@@ -162,3 +162,5 @@ public class EpisodicMemory {
         return Math.min(10, Math.max(1, importance));
     }
 }
+
+// Week 1 update by LoveShah21
