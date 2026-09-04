@@ -97,3 +97,5 @@ public class EmbeddingService {
         return Map.of("reason", error.getClass().getSimpleName(), "service", "orchestrator");
     }
 }
+
+// Week 1 update by fahim0-3
