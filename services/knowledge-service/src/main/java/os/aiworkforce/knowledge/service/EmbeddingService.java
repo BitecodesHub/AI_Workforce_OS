@@ -101,3 +101,5 @@ public class EmbeddingService {
 // Week 1 update by fahim0-3
 
 // Week 2 update by fahim0-3
+
+// Week 3 update by fahim0-3
