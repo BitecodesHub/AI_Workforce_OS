@@ -1,149 +1,121 @@
-import { Card, DataTable, Eyebrow, Notice, PageHeader, StatRow, StatTile, Tag } from '../components/ui'
+import { Card, DataTable, EmptyState, Eyebrow, Notice, PageHeader, StatRow, StatTile, Tag } from '../components/ui'
 import type { Column } from '../components/ui'
+import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+import { useAnalytics } from '../lib/queries'
+import type { ActionCount, AnalyticsSummary, OutcomeCount } from '../lib/queries'
 
 /*
  * Analytics.
  *
- * One accent colour, per the brief, which also suits the content: a chart in six colours implies
- * six things worth comparing, and there are two. The bars are drawn inline rather than pulled
- * from a chart library, because a simple comparison does not need eighty kilobytes of JavaScript.
- *
- * "Hours returned" is an estimate and is labelled as one everywhere it appears. Presenting an
- * estimate as a measurement is how a dashboard becomes a claim nobody can defend in a meeting.
+ * Derived directly from the audit log rather than from a daily rollup table: nothing populates
+ * that rollup yet, so reading it would show zeros forever, indistinguishable from a workspace
+ * with no activity. Counting the audit projection instead means every figure here reflects rows
+ * that actually exist, even before the rollup job is built - see AnalyticsController on the
+ * analytics service for how the count is produced.
  */
 
-type AgentRow = {
-  agent: string
-  category: 'operations' | 'engineering' | 'growth' | 'support'
-  runs: number
-  completed: number
-  approvals: number
-  tokens: string
-  cost: string
+const OUTCOME_TONE = { succeeded: 'success', failed: 'danger', denied: 'warning' } as const
+
+const ACTION_COLUMNS: Column<ActionCount>[] = [
+  { key: 'action', header: 'Action', render: (row) => <span className="mono">{row.action}</span> },
+  { key: 'count', header: 'Count', numeric: true, render: (row) => row.count },
+]
+
+function outcomeTone(outcome: string) {
+  return OUTCOME_TONE[outcome as keyof typeof OUTCOME_TONE] ?? 'neutral'
 }
 
-const BY_AGENT: AgentRow[] = [
-  { agent: 'Customer Support', category: 'support', runs: 96, completed: 91, approvals: 14, tokens: '412k', cost: '0.00' },
-  { agent: 'HR', category: 'operations', runs: 41, completed: 40, approvals: 9, tokens: '186k', cost: '0.00' },
-  { agent: 'Engineering Manager', category: 'engineering', runs: 33, completed: 31, approvals: 0, tokens: '158k', cost: '0.00' },
-  { agent: 'Research', category: 'growth', runs: 22, completed: 22, approvals: 2, tokens: '204k', cost: '0.00' },
-]
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
 
-const WEEK = [
-  { day: 'Mon', completed: 34, failed: 2 },
-  { day: 'Tue', completed: 41, failed: 1 },
-  { day: 'Wed', completed: 28, failed: 4 },
-  { day: 'Thu', completed: 37, failed: 0 },
-  { day: 'Fri', completed: 44, failed: 3 },
-]
+function Summary({ data }: { data: AnalyticsSummary }) {
+  const denied = data.byOutcome.find((row) => row.outcome === 'denied')?.count ?? 0
+  const failed = data.byOutcome.find((row) => row.outcome === 'failed')?.count ?? 0
 
-const PEAK = Math.max(...WEEK.map((entry) => entry.completed + entry.failed))
-
-const COLUMNS: Column<AgentRow>[] = [
-  {
-    key: 'agent',
-    header: 'Agent',
-    render: (row) => (
-      <Tag tone={row.category} withDot>
-        {row.agent}
-      </Tag>
-    ),
-  },
-  { key: 'runs', header: 'Runs', numeric: true, render: (row) => row.runs },
-  { key: 'completed', header: 'Completed', numeric: true, render: (row) => row.completed },
-  { key: 'approvals', header: 'Approvals raised', numeric: true, render: (row) => row.approvals },
-  { key: 'tokens', header: 'Tokens', numeric: true, render: (row) => row.tokens },
-  {
-    key: 'cost',
-    header: 'Cost',
-    numeric: true,
-    render: (row) => (
-      <>
-        {row.cost} <span className="stat-unit">AUD</span>
-      </>
-    ),
-  },
-]
-
-export function Analytics() {
   return (
-    <div className="page">
-      <PageHeader
-        eyebrow="How the workforce is doing"
-        title="Analytics"
-        description="Activity, spend and outcomes for the seven days to 24 September 2026."
-      />
-
-      <Notice tone="info">
-        Hours returned is an estimate derived from task duration against a configured baseline. It
-        is not measured, and it should not be quoted as though it were.
-      </Notice>
-
+    <>
       <div style={{ marginTop: 'var(--space-6)' }}>
         <StatRow>
-          <StatTile label="Tasks completed" value="184" unit="this week" note="Up from 161 last week" />
-          <StatTile label="Completion rate" value="95" unit="per cent" note="9 runs failed or were cancelled" />
-          <StatTile label="Hours returned" value="47.5" unit="hours" note="Estimated, not measured" />
-          <StatTile label="Model spend" value="0.00" unit="AUD" note="Against a monthly cap of 250.00" />
+          <StatTile label="Audit entries" value={String(data.totalEvents)} unit="last 30 days" />
+          <StatTile label="Distinct actions" value={String(data.byAction.length)} unit="kinds of event" />
+          <StatTile label="Denied" value={String(denied)} unit="blocked by policy" />
+          <StatTile label="Failed" value={String(failed)} unit="did not succeed" />
         </StatRow>
         <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
-          Source: daily activity rollups built from run and approval records.
+          {formatDate(data.windowStart)} to {formatDate(data.windowEnd)}, counted from the
+          append-only audit projection.
         </p>
       </div>
 
       <section style={{ marginTop: 'var(--space-7)' }}>
         <Card as="section">
-          <Eyebrow>Runs by day</Eyebrow>
-          <p className="muted" style={{ marginBottom: 'var(--space-6)' }}>
-            Completed in the accent colour, failed in the supporting tone.
-          </p>
-
-          <div
-            className="row"
-            style={{ gap: 'var(--space-5)', alignItems: 'flex-end', height: '160px' }}
-            role="img"
-            aria-label="Runs completed and failed for each weekday, peaking at 47 on Friday."
-          >
-            {WEEK.map((entry) => (
-              <div key={entry.day} className="stack" style={{ flex: 1, gap: 'var(--space-3)', alignItems: 'center' }}>
-                <div
-                  className="stack"
-                  style={{ width: '100%', justifyContent: 'flex-end', height: '120px', gap: '2px' }}
-                >
-                  <div
-                    style={{
-                      height: `${(entry.failed / PEAK) * 120}px`,
-                      background: 'var(--chart-secondary)',
-                      borderRadius: 'var(--radius-tag) var(--radius-tag) 0 0',
-                    }}
-                  />
-                  <div
-                    style={{
-                      height: `${(entry.completed / PEAK) * 120}px`,
-                      background: 'var(--chart-primary)',
-                      borderRadius: entry.failed > 0 ? 0 : 'var(--radius-tag) var(--radius-tag) 0 0',
-                    }}
-                  />
-                </div>
-                <span className="caption">{entry.day}</span>
-                <span className="caption tabular">{entry.completed + entry.failed}</span>
-              </div>
-            ))}
-          </div>
+          <Eyebrow>Outcomes</Eyebrow>
+          {data.byOutcome.length === 0 ? (
+            <p className="muted">No audit entries in this window.</p>
+          ) : (
+            <div className="row" style={{ gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+              {data.byOutcome.map((row: OutcomeCount) => (
+                <Tag key={row.outcome} tone={outcomeTone(row.outcome)} withDot>
+                  {row.outcome} · {row.count}
+                </Tag>
+              ))}
+            </div>
+          )}
         </Card>
       </section>
 
       <section style={{ marginTop: 'var(--space-6)' }}>
         <Card as="section">
-          <Eyebrow>By agent</Eyebrow>
+          <Eyebrow>By action</Eyebrow>
           <DataTable
-            columns={COLUMNS}
-            rows={BY_AGENT}
-            getKey={(row) => row.agent}
-            caption="Activity per agent for the week, from the daily activity rollups."
+            columns={ACTION_COLUMNS}
+            rows={data.byAction}
+            getKey={(row) => row.action}
+            caption="Audit entries grouped by action, for the window above."
           />
         </Card>
       </section>
+    </>
+  )
+}
+
+export function Analytics() {
+  const analyticsQuery = useAnalytics()
+
+  return (
+    <div className="page">
+      <PageHeader
+        eyebrow="How the workforce is doing"
+        title="Analytics"
+        description="Activity for this workspace, derived from the audit log."
+      />
+
+      <Notice tone="info">
+        These figures are counted directly from the audit log, not from a separate rollup. A
+        number here is always as many entries as actually exist, never a placeholder.
+      </Notice>
+
+      <QueryState
+        query={analyticsQuery}
+        permission="analytics:read"
+        what="the analytics dashboard"
+        rows={4}
+        isEmpty={(data) => data.totalEvents === 0}
+        empty={
+          <div style={{ marginTop: 'var(--space-6)' }}>
+            <Card>
+              <EmptyState
+                icon={<EmptyIcon kind="task" />}
+                title="No activity yet"
+                body="Once agents start running and approvals are decided, activity will appear here."
+              />
+            </Card>
+          </div>
+        }
+      >
+        {(data) => <Summary data={data} />}
+      </QueryState>
     </div>
   )
 }

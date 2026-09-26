@@ -78,6 +78,13 @@ aiwos:
     analytics: ${AIWOS_URL_ANALYTICS:http://localhost:8087}
 
 spring:
+  # The default 256KB buffer on an outbound WebClient response is sized for typical JSON replies,
+  # not for a batch of embedding vectors: 96 passages at 1536 dimensions each serialises well past
+  # it, and the call fails with a buffer-limit error that looks nothing like what actually broke.
+  # Every service that calls a sibling over WebClient - embeddings, credentials, audit events -
+  # shares this default rather than each discovering the limit on its own oversized response.
+  codec:
+    max-in-memory-size: 10MB
   jackson:
     default-property-inclusion: non_null
     deserialization:

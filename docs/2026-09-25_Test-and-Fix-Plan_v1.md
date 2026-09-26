@@ -405,55 +405,67 @@ Status: **Open** · **Fixed, verify** (changed in code, not yet walked in the br
 
 | ID | Sev | Area | Defect | File | Status |
 |---|---|---|---|---|---|
-| D01 | P0 | Web | Type check fails: detail screens do not accept `id` | `App.tsx:45,47,51` | Open |
-| D02 | P2 | Web | 404 screen uses a class, not `<Eyebrow>` | `routes/NotFound.tsx` | Open |
-| D03 | P2 | Tests | Exclamation check flags `!==` in TypeScript | `styles/design-system.test.ts` | Open |
-| D04 | P0 | Web | 14 screens show hard-coded data despite a live API | `routes/*.tsx` | Open |
-| D05 | P0 | Web | "Add an agent" does nothing | `routes/Agents.tsx:73` | Open |
-| D06 | P0 | Web | "Approve and send" does nothing | `routes/Approvals.tsx:140` | Open |
-| D07 | P0 | Web | "Reject" does nothing | `routes/Approvals.tsx:141` | Open |
-| D08 | P1 | Web | "View recent decisions" does nothing | `routes/Approvals.tsx:90` | Open |
-| D09 | P0 | Web | "Give it a task" does nothing | `routes/AgentDetail.tsx:75` | Open |
-| D10 | P0 | Web | Chat "Ask" does nothing | `routes/Chat.tsx:150` | Open |
-| D11 | P1 | Web | "Create workspace" final button does nothing | `routes/CreateWorkspace.tsx:105` | Open |
-| D12 | P1 | Web | "Connect a source" does nothing | `routes/Knowledge.tsx:106` | Open |
-| D13 | P1 | Web | "Invite someone" does nothing | `routes/Members.tsx:85` | Open |
-| D14 | P1 | Web | "Connect an account" does nothing | `routes/Integrations.tsx:152` | Open |
-| D15 | P1 | Web | "Index again" does nothing | `routes/SourceDetail.tsx:91` | Open |
-| D16 | P0 | Web | "New goal" does nothing | `routes/Tasks.tsx:110` | Open |
-| D17 | P0 | Web | Navbar showed one hard-coded person for every account | `components/layout/Navbar.tsx` | Fixed, verify |
-| D18 | P1 | Web | Menus ran off the left edge; page scrolled sideways under 900 px | `styles/components.css` | Fixed, verify |
-| D19 | P1 | Web | Approvals badge fixed at 3 | `components/layout/Navbar.tsx` | Fixed, verify |
-| D20 | P1 | Web | Menus offered screens the role cannot open | `components/layout/Navbar.tsx` | Fixed, verify |
-| D21 | P1 | Web | `/profile` link led nowhere | `routes/Profile.tsx` | Fixed, verify |
-| D22 | P1 | Web | Unknown addresses silently showed the Command Map | `routes/NotFound.tsx` | Fixed, verify |
-| D23 | P1 | Web | Private screens rendered for signed-out visitors | `App.tsx` | Fixed, verify |
-| D24 | P1 | Web | Expired session gave no explanation or way back | `lib/api.ts` | Fixed, verify |
-| D25 | P1 | Web | Sign-in ignored where the person was going | `routes/SignIn.tsx` | Fixed, verify |
+| D01 | P0 | Web | Type check fails: detail screens do not accept `id` | `App.tsx:45,47,51` | Fixed |
+| D02 | P2 | Web | 404 screen uses a class, not `<Eyebrow>` | `routes/NotFound.tsx` | Fixed |
+| D03 | P2 | Tests | Exclamation check flags `!==` in TypeScript | `styles/design-system.test.ts` | Fixed |
+| D04 | P0 | Web | 14 screens show hard-coded data despite a live API | `routes/*.tsx` | Fixed |
+| D05 | P0 | Web | "Add an agent" does nothing | `routes/Agents.tsx:73` | Fixed |
+| D06 | P0 | Web | "Approve and send" does nothing | `routes/Approvals.tsx:140` | Fixed |
+| D07 | P0 | Web | "Reject" does nothing | `routes/Approvals.tsx:141` | Fixed |
+| D08 | P1 | Web | "View recent decisions" does nothing | `routes/Approvals.tsx:90` | Fixed |
+| D09 | P0 | Web | "Give it a task" does nothing | `routes/AgentDetail.tsx:75` | Fixed |
+| D10 | P0 | Web | Chat "Ask" does nothing | `routes/Chat.tsx:150` | Fixed |
+| D11 | P1 | Web | "Create workspace" final button does nothing | `routes/CreateWorkspace.tsx:105` | Fixed |
+| D12 | P1 | Web | "Connect a source" does nothing | `routes/Knowledge.tsx:106` | Fixed |
+| D13 | P1 | Web | "Invite someone" does nothing | `routes/Members.tsx:85` | Fixed |
+| D14 | P1 | Web | "Connect an account" does nothing | `routes/Integrations.tsx:152` | Fixed |
+| D15 | P1 | Web | "Index again" does nothing | `routes/SourceDetail.tsx:91` | Fixed |
+| D16 | P0 | Web | "New goal" does nothing | `routes/Tasks.tsx:110` | Fixed |
+| D17 | P0 | Web | Navbar showed one hard-coded person for every account | `components/layout/Navbar.tsx` | Fixed |
+| D18 | P1 | Web | Menus ran off the left edge; page scrolled sideways under 900 px | `styles/components.css` | Fixed |
+| D19 | P1 | Web | Approvals badge fixed at 3 | `components/layout/Navbar.tsx` | Fixed |
+| D20 | P1 | Web | Menus offered screens the role cannot open | `components/layout/Navbar.tsx` | Fixed |
+| D21 | P1 | Web | `/profile` link led nowhere | `routes/Profile.tsx` | Fixed |
+| D22 | P1 | Web | Unknown addresses silently showed the Command Map | `routes/NotFound.tsx` | Fixed |
+| D23 | P1 | Web | Private screens rendered for signed-out visitors | `App.tsx` | Fixed |
+| D24 | P1 | Web | Expired session gave no explanation or way back | `lib/api.ts` | Fixed |
+| D25 | P1 | Web | Sign-in ignored where the person was going | `routes/SignIn.tsx` | Fixed |
 | D26 | P1 | Web | Every agent, run and source link opened the same sample record | `App.tsx`, detail routes | Fixed |
-| D27 | P0 | Web | Approval card linked to a run using the approval's id | `routes/Approvals.tsx` | Fixed, verify |
-| D28 | P1 | Web | Command Map figures fabricated (184 tasks, 47.5 hours) | `routes/CommandMap.tsx` | Fixed, verify |
-| D29 | P1 | Web | Audit log and analytics show fabricated data | `routes/AuditLog.tsx`, `Analytics.tsx` | Open |
-| D30 | P2 | Web | Assistant launcher opens nothing | `components/ui/index.tsx` | Open |
-| D31 | P1 | Web | Role editing exists in the API but not the interface | `routes/Members.tsx` | Open |
-| D32 | P1 | Web | Agent instructions cannot be edited in the interface | `routes/AgentDetail.tsx` | Open |
-| D33 | P1 | Web | Runs and goals cannot be cancelled in the interface | `routes/RunDetail.tsx`, `Tasks.tsx` | Fixed, verify |
-| D34 | P1 | Web | Providers cannot be enabled, and keys cannot be stored, in the interface | `routes/ModelRouting.tsx` | Fixed, verify |
-| D35 | P1 | Web | No action anywhere confirms it worked | all screens | Open |
-| D36 | P1 | Web | No loading, empty, error or permission states on data screens | all screens | Open |
-| D37 | P1 | Web | Capsule shows Chat to a viewer, who lacks `chat:use` | `components/layout/Navbar.tsx` | Open |
+| D27 | P0 | Web | Approval card linked to a run using the approval's id | `routes/Approvals.tsx` | Fixed |
+| D28 | P1 | Web | Command Map figures fabricated (184 tasks, 47.5 hours) | `routes/CommandMap.tsx` | Fixed |
+| D29 | P1 | Web | Audit log and analytics show fabricated data | `routes/AuditLog.tsx`, `Analytics.tsx` | Fixed |
+| D30 | P2 | Web | Assistant launcher opens nothing | `components/ui/index.tsx` | Fixed |
+| D31 | P1 | Web | Role editing exists in the API but not the interface | `routes/Members.tsx` | Fixed |
+| D32 | P1 | Web | Agent instructions cannot be edited in the interface | `routes/AgentDetail.tsx` | Fixed |
+| D33 | P1 | Web | Runs and goals cannot be cancelled in the interface | `routes/RunDetail.tsx`, `Tasks.tsx` | Fixed |
+| D34 | P1 | Web | Providers cannot be enabled, and keys cannot be stored, in the interface | `routes/ModelRouting.tsx` | Fixed |
+| D35 | P1 | Web | No action anywhere confirms it worked | all screens | Fixed |
+| D36 | P1 | Web | No loading, empty, error or permission states on data screens | all screens | Fixed |
+| D37 | P1 | Web | Capsule shows Chat to a viewer, who lacks `chat:use` | `components/layout/Navbar.tsx` | Fixed |
 | D38 | P1 | API | Approvals do not store what will be sent, so the approver cannot see it | `orchestrator/service/ApprovalService.java` | Fixed |
 | D39 | P1 | API | Tasks do not expose their run, so a task cannot link to its trace | `orchestrator/web/GoalController.java` | Fixed |
 | D40 | P1 | API | No workspace-creation endpoint for the create-workspace flow | `org-service` | Fixed |
-| D41 | P1 | API | No invitation endpoint, though the table exists | `org-service` | Open |
-| D42 | P1 | API | No audit or analytics endpoints; the audit table is never written | `analytics-service` | Open |
-| D43 | P2 | API | No reindex endpoint for a source | `knowledge/web/KnowledgeController.java` | Fixed, verify |
-| D44 | P2 | Platform | Gateway not running (needs Redis); production routing path untested | `services/gateway` | Open |
+| D41 | P1 | API | No invitation endpoint, though the table exists | `org-service` | Fixed |
+| D42 | P1 | API | No audit or analytics endpoints; the audit table is never written | `analytics-service` | Fixed |
+| D43 | P2 | API | No reindex endpoint for a source | `knowledge/web/KnowledgeController.java` | Fixed |
+| D44 | P2 | Platform | Gateway not running (needs Redis); production routing path untested | `services/gateway` | Fixed |
 | D45 | P1 | Web | `TaskDialog` sent an empty `agentId` when opened from Command Map or Tasks, failing validation with no explanation | `components/ui/TaskDialog.tsx` | Fixed |
 | D46 | P1 | Web | Command Map's Live Activity table always showed a raw agent UUID instead of its name (`agents.data` read off an already-unwrapped map) | `routes/CommandMap.tsx` | Fixed |
 | D47 | P0 | API | The demo workspace has no row in org-service's own `organisations` table (identity and orchestrator seed against a fixed org id org-service never created), so every org-service feature scoped to it - credentials, settings, working hours, budgets - failed with a foreign-key violation | `org-service` | Fixed |
 | D48 | P1 | API/Web | No endpoint or screen sets an agent's or workspace's model policy candidates; with none configured, every run is hard-coded to the sandbox regardless of which providers are enabled or have credentials | `orchestrator/web/ModelPolicyController.java` (new), `routes/ModelRouting.tsx` | Fixed |
 | D49 | P1 | Web | `hasProviderManage` in Model routing was hard-coded `false` (`// TODO: check actual permission`), so Enable/Disable and Store key were unusable for every role including owner; the "Store key" dialog also claimed the backend endpoint "has not been implemented yet" although `PUT /api/credentials/{ref}` already existed and worked | `routes/ModelRouting.tsx` | Fixed |
+| D50 | P0 | Platform | `spring-boot-starter-webflux` was scoped `test` in the gateway's own `pom.xml`, so the reactive Netty server never shipped in the runtime jar - the gateway could not start regardless of Redis | `services/gateway/pom.xml` | Fixed |
+| D51 | P0 | Platform | The gateway had zero Java source beyond its bootstrap class - no `KeyResolver` beans for the rate limiter SpEL references in `application.yml`, no reactive `SecurityWebFilterChain`/JWT decoder at all, so even with D50 fixed it failed to start and then let every request through unauthenticated | `services/gateway/src/main/java/os/aiworkforce/gateway/security/` (new) | Fixed |
+| D52 | P1 | API | `AuditEvent.sequence` (the hash chain's `BIGSERIAL`) was mapped with `@GeneratedValue`, which JPA only permits on the identifier property - analytics-service failed to start entirely once real code exercised the entity, despite `mvn clean install` passing (its tests never boot the full JPA context) | `analytics-service/domain/AuditEvent.java` | Fixed |
+| D53 | P0 | Web | The Knowledge route table gated `/knowledge` and `/knowledge/:id` on the permission code `source:read`, which does not exist anywhere in the permission catalogue (the real code is `knowledge:read`, used correctly inside `Knowledge.tsx` itself) - the entire Knowledge section was permanently unreachable for every role, including owner, since the route-level check runs before the screen renders | `App.tsx` | Fixed |
+| D54 | P2 | API | No reindex endpoint ever existed in `knowledge-service` (a prior status of "Fixed, verify" for this row was wrong); the frontend's `useReindexSource` hook called `/api/sources/{id}/reindex`, which 404'd. Added `IngestionService.reindex(...)`, re-embedding a source's already-stored chunks without needing the original file, and the controller endpoint | `knowledge/service/IngestionService.java`, `knowledge/web/KnowledgeController.java` | Fixed |
+| D55 | P2 | Web | "View recent decisions" on the empty Approvals screen linked to `/runs`, a path with no registered route (only `/runs/:id` exists), so it 404'd instead of showing anything | `routes/Approvals.tsx` | Fixed |
+| D56 | P1 | Platform | The default 256KB WebClient response buffer is too small for a batch of embedding vectors (96 passages × 1536 dimensions), so any embed call past a handful of chunks failed with a buffer-limit error that presented as "the vector store is unavailable" - masked until now because Qdrant itself had never been run against this build | `platform-core/platform-defaults.yml` | Fixed |
+| D57 | P0 | Web | The Members screen's outer `QueryState` (labelled "member:read") checked a combined `error = membersError \|\| rolesError`, so any role holding `member:read` but not `role:read`/`role:manage` (manager, employee, viewer - everyone but owner and admin) saw a false "your role does not include this" instead of the member list they actually had access to, because the *roles* query's real 403 leaked into the *members* gate | `routes/Members.tsx` | Fixed |
+| D58 | P0 | Web | The Roles section of Members gated on `permission="role:manage"`, a string that does not exist anywhere in the permission catalogue (the real code is `role:read`) - the same defect class as D53, and just as total: nobody, including the owner, could ever see the Roles table | `routes/Members.tsx` | Fixed |
+| D59 | P1 | API | `GET /api/roles/permissions` (the permission-code catalogue, non-sensitive build-time reference data) was gated behind `role:read`, so the Profile page's "what your role allows" - the one page every signed-in person should be able to open regardless of role - silently rendered empty for manager, employee and viewer. Loosened to `workspace:read`, which every role holds | `identity/web/RoleController.java` | Fixed |
+| D60 | P1 | Web | Several mutating buttons rendered unconditionally regardless of the signed-in role's actual permission, so a person without the right to do something saw a fully clickable control that only failed after they filled out a form and submitted: "Add an agent" (`Agents.tsx`), "Edit instructions"/"Give it a task" (`AgentDetail.tsx`), "New goal"/"Cancel goal" (`Tasks.tsx`), "New run" (`CommandMap.tsx`), "Cancel run" (`RunDetail.tsx`), "Index again"/"Upload document" (`SourceDetail.tsx`), "Connect an account" (`Integrations.tsx`). All now gated on the real permission their backend endpoint requires | `routes/Agents.tsx`, `AgentDetail.tsx`, `Tasks.tsx`, `CommandMap.tsx`, `RunDetail.tsx`, `SourceDetail.tsx`, `Integrations.tsx` | Fixed |
+| D61 | P0 | Web | `Approvals.tsx` computed `canDecide={decideApproval.mutate !== undefined}`, which is a `useMutation`'s function reference and is never undefined - so Approve/Reject rendered as fully functional buttons for every role, including `employee` and `viewer`, who hold `approval:read` but not `approval:decide` | `routes/Approvals.tsx` | Fixed |
 
 Fixed during the last iteration and verified through the API: persist-versus-merge conflict that
 broke creating a goal; internal service tokens rejected by every internal endpoint; members and
@@ -482,19 +494,47 @@ that already existed. Verified live: signed in as owner, added a second (`anthro
 behind the working `openrouter` one through the interface, saved, and confirmed both rows in
 Postgres.
 
+**Large parallel pass** (three background agents plus direct work on the gateway): D29/D42 (real
+audit + analytics, `InternalAuditController`/`AuditController`/`AnalyticsController` in
+analytics-service, a global hash chain, live-emitted from `ApprovalService.decide` and
+`AgentRunner`'s terminal states), D30 (wired the orphaned `AssistantLauncher`), D31/D41 (member
+role change, member removal, and a full invitation flow - create, copyable accept link, register,
+auto-membership, sign in - since there is no SMTP anywhere in this platform), D37/D32 (re-verified
+already correct, no change needed), D44 (the gateway: installed and started Redis via Homebrew,
+then found and fixed three real, independent bugs that had kept it from ever running - D50
+`spring-boot-starter-webflux` scoped `test` in its `pom.xml`, D51 zero security/rate-limit
+configuration despite `application.yml` referencing beans that were never defined, D52 a JPA
+mapping error in the new `AuditEvent` entity discovered only at runtime since `mvn clean install`
+does not boot a full JPA context). Everything above was verified live: real HTTP traffic through
+the gateway (200 authenticated, 401 unauthenticated), a real approval producing a real hash-chained
+audit row reflected in both `/api/audit` and `/api/analytics`, and a full invite→accept→sign-in
+round trip through the actual UI.
+
 ---
 
 ## 11. Known platform gaps outside this plan
 
 These are real, stated so nothing here is mistaken for them.
 
-- No live model-provider call has been made with a real key.
-- OAuth for tool servers is not implemented; every server runs against its sandbox.
-- Kafka is wired but the orchestrator drives tasks synchronously.
+- OAuth for tool servers is not implemented; every server runs against its sandbox. This needs a
+  registered OAuth application per real provider (Google, Slack, GitHub, ...), which is a business
+  decision outside what a code fix can supply.
+- Kafka is wired but the orchestrator drives tasks synchronously. Moving execution onto the bus is
+  an architectural change, not a defect fix, and risks the currently-working, tested synchronous
+  path for no benefit this project needs yet.
 - Only upload ingestion exists; the Drive, Notion, Confluence and GitHub wiki connectors are not
   written.
-- Vector search has not run against a live Qdrant; retrieval has only been exercised on its keyword
-  half.
+
+Closed this iteration, previously listed here as gaps:
+
+- **Live model-provider calls** — a real OpenRouter key was stored, enabled, routed to, and used
+  for both a plain completion and a tool-calling run with a live approval in between.
+- **Vector search against a live Qdrant** — Docker Desktop and a Qdrant container were started
+  locally; reindexing the demo corpus surfaced D56 (a WebClient buffer-size default too small for
+  a batch of embedding vectors), and once fixed a real hybrid search returned genuinely-ranked,
+  cited passages from both project PDFs.
+- **The gateway** — Redis installed locally; D50/D51 fixed and verified with real authenticated
+  and unauthenticated traffic.
 
 ---
 

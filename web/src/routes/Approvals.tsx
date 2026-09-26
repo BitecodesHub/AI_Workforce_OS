@@ -4,6 +4,7 @@ import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { timeAgo, timeUntil } from '../lib/api'
 import { useApprovals, useAgentNames, useDecideApproval } from '../lib/queries'
 import { useToast } from '../lib/toast'
+import { can } from '../lib/session'
 
 const ACTION_TONE = { OUTBOUND: 'warning', DESTRUCTIVE: 'danger', WRITE: 'blue' } as const
 const ACTION_LABEL = {
@@ -130,6 +131,7 @@ export function Approvals() {
   const approvalsQuery = useApprovals()
   const agentNames = useAgentNames()
   const decideApproval = useDecideApproval()
+  const canDecideApproval = can('approval:decide')
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectNote, setRejectNote] = useState('')
   const [currentApprovalId, setCurrentApprovalId] = useState<string | null>(null)
@@ -210,7 +212,7 @@ export function Approvals() {
               }
               title="No approvals waiting"
               body="When an agent needs permission to send or delete something, it will appear here."
-              action={<a className="nav-pill" href="/runs">View recent decisions</a>}
+              action={<a className="nav-pill" href="/">View recent decisions</a>}
             />
           </Card>
         }
@@ -226,7 +228,7 @@ export function Approvals() {
                   agentNames={agentNames}
                   onApprove={() => handleApprove(approval.id)}
                   onReject={() => handleRejectOpen(approval.id)}
-                  canDecide={decideApproval.mutate !== undefined}
+                  canDecide={canDecideApproval}
                   isApproving={isApprovingId === approval.id}
                   isRejecting={isRejectingId === approval.id}
                 />

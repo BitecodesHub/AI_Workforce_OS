@@ -1,5 +1,9 @@
-import { Card, DataTable, Eyebrow, Notice, PageHeader, Tag } from '../components/ui'
+import { Card, DataTable, EmptyState, Eyebrow, Notice, PageHeader, Tag } from '../components/ui'
 import type { Column } from '../components/ui'
+import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+import { timeAgo } from '../lib/api'
+import { useAudit } from '../lib/queries'
+import type { AuditEvent } from '../lib/queries'
 
 /*
  * The audit log.
@@ -12,87 +16,35 @@ import type { Column } from '../components/ui'
  * written can be detected rather than merely being trusted.
  */
 
-type AuditRow = {
-  id: string
-  sequence: number
-  actor: string
-  onBehalfOf?: string
-  action: string
-  resource: string
-  outcome: 'succeeded' | 'failed' | 'denied'
-  at: string
-}
-
-const ENTRIES: AuditRow[] = [
-  {
-    id: 'a1',
-    sequence: 4821,
-    actor: 'Customer Support agent',
-    onBehalfOf: 'Priya Shah',
-    action: 'tool.invoke',
-    resource: 'gmail.send_message',
-    outcome: 'denied',
-    at: '09:41:22',
-  },
-  {
-    id: 'a2',
-    sequence: 4820,
-    actor: 'Priya Shah',
-    action: 'approval.decide',
-    resource: 'apr_01J9A',
-    outcome: 'succeeded',
-    at: '09:41:20',
-  },
-  {
-    id: 'a3',
-    sequence: 4819,
-    actor: 'HR agent',
-    onBehalfOf: 'Yash Doshi',
-    action: 'tool.invoke',
-    resource: 'calendar.create_event',
-    outcome: 'succeeded',
-    at: '09:38:04',
-  },
-  {
-    id: 'a4',
-    sequence: 4818,
-    actor: 'Aum Parmar',
-    action: 'role.update',
-    resource: 'manager',
-    outcome: 'succeeded',
-    at: '09:12:55',
-  },
-  {
-    id: 'a5',
-    sequence: 4817,
-    actor: 'Fahim Saiyad',
-    action: 'credential.store',
-    resource: 'provider:openrouter',
-    outcome: 'succeeded',
-    at: '08:59:31',
-  },
-]
-
 const OUTCOME_TONE = { succeeded: 'success', failed: 'danger', denied: 'warning' } as const
 const OUTCOME_LABEL = { succeeded: 'Succeeded', failed: 'Failed', denied: 'Denied' } as const
 
-const COLUMNS: Column<AuditRow>[] = [
+const COLUMNS: Column<AuditEvent>[] = [
   { key: 'sequence', header: 'Entry', numeric: true, render: (row) => row.sequence },
-  { key: 'at', header: 'Time', render: (row) => <span className="mono">{row.at}</span> },
+  { key: 'occurredAt', header: 'Time', render: (row) => <span className="mono">{timeAgo(row.occurredAt)}</span> },
   {
-    key: 'actor',
+    key: 'actorId',
     header: 'Who',
     // An agent's action always names the person accountable for it. A trail that stops at "the
     // agent did it" cannot answer the only question ever asked of one.
     render: (row) => (
       <div>
-        <span>{row.actor}</span>
+        <span>{row.actorId}</span>
         {row.onBehalfOf && <p className="caption">for {row.onBehalfOf}</p>}
       </div>
     ),
   },
   { key: 'action', header: 'Action', render: (row) => <span className="mono">{row.action}</span> },
-  { key: 'resource', header: 'Resource', render: (row) => <span className="muted">{row.resource}</span> },
+  {
+    key: 'resourceType',
+    header: 'Resource',
+    render: (row) => (
+      <span className="muted">
+        {row.resourceType}
+        {row.resourceId ? `:${row.resourceId}` : ''}
+      </span>
+    ),
+  },
   {
     key: 'outcome',
     header: 'Outcome',
@@ -101,6 +53,8 @@ const COLUMNS: Column<AuditRow>[] = [
 ]
 
 export function AuditLog() {
+  const auditQuery = useAudit()
+
   return (
     <div className="page">
       <PageHeader
@@ -116,13 +70,30 @@ export function AuditLog() {
 
       <section style={{ marginTop: 'var(--space-6)' }}>
         <Card as="section">
-          <Eyebrow>Today</Eyebrow>
-          <DataTable
-            columns={COLUMNS}
-            rows={ENTRIES}
-            getKey={(row) => row.id}
-            caption="Audit entries for 24 September 2026, newest first, from the append-only audit projection."
-          />
+          <Eyebrow>Recent entries</Eyebrow>
+          <QueryState
+            query={auditQuery}
+            permission="audit:read"
+            what="the audit log"
+            rows={6}
+            isEmpty={(data) => data.length === 0}
+            empty={
+              <EmptyState
+                icon={<EmptyIcon kind="document" />}
+                title="No audit entries yet"
+                body="Actions taken in this workspace will appear here as they happen."
+              />
+            }
+          >
+            {(entries) => (
+              <DataTable
+                columns={COLUMNS}
+                rows={entries}
+                getKey={(row) => row.id}
+                caption="Audit entries for this workspace, newest first, from the append-only audit projection."
+              />
+            )}
+          </QueryState>
         </Card>
       </section>
     </div>

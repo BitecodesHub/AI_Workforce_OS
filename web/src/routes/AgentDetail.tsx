@@ -5,6 +5,7 @@ import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
 import { useAgent, useUpdateAgent } from '../lib/queries'
 import { useToast } from '../lib/toast'
+import { can } from '../lib/session'
 import type { AgentGrant } from '../lib/queries'
 
 const GRANT_COLUMNS: Column<AgentGrant>[] = [
@@ -151,7 +152,7 @@ export function AgentDetail({ id }: { id: string }) {
               action={
                 <>
                   <StatusTag status={agent.status} />
-                  {!agent.sealed && (
+                  {!agent.sealed && can('agent:update') && (
                     <Button
                       variant="outline"
                       style={{ marginLeft: 'var(--space-3)' }}
@@ -160,12 +161,14 @@ export function AgentDetail({ id }: { id: string }) {
                       Edit instructions
                     </Button>
                   )}
-                  <Button
-                    style={{ marginLeft: 'var(--space-3)' }}
-                    onClick={() => setTaskDialogOpen(true)}
-                  >
-                    Give it a task
-                  </Button>
+                  {can('agent:run') && (
+                    <Button
+                      style={{ marginLeft: 'var(--space-3)' }}
+                      onClick={() => setTaskDialogOpen(true)}
+                    >
+                      Give it a task
+                    </Button>
+                  )}
                 </>
               }
             />

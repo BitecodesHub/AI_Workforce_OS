@@ -172,6 +172,22 @@ public class KnowledgeController {
         }
     }
 
+    public record ReindexResponse(UUID sourceId, String status, int documentsQueued, boolean vectorised, String detail) {}
+
+    /**
+     * Re-embeds a source from its already-stored text, for when the vector store was down
+     * during ingestion. Nothing is re-uploaded: the passages survived that failure in Postgres,
+     * so this only retries the embed-and-upsert half.
+     */
+    @PostMapping("/sources/{sourceId}/reindex")
+    @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
+    @Operation(summary = "Retry vector indexing for every document already in a source")
+    public ReindexResponse reindex(@PathVariable UUID sourceId) {
+        IngestionService.ReindexResult result = ingestion.reindex(orgId(), sourceId);
+        return new ReindexResponse(
+                sourceId, "reindexed", result.documentCount(), result.vectorised(), result.detail());
+    }
+
     @GetMapping("/knowledge/health")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Whether the knowledge base can currently answer")

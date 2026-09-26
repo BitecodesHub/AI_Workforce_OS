@@ -76,8 +76,15 @@ public class RoleController {
         return roles.findAvailableTo(orgId).stream().map(this::toView).toList();
     }
 
+    /*
+     * WORKSPACE_READ, not ROLE_READ: this is the compile-time permission registry - the same
+     * catalogue every role's own description is drawn from - not workspace data, and not
+     * sensitive. Gating it behind ROLE_READ meant the profile page's "what your role allows"
+     * (which every signed-in person can otherwise open) rendered silently empty for any role
+     * without role management access, which is most of them.
+     */
     @GetMapping("/permissions")
-    @RequiresPermission(Permission.Codes.ROLE_READ)
+    @RequiresPermission(Permission.Codes.WORKSPACE_READ)
     @Operation(summary = "Every permission a role may be given")
     public List<PermissionView> permissions() {
         // Served from the build's registry rather than the table: these are the codes the running

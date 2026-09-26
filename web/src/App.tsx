@@ -19,6 +19,7 @@ import { AuditLog } from './routes/AuditLog'
 import { Analytics } from './routes/Analytics'
 import { SignIn } from './routes/SignIn'
 import { CreateWorkspace } from './routes/CreateWorkspace'
+import { AcceptInvite } from './routes/AcceptInvite'
 import { Landing } from './routes/Landing'
 import { Profile } from './routes/Profile'
 import { NotFound } from './routes/NotFound'
@@ -43,6 +44,7 @@ const PUBLIC: Array<[string, RouteMeta]> = [
   ['/home', { permission: null, screen: () => <Landing /> }],
   ['/sign-in', { permission: null, screen: () => <SignIn /> }],
   ['/create-workspace', { permission: null, screen: () => <CreateWorkspace /> }],
+  ['/accept-invite', { permission: null, screen: () => <AcceptInvite /> }],
 ]
 
 const PRIVATE: Array<[string, RouteMeta]> = [
@@ -53,8 +55,8 @@ const PRIVATE: Array<[string, RouteMeta]> = [
   ['/runs/:id', { permission: 'run:read', screen: (p) => <RunDetail id={p.id!} /> }],
   ['/approvals', { permission: 'approval:read', screen: () => <Approvals /> }],
   ['/chat', { permission: 'chat:use', screen: () => <Chat /> }],
-  ['/knowledge', { permission: 'source:read', screen: () => <Knowledge /> }],
-  ['/knowledge/:id', { permission: 'source:read', screen: (p) => <SourceDetail id={p.id!} /> }],
+  ['/knowledge', { permission: 'knowledge:read', screen: () => <Knowledge /> }],
+  ['/knowledge/:id', { permission: 'knowledge:read', screen: (p) => <SourceDetail id={p.id!} /> }],
   ['/integrations', { permission: 'integration:read', screen: () => <Integrations /> }],
   ['/routing', { permission: 'provider:read', screen: () => <ModelRouting /> }],
   ['/members', { permission: 'member:read', screen: () => <Members /> }],
@@ -131,6 +133,7 @@ function titleFor(pattern: string): string {
     '/home': 'A governed AI workforce',
     '/sign-in': 'Sign in',
     '/create-workspace': 'Create a workspace',
+    '/accept-invite': 'Join the workspace',
     '/agents': 'Agents',
     '/agents/:id': 'Agent',
     '/tasks': 'Tasks',

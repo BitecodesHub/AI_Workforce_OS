@@ -4,6 +4,7 @@ import { QueryState, EmptyIcon } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
 import { useRuns, useAgentNames } from '../lib/queries'
 import { useRouter } from '../lib/router'
+import { can } from '../lib/session'
 
 const KIND_TONE = {
   running: 'blue',
@@ -24,6 +25,7 @@ export function CommandMap() {
   const runsQuery = useRuns()
   const agents = useAgentNames()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
+  const canCreate = can('task:create')
 
   return (
     <div className="page">
@@ -31,10 +33,12 @@ export function CommandMap() {
         eyebrow="Your workforce, in focus"
         title="Command Map"
         description="Every agent, every task in flight, and everything waiting on a decision from you."
-        action={<Button onClick={() => setTaskDialogOpen(true)}>New run</Button>}
+        action={canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>New run</Button> : undefined}
       />
 
-      <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} onSuccess={(runId) => runId && navigate(`/runs/${runId}`)} />
+      {canCreate && (
+        <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} onSuccess={(runId) => runId && navigate(`/runs/${runId}`)} />
+      )}
 
       <QueryState
         query={runsQuery}
@@ -47,8 +51,12 @@ export function CommandMap() {
               <EmptyState
                 icon={<EmptyIcon kind="task" />}
                 title="No runs yet"
-                body="Start a run from an agent detail page, or create a new run here."
-                action={<Button onClick={() => setTaskDialogOpen(true)}>New run</Button>}
+                body={
+                  canCreate
+                    ? 'Start a run from an agent detail page, or create a new run here.'
+                    : 'Start a run from an agent detail page.'
+                }
+                action={canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>New run</Button> : undefined}
               />
             </Card>
           </div>

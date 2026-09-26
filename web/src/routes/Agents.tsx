@@ -4,6 +4,7 @@ import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { useAgents, useCreateAgent } from '../lib/queries'
 import { useToast } from '../lib/toast'
 import { useRouter } from '../lib/router'
+import { can } from '../lib/session'
 import type { TagTone } from '../components/ui'
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -142,6 +143,7 @@ function CreateAgentDialog({ open, onClose }: { open: boolean; onClose: () => vo
 export function Agents() {
   const query = useAgents()
   const [createOpen, setCreateOpen] = useState(false)
+  const canCreate = can('agent:create')
 
   return (
     <div className="page">
@@ -150,9 +152,11 @@ export function Agents() {
         title="Agents"
         description="Each agent has a defined role, a model routing policy and only the tools it has been granted."
         action={
-          <Button onClick={() => setCreateOpen(true)}>
-            Add an agent
-          </Button>
+          canCreate ? (
+            <Button onClick={() => setCreateOpen(true)}>
+              Add an agent
+            </Button>
+          ) : undefined
         }
       />
 
@@ -169,8 +173,12 @@ export function Agents() {
               <EmptyState
                 icon={<EmptyIcon kind="agent" />}
                 title="No agents yet"
-                body="Create your first agent to give the workforce something to do."
-                action={<Button onClick={() => setCreateOpen(true)}>Add an agent</Button>}
+                body={
+                  canCreate
+                    ? 'Create your first agent to give the workforce something to do.'
+                    : 'Nobody has configured an agent for this workspace yet.'
+                }
+                action={canCreate ? <Button onClick={() => setCreateOpen(true)}>Add an agent</Button> : undefined}
               />
             </Card>
           </div>

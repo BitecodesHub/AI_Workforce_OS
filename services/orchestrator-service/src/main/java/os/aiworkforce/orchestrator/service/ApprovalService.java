@@ -48,11 +48,13 @@ public class ApprovalService {
     private final Approvals approvals;
     private final Runs runs;
     private final ObjectMapper objectMapper;
+    private final AuditClient audit;
 
-    public ApprovalService(Approvals approvals, Runs runs, ObjectMapper objectMapper) {
+    public ApprovalService(Approvals approvals, Runs runs, ObjectMapper objectMapper, AuditClient audit) {
         this.approvals = approvals;
         this.runs = runs;
         this.objectMapper = objectMapper;
+        this.audit = audit;
     }
 
     /** Raises an approval for a tool call the agent wants to make. */
@@ -126,6 +128,16 @@ public class ApprovalService {
         log.info(
                 "Approval {} {} by {}",
                 approval.getId(), approved ? "approved" : "rejected", actor.id());
+
+        audit.record(
+                orgId,
+                actor,
+                "approval.decide",
+                "approval",
+                approval.getId().toString(),
+                "succeeded",
+                Map.of("approved", approved));
+
         return approval;
     }
 

@@ -1,6 +1,7 @@
 import React from 'react'
 import { Button, Card, DataTable, Dialog, Eyebrow, Input, Notice, PageHeader, Select, StatRow, StatTile, Tag } from '../components/ui'
 import { QueryState } from '../components/ui/QueryState'
+import { ApiError } from '../lib/api'
 import { useToast } from '../lib/toast'
 import { can } from '../lib/session'
 import {
@@ -132,8 +133,8 @@ function RoutingPolicyCard({ models, canManage }: { models: Model[] | undefined;
       await setPolicy.mutateAsync({ candidates })
       toast.success('Routing policy saved')
       setDraft(null)
-    } catch (e) {
-      toast.error('Failed to save the routing policy')
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to save the routing policy')
     }
   }
 
@@ -248,8 +249,9 @@ export function ModelRouting() {
     }
     try {
       await toggleProvider.mutateAsync({ id: provider.id, enable: !provider.enabled })
-    } catch (e) {
-      toastError('Failed to update provider')
+      toastInfo(`${provider.displayName} ${provider.enabled ? 'disabled' : 'enabled'}`)
+    } catch (err) {
+      toastError(err instanceof ApiError ? err.message : 'Failed to update provider')
     }
   }
 
@@ -268,8 +270,8 @@ export function ModelRouting() {
       toastInfo(`Key stored for ${storeKeyProvider.displayName}. Enable it, then give it a place in the routing policy below.`)
       setStoreKeyDialogOpen(false)
       setCredentialValue('')
-    } catch (e) {
-      toastError('Failed to store the key')
+    } catch (err) {
+      toastError(err instanceof ApiError ? err.message : 'Failed to store the key')
     }
   }
 
@@ -280,8 +282,8 @@ export function ModelRouting() {
       toastInfo('Provider enabled but not configured - router will skip it.')
       setEnableDialogOpen(false)
       setEnableDialogProvider(null)
-    } catch (e) {
-      toastError('Failed to enable provider')
+    } catch (err) {
+      toastError(err instanceof ApiError ? err.message : 'Failed to enable provider')
     }
   }
 

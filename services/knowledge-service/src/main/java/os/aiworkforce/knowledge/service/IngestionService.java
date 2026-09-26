@@ -257,6 +257,45 @@ public class IngestionService {
         return Math.max(1, Math.min(extraction.pageCount(), (int) Math.ceil(position * extraction.pageCount())));
     }
 
+    public record ReindexResult(int documentCount, int chunkCount, boolean vectorised, String detail) {}
+
+    /**
+     * Re-writes vectors for every indexed document in a source, from its already-stored chunks.
+     *
+     * <p>The one real reason to reindex is on this page already: the vector store was down
+     * during ingestion, so a document sits at "indexed for keyword search" with its meaning-based
+     * half missing. The text survived that failure - it is in Postgres - so recovering does not
+     * need the original file again, only another attempt at embedding and upserting what is
+     * already chunked.
+     */
+    @Transactional
+    public ReindexResult reindex(UUID orgId, UUID sourceId) {
+        Source source = sources.findByIdAndOrgId(sourceId, orgId)
+                .orElseThrow(() -> ApiException.notFound("source", sourceId));
+
+        List<Document> indexed = documents.findBySourceIdOrderByTitle(sourceId).stream()
+                .filter(Document::isIndexed)
+                .toList();
+
+        int totalChunks = 0;
+        boolean anyVectorised = false;
+        for (Document document : indexed) {
+            List<Chunk> stored = chunks.findByDocumentIdOrderByPosition(document.getId());
+            if (stored.isEmpty()) {
+                continue;
+            }
+            totalChunks += stored.size();
+            anyVectorised |= indexVectors(source, document, stored);
+        }
+        refreshCounts(source);
+
+        String detail = anyVectorised || indexed.isEmpty()
+                ? null
+                : "The vector store is still unavailable. Keyword search is unaffected.";
+        log.info("Reindexed {} document(s), {} passage(s) for source {}", indexed.size(), totalChunks, sourceId);
+        return new ReindexResult(indexed.size(), totalChunks, anyVectorised, detail);
+    }
+
     private void refreshCounts(Source source) {
         List<Document> all = documents.findBySourceIdOrderByTitle(source.getId());
         source.setDocumentCount((int) all.stream().filter(Document::isIndexed).count());

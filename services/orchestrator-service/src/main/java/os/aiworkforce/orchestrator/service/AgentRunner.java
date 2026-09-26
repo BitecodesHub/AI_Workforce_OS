@@ -40,6 +40,7 @@ import os.aiworkforce.orchestrator.repository.Agents;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.ToolGrants;
+import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
@@ -81,6 +82,7 @@ public class AgentRunner {
     private final RoutingPolicyResolver policies;
     private final ApprovalService approvals;
     private final ToolCredentialResolver toolCredentials;
+    private final AuditClient audit;
 
     public AgentRunner(
             Runs runs,
@@ -92,7 +94,8 @@ public class AgentRunner {
             ToolGateway tools,
             RoutingPolicyResolver policies,
             ApprovalService approvals,
-            ToolCredentialResolver toolCredentials) {
+            ToolCredentialResolver toolCredentials,
+            AuditClient audit) {
         this.runs = runs;
         this.steps = steps;
         this.agents = agents;
@@ -103,6 +106,7 @@ public class AgentRunner {
         this.policies = policies;
         this.approvals = approvals;
         this.toolCredentials = toolCredentials;
+        this.audit = audit;
     }
 
     /**
@@ -354,7 +358,33 @@ public class AgentRunner {
         runs.save(run);
         tools.releaseRun(run.getId().toString());
         log.info("Run {} finished as {}", run.getId(), status);
+        emitRunAudit(run, status, failureReason);
         return new Outcome(status, answer, run.getId());
+    }
+
+    /**
+     * Records the run's terminal state in the audit projection.
+     *
+     * <p>The acting principal comes from the ambient request context when one is present - the
+     * person or agent whose call is driving this loop - and falls back to the platform actor for
+     * work started outside a request, such as the abandonment reaper.
+     */
+    private void emitRunAudit(Run run, String status, String failureReason) {
+        boolean completed = "completed".equals(status);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("status", status);
+        if (failureReason != null) {
+            detail.put("failureReason", failureReason);
+        }
+        Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
+        audit.record(
+                run.getOrgId(),
+                actor,
+                completed ? "run.complete" : "run.fail",
+                "run",
+                run.getId().toString(),
+                completed ? "succeeded" : "failed",
+                detail);
     }
 
     // ---- Assembly ---------------------------------------------------------------------------

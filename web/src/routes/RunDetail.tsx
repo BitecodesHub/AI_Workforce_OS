@@ -4,6 +4,7 @@ import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { formatDuration } from '../lib/api'
 import { useRun, useRunSteps, useCancelRun } from '../lib/queries'
 import { useToast } from '../lib/toast'
+import { can } from '../lib/session'
 import type { RunStep } from '../lib/queries'
 
 const KIND_TONE: Record<string, TagTone> = {
@@ -64,6 +65,7 @@ export function RunDetail({ id }: { id: string }) {
   const runQuery = useRun(id)
   const stepsQuery = useRunSteps(id)
   const cancelRun = useCancelRun()
+  const canCancelRun = can('run:cancel')
 
   const handleCancel = async (runId: string) => {
     if (!window.confirm('Cancel this run? Any in-flight steps will be stopped.')) return
@@ -100,7 +102,7 @@ export function RunDetail({ id }: { id: string }) {
                       action={
                         <>
                           <StatusTag status={run.status} />
-                          {CANCELLABLE_STATUSES.includes(run.status) && (
+                          {canCancelRun && CANCELLABLE_STATUSES.includes(run.status) && (
                             <Button
                               variant="outline"
                               style={{ marginLeft: 'var(--space-3)' }}

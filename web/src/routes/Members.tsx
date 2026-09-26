@@ -1,28 +1,28 @@
 import React from 'react'
-import { Button, Card, DataTable, Dialog, Eyebrow, Input, Notice, PageHeader, Tag, Textarea } from '../components/ui'
+import { Button, Card, DataTable, Dialog, Eyebrow, Input, Notice, PageHeader, Select, Tag, Textarea } from '../components/ui'
 import { QueryState } from '../components/ui/QueryState'
+import { ApiError } from '../lib/api'
 import { useToast } from '../lib/toast'
-import { useCreateRole, useDeleteRoleMutation, useMembers, usePermissionCatalogue, useRoles, useUpdateRoleMutation } from '../lib/queries'
+import {
+  useCreateRole,
+  useDeleteRoleMutation,
+  useInviteMember,
+  useInvitations,
+  useMembers,
+  usePermissionCatalogue,
+  useRemoveMember,
+  useRoles,
+  useUpdateMemberRole,
+  useUpdateRoleMutation,
+} from '../lib/queries'
+import { can, profile } from '../lib/session'
 import type { Column } from '../components/ui'
-import type { Member, Role } from '../lib/queries'
+import type { Invitation, Member, Role } from '../lib/queries'
 
-const STATUS_TONE = { active: 'success', invited: 'blue', suspended: 'warning' } as const
-const STATUS_LABEL = { active: 'Active', invited: 'Invited', suspended: 'Suspended' } as const
+const STATUS_TONE = { active: 'success', invited: 'blue', suspended: 'warning', removed: 'neutral' } as const
+const STATUS_LABEL = { active: 'Active', invited: 'Invited', suspended: 'Suspended', removed: 'Removed' } as const
 
-const MEMBER_COLUMNS: Column<Member>[] = [
-  { key: 'displayName', header: 'Name', render: (row) => row.displayName },
-  { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
-  { key: 'role', header: 'Role', render: (row) => <Tag tone="blue">{row.role}</Tag> },
-  {
-    key: 'status',
-    header: 'Status',
-    render: (row) => <Tag tone={STATUS_TONE[row.status as keyof typeof STATUS_TONE] || 'neutral'}>
-      {STATUS_LABEL[row.status as keyof typeof STATUS_LABEL] || row.status}
-    </Tag>,
-  },
-  { key: 'joinedAt', header: 'Joined', render: (row) => <span className="muted">{row.joinedAt ? timeAgo(row.joinedAt) : '—'}</span> },
-  { key: 'lastSignInAt', header: 'Last sign-in', render: (row) => <span className="muted">{row.lastSignInAt ? timeAgo(row.lastSignInAt) : 'Never'}</span> },
-]
+const INVITATION_STATUS_TONE = { pending: 'blue', accepted: 'success', revoked: 'neutral', expired: 'warning' } as const
 
 const ROLE_COLUMNS: Column<Role>[] = [
   { key: 'name', header: 'Role', render: (row) => <span className="mono">{row.name}</span> },
@@ -31,6 +31,21 @@ const ROLE_COLUMNS: Column<Role>[] = [
   { key: 'permissionVersion', header: 'Perm version', numeric: true, render: (row) => row.permissionVersion },
   { key: 'permissions', header: 'Permissions', numeric: true, render: (row) => row.permissions.length },
   { key: 'holders', header: 'Held by', numeric: true, render: (row) => row.holders },
+]
+
+const INVITATION_COLUMNS: Column<Invitation>[] = [
+  { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
+  { key: 'roleName', header: 'Role', render: (row) => <Tag tone="blue">{row.roleName}</Tag> },
+  {
+    key: 'status',
+    header: 'Status',
+    render: (row) => (
+      <Tag tone={INVITATION_STATUS_TONE[row.status as keyof typeof INVITATION_STATUS_TONE] || 'neutral'}>
+        {row.status}
+      </Tag>
+    ),
+  },
+  { key: 'expiresAt', header: 'Expires', render: (row) => <span className="muted">{timeAgo(row.expiresAt)}</span> },
 ]
 
 function timeAgo(iso: string | null | undefined): string {
@@ -46,6 +61,7 @@ function timeAgo(iso: string | null | undefined): string {
 }
 
 export function Members() {
+  const orgId = profile()?.workspaceId ?? ''
   const { data: members, isLoading: membersLoading, error: membersError, refetch: refetchMembers } = useMembers()
   const { data: roles, isLoading: rolesLoading, error: rolesError, refetch: refetchRoles } = useRoles()
   const { data: permissions } = usePermissionCatalogue()
@@ -54,12 +70,24 @@ export function Members() {
   const deleteRole = useDeleteRoleMutation()
   const { error: toastError, success: toastSuccess } = useToast()
 
+  const canInvite = can('member:invite')
+  const canUpdateMember = can('member:update')
+  const canRemoveMember = can('member:remove')
+  const canManageRoles = can('role:create') // Creating a role is the gate; editing/deleting check their own action.
+
+  const { data: invitations } = useInvitations(orgId)
+
   const [inviteDialogOpen, setInviteDialogOpen] = React.useState(false)
   const [createRoleDialogOpen, setCreateRoleDialogOpen] = React.useState(false)
   const [editRoleDialogOpen, setEditRoleDialogOpen] = React.useState(false)
   const [deleteRoleDialogOpen, setDeleteRoleDialogOpen] = React.useState(false)
+  const [roleChangeDialogOpen, setRoleChangeDialogOpen] = React.useState(false)
+  const [removeMemberDialogOpen, setRemoveMemberDialogOpen] = React.useState(false)
   const [editingRole, setEditingRole] = React.useState<Role | null>(null)
   const [deletingRole, setDeletingRole] = React.useState<Role | null>(null)
+  const [changingMember, setChangingMember] = React.useState<Member | null>(null)
+  const [removingMember, setRemovingMember] = React.useState<Member | null>(null)
+  const [newRoleName, setNewRoleName] = React.useState('')
 
   const [createName, setCreateName] = React.useState('')
   const [createDescription, setCreateDescription] = React.useState('')
@@ -69,11 +97,97 @@ export function Members() {
   const [editDescription, setEditDescription] = React.useState('')
   const [editPermissions, setEditPermissions] = React.useState<string[]>([])
 
-  const canManageRoles = false // TODO: check actual permission from session/role
+  const [inviteEmail, setInviteEmail] = React.useState('')
+  const [inviteRoleName, setInviteRoleName] = React.useState('')
+  const [createdInvitation, setCreatedInvitation] = React.useState<Invitation | null>(null)
 
-  const loading = membersLoading || rolesLoading
-  const error = membersError || rolesError
-  const refetch = () => { refetchMembers(); refetchRoles(); }
+  const inviteMember = useInviteMember(orgId, inviteEmail, inviteRoleName)
+  const updateMemberRole = useUpdateMemberRole()
+  const removeMember = useRemoveMember()
+
+  const memberColumns: Column<Member>[] = React.useMemo(() => {
+    const columns: Column<Member>[] = [
+      { key: 'displayName', header: 'Name', render: (row) => row.displayName },
+      { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
+      { key: 'role', header: 'Role', render: (row) => <Tag tone="blue">{row.role}</Tag> },
+      {
+        key: 'status',
+        header: 'Status',
+        render: (row) => <Tag tone={STATUS_TONE[row.status as keyof typeof STATUS_TONE] || 'neutral'}>
+          {STATUS_LABEL[row.status as keyof typeof STATUS_LABEL] || row.status}
+        </Tag>,
+      },
+      { key: 'joinedAt', header: 'Joined', render: (row) => <span className="muted">{row.joinedAt ? timeAgo(row.joinedAt) : '—'}</span> },
+      { key: 'lastSignInAt', header: 'Last sign-in', render: (row) => <span className="muted">{row.lastSignInAt ? timeAgo(row.lastSignInAt) : 'Never'}</span> },
+    ]
+    if (canUpdateMember || canRemoveMember) {
+      columns.push({
+        key: 'actions',
+        header: 'Actions',
+        render: (row) => (
+          <div className="row" style={{ gap: 'var(--space-2)' }}>
+            {canUpdateMember && (
+              <Button
+                variant="outline"
+                onClick={() => { setChangingMember(row); setNewRoleName(row.role); setRoleChangeDialogOpen(true); }}
+              >
+                Change role
+              </Button>
+            )}
+            {canRemoveMember && row.status !== 'removed' && (
+              <Button variant="danger" onClick={() => { setRemovingMember(row); setRemoveMemberDialogOpen(true); }}>
+                Remove
+              </Button>
+            )}
+          </div>
+        ),
+      })
+    }
+    return columns
+  }, [canUpdateMember, canRemoveMember])
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const invitation = await inviteMember.mutateAsync()
+      setCreatedInvitation(invitation)
+      toastSuccess('Invitation created')
+    } catch (err) {
+      toastError(err instanceof ApiError ? err.message : 'Failed to create invitation')
+    }
+  }
+
+  const handleChangeRole = async () => {
+    if (!changingMember) return
+    try {
+      await updateMemberRole.mutateAsync({ userId: changingMember.userId, roleName: newRoleName })
+      toastSuccess('Role updated')
+      setRoleChangeDialogOpen(false)
+      setChangingMember(null)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'last_owner_protected') {
+        toastError('A workspace must keep at least one owner')
+      } else {
+        toastError(err instanceof ApiError ? err.message : 'Failed to update the member’s role')
+      }
+    }
+  }
+
+  const handleRemoveMember = async () => {
+    if (!removingMember) return
+    try {
+      await removeMember.mutateAsync(removingMember.userId)
+      toastSuccess('Member removed')
+      setRemoveMemberDialogOpen(false)
+      setRemovingMember(null)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'last_owner_protected') {
+        toastError('A workspace must keep at least one owner')
+      } else {
+        toastError(err instanceof ApiError ? err.message : 'Failed to remove the member')
+      }
+    }
+  }
 
   const handleCreateRole = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,8 +198,8 @@ export function Members() {
       setCreateName('')
       setCreateDescription('')
       setCreatePermissions([])
-    } catch (e) {
-      toastError('Failed to create role')
+    } catch (err) {
+      toastError(err instanceof ApiError ? err.message : 'Failed to create role')
     }
   }
 
@@ -98,11 +212,10 @@ export function Members() {
       setEditRoleDialogOpen(false)
       setEditingRole(null)
     } catch (err) {
-      const apiError = err as { status?: number; code?: string }
-      if (apiError?.status === 409 && apiError?.code === 'role_builtin') {
+      if (err instanceof ApiError && err.code === 'role_builtin') {
         toastError('Built-in roles cannot be edited')
       } else {
-        toastError('Failed to update role')
+        toastError(err instanceof ApiError ? err.message : 'Failed to update role')
       }
     }
   }
@@ -115,13 +228,12 @@ export function Members() {
       setDeleteRoleDialogOpen(false)
       setDeletingRole(null)
     } catch (err) {
-      const apiError = err as { status?: number; code?: string }
-      if (apiError?.status === 409 && apiError?.code === 'role_has_holders') {
+      if (err instanceof ApiError && err.code === 'role_has_holders') {
         toastError('Cannot delete a role that is still assigned to members')
-      } else if (apiError?.status === 409 && apiError?.code === 'role_builtin') {
+      } else if (err instanceof ApiError && err.code === 'role_builtin') {
         toastError('Built-in roles cannot be deleted')
       } else {
-        toastError('Failed to delete role')
+        toastError(err instanceof ApiError ? err.message : 'Failed to delete role')
       }
     }
   }
@@ -132,7 +244,7 @@ export function Members() {
         eyebrow="Who can do what"
         title="Members and roles"
         description="Roles are composed from permissions and edited here. A change takes effect the next time somebody signs in."
-        action={canManageRoles ? <Button onClick={() => setInviteDialogOpen(true)}>Invite someone</Button> : undefined}
+        action={canInvite ? <Button onClick={() => { setCreatedInvitation(null); setInviteDialogOpen(true); }}>Invite someone</Button> : undefined}
       />
 
       <Notice tone="warning">
@@ -140,7 +252,7 @@ export function Members() {
       </Notice>
 
       <QueryState
-        query={{ data: members, isLoading: loading, error, refetch }}
+        query={{ data: members, isLoading: membersLoading, error: membersError, refetch: refetchMembers }}
         permission="member:read"
         what="members"
         isEmpty={(members) => members.length === 0}
@@ -160,13 +272,31 @@ export function Members() {
               <Card as="section">
                 <Eyebrow>People</Eyebrow>
                 <DataTable
-                  columns={MEMBER_COLUMNS}
+                  columns={memberColumns}
                   rows={members}
                   getKey={(row) => row.userId}
                   caption="Members of this workspace and the role each one holds."
                 />
               </Card>
             </section>
+
+            {canInvite && (
+              <section style={{ marginTop: 'var(--space-6)' }}>
+                <Card as="section">
+                  <Eyebrow>Pending invitations</Eyebrow>
+                  {!invitations || invitations.length === 0 ? (
+                    <p className="muted">No open invitations.</p>
+                  ) : (
+                    <DataTable
+                      columns={INVITATION_COLUMNS}
+                      rows={invitations}
+                      getKey={(row) => row.invitationId}
+                      caption="Invitations sent from this workspace, whether or not they have been accepted yet."
+                    />
+                  )}
+                </Card>
+              </section>
+            )}
 
             <section style={{ marginTop: 'var(--space-6)' }}>
               <Card as="section">
@@ -177,7 +307,7 @@ export function Members() {
                 </p>
                 <QueryState
                   query={{ data: roles, isLoading: rolesLoading, error: rolesError, refetch: refetchRoles }}
-                  permission="role:manage"
+                  permission="role:read"
                   what="roles"
                   isEmpty={(roles) => roles.length === 0}
                   empty={<p className="muted">No roles configured.</p>}
@@ -207,17 +337,98 @@ export function Members() {
 
       <Dialog
         open={inviteDialogOpen}
-        onClose={() => setInviteDialogOpen(false)}
-        eyebrow="Not yet implemented"
-        title="Invitations not yet available"
-        description="The backend endpoint for inviting members (D41) has not been implemented yet."
+        onClose={() => { setInviteDialogOpen(false); setInviteEmail(''); setInviteRoleName(''); }}
+        eyebrow="Invite someone"
+        title="Invite a member"
+        description="There is no email sending in this platform. Instead, this creates a one-time link you copy and send yourself."
         footer={
-          <Button variant="primary" onClick={() => setInviteDialogOpen(false)}>
-            Got it
-          </Button>
+          createdInvitation ? (
+            <Button variant="primary" onClick={() => { setInviteDialogOpen(false); setInviteEmail(''); setInviteRoleName(''); }}>
+              Done
+            </Button>
+          ) : (
+            <div className="dialog-footer">
+              <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={handleInvite}
+                disabled={inviteMember.isPending || !inviteEmail || !inviteRoleName}
+              >
+                {inviteMember.isPending ? 'Creating…' : 'Create invitation'}
+              </Button>
+            </div>
+          )
         }
       >
-        <p className="muted">When available, this will send an invitation email with a sign-up link.</p>
+        {createdInvitation ? (
+          <div className="stack" style={{ gap: 'var(--space-4)' }}>
+            <Notice tone="success">
+              Invitation created for {createdInvitation.email}. Copy this link and send it to them - it
+              will not be shown again.
+            </Notice>
+            <Input label="Accept-invitation link" value={createdInvitation.acceptUrl ?? ''} readOnly />
+          </div>
+        ) : (
+          <form onSubmit={handleInvite} className="stack" style={{ gap: 'var(--space-4)' }}>
+            <Input
+              label="Email address"
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              required
+            />
+            <Select
+              label="Role"
+              value={inviteRoleName}
+              onChange={(e) => setInviteRoleName(e.target.value)}
+              required
+            >
+              <option value="" disabled>Choose a role…</option>
+              {roles?.map((role) => (
+                <option key={role.id} value={role.name}>{role.name}</option>
+              ))}
+            </Select>
+          </form>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={roleChangeDialogOpen}
+        onClose={() => { setRoleChangeDialogOpen(false); setChangingMember(null); }}
+        eyebrow="Change role"
+        title={`Change ${changingMember?.displayName ?? ''}'s role`}
+        footer={
+          <div className="dialog-footer">
+            <Button variant="outline" onClick={() => { setRoleChangeDialogOpen(false); setChangingMember(null); }}>Cancel</Button>
+            <Button variant="primary" onClick={handleChangeRole} disabled={updateMemberRole.isPending || !newRoleName}>
+              {updateMemberRole.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        }
+      >
+        <Select label="New role" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)}>
+          {roles?.map((role) => (
+            <option key={role.id} value={role.name}>{role.name}</option>
+          ))}
+        </Select>
+      </Dialog>
+
+      <Dialog
+        open={removeMemberDialogOpen}
+        onClose={() => { setRemoveMemberDialogOpen(false); setRemovingMember(null); }}
+        eyebrow="Remove member"
+        title={`Remove ${removingMember?.displayName ?? ''}?`}
+        description="They lose access to this workspace immediately. The record of their past membership is kept."
+        footer={
+          <div className="dialog-footer">
+            <Button variant="outline" onClick={() => { setRemoveMemberDialogOpen(false); setRemovingMember(null); }}>Cancel</Button>
+            <Button variant="danger" onClick={handleRemoveMember} disabled={removeMember.isPending}>
+              {removeMember.isPending ? 'Removing…' : 'Remove member'}
+            </Button>
+          </div>
+        }
+      >
+        <p className="muted">This cannot be undone from here; they would need to be invited again.</p>
       </Dialog>
 
       <Dialog

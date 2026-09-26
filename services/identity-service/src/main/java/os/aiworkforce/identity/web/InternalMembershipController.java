@@ -58,6 +58,9 @@ public class InternalMembershipController {
 
     public record BootstrapOwnerRequest(@NotNull UUID orgId, @NotNull UUID userId) {}
 
+    public record BootstrapMemberRequest(
+            @NotNull UUID orgId, @NotNull UUID userId, @jakarta.validation.constraints.NotBlank String roleName) {}
+
     public record MembershipResponse(UUID membershipId, UUID orgId, UUID userId, String role) {}
 
     @PostMapping("/bootstrap-owner")
@@ -93,5 +96,46 @@ public class InternalMembershipController {
 
         log.info("Granted owner in workspace {} to user {}", request.orgId(), request.userId());
         return new MembershipResponse(membership.getId(), request.orgId(), request.userId(), "owner");
+    }
+
+    /**
+     * Grants a named, non-owner role, for an invitation being accepted.
+     *
+     * <p>The organisation service creates the invitation and, once a person accepts it and
+     * registers their account, calls here to place them in the workspace at the role the
+     * invitation named - the same split of responsibility as {@link #bootstrapOwner}, and behind
+     * the same internal-service-token gate.
+     */
+    @PostMapping("/bootstrap-member")
+    @Operation(summary = "Internal: grant a named role to a person who accepted an invitation")
+    @Transactional
+    public MembershipResponse bootstrapMember(@Valid @RequestBody BootstrapMemberRequest request) {
+        Actor actor = RequestContext.requireActor();
+        if (actor.kind() == Actor.Kind.USER) {
+            throw new ApiException(
+                    ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
+        }
+
+        Role role = roles.findByOrgAndName(request.orgId(), request.roleName())
+                .or(() -> roles.findSystemRole(request.roleName()))
+                .orElseThrow(() -> ApiException.validation(
+                        "roleName", "no such role is available to this workspace"));
+
+        Membership existing = memberships.findByUserIdAndOrgId(request.userId(), request.orgId()).orElse(null);
+        if (existing != null) {
+            return new MembershipResponse(existing.getId(), request.orgId(), request.userId(), role.getName());
+        }
+
+        Membership membership = new Membership();
+        membership.setId(UuidV7.generate());
+        membership.setUserId(request.userId());
+        membership.setOrgId(request.orgId());
+        membership.setRoleId(role.getId());
+        membership.setStatus("active");
+        membership.setJoinedAt(Instant.now());
+        memberships.save(membership);
+
+        log.info("Granted {} in workspace {} to user {}", role.getName(), request.orgId(), request.userId());
+        return new MembershipResponse(membership.getId(), request.orgId(), request.userId(), role.getName());
     }
 }

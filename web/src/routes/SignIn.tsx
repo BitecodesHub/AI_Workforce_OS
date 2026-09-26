@@ -39,7 +39,7 @@ export function SignIn() {
   const next = requested && requested.startsWith('/') && !requested.startsWith('//') ? requested : '/'
   const expired = search.get('expired') === '1'
   const signedOut = search.get('signedOut') === '1'
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(search.get('email') ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

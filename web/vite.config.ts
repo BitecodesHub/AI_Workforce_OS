@@ -26,6 +26,8 @@ const routes: Record<string, string> = {
   '/api/workspaces': ORGANISATION,
   '/api/credentials': ORGANISATION,
   '/api/settings': ORGANISATION,
+  '/api/orgs': ORGANISATION,
+  '/api/invitations': ORGANISATION,
   '/api/agents': ORCHESTRATOR,
   '/api/goals': ORCHESTRATOR,
   '/api/runs': ORCHESTRATOR,

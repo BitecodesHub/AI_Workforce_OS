@@ -6,6 +6,7 @@ import { TaskDialog } from '../components/ui/TaskDialog'
 import { useGoals, useCancelGoal } from '../lib/queries'
 import { useToast } from '../lib/toast'
 import { useRouter } from '../lib/router'
+import { can } from '../lib/session'
 
 interface Goal {
   id: string
@@ -36,6 +37,7 @@ interface GoalCardProps {
 
 function GoalCard({ goal, query }: GoalCardProps) {
   const cancelGoal = useCancelGoal(goal.id)
+  const canCancel = can('task:cancel')
   const toast = useToast()
 
   return (
@@ -48,7 +50,7 @@ function GoalCard({ goal, query }: GoalCardProps) {
               <StatusTag status={goal.status} />
             </div>
           </div>
-          {goal.status !== 'completed' && goal.status !== 'cancelled' && goal.status !== 'failed' && (
+          {canCancel && goal.status !== 'completed' && goal.status !== 'cancelled' && goal.status !== 'failed' && (
             <Button
               variant="outline"
               onClick={async () => {
@@ -158,6 +160,7 @@ export function Tasks() {
   const { navigate } = useRouter()
   const query = useGoals()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
+  const canCreate = can('task:create')
 
   return (
     <div className="page">
@@ -165,10 +168,12 @@ export function Tasks() {
         eyebrow="What the workforce is doing"
         title="Tasks"
         description="A goal is broken into tasks, and a task starts only once the tasks it depends on have finished."
-        action={<Button onClick={() => setTaskDialogOpen(true)}>New goal</Button>}
+        action={canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>New goal</Button> : undefined}
       />
 
-      <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} onSuccess={() => navigate('/tasks')} />
+      {canCreate && (
+        <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} onSuccess={() => navigate('/tasks')} />
+      )}
 
       <QueryState
         query={query}
@@ -181,8 +186,12 @@ export function Tasks() {
               <EmptyState
                 icon={<EmptyIcon kind="task" />}
                 title="No goals yet"
-                body="Create a goal to give the workforce something to work towards."
-                action={<Button onClick={() => setTaskDialogOpen(true)}>New goal</Button>}
+                body={
+                  canCreate
+                    ? 'Create a goal to give the workforce something to work towards.'
+                    : 'No goal has been created in this workspace yet.'
+                }
+                action={canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>New goal</Button> : undefined}
               />
             </Card>
           </div>

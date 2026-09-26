@@ -10,12 +10,42 @@ Course project for Web Services & Service-Oriented Architecture (IT644), Autumn 
 ## Running it
 
 Nothing needs configuring. The platform starts with an offline sandbox model and sandbox tool
-drivers, so it is fully demonstrable with no API key anywhere.
+drivers, so it is fully demonstrable with no API key anywhere. Five demo accounts, one per role
+(`owner`/`admin`/`manager`/`employee`/`viewer`, all `@demo.aiworkforce.os`), are seeded on startup
+and listed on the sign-in screen with their shared password.
+
+Two ways to run it, both verified:
+
+**Docker Compose** — the whole stack, as originally designed:
 
 ```bash
 make up          # the whole stack, built and started
 make web-install && make web-dev   # the web client on :5173
 ```
+
+**Locally, without Docker for the services** (what this build was actually developed and
+verified against — a machine without a Docker daemon running for the application containers,
+though Redis and Qdrant below do need one):
+
+```bash
+make build                 # or: mvn clean install
+make dev-backend            # the seven business services, from their jars, against PostgreSQL on 55432
+# separately, the gateway (needs Redis; see below) and the web client:
+java -jar services/gateway/target/gateway.jar
+cd web && pnpm install && pnpm dev
+```
+
+The gateway needs Redis for rate limiting, and vector search needs Qdrant; neither is started by
+`dev-backend`. On a machine with Docker installed but not otherwise used for the stack:
+
+```bash
+brew install redis && brew services start redis        # or: docker run -d -p 6379:6379 redis
+docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant   # vector store, for the dense half of retrieval
+```
+
+Both are optional in the sense that the platform degrades correctly without them — rate limiting
+and vector search are simply unavailable, and every screen that depends on either says so — but
+both are real and both have been run this way.
 
 | Surface | Address |
 |---|---|
@@ -65,49 +95,59 @@ the gateway's check is a first pass, not a control.
 
 ## State of the work
 
-Everything described above is built and compiles; the backend and web test suites pass, and all
-eight migration sets have been applied to a real PostgreSQL instance.
+Everything described below is built, compiles, and has been exercised live end to end — every
+service running together against a real PostgreSQL instance, a real Redis, and a real Qdrant, not
+merely compiled in isolation.
 
 | Area | State |
 |---|---|
-| Build, shared libraries, configuration, cryptography, resilience, observability | Built |
-| Identity, sessions, RBAC, token signing and JWKS | Built |
-| Organisations, envelope-encrypted credentials, working hours | Built |
-| `llm-core`: seven providers, sandbox, router, budgets, usage accounting | Built and tested |
-| `mcp-core`: tool gateway, argument validation, six sandbox servers | Built |
-| Orchestrator: agents, versions, task graph, runs, approvals, reaper | Built |
+| Build, shared libraries, configuration, cryptography, resilience, observability | Built and verified |
+| Identity, sessions, RBAC, token signing and JWKS | Built and verified |
+| Organisations, envelope-encrypted credentials, working hours, invitations | Built and verified |
+| `llm-core`: seven providers, sandbox, router, budgets, usage accounting | Built, tested, and live-verified against OpenRouter |
+| `mcp-core`: tool gateway, argument validation, six sandbox servers | Built and verified |
+| Orchestrator: agents, versions, task graph, runs, approvals, model routing policy, reaper | Built and verified |
 | Memory: working, episodic, compaction | Built |
-| Knowledge: chunking, embeddings, Qdrant, hybrid retrieval with citations | Built |
-| Integrations: connections, scopes, tool invocation records | Built |
-| Analytics: audit hash chain, daily rollups | Built |
-| Web client: 16 screens, design system, design-system tests | Built and tested |
+| Knowledge: chunking, embeddings, Qdrant, hybrid retrieval with citations | Built and live-verified, including the dense half |
+| Integrations: connections, scopes, tool invocation records | Built and verified |
+| Analytics: audit hash chain, live-emitted events, dashboards | Built and verified |
+| Web client: 19 screens, design system, design-system tests | Built and tested |
+| Gateway: routing, JWT verification, Redis-backed rate limiting | Built and live-verified |
 | Containers, compose stack, Kubernetes manifests, CI | Built |
 
-Verified running, not merely compiled. All seven business services start against PostgreSQL,
-sign-in issues an ES256 token, and every service verifies that token independently through the
-published key set. Role-based access is enforced inside each service: an employee is refused
-`/api/roles` and `/api/providers` with 403, an unauthenticated request gets 401, and the eight
-seeded providers and six sandbox tool servers are served from the database.
+Verified running, not merely compiled. All eight services, including the gateway, start together
+and stay healthy; sign-in issues an ES256 token, and every service verifies that token
+independently through the published key set. Role-based access is enforced inside each service:
+an employee is refused `/api/roles` and `/api/providers` with 403, an unauthenticated request gets
+401 at the gateway itself, and the eight seeded providers and six sandbox tool servers are served
+from the database. A stored OpenRouter credential was routed to live, for both a plain completion
+and a tool-calling run that parked for a real approval and resumed afterward. The two project PDFs
+are indexed as 60 passages with both halves of retrieval working: keyword search and, now that a
+local Qdrant is running, vector search — a query for "approval queue human review sensitive
+actions" returns genuinely ranked, cited passages from the source documents, not a fabricated
+sample.
 
 Not yet done, and worth stating plainly:
 
-- **No live provider call has been made.** Each adapter is written against its vendor's documented
-  API and its failure classification is covered by sixteen tests against recorded response shapes,
-  but no request has gone to OpenRouter, Groq, NVIDIA, Gemini, Bedrock, Anthropic or OpenAI with a
-  real key.
 - **OAuth flows for the tool servers are not implemented.** The sandbox drivers are complete and
-  the connection model is in place; the authorisation-code exchange is not written.
+  the connection model is in place; the authorisation-code exchange is not written, because it
+  needs a registered OAuth application per real provider (Google, Slack, GitHub, ...) — a business
+  decision, not something a code change can supply on its own.
 - **Kafka is wired but unused.** The envelope, topics and idempotency table exist; the orchestrator
-  drives tasks synchronously rather than over the bus.
-- **The gateway has not been started.** It needs Redis for rate limiting, which was not available
-  on the machine this was built on. The seven services behind it were verified directly.
+  drives tasks synchronously rather than over the bus. Moving execution onto the bus is an
+  architectural change this project does not yet need, not a defect.
 - **Only upload ingestion works.** A document can be uploaded, extracted, chunked, indexed and
-  cited — the two project PDFs are indexed as 60 passages, and a search returns them with page
-  numbers. The Drive, Notion, Confluence and GitHub wiki connectors are not written, so nothing
+  cited. The Drive, Notion, Confluence and GitHub wiki connectors are not written, so nothing
   crawls a source automatically yet.
-- **Vector search is untested against a running Qdrant.** Docker was unavailable, so retrieval
-  has only been exercised on its keyword half. That half degrades correctly and says so, which is
-  the behaviour the design intends, but the dense ranking has not been observed working.
+
+See [`docs/2026-09-25_Test-and-Fix-Plan_v1.md`](docs/2026-09-25_Test-and-Fix-Plan_v1.md) for the
+full defect register (61 entries, none open) and the journeys walked to close it, including a
+full role-by-role walkthrough (owner, admin, manager, employee, viewer, each signed in for real)
+that found and fixed six more defects: two permission-gate bugs that hid data a role legitimately
+had access to, one backend endpoint gated too strictly for a page every role should be able to
+open, and a systemic pattern of mutating buttons rendered with no permission check at all -
+including an Approve/Reject pair that used a mutation function's truthiness (always true) as its
+permission check.
 
 ## Retrieval, and why the query is written the way it is
 

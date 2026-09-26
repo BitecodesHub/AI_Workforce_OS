@@ -63,6 +63,10 @@ export function Profile() {
           <Eyebrow>What your role allows</Eyebrow>
           {catalogue.isLoading ? (
             <p className="muted">Loading your permissions.</p>
+          ) : catalogue.error ? (
+            <p className="muted">Your permissions could not be loaded. Try reloading the page.</p>
+          ) : grouped.size === 0 ? (
+            <p className="muted">Your role does not carry any permissions yet.</p>
           ) : (
             <div className="stack" style={{ gap: 'var(--space-5)' }}>
               {[...grouped.entries()].map(([resource, permissions]) => (

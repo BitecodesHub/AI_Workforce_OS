@@ -5,6 +5,7 @@ import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { timeAgo } from '../lib/api'
 import { useSource, useSourceDocuments, useReindexSource, useUploadDocument } from '../lib/queries'
 import { useToast } from '../lib/toast'
+import { can } from '../lib/session'
 import type { SourceDocument } from '../lib/queries'
 
 const COLUMNS: Column<SourceDocument>[] = [
@@ -33,6 +34,7 @@ export function SourceDetail({ id }: { id: string }) {
   const documentsQuery = useSourceDocuments(id)
   const reindexSource = useReindexSource(id)
   const uploadDocument = useUploadDocument(id)
+  const canManage = can('knowledge:source_manage')
   const { success, error, info } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -120,15 +122,17 @@ export function SourceDetail({ id }: { id: string }) {
               action={
                 <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center' }}>
                   <StatusTag status={source.status} />
-                  <Button
-                    variant="outline"
-                    onClick={handleReindex}
-                    loading={reindexSource.isPending}
-                    disabled={source.status === 'ingesting'}
-                    style={{ padding: '6px var(--space-4)', fontSize: 'var(--text-caption)' }}
-                  >
-                    Index again
-                  </Button>
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      onClick={handleReindex}
+                      loading={reindexSource.isPending}
+                      disabled={source.status === 'ingesting'}
+                      style={{ padding: '6px var(--space-4)', fontSize: 'var(--text-caption)' }}
+                    >
+                      Index again
+                    </Button>
+                  )}
                 </div>
               }
             />
@@ -154,43 +158,47 @@ export function SourceDetail({ id }: { id: string }) {
             <section style={{ marginTop: 'var(--space-7)' }}>
               <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
                 <Eyebrow>Documents</Eyebrow>
-                <Button
-                  variant="outline"
-                  icon={
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                      <path d="M7 1.5V12.5M1.5 7h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                  }
-                  onClick={openFileDialog}
-                  disabled={uploadDocument.isPending}
-                >
-                  Upload document
-                </Button>
+                {canManage && (
+                  <Button
+                    variant="outline"
+                    icon={
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                        <path d="M7 1.5V12.5M1.5 7h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                      </svg>
+                    }
+                    onClick={openFileDialog}
+                    disabled={uploadDocument.isPending}
+                  >
+                    Upload document
+                  </Button>
+                )}
               </div>
 
-              <div
-                className={`dropzone ${dragActive ? 'dropzone-active' : ''}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={openFileDialog}
-                role="button"
-                tabIndex={0}
-                aria-label="Upload a document"
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="dropzone-input"
-                  onChange={(e) => handleFileSelect(e.target.files)}
-                  aria-hidden="true"
-                />
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginBottom: 'var(--space-3)' }}>
-                  <path d="M12 4v12M4 12l8-8 8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <p className="muted">Drag and drop a file, or click to browse</p>
-                <p className="caption" style={{ marginTop: 'var(--space-1)' }}>Maximum 25 MB. PDF, DOCX, TXT, MD and more.</p>
-              </div>
+              {canManage && (
+                <div
+                  className={`dropzone ${dragActive ? 'dropzone-active' : ''}`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={openFileDialog}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Upload a document"
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="dropzone-input"
+                    onChange={(e) => handleFileSelect(e.target.files)}
+                    aria-hidden="true"
+                  />
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginBottom: 'var(--space-3)' }}>
+                    <path d="M12 4v12M4 12l8-8 8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <p className="muted">Drag and drop a file, or click to browse</p>
+                  <p className="caption" style={{ marginTop: 'var(--space-1)' }}>Maximum 25 MB. PDF, DOCX, TXT, MD and more.</p>
+                </div>
+              )}
 
               <QueryState
                 query={documentsQuery}

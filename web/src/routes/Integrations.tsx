@@ -2,6 +2,7 @@ import React from 'react'
 import { Button, Card, Dialog, Eyebrow, Notice, PageHeader, Tag } from '../components/ui'
 import { QueryState } from '../components/ui/QueryState'
 import { useIntegrations } from '../lib/queries'
+import { can } from '../lib/session'
 
 const EFFECT_TONE = { READ: 'neutral', WRITE: 'blue', OUTBOUND: 'warning', DESTRUCTIVE: 'danger' } as const
 const EFFECT_LABEL = {
@@ -17,6 +18,7 @@ const STATUS_LABEL = { connected: 'Connected', sandbox: 'Sandbox', reconnect_req
 export function Integrations() {
   const { data, isLoading, error, refetch } = useIntegrations()
   const [connectDialogOpen, setConnectDialogOpen] = React.useState(false)
+  const canConnect = can('integration:connect')
 
   return (
     <div className="page">
@@ -115,11 +117,13 @@ export function Integrations() {
                   ))}
                 </ul>
 
-                <div style={{ marginTop: 'var(--space-5)' }}>
-                  <Button variant="outline" onClick={() => setConnectDialogOpen(true)}>
-                    Connect an account
-                  </Button>
-                </div>
+                {canConnect && (
+                  <div style={{ marginTop: 'var(--space-5)' }}>
+                    <Button variant="outline" onClick={() => setConnectDialogOpen(true)}>
+                      Connect an account
+                    </Button>
+                  </div>
+                )}
               </Card>
             ))}
           </div>

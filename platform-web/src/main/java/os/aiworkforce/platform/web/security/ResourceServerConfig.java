@@ -56,6 +56,11 @@ public class ResourceServerConfig {
         // Authentication itself cannot require a token: a person who cannot sign in has none
         // to present. The demo listing sits here for the same reason.
         "/api/auth/**", "/.well-known/**",
+        // Accepting an invitation is how a brand-new person gets their first token; they cannot
+        // present one yet. The endpoint itself checks the invitation's own token, hashed and
+        // matched server-side, so this is not an open door - it is the same shape as
+        // /api/auth/register with the invite's token standing in for a password check.
+        "/api/invitations/accept",
         /*
          * The token-issuing endpoint is the one place that cannot require a token, because it is
          * where a service gets one. It is not unprotected: it checks a shared internal secret in

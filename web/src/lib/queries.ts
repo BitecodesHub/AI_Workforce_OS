@@ -244,6 +244,18 @@ export type PermissionInfo = {
   administrative: boolean
 }
 
+export type Invitation = {
+  invitationId: string
+  email: string
+  roleName: string
+  status: string
+  expiresAt: string
+  acceptedAt: string | null
+  /** Present only on the response right after creation; never returned by the list. */
+  token: string | null
+  acceptUrl: string | null
+}
+
 /* ---- Reads ------------------------------------------------------------------------------------- */
 
 export const useAgents = () => useQuery({ queryKey: ['agents'], queryFn: () => api<Agent[]>('/api/agents') })
@@ -311,6 +323,13 @@ export const useIntegrations = () =>
   useQuery({ queryKey: ['integrations'], queryFn: () => api<Integration[]>('/api/integrations') })
 
 export const useMembers = () => useQuery({ queryKey: ['members'], queryFn: () => api<Member[]>('/api/users') })
+
+export const useInvitations = (orgId: string) =>
+  useQuery({
+    queryKey: ['invitations', orgId],
+    queryFn: () => api<Invitation[]>(`/api/orgs/${orgId}/invitations`),
+    enabled: Boolean(orgId),
+  })
 
 export const useRoles = () => useQuery({ queryKey: ['roles'], queryFn: () => api<Role[]>('/api/roles') })
 
@@ -516,11 +535,41 @@ export function useInviteMember(orgId: string, email: string, roleName: string) 
   const client = useQueryClient()
   return useMutation({
     mutationFn: () =>
-      api<{ invitationId: string }>(`/api/orgs/${orgId}/invitations`, {
+      api<Invitation>(`/api/orgs/${orgId}/invitations`, {
         method: 'POST',
         body: { email, roleName },
       }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['members'] })
+      client.invalidateQueries({ queryKey: ['invitations', orgId] })
+    },
+  })
+}
+
+export function useUpdateMemberRole() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { userId: string; roleName: string }) =>
+      api<Member>(`/api/users/${input.userId}/role`, { method: 'PUT', body: { roleName: input.roleName } }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['members'] }),
+  })
+}
+
+export function useRemoveMember() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: string) => api<void>(`/api/users/${userId}`, { method: 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['members'] }),
+  })
+}
+
+export function useAcceptInvitation() {
+  return useMutation({
+    mutationFn: (input: { token: string; displayName: string; password: string }) =>
+      api<{ userId: string; orgId: string; email: string; roleName: string }>('/api/invitations/accept', {
+        method: 'POST',
+        body: input,
+      }),
   })
 }
 
@@ -528,16 +577,41 @@ export function useChat() {
   throw new Error('useChat: /api/chat endpoint not implemented yet')
 }
 
+export type AuditEvent = {
+  id: string
+  sequence: number
+  actorId: string
+  actorKind: string
+  onBehalfOf: string | null
+  action: string
+  resourceType: string
+  resourceId: string | null
+  outcome: 'succeeded' | 'failed' | 'denied'
+  detail: Record<string, unknown>
+  occurredAt: string
+}
+
+export type ActionCount = { action: string; count: number }
+export type OutcomeCount = { outcome: string; count: number }
+
+export type AnalyticsSummary = {
+  windowStart: string
+  windowEnd: string
+  totalEvents: number
+  byAction: ActionCount[]
+  byOutcome: OutcomeCount[]
+}
+
 export function useAnalytics() {
   return useQuery({
     queryKey: ['analytics'],
-    queryFn: () => api<unknown>('/api/analytics'),
+    queryFn: () => api<AnalyticsSummary>('/api/analytics'),
   })
 }
 
 export function useAudit() {
   return useQuery({
     queryKey: ['audit'],
-    queryFn: () => api<unknown>('/api/audit'),
+    queryFn: () => api<AuditEvent[]>('/api/audit?size=50'),
   })
 }
