@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>os.aiworkforce</groupId>
+    <artifactId>ai-workforce-os</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>mcp-core</artifactId>
+  <name>MCP Core</name>
+  <description>
+    The tool layer: a manifest describing every Model Context Protocol server and its tools,
+    argument validation, side-effect classification, scope enforcement, and a sandbox driver
+    for each server so the platform is demonstrable without a single credential.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>os.aiworkforce</groupId>
+      <artifactId>platform-core</artifactId>
+    </dependency>
+    <!-- For ToolSpec: a tool's definition and the shape the model is shown must not drift. -->
+    <dependency>
+      <groupId>os.aiworkforce</groupId>
+      <artifactId>llm-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-reactor</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-standalone</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

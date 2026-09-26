@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>os.aiworkforce</groupId>
+    <artifactId>ai-workforce-os</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>llm-core</artifactId>
+  <name>LLM Core</name>
+  <description>
+    Provider-independent language model access: one service provider interface, adapters for
+    OpenRouter, NVIDIA NIM, Groq, OpenAI, Anthropic, Google Gemini and AWS Bedrock, a
+    deterministic sandbox provider, and a router that selects a model, fails over through an
+    ordered chain, enforces budgets and records usage for every attempt.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>os.aiworkforce</groupId>
+      <artifactId>platform-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-reactor</artifactId>
+    </dependency>
+
+    <!-- Bedrock speaks SigV4, so it needs the AWS SDK rather than a plain HTTP client. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>bedrockruntime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>netty-nio-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-standalone</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

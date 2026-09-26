@@ -1,0 +1,1290 @@
+/*
+ * Component styles.
+ *
+ * Every rule below draws from tokens.css. Two things are worth stating because they are the
+ * rules most often broken as a product grows: borders are always --line and never anything
+ * else, and radii come from exactly two families - chrome (15-22px) and controls (4-12px, or
+ * fully round) - which are never mixed on one element.
+ */
+
+/* ---- Eyebrow --------------------------------------------------------------------------------
+ * Every page and every card section opens with one. It is the small mono line that tells the
+ * reader what kind of thing they are looking at before they read the heading.
+ */
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--eyebrow);
+  margin-bottom: 9px;
+}
+
+/* ---- Page ---------------------------------------------------------------------------------- */
+
+.page {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: var(--page-padding-y) var(--page-padding-x);
+  /*
+   * Extra room at the foot so the fixed assistant launcher never covers content. Without it the
+   * last card on every page sits under the button, and on a narrow window it lands on top of a
+   * notice a person is trying to read.
+   */
+  padding-bottom: calc(var(--space-8) + 52px + 24px);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-bottom: var(--space-7);
+}
+
+.page-title {
+  font-size: var(--text-h1);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.page-description {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: var(--space-2);
+  max-width: 62ch;
+}
+
+.section-heading {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-emphasis);
+  color: var(--ink);
+}
+
+.section-note {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  font-weight: var(--weight-regular);
+}
+
+/* ---- Card ------------------------------------------------------------------------------------
+ * No shadow at rest. Depth is earned by interaction, not applied by default, which is what keeps
+ * a page of twenty cards looking like a document rather than a pile.
+ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 23px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.card-interactive {
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+}
+
+.card-interactive:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-hover);
+}
+
+/* ---- Stat tiles ------------------------------------------------------------------------------
+ * Separated by hairlines rather than gaps: the row reads as one instrument panel, and the
+ * relationship between the figures stays visible.
+ */
+
+.stat-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+  overflow: hidden;
+}
+
+.stat-tile {
+  padding: var(--space-6) var(--space-5);
+  border-left: 1px solid var(--line);
+}
+
+.stat-tile:first-child {
+  border-left: none;
+}
+
+.stat-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-caption);
+  color: var(--muted);
+  margin-bottom: var(--space-4);
+}
+
+.stat-value {
+  font-size: var(--text-stat);
+  font-weight: var(--weight-emphasis);
+  color: var(--ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* The unit sits beside the number, never inside it: "1,240 h", not "1,240h". A figure a reader
+   cannot copy cleanly is a figure they will retype by hand. */
+.stat-unit {
+  font-size: var(--text-unit);
+  font-weight: var(--weight-regular);
+  color: var(--muted);
+}
+
+.stat-note {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  margin-top: var(--space-3);
+}
+
+/* ---- Table -----------------------------------------------------------------------------------
+ * No zebra striping. Row borders are enough separation, and alternating fills fight with the
+ * tags and status colours that carry the actual meaning.
+ */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-align: left;
+  padding: 0 var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.table td {
+  font-size: var(--text-body);
+  color: var(--ink);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Tags ------------------------------------------------------------------------------------ */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-strong);
+  padding: 3px var(--space-3);
+  border-radius: var(--radius-tag);
+  white-space: nowrap;
+  /* colour-mix keeps a tag's tint locked to its own colour: a new category cannot arrive with a
+     hand-picked background that sits slightly off the system. */
+  background: color-mix(in srgb, var(--tag-colour) 13%, white);
+  color: var(--tag-colour);
+}
+
+.tag-blue { --tag-colour: var(--blue); }
+.tag-success { --tag-colour: var(--green); }
+.tag-warning { --tag-colour: var(--warning-ink); background: var(--warning-bg); }
+.tag-danger { --tag-colour: var(--danger); }
+.tag-neutral { --tag-colour: var(--muted); }
+.tag-operations { --tag-colour: var(--category-operations); }
+.tag-engineering { --tag-colour: var(--category-engineering); }
+.tag-growth { --tag-colour: var(--category-growth); }
+.tag-support { --tag-colour: var(--category-support); }
+
+.tag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* ---- Buttons --------------------------------------------------------------------------------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: var(--weight-emphasis);
+  padding: 10px var(--space-5);
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button-primary {
+  background: var(--blue);
+  color: var(--surface);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--blue-dark);
+}
+
+.button-outline {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.button-outline:hover:not(:disabled) {
+  border-color: var(--border-hover);
+}
+
+.button-quiet {
+  background: transparent;
+  color: var(--muted);
+}
+
+.button-quiet:hover:not(:disabled) {
+  background: #f2f5fb;
+  color: var(--ink);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: #54617a;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  position: relative;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.icon-button:hover {
+  background: #f2f5fb;
+  color: var(--ink);
+}
+
+/* ---- Inputs -----------------------------------------------------------------------------------
+ * One ring on focus, never two. A second inner ring reads as an error state in every other
+ * product a person has used.
+ */
+
+.field {
+  display: block;
+}
+
+.field-label {
+  display: block;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  margin-bottom: var(--space-2);
+}
+
+.input,
+.select {
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+/* An error is never colour alone: the message below the field carries the meaning. */
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--danger);
+  margin-top: var(--space-2);
+}
+
+/* ---- Notices ---------------------------------------------------------------------------------
+ * One sentence, disclosed once per page, never sitting beside the number it qualifies - a
+ * caveat printed next to a figure is read as part of the figure.
+ */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  font-size: var(--text-body);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-control-lg);
+  border: 1px solid;
+}
+
+.notice-info {
+  background: var(--blue-light);
+  border-color: color-mix(in srgb, var(--blue) 30%, transparent);
+  color: var(--ink);
+}
+
+.notice-warning {
+  background: var(--warning-bg);
+  border-color: color-mix(in srgb, var(--warning-ink) 30%, transparent);
+  color: var(--warning-ink);
+}
+
+.notice-success {
+  background: color-mix(in srgb, var(--green) 8%, white);
+  border-color: color-mix(in srgb, var(--green) 30%, transparent);
+  color: var(--green);
+}
+
+/* ---- Empty state ------------------------------------------------------------------------------ */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-8) var(--space-6);
+}
+
+.empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-tile);
+  background: var(--blue-light);
+  color: var(--blue);
+  margin-bottom: var(--space-5);
+}
+
+.empty-title {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-emphasis);
+  color: var(--ink);
+  margin-bottom: var(--space-2);
+}
+
+.empty-body {
+  font-size: var(--text-body);
+  color: var(--muted);
+  max-width: 44ch;
+  margin-bottom: var(--space-6);
+}
+
+/* ---- Glass drawer, for canvas pages ------------------------------------------------------------ */
+
+.drawer {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(210, 221, 238, 0.9);
+  border-radius: var(--radius-drawer);
+  padding: var(--space-6);
+}
+
+.drawer .stat-row {
+  border: none;
+  border-radius: var(--radius-glass-tile);
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.55));
+}
+
+/* ---- Assistant launcher ------------------------------------------------------------------------ */
+
+.assistant-launcher {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 52px;
+  padding: 0 var(--space-6);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+  color: var(--surface);
+  font-size: var(--text-body);
+  font-weight: var(--weight-emphasis);
+  cursor: pointer;
+  box-shadow: var(--shadow-launcher);
+  transition: background-color var(--transition);
+}
+
+.assistant-launcher:hover {
+  background: var(--blue-dark);
+}
+
+@media (max-width: 680px) {
+  .assistant-launcher[data-panel-open='true'] {
+    display: none;
+  }
+}
+
+/* ---- Utility ------------------------------------------------------------------------------------ */
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.caption {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .page {
+    padding: var(--space-6) var(--space-5);
+    padding-bottom: calc(var(--space-8) + 52px + 24px);
+  }
+
+  .stat-row {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
+
+  .stat-tile {
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .stat-tile:first-child {
+    border-top: none;
+  }
+}
+
+/* ---- Navbar -------------------------------------------------------------------------------------
+ * Transparent, with no bottom border and no shadow. The brief specified a white bar with a
+ * 1px --line rule beneath it; this is a deliberate override, so the header sits on the page
+ * rather than on a separate plane above it. Every other navbar rule is unchanged: 68px tall,
+ * 36px of horizontal padding, brand left, pill capsule centre, controls right.
+ */
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  height: var(--navbar-height);
+  padding: 0 var(--navbar-padding-x);
+  background: transparent;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* On a canvas page the bar floats over the map, where it needs its own surface to stay legible.
+   That is the one case the brief's glass treatment still applies to. */
+.navbar-glass {
+  position: fixed;
+  left: var(--space-5);
+  right: var(--space-5);
+  top: var(--space-5);
+  width: auto;
+  height: 60px;
+  border-radius: var(--radius-drawer);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(210, 221, 238, 0.9);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.brand-wordmark {
+  font-size: var(--text-brand);
+  font-weight: var(--weight-brand);
+  letter-spacing: -0.015em;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.brand-stop {
+  color: var(--blue);
+}
+
+/*
+ * One capsule holding the pills, not six pills floating in space.
+ *
+ * The container is what makes the navigation read as a single control: without it the items
+ * drift apart visually, and the active pill looks like a stray highlight rather than a position
+ * within a set. It sits on white because the navbar itself is transparent over --paper.
+ */
+.nav-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+}
+
+.nav-pill {
+  padding: var(--space-3) 15px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-nav);
+  font-weight: var(--weight-emphasis);
+  color: #5b6678;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.nav-pill:hover {
+  background: #f2f5fb;
+  color: var(--ink);
+}
+
+.nav-pill[aria-current='page'] {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+.navbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.region-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The white ring keeps the badge readable wherever it lands, including over a glass bar. */
+.bell-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+  color: var(--surface);
+  font-size: 9.5px;
+  font-weight: var(--weight-strong);
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-pill);
+  background: #eef2f8;
+  color: #536380;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-strong);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+/* Below 900px the capsule collapses into a dropdown. The bell and the gear stay visible,
+   because an unread approval is the one thing a person must not have to go looking for. */
+@media (max-width: 900px) {
+  .navbar {
+    padding: 0 var(--space-5);
+  }
+
+  /* On a narrow screen the menus hang from the right edge of the window, not from their button,
+     so they stay fully visible. */
+  .more-menu {
+    position: static;
+  }
+
+  .menu-panel {
+    right: var(--space-5);
+    left: auto;
+  }
+
+  .nav-capsule {
+    display: none;
+  }
+
+  .nav-capsule[data-open='true'] {
+    /* Below 900px the capsule becomes a dropdown panel, so it drops the round shape. */
+    border-radius: var(--radius-card);
+    position: absolute;
+    top: var(--navbar-height);
+    left: var(--space-5);
+    right: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    padding: var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-hover);
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .region-label {
+    display: none;
+  }
+}
+
+/* ---- Overflow menu ------------------------------------------------------------------------------
+ * Nine screens do not fit in a six-item capsule, and leaving them unreachable was worse than
+ * either. They sit here, grouped and annotated, so a person can find a destination without
+ * already knowing its name.
+ */
+
+.more-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + var(--space-3));
+  right: 0;
+  z-index: 50;
+  min-width: 260px;
+  /* Never wider than the viewport, so a menu opened near an edge cannot run off-screen or make
+     the whole page scroll sideways - which it did before. */
+  max-width: calc(100vw - 32px);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hover);
+}
+
+.menu-group + .menu-group {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.menu-heading {
+  margin-bottom: var(--space-3);
+}
+
+.menu-item {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+  color: var(--ink);
+  transition: background-color var(--transition);
+}
+
+.menu-item:hover {
+  background: #f2f5fb;
+}
+
+.menu-item[aria-current='page'] {
+  background: var(--blue-light);
+}
+
+.menu-item[aria-current='page'] .menu-item-label {
+  color: var(--blue);
+}
+
+.menu-item-label {
+  display: block;
+  font-size: var(--text-body);
+  font-weight: var(--weight-emphasis);
+}
+
+.menu-item-note {
+  display: block;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ---- Skip link ------------------------------------------------------------------------------------
+ * Hidden until focused. Somebody navigating by keyboard should not have to tab through the whole
+ * navigation on every page to reach the content.
+ */
+
+.skip-link {
+  position: absolute;
+  left: var(--space-5);
+  top: -100px;
+  z-index: 100;
+  padding: var(--space-3) var(--space-5);
+  background: var(--blue);
+  color: var(--surface);
+  font-size: var(--text-body);
+  font-weight: var(--weight-emphasis);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+  transition: top var(--transition);
+}
+
+.skip-link:focus {
+  top: var(--space-4);
+}
+
+/* ---- Back link ------------------------------------------------------------------------------------- */
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--muted);
+  text-decoration: none;
+  margin-bottom: var(--space-4);
+  transition: color var(--transition);
+}
+
+.back-link:hover {
+  color: var(--blue);
+}
+
+/* ---- Account menu ---------------------------------------------------------------------------- */
+
+.menu-identity {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--space-4);
+}
+
+/* A button inside a menu of links has to be reset, or it inherits the browser's own styling
+   and sits visibly apart from the items above it. */
+.menu-item-danger {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.menu-item-danger .menu-item-label {
+  color: var(--danger);
+}
+
+.menu-item-danger:hover {
+  background: color-mix(in srgb, var(--danger) 8%, white);
+}
+
+/* ---- Demo account picker ----------------------------------------------------------------------
+ * A card rather than a list of links: each one is a real action that signs somebody in, and it
+ * should look like something you press.
+ */
+
+.demo-account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+.demo-account:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  background: var(--blue-light);
+}
+
+.demo-account:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---- Landing page --------------------------------------------------------------------------
+ * The public page has its own bar rather than the application navbar: somebody who is not signed
+ * in has no workspace to navigate, and showing them six destinations they cannot reach is a
+ * worse introduction than showing them none.
+ */
+
+.landing-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  height: var(--navbar-height);
+  padding: 0 var(--navbar-padding-x);
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  background: transparent;
+}
+
+.landing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-5);
+}
+
+/* ---- Split sign-in ---------------------------------------------------------------------------
+ * The form sits on the right and the explanation on the left, so the eye lands on the content
+ * first and the action second.
+ */
+
+.auth-split {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: var(--space-8);
+  align-items: start;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+
+.auth-aside {
+  position: sticky;
+  top: var(--space-8);
+}
+
+@media (max-width: 900px) {
+  .auth-split {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+
+  .auth-aside {
+    position: static;
+    /* The form comes first on a phone: somebody on a small screen who wants to sign in should
+       not scroll past the pitch to reach the field. */
+    order: 2;
+  }
+
+  .landing-bar {
+    padding: 0 var(--space-5);
+  }
+}
+
+/* ---- Sign-in supporting points ---------------------------------------------------------------- */
+
+.auth-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.auth-points li {
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--line);
+}
+
+/* ---- Spinner, skeleton and state panels ------------------------------------------------------- */
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A shimmer rather than a static block: a still grey bar reads as broken content, a moving one
+   reads as content on its way. */
+.skeleton {
+  height: 14px;
+  border-radius: var(--radius-tag);
+  background: linear-gradient(90deg, var(--line) 25%, #f1f4f8 50%, var(--line) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.state-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-8) var(--space-6);
+}
+
+.state-icon-danger {
+  background: color-mix(in srgb, var(--danger) 10%, white);
+  color: var(--danger);
+}
+
+.button-danger {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  color: var(--danger);
+}
+
+.button-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 7%, white);
+}
+
+.textarea {
+  height: auto;
+  min-height: 104px;
+  padding: var(--space-4);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+/* ---- Dialog -------------------------------------------------------------------------------------- */
+
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 60px rgba(26, 42, 74, 0.18);
+}
+
+.dialog::backdrop {
+  background: rgba(32, 39, 53, 0.32);
+  backdrop-filter: blur(2px);
+}
+
+.dialog[open] {
+  animation: dialog-in var(--transition-slow);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dialog-body {
+  padding: var(--space-6);
+}
+
+.dialog-title {
+  font-size: 18px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+/* ---- Toasts -------------------------------------------------------------------------------------- */
+
+.toast-region {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(440px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-control-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: var(--text-body);
+  box-shadow: var(--shadow-hover);
+  pointer-events: auto;
+  animation: dialog-in var(--transition-slow);
+}
+
+.toast-success {
+  border-color: color-mix(in srgb, var(--green) 35%, var(--line));
+}
+
+.toast-success span::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--green);
+  vertical-align: 1px;
+}
+
+.toast-error {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+  color: var(--danger);
+}
+
+.toast-close {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-pill);
+}
+
+.toast-close:hover {
+  color: var(--ink);
+}
+
+/* A route change fades in rather than snapping, so a person can see the screen changed. Colour
+   and opacity only - nothing slides or bounces. */
+.route-enter {
+  animation: route-in var(--transition-slow);
+}
+
+@keyframes route-in {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Dropzone ------------------------------------------------------------------------------------ */
+
+.dropzone {
+  border: 2px dashed var(--line);
+  border-radius: var(--radius-control-lg);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition), background-color var(--transition);
+  background: var(--surface);
+}
+
+.dropzone:hover,
+.dropzone-active {
+  border-color: var(--blue);
+  background: var(--blue-light);
+}
+
+.dropzone:focus-visible {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.dropzone-input {
+  display: none;
+}
+
+/* ---- Links in tables ----------------------------------------------------------------------------- */
+
+.link {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: var(--weight-medium);
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/* ---- Empty chat ---------------------------------------------------------------------------------- */
+
+.empty-chat {
+  flex: 1;
+  display: flex;
+}
+
+/* ---- Detail layouts --------------------------------------------------------------------------- */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 2fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.facts {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-6) 0 0;
+}
+
+.facts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.facts > div:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.facts dt {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  font-size: var(--text-body);
+  text-align: right;
+}
+
+.avatar-large {
+  width: 48px;
+  height: 48px;
+  font-size: 14px;
+}
+
+.back-link svg {
+  flex-shrink: 0;
+}
+
+.table tbody tr[data-href] {
+  cursor: pointer;
+}
+
+.table tbody tr[data-href]:hover td {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.02));
+}
+
+.table-row-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}

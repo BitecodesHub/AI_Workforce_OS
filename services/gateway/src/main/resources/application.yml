@@ -1,0 +1,144 @@
+# The single edge of the platform.
+#
+# Routes are declared here rather than in code so a service can be moved, split or taken out of
+# rotation without a rebuild. The gateway holds no business rules: it authenticates, it limits
+# rate, it correlates, it forwards. Every authorisation decision belongs to the service that owns
+# the data, because anything already inside the cluster can reach that service directly.
+
+spring:
+  application:
+    name: gateway
+  config:
+    import: "classpath:platform-defaults.yml"
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3s
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AIWOS_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+            # One limiter definition, applied to every route. Per-route and per-organisation
+            # overrides live in runtime configuration, so a limit can be tightened during an
+            # incident without a deployment.
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@principalKeyResolver}"
+                redis-rate-limiter.replenishRate: ${AIWOS_RATE_REPLENISH:10}
+                redis-rate-limiter.burstCapacity: ${AIWOS_RATE_BURST:60}
+                redis-rate-limiter.requestedTokens: 1
+
+          httpclient:
+            connect-timeout: 5000
+            response-timeout: 60s
+            pool:
+              max-connections: 200
+              acquire-timeout: 5000
+
+          routes:
+            # Authentication endpoints are deliberately first and deliberately open: a person who
+            # cannot sign in cannot present a token, so requiring one here would be circular.
+            - id: identity-public
+              uri: ${AIWOS_URL_IDENTITY:http://localhost:8081}
+              predicates:
+                - Path=/api/auth/**,/.well-known/jwks.json
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@remoteAddressKeyResolver}"
+                    redis-rate-limiter.replenishRate: ${AIWOS_AUTH_RATE_REPLENISH:1}
+                    redis-rate-limiter.burstCapacity: ${AIWOS_AUTH_RATE_BURST:10}
+
+            - id: identity
+              uri: ${AIWOS_URL_IDENTITY:http://localhost:8081}
+              predicates:
+                - Path=/api/users/**,/api/roles/**,/api/permissions/**,/api/api-keys/**,/api/sessions/**
+
+            - id: organisation
+              uri: ${AIWOS_URL_ORGANISATION:http://localhost:8082}
+              predicates:
+                - Path=/api/workspaces/**,/api/members/**,/api/invitations/**,/api/settings/**,/api/credentials/**
+
+            - id: orchestrator
+              uri: ${AIWOS_URL_ORCHESTRATOR:http://localhost:8083}
+              predicates:
+                - Path=/api/agents/**,/api/goals/**,/api/tasks/**,/api/runs/**,/api/approvals/**,/api/providers/**,/api/chat/**
+
+            - id: memory
+              uri: ${AIWOS_URL_MEMORY:http://localhost:8084}
+              predicates:
+                - Path=/api/memory/**
+
+            - id: knowledge
+              uri: ${AIWOS_URL_KNOWLEDGE:http://localhost:8085}
+              predicates:
+                - Path=/api/knowledge/**,/api/sources/**
+              filters:
+                # Ingestion uploads whole documents, so this route alone gets a longer patience.
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalKeyResolver}"
+                    redis-rate-limiter.replenishRate: ${AIWOS_INGEST_RATE_REPLENISH:2}
+                    redis-rate-limiter.burstCapacity: ${AIWOS_INGEST_RATE_BURST:10}
+
+            - id: integrations
+              uri: ${AIWOS_URL_INTEGRATIONS:http://localhost:8086}
+              predicates:
+                - Path=/api/integrations/**,/api/tools/**,/api/oauth/**
+
+            - id: analytics
+              uri: ${AIWOS_URL_ANALYTICS:http://localhost:8087}
+              predicates:
+                - Path=/api/analytics/**,/api/audit/**,/api/reports/**
+
+  codec:
+    max-in-memory-size: 10MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  # The edge is the right place to cap a request body: rejecting an oversized upload here saves
+  # it crossing the cluster only to be refused by the service.
+  max-http-request-header-size: 16KB
+
+aiwos:
+  service-name: gateway
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    # One page listing every service's contract, so a consumer reads one document rather than
+    # discovering eight.
+    urls:
+      - name: identity
+        url: /api/identity/v3/api-docs
+      - name: organisation
+        url: /api/organisation/v3/api-docs
+      - name: orchestrator
+        url: /api/orchestrator/v3/api-docs
+      - name: memory
+        url: /api/memory/v3/api-docs
+      - name: knowledge
+        url: /api/knowledge/v3/api-docs
+      - name: integrations
+        url: /api/integrations/v3/api-docs
+      - name: analytics
+        url: /api/analytics/v3/api-docs
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,redis

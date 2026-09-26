@@ -1,0 +1,64 @@
+# Configuration and secrets.
+#
+# The split is the point. Everything in the ConfigMap is inspectable by anyone who can read the
+# namespace and is safe for that to be true. Everything in the Secret is supplied by an external
+# secret store at deploy time and never committed - the manifest below declares the shape, not
+# the values.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiwos-config
+  namespace: aiwos
+data:
+  AIWOS_ENVIRONMENT: production
+  AIWOS_LOG_FORMAT: json
+  AIWOS_LOG_LEVEL: INFO
+
+  DB_HOST: postgres.aiwos.svc.cluster.local
+  DB_PORT: "5432"
+  DB_NAME: aiwos
+  REDIS_HOST: redis.aiwos.svc.cluster.local
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP: kafka.aiwos.svc.cluster.local:9092
+  QDRANT_URL: http://qdrant.aiwos.svc.cluster.local:6333
+
+  AIWOS_JWKS_URI: http://identity.aiwos.svc.cluster.local:8080/.well-known/jwks.json
+  AIWOS_OTLP_ENDPOINT: http://otel-collector.monitoring.svc.cluster.local:4318
+  # Tracing every request is unaffordable at scale and is refused by the startup validator in
+  # production, which is why this is not 1.0.
+  AIWOS_TRACE_SAMPLE_RATIO: "0.1"
+
+  AIWOS_URL_GATEWAY: http://gateway.aiwos.svc.cluster.local:8080
+  AIWOS_URL_IDENTITY: http://identity.aiwos.svc.cluster.local:8080
+  AIWOS_URL_ORGANISATION: http://organisation.aiwos.svc.cluster.local:8080
+  AIWOS_URL_ORCHESTRATOR: http://orchestrator.aiwos.svc.cluster.local:8080
+  AIWOS_URL_MEMORY: http://memory.aiwos.svc.cluster.local:8080
+  AIWOS_URL_KNOWLEDGE: http://knowledge.aiwos.svc.cluster.local:8080
+  AIWOS_URL_INTEGRATIONS: http://integrations.aiwos.svc.cluster.local:8080
+  AIWOS_URL_ANALYTICS: http://analytics.aiwos.svc.cluster.local:8080
+---
+# Declares which secrets the platform needs. The values come from the cluster's secret store,
+# never from this file. The startup validator refuses to serve traffic in production if the
+# signing key or the encryption master key is missing, so a partial secret cannot ship quietly.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aiwos-secrets
+  namespace: aiwos
+  annotations:
+    aiwos.os/managed-by: external-secrets
+type: Opaque
+stringData:
+  DB_PASSWORD: ""
+  REDIS_PASSWORD: ""
+  AIWOS_SECURITY_SIGNING_PRIVATE_KEY_PEM: ""
+  AIWOS_ENCRYPTION_MASTER_KEY: ""
+  AIWOS_SECURITY_DEVELOPMENT_SECRET: ""
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aiwos
+  namespace: aiwos
+automountServiceAccountToken: false

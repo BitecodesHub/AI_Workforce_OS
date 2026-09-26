@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aiwos
+  labels:
+    name: aiwos
+    # Enforces the restricted Pod Security Standard: no privilege escalation, no host
+    # namespaces, non-root only. A workload that needs an exception has to ask for it
+    # explicitly rather than acquiring it by accident.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

@@ -1,0 +1,49 @@
+# Staging runs the same manifests with less of everything.
+#
+# Same images, same configuration shape, same probes. A staging environment that differs
+# structurally from production tests something other than what will be deployed.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aiwos
+
+resources:
+  - ../../base
+
+patches:
+  - target: {kind: Deployment}
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: {kind: HorizontalPodAutoscaler}
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+  - target: {kind: Ingress, name: aiwos}
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.aiworkforce.os
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: staging.aiworkforce.os
+
+  # The base ConfigMap is a plain resource, not a generated one, so it is patched rather than
+  # merged: configMapGenerator can only merge into a map another generator produced.
+  - target: {kind: ConfigMap, name: aiwos-config}
+    patch: |
+      - op: replace
+        path: /data/AIWOS_ENVIRONMENT
+        value: staging
+      - op: replace
+        path: /data/AIWOS_LOG_LEVEL
+        value: DEBUG
+      # Full tracing is affordable at staging volumes and is what makes a reproduction useful.
+      - op: replace
+        path: /data/AIWOS_TRACE_SAMPLE_RATIO
+        value: "1.0"

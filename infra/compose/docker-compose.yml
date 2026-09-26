@@ -1,0 +1,212 @@
+# The whole platform, locally, with no credentials configured.
+#
+# Every service starts with sandbox providers and sandbox tool drivers, so `make up` gives a
+# working system rather than a system waiting for secrets. Adding a real provider key later is a
+# row in the console, not a change to this file.
+
+name: aiwos
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [aiwos]
+  environment: &service-environment
+    AIWOS_ENVIRONMENT: local
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_NAME: aiwos
+    DB_USER: aiwos
+    DB_PASSWORD: aiwos
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    KAFKA_BOOTSTRAP: redpanda:9092
+    QDRANT_URL: http://qdrant:6333
+    AIWOS_JWKS_URI: http://identity:8080/.well-known/jwks.json
+    AIWOS_OTLP_ENDPOINT: http://otel-collector:4318
+    AIWOS_CORS_ORIGINS: http://localhost:5173
+    AIWOS_URL_GATEWAY: http://gateway:8080
+    AIWOS_URL_IDENTITY: http://identity:8080
+    AIWOS_URL_ORGANISATION: http://organisation:8080
+    AIWOS_URL_ORCHESTRATOR: http://orchestrator:8080
+    AIWOS_URL_MEMORY: http://memory:8080
+    AIWOS_URL_KNOWLEDGE: http://knowledge:8080
+    AIWOS_URL_INTEGRATIONS: http://integrations:8080
+    AIWOS_URL_ANALYTICS: http://analytics:8080
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+  # The services are not given a memory limit here on purpose: the JVM reads the cgroup limit,
+  # and an over-tight limit in development produces confusing out-of-memory kills rather than
+  # useful backpressure.
+
+services:
+  # ---- Infrastructure ------------------------------------------------------------------------
+
+  postgres:
+    image: postgres:17-alpine
+    networks: [aiwos]
+    environment:
+      POSTGRES_DB: aiwos
+      POSTGRES_USER: aiwos
+      POSTGRES_PASSWORD: aiwos
+      # C collation makes index scans on text predictable and noticeably faster; the platform
+      # does its own case-insensitive comparison where it needs one.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiwos -d aiwos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+
+  redis:
+    image: redis:7-alpine
+    networks: [aiwos]
+    ports: ["6379:6379"]
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      # Working memory is expendable under pressure; rate-limit counters and caches are not
+      # worth an eviction storm either. allkeys-lru drops the least useful rather than failing.
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    networks: [aiwos]
+    ports: ["6333:6333"]
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  redpanda:
+    # Speaks the Kafka protocol in a single container with no ZooKeeper, which keeps a
+    # development machine's memory for the services rather than the broker.
+    image: redpandadata/redpanda:latest
+    networks: [aiwos]
+    ports: ["9092:9092", "19092:19092"]
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:latest
+    networks: [aiwos]
+    ports: ["9090:9090"]
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    networks: [aiwos]
+    ports: ["3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: aiwos
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+
+  # ---- Platform services ---------------------------------------------------------------------
+
+  identity:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: identity-service}}
+    ports: ["8081:8080"]
+
+  organisation:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: org-service}}
+    ports: ["8082:8080"]
+
+  orchestrator:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: orchestrator-service}}
+    ports: ["8083:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+
+  memory:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: memory-service}}
+    ports: ["8084:8080"]
+
+  knowledge:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: knowledge-service}}
+    ports: ["8085:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      qdrant: {condition: service_started}
+
+  integrations:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: integrations-service}}
+    ports: ["8086:8080"]
+
+  analytics:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: analytics-service}}
+    ports: ["8087:8080"]
+
+  gateway:
+    <<: *service-defaults
+    build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: gateway}}
+    ports: ["8080:8080"]
+    depends_on:
+      redis: {condition: service_healthy}
+      identity: {condition: service_started}
+
+networks:
+  aiwos:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:
+  redpanda-data:
+  prometheus-data:
+  grafana-data:

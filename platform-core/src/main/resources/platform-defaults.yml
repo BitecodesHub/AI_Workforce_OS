@@ -1,0 +1,147 @@
+# Defaults shared by every service.
+#
+# A service imports this file and overrides only what is genuinely its own: its name, its port,
+# its database schema and its own dependencies. Anything that should be the same everywhere is
+# set here once, so eight services cannot drift apart in how they log, time out or retry.
+#
+# Every value can be overridden by an environment variable using Spring's relaxed binding, for
+# example AIWOS_SECURITY_ACCESS_TOKEN_TTL=PT5M. Nothing here is a secret; secrets arrive only
+# as environment variables or from the secret store.
+
+aiwos:
+  environment: ${AIWOS_ENVIRONMENT:local}
+  service-version: ${AIWOS_SERVICE_VERSION:0.1.0-SNAPSHOT}
+
+  security:
+    issuer: ${AIWOS_ISSUER:aiwos}
+    audience: ${AIWOS_AUDIENCE:aiwos-api}
+    jwks-uri: ${AIWOS_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+    access-token-ttl: PT15M
+    refresh-token-ttl: P30D
+    # An internal token lives only long enough to cross the cluster once. A leaked one is
+    # useless a minute later, which is the point.
+    internal-token-ttl: PT60S
+    clock-skew-leeway: PT30S
+    argon2:
+      iterations: 3
+      memory-kib: 65536
+      parallelism: 4
+    encryption:
+      master-key-id: ${AIWOS_ENCRYPTION_KEY_ID:local-dev}
+      master-key-base64: ${AIWOS_ENCRYPTION_MASTER_KEY:}
+    # No outbound email exists on this platform yet - no SMTP is configured and no verification
+    # message is ever sent - so requiring verification here would make every new account a dead
+    # end with no way to complete it. False is a local/demo default; a deployment that adds real
+    # email delivery sets AIWOS_REQUIRE_EMAIL_VERIFICATION=true and wires the sender.
+    require-email-verification: ${AIWOS_REQUIRE_EMAIL_VERIFICATION:false}
+
+  http:
+    connect-timeout: PT5S
+    read-timeout: PT60S
+    cors-allowed-origins: ${AIWOS_CORS_ORIGINS:http://localhost:5173}
+
+  rate-limit:
+    enabled: true
+    default-requests-per-minute: 600
+    auth-attempts-per-minute: 10
+
+  events:
+    enabled: ${AIWOS_EVENTS_ENABLED:true}
+    topic-prefix: aiwos
+    max-delivery-attempts: 4
+    retry-backoff: PT5S,PT30S,PT5M
+
+  resilience:
+    failure-rate-percent-threshold: 50
+    wait-duration-in-open-state: PT30S
+    max-retry-attempts: 3
+    retry-jitter: true
+    default-call-timeout: PT60S
+
+  observability:
+    log-format: ${AIWOS_LOG_FORMAT:json}
+    tracing-enabled: ${AIWOS_TRACING_ENABLED:true}
+    otlp-endpoint: ${AIWOS_OTLP_ENDPOINT:http://localhost:4318}
+
+  runtime-config:
+    enabled: true
+    cache-ttl: PT60S
+
+  services:
+    gateway: ${AIWOS_URL_GATEWAY:http://localhost:8080}
+    identity: ${AIWOS_URL_IDENTITY:http://localhost:8081}
+    organisation: ${AIWOS_URL_ORGANISATION:http://localhost:8082}
+    orchestrator: ${AIWOS_URL_ORCHESTRATOR:http://localhost:8083}
+    memory: ${AIWOS_URL_MEMORY:http://localhost:8084}
+    knowledge: ${AIWOS_URL_KNOWLEDGE:http://localhost:8085}
+    integrations: ${AIWOS_URL_INTEGRATIONS:http://localhost:8086}
+    analytics: ${AIWOS_URL_ANALYTICS:http://localhost:8087}
+
+spring:
+  jackson:
+    default-property-inclusion: non_null
+    deserialization:
+      fail-on-unknown-properties: false
+      # A date without a zone is ambiguous, and ambiguity in a timestamp becomes a wrong
+      # invoice or a missed approval deadline. Everything is an Instant, in UTC.
+      adjust-dates-to-context-time-zone: false
+    serialization:
+      write-dates-as-timestamps: false
+  threads:
+    virtual:
+      # Most work here waits on a database, a model provider or another service. Virtual threads
+      # let that waiting cost a stack rather than a platform thread.
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
+
+  servlet:
+    multipart:
+      # Matches the cap the ingress enforces and the one the upload endpoint states. Three
+      # places declaring a limit is fine; three places declaring different limits means the
+      # smallest wins silently, and a person sees "too large" for a file the interface said
+      # was acceptable.
+      max-file-size: 25MB
+      max-request-size: 26MB
+      file-size-threshold: 1MB
+
+server:
+  shutdown: graceful
+  error:
+    whitelabel:
+      enabled: false
+  compression:
+    enabled: true
+    mime-types: application/json,application/problem+json
+  tomcat:
+    max-swallow-size: 10MB
+    connection-timeout: 20s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only what a platform needs. Anything that dumps configuration or heap stays closed.
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+      group:
+        # Readiness must fail when a dependency is gone, so traffic stops arriving.
+        readiness:
+          include: readinessState,db,redis
+  metrics:
+    tags:
+      service: ${aiwos.service-name:unknown}
+  tracing:
+    sampling:
+      probability: ${AIWOS_TRACE_SAMPLE_RATIO:1.0}
+
+logging:
+  level:
+    root: INFO
+    os.aiworkforce: ${AIWOS_LOG_LEVEL:INFO}
+    org.hibernate.orm.jdbc.bind: WARN
+    org.springframework.web: INFO

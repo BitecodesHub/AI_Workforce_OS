@@ -1,0 +1,184 @@
+/*
+ * The design system, as one file.
+ *
+ * Every colour, size, radius and step in the product is defined here and nowhere else. A raw hex
+ * value in a component is a defect, and `design-system.test.ts` fails the build over one: the
+ * moment two greys exist, the interface starts looking assembled rather than designed.
+ */
+
+@import 'tailwindcss';
+
+:root {
+  /* ---- Colour ------------------------------------------------------------------------------ */
+  --blue: #2458e5;          /* primary: links, active states, one accent per screen */
+  --blue-dark: #1947c8;     /* hover on primary buttons */
+  --blue-light: #eef3ff;    /* active pill fill, soft highlights */
+  --ink: #202735;           /* body and heading text */
+  --muted: #637083;         /* secondary text, captions, units */
+  --line: #e5e9ef;          /* every border, every divider */
+  --green: #147b65;         /* success and positive only */
+  --paper: #f8fafc;         /* page background; cards sit on it in pure white */
+  --surface: #ffffff;
+
+  --warning-ink: #7a4b00;
+  --warning-bg: #fff7ea;
+  --danger: #a8452b;
+
+  /* Agent categories, replacing the sector palette in the brief. Tags use dark text on a
+     12-15% tint of the same colour, which is what keeps them legible at 9px. */
+  --category-operations: #2c5eea;
+  --category-engineering: #098875;
+  --category-growth: #bb861b;
+  --category-support: #dd7150;
+
+  /* Charts: one accent plus one supporting tone. A third series would break the rule that a
+     screen carries one accent, so a chart needing more is the wrong chart. */
+  --chart-primary: #2458e5;
+  --chart-secondary: #9fb6ea;
+  --chart-grid: var(--line);
+
+  /* Eyebrow text sits slightly cooler than body text so it recedes without going faint. */
+  --eyebrow: #5a6f91;
+
+  /* ---- Type -------------------------------------------------------------------------------- */
+  --font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Fractional weights are deliberate: 550 carries emphasis without the heaviness of 600, and
+     700 never appears inside content. */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-emphasis: 550;
+  --weight-strong: 600;
+  --weight-brand: 650;
+
+  --text-h1: 36px;
+  --text-h2: 13.5px;
+  --text-body: 12.5px;
+  --text-caption: 10px;
+  --text-micro: 9px;
+  --text-stat: 30px;
+  --text-unit: 11px;
+  --text-nav: 12.5px;
+  --text-brand: 28px;
+
+  /* ---- Radii: two families, never mixed on one element ------------------------------------- */
+  --radius-card: 18px;
+  --radius-tile: 15px;
+  --radius-dialog: 20px;
+  --radius-drawer: 22px;
+  --radius-glass-tile: 16px;
+  --radius-control: 11px;
+  --radius-control-lg: 12px;
+  --radius-pill: 999px;
+  --radius-tag: 4px;
+
+  /* ---- Spacing scale ----------------------------------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 22px;
+  --space-7: 32px;
+  --space-8: 44px;
+
+  /* ---- Structure --------------------------------------------------------------------------- */
+  --navbar-height: 68px;
+  --navbar-padding-x: 36px;
+  --page-max-width: 1180px;
+  --page-padding-y: 32px;
+  --page-padding-x: 36px;
+
+  /* ---- Depth: at rest there is none ------------------------------------------------------- */
+  --shadow-hover: 0 6px 20px rgba(26, 42, 74, 0.12);
+  --shadow-launcher: 0 10px 30px rgba(36, 88, 229, 0.28);
+  --border-hover: #a6bdea;
+  --focus-ring: #dce7ff;
+
+  /* ---- Motion: colour and border only. Nothing moves, nothing bounces. --------------------- */
+  --transition: 0.18s ease;
+  --transition-slow: 0.22s ease;
+}
+
+/* Tailwind v4 reads the same variables, so a utility class and a hand-written rule cannot
+   disagree about what "blue" means. */
+@theme inline {
+  --color-blue: var(--blue);
+  --color-blue-dark: var(--blue-dark);
+  --color-blue-light: var(--blue-light);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-green: var(--green);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+/* ---- Base ---------------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+p,
+figure {
+  margin: 0;
+}
+
+/* Numbers in a column must line up, or a table of figures becomes unreadable. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/*
+ * Focus is visible on everything, always. Removing the outline is the single most common
+ * accessibility failure in a product like this, and it makes the interface unusable by keyboard.
+ * :focus-visible means a mouse click does not leave a ring behind, so there is no reason to.
+ */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+::selection {
+  background: var(--blue-light);
+  color: var(--ink);
+}
+
+/* People who have asked their system for less motion get none. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

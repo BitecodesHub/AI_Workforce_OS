@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aiwos
+
+resources:
+  - namespace.yaml
+  - config.yaml
+  - network-policy.yaml
+  - gateway.yaml
+  - identity.yaml
+  - organisation.yaml
+  - orchestrator.yaml
+  - memory.yaml
+  - knowledge.yaml
+  - integrations.yaml
+  - analytics.yaml
+  - ingress.yaml
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: aiwos
+      app.kubernetes.io/managed-by: kustomize

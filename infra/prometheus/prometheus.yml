@@ -1,0 +1,25 @@
+# Scrapes every service's Micrometer endpoint.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    platform: aiwos
+
+scrape_configs:
+  - job_name: aiwos-services
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - gateway:8080
+          - identity:8080
+          - organisation:8080
+          - orchestrator:8080
+          - memory:8080
+          - knowledge:8080
+          - integrations:8080
+          - analytics:8080
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "([^:]+):.*"
+        target_label: service
+        replacement: "$1"

@@ -1,0 +1,119 @@
+# Read models, dashboards and the audit projection.
+#
+# This file holds only what belongs to this service. Everything shared - security, resilience,
+# observability, event and HTTP defaults - comes from platform-defaults.yml, so a change to how
+# the platform behaves is made once rather than in eight places.
+
+spring:
+  application:
+    name: analytics-service
+  config:
+    import: "classpath:platform-defaults.yml"
+
+  datasource:
+    # Each service owns one schema and never reads another service's tables. The database is
+    # shared in development for convenience; in production each service gets its own instance,
+    # and only this URL changes.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:aiwos}?currentSchema=analytics
+    username: ${DB_USER:aiwos}
+    password: ${DB_PASSWORD:aiwos}
+    hikari:
+      pool-name: analytics-pool
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 2
+      connection-timeout: 10000
+      # Shorter than the database's own idle timeout, so the pool retires a connection before
+      # the server does and no request ever picks up a socket the server has already closed.
+      max-lifetime: 1500000
+      idle-timeout: 300000
+      leak-detection-threshold: 30000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema. Letting Hibernate alter tables would mean the schema in
+      # production depends on which code happened to start first.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: analytics
+        jdbc:
+          batch_size: 50
+          time_zone: UTC
+        order_inserts: true
+        order_updates: true
+        query:
+          fail_on_pagination_over_collection_fetch: true
+          in_clause_parameter_padding: true
+
+  flyway:
+    enabled: true
+    schemas: analytics
+    default-schema: analytics
+    create-schemas: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    # A checksum mismatch means a released migration was edited. Failing is correct: the
+    # environments that already ran the old version would otherwise diverge silently.
+    validate-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3s
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 16
+          max-idle: 8
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      acks: all
+      # Retries plus idempotence: a broker failover must not silently drop an event, and must
+      # not duplicate one either.
+      retries: 5
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        compression.type: zstd
+    consumer:
+      group-id: analytics-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        max.poll.interval.ms: 300000
+        session.timeout.ms: 45000
+    listener:
+      ack-mode: manual_immediate
+      concurrency: 3
+      observation-enabled: true
+
+server:
+  port: ${SERVER_PORT:8087}
+
+aiwos:
+  service-name: analytics
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    display-request-duration: true
+
+---
+# Tests run against Testcontainers, so nothing here points at a developer's own database.
+spring:
+  config:
+    activate:
+      on-profile: test
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:19092}
+aiwos:
+  environment: test
+  events:
+    enabled: false

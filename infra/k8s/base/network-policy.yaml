@@ -1,0 +1,113 @@
+# East-west traffic is denied by default and allowed only between declared pairs.
+#
+# Without this, a compromise of any one service gives an attacker the whole cluster's internal
+# API surface: the credential endpoint on the organisation service, the internal token endpoint
+# on identity, every database. The services are separate processes; the network policy is what
+# makes them separate trust boundaries as well.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: aiwos
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# DNS is the one thing everything needs, and denying it breaks every service in a way that is
+# very hard to diagnose.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: aiwos
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# Only the gateway accepts traffic from outside. Every other service is reachable only from
+# inside the namespace, by a caller that is itself a platform service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-ingress
+  namespace: aiwos
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: gateway}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# The business services accept traffic from the gateway and from each other, and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: service-mesh-ingress
+  namespace: aiwos
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: aiwos}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/part-of: aiwos}
+      ports:
+        - {protocol: TCP, port: 8080}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# Egress: the data stores, sibling services, and the internet for model providers.
+#
+# The internet rule excludes link-local and private ranges. 169.254.169.254 is the cloud
+# metadata endpoint, and a service that can reach it can often mint credentials for the whole
+# account - which is exactly what a prompt-injected agent would be steered towards.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-egress
+  namespace: aiwos
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: aiwos}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/part-of: aiwos}
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: datastore}
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 6379}
+        - {protocol: TCP, port: 6333}
+        - {protocol: TCP, port: 9092}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - {protocol: TCP, port: 443}

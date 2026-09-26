@@ -1,0 +1,163 @@
+# knowledge service.
+#
+# Resource requests are what the scheduler places on and what the JVM sizes its heap against, so
+# they are set from observed usage rather than copied. The orchestrator and knowledge services
+# ask for more because one holds long agent runs and the other embeds whole documents.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge
+  namespace: aiwos
+  labels: &labels
+    app.kubernetes.io/name: knowledge
+    app.kubernetes.io/part-of: aiwos
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never fewer than the current replicas during a deploy: a service that drops capacity
+      # while rolling is a service that fails requests during every release.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knowledge
+  template:
+    metadata:
+      labels: *labels
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: aiwos
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # Long enough for an in-flight agent run to finish rather than being cut off mid-tool-call.
+      terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: knowledge
+      containers:
+        - name: knowledge
+          image: ghcr.io/bitecodeshub/aiwos-knowledge-service:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          envFrom:
+            - configMapRef: {name: aiwos-config}
+            - secretRef: {name: aiwos-secrets}
+          env:
+            - name: SERVICE_NAME
+              value: knowledge
+            - name: JAVA_TOOL_OPTIONS
+              # The heap is a percentage of the container limit, so changing the limit below
+              # resizes the heap with it. A fixed -Xmx drifts from the limit and gets the pod
+              # killed by the kernel rather than throwing a manageable error.
+              value: >-
+                -XX:MaxRAMPercentage=70 -XX:+UseZGC -XX:+ExitOnOutOfMemoryError
+                -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp
+                -Duser.timezone=UTC
+          resources:
+            requests: {cpu: "500m", memory: "1Gi"}
+            limits: {cpu: "2", memory: "2Gi"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            # The only writable path. A container that cannot write to its own image cannot be
+            # made to persist whatever an attacker drops into it.
+            - {name: tmp, mountPath: /tmp}
+          startupProbe:
+            # Generous, because Flyway migrations run before the service is ready and a large
+            # migration on a cold database is slow. Failing here restarts the pod mid-migration.
+            httpGet: {path: /actuator/health/readiness, port: http}
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            # Liveness checks only that the process is alive, never its dependencies. A liveness
+            # probe that fails when the database is down restarts every pod during a database
+            # blip and turns a brief outage into a crash loop.
+            httpGet: {path: /actuator/health/liveness, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knowledge
+  namespace: aiwos
+  labels:
+    app.kubernetes.io/name: knowledge
+    app.kubernetes.io/part-of: aiwos
+spec:
+  selector:
+    app.kubernetes.io/name: knowledge
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: knowledge
+  namespace: aiwos
+spec:
+  # Keeps a node drain from taking the last replica. Without it, a cluster upgrade can evict
+  # both pods of a two-replica service at once.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knowledge
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: knowledge
+  namespace: aiwos
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: knowledge
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 70}
+    - type: Resource
+      resource:
+        name: memory
+        target: {type: Utilization, averageUtilization: 80}
+  behavior:
+    scaleDown:
+      # Slow to scale down, quick to scale up. Shedding capacity the moment load dips causes a
+      # second scale-up a minute later, and the thrash costs more than the idle pods.
+      stabilizationWindowSeconds: 300
+      policies:
+        - {type: Percent, value: 50, periodSeconds: 60}
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - {type: Percent, value: 100, periodSeconds: 30}

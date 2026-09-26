@@ -1,0 +1,40 @@
+# Java / Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+*.class
+*.jar
+!maven-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.p8
+!*.example
+
+# Infrastructure state
+.volumes/
+infra/compose/data/
+
+# IDE / OS
+.DS_Store
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
