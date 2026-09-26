@@ -1044,6 +1044,10 @@
 /* ---- Dialog -------------------------------------------------------------------------------------- */
 
 .dialog {
+  /* Tailwind's preflight zeroes every element's default margin, `dialog` included, which breaks
+     the browser's own centering trick for `showModal()` - a fixed-position box with inset 0 on
+     every side plus an auto margin lands in the middle only if the margin is actually auto. */
+  margin: auto;
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);
   padding: 0;
