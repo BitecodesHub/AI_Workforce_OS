@@ -36,12 +36,34 @@
   padding-bottom: calc(var(--space-8) + 52px + 24px);
 }
 
+/* The actions wrap below the title when they do not fit beside it. Without the wrap, a phone
+   pushed an agent's "Edit instructions" and "Give it a task" off the right edge of the screen. */
 .page-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-5);
   margin-bottom: var(--space-7);
+}
+
+.page-header-text {
+  min-width: 0;
+}
+
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.page-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 .page-title {
@@ -50,6 +72,7 @@
   letter-spacing: -0.01em;
   color: var(--ink);
   line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .page-description {
@@ -57,6 +80,12 @@
   color: var(--muted);
   margin-top: var(--space-2);
   max-width: 62ch;
+}
+
+@media (max-width: 600px) {
+  .page-title {
+    font-size: var(--text-h1-compact);
+  }
 }
 
 .section-heading {
@@ -115,12 +144,35 @@
 }
 
 .stat-tile {
+  min-width: 0;
   padding: var(--space-6) var(--space-5);
   border-left: 1px solid var(--line);
 }
 
 .stat-tile:first-child {
   border-left: none;
+}
+
+/* A tile that links to the list it counts. The fill is the whole affordance: no shadow at rest,
+   none on hover. The focus ring is drawn inside the tile, because the row clips anything outside. */
+.stat-tile-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--transition);
+}
+
+.stat-tile-link:hover {
+  background: var(--blue-light);
+}
+
+.stat-tile-link:hover .stat-label {
+  color: var(--blue);
+}
+
+.stat-tile-link:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -4px;
 }
 
 .stat-label {
@@ -140,8 +192,12 @@
   line-height: 1;
   font-variant-numeric: tabular-nums;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
+  /* A long figure ("US$1,204.50") breaks inside a narrow tile instead of overflowing it. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* The unit sits beside the number, never inside it: "1,240 h", not "1,240h". A figure a reader
@@ -162,6 +218,14 @@
  * No zebra striping. Row borders are enough separation, and alternating fills fight with the
  * tags and status colours that carry the actual meaning.
  */
+
+/* A table wider than its card scrolls inside this region instead of widening the page. On a phone
+   that used to zoom the whole page out to about 60 percent. */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
 
 .table {
   width: 100%;
@@ -198,6 +262,51 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A sortable header is a button that still looks like a header. */
+.table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.table-sort:hover,
+.table th[aria-sort='ascending'] .table-sort,
+.table th[aria-sort='descending'] .table-sort {
+  color: var(--ink);
+}
+
+.table-sort-icon {
+  flex-shrink: 0;
+  opacity: 0.45;
+}
+
+.table th[aria-sort='ascending'] .table-sort-icon,
+.table th[aria-sort='descending'] .table-sort-icon {
+  opacity: 1;
+}
+
+/* A long tag in a cell stops at a readable width and ends in an ellipsis; callers put the full
+   text in the tag's title. */
+.table td .tag {
+  max-width: 28ch;
+}
+
+.table td .tag-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- Tags ------------------------------------------------------------------------------------ */
 
 .tag {
@@ -210,9 +319,10 @@
   border-radius: var(--radius-tag);
   white-space: nowrap;
   /* colour-mix keeps a tag's tint locked to its own colour: a new category cannot arrive with a
-     hand-picked background that sits slightly off the system. */
+     hand-picked background that sits slightly off the system. The text is the same colour
+     darkened, because the raw category colours on their own tint failed WCAG AA contrast. */
   background: color-mix(in srgb, var(--tag-colour) 13%, white);
-  color: var(--tag-colour);
+  color: color-mix(in srgb, var(--tag-colour) 70%, black);
 }
 
 .tag-blue { --tag-colour: var(--blue); }
@@ -247,6 +357,8 @@
   border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
+  /* A link drawn as a button (<a className="button ...">) must not keep the link underline. */
+  text-decoration: none;
   transition: background-color var(--transition), border-color var(--transition), color var(--transition);
 }
 
@@ -284,6 +396,12 @@
   color: var(--ink);
 }
 
+/* A compact button for actions inside a table row or a dense card. */
+.button-sm {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-caption);
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -299,9 +417,14 @@
   transition: background-color var(--transition), color var(--transition);
 }
 
-.icon-button:hover {
+.icon-button:hover:not(:disabled) {
   background: #f2f5fb;
   color: var(--ink);
+}
+
+.icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ---- Inputs -----------------------------------------------------------------------------------
@@ -318,6 +441,16 @@
   font-size: var(--text-caption);
   color: var(--muted);
   margin-bottom: var(--space-2);
+}
+
+/* Said in words, only on fields that really are optional. */
+.field-optional {
+  font-weight: var(--weight-regular);
+  color: var(--muted);
+}
+
+.field-hint {
+  margin-top: var(--space-2);
 }
 
 .input,
@@ -345,7 +478,8 @@
   color: var(--muted);
 }
 
-.input[aria-invalid='true'] {
+.input[aria-invalid='true'],
+.select[aria-invalid='true'] {
   border-color: var(--danger);
 }
 
@@ -522,9 +656,12 @@
     padding-bottom: calc(var(--space-8) + 52px + 24px);
   }
 
+  /* Two figures a row rather than one: a single column of four tiles pushed every table below the
+     fold on a phone. Hairlines still separate each tile from its neighbours. */
   .stat-row {
     grid-auto-flow: row;
     grid-auto-columns: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .stat-tile {
@@ -532,8 +669,31 @@
     border-top: 1px solid var(--line);
   }
 
-  .stat-tile:first-child {
+  .stat-tile:nth-child(-n + 2) {
     border-top: none;
+  }
+
+  .stat-tile:nth-child(even) {
+    border-left: 1px solid var(--line);
+  }
+
+  /* An odd tile out takes the whole last row instead of leaving an empty cell beside it. */
+  .stat-tile:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 420px) {
+  .stat-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stat-tile:nth-child(even) {
+    border-left: none;
+  }
+
+  .stat-tile:nth-child(2) {
+    border-top: 1px solid var(--line);
   }
 }
 
@@ -542,11 +702,14 @@
  * 1px --line rule beneath it; this is a deliberate override, so the header sits on the page
  * rather than on a separate plane above it. Every other navbar rule is unchanged: 68px tall,
  * 36px of horizontal padding, brand left, pill capsule centre, controls right.
+ *
+ * It scrolls away with the page rather than sticking. A transparent bar held over scrolling
+ * content left its links sitting on top of table rows, illegible at every width. Relative
+ * positioning keeps it the anchor for the phone menu that drops from it.
  */
 
 .navbar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 40;
   display: flex;
   align-items: center;
@@ -680,6 +843,13 @@
   font-weight: var(--weight-strong);
 }
 
+/* The gear or the avatar shows it holds the current page, as the capsule's pills do. */
+.icon-button[data-active='true'],
+.avatar[data-active='true'] {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
 .nav-toggle {
   display: none;
 }
@@ -729,6 +899,34 @@
   }
 
   .region-label {
+    display: none;
+  }
+}
+
+/* On a phone the wordmark and the gaps shrink so the whole bar fits a 375px screen. */
+@media (max-width: 480px) {
+  .navbar {
+    gap: var(--space-3);
+  }
+
+  .brand {
+    gap: var(--space-3);
+  }
+
+  .brand-wordmark {
+    font-size: var(--text-brand-compact);
+  }
+
+  .navbar-right {
+    gap: var(--space-2);
+  }
+}
+
+/* Narrower than 375px the wordmark and four touch-sized controls cannot share one row, and the
+   menu button - the only way to the navigation on a phone - was pushed off the edge. The mark
+   stays, and the link keeps its accessible name from its label. */
+@media (max-width: 374px) {
+  .brand-wordmark {
     display: none;
   }
 }
@@ -878,9 +1076,10 @@
  */
 
 .demo-account {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
   width: 100%;
   text-align: left;
   padding: var(--space-4);
@@ -903,28 +1102,104 @@
   cursor: not-allowed;
 }
 
-/* ---- Landing page --------------------------------------------------------------------------
- * The public page has its own bar rather than the application navbar: somebody who is not signed
- * in has no workspace to navigate, and showing them six destinations they cannot reach is a
- * worse introduction than showing them none.
- */
-
-.landing-bar {
+/* Tinted the same way a Tag is (--avatar-colour mixed into a background and a darkened
+   foreground), so a role's initials and its role tag always read as the same colour. Set with
+   an inline custom property rather than the tag-* classes, so this never inherits a tag's own
+   background override (tag-warning draws a flat fill, not a mix). */
+.demo-account-avatar {
+  grid-row: 1 / 4;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-pill);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
-  height: var(--navbar-height);
-  padding: 0 var(--navbar-padding-x);
-  max-width: var(--page-max-width);
-  margin: 0 auto;
-  background: transparent;
+  justify-content: center;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-strong);
+  background: color-mix(in srgb, var(--avatar-colour, var(--muted)) 15%, white);
+  color: color-mix(in srgb, var(--avatar-colour, var(--muted)) 70%, black);
 }
 
-.landing-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: var(--space-5);
+/* ---- Auth atmosphere ---------------------------------------------------------------------------
+ * The one place a signed-out person arrives cold, so it is the one console screen allowed a
+ * static field of colour behind it - no motion, the console's rule still holds, just light and
+ * depth instead of bare grey. Every colour here is a token or a color-mix over one.
+ */
+
+.auth-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.auth-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.auth-atmosphere::before,
+.auth-atmosphere::after {
+  content: '';
+  position: absolute;
+  border-radius: var(--radius-pill);
+  filter: blur(70px);
+}
+
+.auth-atmosphere::before {
+  width: 620px;
+  height: 620px;
+  top: -260px;
+  right: -180px;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--blue) 16%, transparent), transparent);
+}
+
+.auth-atmosphere::after {
+  width: 460px;
+  height: 460px;
+  bottom: -220px;
+  left: -140px;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--category-engineering) 12%, transparent), transparent);
+}
+
+.auth-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--blue) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--blue) 6%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 10%, transparent 70%);
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 10%, transparent 70%);
+}
+
+.auth-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-7) var(--space-6) 0;
+}
+
+.auth-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: var(--space-7);
+}
+
+@media (max-width: 520px) {
+  .auth-panel {
+    padding: var(--space-6);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
 }
 
 /* ---- Split sign-in ---------------------------------------------------------------------------
@@ -933,13 +1208,15 @@
  */
 
 .auth-split {
+  position: relative;
+  z-index: 1;
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: 1fr 1fr;
   gap: var(--space-8);
-  align-items: start;
-  max-width: 1040px;
+  align-items: center;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: var(--space-8) var(--space-6);
+  padding: var(--space-7) var(--space-6) var(--space-8);
 }
 
 .auth-aside {
@@ -947,21 +1224,27 @@
   top: var(--space-8);
 }
 
+/* The form comes first in the document, so keyboard and screen reader users reach it first; on a
+   wide screen the explanation is still drawn on the left. */
+@media (min-width: 901px) {
+  .auth-aside {
+    order: -1;
+  }
+}
+
 @media (max-width: 900px) {
   .auth-split {
     grid-template-columns: 1fr;
-    gap: var(--space-6);
+    gap: var(--space-7);
+    padding-top: var(--space-6);
   }
 
   .auth-aside {
     position: static;
     /* The form comes first on a phone: somebody on a small screen who wants to sign in should
-       not scroll past the pitch to reach the field. */
+       not scroll past the pitch to reach the field. The brand mark is shown separately, above
+       both, so the screen still reads as this product's from the first paint. */
     order: 2;
-  }
-
-  .landing-bar {
-    padding: 0 var(--space-5);
   }
 }
 
@@ -1078,8 +1361,25 @@
   }
 }
 
+/* Focus lands on the dialog box itself only when it holds nothing to type into. It is not a
+   control, so it takes no ring; the first Tab moves to one that does. */
+.dialog:focus-visible {
+  outline: none;
+}
+
 .dialog-body {
   padding: var(--space-6);
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.dialog-heading {
+  min-width: 0;
 }
 
 .dialog-title {
@@ -1088,8 +1388,22 @@
   letter-spacing: -0.01em;
 }
 
+.dialog-description {
+  margin-top: var(--space-2);
+}
+
+.dialog-error {
+  margin-top: var(--space-5);
+}
+
+.dialog-content {
+  margin-top: var(--space-6);
+}
+
 .dialog-footer {
   display: flex;
+  /* Two long labels wrap onto a second line on a narrow phone rather than overflow the dialog. */
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-3);
   margin-top: var(--space-6);
@@ -1291,4 +1605,111 @@
   display: block;
   color: inherit;
   text-decoration: none;
+}
+
+/* ---- Filter bar -----------------------------------------------------------------------------------
+ * Search and filters above a long list. Chips are toggles, drawn as pills so they read as a set of
+ * choices rather than as buttons that do something. The count sits on its own line underneath.
+ */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.filter-search {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 360px;
+}
+
+.filter-select {
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
+.filter-facet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.filter-facet .field-label {
+  margin-bottom: 0;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.filter-chip:hover {
+  border-color: var(--border-hover);
+}
+
+.filter-chip[aria-pressed='true'] {
+  background: var(--blue-light);
+  color: var(--blue);
+  border-color: transparent;
+}
+
+.filter-chip-count {
+  color: var(--muted);
+}
+
+.filter-chip[aria-pressed='true'] .filter-chip-count {
+  color: inherit;
+}
+
+.filter-count {
+  flex-basis: 100%;
+}
+
+/* ---- Touch targets --------------------------------------------------------------------------------
+ * On a touch screen every control is at least 40px, the size a fingertip can hit without also
+ * hitting its neighbour. A mouse pointer keeps the denser desktop sizes.
+ */
+
+@media (pointer: coarse) {
+  .icon-button,
+  .avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .toast-close {
+    padding: var(--space-3);
+  }
+
+  /* Vertical padding only, so the link stays aligned with the page's left edge. */
+  .back-link {
+    padding: var(--space-3) 0;
+  }
+
+  .filter-chip {
+    min-height: 40px;
+    padding: var(--space-2) var(--space-4);
+  }
 }

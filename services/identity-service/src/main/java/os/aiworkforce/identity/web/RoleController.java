@@ -104,14 +104,15 @@ public class RoleController {
         UUID orgId = UUID.fromString(RequestContext.requireOrgId());
         validate(request.permissions());
 
-        if (roles.findByOrgAndName(orgId, request.name()).isPresent()
-                || roles.findSystemRole(request.name()).isPresent()) {
+        // Looked up as it will be stored, so " Manager" cannot slip past the check for "Manager".
+        String name = request.name().strip();
+        if (roles.findByOrgAndName(orgId, name).isPresent() || roles.findSystemRole(name).isPresent()) {
             throw new ApiException(ErrorCode.ALREADY_EXISTS, "A role with that name already exists.");
         }
 
         Role role = new Role();
         role.setOrgId(orgId);
-        role.setName(request.name().strip());
+        role.setName(name);
         role.setDescription(request.description() == null ? "" : request.description().strip());
         role.setSystem(false);
         role.setPermissions(new LinkedHashSet<>(request.permissions()));
@@ -138,7 +139,18 @@ public class RoleController {
         }
         validate(request.permissions());
 
-        role.setName(request.name().strip());
+        // Renaming onto a name another role already uses is refused the same way creating one
+        // is, rather than left to the unique index to reject as a bare conflict.
+        String name = request.name().strip();
+        boolean taken = roles.findByOrgAndName(orgId, name)
+                        .filter(other -> !other.getId().equals(role.getId()))
+                        .isPresent()
+                || roles.findSystemRole(name).isPresent();
+        if (taken) {
+            throw new ApiException(ErrorCode.ALREADY_EXISTS, "A role with that name already exists.");
+        }
+
+        role.setName(name);
         role.setDescription(request.description() == null ? "" : request.description().strip());
         // replacePermissions bumps the permission version, which invalidates every token already
         // issued under this role. That is what makes narrowing a role take effect at once.

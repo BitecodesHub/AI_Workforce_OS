@@ -111,7 +111,8 @@ merely compiled in isolation.
 | Knowledge: chunking, embeddings, Qdrant, hybrid retrieval with citations | Built and live-verified, including the dense half |
 | Integrations: connections, scopes, tool invocation records | Built and verified |
 | Analytics: audit hash chain, live-emitted events, dashboards | Built and verified |
-| Web client: 19 screens, design system, design-system tests | Built and tested |
+| Web client: 20 screens, design system, design-system tests, a usability pass for first-time evaluators | Built and tested |
+| Public home page: interactive console, approval-gate, provider-failover, audit-chain and cited-answer demos, role explorer | Built, tested, and adversarially reviewed |
 | Gateway: routing, JWT verification, Redis-backed rate limiting | Built and live-verified |
 | Containers, compose stack, Kubernetes manifests, CI | Built |
 
@@ -140,8 +141,19 @@ Not yet done, and worth stating plainly:
   cited. The Drive, Notion, Confluence and GitHub wiki connectors are not written, so nothing
   crawls a source automatically yet.
 
+A subsequent usability pass reviewed the signed-in console for a first-time evaluator, then a daily
+operator: 201 candidate findings, verified down to 67, closed raw UUIDs and status codes, durations
+like "84817s", literal markup in the Model Routing cost cells, and static banners claiming no model
+was configured when a live OpenRouter key was working — plus added a `/runs` list page, search and
+filtering on every long list, and a getting-started guide scoped to what each role can do. Verifying
+it live, rather than assuming the sandbox-tested path generalised, surfaced a real, reproduced
+infinite approval loop: a resumed run rebuilt its conversation without the tool call it had just
+been approved for, so the model repeated the same request indefinitely. Fixed by persisting each
+tool call's id and arguments and reconstructing the exchange correctly on resume — confirmed live,
+where the HR agent's send-email flow had looped three times before and completed in one afterward.
+
 See [`docs/2026-09-25_Test-and-Fix-Plan_v1.md`](docs/2026-09-25_Test-and-Fix-Plan_v1.md) for the
-full defect register (61 entries, none open) and the journeys walked to close it, including a
+full defect register (76 entries, all fixed) and the journeys walked to close it, including a
 full role-by-role walkthrough (owner, admin, manager, employee, viewer, each signed in for real)
 that found and fixed six more defects: two permission-gate bugs that hid data a role legitimately
 had access to, one backend endpoint gated too strictly for a page every role should be able to

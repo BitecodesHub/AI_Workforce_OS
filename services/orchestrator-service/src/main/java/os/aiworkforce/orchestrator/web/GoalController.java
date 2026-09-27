@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -80,12 +81,20 @@ public class GoalController {
             @Size(max = 4_000) String description,
             @Valid @NotNull @Size(min = 1, max = 50) List<TaskInput> tasks) {}
 
+    /**
+     * Goals, newest first, a page at a time.
+     *
+     * <p>The default page stays at 50 and the cap at 100 because each goal is returned with its
+     * tasks and each task with its latest run, so a page costs a query per goal and per task.
+     */
     @GetMapping
     @RequiresPermission(Permission.Codes.TASK_READ)
     @Operation(summary = "Recent goals in this workspace, with their tasks")
-    public List<GoalView> list() {
+    public List<GoalView> list(
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
         UUID orgId = orgId();
-        return goals.findByOrgIdOrderByCreatedAtDesc(orgId, PageRequest.of(0, 50)).stream()
+        PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, 100));
+        return goals.findByOrgIdOrderByCreatedAtDesc(orgId, pageable).stream()
                 .map(this::toView)
                 .toList();
     }

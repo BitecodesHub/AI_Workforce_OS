@@ -24,8 +24,9 @@
   --warning-bg: #fff7ea;
   --danger: #a8452b;
 
-  /* Agent categories, replacing the sector palette in the brief. Tags use dark text on a
-     12-15% tint of the same colour, which is what keeps them legible at 9px. */
+  /* Agent categories, replacing the sector palette in the brief. A tag sets its text in its own
+     colour darkened to 70% (mixed with black) on a 13% tint of it, which keeps every tag above
+     5:1 at the 11px caption size. The raw colours on that tint fell as low as 2.8:1. */
   --category-operations: #2c5eea;
   --category-engineering: #098875;
   --category-growth: #bb861b;
@@ -53,14 +54,16 @@
   --weight-brand: 650;
 
   --text-h1: 36px;
+  --text-h1-compact: 28px;  /* page titles below 600px, so a title does not fill a phone screen */
   --text-h2: 13.5px;
   --text-body: 12.5px;
-  --text-caption: 10px;
-  --text-micro: 9px;
+  --text-caption: 11px;     /* labels, captions and tags; 10px was below comfortable reading size */
+  --text-micro: 10px;       /* table headers, the smallest text in the product */
   --text-stat: 30px;
   --text-unit: 11px;
   --text-nav: 12.5px;
   --text-brand: 28px;
+  --text-brand-compact: 22px; /* the wordmark below 480px, so the top bar fits a 375px screen */
 
   /* ---- Radii: two families, never mixed on one element ------------------------------------- */
   --radius-card: 18px;

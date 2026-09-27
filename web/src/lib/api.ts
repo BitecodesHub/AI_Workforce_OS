@@ -1,4 +1,14 @@
-import { accessToken, clearSession, getRefreshPromise, setRefreshPromise } from './session'
+import { formatElapsed, formatRelative } from './format'
+import {
+  accessToken,
+  announceSessionChange,
+  clearSession,
+  getRefreshPromise,
+  profile,
+  saveSession,
+  setRefreshPromise,
+  type Profile,
+} from './session'
 
 /*
  * One way to talk to the platform.
@@ -14,13 +24,23 @@ export class ApiError extends Error {
   readonly code: string
   readonly retryable: boolean
   readonly fields: Record<string, string>
+  /** Correlates the failure with the service logs; worth quoting when something broke on the server. */
+  readonly requestId?: string
 
-  constructor(status: number, code: string, message: string, retryable: boolean, fields: Record<string, string>) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    retryable: boolean,
+    fields: Record<string, string>,
+    requestId?: string,
+  ) {
     super(message)
     this.status = status
     this.code = code
     this.retryable = retryable
     this.fields = fields
+    if (requestId) this.requestId = requestId
   }
 
   get isPermissionDenied() {
@@ -38,37 +58,176 @@ type Options = {
   form?: FormData
 }
 
-async function doRefresh(): Promise<boolean> {
-  const response = await fetch('/api/auth/refresh', {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!response.ok) return false
-  const data = await response.json().catch(() => null)
-  if (data?.accessToken) {
-    sessionStorage.setItem('aiwos.accessToken', data.accessToken)
-    return true
-  }
-  return false
+const GENERIC_FAILURE = 'Something went wrong. Try again.'
+
+/** What platform-core's ErrorCode.VALIDATION_FAILED says when it has nothing more specific. */
+const GENERIC_VALIDATION_DETAIL = 'Some of the values supplied are not valid.'
+
+/** Detail keys the platform attaches to failures that describe the resource, not a form field. */
+const NON_FIELD_KEYS = new Set(['resource', 'id', 'holders', 'requiredPermission', 'requiredPermissions'])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export async function api<T>(path: string, options: Options = {}): Promise<T> {
-  const headers: Record<string, string> = {}
-  const token = accessToken()
-  if (token) headers.Authorization = `Bearer ${token}`
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+function networkError(): ApiError {
+  return new ApiError(0, 'network_error', 'The platform could not be reached. Check that it is running.', true, {})
+}
 
+/**
+ * Field problems from a problem document's `errors`, keyed by field name.
+ *
+ * A failure raised in code (ApiException.validation) arrives as one `{ field, problem }` pair;
+ * bean validation arrives as one entry per field. Entries that describe the resource rather than
+ * a field (resource, id, holders, requiredPermission) are left out.
+ */
+export function normaliseFields(errors: unknown): Record<string, string> {
+  if (!isRecord(errors)) return {}
+  if (typeof errors.field === 'string' && typeof errors.problem === 'string') {
+    return { [errors.field]: errors.problem }
+  }
+  const fields: Record<string, string> = {}
+  for (const [key, value] of Object.entries(errors)) {
+    if (typeof value === 'string' && !NON_FIELD_KEYS.has(key)) fields[key] = value
+  }
+  return fields
+}
+
+/** 'systemPrompt' -> 'System prompt', 'candidates[0].modelId' -> 'Candidates 1 model id'. */
+function fieldLabel(field: string, labels?: Record<string, string>): string {
+  const given = labels?.[field]
+  if (given) return given
+  const words = field
+    .replace(/\[(\d+)\]/g, (_, index: string) => ` ${Number(index) + 1} `)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'A field'
+}
+
+function withFullStop(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`
+}
+
+function fieldSentence(fields: Record<string, string>, labels?: Record<string, string>): string {
+  return Object.entries(fields)
+    .map(([field, problem]) => `${fieldLabel(field, labels)}: ${problem}`)
+    .join('; ')
+}
+
+/** Turns a failed response and its parsed body into the one error shape the interface reads. */
+function toApiError(response: Response, body: unknown): ApiError {
+  const problem = isRecord(body) ? body : {}
+  const code = typeof problem.code === 'string' && problem.code ? problem.code : 'unknown_error'
+  const fields = normaliseFields(problem.errors)
+  const requestId =
+    (typeof problem.requestId === 'string' && problem.requestId) || response.headers.get('X-Request-Id') || undefined
+
+  let message = typeof problem.detail === 'string' && problem.detail ? problem.detail : GENERIC_FAILURE
+  // The generic validation sentence names no field. With exactly one problem, saying which field
+  // and what is wrong improves every screen that shows error.message, with no change to it.
+  if (message === GENERIC_VALIDATION_DETAIL && Object.keys(fields).length === 1) {
+    message = withFullStop(fieldSentence(fields))
+  }
+
+  const retryable = typeof problem.retryable === 'boolean' ? problem.retryable : response.status >= 500
+  return new ApiError(response.status, code, message, retryable, fields, requestId)
+}
+
+/**
+ * One sentence to show a person for any thrown value.
+ *
+ * Validation failures name each field (with `labels` mapping a field name to the label on the
+ * form), server faults carry the request reference support needs, and anything that is not an
+ * ApiError gets a neutral sentence rather than a stack-trace message.
+ */
+export function describeApiError(error: unknown, labels?: Record<string, string>): string {
+  if (!(error instanceof ApiError)) return GENERIC_FAILURE
+  const count = Object.keys(error.fields).length
+  if (error.code === 'validation_failed' && count > 0) {
+    const lead = count === 1 ? 'Check this field' : 'Check these fields'
+    return withFullStop(`${lead}: ${fieldSentence(error.fields, labels)}`)
+  }
+  if (error.status >= 500 && error.requestId) {
+    return `${withFullStop(error.message)} Reference: ${error.requestId}`
+  }
+  return error.message
+}
+
+/** The profile a renewal carries, over the stored one. A field the response leaves out keeps its stored value. */
+function renewedProfile(previous: Profile | null, data: Record<string, unknown>): Profile {
+  const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined)
+  const permissions = Array.isArray(data.permissions)
+    ? data.permissions.filter((code): code is string => typeof code === 'string')
+    : undefined
+  return {
+    userId: text(data.userId) ?? previous?.userId ?? '',
+    // Omitted (never null) under non_null inclusion when the session has no workspace.
+    workspaceId: text(data.workspaceId) ?? previous?.workspaceId ?? null,
+    // Always present in a refresh response. An empty list is a real revocation and is stored.
+    permissions: permissions ?? previous?.permissions ?? [],
+    displayName: text(data.displayName) ?? previous?.displayName ?? '',
+    email: text(data.email) ?? previous?.email ?? '',
+    role: text(data.role) ?? previous?.role ?? null,
+  }
+}
+
+/**
+ * Exchanges the refresh cookie for a new access token.
+ *
+ * The identity service reads the role afresh on every refresh (AuthService.issue) and returns the
+ * permissions, role and name with the token, so the stored profile is rewritten from it. That is
+ * what lets a role change reach an open console at the next renewal instead of the next sign-in.
+ * A network failure is thrown rather than reported as a failed refresh, so an outage is not
+ * mistaken for an expired session.
+ */
+async function doRefresh(): Promise<boolean> {
   let response: Response
   try {
-    response = await fetch(path, {
+    response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    })
+  } catch {
+    throw networkError()
+  }
+  if (!response.ok) return false
+  const data: unknown = await response.json().catch(() => null)
+  if (!isRecord(data) || typeof data.accessToken !== 'string' || !data.accessToken) return false
+  saveSession(data.accessToken, renewedProfile(profile(), data))
+  announceSessionChange()
+  return true
+}
+
+async function send(path: string, options: Options, token: string | null): Promise<Response> {
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+  try {
+    return await fetch(path, {
       method: options.method ?? 'GET',
       headers,
       credentials: 'include',
       body: options.form ?? (options.body !== undefined ? JSON.stringify(options.body) : null),
     })
   } catch {
-    throw new ApiError(0, 'network_error', 'The platform could not be reached. Check that it is running.', true, {})
+    throw networkError()
   }
+}
+
+async function read<T>(response: Response): Promise<T> {
+  if (response.status === 204) return undefined as T
+  const text = await response.text()
+  const body = text ? safeJson(text) : null
+  if (!response.ok) throw toApiError(response, body)
+  return body as T
+}
+
+export async function api<T>(path: string, options: Options = {}): Promise<T> {
+  const token = accessToken()
+  const response = await send(path, options, token)
 
   if (response.status === 401 && token) {
     const existing = getRefreshPromise()
@@ -84,67 +243,15 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
           }
         })()
 
-    if (refreshed) {
-      const newToken = accessToken()
-      const retryHeaders: Record<string, string> = {}
-      if (newToken) retryHeaders.Authorization = `Bearer ${newToken}`
-      if (options.body !== undefined) retryHeaders['Content-Type'] = 'application/json'
-
-      const retryResponse = await fetch(path, {
-        method: options.method ?? 'GET',
-        headers: retryHeaders,
-        credentials: 'include',
-        body: options.form ?? (options.body !== undefined ? JSON.stringify(options.body) : null),
-      })
-
-      if (retryResponse.status === 204) return undefined as T
-
-      const retryText = await retryResponse.text()
-      const retryBody = retryText ? safeJson(retryText) : null
-
-      if (!retryResponse.ok) {
-        const problem = (retryBody ?? {}) as { code?: string; detail?: string; retryable?: boolean; errors?: Record<string, unknown> }
-        const fields: Record<string, string> = {}
-        for (const [key, value] of Object.entries(problem.errors ?? {})) {
-          if (typeof value === 'string') fields[key] = value
-        }
-        throw new ApiError(
-          retryResponse.status,
-          problem.code ?? 'unknown_error',
-          problem.detail ?? 'Something went wrong. Try again.',
-          problem.retryable ?? retryResponse.status >= 500,
-          fields,
-        )
-      }
-      return retryBody as T
-    }
+    if (refreshed) return read<T>(await send(path, options, accessToken()))
 
     clearSession()
-    const next = encodeURIComponent(window.location.pathname)
+    const next = encodeURIComponent(window.location.pathname + window.location.search)
     window.location.href = `/sign-in?next=${next}&expired=1`
     throw new ApiError(401, 'token_expired', 'Your session has ended. Sign in again.', false, {})
   }
 
-  if (response.status === 204) return undefined as T
-
-  const text = await response.text()
-  const body = text ? safeJson(text) : null
-
-  if (!response.ok) {
-    const problem = (body ?? {}) as { code?: string; detail?: string; retryable?: boolean; errors?: Record<string, unknown> }
-    const fields: Record<string, string> = {}
-    for (const [key, value] of Object.entries(problem.errors ?? {})) {
-      if (typeof value === 'string') fields[key] = value
-    }
-    throw new ApiError(
-      response.status,
-      problem.code ?? 'unknown_error',
-      problem.detail ?? 'Something went wrong. Try again.',
-      problem.retryable ?? response.status >= 500,
-      fields,
-    )
-  }
-  return body as T
+  return read<T>(response)
 }
 
 function safeJson(text: string): unknown {
@@ -155,33 +262,26 @@ function safeJson(text: string): unknown {
   }
 }
 
-/** Human-readable relative time, for "requested 22 minutes ago". */
+/**
+ * Human-readable relative time, for "requested 22 minutes ago".
+ * @deprecated Use formatRelative from './format', or the <Time> component.
+ */
 export function timeAgo(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000)
-  if (seconds < 45) return 'just now'
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
-  const days = Math.round(hours / 24)
-  return `${days} day${days === 1 ? '' : 's'} ago`
+  return formatRelative(iso)
 }
 
-/** "in 23 hours", for approval deadlines. */
+/**
+ * "in 23 hours", for approval deadlines. A time already past reads "5 minutes ago".
+ * @deprecated Use formatRelative from './format', or the <Time> component.
+ */
 export function timeUntil(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60000)
-  if (minutes <= 0) return 'now'
-  if (minutes < 60) return `in ${minutes} minute${minutes === 1 ? '' : 's'}`
-  const hours = Math.round(minutes / 60)
-  return `in ${hours} hour${hours === 1 ? '' : 's'}`
+  return formatRelative(iso)
 }
 
+/**
+ * Time between two instants, or from one instant until now.
+ * @deprecated Use formatElapsed (or formatRunElapsed for a run) from './format'.
+ */
 export function formatDuration(from: string | null | undefined, to: string | null | undefined): string {
-  if (!from) return '—'
-  const end = to ? new Date(to).getTime() : Date.now()
-  const seconds = Math.max(0, Math.round((end - new Date(from).getTime()) / 1000))
-  if (seconds < 60) return `${seconds}s`
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
+  return formatElapsed(from, to)
 }

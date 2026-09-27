@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ApiError } from '../../lib/api'
+import { ApiError, describeApiError } from '../../lib/api'
 import { EmptyState, ErrorState, LoadingState, PermissionState } from './index'
 
 /*
@@ -17,6 +17,15 @@ type QueryLike<T> = {
   refetch: () => unknown
 }
 
+/**
+ * The record is not there: a 404, or the 400 the platform returns when an id in the address is
+ * not an id at all (a truncated or mistyped link). Retrying cannot change either.
+ */
+function isMissingRecord(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false
+  return error.status === 404 || (error.status === 400 && error.code === 'malformed_request')
+}
+
 export function QueryState<T>({
   query,
   permission,
@@ -24,6 +33,7 @@ export function QueryState<T>({
   isEmpty,
   empty,
   rows,
+  notFound,
   children,
 }: {
   query: QueryLike<T>
@@ -34,6 +44,8 @@ export function QueryState<T>({
   isEmpty?: (data: T) => boolean
   empty?: ReactNode
   rows?: number
+  /** The way out when the record does not exist, usually a BackLink to its list. */
+  notFound?: ReactNode
   children: (data: T) => ReactNode
 }) {
   if (query.isLoading) return <LoadingState rows={rows ?? 4} label={`Loading ${what}`} />
@@ -43,9 +55,20 @@ export function QueryState<T>({
     if (error instanceof ApiError && error.isPermissionDenied) {
       return <PermissionState permission={permission} what={what} />
     }
-    const message = error instanceof ApiError ? error.message : 'Something went wrong while loading.'
+    if (isMissingRecord(error)) {
+      return (
+        <EmptyState
+          icon={<EmptyIcon kind="search" />}
+          title="This item does not exist"
+          body="It may have been removed, or the link is incomplete."
+          action={notFound}
+        />
+      )
+    }
+    // describeApiError names the fields a validation failure is about, and adds the request
+    // reference to a server failure so it can be quoted when reporting it.
     const retryable = error instanceof ApiError ? error.retryable || error.status === 0 : true
-    return <ErrorState message={message} retryable={retryable} onRetry={() => query.refetch()} />
+    return <ErrorState message={describeApiError(error)} retryable={retryable} onRetry={() => query.refetch()} />
   }
 
   if (query.data === undefined) return <LoadingState rows={rows ?? 4} label={`Loading ${what}`} />

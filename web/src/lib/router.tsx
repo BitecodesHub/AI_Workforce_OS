@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
 /*
@@ -11,26 +11,72 @@ import type { ReactNode } from 'react'
  * links.
  */
 
-type RouterValue = { path: string; search: URLSearchParams; navigate: (to: string) => void }
+export type NavigateOptions = {
+  /** Replace the current history entry instead of adding one, for state such as list filters. */
+  replace?: boolean
+  /** Scroll to the top (or to the #fragment) afterwards. Defaults to true, or false with replace. */
+  scroll?: boolean
+}
+
+type RouterValue = {
+  path: string
+  search: URLSearchParams
+  /** The #fragment, including the '#', or an empty string. */
+  hash: string
+  navigate: (to: string, options?: NavigateOptions) => void
+}
 
 const RouterContext = createContext<RouterValue | null>(null)
 
-export function RouterProvider({ children }: { children: ReactNode }) {
-  const [location, setLocation] = useState(() => ({
-    path: window.location.pathname,
-    search: window.location.search,
-  }))
+const readLocation = () => ({
+  path: window.location.pathname,
+  search: window.location.search,
+  hash: window.location.hash,
+})
 
-  const navigate = useCallback((to: string) => {
-    window.history.pushState({}, '', to)
-    setLocation({ path: window.location.pathname, search: window.location.search })
+/**
+ * Brings the #fragment's element into view, after moving to the top of the page unless
+ * `fromTop` is false. The target usually renders only after its data arrives, so it is looked
+ * for over a short while rather than once.
+ */
+function scrollToTarget(hash: string, fromTop = true) {
+  if (fromTop) window.scrollTo({ top: 0 })
+  if (!hash || hash === '#') return
+  let id: string
+  try {
+    id = decodeURIComponent(hash.slice(1))
+  } catch {
+    return
+  }
+  let attempts = 0
+  const look = () => {
+    const target = document.getElementById(id)
+    if (target) {
+      target.scrollIntoView?.({ block: 'start' })
+      return
+    }
+    attempts += 1
+    if (attempts < 20) window.setTimeout(look, 100)
+  }
+  window.requestAnimationFrame(look)
+}
+
+export function RouterProvider({ children }: { children: ReactNode }) {
+  const [location, setLocation] = useState(readLocation)
+
+  const navigate = useCallback((to: string, options: NavigateOptions = {}) => {
+    const replace = options.replace ?? false
+    if (replace) window.history.replaceState(window.history.state, '', to)
+    else window.history.pushState({}, '', to)
+    setLocation(readLocation())
     // A new screen starts at the top. Keeping the old scroll position lands a person half way
-    // down a page they have never seen.
-    window.scrollTo({ top: 0 })
+    // down a page they have never seen. A replaced entry is the same screen with new state (a
+    // filter, a search), so it keeps its place unless asked otherwise.
+    if (options.scroll ?? !replace) scrollToTarget(window.location.hash)
   }, [])
 
   useEffect(() => {
-    const onPop = () => setLocation({ path: window.location.pathname, search: window.location.search })
+    const onPop = () => setLocation(readLocation())
     window.addEventListener('popstate', onPop)
 
     const onClick = (event: MouseEvent) => {
@@ -44,25 +90,44 @@ export function RouterProvider({ children }: { children: ReactNode }) {
       navigate(href)
     }
     document.addEventListener('click', onClick)
+
+    // A deep link with a fragment (/approvals#approval-...) lands on its item once it renders.
+    // The browser keeps its own scroll position on first load, so there is no jump to the top.
+    if (window.location.hash) scrollToTarget(window.location.hash, false)
+
     return () => {
       window.removeEventListener('popstate', onPop)
       document.removeEventListener('click', onClick)
     }
   }, [navigate])
 
-  return (
-    <RouterContext.Provider
-      value={{ path: location.path, search: new URLSearchParams(location.search), navigate }}
-    >
-      {children}
-    </RouterContext.Provider>
+  // The same URLSearchParams object until the query string changes, so screens can depend on it.
+  const search = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const value = useMemo(
+    () => ({ path: location.path, search, hash: location.hash, navigate }),
+    [location.path, search, location.hash, navigate],
   )
+
+  return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
 }
 
 export function useRouter(): RouterValue {
   const value = useContext(RouterContext)
   if (!value) throw new Error('useRouter must be used inside RouterProvider')
   return value
+}
+
+const APP_NAME = 'AI Workforce OS'
+
+/**
+ * Names the browser tab after what the screen shows ("Maya · AI Workforce OS"), so tabs and
+ * history entries can be told apart. Does nothing until the title is known; the shell's
+ * route-level title stands until then.
+ */
+export function useDocumentTitle(title?: string | null) {
+  useEffect(() => {
+    if (title) document.title = `${title} · ${APP_NAME}`
+  }, [title])
 }
 
 /** Matches "/agents/:id" against a path, returning the parameters or null. */
@@ -73,7 +138,13 @@ export function match(pattern: string, path: string): Record<string, string> | n
   const params: Record<string, string> = {}
   for (let i = 0; i < patternParts.length; i++) {
     const expected = patternParts[i]!
-    const actual = decodeURIComponent(pathParts[i]!)
+    let actual: string
+    try {
+      actual = decodeURIComponent(pathParts[i]!)
+    } catch {
+      // A malformed escape in a typed or pasted URL is a path that matches nothing, not a crash.
+      return null
+    }
     if (expected.startsWith(':')) params[expected.slice(1)] = actual
     else if (expected !== actual) return null
   }

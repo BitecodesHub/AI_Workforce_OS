@@ -1,0 +1,1123 @@
+/*
+ * Public home page: agents, the audit chain demo, the role explorer, the platform band, limits and
+ * the call to action, and the footer. Owner: roles-and-sections.
+ *
+ * Prefixes: .lp-agents-*, .lp-audit-*, .lp-roles-*, .lp-platform-*, .lp-limits-*, .lp-cta-*,
+ * .lp-footer-*. No keyframes of its own: entrances reuse base.css (lp-fade, lp-tick).
+ *
+ * Rules kept here: no raw hex; every 1px solid border is --line, the blue-grey glass rgba or
+ * transparent, with emphasis in a separate border-color; radii from the radius tokens only; no
+ * shadow at rest; every transition and animation only under .lp[data-motion='on'] inside
+ * (prefers-reduced-motion: no-preference). Where the spec asked for dimmed text by opacity, text
+ * keeps full opacity in --muted instead, so it still meets 4.5:1.
+ */
+
+/* ---- Agents ------------------------------------------------------------------------------- */
+
+.lp-agents-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--lp-grid-gap);
+  align-items: stretch;
+}
+
+.lp-agents-grid > * {
+  min-width: 0;
+}
+
+.lp-agents-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.lp-agents-head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.lp-agents-tile .lp-agents-title {
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+
+.lp-agents-detail {
+  flex: 1 1 auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.lp-agents-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+/* Two lines are always reserved, so switching servers never changes the tile's height. */
+.lp-agents-grant {
+  display: block;
+  min-height: calc(2 * 1.45em + 9px);
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.lp-agents-grant-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lp-agents-lock {
+  margin-top: 1px;
+  color: var(--warning-ink);
+}
+
+@media (max-width: 1179px) {
+  .lp-agents-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 599px) {
+  .lp-agents-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- Audit chain demo --------------------------------------------------------------------- */
+
+.lp-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp-audit-entry {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 8px 12px;
+}
+
+.lp-audit-entry[data-altered='true'] {
+  border-color: color-mix(in srgb, var(--warning-ink) 30%, white);
+}
+
+.lp-audit-entry[data-broken='true'] {
+  border-color: color-mix(in srgb, var(--danger) 30%, white);
+}
+
+/* The connector between two entries: a 2px line drawn with a background, then the link icon. */
+.lp-audit-link {
+  position: absolute;
+  top: -15px;
+  left: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 14px;
+  color: var(--eyebrow);
+  pointer-events: none;
+}
+
+.lp-audit-link::before {
+  content: '';
+  display: block;
+  width: 2px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--border-hover);
+}
+
+.lp-audit-link[data-broken='true'] {
+  color: var(--danger);
+}
+
+.lp-audit-link[data-broken='true']::before {
+  background: var(--danger);
+}
+
+.lp-audit-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.lp-audit-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--eyebrow);
+}
+
+.lp-audit-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lp-audit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tag);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.lp-audit-chip[data-bad='true'] {
+  border-color: color-mix(in srgb, var(--danger) 35%, white);
+  background: var(--lp-bad-bg);
+  color: var(--danger);
+}
+
+.lp-audit-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.lp-audit-text {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.lp-audit-text del {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* inline-block so the tick entrance can move it; transforms do not apply to inline boxes. */
+.lp-audit-text ins {
+  display: inline-block;
+  padding: 0 3px;
+  border-radius: var(--radius-tag);
+  background: var(--lp-bad-bg);
+  color: var(--danger);
+  text-decoration: none;
+}
+
+/* The toggle's pressed state, so the visual state follows aria-pressed. */
+.lp-audit-toggle[aria-pressed='true'] {
+  border-color: var(--border-hover);
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+/* Space is always reserved for the caveat, so revealing it never pushes the tile taller. */
+.lp-audit-caveat {
+  visibility: hidden;
+  max-width: 64ch;
+}
+
+.lp-audit-caveat[data-shown='true'] {
+  visibility: visible;
+}
+
+/* ---- Role explorer ------------------------------------------------------------------------ */
+
+.lp-roles {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  gap: 22px;
+  min-width: 0;
+  padding: 22px;
+}
+
+/* Tabs */
+
+.lp-roles-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lp-roles-tab {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name count'
+    'desc desc'
+    'meter meter';
+  align-content: center;
+  gap: 2px 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 64px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lp-roles-tab:hover {
+  border-color: var(--border-hover);
+}
+
+.lp-roles-tab[aria-selected='true'] {
+  border-color: var(--border-hover);
+  background: color-mix(in srgb, var(--blue-light) 70%, white);
+}
+
+/* A shape cue for the selected tab, so colour is not the only signal. */
+.lp-roles-tab[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+
+.lp-roles-tab-name {
+  grid-area: name;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: var(--weight-emphasis);
+  line-height: 1.25;
+}
+
+.lp-roles-tab-count {
+  grid-area: count;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--eyebrow);
+  white-space: nowrap;
+}
+
+.lp-roles-tab-desc {
+  grid-area: desc;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.lp-roles-meter {
+  grid-area: meter;
+  display: block;
+  justify-self: stretch;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.lp-roles-meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--chart-secondary);
+  transform-origin: left center;
+  transform: scaleX(var(--lp-roles-fill, 0));
+}
+
+.lp-roles-tab[aria-selected='true'] .lp-roles-meter-fill {
+  background: var(--blue);
+}
+
+/* Panel */
+
+.lp-roles-panel {
+  container-type: inline-size;
+  container-name: lp-roles-panel;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.lp-roles-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lp-roles-identity {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.lp-roles-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lp-roles-name {
+  font-size: 20px;
+  font-weight: var(--weight-strong);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.lp-roles-summary {
+  max-width: 52ch;
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.lp-roles-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lp-roles-count-value {
+  min-width: 2ch;
+  font-size: 30px;
+  font-weight: var(--weight-emphasis);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-align: right;
+  color: var(--ink);
+}
+
+.lp-roles-count-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lp-roles-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lp-roles-compare-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--eyebrow);
+}
+
+/* Body: plain words beside console areas once the panel is wide enough. */
+
+.lp-roles-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px 22px;
+}
+
+@container lp-roles-panel (min-width: 640px) {
+  .lp-roles-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.lp-roles-block {
+  min-width: 0;
+}
+
+.lp-roles-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.lp-roles-h4 {
+  font-size: 12.5px;
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.lp-roles-block > .lp-roles-h4 {
+  margin-bottom: 8px;
+}
+
+.lp-roles-tally {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--eyebrow);
+}
+
+.lp-roles-checks {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-roles-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.lp-roles-check:last-child {
+  border-bottom: 0;
+}
+
+.lp-roles-check-icon {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.lp-roles-check[data-allowed='true'] .lp-roles-check-icon {
+  color: var(--green);
+}
+
+.lp-roles-check-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+.lp-roles-check-label {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.lp-roles-check[data-allowed='false'] .lp-roles-check-label {
+  color: var(--muted);
+}
+
+.lp-roles-check-codes {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--eyebrow);
+  overflow-wrap: anywhere;
+}
+
+.lp-roles-areas {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@container lp-roles-panel (max-width: 519px) {
+  .lp-roles-areas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.lp-roles-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+/* Unavailable: a lock, a dashed outline and muted text, rather than faded text. */
+.lp-roles-area[data-open='false'] {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+}
+
+.lp-roles-area-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Permission map */
+
+.lp-roles-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+}
+
+.lp-roles-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-roles-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tag);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--weight-regular);
+  line-height: 1.3;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.lp-roles-code[data-held='true'] {
+  border-color: transparent;
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+/* Green text is deepened slightly towards ink so it keeps 4.5:1 on its tint at 9px. */
+.lp-roles-code[data-diff='added'] {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--green) 12%, white);
+  color: color-mix(in srgb, var(--green) 80%, var(--ink));
+}
+
+.lp-roles-code[data-diff='removed'] {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.lp-roles-code[data-diff='removed'] .lp-roles-code-text {
+  text-decoration: line-through;
+}
+
+.lp-roles-code-sign {
+  font-weight: var(--weight-medium);
+}
+
+.lp-roles-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.lp-roles-legend > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lp-roles-swatch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tag);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.lp-roles-swatch[data-held='true'] {
+  border-color: transparent;
+  background: var(--blue-light);
+}
+
+.lp-roles-swatch[data-diff='added'] {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--green) 12%, white);
+  color: color-mix(in srgb, var(--green) 80%, var(--ink));
+}
+
+.lp-roles-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.lp-roles-foot .caption {
+  max-width: 60ch;
+}
+
+@media (max-width: 899px) {
+  .lp-roles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lp-roles-tabs {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .lp-roles-tab {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'name'
+      'count'
+      'meter';
+    justify-items: center;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .lp-roles-tab[aria-selected='true']::before {
+    top: auto;
+    right: 12px;
+    bottom: 0;
+    left: 12px;
+    width: auto;
+    height: 3px;
+  }
+
+  .lp-roles-tab-name {
+    font-size: 11px;
+  }
+
+  .lp-roles-tab-count {
+    font-size: 9px;
+  }
+
+  .lp-roles-tab-desc {
+    display: none;
+  }
+}
+
+@media (max-width: 599px) {
+  .lp-roles {
+    padding: 16px;
+  }
+
+  .lp-roles-tabs {
+    gap: 3px;
+  }
+
+  .lp-roles-tab {
+    padding: 8px 3px;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* ---- Platform band ------------------------------------------------------------------------ */
+
+.lp-platform {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.lp-platform-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.lp-platform-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lp-platform-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  min-width: 0;
+}
+
+.lp-platform-value {
+  font-size: 26px;
+  font-weight: var(--weight-emphasis);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.lp-platform-unit {
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+}
+
+.lp-platform-note {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.lp-platform-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 22px;
+}
+
+.lp-platform-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.lp-platform-label {
+  flex: none;
+  min-width: 13ch;
+}
+
+.lp-platform-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-platform-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tag);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+@media (max-width: 1179px) {
+  .lp-platform-stats {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .lp-platform-stats > .lp-platform-stat {
+    grid-column: span 2;
+  }
+
+  .lp-platform-stats > .lp-platform-stat:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
+
+@media (max-width: 899px) {
+  .lp-platform-rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 599px) {
+  .lp-platform-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lp-platform-stats > .lp-platform-stat,
+  .lp-platform-stats > .lp-platform-stat:nth-child(n + 4) {
+    grid-column: span 1;
+  }
+
+  .lp-platform-stats > .lp-platform-stat:nth-child(5) {
+    grid-column: span 2;
+  }
+}
+
+/* ---- Limits and the call to action -------------------------------------------------------- */
+
+.lp-limits-split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--lp-grid-gap);
+  align-items: stretch;
+}
+
+.lp-limits-split > * {
+  min-width: 0;
+}
+
+.lp-limits {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 22px;
+}
+
+.lp-limits-list {
+  flex: 1 1 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.lp-limits-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lp-limits-mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lp-limits-index {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.06em;
+  color: var(--eyebrow);
+}
+
+.lp-limits-icon {
+  color: var(--muted);
+}
+
+.lp-limits-text {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+/* The wrapper positions the soft light behind the panel; it adds no stacking context, so the
+   light sits behind the glass and is blurred by it. */
+.lp-cta-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.lp-cta-aurora {
+  top: -60px;
+  right: -80px;
+  z-index: -1;
+}
+
+/* The tint is 6% rather than 10% so the eyebrow and caption keep 4.5:1 in the top corner. */
+.lp-cta {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 32px 22px;
+  border-radius: var(--radius-card);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 6%, white), var(--lp-glass));
+}
+
+.lp-cta .eyebrow {
+  margin-bottom: 0;
+}
+
+.lp-cta-copy {
+  max-width: 46ch;
+  color: var(--ink);
+}
+
+.lp-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.lp-cta-hedge {
+  max-width: 52ch;
+}
+
+@media (max-width: 899px) {
+  .lp-limits-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 599px) {
+  .lp-limits {
+    padding: 16px;
+  }
+
+  .lp-limits-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lp-cta {
+    padding: 24px 16px;
+  }
+
+  .lp-cta-actions {
+    width: 100%;
+  }
+
+  .lp-cta-actions > .button {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---- Footer ------------------------------------------------------------------------------- */
+
+.lp-footer {
+  display: block;
+}
+
+.lp-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-height: 64px;
+  border-top: 1px solid var(--line);
+}
+
+.lp-footer-caption {
+  min-width: 0;
+}
+
+.lp-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+@media (max-width: 599px) {
+  .lp-footer-row {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-block: 12px;
+  }
+}
+
+/* ---- Motion: only when the visitor allows it and the page has switched it on --------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Agents */
+  .lp[data-motion='on'] .lp-agents-lock {
+    transition: color var(--lp-quick) ease;
+  }
+
+  /* Audit: the connector notices the break a moment after the edit. */
+  .lp[data-motion='on'] .lp-audit-link,
+  .lp[data-motion='on'] .lp-audit-link::before {
+    transition:
+      color 220ms ease 300ms,
+      background-color 220ms ease 300ms;
+  }
+
+  .lp[data-motion='on'] .lp-audit-entry,
+  .lp[data-motion='on'] .lp-audit-chip {
+    transition:
+      border-color 220ms ease,
+      background-color 220ms ease,
+      color 220ms ease;
+  }
+
+  .lp[data-motion='on'] .lp-audit-caveat[data-shown='true'] {
+    animation: lp-fade var(--lp-state) var(--lp-ease-out) backwards;
+  }
+
+  /* Roles: the meters grow in once the explorer is seen. */
+  .lp[data-motion='on'] .lp-roles-tab {
+    transition:
+      border-color var(--lp-quick) ease,
+      background-color var(--lp-quick) ease;
+  }
+
+  .lp[data-motion='on'] .lp-roles-meter-fill {
+    transition:
+      transform 420ms var(--lp-ease-out),
+      background-color 420ms var(--lp-ease-out);
+  }
+
+  .lp[data-motion='on'] .lp-roles:not([data-inview='true']) .lp-roles-meter-fill {
+    transform: scaleX(0);
+  }
+
+  .lp[data-motion='on'] .lp-roles-check-icon,
+  .lp[data-motion='on'] .lp-roles-check-label {
+    transition: color 200ms ease;
+  }
+
+  /* Chips change colour in a short ripple through the map, capped at 280ms. */
+  .lp[data-motion='on'] .lp-roles-code {
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease;
+    transition-delay: min(calc(var(--ci, 0) * 6ms), 280ms);
+  }
+}

@@ -69,12 +69,12 @@ spring:
             - id: organisation
               uri: ${AIWOS_URL_ORGANISATION:http://localhost:8082}
               predicates:
-                - Path=/api/workspaces/**,/api/members/**,/api/invitations/**,/api/settings/**,/api/credentials/**
+                - Path=/api/workspaces/**,/api/members/**,/api/invitations/**,/api/settings/**,/api/credentials/**,/api/orgs/**
 
             - id: orchestrator
               uri: ${AIWOS_URL_ORCHESTRATOR:http://localhost:8083}
               predicates:
-                - Path=/api/agents/**,/api/goals/**,/api/tasks/**,/api/runs/**,/api/approvals/**,/api/providers/**,/api/chat/**
+                - Path=/api/agents/**,/api/goals/**,/api/tasks/**,/api/runs/**,/api/approvals/**,/api/providers/**,/api/chat/**,/api/model-policy,/api/model-policy/**
 
             - id: memory
               uri: ${AIWOS_URL_MEMORY:http://localhost:8084}

@@ -1,0 +1,399 @@
+/*
+ * Public home page: the approval-gate demo (owner: agent-run).
+ *
+ * Prefixes .lp-run-* and .lp-approval-*. Colours are tokens or color-mix over tokens; borders are
+ * var(--line), with emphasis in a separate border-color; radii come from the token map. Nothing
+ * here animates on its own: entrances use the shared .lp-anim-* classes and the deadline uses the
+ * shared .lp-bar, both of which switch off with reduced motion.
+ */
+
+/* ---- Controls ----------------------------------------------------------------------------- */
+
+.lp-run-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+  min-width: 0;
+}
+
+/* Wide enough that the three equal-width pills never squeeze a label. */
+.lp-run-decider {
+  width: min(100%, 320px);
+  min-width: 0;
+}
+
+.lp-run-start {
+  flex: none;
+}
+
+/* ---- Stage -------------------------------------------------------------------------------- */
+
+.lp-run-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.lp-run-stage > * {
+  min-width: 0;
+}
+
+/* ---- Timeline ----------------------------------------------------------------------------- */
+
+.lp-run-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lp-run-timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.lp-run-timeline-head h4 {
+  min-width: 0;
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+}
+
+.lp-run-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-run-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: start;
+  min-height: 44px;
+  padding-block: 6px;
+  transition: opacity var(--lp-state) ease;
+}
+
+/* The connector down to the next marker: a 2px background, never a border. It starts under this
+   marker (6px padding + 22px) and ends where the next row's marker begins. */
+.lp-run-step::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 28px;
+  bottom: -6px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.lp-run-step:last-child::before {
+  content: none;
+}
+
+.lp-run-step[data-state='done']::before,
+.lp-run-step[data-state='approved']::before {
+  background: linear-gradient(var(--blue), var(--chart-secondary));
+}
+
+/* Dimming the whole row by element opacity took its text down with it - .lp-run-step-detail is
+   already var(--muted) at full strength, which is the accessible way to read as de-emphasised, so
+   only the decorative marker (aria-hidden) dims here; the label switches to muted below instead
+   of losing contrast to a fraction of --ink. */
+.lp-run-step[data-state='ghost'] .lp-run-marker,
+.lp-run-step[data-state='skipped'] .lp-run-marker {
+  opacity: 0.5;
+}
+
+.lp-run-step[data-state='ghost'] .lp-run-step-label,
+.lp-run-step[data-state='skipped'] .lp-run-step-label {
+  color: var(--muted);
+}
+
+.lp-run-marker {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted);
+  transition:
+    background-color var(--lp-quick) ease,
+    border-color var(--lp-quick) ease,
+    color var(--lp-quick) ease;
+}
+
+.lp-run-glyph {
+  display: grid;
+  place-items: center;
+}
+
+.lp-run-step[data-state='active'] .lp-run-marker {
+  color: var(--blue);
+  background: var(--blue-light);
+  border-color: var(--border-hover);
+}
+
+.lp-run-step[data-state='done'] .lp-run-marker,
+.lp-run-step[data-state='approved'] .lp-run-marker {
+  color: var(--green);
+  background: var(--lp-ok-bg);
+  border-color: color-mix(in srgb, var(--green) 28%, transparent);
+}
+
+.lp-run-step[data-state='waiting'] .lp-run-marker {
+  color: var(--warning-ink);
+  background: var(--warning-bg);
+  border-color: color-mix(in srgb, var(--warning-ink) 28%, transparent);
+}
+
+.lp-run-step[data-state='rejected'] .lp-run-marker {
+  color: var(--danger);
+  background: var(--lp-bad-bg);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.lp-run-step-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Label and tag share a line when they fit; otherwise the tag wraps below the label. */
+.lp-run-step-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  min-height: 22px;
+  min-width: 0;
+}
+
+.lp-run-step-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.lp-run-step-tag {
+  display: inline-flex;
+  flex: none;
+}
+
+.lp-run-step-detail {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ---- Card slot ---------------------------------------------------------------------------- */
+
+.lp-run-card-slot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lp-run-placeholder {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-tile);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.lp-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+  transition: border-color var(--lp-state) ease;
+}
+
+.lp-approval[data-status='waiting'] {
+  border-color: var(--border-hover);
+}
+
+.lp-approval .eyebrow {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.lp-approval-title {
+  font-size: 14px;
+  font-weight: var(--weight-strong);
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.lp-approval-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.lp-approval-meta .lp-mono {
+  color: var(--eyebrow);
+}
+
+.lp-approval-payload {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lp-approval-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--lp-tint-04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.lp-approval-note .lp-icon {
+  margin-top: 2px;
+  color: var(--eyebrow);
+}
+
+/* A trigger that is carrying out a decision stays focusable but reads as inert. */
+.lp-approval .button[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---- Payload ------------------------------------------------------------------------------ */
+
+.lp-run-payload {
+  color: var(--ink);
+}
+
+.lp-run-json-key {
+  color: var(--eyebrow);
+}
+
+.lp-run-json-str {
+  color: var(--ink);
+}
+
+.lp-run-json-punc {
+  color: var(--muted);
+}
+
+/* ---- Result ------------------------------------------------------------------------------- */
+
+.lp-run-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--lp-inset-fill);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+}
+
+.lp-run-result[data-outcome='completed'] {
+  background: var(--lp-ok-bg);
+}
+
+.lp-run-result[data-outcome='rejected'] {
+  background: var(--lp-bad-bg);
+}
+
+.lp-run-result-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: var(--weight-strong);
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.lp-run-result[data-outcome='completed'] .lp-run-result-title .lp-icon {
+  color: var(--green);
+}
+
+.lp-run-result[data-outcome='rejected'] .lp-run-result-title .lp-icon {
+  color: var(--danger);
+}
+
+.lp-run-result[data-outcome='expired'] .lp-run-result-title .lp-icon {
+  color: var(--muted);
+}
+
+.lp-run-result-body {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+/* ---- Tile widths -------------------------------------------------------------------------- */
+
+/* The tile (.lp-demo) is the container. From 640px the timeline and the card sit side by side. */
+@container (min-width: 640px) {
+  .lp-run-stage {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+
+/* Narrow tiles: the role switch and Start span the full width, one above the other. */
+@container (max-width: 519px) {
+  .lp-run-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lp-run-decider {
+    width: 100%;
+  }
+
+  .lp-run-start {
+    width: 100%;
+  }
+}
+
+/* Primary controls are at least 44px tall on small screens. */
+@media (max-width: 599px) {
+  .lp-run-start {
+    min-height: 44px;
+  }
+}

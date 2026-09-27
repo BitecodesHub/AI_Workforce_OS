@@ -5,9 +5,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,6 +25,7 @@ import os.aiworkforce.orchestrator.domain.RunStep;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.service.ApprovalService;
+import os.aiworkforce.orchestrator.service.TaskProgress;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
@@ -40,17 +44,26 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
 @Tag(name = "Runs")
 public class RunController {
 
+    /** Every value the runs_status_valid constraint allows. */
+    static final Set<String> RUN_STATUSES =
+            Set.of("running", "waiting_approval", "completed", "failed", "cancelled", "abandoned");
+
+    static final String RUN_STOPPED = "A person stopped this run before it finished.";
+
     private final Runs runs;
     private final RunSteps steps;
     private final ApprovalService approvals;
+    private final TaskProgress progress;
 
     public RunController(
             Runs runs,
             RunSteps steps,
-            ApprovalService approvals) {
+            ApprovalService approvals,
+            TaskProgress progress) {
         this.runs = runs;
         this.steps = steps;
         this.approvals = approvals;
+        this.progress = progress;
     }
 
     public record RunView(
@@ -79,14 +92,39 @@ public class RunController {
             long durationMs,
             Instant occurredAt) {}
 
+    /**
+     * Recent runs, newest first, optionally narrowed by status and agent.
+     *
+     * <p>The filters are applied in the database, not to the page already loaded, so "every
+     * failed run" means every failed run in the workspace rather than the failures among the
+     * newest few.
+     */
     @GetMapping
     @RequiresPermission(Permission.Codes.RUN_READ)
-    @Operation(summary = "Recent runs in this workspace")
+    @Operation(summary = "Recent runs in this workspace, optionally filtered by status and agent")
     public List<RunView> list(
-            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size) {
-        return runs.findByOrgIdOrderByStartedAtDesc(orgId(), PageRequest.of(page, Math.min(size, 100)))
-                .map(RunController::toView)
-                .toList();
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) UUID agentId) {
+        UUID orgId = orgId();
+        String wanted = status == null || status.isBlank() ? null : status.strip().toLowerCase(Locale.ROOT);
+        if (wanted != null && !RUN_STATUSES.contains(wanted)) {
+            throw ApiException.validation(
+                    "status", "must be one of running, waiting_approval, completed, failed, cancelled or abandoned");
+        }
+        PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, 100));
+        Page<Run> result;
+        if (wanted != null && agentId != null) {
+            result = runs.findByOrgIdAndAgentIdAndStatusOrderByStartedAtDesc(orgId, agentId, wanted, pageable);
+        } else if (wanted != null) {
+            result = runs.findByOrgIdAndStatusOrderByStartedAtDesc(orgId, wanted, pageable);
+        } else if (agentId != null) {
+            result = runs.findByOrgIdAndAgentIdOrderByStartedAtDesc(orgId, agentId, pageable);
+        } else {
+            result = runs.findByOrgIdOrderByStartedAtDesc(orgId, pageable);
+        }
+        return result.map(RunController::toView).toList();
     }
 
     @GetMapping("/{runId}")
@@ -117,11 +155,14 @@ public class RunController {
         if (!run.isActive()) {
             throw new ApiException(ErrorCode.CONFLICT, "That run has already finished.");
         }
-        run.finish("cancelled", "Cancelled by " + RequestContext.requireActor().id());
+        // The reason is shown on the trace as it is, so it is written for a person to read. Who
+        // stopped the run is kept on the row itself (updated_by), not spelled out as an identifier.
+        run.finish("cancelled", RUN_STOPPED);
         runs.save(run);
         // Open approvals for a cancelled run must not stay in the queue: an approver deciding
         // one would resume a run somebody has already stopped.
         approvals.cancelForRun(runId);
+        progress.onRunFinished(run, "cancelled", null, "The run for this task was stopped before it finished.");
         return toView(run);
     }
 

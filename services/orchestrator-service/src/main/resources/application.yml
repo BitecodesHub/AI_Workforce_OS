@@ -10,6 +10,15 @@ spring:
   config:
     import: "classpath:platform-defaults.yml"
 
+  task:
+    scheduling:
+      # Applies only when virtual threads are off. The platform turns them on, and Spring then uses
+      # a scheduler that ignores this setting (see MaintenanceScheduler.advanceGoals). Without them,
+      # a single pool thread would make the abandoned-run reaper and the approval-expiry sweep
+      # wait behind every agent run the goal sweep starts, and those can take minutes.
+      pool:
+        size: 3
+
   datasource:
     # Each service owns one schema and never reads another service's tables. The database is
     # shared in development for convenience; in production each service gets its own instance,

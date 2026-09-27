@@ -38,4 +38,13 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
             where u.orgId = :orgId and u.occurredAt >= :since
             """)
     java.math.BigDecimal spendSince(@Param("orgId") UUID orgId, @Param("since") Instant since);
+
+    /**
+     * What one run has cost so far, across every attempt the router made for it.
+     *
+     * <p>Failed attempts are included for the same reason they are recorded at all: a provider
+     * bills for a call that timed out after generating most of an answer.
+     */
+    @Query("select coalesce(sum(u.cost), 0) from LlmUsageRecord u where u.runId = :runId")
+    java.math.BigDecimal costForRun(@Param("runId") UUID runId);
 }

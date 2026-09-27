@@ -10,6 +10,24 @@
 const TOKEN_KEY = 'aiwos.accessToken'
 const PROFILE_KEY = 'aiwos.profile'
 
+/**
+ * Fired on window after a session renewal rewrites the stored profile, so the shell can re-read
+ * can() and the role without waiting for the next navigation.
+ */
+export const SESSION_EVENT = 'aiwos:session'
+
+/**
+ * How long a role change takes to reach someone who is already signed in, for any screen that
+ * changes or explains a role. Screens use this sentence rather than writing their own.
+ *
+ * It holds because the refresh response from the identity service carries the permissions, role
+ * and name read from the role at that moment, and api.ts stores them on every renewal. Renewal
+ * happens when the access token expires, and its lifetime is 15 minutes (access-token-ttl in
+ * platform-defaults.yml). No service checks a token against the current role before then, so
+ * the server keeps honouring the old permissions for the same window.
+ */
+export const ROLE_CHANGE_DELAY_COPY = 'A role change reaches the console within 15 minutes, when the session renews.'
+
 export type Profile = {
   userId: string
   workspaceId: string | null
@@ -26,6 +44,15 @@ export function saveSession(accessToken: string, profile: Profile) {
   } catch {
     // Private browsing and blocked site data both throw here. The session still works for this
     // page load; it simply will not survive a reload.
+  }
+}
+
+/** Tells the shell the stored profile changed. Safe where window or Event is unavailable. */
+export function announceSessionChange() {
+  try {
+    window.dispatchEvent(new Event(SESSION_EVENT))
+  } catch {
+    /* No window to notify, for example under a test runner without a DOM. */
   }
 }
 

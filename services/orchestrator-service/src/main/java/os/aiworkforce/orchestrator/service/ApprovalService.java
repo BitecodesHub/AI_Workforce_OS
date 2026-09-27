@@ -2,6 +2,7 @@ package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -49,12 +50,15 @@ public class ApprovalService {
     private final Runs runs;
     private final ObjectMapper objectMapper;
     private final AuditClient audit;
+    private final TaskProgress progress;
 
-    public ApprovalService(Approvals approvals, Runs runs, ObjectMapper objectMapper, AuditClient audit) {
+    public ApprovalService(
+            Approvals approvals, Runs runs, ObjectMapper objectMapper, AuditClient audit, TaskProgress progress) {
         this.approvals = approvals;
         this.runs = runs;
         this.objectMapper = objectMapper;
         this.audit = audit;
+        this.progress = progress;
     }
 
     /** Raises an approval for a tool call the agent wants to make. */
@@ -92,8 +96,12 @@ public class ApprovalService {
      * <p>The permission is re-checked here, not only when the queue was rendered. A person can be
      * demoted between opening the page and clicking the button, and the check that matters is the
      * one made at the moment the action is authorised.
+     *
+     * <p>A refusal does not roll back what was written before it. The only write before a refusal
+     * is marking an overdue approval expired, and that must stick: it is the truth whether or not
+     * this caller's decision could be accepted.
      */
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public Approval decide(UUID orgId, UUID approvalId, boolean approved, String note) {
         Actor actor = RequestContext.requireActor();
         Approval approval = approvals.findByIdAndOrgId(approvalId, orgId)
@@ -119,9 +127,11 @@ public class ApprovalService {
         if (!approved) {
             // A rejection ends the run rather than letting the agent look for another way to do
             // the same thing.
-            runs.findById(approval.getRunId()).ifPresent(run -> {
-                run.finish("cancelled", "An approver rejected the action this run needed.");
+            runs.findById(approval.getRunId()).filter(Run::isActive).ifPresent(run -> {
+                String reason = "An approver rejected the action this run needed.";
+                run.finish("cancelled", reason);
                 runs.save(run);
+                progress.onRunFinished(run, "cancelled", null, reason);
             });
         }
 
@@ -129,6 +139,13 @@ public class ApprovalService {
                 "Approval {} {} by {}",
                 approval.getId(), approved ? "approved" : "rejected", actor.id());
 
+        // The run is named so an investigator can go from the decision straight to its trace.
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("approved", approved);
+        detail.put("runId", approval.getRunId().toString());
+        if (approval.getTool() != null) {
+            detail.put("tool", approval.getTool());
+        }
         audit.record(
                 orgId,
                 actor,
@@ -136,7 +153,7 @@ public class ApprovalService {
                 "approval",
                 approval.getId().toString(),
                 "succeeded",
-                Map.of("approved", approved));
+                detail);
 
         return approval;
     }
@@ -166,8 +183,10 @@ public class ApprovalService {
         approvals.save(approval);
         runs.findById(approval.getRunId()).ifPresent(run -> {
             if (run.isActive()) {
-                run.finish("cancelled", "The approval this run needed expired before anybody decided.");
+                String reason = "The approval this run needed expired before anybody decided.";
+                run.finish("cancelled", reason);
                 runs.save(run);
+                progress.onRunFinished(run, "cancelled", null, reason);
             }
         });
     }

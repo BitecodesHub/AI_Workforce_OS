@@ -1,139 +1,245 @@
 import { useState } from 'react'
-import { Card, DataTable, EmptyState, Eyebrow, Notice, PageHeader, StatRow, StatTile, Tag, Button } from '../components/ui'
+import {
+  Button,
+  Card,
+  DataTable,
+  EmptyState,
+  Eyebrow,
+  Notice,
+  PageHeader,
+  StatRow,
+  StatTile,
+  StatusTag,
+  Tag,
+  Time,
+} from '../components/ui'
+import type { Column } from '../components/ui'
 import { QueryState, EmptyIcon } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
-import { useRuns, useAgentNames } from '../lib/queries'
-import { useRouter } from '../lib/router'
+import { GettingStarted } from '../components/command-map/GettingStarted'
+import { formatCount, formatRelative, formatRunElapsed, truncateWords } from '../lib/format'
+import { categoryTone, startedByLabel } from '../lib/labels'
+import {
+  RUN_PAGE_SIZE,
+  useAgentNames,
+  useAgents,
+  useApprovals,
+  useCredentials,
+  useModelPolicy,
+  useProviders,
+  useRuns,
+  useTaskIndex,
+} from '../lib/queries'
+import type { Run } from '../lib/queries'
+import { liveRouting, routingSummary } from '../lib/routing'
 import { can } from '../lib/session'
+import { useNow } from '../lib/useNow'
 
-const KIND_TONE = {
-  running: 'blue',
-  waiting: 'warning',
-  completed: 'success',
-  failed: 'danger',
-} as const
-
-const KIND_LABEL = {
-  running: 'Running',
-  waiting: 'Waiting for approval',
-  completed: 'Completed',
-  failed: 'Failed',
-} as const
+/*
+ * The first screen after signing in.
+ *
+ * It answers three questions in order: is anything waiting on me, which model are the agents
+ * really answering on, and what have they been doing. Every figure says what it covers (the most
+ * recent runs, not all of them) and opens the list behind it.
+ */
 
 export function CommandMap() {
-  const { navigate } = useRouter()
   const runsQuery = useRuns()
-  const agents = useAgentNames()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const canCreate = can('task:create')
+  const giveTask = canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>Give an agent a task</Button> : undefined
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="Your workforce, in focus"
         title="Command Map"
-        description="Every agent, every task in flight, and everything waiting on a decision from you."
-        action={canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>New run</Button> : undefined}
+        description="What your agents have been doing recently, and anything waiting on a decision."
+        action={giveTask}
       />
 
-      {canCreate && (
-        <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} onSuccess={(runId) => runId && navigate(`/runs/${runId}`)} />
-      )}
+      {/* No onSuccess: once the task starts, the dialog opens its run, or its goal if no run started. */}
+      {canCreate && <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} />}
 
-      <QueryState
-        query={runsQuery}
-        permission="run:read"
-        what="the runs list"
-        isEmpty={(data) => data.length === 0}
-        empty={
-          <div style={{ marginTop: 'var(--space-7)' }}>
+      <div className="stack" style={{ gap: 'var(--space-6)' }}>
+        <ApprovalsWaiting />
+        <RoutingStatus />
+        <GettingStarted />
+
+        <QueryState
+          query={runsQuery}
+          permission="run:read"
+          what="recent runs"
+          isEmpty={(data) => data.length === 0}
+          empty={
             <Card>
               <EmptyState
                 icon={<EmptyIcon kind="task" />}
                 title="No runs yet"
                 body={
                   canCreate
-                    ? 'Start a run from an agent detail page, or create a new run here.'
-                    : 'Start a run from an agent detail page.'
+                    ? 'No agent has run yet. Give an agent a task to see its trace here.'
+                    : 'No agent has run yet. Traces appear here once someone gives an agent a task.'
                 }
-                action={canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>New run</Button> : undefined}
+                action={giveTask}
               />
             </Card>
-          </div>
-        }
-        rows={4}
-      >
-        {(runs) => {
-          // useAgentNames() already returns the id-keyed map, not a query object - reading
-          // `.data` off it (as this did) silently produced `undefined` every time, so the agent
-          // column always fell back to showing the raw id instead of a name.
-          const agentMap = agents
-          return (
-            <>
-              {/* Disclosed once, at the top, and never repeated beside a figure. */}
-              <Notice tone="info">
-                No model provider is configured, so every agent is answering on the offline sandbox model.
-                Add a provider key in Settings to route this workspace to a live model.
-              </Notice>
-
-              <div style={{ marginTop: 'var(--space-6)' }}>
-                <StatRow>
-                  <StatTile label="Runs total" value={runs.length} />
-                  <StatTile label="Running" value={runs.filter((r) => r.status === 'running').length} />
-                  <StatTile label="Completed" value={runs.filter((r) => r.status === 'completed').length} />
-                  <StatTile label="Failed" value={runs.filter((r) => r.status === 'failed').length} />
-                </StatRow>
-                <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
-                  Source: run records from the orchestrator.
-                </p>
-              </div>
-
-              <section style={{ marginTop: 'var(--space-7)' }}>
-                <Card as="section">
-                  <Eyebrow>Live activity</Eyebrow>
-                  <DataTable
-                    columns={[
-                      {
-                        key: 'agent',
-                        header: 'Agent',
-                        render: (run) => {
-                          const agent = agentMap[run.agentId]
-                          const category = agent?.category ?? 'operations'
-                          return (
-                            <Tag tone={category as 'operations' | 'engineering' | 'growth' | 'support'} withDot>
-                              {agent?.name ?? run.agentId}
-                            </Tag>
-                          )
-                        },
-                      },
-                      { key: 'trigger', header: 'Trigger', render: (run) => <span className="muted">{run.trigger}</span> },
-                      {
-                        key: 'status',
-                        header: 'Status',
-                        render: (run) => <Tag tone={KIND_TONE[run.status as keyof typeof KIND_TONE] ?? 'neutral'}>{KIND_LABEL[run.status as keyof typeof KIND_LABEL] ?? run.status}</Tag>,
-                      },
-                      { key: 'taskId', header: 'Source', render: (run) => <span className="mono">{run.taskId ? `task:${run.taskId}` : 'direct'}</span> },
-                      {
-                        key: 'duration',
-                        header: 'Duration',
-                        numeric: true,
-                        render: (run) =>
-                          run.completedAt
-                            ? `${Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)}s`
-                            : `${Math.round((Date.now() - new Date(run.startedAt).getTime()) / 1000)}s`,
-                      },
-                    ]}
-                    rows={runs}
-                    getKey={(row) => row.id}
-                    getRowHref={(row) => `/runs/${row.id}`}
-                    caption="Agent runs in the last hour, from the orchestrator's run records."
-                  />
-                </Card>
-              </section>
-            </>
-          )
-        }}
-      </QueryState>
+          }
+          rows={4}
+        >
+          {(runs) => <RecentRuns runs={runs} />}
+        </QueryState>
+      </div>
     </div>
+  )
+}
+
+/** Pending approvals, shared with the navigation badge through the ['approvals'] cache. */
+function ApprovalsWaiting() {
+  const canRead = can('approval:read')
+  const approvals = useApprovals({ enabled: canRead })
+  const count = approvals.data?.length ?? 0
+  if (!canRead || count === 0) return null
+  return (
+    <Notice tone="info">
+      <span>
+        {count === 1 ? '1 action is waiting for a decision.' : `${formatCount(count)} actions are waiting for a decision.`}{' '}
+        <a className="link" href="/approvals">
+          Open Approvals
+        </a>
+      </span>
+    </Notice>
+  )
+}
+
+/**
+ * Which model runs are sent to, worked out from the routing policy, the providers and the stored
+ * keys. Shown only to roles that can read all three, and only once all three have loaded: a claim
+ * on the first screen that turns out to be wrong is worse than none, so a failed request makes no
+ * claim at all. Other roles see sandbox answers marked on each trace instead.
+ */
+function RoutingStatus() {
+  const canRead = can('provider:read')
+  const canManage = can('provider:manage')
+  const policy = useModelPolicy({ enabled: canRead })
+  const providers = useProviders({ enabled: canRead })
+  const credentials = useCredentials({ enabled: canRead })
+
+  if (!canRead || policy.error || providers.error || credentials.error) return null
+  if (!policy.data || !providers.data || !credentials.data) return null
+
+  const routing = liveRouting(policy.data, providers.data, credentials.data)
+  const summary = routingSummary(routing, { canManage })
+  const link = (
+    <a className="link" href="/routing">
+      {summary.linkToRouting ? 'Set up model routing' : 'See model routing'}
+    </a>
+  )
+
+  if (routing.live) {
+    return (
+      <p className="caption">
+        {summary.text} {link}
+      </p>
+    )
+  }
+  return (
+    <Notice tone={summary.tone}>
+      <span>
+        {summary.text} {link}
+      </span>
+    </Notice>
+  )
+}
+
+function RecentRuns({ runs }: { runs: Run[] }) {
+  const agentsQuery = useAgents()
+  const agents = useAgentNames()
+  // Every role can read tasks today; the check keeps a narrower custom role from a failed request.
+  const taskIndex = useTaskIndex({ enabled: can('task:read') })
+  // Running durations tick; everything else here changes only when the list refreshes.
+  const now = useNow(15_000)
+
+  const agentName = (run: Run) =>
+    agents[run.agentId]?.name ?? (agentsQuery.isLoading ? 'Loading…' : 'Unknown agent')
+  const count = (status: string) => runs.filter((run) => run.status === status).length
+  const allLoaded = runs.length < RUN_PAGE_SIZE
+
+  const columns: Column<Run>[] = [
+    {
+      key: 'agent',
+      header: 'Agent',
+      render: (run) => {
+        const name = agentName(run)
+        return (
+          <Tag tone={categoryTone(agents[run.agentId]?.category)} withDot title={name}>
+            {name}
+          </Tag>
+        )
+      },
+    },
+    { key: 'status', header: 'Status', render: (run) => <StatusTag kind="run" status={run.status} /> },
+    {
+      key: 'startedBy',
+      header: 'Started by',
+      render: (run) => {
+        const entry = run.taskId ? taskIndex[run.taskId] : undefined
+        if (entry) {
+          return (
+            <a className="link" href={`/tasks?goal=${entry.goal.id}`} title={entry.goal.title}>
+              <span className="visually-hidden">Goal: </span>
+              {truncateWords(entry.goal.title, 48)}
+            </a>
+          )
+        }
+        return <span className="muted">{startedByLabel(run)}</span>
+      },
+    },
+    { key: 'started', header: 'Started', render: (run) => <Time iso={run.startedAt} /> },
+    { key: 'duration', header: 'Duration', numeric: true, render: (run) => formatRunElapsed(run, now) },
+  ]
+
+  return (
+    <>
+      <div>
+        <StatRow>
+          <StatTile label="Recent runs" value={formatCount(runs.length)} href="/runs" />
+          <StatTile label="Completed" value={formatCount(count('completed'))} href="/runs?status=completed" />
+          <StatTile
+            label="Waiting for approval"
+            value={formatCount(count('waiting_approval'))}
+            href="/runs?status=waiting_approval"
+          />
+          <StatTile label="Failed" value={formatCount(count('failed'))} href="/runs?status=failed" />
+        </StatRow>
+        <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
+          {allLoaded ? 'Across every run so far.' : `Across the ${RUN_PAGE_SIZE} most recent runs.`} Select a figure
+          to see those runs.
+        </p>
+      </div>
+
+      <Card as="section">
+        <Eyebrow as="h2">Live activity</Eyebrow>
+        <DataTable
+          columns={columns}
+          rows={runs}
+          getKey={(run) => run.id}
+          getRowHref={(run) => `/runs/${run.id}`}
+          getRowLabel={(run) => {
+            const name = agents[run.agentId]?.name
+            const started = formatRelative(run.startedAt, now)
+            return name ? `Open the ${name} run started ${started}` : `Open the run started ${started}`
+          }}
+          caption={
+            allLoaded ? 'Every agent run so far, newest first.' : `The ${RUN_PAGE_SIZE} most recent agent runs, newest first.`
+          }
+        />
+        <p style={{ marginTop: 'var(--space-4)' }}>
+          <a className="link" href="/runs">
+            See every run
+          </a>
+        </p>
+      </Card>
+    </>
   )
 }

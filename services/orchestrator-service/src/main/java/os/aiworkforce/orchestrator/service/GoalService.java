@@ -1,19 +1,25 @@
 package os.aiworkforce.orchestrator.service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import os.aiworkforce.orchestrator.domain.Goal;
+import os.aiworkforce.orchestrator.domain.Run;
+import os.aiworkforce.orchestrator.domain.RunStep;
 import os.aiworkforce.orchestrator.domain.Task;
 import os.aiworkforce.orchestrator.repository.Goals;
+import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.Tasks;
 import os.aiworkforce.platform.context.RequestContext;
@@ -43,18 +49,31 @@ public class GoalService {
 
     private static final Logger log = LoggerFactory.getLogger(GoalService.class);
     private static final int MAX_TASKS_PER_GOAL = 50;
+    static final String GOAL_CANCELLED = "The goal this run belonged to was cancelled.";
 
     private final Goals goals;
     private final Tasks tasks;
+    private final Runs runs;
+    private final RunSteps steps;
     private final AgentRunner runner;
+    private final ApprovalService approvals;
+    private final TaskProgress progress;
 
     public GoalService(
             Goals goals,
             Tasks tasks,
-            AgentRunner runner) {
+            Runs runs,
+            RunSteps steps,
+            AgentRunner runner,
+            ApprovalService approvals,
+            TaskProgress progress) {
         this.goals = goals;
         this.tasks = tasks;
+        this.runs = runs;
+        this.steps = steps;
         this.runner = runner;
+        this.approvals = approvals;
+        this.progress = progress;
     }
 
     /**
@@ -154,71 +173,94 @@ public class GoalService {
      * <p>One task per call rather than a loop, so a caller - the scheduler, a test, a manual
      * nudge - decides the pace. Draining the whole graph inside one transaction would hold a
      * database connection for the length of every model call in it.
+     *
+     * <p>What the run's outcome means for the task and its goal is decided by {@link TaskProgress},
+     * which the runner reports to as the run finishes or parks.
      */
     @Transactional
     public boolean runNextTask(UUID orgId) {
-        List<Task> claimable = tasks.findClaimable(
-                orgId, org.springframework.data.domain.PageRequest.of(0, 10));
+        List<Task> candidates = tasks.findClaimable(orgId, PageRequest.of(0, 10));
 
-        for (Task task : claimable) {
-            if (!dependenciesMet(task)) {
+        for (Task candidate : candidates) {
+            if (!dependenciesMet(candidate)) {
                 continue;
             }
+            // The request that created a goal and the goal sweep both advance it. The claim
+            // makes sure only one of them runs a given task.
+            Optional<Task> claimed = tasks.claim(candidate.getId());
+            if (claimed.isEmpty()) {
+                continue;
+            }
+            Task task = claimed.get();
             if (task.getAgentId() == null) {
                 task.setStatus("skipped");
                 task.setFailureReason("No agent was assigned to this task.");
+                task.setCompletedAt(Instant.now());
                 tasks.save(task);
+                progress.closeGoalIfFinished(task.getGoalId());
                 continue;
             }
 
             task.setStatus("running");
             task.setAttempt(task.getAttempt() + 1);
-            task.setStartedAt(java.time.Instant.now());
+            task.setStartedAt(Instant.now());
             tasks.save(task);
 
             try {
-                AgentRunner.Outcome outcome =
-                        runner.start(orgId, task.getAgentId(), task.getId(), task.getInstruction(), "task");
-                applyOutcome(task, outcome);
+                runner.start(orgId, task.getAgentId(), task.getId(), task.getInstruction(), "task");
             } catch (ApiException e) {
-                failTask(task, e.getMessage());
+                progress.onStartFailed(task, e.getMessage());
             }
-            closeGoalIfFinished(task.getGoalId());
             return true;
         }
         return false;
     }
 
-    private void applyOutcome(Task task, AgentRunner.Outcome outcome) {
-        switch (outcome.status()) {
-            case "completed" -> {
-                task.setStatus("completed");
-                task.setResult(outcome.answer());
-                task.setCompletedAt(java.time.Instant.now());
-                tasks.save(task);
-            }
-            case "waiting_approval" -> {
-                // The task stays open. It resumes when the approval is decided, so it must not
-                // be counted as finished or as failed in the meantime.
-                task.setStatus("waiting_approval");
-                tasks.save(task);
-            }
-            default -> failTask(task, "The agent did not complete this task.");
-        }
+    /** Workspaces with at least one task waiting to start, for the goal sweep. */
+    @Transactional(readOnly = true)
+    public List<UUID> workspacesWithWaitingTasks() {
+        return tasks.findOrgIdsWithClaimableTasks();
     }
 
-    private void failTask(Task task, String reason) {
-        if (task.canRetry()) {
-            // Back to pending so the scheduler picks it up again, with the attempt already
-            // counted so it cannot loop forever.
-            task.setStatus("pending");
-            task.setFailureReason(reason);
-        } else {
-            task.setStatus("failed");
-            task.setFailureReason(reason);
-            task.setCompletedAt(java.time.Instant.now());
+    /**
+     * Repairs tasks still shown as in progress after their run has ended.
+     *
+     * <p>Each is given the outcome its latest run actually had, exactly as if that run had just
+     * reported it. This is what cleans up a task left "waiting for approval" by a run that was
+     * approved, rejected, expired or cancelled before those paths reported to the task.
+     *
+     * @return how many tasks were repaired
+     */
+    @Transactional
+    public int reconcileStrandedTasks(int limit) {
+        int repaired = 0;
+        for (Task task : tasks.findStranded(PageRequest.of(0, limit))) {
+            Run run = runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId()).orElse(null);
+            if (run == null || run.isActive()) {
+                continue;
+            }
+            String was = task.getStatus();
+            String answer = "completed".equals(run.getStatus()) ? finalAnswer(run) : null;
+            progress.onRunFinished(run, run.getStatus(), answer, run.getFailureReason());
+            log.info("Task {} was {} although its run {} had ended as {}; now {}",
+                    task.getId(), was, run.getId(), run.getStatus(), task.getStatus());
+            repaired++;
         }
-        tasks.save(task);
+        return repaired;
+    }
+
+    /** The last thing the model said, which is the answer a completed run finished with. */
+    private String finalAnswer(Run run) {
+        List<RunStep> trace = steps.findByRunIdOrderByPosition(run.getId());
+        for (int index = trace.size() - 1; index >= 0; index--) {
+            RunStep step = trace.get(index);
+            if ("model_call".equals(step.getKind())
+                    && step.getDetail().get("content") instanceof String text
+                    && !text.isBlank()) {
+                return text;
+            }
+        }
+        return null;
     }
 
     private boolean dependenciesMet(Task task) {
@@ -228,20 +270,13 @@ public class GoalService {
                 .allMatch(Task::isTerminal);
     }
 
-    private void closeGoalIfFinished(UUID goalId) {
-        if (tasks.countUnfinished(goalId) > 0) {
-            return;
-        }
-        goals.findById(goalId).ifPresent(goal -> {
-            List<Task> all = tasks.findByGoalIdOrderByPosition(goalId);
-            boolean anyFailed = all.stream().anyMatch(task -> "failed".equals(task.getStatus()));
-            goal.setStatus(anyFailed ? "failed" : "completed");
-            goal.setCompletedAt(java.time.Instant.now());
-            goals.save(goal);
-            log.info("Goal {} finished as {}", goalId, goal.getStatus());
-        });
-    }
-
+    /**
+     * Cancels a goal and everything still open under it.
+     *
+     * <p>A task's run is stopped too, and any approval it was waiting on is withdrawn. Otherwise
+     * the run would stay "waiting for approval", the approval would stay in the queue, and
+     * approving it would resume work for a goal the person had cancelled.
+     */
     @Transactional
     public void cancel(UUID orgId, UUID goalId) {
         Goal goal = goals.findByIdAndOrgId(goalId, orgId)
@@ -252,12 +287,21 @@ public class GoalService {
         tasks.findByGoalIdOrderByPosition(goalId).stream()
                 .filter(task -> !task.isTerminal())
                 .forEach(task -> {
+                    runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId())
+                            .filter(Run::isActive)
+                            .ifPresent(run -> {
+                                run.finish("cancelled", GOAL_CANCELLED);
+                                runs.save(run);
+                                approvals.cancelForRun(run.getId());
+                            });
+                    // Marked directly rather than through TaskProgress, and before the goal is
+                    // closed, so the goal ends as cancelled rather than as the sum of its tasks.
                     task.setStatus("cancelled");
-                    task.setCompletedAt(java.time.Instant.now());
+                    task.setCompletedAt(Instant.now());
                     tasks.save(task);
                 });
         goal.setStatus("cancelled");
-        goal.setCompletedAt(java.time.Instant.now());
+        goal.setCompletedAt(Instant.now());
         goals.save(goal);
     }
 }

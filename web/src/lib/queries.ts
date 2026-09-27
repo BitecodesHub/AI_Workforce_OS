@@ -1,4 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query'
 import { api } from './api'
 
 /*
@@ -7,6 +15,14 @@ import { api } from './api'
  * Queries are keyed so that an action refreshes exactly what it changed: approving something
  * refreshes the approvals queue, the runs list and the badge in the navigation together, and a
  * screen never shows a count that disagrees with the list beneath it.
+ *
+ * The services serialise with non_null inclusion, so a null field is left out of the JSON rather
+ * than sent as null. Two conventions follow from that:
+ *
+ * - A field typed `?: T | null` may be missing. Test it with `== null` or `!= null`, never `=== null`.
+ * - A field typed `T | null` (no question mark) is always present: the hooks that return it put
+ *   the null back (see withNulls), because current screens compare these with `=== null` or keep
+ *   structural copies of these types that expect the field to be there.
  */
 
 export type Agent = {
@@ -15,7 +31,16 @@ export type Agent = {
   name: string
   category: string
   status: string
+  /** Null only for an agent with no saved configuration revision. */
   revision: number | null
+  /**
+   * The first sentence of the current revision's system prompt, at most 160 characters. It is an
+   * excerpt of the agent's instructions (usually second person, "You handle..."), not a
+   * description written about the agent, so present it as such.
+   */
+  summary?: string | null
+  /** The distinct tool servers this agent is granted, by server name (show them with serverLabel). */
+  tools?: string[] | null
 }
 
 export type AgentGrant = {
@@ -23,10 +48,11 @@ export type AgentGrant = {
   tools: string[]
   scopes: string[]
   requireApproval: boolean
-  maxCallsPerRun: number | null
+  maxCallsPerRun?: number | null
 }
 
 export type AgentDetail = Agent & {
+  /** The next three are null only when the agent has no saved revision. */
   systemPrompt: string | null
   goals: string | null
   maxSteps: number | null
@@ -37,16 +63,24 @@ export type AgentDetail = Agent & {
 export type Run = {
   id: string
   agentId: string
-  taskId: string | null
+  taskId?: string | null
   status: string
   trigger: string
   stepCount: number
   promptTokens: number
   completionTokens: number
+  /** RunView.cost: the run's total cost in US dollars, from the model catalogue prices. */
   cost: number
   startedAt: string
-  completedAt: string | null
-  failureReason: string | null
+  completedAt?: string | null
+  failureReason?: string | null
+}
+
+/** What starting a run returns (AgentController.RunStarted). The run's id is `runId`. */
+export type RunStarted = {
+  runId: string
+  status: string
+  answer?: string | null
 }
 
 export type RunStep = {
@@ -54,8 +88,8 @@ export type RunStep = {
   position: number
   kind: string
   detail: Record<string, unknown>
-  provider: string | null
-  model: string | null
+  provider?: string | null
+  model?: string | null
   promptTokens: number
   completionTokens: number
   durationMs: number
@@ -76,8 +110,16 @@ export type Approval = {
   expiresAt: string
 }
 
+/** What deciding an approval returns. `runStatus` is where the run stands after the decision. */
+export type DecisionResult = {
+  approvalId: string
+  status: string
+  runStatus?: string | null
+}
+
 export type Task = {
   id: string
+  /** Null when the agent the task was assigned to has since been deleted. */
   agentId: string | null
   title: string
   status: string
@@ -87,6 +129,7 @@ export type Task = {
   failureReason: string | null
   startedAt: string | null
   completedAt: string | null
+  /** The most recent run against this task. Null for a task that has not run yet. */
   runId: string | null
 }
 
@@ -105,9 +148,10 @@ export type Provider = {
   displayName: string
   kind: string
   enabled: boolean
-  credentialRef: string | null
+  /** What to pass to PUT /api/credentials/{ref}. Absent for the sandbox, which needs no key. */
+  credentialRef?: string | null
   credentialStatus: string
-  credentialCheckedAt: string | null
+  credentialCheckedAt?: string | null
   circuitState: string
   regions: string[]
   modelCount: number
@@ -125,14 +169,17 @@ export type Model = {
   inputCostPerMillion: number
   outputCostPerMillion: number
   enabled: boolean
+  /** Set while the router has taken this model out of rotation, with the reason. */
+  unavailableUntil?: string | null
+  unavailableReason?: string | null
 }
 
 export type ModelPolicyCandidate = {
   position: number
   providerId: string
   modelId: string
-  temperature: number | null
-  maxOutputTokens: number | null
+  temperature?: number | null
+  maxOutputTokens?: number | null
 }
 
 export type ModelPolicy = {
@@ -145,8 +192,28 @@ export type ModelPolicy = {
   candidates: ModelPolicyCandidate[]
 }
 
+/** A field left out keeps its stored value; the candidate list is always replaced. */
 export type ModelPolicyInput = {
-  candidates: Array<{ providerId: string; modelId: string }>
+  candidates: Array<{
+    providerId: string
+    modelId: string
+    temperature?: number | null
+    maxOutputTokens?: number | null
+  }>
+  exhaustedBehaviour?: 'FAIL_CLOSED' | 'DEGRADE_TO_SANDBOX'
+  maxAttemptsPerCandidate?: number
+  overallDeadlineSeconds?: number
+  compactOnOverflow?: boolean
+}
+
+/** A stored credential, described without its value (CredentialService.CredentialView). */
+export type CredentialView = {
+  ref: string
+  kind: string
+  fingerprint?: string | null
+  present: boolean
+  expiresAt?: string | null
+  lastUsedAt?: string | null
 }
 
 export type Source = {
@@ -189,8 +256,17 @@ export type IngestResult = {
   documentId: string
   status: 'indexed' | 'skipped' | 'unchanged' | 'failed'
   chunkCount: number
-  detail: string | null
+  detail?: string | null
   searchable: boolean
+}
+
+/** What a reindex returns. `vectorised` false means meaning-based search is still missing; `detail` says why. */
+export type ReindexResult = {
+  sourceId: string
+  status: string
+  documentsQueued: number
+  vectorised: boolean
+  detail?: string | null
 }
 
 export type Tool = {
@@ -208,11 +284,11 @@ export type Integration = {
   status: string
   sandbox: boolean
   reconnectRequired: boolean
-  accountLabel: string | null
+  accountLabel?: string | null
   grantedScopes: string[]
   missingScopes: string[]
-  connectedAt: string | null
-  tokenExpiresAt: string | null
+  connectedAt?: string | null
+  tokenExpiresAt?: string | null
   tools: Tool[]
 }
 
@@ -222,8 +298,8 @@ export type Member = {
   email: string
   role: string
   status: string
-  joinedAt: string | null
-  lastSignInAt: string | null
+  joinedAt?: string | null
+  lastSignInAt?: string | null
 }
 
 export type Role = {
@@ -250,44 +326,261 @@ export type Invitation = {
   roleName: string
   status: string
   expiresAt: string
-  acceptedAt: string | null
+  acceptedAt?: string | null
   /** Present only on the response right after creation; never returned by the list. */
-  token: string | null
-  acceptUrl: string | null
+  token?: string | null
+  acceptUrl?: string | null
 }
+
+/** For hooks a role may not be allowed to call: pass `enabled: can('<code>')` to skip the request. */
+export type QueryOptions = { enabled?: boolean }
+
+/* ---- Freshness --------------------------------------------------------------------------------- */
+
+/*
+ * Lists poll only while something in them can still change on its own. Polling pauses while the
+ * tab is hidden (refetchIntervalInBackground stays false) and resumes on focus.
+ */
+
+const ACTIVE_RUN_STATUSES = new Set(['running', 'waiting_approval'])
+const ACTIVE_GOAL_STATUSES = new Set(['planning', 'running', 'waiting'])
+
+/** Whether a run can still change: running, or held for an approval. */
+export function isRunActive(run?: { status: string } | null): boolean {
+  return run != null && ACTIVE_RUN_STATUSES.has(run.status.toLowerCase())
+}
+
+/** Whether a goal can still change: planning, running or waiting. */
+export function isGoalActive(goal?: { status: string } | null): boolean {
+  return goal != null && ACTIVE_GOAL_STATUSES.has(goal.status.toLowerCase())
+}
+
+/** Rows per page for the paged lists. A full last page means there may be more. */
+export const RUN_PAGE_SIZE = 50
+export const GOAL_PAGE_SIZE = 50
+export const AUDIT_PAGE_SIZE = 100
+
+/*
+ * Paged lists are offset-based, so a row created while someone reads can push an older row onto
+ * the next page, where it would appear twice. Each page is filtered of rows an earlier page
+ * already holds. Declared once so the selected data keeps its identity between renders.
+ */
+function uniquePages<T>(idOf: (row: T) => string) {
+  return (data: InfiniteData<T[], number>): InfiniteData<T[], number> => {
+    const seen = new Set<string>()
+    return {
+      ...data,
+      pages: data.pages.map((page) =>
+        page.filter((row) => {
+          const id = idOf(row)
+          if (seen.has(id)) return false
+          seen.add(id)
+          return true
+        }),
+      ),
+    }
+  }
+}
+
+/**
+ * Puts back the nulls non_null inclusion leaves out, for the fields typed `T | null` without a
+ * question mark. Screens can then rely on `=== null` for them.
+ */
+function withNulls<T extends Record<string, unknown>>(row: T, keys: ReadonlyArray<keyof T & string>): T {
+  const filled: Record<string, unknown> = { ...row }
+  for (const key of keys) {
+    if (filled[key] === undefined) filled[key] = null
+  }
+  return filled as T
+}
+
+const agentRow = (agent: Agent): Agent => withNulls(agent, ['revision'])
+const agentDetailRow = (agent: AgentDetail): AgentDetail =>
+  withNulls(agent, ['revision', 'systemPrompt', 'goals', 'maxSteps'])
+const taskRow = (task: Task): Task =>
+  withNulls(task, ['agentId', 'result', 'failureReason', 'startedAt', 'completedAt', 'runId'])
+const goalRow = (goal: Goal): Goal => ({ ...withNulls(goal, ['completedAt']), tasks: goal.tasks.map(taskRow) })
+const approvalRow = (approval: Approval): Approval => withNulls(approval, ['tool'])
+const sourceRow = (source: Source): Source => withNulls(source, ['lastIngestedAt', 'lastError'])
+const documentRow = (document: SourceDocument): SourceDocument => withNulls(document, ['skipReason', 'indexedAt'])
+const passageRow = (passage: Passage): Passage => withNulls(passage, ['uri', 'pageNumber', 'heading'])
+
+const uniqueRuns = uniquePages<Run>((run) => run.id)
+const uniqueGoals = uniquePages<Goal>((goal) => goal.id)
+const uniqueAuditEvents = uniquePages<AuditEvent>((event) => event.id)
 
 /* ---- Reads ------------------------------------------------------------------------------------- */
 
-export const useAgents = () => useQuery({ queryKey: ['agents'], queryFn: () => api<Agent[]>('/api/agents') })
-
-export const useAgent = (id: string) =>
-  useQuery({ queryKey: ['agents', id], queryFn: () => api<AgentDetail>(`/api/agents/${id}`) })
-
-export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: () => api<Run[]>('/api/runs?size=50') })
-
-export const useRun = (id: string) => useQuery({ queryKey: ['runs', id], queryFn: () => api<Run>(`/api/runs/${id}`) })
-
-export const useRunSteps = (id: string) =>
-  useQuery({ queryKey: ['runs', id, 'steps'], queryFn: () => api<RunStep[]>(`/api/runs/${id}/steps`) })
-
-export const useApprovals = () =>
+export const useAgents = (options: QueryOptions = {}) =>
   useQuery({
-    queryKey: ['approvals'],
-    queryFn: () => api<Approval[]>('/api/approvals'),
-    // The badge in the navigation depends on this, so it is kept reasonably fresh.
-    refetchInterval: 30_000,
+    queryKey: ['agents'],
+    queryFn: async () => (await api<Agent[]>('/api/agents')).map(agentRow),
+    enabled: options.enabled ?? true,
   })
 
-export const useGoals = () => useQuery({ queryKey: ['goals'], queryFn: () => api<Goal[]>('/api/goals') })
+export const useAgent = (id: string) =>
+  useQuery({
+    queryKey: ['agents', id],
+    queryFn: async () => agentDetailRow(await api<AgentDetail>(`/api/agents/${id}`)),
+  })
 
-export const useProviders = () =>
-  useQuery({ queryKey: ['providers'], queryFn: () => api<Provider[]>('/api/providers') })
+/** An agent's own routing policy. `configured` false means it follows the workspace policy. */
+export const useAgentModelPolicy = (id: string, options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['agents', id, 'model-policy'],
+    queryFn: () => api<ModelPolicy>(`/api/agents/${id}/model-policy`),
+    enabled: Boolean(id) && (options.enabled ?? true),
+  })
 
-export const useModels = () =>
-  useQuery({ queryKey: ['providers', 'models'], queryFn: () => api<Model[]>('/api/providers/models') })
+/** The 50 most recent runs, refreshed every 5 seconds while any is active and every 30 otherwise. */
+export const useRuns = () =>
+  useQuery({
+    queryKey: ['runs'],
+    queryFn: () => api<Run[]>(`/api/runs?size=${RUN_PAGE_SIZE}`),
+    refetchInterval: (query) => (query.state.data?.some(isRunActive) ? 5_000 : 30_000),
+  })
 
-export const useModelPolicy = () =>
-  useQuery({ queryKey: ['model-policy'], queryFn: () => api<ModelPolicy>('/api/model-policy') })
+export type RunListFilter = { status?: string | null; agentId?: string | null }
+
+/**
+ * Every run, newest first, a page of 50 at a time. `status` and `agentId` filter on the server,
+ * so they search every run, not only the loaded pages. `hasNextPage` stays true while the last
+ * page was full.
+ */
+export function useRunList(filter: RunListFilter = {}) {
+  const status = filter.status || null
+  const agentId = filter.agentId || null
+  return useInfiniteQuery({
+    queryKey: ['runs', 'list', { status, agentId }],
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ page: String(pageParam), size: String(RUN_PAGE_SIZE) })
+      if (status) params.set('status', status)
+      if (agentId) params.set('agentId', agentId)
+      return api<Run[]>(`/api/runs?${params.toString()}`)
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.length >= RUN_PAGE_SIZE ? lastPageParam + 1 : undefined,
+    select: uniqueRuns,
+    // A change of status or agent keeps the previous rows on screen until the new ones arrive,
+    // rather than emptying the list to a loading state and a count of "0 of 0".
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) => page.some(isRunActive)) ? 5_000 : 30_000,
+  })
+}
+
+/**
+ * One run, refreshed every 3 seconds while it is running or held for an approval. When it
+ * finishes, its trace is refetched once more so the last steps are not missed.
+ */
+export function useRun(id: string) {
+  const client = useQueryClient()
+  return useQuery({
+    queryKey: ['runs', id],
+    queryFn: async () => {
+      const before = client.getQueryData<Run>(['runs', id])
+      const run = await api<Run>(`/api/runs/${id}`)
+      if (isRunActive(before) && !isRunActive(run)) {
+        void client.invalidateQueries({ queryKey: ['runs', id, 'steps'] })
+      }
+      return run
+    },
+    refetchInterval: (query) => (isRunActive(query.state.data) ? 3_000 : false),
+  })
+}
+
+/**
+ * A run's trace, refreshed every 3 seconds while the run is active. Pass `active` from the run
+ * the screen already holds; without it, the cached run from useRun decides.
+ */
+export function useRunSteps(id: string, options: { active?: boolean } = {}) {
+  const client = useQueryClient()
+  return useQuery({
+    queryKey: ['runs', id, 'steps'],
+    queryFn: () => api<RunStep[]>(`/api/runs/${id}/steps`),
+    refetchInterval: () =>
+      (options.active ?? isRunActive(client.getQueryData<Run>(['runs', id]))) ? 3_000 : false,
+  })
+}
+
+export const useApprovals = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['approvals'],
+    queryFn: async () => (await api<Approval[]>('/api/approvals')).map(approvalRow),
+    // The badge in the navigation depends on this, so it is kept reasonably fresh.
+    refetchInterval: 30_000,
+    enabled: options.enabled ?? true,
+  })
+
+/** The 50 most recent goals with their tasks, refreshed every 5 seconds while any is still active. */
+export const useGoals = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['goals'],
+    queryFn: async () => (await api<Goal[]>('/api/goals')).map(goalRow),
+    refetchInterval: (query) => (query.state.data?.some(isGoalActive) ? 5_000 : false),
+    enabled: options.enabled ?? true,
+  })
+
+/**
+ * Every goal, newest first, a page of 50 at a time. Stops offering another page once a page comes
+ * back short, or adds no goal the earlier pages did not already hold.
+ */
+export function useGoalPages(options: QueryOptions = {}) {
+  return useInfiniteQuery({
+    queryKey: ['goals', 'pages'],
+    queryFn: async ({ pageParam }) =>
+      (await api<Goal[]>(`/api/goals?page=${pageParam}&size=${GOAL_PAGE_SIZE}`)).map(goalRow),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages, lastPageParam) => {
+      if (lastPage.length < GOAL_PAGE_SIZE) return undefined
+      const earlier = new Set(allPages.slice(0, -1).flatMap((page) => page.map((goal) => goal.id)))
+      return lastPage.some((goal) => !earlier.has(goal.id)) ? lastPageParam + 1 : undefined
+    },
+    select: uniqueGoals,
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) => page.some(isGoalActive)) ? 5_000 : false,
+    enabled: options.enabled ?? true,
+  })
+}
+
+/** One goal and its tasks, for deep links and goals older than the loaded pages. Skipped without an id. */
+export const useGoal = (id: string | null | undefined, options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['goals', id ?? ''],
+    queryFn: async () => goalRow(await api<Goal>(`/api/goals/${id ?? ''}`)),
+    refetchInterval: (query) => (isGoalActive(query.state.data) ? 5_000 : false),
+    enabled: Boolean(id) && (options.enabled ?? true),
+  })
+
+export const useProviders = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['providers'],
+    queryFn: () => api<Provider[]>('/api/providers'),
+    enabled: options.enabled ?? true,
+  })
+
+export const useModels = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['providers', 'models'],
+    queryFn: () => api<Model[]>('/api/providers/models'),
+    enabled: options.enabled ?? true,
+  })
+
+export const useModelPolicy = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['model-policy'],
+    queryFn: () => api<ModelPolicy>('/api/model-policy'),
+    enabled: options.enabled ?? true,
+  })
+
+/** Which credentials are stored, without their values (provider:read). */
+export const useCredentials = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['credentials'],
+    queryFn: () => api<CredentialView[]>('/api/credentials'),
+    enabled: options.enabled ?? true,
+  })
 
 export function useSetModelPolicy() {
   const client = useQueryClient()
@@ -299,56 +592,80 @@ export function useSetModelPolicy() {
 }
 
 export function useStoreCredential() {
+  const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { ref: string; kind: string; value: string }) =>
-      api<{ ref: string; present: boolean }>(`/api/credentials/${input.ref}`, {
+    mutationFn: (input: { ref: string; kind: string; value: string; expiresAt?: string | null }) =>
+      api<CredentialView>(`/api/credentials/${input.ref}`, {
         method: 'PUT',
-        body: { kind: input.kind, value: input.value },
+        body: { kind: input.kind, value: input.value, ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}) },
       }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['credentials'] })
+      client.invalidateQueries({ queryKey: ['providers'] })
+    },
   })
 }
 
-export const useSources = () => useQuery({ queryKey: ['sources'], queryFn: () => api<Source[]>('/api/sources') })
+export const useSources = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['sources'],
+    queryFn: async () => (await api<Source[]>('/api/sources')).map(sourceRow),
+    enabled: options.enabled ?? true,
+  })
 
 export const useSource = (id: string) =>
-  useQuery({ queryKey: ['sources', id], queryFn: () => api<Source>(`/api/sources/${id}`) })
+  useQuery({ queryKey: ['sources', id], queryFn: async () => sourceRow(await api<Source>(`/api/sources/${id}`)) })
 
 export const useSourceDocuments = (id: string) =>
   useQuery({
     queryKey: ['sources', id, 'documents'],
-    queryFn: () => api<SourceDocument[]>(`/api/sources/${id}/documents`),
+    queryFn: async () => (await api<SourceDocument[]>(`/api/sources/${id}/documents`)).map(documentRow),
   })
 
 export const useIntegrations = () =>
   useQuery({ queryKey: ['integrations'], queryFn: () => api<Integration[]>('/api/integrations') })
 
-export const useMembers = () => useQuery({ queryKey: ['members'], queryFn: () => api<Member[]>('/api/users') })
+export const useMembers = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['members'],
+    queryFn: () => api<Member[]>('/api/users'),
+    enabled: options.enabled ?? true,
+  })
 
-export const useInvitations = (orgId: string) =>
+export const useInvitations = (orgId: string, options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['invitations', orgId],
     queryFn: () => api<Invitation[]>(`/api/orgs/${orgId}/invitations`),
-    enabled: Boolean(orgId),
+    enabled: Boolean(orgId) && (options.enabled ?? true),
   })
 
-export const useRoles = () => useQuery({ queryKey: ['roles'], queryFn: () => api<Role[]>('/api/roles') })
+/** Every role with its permissions and holder count (role:read). */
+export const useRoles = (options: QueryOptions = {}) =>
+  useQuery({ queryKey: ['roles'], queryFn: () => api<Role[]>('/api/roles'), enabled: options.enabled ?? true })
 
-export const usePermissionCatalogue = () =>
-  useQuery({ queryKey: ['roles', 'permissions'], queryFn: () => api<PermissionInfo[]>('/api/roles/permissions') })
+/** Every permission code with its description (workspace:read, which every role holds). */
+export const usePermissionCatalogue = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['roles', 'permissions'],
+    queryFn: () => api<PermissionInfo[]>('/api/roles/permissions'),
+    enabled: options.enabled ?? true,
+  })
 
 /* ---- Writes ------------------------------------------------------------------------------------ */
 
 export function useCreateGoal() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { title: string; agentId: string; instruction: string }) =>
-      api<Goal>('/api/goals', {
-        method: 'POST',
-        body: {
-          title: input.title,
-          tasks: [{ agentId: input.agentId, title: input.title, instruction: input.instruction }],
-        },
-      }),
+    mutationFn: async (input: { title: string; agentId: string; instruction: string }) =>
+      goalRow(
+        await api<Goal>('/api/goals', {
+          method: 'POST',
+          body: {
+            title: input.title,
+            tasks: [{ agentId: input.agentId, title: input.title, instruction: input.instruction }],
+          },
+        }),
+      ),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['goals'] })
       client.invalidateQueries({ queryKey: ['runs'] })
@@ -361,11 +678,13 @@ export function useDecideApproval() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (input: { id: string; approved: boolean; note?: string }) =>
-      api<{ approvalId: string; status: string; runStatus: string }>(`/api/approvals/${input.id}/decision`, {
+      api<DecisionResult>(`/api/approvals/${input.id}/decision`, {
         method: 'POST',
         body: { approved: input.approved, note: input.note ?? null },
       }),
-    onSuccess: () => {
+    // Settled rather than success: a decision that failed because someone else already decided,
+    // or the approval expired, must still clear the stale card.
+    onSettled: () => {
       client.invalidateQueries({ queryKey: ['approvals'] })
       client.invalidateQueries({ queryKey: ['runs'] })
       client.invalidateQueries({ queryKey: ['goals'] })
@@ -376,8 +695,8 @@ export function useDecideApproval() {
 export function useCreateAgent() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { key: string; name: string; category: string; systemPrompt: string }) =>
-      api<Agent>('/api/agents', { method: 'POST', body: input }),
+    mutationFn: async (input: { key: string; name: string; category: string; systemPrompt: string }) =>
+      agentRow(await api<Agent>('/api/agents', { method: 'POST', body: input })),
     onSuccess: () => client.invalidateQueries({ queryKey: ['agents'] }),
   })
 }
@@ -385,8 +704,9 @@ export function useCreateAgent() {
 export function useUpdateAgent(id: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { systemPrompt: string; goals: string; maxSteps: number }) =>
-      api<Agent>(`/api/agents/${id}/configuration`, { method: 'PUT', body: input }),
+    /** `maxSteps` null or left out saves the default of 12. */
+    mutationFn: async (input: { systemPrompt: string; goals: string; maxSteps?: number | null }) =>
+      agentRow(await api<Agent>(`/api/agents/${id}/configuration`, { method: 'PUT', body: input })),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['agents'] })
     },
@@ -400,6 +720,7 @@ export function useCancelRun() {
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['runs'] })
       client.invalidateQueries({ queryKey: ['approvals'] })
+      client.invalidateQueries({ queryKey: ['goals'] })
     },
   })
 }
@@ -407,7 +728,8 @@ export function useCancelRun() {
 export function useCreateSource() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { name: string; kind: string }) => api<Source>('/api/sources', { method: 'POST', body: input }),
+    mutationFn: async (input: { name: string; kind: string }) =>
+      sourceRow(await api<Source>('/api/sources', { method: 'POST', body: input })),
     onSuccess: () => client.invalidateQueries({ queryKey: ['sources'] }),
   })
 }
@@ -428,11 +750,13 @@ export function useUploadDocument(sourceId: string) {
 
 export function useSearch() {
   return useMutation({
-    mutationFn: (query: string) =>
-      api<{ passages: Passage[]; grounded: boolean }>('/api/knowledge/search', {
+    mutationFn: async (query: string) => {
+      const result = await api<{ passages: Passage[]; grounded: boolean }>('/api/knowledge/search', {
         method: 'POST',
         body: { query, limit: 4 },
-      }),
+      })
+      return { ...result, passages: result.passages.map(passageRow) }
+    },
   })
 }
 
@@ -446,16 +770,49 @@ export function useToggleProvider() {
 }
 
 /** Agent names by id, for screens that show runs and approvals. */
-export function useAgentNames(): Record<string, Agent> {
-  const { data } = useAgents()
-  return Object.fromEntries((data ?? []).map((agent) => [agent.id, agent]))
+export function useAgentNames(options: QueryOptions = {}): Record<string, Agent> {
+  const { data } = useAgents(options)
+  return useMemo(() => Object.fromEntries((data ?? []).map((agent) => [agent.id, agent])), [data])
 }
 
+/**
+ * Members by user id, for naming the people behind audit entries, cancellations and decisions.
+ * member:read is held by every built-in role. A miss means a former member: show a short id.
+ */
+export function useMemberNames(options: QueryOptions = {}): Record<string, Member> {
+  const { data } = useMembers(options)
+  return useMemo(() => Object.fromEntries((data ?? []).map((member) => [member.userId, member])), [data])
+}
+
+/**
+ * Each task with its goal, by task id, from the 50 most recent goals (useGoals). A miss means the
+ * task belongs to an older goal: fall back to neutral wording, or load it with useGoal.
+ */
+export function useTaskIndex(options: QueryOptions = {}): Record<string, { task: Task; goal: Goal }> {
+  const { data } = useGoals(options)
+  return useMemo(() => {
+    const index: Record<string, { task: Task; goal: Goal }> = {}
+    for (const goal of data ?? []) {
+      for (const task of goal.tasks) index[task.id] = { task, goal }
+    }
+    return index
+  }, [data])
+}
+
+/**
+ * Starts a run from a direct instruction. Resolves to RunStarted: navigate with `runId`.
+ * `id` repeats `runId` only so callers written against the old Run typing keep working.
+ */
 export function useCreateRun(agentId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { taskId?: string; instruction?: string }) =>
-      api<Run>(`/api/agents/${agentId}/runs`, { method: 'POST', body: input }),
+    mutationFn: async (input: { instruction: string }): Promise<RunStarted & { /** @deprecated Use runId. */ id: string }> => {
+      const started = await api<RunStarted>(`/api/agents/${agentId}/runs`, {
+        method: 'POST',
+        body: { instruction: input.instruction },
+      })
+      return { ...started, id: started.runId }
+    },
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['runs'] })
       client.invalidateQueries({ queryKey: ['approvals'] })
@@ -467,7 +824,7 @@ export function useCreateRun(agentId: string) {
 export function useCancelGoal(goalId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: () => api<Goal>(`/api/goals/${goalId}/cancel`, { method: 'POST' }),
+    mutationFn: async () => goalRow(await api<Goal>(`/api/goals/${goalId}/cancel`, { method: 'POST' })),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['goals'] })
       client.invalidateQueries({ queryKey: ['runs'] })
@@ -479,7 +836,7 @@ export function useCancelGoal(goalId: string) {
 export function useReindexSource(sourceId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: () => api<{ sourceId: string; status: string; documentsQueued: number }>(`/api/sources/${sourceId}/reindex`, { method: 'POST' }),
+    mutationFn: () => api<ReindexResult>(`/api/sources/${sourceId}/reindex`, { method: 'POST' }),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['sources'] })
       client.invalidateQueries({ queryKey: ['sources', sourceId] })
@@ -551,7 +908,11 @@ export function useUpdateMemberRole() {
   return useMutation({
     mutationFn: (input: { userId: string; roleName: string }) =>
       api<Member>(`/api/users/${input.userId}/role`, { method: 'PUT', body: { roleName: input.roleName } }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['members'] }),
+    // Roles too: each role's holder count changes with the member.
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['members'] })
+      client.invalidateQueries({ queryKey: ['roles'] })
+    },
   })
 }
 
@@ -559,7 +920,10 @@ export function useRemoveMember() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (userId: string) => api<void>(`/api/users/${userId}`, { method: 'DELETE' }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['members'] }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['members'] })
+      client.invalidateQueries({ queryKey: ['roles'] })
+    },
   })
 }
 
@@ -582,10 +946,10 @@ export type AuditEvent = {
   sequence: number
   actorId: string
   actorKind: string
-  onBehalfOf: string | null
+  onBehalfOf?: string | null
   action: string
   resourceType: string
-  resourceId: string | null
+  resourceId?: string | null
   outcome: 'succeeded' | 'failed' | 'denied'
   detail: Record<string, unknown>
   occurredAt: string
@@ -613,5 +977,17 @@ export function useAudit() {
   return useQuery({
     queryKey: ['audit'],
     queryFn: () => api<AuditEvent[]>('/api/audit?size=50'),
+  })
+}
+
+/** The whole audit log, newest first, a page of 100 at a time. */
+export function useAuditPages() {
+  return useInfiniteQuery({
+    queryKey: ['audit', 'pages'],
+    queryFn: ({ pageParam }) => api<AuditEvent[]>(`/api/audit?page=${pageParam}&size=${AUDIT_PAGE_SIZE}`),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.length >= AUDIT_PAGE_SIZE ? lastPageParam + 1 : undefined,
+    select: uniqueAuditEvents,
   })
 }

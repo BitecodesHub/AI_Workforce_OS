@@ -1,8 +1,28 @@
 import React from 'react'
-import { Button, Card, DataTable, Dialog, Eyebrow, Input, Notice, PageHeader, Select, Tag, Textarea } from '../components/ui'
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  DataTable,
+  Dialog,
+  Eyebrow,
+  FilterBar,
+  FilterEmpty,
+  Input,
+  Notice,
+  PageHeader,
+  Select,
+  Tag,
+  Textarea,
+  Time,
+} from '../components/ui'
 import { QueryState } from '../components/ui/QueryState'
-import { ApiError } from '../lib/api'
+import { ApiError, describeApiError } from '../lib/api'
+import { formatCount, sentenceCase } from '../lib/format'
+import { roleLabel, statusLabel } from '../lib/labels'
 import { useToast } from '../lib/toast'
+import { useListFilter } from '../lib/useListFilter'
+import { useNow } from '../lib/useNow'
 import {
   useCreateRole,
   useDeleteRoleMutation,
@@ -15,110 +35,335 @@ import {
   useUpdateMemberRole,
   useUpdateRoleMutation,
 } from '../lib/queries'
-import { can, profile } from '../lib/session'
+import { ROLE_CHANGE_DELAY_COPY, can, profile } from '../lib/session'
 import type { Column } from '../components/ui'
-import type { Invitation, Member, Role } from '../lib/queries'
+import type { Invitation, Member, PermissionInfo, Role } from '../lib/queries'
 
-const STATUS_TONE = { active: 'success', invited: 'blue', suspended: 'warning', removed: 'neutral' } as const
-const STATUS_LABEL = { active: 'Active', invited: 'Invited', suspended: 'Suspended', removed: 'Removed' } as const
+/*
+ * Members and roles.
+ *
+ * Who belongs to the workspace, the links that let someone join, and the roles that decide what
+ * each person can do. Every control is shown only to a role that can use it; everyone else sees
+ * the same lists, read-only.
+ *
+ * Timing matters here and is stated plainly. A role change, a new role composition and a removal
+ * all reach a signed-in person when their session renews (ROLE_CHANGE_DELAY_COPY), not at once.
+ */
 
-const INVITATION_STATUS_TONE = { pending: 'blue', accepted: 'success', revoked: 'neutral', expired: 'warning' } as const
+const OWNER_RULE = 'A workspace must keep at least one owner. The last owner cannot be demoted or removed.'
 
-const ROLE_COLUMNS: Column<Role>[] = [
-  { key: 'name', header: 'Role', render: (row) => <span className="mono">{row.name}</span> },
-  { key: 'description', header: 'Description', render: (row) => <span className="muted">{row.description}</span> },
-  { key: 'system', header: 'Built-in', render: (row) => <Tag tone={row.system ? 'neutral' : 'blue'}>{row.system ? 'Yes' : 'No'}</Tag> },
-  { key: 'permissionVersion', header: 'Perm version', numeric: true, render: (row) => row.permissionVersion },
-  { key: 'permissions', header: 'Permissions', numeric: true, render: (row) => row.permissions.length },
-  { key: 'holders', header: 'Held by', numeric: true, render: (row) => row.holders },
-]
+const ROLE_FIELD_LABELS = { name: 'Role name', description: 'Description', permissions: 'Permissions' }
+const INVITE_FIELD_LABELS = { email: 'Email address', roleName: 'Role' }
 
-const INVITATION_COLUMNS: Column<Invitation>[] = [
-  { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
-  { key: 'roleName', header: 'Role', render: (row) => <Tag tone="blue">{row.roleName}</Tag> },
-  {
-    key: 'status',
-    header: 'Status',
-    render: (row) => (
-      <Tag tone={INVITATION_STATUS_TONE[row.status as keyof typeof INVITATION_STATUS_TONE] || 'neutral'}>
-        {row.status}
-      </Tag>
-    ),
-  },
-  { key: 'expiresAt', header: 'Expires', render: (row) => <span className="muted">{timeAgo(row.expiresAt)}</span> },
-]
+/** Built-in roles first, most powerful first; a workspace's own roles after them, by name. */
+const ROLE_RANK: Record<string, number> = { owner: 0, admin: 1, manager: 2, employee: 3, viewer: 4 }
+const byRoleRank = (a: string, b: string) =>
+  (ROLE_RANK[a] ?? 99) - (ROLE_RANK[b] ?? 99) || roleLabel(a).localeCompare(roleLabel(b))
 
-function timeAgo(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000)
-  if (seconds < 45) return 'just now'
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
-  const days = Math.round(hours / 24)
-  return `${days} day${days === 1 ? '' : 's'} ago`
+const MEMBER_FACETS = { role: (member: Member) => member.role }
+const memberText = (member: Member) => `${member.displayName} ${member.email} ${roleLabel(member.role)}`
+
+const withFullStop = (text: string) => (/[.?]$/.test(text) ? text : `${text}.`)
+const asSentence = (text: string) => withFullStop(text.charAt(0).toUpperCase() + text.slice(1))
+
+function isPast(iso: string | null | undefined, now: number): boolean {
+  if (!iso) return false
+  const time = new Date(iso).getTime()
+  return !Number.isNaN(time) && time <= now
+}
+
+/** A pending invitation whose deadline has passed is expired, whatever its stored status says. */
+function invitationStatus(invitation: Invitation, now: number): string {
+  const status = invitation.status.toLowerCase()
+  return status === 'pending' && isPast(invitation.expiresAt, now) ? 'expired' : status
+}
+
+function InvitationTiming({ invitation, now }: { invitation: Invitation; now: number }) {
+  const status = invitationStatus(invitation, now)
+  if (status === 'accepted') {
+    return (
+      <span className="muted">
+        Accepted{invitation.acceptedAt ? <> <Time iso={invitation.acceptedAt} /></> : null}
+      </span>
+    )
+  }
+  if (status === 'pending') {
+    return (
+      <span className="muted">
+        Expires <Time iso={invitation.expiresAt} />
+      </span>
+    )
+  }
+  if (status === 'expired') {
+    return (
+      <span className="muted">
+        Expired <Time iso={invitation.expiresAt} />
+      </span>
+    )
+  }
+  return <span className="muted">—</span>
+}
+
+/**
+ * A one-time invitation link with a way to copy it. Where the clipboard is unavailable or
+ * refused, the link is selected instead so it can be copied from the keyboard. The result is said
+ * beside the button: a toast would sit behind the dialog's backdrop.
+ */
+function InviteLink({ url, inputId }: { url: string; inputId: string }) {
+  const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'manual'>('idle')
+
+  const copy = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(url)
+      setCopyState('copied')
+    } catch {
+      const input = document.getElementById(inputId)
+      if (input instanceof HTMLInputElement) {
+        input.focus()
+        input.select()
+      }
+      setCopyState('manual')
+    }
+  }
+
+  return (
+    <div className="stack" style={{ gap: 'var(--space-2)' }}>
+      <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+          <Input
+            id={inputId}
+            label="Invitation link"
+            value={url}
+            readOnly
+            className="input mono"
+            onFocus={(event) => event.currentTarget.select()}
+          />
+        </div>
+        <Button variant="outline" onClick={() => void copy()}>
+          Copy link
+        </Button>
+      </div>
+      <p className="caption" role="status">
+        {copyState === 'copied' && 'Link copied.'}
+        {copyState === 'manual' && 'The link is selected. Copy it with your keyboard.'}
+      </p>
+    </div>
+  )
+}
+
+/** The permission catalogue in groups by resource, in the catalogue's own order. */
+function groupPermissions(catalogue: PermissionInfo[]): Array<[string, PermissionInfo[]]> {
+  const groups = new Map<string, PermissionInfo[]>()
+  for (const permission of catalogue) {
+    const group = groups.get(permission.resource)
+    if (group) group.push(permission)
+    else groups.set(permission.resource, [permission])
+  }
+  return [...groups.entries()]
+}
+
+function PermissionPicker({
+  catalogue,
+  selected,
+  onChange,
+}: {
+  catalogue: PermissionInfo[] | undefined
+  selected: string[]
+  onChange: (next: string[]) => void
+}) {
+  const hintId = React.useId()
+  const groups = React.useMemo(() => groupPermissions(catalogue ?? []), [catalogue])
+  const toggle = (code: string, on: boolean) =>
+    onChange(on ? [...selected, code] : selected.filter((existing) => existing !== code))
+
+  return (
+    <fieldset className="field" style={{ minWidth: 0 }} aria-describedby={selected.length === 0 ? hintId : undefined}>
+      <legend className="field-label">
+        Permissions <span className="field-optional">({formatCount(selected.length)} selected)</span>
+      </legend>
+      {catalogue === undefined ? (
+        <p className="muted">Loading the permissions…</p>
+      ) : (
+        <div
+          className="stack"
+          style={{ gap: 'var(--space-4)', maxHeight: '260px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}
+        >
+          {groups.map(([resource, permissions]) => (
+            <div key={resource} className="stack" style={{ gap: 'var(--space-2)' }}>
+              <p className="caption">{sentenceCase(resource)}</p>
+              {permissions.map((permission) => (
+                <label
+                  key={permission.code}
+                  title={permission.code}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(permission.code)}
+                    onChange={(event) => toggle(permission.code, event.target.checked)}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <span>{permission.description}</span>
+                  {permission.administrative && <Tag tone="warning">Administrative</Tag>}
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {selected.length === 0 && (
+        <p className="caption field-hint" id={hintId}>
+          Choose at least one permission.
+        </p>
+      )}
+    </fieldset>
+  )
+}
+
+type RoleDraft = {
+  mode: 'create' | 'edit'
+  roleId: string | null
+  name: string
+  description: string
+  permissions: string[]
+  /** The role a new one was started from, or '' for a blank role. */
+  startFrom: string
+}
+
+const copyName = (name: string) => `${name}-copy`.slice(0, 60)
+
+function roleErrorMessage(error: unknown, action: 'save' | 'delete'): string {
+  if (error instanceof ApiError) {
+    if (error.code === 'already_exists') return 'A role with that name already exists.'
+    if (error.code === 'immutable_resource') {
+      return action === 'delete'
+        ? 'Built-in roles cannot be deleted.'
+        : 'Built-in roles cannot be edited. Copy it to start a role of your own.'
+    }
+    if (error.code === 'resource_in_use') return 'Somebody still holds this role. Reassign them first.'
+  }
+  return describeApiError(error, ROLE_FIELD_LABELS)
+}
+
+function memberErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'last_owner_protected') return OWNER_RULE
+  return describeApiError(error, { roleName: 'New role' })
 }
 
 export function Members() {
-  const orgId = profile()?.workspaceId ?? ''
-  const { data: members, isLoading: membersLoading, error: membersError, refetch: refetchMembers } = useMembers()
-  const { data: roles, isLoading: rolesLoading, error: rolesError, refetch: refetchRoles } = useRoles()
-  const { data: permissions } = usePermissionCatalogue()
-  const createRole = useCreateRole()
-  const updateRole = useUpdateRoleMutation()
-  const deleteRole = useDeleteRoleMutation()
-  const { error: toastError, success: toastSuccess } = useToast()
+  const me = profile()
+  const myId = me?.userId ?? null
+  const orgId = me?.workspaceId ?? ''
+  const toast = useToast()
+  const now = useNow()
 
   const canInvite = can('member:invite')
   const canUpdateMember = can('member:update')
   const canRemoveMember = can('member:remove')
-  const canManageRoles = can('role:create') // Creating a role is the gate; editing/deleting check their own action.
+  const canManageMembers = canUpdateMember || canRemoveMember
+  const canReadRoles = can('role:read')
+  const canCreateRole = can('role:create')
+  const canUpdateRole = can('role:update')
+  const canDeleteRole = can('role:delete')
+  const canActOnRoles = canCreateRole || canUpdateRole || canDeleteRole
 
-  const { data: invitations } = useInvitations(orgId)
+  const membersQuery = useMembers()
+  // Each list is requested only by a role allowed to read it, so nobody else makes a request that
+  // can only be refused.
+  const rolesQuery = useRoles({ enabled: canReadRoles })
+  const roles = rolesQuery.data
+  const { data: catalogue } = usePermissionCatalogue({ enabled: canCreateRole || canUpdateRole })
+  const invitationsQuery = useInvitations(orgId, { enabled: canInvite })
 
-  const [inviteDialogOpen, setInviteDialogOpen] = React.useState(false)
-  const [createRoleDialogOpen, setCreateRoleDialogOpen] = React.useState(false)
-  const [editRoleDialogOpen, setEditRoleDialogOpen] = React.useState(false)
-  const [deleteRoleDialogOpen, setDeleteRoleDialogOpen] = React.useState(false)
-  const [roleChangeDialogOpen, setRoleChangeDialogOpen] = React.useState(false)
-  const [removeMemberDialogOpen, setRemoveMemberDialogOpen] = React.useState(false)
-  const [editingRole, setEditingRole] = React.useState<Role | null>(null)
-  const [deletingRole, setDeletingRole] = React.useState<Role | null>(null)
-  const [changingMember, setChangingMember] = React.useState<Member | null>(null)
-  const [removingMember, setRemovingMember] = React.useState<Member | null>(null)
-  const [newRoleName, setNewRoleName] = React.useState('')
-
-  const [createName, setCreateName] = React.useState('')
-  const [createDescription, setCreateDescription] = React.useState('')
-  const [createPermissions, setCreatePermissions] = React.useState<string[]>([])
-
-  const [editName, setEditName] = React.useState('')
-  const [editDescription, setEditDescription] = React.useState('')
-  const [editPermissions, setEditPermissions] = React.useState<string[]>([])
-
-  const [inviteEmail, setInviteEmail] = React.useState('')
-  const [inviteRoleName, setInviteRoleName] = React.useState('')
-  const [createdInvitation, setCreatedInvitation] = React.useState<Invitation | null>(null)
-
-  const inviteMember = useInviteMember(orgId, inviteEmail, inviteRoleName)
+  const createRole = useCreateRole()
+  const updateRole = useUpdateRoleMutation()
+  const deleteRole = useDeleteRoleMutation()
   const updateMemberRole = useUpdateMemberRole()
   const removeMember = useRemoveMember()
 
-  const memberColumns: Column<Member>[] = React.useMemo(() => {
+  const filter = useListFilter({ rows: membersQuery.data, text: memberText, facets: MEMBER_FACETS })
+
+  // ---- Invitations --------------------------------------------------------------------------
+  const [inviteOpen, setInviteOpen] = React.useState(false)
+  const [inviteEmail, setInviteEmail] = React.useState('')
+  const [inviteRoleName, setInviteRoleName] = React.useState('')
+  const [inviteError, setInviteError] = React.useState<string | null>(null)
+  const [inviteFieldErrors, setInviteFieldErrors] = React.useState<{ email?: string | undefined; roleName?: string | undefined }>({})
+  const [createdInvitation, setCreatedInvitation] = React.useState<Invitation | null>(null)
+  // The last link created on this visit, kept on the page after its dialog closes so a stray
+  // Escape or click outside the dialog cannot lose a link that is never shown again.
+  const [keptInvitation, setKeptInvitation] = React.useState<Invitation | null>(null)
+  const dialogLinkId = React.useId()
+  const pageLinkId = React.useId()
+  const inviteMember = useInviteMember(orgId, inviteEmail.trim(), inviteRoleName)
+
+  // ---- People -------------------------------------------------------------------------------
+  const [changing, setChanging] = React.useState<Member | null>(null)
+  const [newRoleName, setNewRoleName] = React.useState('')
+  const [changeError, setChangeError] = React.useState<string | null>(null)
+  const [removing, setRemoving] = React.useState<Member | null>(null)
+  const [removeError, setRemoveError] = React.useState<string | null>(null)
+
+  // ---- Roles --------------------------------------------------------------------------------
+  const [roleDraft, setRoleDraft] = React.useState<RoleDraft | null>(null)
+  const [roleError, setRoleError] = React.useState<string | null>(null)
+  const [deletingRole, setDeletingRole] = React.useState<Role | null>(null)
+  const [deleteError, setDeleteError] = React.useState<string | null>(null)
+
+  // When the link replaces the form, focus moves to it, selected, ready to copy.
+  React.useEffect(() => {
+    if (!createdInvitation) return
+    const input = document.getElementById(dialogLinkId)
+    if (input instanceof HTMLInputElement) {
+      input.focus()
+      input.select()
+    }
+  }, [createdInvitation, dialogLinkId])
+
+  const sortedRoles = React.useMemo(() => [...(roles ?? [])].sort((a, b) => byRoleRank(a.name, b.name)), [roles])
+  const roleByName = React.useMemo(() => Object.fromEntries((roles ?? []).map((role) => [role.name, role])), [roles])
+
+  const memberColumns = React.useMemo<Column<Member>[]>(() => {
     const columns: Column<Member>[] = [
-      { key: 'displayName', header: 'Name', render: (row) => row.displayName },
-      { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
-      { key: 'role', header: 'Role', render: (row) => <Tag tone="blue">{row.role}</Tag> },
+      {
+        key: 'displayName',
+        header: 'Name',
+        sortValue: (row) => row.displayName,
+        render: (row) => (
+          <span>
+            {row.displayName}
+            {row.userId === myId && <span className="muted"> (you)</span>}
+          </span>
+        ),
+      },
+      { key: 'email', header: 'Email', sortValue: (row) => row.email, render: (row) => <span className="mono">{row.email}</span> },
+      {
+        key: 'role',
+        header: 'Role',
+        sortValue: (row) => ROLE_RANK[row.role] ?? 99,
+        render: (row) => <Tag tone="blue" title={roleLabel(row.role)}>{roleLabel(row.role)}</Tag>,
+      },
       {
         key: 'status',
         header: 'Status',
-        render: (row) => <Tag tone={STATUS_TONE[row.status as keyof typeof STATUS_TONE] || 'neutral'}>
-          {STATUS_LABEL[row.status as keyof typeof STATUS_LABEL] || row.status}
-        </Tag>,
+        render: (row) => {
+          const status = statusLabel('member', row.status)
+          return <Tag tone={status.tone}>{status.label}</Tag>
+        },
       },
-      { key: 'joinedAt', header: 'Joined', render: (row) => <span className="muted">{row.joinedAt ? timeAgo(row.joinedAt) : '—'}</span> },
-      { key: 'lastSignInAt', header: 'Last sign-in', render: (row) => <span className="muted">{row.lastSignInAt ? timeAgo(row.lastSignInAt) : 'Never'}</span> },
+      {
+        key: 'joinedAt',
+        header: 'Joined',
+        sortValue: (row) => row.joinedAt ?? null,
+        render: (row) => <Time iso={row.joinedAt} className="muted" />,
+      },
+      {
+        key: 'lastSignInAt',
+        header: 'Last sign-in',
+        sortValue: (row) => row.lastSignInAt ?? null,
+        render: (row) => (row.lastSignInAt ? <Time iso={row.lastSignInAt} className="muted" /> : <span className="muted">Never</span>),
+      },
     ]
     if (canUpdateMember || canRemoveMember) {
       columns.push({
@@ -129,13 +374,27 @@ export function Members() {
             {canUpdateMember && (
               <Button
                 variant="outline"
-                onClick={() => { setChangingMember(row); setNewRoleName(row.role); setRoleChangeDialogOpen(true); }}
+                className="button-sm"
+                aria-label={`Change role for ${row.displayName}`}
+                onClick={() => {
+                  setChanging(row)
+                  setNewRoleName(row.role)
+                  setChangeError(null)
+                }}
               >
                 Change role
               </Button>
             )}
             {canRemoveMember && row.status !== 'removed' && (
-              <Button variant="danger" onClick={() => { setRemovingMember(row); setRemoveMemberDialogOpen(true); }}>
+              <Button
+                variant="danger"
+                className="button-sm"
+                aria-label={row.userId === myId ? 'Remove yourself' : `Remove ${row.displayName}`}
+                onClick={() => {
+                  setRemoving(row)
+                  setRemoveError(null)
+                }}
+              >
                 Remove
               </Button>
             )}
@@ -144,388 +403,659 @@ export function Members() {
       })
     }
     return columns
-  }, [canUpdateMember, canRemoveMember])
+  }, [canUpdateMember, canRemoveMember, myId])
 
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const roleColumns = React.useMemo<Column<Role>[]>(() => {
+    const columns: Column<Role>[] = [
+      { key: 'name', header: 'Role', render: (row) => <span title={row.name}>{roleLabel(row.name)}</span> },
+      { key: 'description', header: 'Description', render: (row) => <span className="muted">{row.description || '—'}</span> },
+      {
+        key: 'system',
+        header: 'Type',
+        render: (row) => <Tag tone={row.system ? 'neutral' : 'blue'}>{row.system ? 'Built-in' : 'Custom'}</Tag>,
+      },
+      { key: 'permissions', header: 'Permissions', numeric: true, render: (row) => formatCount(row.permissions.length) },
+      { key: 'holders', header: 'Held by', numeric: true, render: (row) => formatCount(row.holders) },
+    ]
+    if (canCreateRole || canUpdateRole || canDeleteRole) {
+      columns.push({
+        key: 'actions',
+        header: 'Actions',
+        render: (row) => {
+          const name = roleLabel(row.name)
+          return (
+            <div className="row" style={{ gap: 'var(--space-2)' }}>
+              {canUpdateRole && !row.system && (
+                <Button
+                  variant="outline"
+                  className="button-sm"
+                  aria-label={`Edit role ${name}`}
+                  onClick={() => {
+                    setRoleDraft({
+                      mode: 'edit',
+                      roleId: row.id,
+                      name: row.name,
+                      description: row.description,
+                      permissions: [...row.permissions],
+                      startFrom: '',
+                    })
+                    setRoleError(null)
+                  }}
+                >
+                  Edit
+                </Button>
+              )}
+              {canCreateRole && (
+                <Button
+                  variant="outline"
+                  className="button-sm"
+                  aria-label={`Copy role ${name}`}
+                  onClick={() => {
+                    setRoleDraft({
+                      mode: 'create',
+                      roleId: null,
+                      name: copyName(row.name),
+                      description: row.description,
+                      permissions: [...row.permissions],
+                      startFrom: row.id,
+                    })
+                    setRoleError(null)
+                  }}
+                >
+                  Copy
+                </Button>
+              )}
+              {canDeleteRole && !row.system && (
+                <Button
+                  variant="danger"
+                  className="button-sm"
+                  aria-label={`Delete role ${name}`}
+                  onClick={() => {
+                    setDeletingRole(row)
+                    setDeleteError(null)
+                  }}
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
+          )
+        },
+      })
+    }
+    return columns
+  }, [canCreateRole, canUpdateRole, canDeleteRole])
+
+  const invitationColumns = React.useMemo<Column<Invitation>[]>(
+    () => [
+      { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
+      { key: 'roleName', header: 'Role', render: (row) => <Tag tone="blue">{roleLabel(row.roleName)}</Tag> },
+      {
+        key: 'status',
+        header: 'Status',
+        render: (row) => {
+          const status = statusLabel('invitation', invitationStatus(row, now))
+          return <Tag tone={status.tone} title={status.label}>{status.label}</Tag>
+        },
+      },
+      { key: 'expiresAt', header: 'When', render: (row) => <InvitationTiming invitation={row} now={now} /> },
+    ],
+    [now],
+  )
+
+  // ---- Handlers -----------------------------------------------------------------------------
+
+  const openInvite = () => {
+    setCreatedInvitation(null)
+    setInviteError(null)
+    setInviteFieldErrors({})
+    setInviteOpen(true)
+  }
+
+  const closeInvite = () => {
+    // A link that was created stays on the page, in the invitations card, until it is hidden.
+    if (createdInvitation) setKeptInvitation(createdInvitation)
+    setInviteOpen(false)
+    setCreatedInvitation(null)
+    setInviteEmail('')
+    setInviteRoleName('')
+    setInviteError(null)
+    setInviteFieldErrors({})
+  }
+
+  const handleInvite = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setInviteError(null)
+    setInviteFieldErrors({})
     try {
       const invitation = await inviteMember.mutateAsync()
       setCreatedInvitation(invitation)
-      toastSuccess('Invitation created')
+      setKeptInvitation(null)
     } catch (err) {
-      toastError(err instanceof ApiError ? err.message : 'Failed to create invitation')
+      const fields = err instanceof ApiError ? err.fields : {}
+      const email = fields.email ? asSentence(fields.email) : undefined
+      const roleName = fields.roleName ? asSentence(fields.roleName) : undefined
+      setInviteFieldErrors({ email, roleName })
+      setInviteError(email || roleName ? null : describeApiError(err, INVITE_FIELD_LABELS))
     }
   }
 
-  const handleChangeRole = async () => {
-    if (!changingMember) return
+  const closeChange = () => {
+    setChanging(null)
+    setChangeError(null)
+  }
+
+  const handleChangeRole = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!changing || !newRoleName || newRoleName === changing.role) return
+    setChangeError(null)
     try {
-      await updateMemberRole.mutateAsync({ userId: changingMember.userId, roleName: newRoleName })
-      toastSuccess('Role updated')
-      setRoleChangeDialogOpen(false)
-      setChangingMember(null)
+      await updateMemberRole.mutateAsync({ userId: changing.userId, roleName: newRoleName })
+      toast.success(`Role updated. ${ROLE_CHANGE_DELAY_COPY}`)
+      closeChange()
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'last_owner_protected') {
-        toastError('A workspace must keep at least one owner')
-      } else {
-        toastError(err instanceof ApiError ? err.message : 'Failed to update the member’s role')
-      }
+      setChangeError(memberErrorMessage(err))
     }
+  }
+
+  const closeRemove = () => {
+    setRemoving(null)
+    setRemoveError(null)
   }
 
   const handleRemoveMember = async () => {
-    if (!removingMember) return
+    if (!removing) return
+    setRemoveError(null)
     try {
-      await removeMember.mutateAsync(removingMember.userId)
-      toastSuccess('Member removed')
-      setRemoveMemberDialogOpen(false)
-      setRemovingMember(null)
+      await removeMember.mutateAsync(removing.userId)
+      toast.success(removing.userId === myId ? 'You were removed from this workspace.' : `${removing.displayName} was removed.`)
+      closeRemove()
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'last_owner_protected') {
-        toastError('A workspace must keep at least one owner')
-      } else {
-        toastError(err instanceof ApiError ? err.message : 'Failed to remove the member')
-      }
+      setRemoveError(memberErrorMessage(err))
     }
   }
 
-  const handleCreateRole = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const openCreateRole = () => {
+    setRoleDraft({ mode: 'create', roleId: null, name: '', description: '', permissions: [], startFrom: '' })
+    setRoleError(null)
+  }
+
+  const closeRoleDraft = () => {
+    setRoleDraft(null)
+    setRoleError(null)
+  }
+
+  const changeStartFrom = (roleId: string) => {
+    setRoleDraft((draft) => {
+      if (!draft) return draft
+      const source = roles?.find((role) => role.id === roleId)
+      if (!source) return { ...draft, startFrom: '', permissions: draft.startFrom ? [] : draft.permissions }
+      return {
+        ...draft,
+        startFrom: roleId,
+        name: draft.name.trim() ? draft.name : copyName(source.name),
+        description: draft.description.trim() ? draft.description : source.description,
+        permissions: [...source.permissions],
+      }
+    })
+  }
+
+  const rolePending = createRole.isPending || updateRole.isPending
+  const roleDraftValid = Boolean(roleDraft && roleDraft.name.trim() && roleDraft.permissions.length > 0)
+
+  const handleSaveRole = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!roleDraft || !roleDraftValid) return
+    setRoleError(null)
+    const input = {
+      name: roleDraft.name.trim(),
+      description: roleDraft.description.trim(),
+      permissions: roleDraft.permissions,
+    }
     try {
-      await createRole.mutateAsync({ name: createName, description: createDescription, permissions: createPermissions })
-      toastSuccess('Role created')
-      setCreateRoleDialogOpen(false)
-      setCreateName('')
-      setCreateDescription('')
-      setCreatePermissions([])
+      if (roleDraft.mode === 'edit' && roleDraft.roleId) {
+        await updateRole.mutateAsync({ id: roleDraft.roleId, ...input })
+        toast.success(`Role updated. ${ROLE_CHANGE_DELAY_COPY}`)
+      } else {
+        await createRole.mutateAsync(input)
+        toast.success(`Role ${input.name} created. Give it to someone with Change role, or when you invite them.`)
+      }
+      closeRoleDraft()
     } catch (err) {
-      toastError(err instanceof ApiError ? err.message : 'Failed to create role')
+      setRoleError(roleErrorMessage(err, 'save'))
     }
   }
 
-  const handleUpdateRole = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingRole) return
-    try {
-      await updateRole.mutateAsync({ id: editingRole.id, name: editName, description: editDescription, permissions: editPermissions })
-      toastSuccess('Role updated')
-      setEditRoleDialogOpen(false)
-      setEditingRole(null)
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'role_builtin') {
-        toastError('Built-in roles cannot be edited')
-      } else {
-        toastError(err instanceof ApiError ? err.message : 'Failed to update role')
-      }
-    }
+  const closeDeleteRole = () => {
+    setDeletingRole(null)
+    setDeleteError(null)
   }
 
   const handleDeleteRole = async () => {
     if (!deletingRole) return
+    setDeleteError(null)
     try {
       await deleteRole.mutateAsync(deletingRole.id)
-      toastSuccess('Role deleted')
-      setDeleteRoleDialogOpen(false)
-      setDeletingRole(null)
+      toast.success(`Role ${roleLabel(deletingRole.name)} deleted.`)
+      closeDeleteRole()
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'role_has_holders') {
-        toastError('Cannot delete a role that is still assigned to members')
-      } else if (err instanceof ApiError && err.code === 'role_builtin') {
-        toastError('Built-in roles cannot be deleted')
-      } else {
-        toastError(err instanceof ApiError ? err.message : 'Failed to delete role')
-      }
+      setDeleteError(roleErrorMessage(err, 'delete'))
     }
   }
+
+  // ---- Derived for the dialogs --------------------------------------------------------------
+
+  const changingSelf = changing !== null && changing.userId === myId
+  const roleUnchanged = changing !== null && newRoleName === changing.role
+  const chosenRole = roleByName[newRoleName]
+  const inviteRole = roleByName[inviteRoleName]
+  const removingSelf = removing !== null && removing.userId === myId
+  const editedRole = roleDraft?.roleId ? roles?.find((role) => role.id === roleDraft.roleId) : undefined
+  const deletingHolders = deletingRole?.holders ?? 0
+
+  const roleOptions = sortedRoles.map((role) => (
+    <option key={role.id} value={role.name}>
+      {roleLabel(role.name)}
+    </option>
+  ))
+
+  const facetRoles = React.useMemo(
+    () => [...new Set((membersQuery.data ?? []).map((member) => member.role))].sort(byRoleRank),
+    [membersQuery.data],
+  )
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="Who can do what"
         title="Members and roles"
-        description="Roles are composed from permissions and edited here. A change takes effect the next time somebody signs in."
-        action={canInvite ? <Button onClick={() => { setCreatedInvitation(null); setInviteDialogOpen(true); }}>Invite someone</Button> : undefined}
+        description={`Roles are composed from permissions. ${ROLE_CHANGE_DELAY_COPY}`}
+        action={canInvite ? <Button onClick={openInvite}>Invite someone</Button> : undefined}
       />
 
-      <Notice tone="warning">
-        A workspace must keep at least one owner. The last owner cannot be demoted or removed.
-      </Notice>
+      {canManageMembers && <Notice tone="info">{OWNER_RULE}</Notice>}
 
-      <QueryState
-        query={{ data: members, isLoading: membersLoading, error: membersError, refetch: refetchMembers }}
-        permission="member:read"
-        what="members"
-        isEmpty={(members) => members.length === 0}
-        empty={
-          <div style={{ marginTop: 'var(--space-6)' }}>
-            <Card as="section">
-              <Eyebrow>People</Eyebrow>
-              <p className="muted">No members found.</p>
-            </Card>
-          </div>
-        }
-        rows={6}
-      >
-        {(members) => (
-          <>
-            <section style={{ marginTop: 'var(--space-6)' }}>
-              <Card as="section">
-                <Eyebrow>People</Eyebrow>
-                <DataTable
-                  columns={memberColumns}
-                  rows={members}
-                  getKey={(row) => row.userId}
-                  caption="Members of this workspace and the role each one holds."
+      <section style={{ marginTop: 'var(--space-6)' }}>
+        <Card as="section">
+          <Eyebrow as="h2">People</Eyebrow>
+          <QueryState
+            query={membersQuery}
+            permission="member:read"
+            what="the member list"
+            isEmpty={(members) => members.length === 0}
+            empty={<p className="muted">No members found.</p>}
+            rows={6}
+          >
+            {() => (
+              <>
+                <FilterBar
+                  searchLabel="Search people"
+                  placeholder="Name or email"
+                  query={filter.query}
+                  onQueryChange={filter.setQuery}
+                  facets={[
+                    {
+                      param: 'role',
+                      label: 'Role',
+                      options: facetRoles.map((role) => ({
+                        value: role,
+                        label: roleLabel(role),
+                        count: filter.counts.role?.[role] ?? 0,
+                      })),
+                      selected: filter.selected.role ?? [],
+                      onToggle: (value) => filter.toggle('role', value),
+                    },
+                  ]}
+                  shown={filter.filtered.length}
+                  total={filter.total}
+                  active={filter.active}
+                  onClear={filter.clear}
                 />
-              </Card>
-            </section>
-
-            {canInvite && (
-              <section style={{ marginTop: 'var(--space-6)' }}>
-                <Card as="section">
-                  <Eyebrow>Pending invitations</Eyebrow>
-                  {!invitations || invitations.length === 0 ? (
-                    <p className="muted">No open invitations.</p>
-                  ) : (
-                    <DataTable
-                      columns={INVITATION_COLUMNS}
-                      rows={invitations}
-                      getKey={(row) => row.invitationId}
-                      caption="Invitations sent from this workspace, whether or not they have been accepted yet."
-                    />
-                  )}
-                </Card>
-              </section>
+                {filter.filtered.length === 0 ? (
+                  <FilterEmpty onClear={filter.clear} what="members" />
+                ) : (
+                  <DataTable
+                    columns={memberColumns}
+                    rows={filter.filtered}
+                    getKey={(row) => row.userId}
+                    caption="Members of this workspace and the role each one holds."
+                  />
+                )}
+              </>
             )}
+          </QueryState>
+        </Card>
+      </section>
 
-            <section style={{ marginTop: 'var(--space-6)' }}>
-              <Card as="section">
-                <Eyebrow>Roles</Eyebrow>
-                <p className="muted" style={{ marginBottom: 'var(--space-5)' }}>
-                  Built-in roles are shared by every workspace and cannot be edited. Copy one to make a
-                  role of your own.
-                </p>
-                <QueryState
-                  query={{ data: roles, isLoading: rolesLoading, error: rolesError, refetch: refetchRoles }}
-                  permission="role:read"
-                  what="roles"
-                  isEmpty={(roles) => roles.length === 0}
-                  empty={<p className="muted">No roles configured.</p>}
-                  rows={4}
-                >
-                  {(roles) => (
-                    <>
-                      <DataTable
-                        columns={ROLE_COLUMNS}
-                        rows={roles}
-                        getKey={(row) => row.id}
-                        caption="Roles available in this workspace, with the number of permissions each carries."
-                      />
-                      {canManageRoles && (
-                        <div style={{ marginTop: 'var(--space-5)', display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                          <Button onClick={() => setCreateRoleDialogOpen(true)}>Create role</Button>
-                        </div>
-                      )}
-                    </>
+      {canInvite && (
+        <section style={{ marginTop: 'var(--space-6)' }}>
+          <Card as="section">
+            <Eyebrow as="h2">Invitations</Eyebrow>
+            {keptInvitation?.acceptUrl && (
+              <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+                <Notice tone="success">
+                  The link for {keptInvitation.email} stays here until you leave this page. It is not
+                  shown again after that.
+                </Notice>
+                <InviteLink url={keptInvitation.acceptUrl} inputId={pageLinkId} />
+                <div>
+                  <Button variant="quiet" className="button-sm" onClick={() => setKeptInvitation(null)}>
+                    Hide the link
+                  </Button>
+                </div>
+              </div>
+            )}
+            <QueryState
+              query={invitationsQuery}
+              permission="member:invite"
+              what="the invitations list"
+              isEmpty={(rows) => rows.length === 0}
+              empty={<p className="muted">No invitations yet. Invite someone to create a link for them.</p>}
+              rows={3}
+            >
+              {(rows) => (
+                <DataTable
+                  columns={invitationColumns}
+                  rows={rows}
+                  getKey={(row) => row.invitationId}
+                  caption="Invitations created in this workspace, newest first, with where each one stands."
+                />
+              )}
+            </QueryState>
+          </Card>
+        </section>
+      )}
+
+      {canReadRoles && (
+        <section style={{ marginTop: 'var(--space-6)' }}>
+          <Card as="section">
+            <Eyebrow as="h2">Roles</Eyebrow>
+            <p className="muted" style={{ marginBottom: 'var(--space-5)' }}>
+              Built-in roles cannot be edited.{canCreateRole ? ' Copy one to start a role of your own.' : ''}
+            </p>
+            <QueryState
+              query={rolesQuery}
+              permission="role:read"
+              what="the roles list"
+              isEmpty={(rows) => rows.length === 0}
+              empty={<p className="muted">No roles configured.</p>}
+              rows={4}
+            >
+              {() => (
+                <>
+                  <DataTable
+                    columns={roleColumns}
+                    rows={sortedRoles}
+                    getKey={(row) => row.id}
+                    caption="Roles available in this workspace, with the number of permissions each carries and how many people hold it."
+                  />
+                  {canCreateRole && (
+                    <div style={{ marginTop: 'var(--space-5)', display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                      <Button onClick={openCreateRole}>Create role</Button>
+                    </div>
                   )}
-                </QueryState>
-              </Card>
-            </section>
-          </>
-        )}
-      </QueryState>
+                  {!canActOnRoles && (
+                    <p className="caption" style={{ marginTop: 'var(--space-4)' }}>
+                      Only owners and admins can create, edit or delete roles.
+                    </p>
+                  )}
+                </>
+              )}
+            </QueryState>
+          </Card>
+        </section>
+      )}
 
       <Dialog
-        open={inviteDialogOpen}
-        onClose={() => { setInviteDialogOpen(false); setInviteEmail(''); setInviteRoleName(''); }}
+        open={inviteOpen}
+        onClose={closeInvite}
         eyebrow="Invite someone"
-        title="Invite a member"
-        description="There is no email sending in this platform. Instead, this creates a one-time link you copy and send yourself."
+        title={createdInvitation ? 'Send this link' : 'Invite a member'}
+        description={
+          createdInvitation
+            ? undefined
+            : 'The platform does not send email. This creates a one-time link that you copy and send yourself.'
+        }
+        dismissible={!inviteMember.isPending}
+        // A stray click beside the dialog must not throw away a link that is shown only once.
+        closeOnBackdrop={!createdInvitation}
+        error={inviteError}
         footer={
           createdInvitation ? (
-            <Button variant="primary" onClick={() => { setInviteDialogOpen(false); setInviteEmail(''); setInviteRoleName(''); }}>
+            <Button variant="primary" onClick={closeInvite}>
               Done
             </Button>
           ) : (
-            <div className="dialog-footer">
-              <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>Cancel</Button>
+            <>
+              <Button variant="outline" onClick={closeInvite} disabled={inviteMember.isPending}>
+                Cancel
+              </Button>
               <Button
                 variant="primary"
-                onClick={handleInvite}
-                disabled={inviteMember.isPending || !inviteEmail || !inviteRoleName}
+                type="submit"
+                form="invite-form"
+                loading={inviteMember.isPending}
+                disabled={!inviteEmail.trim() || !inviteRoleName}
               >
-                {inviteMember.isPending ? 'Creating…' : 'Create invitation'}
+                Create invitation
               </Button>
-            </div>
+            </>
           )
         }
       >
         {createdInvitation ? (
           <div className="stack" style={{ gap: 'var(--space-4)' }}>
-            <Notice tone="success">
-              Invitation created for {createdInvitation.email}. Copy this link and send it to them - it
-              will not be shown again.
+            <Notice tone="success" live>
+              Invitation created for {createdInvitation.email} as {roleLabel(createdInvitation.roleName)}.
+              Send them this link. It is not shown again once you leave this page.
             </Notice>
-            <Input label="Accept-invitation link" value={createdInvitation.acceptUrl ?? ''} readOnly />
+            {createdInvitation.acceptUrl ? (
+              <InviteLink url={createdInvitation.acceptUrl} inputId={dialogLinkId} />
+            ) : (
+              <p className="muted">The platform did not return a link for this invitation. Create it again.</p>
+            )}
+            <p className="caption">
+              The link works once and expires <Time iso={createdInvitation.expiresAt} />.
+            </p>
           </div>
         ) : (
-          <form onSubmit={handleInvite} className="stack" style={{ gap: 'var(--space-4)' }}>
+          <form id="invite-form" onSubmit={handleInvite} className="stack" style={{ gap: 'var(--space-4)' }}>
             <Input
               label="Email address"
               type="email"
               value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
+              onChange={(event) => {
+                setInviteEmail(event.target.value)
+                setInviteFieldErrors((errors) => ({ ...errors, email: undefined }))
+              }}
               required
+              maxLength={320}
+              autoComplete="off"
+              error={inviteFieldErrors.email}
+              hint="Inviting an address that already has an open invitation replaces that invitation."
             />
             <Select
               label="Role"
               value={inviteRoleName}
-              onChange={(e) => setInviteRoleName(e.target.value)}
+              onChange={(event) => {
+                setInviteRoleName(event.target.value)
+                setInviteFieldErrors((errors) => ({ ...errors, roleName: undefined }))
+              }}
               required
+              error={inviteFieldErrors.roleName}
+              hint={inviteRole?.description || undefined}
             >
-              <option value="" disabled>Choose a role…</option>
-              {roles?.map((role) => (
-                <option key={role.id} value={role.name}>{role.name}</option>
-              ))}
+              <option value="" disabled>
+                Choose a role…
+              </option>
+              {roleOptions}
             </Select>
           </form>
         )}
       </Dialog>
 
       <Dialog
-        open={roleChangeDialogOpen}
-        onClose={() => { setRoleChangeDialogOpen(false); setChangingMember(null); }}
+        open={changing !== null}
+        onClose={closeChange}
         eyebrow="Change role"
-        title={`Change ${changingMember?.displayName ?? ''}'s role`}
+        title={changingSelf ? 'Change your own role' : `Change ${changing?.displayName ?? ''}'s role`}
+        description={ROLE_CHANGE_DELAY_COPY}
+        dismissible={!updateMemberRole.isPending}
+        error={changeError}
         footer={
-          <div className="dialog-footer">
-            <Button variant="outline" onClick={() => { setRoleChangeDialogOpen(false); setChangingMember(null); }}>Cancel</Button>
-            <Button variant="primary" onClick={handleChangeRole} disabled={updateMemberRole.isPending || !newRoleName}>
-              {updateMemberRole.isPending ? 'Saving…' : 'Save'}
+          <>
+            <Button variant="outline" onClick={closeChange} disabled={updateMemberRole.isPending}>
+              Cancel
             </Button>
-          </div>
+            <Button
+              variant="primary"
+              type="submit"
+              form="change-role-form"
+              loading={updateMemberRole.isPending}
+              disabled={roleUnchanged || !newRoleName}
+            >
+              Save role
+            </Button>
+          </>
         }
       >
-        <Select label="New role" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)}>
-          {roles?.map((role) => (
-            <option key={role.id} value={role.name}>{role.name}</option>
-          ))}
-        </Select>
+        <form id="change-role-form" onSubmit={handleChangeRole} className="stack" style={{ gap: 'var(--space-4)' }}>
+          {changing?.role === 'owner' && <Notice tone="info">{OWNER_RULE}</Notice>}
+          {changingSelf && (
+            <Notice tone="warning">
+              This is your own role. If the new role cannot change members' roles, you will not be
+              able to change it back yourself.
+            </Notice>
+          )}
+          <Select
+            label="New role"
+            value={newRoleName}
+            onChange={(event) => setNewRoleName(event.target.value)}
+            hint={roleUnchanged ? 'Choose a different role.' : chosenRole?.description || undefined}
+          >
+            {roleOptions}
+          </Select>
+        </form>
       </Dialog>
 
-      <Dialog
-        open={removeMemberDialogOpen}
-        onClose={() => { setRemoveMemberDialogOpen(false); setRemovingMember(null); }}
+      <ConfirmDialog
+        open={removing !== null}
+        onClose={closeRemove}
+        onConfirm={handleRemoveMember}
         eyebrow="Remove member"
-        title={`Remove ${removingMember?.displayName ?? ''}?`}
-        description="They lose access to this workspace immediately. The record of their past membership is kept."
+        title={removingSelf ? 'Remove yourself?' : `Remove ${removing?.displayName ?? ''}?`}
+        description={
+          removingSelf
+            ? 'You lose access to this workspace within 15 minutes, when your session renews.'
+            : 'They lose access to this workspace within 15 minutes, when their session renews. The record of their membership is kept.'
+        }
+        confirmLabel={removingSelf ? 'Remove myself' : 'Remove member'}
+        cancelLabel="Cancel"
+        tone="danger"
+        loading={removeMember.isPending}
+        error={removeError}
+      >
+        <div className="stack" style={{ gap: 'var(--space-4)' }}>
+          {removing?.role === 'owner' && <Notice tone="info">{OWNER_RULE}</Notice>}
+          <p className="muted">This cannot be undone from the console.</p>
+        </div>
+      </ConfirmDialog>
+
+      <Dialog
+        open={roleDraft !== null}
+        onClose={closeRoleDraft}
+        eyebrow={roleDraft?.mode === 'edit' ? 'Edit role' : 'New role'}
+        title={roleDraft?.mode === 'edit' ? `Edit ${roleLabel(editedRole?.name ?? roleDraft.name)}` : 'Create a role'}
+        description={
+          roleDraft?.mode === 'edit'
+            ? `Changes apply to everyone who holds this role (${formatCount(editedRole?.holders ?? 0)}). ${ROLE_CHANGE_DELAY_COPY}`
+            : 'Choose the permissions this role carries. Start from an existing role to adjust it rather than build it from nothing.'
+        }
+        dismissible={!rolePending}
+        error={roleError}
         footer={
-          <div className="dialog-footer">
-            <Button variant="outline" onClick={() => { setRemoveMemberDialogOpen(false); setRemovingMember(null); }}>Cancel</Button>
-            <Button variant="danger" onClick={handleRemoveMember} disabled={removeMember.isPending}>
-              {removeMember.isPending ? 'Removing…' : 'Remove member'}
+          <>
+            <Button variant="outline" onClick={closeRoleDraft} disabled={rolePending}>
+              Cancel
             </Button>
-          </div>
+            <Button variant="primary" type="submit" form="role-form" loading={rolePending} disabled={!roleDraftValid}>
+              {roleDraft?.mode === 'edit' ? 'Save changes' : 'Create role'}
+            </Button>
+          </>
         }
       >
-        <p className="muted">This cannot be undone from here; they would need to be invited again.</p>
+        {roleDraft && (
+          <form id="role-form" onSubmit={handleSaveRole} className="stack" style={{ gap: 'var(--space-4)' }}>
+            {roleDraft.mode === 'create' && (
+              <Select
+                label="Start from"
+                value={roleDraft.startFrom}
+                onChange={(event) => changeStartFrom(event.target.value)}
+              >
+                <option value="">A blank role</option>
+                {sortedRoles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {roleLabel(role.name)}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Input
+              label="Role name"
+              value={roleDraft.name}
+              onChange={(event) => {
+                const name = event.target.value
+                setRoleDraft((draft) => (draft ? { ...draft, name } : draft))
+              }}
+              required
+              maxLength={60}
+              autoComplete="off"
+            />
+            <Textarea
+              label="Description"
+              optional
+              value={roleDraft.description}
+              onChange={(event) => {
+                const description = event.target.value
+                setRoleDraft((draft) => (draft ? { ...draft, description } : draft))
+              }}
+              rows={2}
+              maxLength={300}
+            />
+            <PermissionPicker
+              catalogue={catalogue}
+              selected={roleDraft.permissions}
+              onChange={(permissions) => setRoleDraft((draft) => (draft ? { ...draft, permissions } : draft))}
+            />
+          </form>
+        )}
       </Dialog>
 
       <Dialog
-        open={createRoleDialogOpen}
-        onClose={() => setCreateRoleDialogOpen(false)}
-        eyebrow="New role"
-        title="Create a custom role"
-        description="Select the permissions this role should include. Built-in roles cannot be changed; create a new one instead."
-        footer={
-          <div className="dialog-footer">
-            <Button variant="outline" onClick={() => setCreateRoleDialogOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreateRole} disabled={createRole.isPending}>
-              {createRole.isPending ? 'Creating…' : 'Create role'}
-            </Button>
-          </div>
-        }
-      >
-        <form onSubmit={handleCreateRole} className="stack" style={{ gap: 'var(--space-4)' }}>
-          <Input label="Role name" value={createName} onChange={(e) => setCreateName(e.target.value)} required />
-          <Textarea label="Description" value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} rows={3} />
-          <div className="field">
-            <label className="field-label">Permissions</label>
-            <div className="stack" style={{ gap: 'var(--space-2)', maxHeight: '200px', overflow: 'auto' }}>
-              {permissions?.map((perm) => (
-                <label key={perm.code} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '13px' }}>
-                  <input
-                    type="checkbox"
-                    checked={createPermissions.includes(perm.code)}
-                    onChange={(e) => setCreatePermissions(e.target.checked ? [...createPermissions, perm.code] : createPermissions.filter(p => p !== perm.code))}
-                  />
-                  <span className="mono">{perm.code}</span>
-                  <span className="muted">{perm.description}</span>
-                  {perm.administrative && <Tag tone="warning">Admin</Tag>}
-                </label>
-              ))}
-            </div>
-          </div>
-        </form>
-      </Dialog>
-
-      <Dialog
-        open={editRoleDialogOpen}
-        onClose={() => { setEditRoleDialogOpen(false); setEditingRole(null); }}
-        eyebrow="Edit role"
-        title={`Edit ${editingRole?.name ?? ''}`}
-        description="Change the name, description, or permissions for this role. Built-in roles cannot be edited."
-        footer={
-          <div className="dialog-footer">
-            <Button variant="outline" onClick={() => { setEditRoleDialogOpen(false); setEditingRole(null); }}>Cancel</Button>
-            <Button variant="primary" onClick={handleUpdateRole} disabled={updateRole.isPending}>
-              {updateRole.isPending ? 'Saving…' : 'Save changes'}
-            </Button>
-          </div>
-        }
-      >
-        <form onSubmit={handleUpdateRole} className="stack" style={{ gap: 'var(--space-4)' }}>
-          <Input label="Role name" value={editName} onChange={(e) => setEditName(e.target.value)} required disabled={editingRole?.system} />
-          <Textarea label="Description" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} disabled={editingRole?.system} />
-          {editingRole?.system && <p className="caption" style={{ color: 'var(--color-warning)' }}>Built-in role: name cannot be changed.</p>}
-          <div className="field">
-            <label className="field-label">Permissions</label>
-            <div className="stack" style={{ gap: 'var(--space-2)', maxHeight: '200px', overflow: 'auto' }}>
-              {permissions?.map((perm) => (
-                <label key={perm.code} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '13px' }}>
-                  <input
-                    type="checkbox"
-                    checked={editPermissions.includes(perm.code)}
-                    onChange={(e) => setEditPermissions(e.target.checked ? [...editPermissions, perm.code] : editPermissions.filter(p => p !== perm.code))}
-                    disabled={editingRole?.system}
-                  />
-                  <span className="mono">{perm.code}</span>
-                  <span className="muted">{perm.description}</span>
-                  {perm.administrative && <Tag tone="warning">Admin</Tag>}
-                </label>
-              ))}
-            </div>
-          </div>
-        </form>
-      </Dialog>
-
-      <Dialog
-        open={deleteRoleDialogOpen}
-        onClose={() => { setDeleteRoleDialogOpen(false); setDeletingRole(null); }}
+        open={deletingRole !== null}
+        onClose={closeDeleteRole}
         eyebrow="Delete role"
-        title={`Delete ${deletingRole?.name ?? ''}?`}
-        description="This action cannot be undone. Members with this role will need to be reassigned."
+        title={`Delete ${roleLabel(deletingRole?.name)}?`}
+        description={deletingHolders > 0 ? undefined : 'Nobody holds this role. Deleting it cannot be undone.'}
+        dismissible={!deleteRole.isPending}
+        error={deleteError}
         footer={
-          <div className="dialog-footer">
-            <Button variant="outline" onClick={() => { setDeleteRoleDialogOpen(false); setDeletingRole(null); }}>Cancel</Button>
-            <Button variant="danger" onClick={handleDeleteRole} disabled={deleteRole.isPending}>
-              {deleteRole.isPending ? 'Deleting…' : 'Delete role'}
+          <>
+            <Button variant="outline" onClick={closeDeleteRole} disabled={deleteRole.isPending} data-autofocus>
+              {deletingHolders > 0 ? 'Close' : 'Keep it'}
             </Button>
-          </div>
+            <Button variant="danger" onClick={() => void handleDeleteRole()} loading={deleteRole.isPending} disabled={deletingHolders > 0}>
+              Delete role
+            </Button>
+          </>
         }
       >
-        {deletingRole?.system && <p className="muted" style={{ color: 'var(--color-warning)' }}>This is a built-in role and cannot be deleted.</p>}
-        {deletingRole && deletingRole.holders > 0 && <p className="muted" style={{ color: 'var(--color-danger)' }}>{deletingRole.holders} member(s) currently hold this role.</p>}
+        {deletingHolders > 0 ? (
+          <p style={{ color: 'var(--danger)' }}>
+            {deletingHolders === 1 ? 'One member holds this role.' : `${formatCount(deletingHolders)} members hold this role.`}{' '}
+            Reassign them first, with Change role in the People list.
+          </p>
+        ) : null}
       </Dialog>
     </div>
   )

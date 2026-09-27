@@ -467,6 +467,20 @@ Status: **Open** · **Fixed, verify** (changed in code, not yet walked in the br
 | D60 | P1 | Web | Several mutating buttons rendered unconditionally regardless of the signed-in role's actual permission, so a person without the right to do something saw a fully clickable control that only failed after they filled out a form and submitted: "Add an agent" (`Agents.tsx`), "Edit instructions"/"Give it a task" (`AgentDetail.tsx`), "New goal"/"Cancel goal" (`Tasks.tsx`), "New run" (`CommandMap.tsx`), "Cancel run" (`RunDetail.tsx`), "Index again"/"Upload document" (`SourceDetail.tsx`), "Connect an account" (`Integrations.tsx`). All now gated on the real permission their backend endpoint requires | `routes/Agents.tsx`, `AgentDetail.tsx`, `Tasks.tsx`, `CommandMap.tsx`, `RunDetail.tsx`, `SourceDetail.tsx`, `Integrations.tsx` | Fixed |
 | D61 | P0 | Web | `Approvals.tsx` computed `canDecide={decideApproval.mutate !== undefined}`, which is a `useMutation`'s function reference and is never undefined - so Approve/Reject rendered as fully functional buttons for every role, including `employee` and `viewer`, who hold `approval:read` but not `approval:decide` | `routes/Approvals.tsx` | Fixed |
 | D62 | P0 | Web | Every dialog on the site (`<dialog>` shown via `showModal()`) opened pinned to the top-left of the viewport instead of centered - Tailwind's Preflight zeroes every element's default margin, `dialog` included, which breaks the browser's own `margin: auto` centering trick for a fixed, inset-0 modal. User-reported (screenshot), reproduced, and confirmed via computed style (`margin: 0px` instead of `auto`) | `styles/components.css` | Fixed |
+| D63 | P0 | Web | The public home page was rebuilt end to end ("Living Console": a glass hero replicating the console, four live interactive demos - approval gate, provider failover, audit chain, cited answers - a role explorer, and a denser bento layout), per the user's explicit request for something "amazing, interactive, beautiful, futuristic, not spacious". Built via a judged design panel (3 directions scored and synthesized) and a 6-agent parallel build against one file plan | `routes/Landing.tsx`, `components/landing/**` (new), `hooks/**` (new), `styles/landing/**` (new) | Fixed |
+| D64 | P0 | Web | The cited-answer demo's first citation named the wrong page of `Project_Proposal.pdf` (page 5; the quoted sentence is actually on page 6) - a visitor who opened the source document would find the platform's own flagship "every claim carries the right page" demo wrong on its own terms | `components/landing/answer/citedAnswerModel.ts` | Fixed |
+| D65 | P1 | Web | The failover demo claimed a single 401 "opens a breaker"; the real circuit breaker only opens after a run of failures crosses its threshold, and a rejected credential is not actually remembered by the router between separate requests the way the demo implied. Reworded to describe what the demo actually remembers for itself, and what the real breaker does | `components/landing/failover/failoverModel.ts`, `FailoverDemo.tsx` | Fixed |
+| D66 | P1 | Web | Three more overstated or invented product claims on the new page: the audit demo said "every decision, tool call and refusal is recorded" when only approval decisions and run outcomes are currently audit-logged (its sample entries were tool-call/refusal examples that do not match either); the approval demo said a run "resumes on the same model" three times, when resume re-resolves routing rather than pinning a model; the approval card showed "Example deadline: 30 min" when the real, non-configurable window is 24 hours | `components/landing/sections/AuditChainDemo.tsx`, `auditChain.ts`, `agent-run/approvalModel.ts`, `ApprovalDemo.tsx` | Fixed |
+| D67 | P2 | Web | Two smaller factual slips on the new page: the role explorer said a role change "takes effect the next time somebody signs in" (it actually applies at the next token refresh, no re-sign-in needed); the CTA said live providers are "one stored key and a routing policy away" without mentioning the provider also has to be enabled | `components/landing/roles/RoleSwitcher.tsx`, `sections/LimitsAndCta.tsx` | Fixed |
+| D68 | P1 | Web | Delayed `.focus()` calls in the new approval demo and role explorer had no `preventScroll`, so a visitor who had scrolled on to a later demo was yanked back to a card they had already left, 1.2-2s after clicking it | `agent-run/ApprovalDemo.tsx`, `roles/RoleSwitcher.tsx` | Fixed |
+| D69 | P2 | Web | The demo tiles (`#approval`, `#failover`, etc.) had no `scroll-margin-top`, so an in-page link to one (from the hero's fact strip or console) landed with its head, including the required "Simulated" tag, hidden under the sticky glass bar; the skip link's target (`<main>`) was not focusable, so a keyboard user got no visible indication of where they landed | `styles/landing/base.css`, `routes/Landing.tsx` | Fixed |
+| D70 | P1 | Web | The provider-failover fieldset used the native `disabled` attribute for its "busy while routing" state; disabling a fieldset a visitor's keyboard focus is inside (reached by tabbing a `<select>` into view, which is also what triggers autoplay) force-blurs that control to the document body. Switched to `aria-disabled` plus a guard in each control's own handler | `failover/FailoverDemo.tsx` | Fixed |
+| D71 | P2 | Web | Rows dimmed with whole-element `opacity` in the approval demo took their text down with them, well under 4.5:1 in the parked state that reduced-motion visitors land on directly; the "Send a request" button, `aria-disabled` while routing, looked and hovered exactly like an active button, so a sighted visitor pressed it and nothing happened | `styles/landing/agent-run.css`, `styles/landing/base.css` | Fixed |
+| D72 | P1 | Web | Selecting a workspace tool in an agent card used `role="group"` and `aria-pressed` (independent-toggle semantics) for what is actually a single-select, roving-tabindex, arrow-key-navigable group - a screen reader announcing "toggle button, pressed" implies picking another leaves this one on too. Changed to `role="radiogroup"` / `role="radio"` / `aria-checked` | `components/landing/sections/AgentsSection.tsx` | Fixed |
+| D73 | P1 | Web | With "Viewer" selected, the approval card still showed the real request ("Approval requested · gmail.send_message", "Send the welcome email to the new hire") directly above a note saying a viewer does not see the approval queue - showing the exact thing while saying it cannot be seen. The card now shows a generic "Approval pending" placeholder for a viewer until a decision exists | `agent-run/ApprovalDemo.tsx` | Fixed |
+| D74 | P2 | Web | The hero's simulated console had a screen-reader description asserting "four agents running", true of only one possible frame; the routing-trace panel rendered its placeholder rows at `visibility: hidden`, so the panel looked completely blank (not just quiet) for 0.8s at the start of every 10s loop and 1.2s at the end of each one, including on first paint | `hero/HeroConsole.tsx`, `styles/landing/hero.css` | Fixed |
+| D75 | P0 | Backend | A resumed run rebuilt its conversation from the trace, but only a tool call's *name* was persisted, never its id or arguments - so the model's own tool-call turn was silently dropped from history and the approval step became a bare "you're approved, continue" message tied to nothing. Live testing found the actual consequence: approving "HR: send a welcome email" produced a second, near-identical send request, and then a third after approving that one too - a real, observed infinite approval loop for any agent that uses a tool needing approval, not a sandbox-only quirk. Fixed by persisting each call's id and arguments (`toolCallRecords` on the `model_call` step, `toolCallId` on `tool_call`/`approval` steps) and reconstructing the assistant's real tool-call turn, with a correctly linked tool-result turn, on resume. Verified live end to end: a fresh HR run drafted, asked to send, parked, and finished in exactly one approval after the fix, where it had looped three times before | `services/orchestrator-service/.../service/AgentRunner.java` | Fixed |
+| D76 | P1 | Backend | A model provider occasionally answers 200 with empty content and no recognised finish reason - observed live, once, from OpenRouter's free routed Llama 3.3 70B - and the run completed anyway with a silent blank answer and nothing to say anything had gone wrong. Now treated as a failure with a clear reason ("The model returned no answer..."), so the task's existing retry rule tries again rather than a person seeing a completed run with nothing in it | `services/orchestrator-service/.../service/AgentRunner.java` | Fixed | |
 
 Fixed during the last iteration and verified through the API: persist-versus-merge conflict that
 broke creating a goal; internal service tokens rejected by every internal endpoint; members and
@@ -510,6 +524,84 @@ does not boot a full JPA context). Everything above was verified live: real HTTP
 the gateway (200 authenticated, 401 unauthenticated), a real approval producing a real hash-chained
 audit row reflected in both `/api/audit` and `/api/analytics`, and a full invite→accept→sign-in
 round trip through the actual UI.
+
+**Home page redesign** (D63-D74): built via a judged 3-direction design panel and a 6-agent
+parallel build against one file plan (foundation, then hero / agent-run / failover-and-answer /
+roles-and-sections in parallel, then integration), then reviewed by four independent lenses
+(design-system and factual truth, accessibility, React correctness and performance, layout and
+density), each finding checked by a skeptical verifier before being fixed. 39 findings came back;
+12 were applied above after independent re-verification (some verifier passes hit a spend limit
+mid-run, so several were re-confirmed directly against the real backend code - PDF page numbers,
+`ModelRouter`/breaker behaviour, `AuditClient` wiring, `resume()`, token refresh - rather than
+taken on the reviewer's word alone). `tsc -b`, `pnpm lint`, all 107 tests and `pnpm build` pass
+after every change in this round.
+
+Found but deliberately left open, mostly layout/density refinements rather than defects a visitor
+would call broken: the hero drops to one narrow, left-aligned column between roughly 1024 and
+1179px instead of a balanced two-column layout; the failover tile is still the tallest on the page
+and leaves a blank area in its row neighbour, though its trace is now capped shorter; the role
+explorer's role list leaves an empty column beside the longer details panel on wide screens; a few
+narrow-band wrapping issues around 1180-1260px (the approval stage, the cited-answer split, the
+hero fact-strip labels); the hover-spotlight effect and the role counter's per-frame state each
+cause more re-rendering than they need to; Google Fonts is still loaded from a CDN, which is a
+whole-app decision from before this redesign, not something introduced by it; and the new
+"landing styles" design-system test has a few gaps (a border-longhand regex, no check that every
+`--lp-*` custom property is actually defined, no zero-emoji check) that would let a future
+regression through undetected. None of these were found to make the page actually break, mislead,
+or become unusable - they are recorded here so a later pass can pick them up deliberately rather
+than rediscover them.
+
+**Usability pass, 27 September 2026** — the signed-in console, reviewed from a first-time
+evaluator's perspective first, then a daily operator's. Seven parallel lenses (evaluator journey,
+data presentation, forms and errors, navigation, system-status truthfulness, operator efficiency,
+responsive/accessibility) produced 201 raw findings; deduplication and an adversarial verify pass
+against the real code kept 67. Applied in dependency order:
+
+- **Shared foundation** (`lib/format.ts`, `lib/labels.ts`, `lib/routing.ts`, `lib/onboarding.ts`,
+  `lib/useListFilter.ts`, `components/ui/FilterBar.tsx`): one place for humanised times, durations,
+  money and every status vocabulary in the platform (run, task, goal, approval, agent, source,
+  document, integration, invitation, outcome, circuit, tool call), a shared computation of whether
+  live model routing is really active (used identically by the Command Map banner and Model
+  Routing, rather than each screen inventing its own), and a reusable search/filter bar with its
+  state kept in the URL.
+- **Backend**: `GET /api/runs` gained `status`/`agentId` filters and a new `/runs` list route uses
+  them server-side rather than filtering only the page already loaded; a task and its goal now
+  follow their run to a real conclusion instead of sticking on "Waiting for approval" forever
+  (`TaskProgress`, a new reconciling sweep in `MaintenanceScheduler`); cancelling a goal now stops
+  its run and withdraws its approval instead of leaving both stranded; run cost is recorded from
+  real usage and backfilled for existing runs (Flyway V3); the instruction a run was given is kept
+  in its own trace step; the gateway gained routes for `/api/orgs/**` and `/api/model-policy/**`
+  that were missing behind the production gateway.
+- **Five screen areas**, each owning a disjoint set of files: the app shell, navigation and the new
+  `/runs` page; the Command Map, run trace and task dialog (including the getting-started guide);
+  agents, tasks and approvals; knowledge, chat and integrations; and administration (model routing,
+  members, audit, analytics). Every screen owner then re-verified its own findings adversarially
+  and applied cross-area requests from the other owners.
+
+Concretely, this closed the defects the user had already spotted plus everything the audit added:
+raw agent UUIDs and raw status codes replaced by names and plain language everywhere; durations
+that read "84817s" now read "23 h 05 min"; the Model Routing cost cells that rendered the literal
+text `<span className="stat-unit">USD</span>` now render `US$0.30`; the Circuit column's raw
+`CLOSED` now reads "Healthy"; a stored, enabled, working OpenRouter credential no longer produces
+"No model provider is configured" banners on the Command Map or Model Routing, both of which now
+say what is really routing; Source detail no longer claims documents "need attention" when every
+one is indexed; a getting-started guide, filtered to what each role can actually do, appears on
+first visit; every long list (runs, tasks, audit, members) can be searched and filtered.
+
+Verifying it live surfaced two further backend defects neither the audit nor the plan had reason to
+expect, because they only show up when a real, non-sandbox model is actually driving a multi-step,
+approval-gated run rather than the sandbox model or a single-step run — see D75 and D76. D75 in
+particular was a real, reproduced infinite approval loop, found by walking the HR agent's
+send-an-email flow live with the stored OpenRouter key rather than assuming the sandbox-verified
+path generalised.
+
+Verified after every change: `pnpm exec tsc -b`, `pnpm lint`, `pnpm exec vitest run` (192 tests),
+`pnpm build`, a full Maven reactor `install` (all modules), and the orchestrator's own test suite
+(63 tests, including the two added for D75 and D76) all green. Walked live in the browser as
+manager (task creation, an approval that previously would have looped, its resolution, run trace,
+Runs list, Knowledge, Chat, Model Routing, Members, Audit Log), as admin (Audit Log content), and
+as viewer (getting-started guide correctly narrowed to three read-only steps, no task or approval
+actions offered) - plus a deliberate wrong-password sign-in to confirm error handling.
 
 ---
 

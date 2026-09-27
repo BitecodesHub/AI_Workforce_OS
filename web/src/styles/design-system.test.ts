@@ -137,3 +137,62 @@ describe('screens', () => {
     expect(items.length).toBeLessThanOrEqual(6)
   })
 })
+
+/*
+ * The public page has its own stylesheets, which components.css's checks never see. These hold
+ * them to the same rules: borders from --line or the glass rgba, radii from the token families,
+ * no raw hex, and keyframe names that cannot collide with the console's.
+ */
+describe('landing styles', () => {
+  const LANDING_DIR = join(SRC, 'styles/landing')
+  const LANDING_FILES = walk(LANDING_DIR, ['.css'])
+  const landing = LANDING_FILES.map((file) => ({ file, source: readFileSync(file, 'utf8') }))
+  const RADIUS = /^((0|var\(--radius-[a-z-]+\))(\s+(0|var\(--radius-[a-z-]+\))){0,3}|inherit)$/
+
+  it('imports every landing stylesheet from index.css', () => {
+    const index = readFileSync(join(LANDING_DIR, 'index.css'), 'utf8')
+    const others = readdirSync(LANDING_DIR).filter((entry) => entry.endsWith('.css') && entry !== 'index.css')
+    expect(others.length).toBeGreaterThan(0)
+    for (const file of others) {
+      expect(index, `index.css does not import ${file}`).toContain(`@import './${file}'`)
+    }
+  })
+
+  it('draws every border from --line', () => {
+    const borders = landing.flatMap(({ source }) =>
+      [...source.matchAll(/border(?:-\w+)?:\s*1px solid ([^;]+);/g)].map((m) => m[1]!.trim()),
+    )
+    expect(borders.length).toBeGreaterThanOrEqual(6)
+    for (const border of borders) {
+      const allowed =
+        border.includes('var(--line)') ||
+        border.includes('rgba(210, 221, 238') ||
+        border === 'transparent'
+      expect(allowed, `border "${border}" is not --line`).toBe(true)
+    }
+  })
+
+  it('takes every radius from the token families', () => {
+    for (const { file, source } of landing) {
+      for (const m of source.matchAll(/border-radius:\s*([^;]+);/g)) {
+        const value = m[1]!.trim()
+        expect(value, `${file} uses border-radius "${value}"`).toMatch(RADIUS)
+      }
+    }
+  })
+
+  it('keeps raw colour values out', () => {
+    for (const { file, source } of landing) {
+      const hexes = source.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []
+      expect(hexes, `${file} contains a raw colour: ${hexes.join(', ')}`).toHaveLength(0)
+    }
+  })
+
+  it('names every keyframe with the lp- prefix', () => {
+    for (const { file, source } of landing) {
+      for (const m of source.matchAll(/@keyframes\s+([^\s{]+)/g)) {
+        expect(m[1]!, `${file} declares keyframes "${m[1]}"`).toMatch(/^lp-/)
+      }
+    }
+  })
+})

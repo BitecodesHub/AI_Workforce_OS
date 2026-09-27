@@ -1,0 +1,267 @@
+[
+ {
+  "path": "web/src/styles/landing/index.css",
+  "owner": "foundation",
+  "contents": "Contents, in this order and nothing else:\n@import './base.css';\n@import './hero.css';\n@import './agent-run.css';\n@import './failover-answer.css';\n@import './roles-sections.css';\n\nOnly Landing.tsx imports this file."
+ },
+ {
+  "path": "web/src/styles/landing/base.css",
+  "owner": "foundation",
+  "contents": "Header comment: records the landing-only exception for transform and opacity motion, scoped to .lp.\n\nCustom properties on .lp, exactly as in spec 4.1, with media overrides at 1179px, 899px and 599px.\n\nClasses, all from spec 4.2:\n- Root and layout: .lp, .lp-main, .lp-shell, .lp-section, .lp-section-tight, .lp-head, .lp-head-main, .lp-head-aside\n- Type: .lp-h2, .lp-h2-band, .lp-h3, .lp-lead, .lp-copy, .lp-mono, .lp-micro\n- Background: .lp-aurora, .lp-aurora-blob, .lp-aurora::after (the grid), .lp-aurora-low\n- Surfaces: .lp-glass (with ::before specular line and the @supports fallback), .lp-frost, .lp-inset, .lp-code, .lp-hairline-grid, .lp-hairline-cell, .lp-notice-pill\n- Bento: .lp-bento with [data-area] spans\n- Demo frame: .lp-demo (with ::before light pool and [data-inview] rule), .lp-demo-head, .lp-demo-title, .lp-demo-lead, .lp-demo-body, .lp-demo-status, .lp-demo-foot, .lp-demo-actions\n- Controls: .lp-button-lg, .lp-sheen, .lp-chip, .lp-select, .lp-seg, .lp-seg-legend, .lp-seg-legend-hidden, .lp-seg-options, .lp-seg-input, .lp-seg-pill, .lp-seg-full, .lp-link\n- Status: .lp-dot and its colour modifiers, .lp-pulse, .lp-bar, .lp-bar-fill with data-run fill, drain, full and empty, .lp-scan-host\n- Reveal and hover: .lp-reveal, .lp-anim-rise, .lp-anim-slide, .lp-anim-fade, .lp-anim-tick, .lp-lift, .lp-spot, .lp-bezel\n- Ambient pause: rules under .lp[data-ambient='paused']\n\nKeyframes, all inside @media (prefers-reduced-motion: no-preference): lp-rise, lp-fade, lp-slide, lp-tick, lp-pulse, lp-fill, lp-drain, lp-scan, lp-sheen, lp-drift-1, lp-drift-2, lp-drift-3.\n\nReduced-motion delay-zeroing block.\n\nRules: no hex anywhere. Borders only var(--line), rgba(210, 221, 238, a) or transparent. Radii only tokens."
+ },
+ {
+  "path": "web/src/hooks/useReducedMotion.ts",
+  "owner": "foundation",
+  "contents": "export function useReducedMotion(): boolean\n\n- Built on useSyncExternalStore over matchMedia('(prefers-reduced-motion: reduce)').\n- Returns true when window or matchMedia is missing. The server snapshot is also true."
+ },
+ {
+  "path": "web/src/hooks/useInView.ts",
+  "owner": "foundation",
+  "contents": "export type InViewOptions = { threshold?: number; rootMargin?: string; once?: boolean }\nexport function useInView<T extends Element>(options?: InViewOptions): { ref: React.RefCallback<T>; inView: boolean }\n\n- Defaults: threshold 0, rootMargin '0px', once true.\n- When IntersectionObserver is missing, the lazy initial state is true.\n- setState happens only in the observer callback.\n- The observer is cleaned up on unmount."
+ },
+ {
+  "path": "web/src/hooks/useReveal.ts",
+  "owner": "foundation",
+  "contents": "export function useReveal<T extends HTMLElement>(): React.RefCallback<T>\nexport function revealStyle(index: number): React.CSSProperties  // returns { '--i': String(index) }\n\n- One module-level shared IntersectionObserver: threshold 0, rootMargin '0px 0px -12% 0px'.\n- On intersect it sets node.dataset.inview = 'true' and unobserves the node.\n- Without IntersectionObserver it sets the attribute immediately.\n- The ref callback is stable and returns a cleanup."
+ },
+ {
+  "path": "web/src/hooks/useSequence.ts",
+  "owner": "foundation",
+  "contents": "export type SequenceStep = { at: number; run: () => void }\nexport type Sequence = { play: (steps: ReadonlyArray<SequenceStep>) => void; cancel: () => void }\nexport function useSequence(): Sequence\n\n- play and cancel keep stable identities.\n- play cancels pending timers first.\n- When reduced motion is on (via useReducedMotion), play runs every step synchronously, sorted by at.\n- Otherwise it schedules one setTimeout per step, including at: 0.\n- Timers are cleared on cancel and on unmount."
+ },
+ {
+  "path": "web/src/hooks/useCountUp.ts",
+  "owner": "foundation",
+  "contents": "export function useCountUp(target: number, active: boolean, durationMs?: number): number\n\n- Default duration 600ms.\n- Reduced: returns target.\n- Motion on, before the first activation: returns 0.\n- On the first activation: rAF ease-out cubic from 0 to target.\n- On a later target change while active: animates from the displayed value to the new target over 300ms.\n- setState only in rAF callbacks.\n- Callers render the value aria-hidden, with a visually-hidden final value beside it."
+ },
+ {
+  "path": "web/src/hooks/usePointerSpot.ts",
+  "owner": "foundation",
+  "contents": "export function usePointerSpot<T extends HTMLElement>(): React.RefCallback<T>\n\n- Active only when matchMedia('(hover: hover) and (pointer: fine)') matches and motion is not reduced.\n- pointermove writes --mx and --my in px, relative to the element, coalesced with rAF.\n- Returns a cleanup."
+ },
+ {
+  "path": "web/src/components/landing/shared/LandingRoot.tsx",
+  "owner": "foundation",
+  "contents": "export type LandingMotion = { reduced: boolean; ambientPaused: boolean; setAmbientPaused: (paused: boolean) => void }\nexport function LandingRoot({ children }: { children: ReactNode }): ReactElement\nexport function useLandingMotion(): LandingMotion\n\nLandingRoot:\n- Renders div.lp with data-motion='on' or 'off' and data-ambient='running' or 'paused'.\n- Inside it: div.lp-aurora (aria-hidden) with three span.lp-aurora-blob, then children.\n- Provides the motion context.\n\nuseLandingMotion:\n- Calls useContext and useReducedMotion unconditionally.\n- Outside a root it returns { reduced, ambientPaused: false, setAmbientPaused: no-op }."
+ },
+ {
+  "path": "web/src/components/landing/shared/LandingSection.tsx",
+  "owner": "foundation",
+  "contents": "export function LandingSection(props: { id: string; labelledBy: string; children: ReactNode; className?: string; tight?: boolean }): ReactElement\n- Renders section.lp-section, adding lp-section-tight when tight, with aria-labelledby and tabIndex -1, wrapping div.lp-shell.\n\nexport function SectionHead(props: { eyebrow: string; title: ReactNode; titleId: string; lead?: ReactNode; aside?: ReactNode; band?: boolean }): ReactElement\n- A Reveal with .lp-head.\n- .lp-head-main holds <Eyebrow> and h2.lp-h2 (plus .lp-h2-band when band is set).\n- .lp-head-aside holds the lead as .lp-lead, then the aside. It renders only when either is present.\n\nexport function Reveal(props: { as?: 'div' | 'article' | 'li' | 'figure' | 'aside' | 'header' | 'section'; index?: number; className?: string; id?: string; labelledBy?: string; children: ReactNode }): ReactElement\n- Adds lp-reveal, the useReveal ref and revealStyle(index ?? 0).\n- Uses conditional spreads for optional attributes."
+ },
+ {
+  "path": "web/src/components/landing/shared/DemoFrame.tsx",
+  "owner": "foundation",
+  "contents": "export type DemoArea = 'approval' | 'failover' | 'audit' | 'cited'\nexport type DemoFrameProps = { area: DemoArea; index: '01' | '02' | '03' | '04'; name: string; title: string; lead: ReactNode; status: string; children: ReactNode; footnote?: string; busy?: boolean }\nexport function DemoFrame(props: DemoFrameProps): ReactElement\n\nRenders article#{area}, with:\n- data-area and class 'lp-demo lp-frost lp-spot lp-reveal';\n- revealStyle with index 0, 1, 2 or 3 by area;\n- aria-labelledby '{area}-title';\n- a ref that merges useReveal and usePointerSpot.\n\nChildren of the article, in order:\n- header.lp-demo-head: <Eyebrow>{index} \u00b7 {name}</Eyebrow> and Tag neutral 'Simulated'\n- h3#{area}-title.lp-demo-title\n- p.lp-demo-lead\n- div.lp-demo-body with aria-busy when busy\n- p.lp-demo-status with role status and aria-atomic\n- the optional p.lp-demo-foot"
+ },
+ {
+  "path": "web/src/components/landing/shared/SegmentedControl.tsx",
+  "owner": "foundation",
+  "contents": "export type SegmentedOption<V extends string> = { value: V; label: string }\nexport type SegmentedControlProps<V extends string> = { legend: string; value: V; options: ReadonlyArray<SegmentedOption<V>>; onChange: (value: V) => void; disabled?: boolean; hideLegend?: boolean; fullWidth?: boolean }\nexport function SegmentedControl<V extends string>(props: SegmentedControlProps<V>): ReactElement\n\n- Renders fieldset.lp-seg with a legend (.lp-seg-legend, or .lp-seg-legend-hidden when hideLegend is set).\n- Then .lp-seg-options (plus .lp-seg-full when fullWidth is set), holding labels that each wrap input.lp-seg-input[type=radio] and span.lp-seg-pill.\n- The radio name comes from useId."
+ },
+ {
+  "path": "web/src/components/landing/shared/Icon.tsx",
+  "owner": "foundation",
+  "contents": "export type IconName = 'check' | 'dash' | 'x' | 'lock' | 'pause' | 'play' | 'arrow-right' | 'link' | 'link-broken' | 'document' | 'route' | 'gate' | 'clock' | 'slash' | 'pencil' | 'reset'\nexport function Icon(props: { name: IconName; size?: 14 | 16 | 18; className?: string }): ReactElement\n\n- Inline SVG: viewBox 0 0 16 16, stroke currentColor, strokeWidth 1.6, fill none, aria-hidden, focusable false.\n- Default size 14.\n- No Unicode glyphs."
+ },
+ {
+  "path": "web/src/components/landing/shared/useInPageLink.ts",
+  "owner": "foundation",
+  "contents": "export function useInPageLink(): (event: React.MouseEvent<HTMLAnchorElement>) => void\n\n- Resolves the '#id' href.\n- If the target exists and supports scrollIntoView, it:\n  - calls preventDefault;\n  - calls scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });\n  - calls history.pushState(null, '', '#' + id);\n  - focuses the target with preventScroll.\n- Otherwise it leaves native behaviour alone.\n- It never sets scroll-behavior on html."
+ },
+ {
+  "path": "web/src/components/landing/shared/landingFacts.ts",
+  "owner": "foundation",
+  "contents": "Types:\nexport type AgentCategory = 'operations' | 'engineering' | 'growth' | 'support'\nexport type AgentId = 'hr' | 'eng' | 'research' | 'support'\n\nAGENTS: 4 entries of { id, name, category, title, detail }. The copy is verbatim from the current Landing.tsx USE_CASES.\n\nConstants:\n- PROVIDERS: 7 names\n- SANDBOX_MODEL\n- TOOL_SERVERS: 6 names\n- SERVICE_COUNT = 8\n- PERMISSION_CODE_COUNT = 46\n- BUILT_IN_ROLE_COUNT = 5\n- SIMULATED_PAGE_NOTICE\n- CTA\n- DEMO_ACCOUNTS_HEDGE\n\nAll exact strings are in spec 4.8."
+ },
+ {
+  "path": "web/src/components/landing/shared/shared.test.tsx",
+  "owner": "foundation",
+  "contents": "Vitest and Testing Library. Four tests:\n- useReducedMotion is true without matchMedia.\n- useSequence runs steps synchronously when reduced.\n- DemoFrame renders an empty role=status element and the 'Simulated' tag.\n- SegmentedControl calls onChange on click.\n\nNo hex, and no '!' in JSX text."
+ },
+ {
+  "path": "web/src/styles/landing/hero.css",
+  "owner": "hero",
+  "contents": "Classes:\n- Bar: .lp-bar-sentinel, .lp-bar, .lp-bar[data-solid='true'] .lp-bar-inner, .lp-bar-inner, .lp-bar-nav, .lp-bar-actions, .lp-bar-cta[data-visible], and .lp .nav-pill[aria-current='location']\n- Hero: .lp-hero, .lp-hero-grid, .lp-hero-copy (load stagger via lp-hero-enter), .lp-hero-title, .lp-hero-accent (with the @supports fallback), .lp-hero-lead, .lp-hero-ctas, .lp-hero-caption\n- Fact strip: .lp-facts, .lp-fact, .lp-fact-value, .lp-fact-label\n- Console: .lp-console, .lp-console-stage, .lp-console-depth (parallax translate from --px and --py; no rotation), .lp-console-layer, .lp-console-back, .lp-console-trace, .lp-console-approval, .lp-console-pool, .lp-console-chrome, .lp-console-stats, .lp-console-table, .lp-console-verb, .lp-console-caption\n- Pause: .lp-hero-pause\n\nAlso: container queries at 520px, the breakpoints in spec 6, and the keyframe lp-hero-enter.\n\nRules: borders and radii follow R3 and R4; no hex."
+ },
+ {
+  "path": "web/src/components/landing/hero/LandingBar.tsx",
+  "owner": "hero",
+  "contents": "export function LandingBar(): ReactElement\n\nRenders:\n- div.lp-bar-sentinel\n- header.lp-bar[data-solid], containing:\n  - Brand\n  - nav.nav-capsule.lp-bar-nav, aria-label 'On this page', with 4 nav-pill anchors (Agents, Demos, Roles, Limits) wired to useInPageLink and aria-current='location'\n  - a.button.button-outline 'Sign in'\n  - a.button.button-primary.lp-bar-cta 'Try a demo account' with data-visible\n\nThree IntersectionObservers (sentinel, #lp-hero-ctas, scrollspy with rootMargin '-45% 0px -50% 0px'). No scroll listeners.\n\nThe spec is in 6.1."
+ },
+ {
+  "path": "web/src/components/landing/hero/Hero.tsx",
+  "owner": "hero",
+  "contents": "export function Hero(): ReactElement\n\nRenders section.lp-hero (aria-labelledby 'hero-title') containing .lp-shell.lp-hero-grid.\n\nCopy column, in order:\n- <Eyebrow>\n- h1#hero-title with span.lp-hero-accent\n- the lead\n- div#lp-hero-ctas with two lp-button-lg anchors (the primary has lp-sheen and the arrow-right Icon)\n- the caption with a green dot\n- ul.lp-facts.lp-glass with 4 anchor cells using useInPageLink\n\nThen <HeroConsole />. Exact copy is in spec 6.2."
+ },
+ {
+  "path": "web/src/components/landing/hero/HeroConsole.tsx",
+  "owner": "hero",
+  "contents": "export function HeroConsole(): ReactElement\n\nFigure structure:\n- figure.lp-console with span.lp-bezel and .lp-console-stage\n- three .lp-console-depth wrappers holding the back, trace and approval layers (the approval layer is inert until it arrives)\n- light pools\n- the visible figcaption and a visually-hidden summary\n\nDriver:\n- setInterval of 250ms, gated by motion, ambientPaused, useInView (threshold 0.3, once false) and document.hidden.\n- The frame comes from heroFrame(elapsed).\n\nAlso:\n- The pause button (aria-pressed, constant label 'Pause motion') calls setAmbientPaused.\n- usePointerParallax.\n\nReduced motion: a static frame at COMPOSED_ELAPSED_MS and no button.\n\nNo DataTable: use plain table.table markup. The spec is in 6.3."
+ },
+ {
+  "path": "web/src/components/landing/hero/heroConsoleModel.ts",
+  "owner": "hero",
+  "contents": "Exports:\n- CYCLE_MS = 10000\n- COMPOSED_ELAPSED_MS = 5000\n- the types HeroRow, HeroTraceLine and HeroFrame\n- heroFrame(elapsedMs: number): HeroFrame\n\nheroFrame is pure and implements the exact formulas in spec 6.3 (stats, rows, trace and arrival). It imports AgentCategory from shared/landingFacts."
+ },
+ {
+  "path": "web/src/components/landing/hero/usePointerParallax.ts",
+  "owner": "hero",
+  "contents": "export function usePointerParallax(enabled: boolean): { hostRef: React.RefCallback<HTMLElement>; stageRef: React.RefCallback<HTMLElement> }\n\n- pointermove is normalised to -1..1 and lerped at 0.1 per rAF frame.\n- The loop stops when the change is below 0.001; pointerleave returns the values to 0.\n- Writes --px and --py on the stage.\n- Inactive unless enabled. It cleans up its listeners and rAF."
+ },
+ {
+  "path": "web/src/components/landing/hero/heroConsoleModel.test.ts",
+  "owner": "hero",
+  "contents": "Tests heroFrame:\n- stats at 0, 3000, 4500, 6000 and 60000 ms;\n- running is never negative;\n- approvalArrived persists after 60000;\n- three trace lines at 3000 and none at 9700."
+ },
+ {
+  "path": "web/src/styles/landing/agent-run.css",
+  "owner": "agent-run",
+  "contents": "Classes:\n- Controls and stage: .lp-run-controls, .lp-run-stage (container split at 640px)\n- Timeline: .lp-run-timeline, .lp-run-step[data-state] (every state from spec 7.3), .lp-run-step::before (connector as a background), .lp-run-marker\n- Card: .lp-run-card-slot, .lp-run-placeholder (1px dashed var(--line)), .lp-approval, .lp-approval-meta, .lp-approval-actions, .lp-approval-note\n- Payload: .lp-run-payload, .lp-run-json-key, .lp-run-json-str, .lp-run-json-punc\n- Result: .lp-run-result\n\nLayout rules for 375px. Optional keyframes use the lp-run- prefix.\n\nRules: borders var(--line) or the glass rgba only; radii from tokens; no hex."
+ },
+ {
+  "path": "web/src/components/landing/agent-run/ApprovalDemo.tsx",
+  "owner": "agent-run",
+  "contents": "export function ApprovalDemo(): ReactElement\n\nBuilds on: DemoFrame (area approval, index 01), SegmentedControl ('Deciding as'), Button, Tag, Spinner, Icon, PayloadView, useSequence, useInView (threshold 0.45), useLandingMotion.\n\nState:\n- useReducer(approvalReducer, reduced, initApprovalState)\n- autoplay per spec 4.9\n- a focus effect keyed on focus.nonce\n\nAll copy, timings and layout follow spec 7."
+ },
+ {
+  "path": "web/src/components/landing/agent-run/approvalModel.ts",
+  "owner": "agent-run",
+  "contents": "Exports:\n- the types Decider, StepId, StepState, Phase, CardStatus, FocusTarget, ApprovalState and ApprovalEvent\n- canDecide\n- initApprovalState(reduced)\n- approvalReducer\n- PAYLOAD\n- STEP_COPY\n- the sequence builders startSteps(dispatch, byUser), approveSteps(dispatch) and expireSteps(dispatch), each returning SequenceStep[]\n\nExact semantics, guards and copy are in spec 7.3."
+ },
+ {
+  "path": "web/src/components/landing/agent-run/PayloadView.tsx",
+  "owner": "agent-run",
+  "contents": "export function PayloadView(props: { payload: Readonly<Record<string, string>>; label: string }): ReactElement\n\n- Renders pre.lp-code.lp-run-payload with aria-label.\n- The JSON is pretty-printed from the object, with spans .lp-run-json-key, .lp-run-json-str and .lp-run-json-punc.\n- Braces are rendered as string expressions."
+ },
+ {
+  "path": "web/src/components/landing/agent-run/approvalModel.test.ts",
+  "owner": "agent-run",
+  "contents": "Tests:\n- the reducer paths: approve (ends completed), reject, and let-expire (ends expired);\n- employee and viewer cannot APPROVE or REJECT;\n- LET_EXPIRE works for any decider;\n- the reduced initial state is parked."
+ },
+ {
+  "path": "web/src/components/landing/agent-run/ApprovalDemo.test.tsx",
+  "owner": "agent-run",
+  "contents": "With jsdom (reduced motion is on because matchMedia is missing):\n- the demo renders parked, showing 'Exactly what will be sent';\n- clicking Approve shows the status 'The run resumed on the same model and completed.';\n- choosing Employee hides Approve.\n\nNo '!' in JSX text."
+ },
+ {
+  "path": "web/src/styles/landing/failover-answer.css",
+  "owner": "failover-and-answer",
+  "contents": "Failover classes:\n- .lp-route-presets, .lp-route-config, .lp-route-chain\n- .lp-route-node[data-state] (background tints from spec 8.1)\n- .lp-route-index, .lp-route-name, .lp-route-packet (transform from --lp-hop; hidden at container width 520px and below)\n- .lp-route-trace, .lp-route-outcome\n\nCited-answer classes:\n- .lp-cite-stage (split at 600px), .lp-cite-chat, .lp-cite-user, .lp-cite-answer, .lp-cite-marker\n- .lp-cite-sources, .lp-cite-pages\n- .lp-cite-page[data-hit][data-active] (28x36, radius var(--radius-tag))\n- .lp-cite-retrieval, .lp-cite-passages, .lp-cite-passage[data-active]\n\nAlso 375px rules. Keyframes use the lp-route- or lp-cite- prefix.\n\nRules: R2 to R5 apply."
+ },
+ {
+  "path": "web/src/components/landing/failover/FailoverDemo.tsx",
+  "owner": "failover-and-answer",
+  "contents": "export function FailoverDemo(): ReactElement\n\nBuilds on: DemoFrame (area failover, index 02), preset chips, a fieldset holding the chain rows with native selects and visually-hidden labels, SegmentedControl for policy, Send and Reset buttons, the trace ol (not live), the packet, and the outcome Tag.\n\nPlayback: planRoute events played through useSequence. Breaker memory, autoplay of the throttled preset, and the reduced initial state as specified.\n\nThe spec is in 8.1."
+ },
+ {
+  "path": "web/src/components/landing/failover/failoverModel.ts",
+  "owner": "failover-and-answer",
+  "contents": "Exports:\n- ProviderId, CHAIN, SkipFault, CallFault, Fault, Policy, Config, PresetId, PRESETS, NodeState, TraceLine, Outcome, RouteEvent\n- FAULT_LABEL, SKIP_REASON\n- planRoute(config, policy): RouteEvent[]\n- summarise(outcome): string\n- applyEvents(state, events) for synchronous folding\n\nExact timings and copy are in spec 8.1."
+ },
+ {
+  "path": "web/src/components/landing/failover/failoverModel.test.ts",
+  "owner": "failover-and-answer",
+  "contents": "Tests, one per case:\n- throttled: Groq answers with 1 failover.\n- bad_key: Gemini answers, and a breaker event is emitted for OpenRouter.\n- provider_down: Anthropic answers.\n- safety_refusal: the chain stops and later nodes are not tried.\n- everything_down: failed_closed or degraded, depending on policy.\n- The event at values are non-decreasing."
+ },
+ {
+  "path": "web/src/components/landing/answer/CitedAnswerDemo.tsx",
+  "owner": "failover-and-answer",
+  "contents": "export function CitedAnswerDemo(): ReactElement\n\nBuilds on: DemoFrame (area cited, index 04, busy while answering), question chips, Clear, user and agent bubbles, citation marker buttons (aria-controls, aria-pressed, hover and focus preview), and the sources aside with 8 page thumbnails (.lp-scan-host), the retrieval line and the passages li#cite-passage-1 and li#cite-passage-2.\n\nPlayback: useSequence drives the word reveal at 22ms per word. Autoplay asks 'send'. The reduced initial state is answered.\n\nThe spec is in 8.2."
+ },
+ {
+  "path": "web/src/components/landing/answer/citedAnswerModel.ts",
+  "owner": "failover-and-answer",
+  "contents": "Exports:\n- QuestionId, QUESTIONS, Segment\n- ANSWER (segments)\n- PASSAGES (page 5 and page 4 quotes verbatim)\n- DECLINE\n- DOCUMENT_NAME = 'Project_Proposal.pdf'\n- PAGE_COUNT = 8\n- wordCount(segments)\n- sliceWords(segments, n)"
+ },
+ {
+  "path": "web/src/components/landing/answer/citedAnswerModel.test.ts",
+  "owner": "failover-and-answer",
+  "contents": "Tests:\n- wordCount matches the plain text;\n- sliceWords never splits a citation marker;\n- passage 1 is page 5 and passage 2 is page 4."
+ },
+ {
+  "path": "web/src/styles/landing/roles-sections.css",
+  "owner": "roles-and-sections",
+  "contents": "Agents: .lp-agents-grid, .lp-agents-tile, .lp-agents-tools, .lp-agents-grant.\n\nAudit: .lp-audit-list, .lp-audit-entry, .lp-audit-link[data-broken] (a line drawn with a background), .lp-audit-chip.\n\nRoles: .lp-roles, .lp-roles-grid, .lp-roles-tabs, .lp-roles-tab[aria-selected], .lp-roles-meter, .lp-roles-meter-fill, .lp-roles-panel, .lp-roles-panel-head, .lp-roles-body (container split at 640px), .lp-roles-checks, .lp-roles-areas, .lp-roles-map, .lp-roles-code[data-held][data-diff='added'|'removed'], .lp-roles-legend.\n\nPlatform: .lp-platform, .lp-platform-stats, .lp-platform-chip.\n\nLimits and CTA: .lp-limits, .lp-limits-list, .lp-cta (gradient fill, aurora-low placement).\n\nFooter: .lp-footer, .lp-footer-row.\n\nAlso breakpoints and 375px rules. Keyframes use the lp-roles- or lp-audit- prefix.\n\nRules: R2 to R5 apply."
+ },
+ {
+  "path": "web/src/components/landing/roles/RoleSwitcher.tsx",
+  "owner": "roles-and-sections",
+  "contents": "export function RoleSwitcher(): ReactElement\n\nRenders LandingSection#roles with SectionHead, then .lp-roles containing:\n- the tablist (5 tabs, roving tabindex, arrow keys, Home and End, automatic activation, meters);\n- the tabpanel: header with the count from useCountUp, and the 'Compare with' native select;\n- the 'In plain words' checklist, the console areas, and the permission map with compare mode;\n- the footer link and hedge;\n- a visually-hidden polite announcer.\n\nDefault role: manager. The spec is in 9.3."
+ },
+ {
+  "path": "web/src/components/landing/roles/roleData.ts",
+  "owner": "roles-and-sections",
+  "contents": "Exports:\n- RoleId, PERMISSION_GROUPS (17 domains, 46 codes, Permission.java order), ALL_CODES\n- ROLE_ORDER, ROLE_LABEL, ROLE_ARTICLE, ROLE_CODES (exact sets from spec 9.3)\n- ROLE_DESCRIPTION (seeder verbatim), ROLE_SUMMARY, ROLE_TONE\n- CAPABILITIES, CONSOLE_AREAS\n- holdsAll(role, codes), compareRoles(a, b)"
+ },
+ {
+  "path": "web/src/components/landing/roles/roleData.test.ts",
+  "owner": "roles-and-sections",
+  "contents": "Tests:\n- role sizes are 46, 45, 25, 12 and 8;\n- ALL_CODES has 46 unique codes and equals the union of the groups;\n- employee is a subset of manager;\n- compareRoles(manager, employee) gives 13 added and 0 removed;\n- console-area counts are 11, 11, 10, 8 and 7."
+ },
+ {
+  "path": "web/src/components/landing/sections/AgentsSection.tsx",
+  "owner": "roles-and-sections",
+  "contents": "export function AgentsSection(): ReactElement\n\n- Renders LandingSection#agents (tight) with SectionHead, then .lp-agents-grid of 4 Reveal articles (.lp-agents-tile lp-frost lp-lift lp-spot).\n- Each tile has a category Tag, an h3, the detail, a tool-chip group (aria-pressed, roving tabindex) and a polite grant sentence with a lock Icon when gated.\n- Data comes from AGENTS and agentGrants. The spec is in 9.1."
+ },
+ {
+  "path": "web/src/components/landing/sections/agentGrants.ts",
+  "owner": "roles-and-sections",
+  "contents": "export const AGENT_GRANTS: Record<AgentId, ReadonlyArray<{ server: (typeof TOOL_SERVERS)[number]; sentence: string; gated: boolean }>>\n\n- Holds the exact sentences in spec 9.1, verified against DemoAgentSeeder.\n- The first gated entry is the default."
+ },
+ {
+  "path": "web/src/components/landing/sections/AuditChainDemo.tsx",
+  "owner": "roles-and-sections",
+  "contents": "export function AuditChainDemo(): ReactElement\n\nRenders DemoFrame (area audit, index 03) containing:\n- ol.lp-audit-list of 4 inset entries with 'seq NNNN' labels, the text (del and ins while altered), and the prev and hash chips;\n- connectors that turn danger with the link-broken Icon on a mismatch;\n- the 'Alter entry 2' aria-pressed button;\n- the computed status and the tampered caveat.\n\nEverything is computed during render with useMemo. There are no effects. The spec is in 9.2."
+ },
+ {
+  "path": "web/src/components/landing/sections/auditChain.ts",
+  "owner": "roles-and-sections",
+  "contents": "Exports:\n- fnv1a32(input): 8 lowercase hex characters\n- AuditEntry, Recorded\n- GENESIS = '00000000'\n- ENTRIES (4 entries, seq 1041 to 1044, copy in spec 9.2)\n- record(entries), tamper(entries), verify(recorded, current)\n\nNo '#' characters anywhere."
+ },
+ {
+  "path": "web/src/components/landing/sections/auditChain.test.ts",
+  "owner": "roles-and-sections",
+  "contents": "Tests:\n- the untampered chain verifies;\n- tamper marks entry 2 altered and entry 3 prevMismatch only;\n- fnv1a32 is deterministic and always 8 characters long."
+ },
+ {
+  "path": "web/src/components/landing/sections/PlatformBand.tsx",
+  "owner": "roles-and-sections",
+  "contents": "export function PlatformBand(): ReactElement\n\nRenders LandingSection#platform with a band SectionHead ('Under the hood', 'What is actually running'), then .lp-platform.lp-frost containing:\n- a 5-cell hairline stats grid with useCountUp values (aria-hidden, plus visually-hidden final values);\n- a 'Model providers' row of neutral Tags;\n- a 'Tool servers' row of mono chips.\n\nThe spec is in 9.4."
+ },
+ {
+  "path": "web/src/components/landing/sections/LimitsAndCta.tsx",
+  "owner": "roles-and-sections",
+  "contents": "export function LimitsAndCta(): ReactElement\n\nRenders LandingSection#limits as a 7 | 5 split.\n\nLeft panel (.lp-limits lp-frost): <Eyebrow>, h2#limits-title, and a hairline ol of the four verbatim limits with mono index and slash Icon.\n\nRight panel (section.lp-cta.lp-glass, aria-labelledby cta-title): .lp-aurora-low, <Eyebrow>, h2#cta-title, copy, two lp-button-lg anchors (the primary with lp-sheen), and the hedge caption.\n\nThe spec is in 9.5."
+ },
+ {
+  "path": "web/src/components/landing/sections/LandingFooter.tsx",
+  "owner": "roles-and-sections",
+  "contents": "export function LandingFooter(): ReactElement\n\n- footer.lp-footer containing .lp-shell.lp-footer-row.\n- The caption 'AI Workforce OS, an enterprise multi-agent platform.'\n- nav-pill links 'Sign in' (/sign-in) and 'Create a workspace' (/create-workspace)."
+ },
+ {
+  "path": "web/src/routes/Landing.tsx",
+  "owner": "integrator",
+  "contents": "export function Landing(): ReactElement\n\n- Imports '../styles/landing/index.css' once.\n- Composition exactly as in spec section 3: LandingRoot, skip link, LandingBar, main#main.lp-main, Hero, AgentsSection, the demos LandingSection with an inline head containing a literal <Eyebrow>Try it here</Eyebrow>, and .lp-bento holding ApprovalDemo, FailoverDemo, AuditChainDemo and CitedAnswerDemo; then RoleSwitcher, PlatformBand, LimitsAndCta and LandingFooter.\n- Keeps a short header comment on honesty.\n- No hex, and no '!'."
+ },
+ {
+  "path": "web/src/App.tsx",
+  "owner": "integrator",
+  "contents": "One change only, in the title effect: when !signedIn && path === '/', use the '/home' title pattern, so the signed-out root reads 'A governed AI workforce \u00b7 AI Workforce OS'.\n\nChange nothing else."
+ },
+ {
+  "path": "web/src/styles/design-system.test.ts",
+  "owner": "integrator",
+  "contents": "Keep every existing test unchanged.\n\nAdd describe('landing styles'), which reads every .css file in src/styles/landing/ and checks:\n- (a) index.css imports every other file;\n- (b) the border rule applies to all landing files, with at least 6 matches;\n- (c) the radius-token regex from spec 10;\n- (d) no hex;\n- (e) keyframes are prefixed lp-."
+ },
+ {
+  "path": "web/src/styles/components.css",
+  "owner": "integrator",
+  "contents": "Delete the unused .landing-bar and .landing-grid rules, and the .landing-bar rule inside the 900px media query.\n\nChange nothing else. The test slices for .card, .navbar and .input must stay byte-identical."
+ },
+ {
+  "path": "web/src/components/landing/Landing.test.tsx",
+  "owner": "integrator",
+  "contents": "Renders <Landing /> inside RouterProvider and checks:\n- globalThis.fetch is spied and never called;\n- axe-core reports no violations, with color-contrast disabled;\n- reduced end states are present: 'Exactly what will be sent', an 'Answered' tag, 'Project_Proposal.pdf', and the manager tab aria-selected;\n- exactly one h1.\n\nThis file lives outside src/routes/ on purpose, because the eyebrow test scans every .tsx file under src/routes/."
+ }
+]

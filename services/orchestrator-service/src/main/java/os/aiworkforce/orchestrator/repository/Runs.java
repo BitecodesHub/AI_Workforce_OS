@@ -35,6 +35,18 @@ public interface Runs extends JpaRepository<Run, UUID> {
 
     Page<Run> findByOrgIdOrderByStartedAtDesc(UUID orgId, Pageable pageable);
 
+    /*
+     * The filtered lists behind the Runs page. Every one is keyed on the workspace first, so a
+     * filter can never widen a query beyond the caller's own organisation.
+     */
+
+    Page<Run> findByOrgIdAndStatusOrderByStartedAtDesc(UUID orgId, String status, Pageable pageable);
+
+    Page<Run> findByOrgIdAndAgentIdOrderByStartedAtDesc(UUID orgId, UUID agentId, Pageable pageable);
+
+    Page<Run> findByOrgIdAndAgentIdAndStatusOrderByStartedAtDesc(
+            UUID orgId, UUID agentId, String status, Pageable pageable);
+
     Optional<Run> findByIdAndOrgId(UUID id, UUID orgId);
 
     /**

@@ -3,11 +3,15 @@ package os.aiworkforce.orchestrator.web;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +25,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import os.aiworkforce.orchestrator.domain.Agent;
+import os.aiworkforce.orchestrator.domain.AgentToolGrant;
 import os.aiworkforce.orchestrator.domain.AgentVersion;
 import os.aiworkforce.orchestrator.repository.AgentVersions;
 import os.aiworkforce.orchestrator.repository.Agents;
@@ -53,8 +58,22 @@ public class AgentController {
         this.grants = grants;
     }
 
+    /** The longest summary returned, so a card can show it without a layout of its own. */
+    static final int SUMMARY_LIMIT = 160;
+
+    private static final Pattern FIRST_SENTENCE = Pattern.compile("^(.+?[.!?])(?=\\s|$)");
+
+    /**
+     * An agent as a list shows it.
+     *
+     * @param summary the first sentence of the current configuration's system prompt, at most
+     *     {@value #SUMMARY_LIMIT} characters; an excerpt of the agent's own instructions, usually
+     *     written in the second person. Null when the agent has no configuration.
+     * @param tools the distinct tool servers the agent is granted, sorted; empty when it has none
+     */
     public record AgentView(
-            UUID id, String key, String name, String category, String status, Integer revision) {}
+            UUID id, String key, String name, String category, String status, Integer revision,
+            String summary, List<String> tools) {}
 
     public record CreateAgentRequest(
             @NotBlank @Size(max = 60) String key,
@@ -68,7 +87,10 @@ public class AgentController {
             @Size(max = 4_000) String goals,
             BigDecimal temperature,
             Integer maxOutputTokens,
-            Integer maxSteps) {}
+            // 1 to 50; null means the default. A limit below 1 would fail every run before its first step.
+            @Min(1) @Max(50) Integer maxSteps) {}
+
+    static final int DEFAULT_MAX_STEPS = 12;
 
     public record RunRequest(@NotBlank @Size(max = 10_000) String instruction) {}
 
@@ -79,7 +101,7 @@ public class AgentController {
     public record AgentDetail(
             UUID id, String key, String name, String category, String status,
             Integer revision, String systemPrompt, String goals, Integer maxSteps,
-            boolean sealed, List<GrantView> grants) {}
+            boolean sealed, List<GrantView> grants, String summary, List<String> tools) {}
 
     public record RunStarted(UUID runId, String status, String answer) {}
 
@@ -89,9 +111,7 @@ public class AgentController {
     public List<AgentView> list() {
         UUID orgId = orgId();
         return agents.findByOrgIdOrderByName(orgId).stream()
-                .map(agent -> new AgentView(
-                        agent.getId(), agent.getKey(), agent.getName(),
-                        agent.getCategory(), agent.getStatus(), revisionOf(agent)))
+                .map(agent -> toView(agent, currentVersionOf(agent)))
                 .toList();
     }
 
@@ -101,10 +121,9 @@ public class AgentController {
     public AgentDetail get(@PathVariable UUID agentId) {
         Agent agent = agents.findByIdAndOrgId(agentId, orgId())
                 .orElseThrow(() -> ApiException.notFound("agent", agentId));
-        AgentVersion version = agent.getCurrentVersionId() == null
-                ? null
-                : versions.findById(agent.getCurrentVersionId()).orElse(null);
-        List<GrantView> grantViews = grants.findByAgentIdAndEnabledTrue(agentId).stream()
+        AgentVersion version = currentVersionOf(agent);
+        List<AgentToolGrant> granted = grants.findByAgentIdAndEnabledTrue(agentId);
+        List<GrantView> grantViews = granted.stream()
                 .map(grant -> new GrantView(grant.getServer(), grant.getAllowedTools(), grant.getScopes(),
                         grant.isRequireApproval(), grant.getMaxCallsPerRun()))
                 .toList();
@@ -115,7 +134,9 @@ public class AgentController {
                 version == null ? null : version.getGoals(),
                 version == null ? null : version.getMaxSteps(),
                 version != null && version.isSealed(),
-                grantViews);
+                grantViews,
+                version == null ? null : summarise(version.getSystemPrompt()),
+                serverNames(granted));
     }
 
     @PostMapping
@@ -139,12 +160,12 @@ public class AgentController {
         agent.setCategory(request.category());
         agents.save(agent);
 
-        AgentVersion version = newVersion(agent, request.systemPrompt(), request.goals(), null, null, 12);
+        AgentVersion version = newVersion(
+                agent, request.systemPrompt(), request.goals(), null, null, DEFAULT_MAX_STEPS);
         agent.setCurrentVersionId(version.getId());
         agents.save(agent);
 
-        return new AgentView(agent.getId(), agent.getKey(), agent.getName(),
-                agent.getCategory(), agent.getStatus(), version.getRevision());
+        return toView(agent, version);
     }
 
     /**
@@ -165,12 +186,11 @@ public class AgentController {
         AgentVersion version = newVersion(
                 agent, request.systemPrompt(), request.goals(),
                 request.temperature(), request.maxOutputTokens(),
-                request.maxSteps() == null ? 12 : request.maxSteps());
+                request.maxSteps() == null ? DEFAULT_MAX_STEPS : request.maxSteps());
         agent.setCurrentVersionId(version.getId());
         agents.save(agent);
 
-        return new AgentView(agent.getId(), agent.getKey(), agent.getName(),
-                agent.getCategory(), agent.getStatus(), version.getRevision());
+        return toView(agent, version);
     }
 
     @GetMapping("/{agentId}/versions")
@@ -207,11 +227,52 @@ public class AgentController {
         return versions.save(version);
     }
 
-    private Integer revisionOf(Agent agent) {
+    private AgentView toView(Agent agent, AgentVersion version) {
+        return new AgentView(
+                agent.getId(), agent.getKey(), agent.getName(), agent.getCategory(), agent.getStatus(),
+                version == null ? null : version.getRevision(),
+                version == null ? null : summarise(version.getSystemPrompt()),
+                serverNames(grants.findByAgentIdAndEnabledTrue(agent.getId())));
+    }
+
+    private AgentVersion currentVersionOf(Agent agent) {
         if (agent.getCurrentVersionId() == null) {
             return null;
         }
-        return versions.findById(agent.getCurrentVersionId()).map(AgentVersion::getRevision).orElse(null);
+        return versions.findById(agent.getCurrentVersionId()).orElse(null);
+    }
+
+    private static List<String> serverNames(List<AgentToolGrant> granted) {
+        return granted.stream()
+                .map(AgentToolGrant::getServer)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    /**
+     * The first sentence of a system prompt, as a short excerpt of what the agent was told to do.
+     *
+     * <p>Whitespace is collapsed first, because prompts are usually wrapped across lines. A
+     * sentence longer than the limit is cut at the last word that fits and marked with an
+     * ellipsis, so an excerpt never ends half way through a word.
+     */
+    static String summarise(String prompt) {
+        if (prompt == null) {
+            return null;
+        }
+        String text = prompt.strip().replaceAll("\\s+", " ");
+        if (text.isEmpty()) {
+            return null;
+        }
+        Matcher sentence = FIRST_SENTENCE.matcher(text);
+        String first = sentence.find() ? sentence.group(1) : text;
+        if (first.length() <= SUMMARY_LIMIT) {
+            return first;
+        }
+        int cut = first.lastIndexOf(' ', SUMMARY_LIMIT - 1);
+        String head = cut > 0 ? first.substring(0, cut) : first.substring(0, SUMMARY_LIMIT - 1);
+        return head.replaceAll("[\\s,;:]+$", "") + "…";
     }
 
     private static UUID orgId() {
