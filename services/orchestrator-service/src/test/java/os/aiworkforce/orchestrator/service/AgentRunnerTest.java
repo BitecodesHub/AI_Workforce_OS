@@ -4,8 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -13,6 +17,7 @@ import static os.aiworkforce.orchestrator.service.WorkFixture.ORG;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,6 +27,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.PlatformTransactionManager;
+import reactor.core.publisher.Mono;
 
 import os.aiworkforce.llm.model.ChatMessage;
 import os.aiworkforce.llm.model.ChatRequest;
@@ -30,9 +37,11 @@ import os.aiworkforce.llm.model.FinishReason;
 import os.aiworkforce.llm.model.TokenUsage;
 import os.aiworkforce.llm.model.ToolCall;
 import os.aiworkforce.llm.router.ModelRouter;
+import os.aiworkforce.mcp.model.ToolResult;
 import os.aiworkforce.mcp.policy.ToolGateway;
 import os.aiworkforce.orchestrator.domain.Agent;
 import os.aiworkforce.orchestrator.domain.AgentVersion;
+import os.aiworkforce.orchestrator.domain.Approval;
 import os.aiworkforce.orchestrator.domain.Run;
 import os.aiworkforce.orchestrator.domain.RunStep;
 import os.aiworkforce.orchestrator.repository.AgentVersions;
@@ -41,6 +50,7 @@ import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.ToolGrants;
 import os.aiworkforce.orchestrator.repository.Usage;
+import os.aiworkforce.orchestrator.voice.VoiceClipService;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
 
@@ -57,6 +67,9 @@ class AgentRunnerTest {
     private Usage usage;
     private TaskProgress progress;
     private RoutingPolicyResolver policies;
+    private ApprovalService approvals;
+    private ToolGateway tools;
+    private VoiceClipService voiceClips;
     private AgentRunner runner;
 
     private Agent agent;
@@ -72,10 +85,15 @@ class AgentRunnerTest {
         usage = mock(Usage.class);
         progress = mock(TaskProgress.class);
         policies = mock(RoutingPolicyResolver.class);
+        approvals = mock(ApprovalService.class);
+        tools = mock(ToolGateway.class);
+        voiceClips = mock(VoiceClipService.class);
+        lenient().when(voiceClips.afterVoiceNote(any(), any(), any())).thenReturn(Optional.empty());
+        lenient().when(voiceClips.keyStored(any())).thenReturn(false);
         runner = new AgentRunner(
-                runs, steps, agents, versions, mock(ToolGrants.class), router, mock(ToolGateway.class),
-                policies, mock(ApprovalService.class), mock(ToolCredentialResolver.class),
-                mock(AuditClient.class), usage, progress);
+                runs, steps, agents, versions, mock(ToolGrants.class), router, tools,
+                policies, approvals, mock(ToolCredentialResolver.class),
+                mock(AuditClient.class), usage, progress, voiceClips, mock(PlatformTransactionManager.class));
 
         agent = new Agent();
         agent.setId(UUID.randomUUID());
@@ -142,7 +160,7 @@ class AgentRunnerTest {
         // parked run still resumes rather than throwing.
         assertThat(messages.get(3).role()).isEqualTo(ChatMessage.Role.TOOL);
         assertThat(messages.get(3).toolCallId()).isEqualTo("gmail.send_message");
-        assertThat(messages.get(3).content()).contains("Approved by a person");
+        assertThat(messages.get(3).content()).contains("its result follows");
         assertThat(outcome.status()).isEqualTo("completed");
         verify(progress).onRunResumed(run);
         verify(progress).onRunFinished(run, "completed", "Sent.", null);
@@ -178,7 +196,162 @@ class AgentRunnerTest {
         ChatMessage toolReply = messages.get(3);
         assertThat(toolReply.role()).isEqualTo(ChatMessage.Role.TOOL);
         assertThat(toolReply.toolCallId()).isEqualTo("call_1");
-        assertThat(toolReply.content()).contains("Do not repeat it");
+        assertThat(toolReply.content()).contains("its result follows");
+    }
+
+    @Test
+    @DisplayName("a successful voice note tool call is handed to the voice clip service, and its clip id is recorded")
+    void voiceNoteCapturesAClip() {
+        UUID clipId = UUID.randomUUID();
+        when(voiceClips.afterVoiceNote(any(), eq(agent), eq("{\"text\":\"Hello there.\"}")))
+                .thenReturn(Optional.of(clipId));
+        when(steps.highestPosition(any())).thenReturn(-1);
+        when(router.route(any(), any(), any())).thenReturn(
+                toolCallAnswer("call_1", "voice.create_voice_note", "{\"text\":\"Hello there.\"}"),
+                answer("Noted."));
+        when(tools.invoke(any(), any(), any())).thenReturn(Mono.just(
+                ToolResult.succeeded("{\"ok\":true}", "Saved a voice note script (11 characters).", Duration.ZERO)));
+
+        runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        ArgumentCaptor<RunStep> saved = ArgumentCaptor.forClass(RunStep.class);
+        verify(steps, atLeastOnce()).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .filteredOn(step -> "tool_call".equals(step.getKind()))
+                .extracting(step -> step.getDetail().get("clipId"))
+                .containsExactly(clipId.toString());
+    }
+
+    @Test
+    @DisplayName("a voice note made without a stored ElevenLabs key says so plainly, but the tool call still succeeds")
+    void voiceNoteWithoutKeyNotesItPlainly() {
+        // voiceClips defaults (set up in @BeforeEach) already answer no clip and no key.
+        when(steps.highestPosition(any())).thenReturn(-1);
+        when(router.route(any(), any(), any())).thenReturn(
+                toolCallAnswer("call_1", "voice.create_voice_note", "{\"text\":\"Hello there.\"}"),
+                answer("Noted."));
+        when(tools.invoke(any(), any(), any())).thenReturn(Mono.just(
+                ToolResult.succeeded("{\"ok\":true}", "Saved a voice note script (11 characters).", Duration.ZERO)));
+
+        runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        ArgumentCaptor<RunStep> saved = ArgumentCaptor.forClass(RunStep.class);
+        verify(steps, atLeastOnce()).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .filteredOn(step -> "tool_call".equals(step.getKind()))
+                .extracting(step -> step.getDetail().get("summary"))
+                .containsExactly("Saved a voice note script (11 characters)."
+                        + " No ElevenLabs key is stored, so no audio was created.");
+    }
+
+    @Test
+    @DisplayName("resume invokes the approved call exactly once, and its result reaches the conversation")
+    void resumeInvokesApprovedCallOnce() {
+        UUID runId = UUID.randomUUID();
+        parkedRun(runId);
+        UUID approvalId = UUID.randomUUID();
+        List<RunStep> trace = new java.util.ArrayList<>(List.of(
+                RunStep.of(ORG, runId, 0, "note", Map.of("type", "instruction", "content", INSTRUCTION)),
+                RunStep.of(ORG, runId, 1, "approval", Map.of(
+                        "approvalId", approvalId.toString(), "toolCallId", "call_1", "tool", "gmail.send_message"))));
+        stubStepsBackedBy(runId, trace);
+        Approval approval = new Approval();
+        approval.setId(approvalId);
+        approval.setOrgId(ORG);
+        approval.setRunId(runId);
+        approval.setAgentId(agent.getId());
+        approval.setTool("gmail.send_message");
+        approval.setToolCallId("call_1");
+        approval.setStatus("approved");
+        approval.setPayload("{\"to\":\"priya@example.com\"}");
+        when(approvals.find(ORG, approvalId)).thenReturn(Optional.of(approval));
+        when(tools.invoke(any(), any(), any()))
+                .thenReturn(Mono.just(ToolResult.succeeded("{\"ok\":true}", "Sent the welcome email.", Duration.ZERO)));
+        when(router.route(any(), any(), any())).thenReturn(answer("Done."));
+
+        AgentRunner.Outcome outcome = runner.resume(ORG, runId);
+
+        verify(tools, times(1)).invoke(any(), any(), any());
+        assertThat(outcome.status()).isEqualTo("completed");
+        assertThat(trace)
+                .filteredOn(step -> "tool_call".equals(step.getKind()))
+                .extracting(step -> step.getDetail().get("summary"))
+                .containsExactly("Sent the welcome email.");
+        ArgumentCaptor<ChatRequest> request = ArgumentCaptor.forClass(ChatRequest.class);
+        verify(router).route(request.capture(), any(), any());
+        assertThat(request.getValue().messages())
+                .filteredOn(message -> message.role() == ChatMessage.Role.TOOL)
+                .extracting(ChatMessage::content)
+                .containsExactly("Sent the welcome email.");
+    }
+
+    @Test
+    @DisplayName("resuming the same run again does not invoke the already-answered call a second time")
+    void resumeDoesNotReinvokeAnAlreadyAnsweredCall() {
+        UUID runId = UUID.randomUUID();
+        parkedRun(runId);
+        UUID approvalId = UUID.randomUUID();
+        List<RunStep> trace = new java.util.ArrayList<>(List.of(
+                RunStep.of(ORG, runId, 0, "note", Map.of("type", "instruction", "content", INSTRUCTION)),
+                RunStep.of(ORG, runId, 1, "approval", Map.of(
+                        "approvalId", approvalId.toString(), "toolCallId", "call_1", "tool", "gmail.send_message")),
+                RunStep.of(ORG, runId, 2, "tool_call", Map.of(
+                        "toolCallId", "call_1", "tool", "gmail.send_message", "status", "SUCCEEDED",
+                        "summary", "Sent the welcome email."))));
+        stubStepsBackedBy(runId, trace);
+        Approval approval = new Approval();
+        approval.setId(approvalId);
+        approval.setOrgId(ORG);
+        approval.setRunId(runId);
+        approval.setAgentId(agent.getId());
+        approval.setTool("gmail.send_message");
+        approval.setToolCallId("call_1");
+        approval.setStatus("approved");
+        when(approvals.find(ORG, approvalId)).thenReturn(Optional.of(approval));
+        when(router.route(any(), any(), any())).thenReturn(answer("Done."));
+
+        runner.resume(ORG, runId);
+
+        verify(tools, never()).invoke(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a rejected approval is never invoked, whatever a caller asks resume to do")
+    void resumeNeverInvokesRejectedApproval() {
+        UUID runId = UUID.randomUUID();
+        parkedRun(runId);
+        UUID approvalId = UUID.randomUUID();
+        List<RunStep> trace = new java.util.ArrayList<>(List.of(
+                RunStep.of(ORG, runId, 0, "note", Map.of("type", "instruction", "content", INSTRUCTION)),
+                RunStep.of(ORG, runId, 1, "approval", Map.of(
+                        "approvalId", approvalId.toString(), "toolCallId", "call_1", "tool", "gmail.send_message"))));
+        stubStepsBackedBy(runId, trace);
+        Approval approval = new Approval();
+        approval.setId(approvalId);
+        approval.setOrgId(ORG);
+        approval.setRunId(runId);
+        approval.setAgentId(agent.getId());
+        approval.setTool("gmail.send_message");
+        approval.setToolCallId("call_1");
+        approval.setStatus("rejected");
+        when(approvals.find(ORG, approvalId)).thenReturn(Optional.of(approval));
+        when(router.route(any(), any(), any())).thenReturn(answer("Stopped."));
+
+        runner.resume(ORG, runId);
+
+        verify(tools, never()).invoke(any(), any(), any());
+    }
+
+    /** Makes the mocked step repository behave like real persistence for one run's trace. */
+    private void stubStepsBackedBy(UUID runId, List<RunStep> trace) {
+        when(steps.findByRunIdOrderByPosition(runId)).thenAnswer(call -> List.copyOf(trace));
+        when(steps.highestPosition(runId))
+                .thenAnswer(call -> trace.stream().mapToInt(RunStep::getPosition).max().orElse(-1));
+        when(steps.save(any())).thenAnswer(call -> {
+            RunStep step = call.getArgument(0);
+            trace.add(step);
+            return step;
+        });
     }
 
     @Test
@@ -212,7 +385,7 @@ class AgentRunnerTest {
 
         AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
 
-        verify(runs, atLeastOnce()).save(saved.capture());
+        verify(runs, atLeastOnce()).saveAndFlush(saved.capture());
         Run run = saved.getValue();
         assertThat(outcome.status()).isEqualTo("failed");
         assertThat(run.getStatus()).isEqualTo("failed");
@@ -230,7 +403,7 @@ class AgentRunnerTest {
 
         AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), UUID.randomUUID(), INSTRUCTION, "task");
 
-        verify(runs, atLeastOnce()).save(saved.capture());
+        verify(runs, atLeastOnce()).saveAndFlush(saved.capture());
         Run run = saved.getValue();
         assertThat(outcome.status()).isEqualTo("failed");
         assertThat(run.getStatus()).isEqualTo("failed");
@@ -265,7 +438,7 @@ class AgentRunnerTest {
 
         AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
 
-        verify(runs, atLeastOnce()).save(saved.capture());
+        verify(runs, atLeastOnce()).saveAndFlush(saved.capture());
         Run run = saved.getValue();
         assertThat(outcome.status()).isEqualTo("failed");
         assertThat(run.getStatus()).isEqualTo("failed");
@@ -302,5 +475,11 @@ class AgentRunnerTest {
         return new ChatResponse(
                 content, List.of(), FinishReason.STOP, TokenUsage.of(120, 30), "sandbox", "sandbox-echo",
                 Duration.ofMillis(40), List.of(), Map.of());
+    }
+
+    private static ChatResponse toolCallAnswer(String callId, String toolName, String argumentsJson) {
+        return new ChatResponse(
+                "", List.of(new ToolCall(callId, toolName, argumentsJson)), FinishReason.TOOL_CALLS,
+                TokenUsage.of(120, 30), "sandbox", "sandbox-echo", Duration.ofMillis(40), List.of(), Map.of());
     }
 }

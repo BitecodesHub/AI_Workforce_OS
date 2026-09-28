@@ -9,10 +9,12 @@ import {
   auditActionLabel,
   categoryTone,
   embeddingProviderLabel,
+  goalSourceLabel,
   hasExplicitStatus,
   mediaTypeLabel,
   providerKindLabel,
   roleLabel,
+  scheduleStateLabel,
   serverLabel,
   sourceKindLabel,
   startedByLabel,
@@ -113,6 +115,12 @@ describe('status labels cover the database', () => {
       expect(CATEGORY_LABEL[category]).toBeTruthy()
       expect(categoryTone(category)).toBe(category)
     }
+  })
+
+  it('names every goal source the database allows (goals_source_valid, not a *_status_valid constraint)', () => {
+    const sources = valuesOf('goals_source_valid')
+    expect(sources.length).toBeGreaterThan(0)
+    expect(sources.map((source) => goalSourceLabel(source).label)).toEqual(['Started by hand', 'From Chat', 'Scheduled'])
   })
 
   it('names every source kind, provider kind and action class the database allows', () => {
@@ -236,5 +244,18 @@ describe('other labels', () => {
     expect(embeddingProviderLabel('gemini')).toBe('Google Gemini')
     expect(embeddingProviderLabel('voyage_ai')).toBe('Voyage ai')
     expect(embeddingProviderLabel(null)).toBe('No provider')
+  })
+
+  it('says how a goal came to exist, and falls back for an unset or unknown source', () => {
+    expect(goalSourceLabel('manual')).toEqual({ tone: 'neutral', label: 'Started by hand' })
+    expect(goalSourceLabel('chat')).toEqual({ tone: 'blue', label: 'From Chat' })
+    expect(goalSourceLabel('schedule')).toEqual({ tone: 'operations', label: 'Scheduled' })
+    expect(goalSourceLabel(null)).toEqual({ tone: 'neutral', label: 'Started by hand' })
+    expect(goalSourceLabel('something_new')).toEqual({ tone: 'neutral', label: 'Something new' })
+  })
+
+  it('reads a schedule as active or paused from its enabled flag', () => {
+    expect(scheduleStateLabel(true)).toEqual({ tone: 'success', label: 'Active' })
+    expect(scheduleStateLabel(false)).toEqual({ tone: 'neutral', label: 'Paused' })
   })
 })

@@ -225,23 +225,29 @@ async function read<T>(response: Response): Promise<T> {
   return body as T
 }
 
+/**
+ * One refresh at a time, shared with anyone else already waiting on one (api() itself, and
+ * fetchAudio in voice.ts for the one binary endpoint api() cannot serve). A network failure
+ * propagates as the same ApiError doRefresh throws, rather than being read as an expired session.
+ */
+export async function refreshAccessToken(): Promise<boolean> {
+  const existing = getRefreshPromise()
+  if (existing) return existing
+  const promise = doRefresh()
+  setRefreshPromise(promise)
+  try {
+    return await promise
+  } finally {
+    setRefreshPromise(null)
+  }
+}
+
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const token = accessToken()
   const response = await send(path, options, token)
 
   if (response.status === 401 && token) {
-    const existing = getRefreshPromise()
-    const refreshed = existing
-      ? await existing
-      : await (async () => {
-          const promise = doRefresh()
-          setRefreshPromise(promise)
-          try {
-            return await promise
-          } finally {
-            setRefreshPromise(null)
-          }
-        })()
+    const refreshed = await refreshAccessToken()
 
     if (refreshed) return read<T>(await send(path, options, accessToken()))
 

@@ -24,9 +24,13 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
+import os.aiworkforce.orchestrator.domain.Task;
+import os.aiworkforce.orchestrator.repository.Goals;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
+import os.aiworkforce.orchestrator.repository.Tasks;
 import os.aiworkforce.orchestrator.service.ApprovalService;
 import os.aiworkforce.orchestrator.service.TaskProgress;
 import os.aiworkforce.platform.context.Actor;
@@ -41,6 +45,8 @@ class RunControllerTest {
     private static final UUID AGENT = UUID.randomUUID();
 
     private Runs runs;
+    private Tasks tasks;
+    private Goals goals;
     private ApprovalService approvals;
     private TaskProgress progress;
     private RunController controller;
@@ -48,9 +54,11 @@ class RunControllerTest {
     @BeforeEach
     void setUp() {
         runs = mock(Runs.class);
+        tasks = mock(Tasks.class);
+        goals = mock(Goals.class);
         approvals = mock(ApprovalService.class);
         progress = mock(TaskProgress.class);
-        controller = new RunController(runs, mock(RunSteps.class), approvals, progress);
+        controller = new RunController(runs, mock(RunSteps.class), tasks, goals, approvals, progress);
         RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
     }
 
@@ -65,6 +73,41 @@ class RunControllerTest {
         when(runs.findByOrgIdOrderByStartedAtDesc(eq(ORG), any())).thenReturn(page(run("completed")));
 
         assertThat(controller.list(0, 25, null, null)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a run for a task carries the goal it belongs to and who asked for it")
+    void carriesGoalAndRequester() {
+        UUID requestedBy = UUID.randomUUID();
+        UUID goalId = UUID.randomUUID();
+        Run run = run("completed");
+        UUID taskId = UUID.randomUUID();
+        run.setTaskId(taskId);
+        Task task = new Task();
+        task.setId(taskId);
+        task.setGoalId(goalId);
+        Goal goal = new Goal();
+        goal.setId(goalId);
+        goal.setRequestedBy(requestedBy);
+        when(runs.findByOrgIdOrderByStartedAtDesc(eq(ORG), any())).thenReturn(page(run));
+        when(tasks.findAllById(Set.of(taskId))).thenReturn(List.of(task));
+        when(goals.findAllById(Set.of(goalId))).thenReturn(List.of(goal));
+
+        RunController.RunView view = controller.list(0, 25, null, null).getFirst();
+
+        assertThat(view.goalId()).isEqualTo(goalId);
+        assertThat(view.requestedBy()).isEqualTo(requestedBy);
+    }
+
+    @Test
+    @DisplayName("a run started directly on an agent, with no task, carries no goal or requester")
+    void manualRunCarriesNoGoal() {
+        when(runs.findByOrgIdOrderByStartedAtDesc(eq(ORG), any())).thenReturn(page(run("completed")));
+
+        RunController.RunView view = controller.list(0, 25, null, null).getFirst();
+
+        assertThat(view.goalId()).isNull();
+        assertThat(view.requestedBy()).isNull();
     }
 
     @Test

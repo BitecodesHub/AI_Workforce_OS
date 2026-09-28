@@ -39,10 +39,12 @@ public class TaskProgress {
 
     private final Tasks tasks;
     private final Goals goals;
+    private final List<GoalLifecycleListener> listeners;
 
-    public TaskProgress(Tasks tasks, Goals goals) {
+    public TaskProgress(Tasks tasks, Goals goals, List<GoalLifecycleListener> listeners) {
         this.tasks = tasks;
         this.goals = goals;
+        this.listeners = listeners == null ? List.of() : listeners;
     }
 
     /**
@@ -91,6 +93,7 @@ public class TaskProgress {
             }
         }
         tasks.save(task);
+        notifyTaskFinished(task);
         afterTaskChanged(task);
     }
 
@@ -124,6 +127,7 @@ public class TaskProgress {
     public void onStartFailed(Task task, String reason) {
         applyFailure(task, reason == null ? DEFAULT_FAILURE : reason, Instant.now());
         tasks.save(task);
+        notifyTaskFinished(task);
         afterTaskChanged(task);
     }
 
@@ -150,6 +154,39 @@ public class TaskProgress {
         goal.setCompletedAt(Instant.now());
         goals.save(goal);
         log.info("Goal {} finished as {}", goalId, goal.getStatus());
+        notifyGoalFinished(goal);
+    }
+
+    // ---- Lifecycle listeners ------------------------------------------------------------------
+
+    /** Every listener is called, and one throwing must not stop the task from being recorded. */
+    private void notifyTaskFinished(Task task) {
+        if (listeners.isEmpty()) {
+            return;
+        }
+        Goal goal = goals.findById(task.getGoalId()).orElse(null);
+        if (goal == null) {
+            return;
+        }
+        for (GoalLifecycleListener listener : listeners) {
+            try {
+                listener.onTaskFinished(goal, task, task.getStatus());
+            } catch (RuntimeException e) {
+                log.error("A goal lifecycle listener failed handling task {} reaching {}",
+                        task.getId(), task.getStatus(), e);
+            }
+        }
+    }
+
+    private void notifyGoalFinished(Goal goal) {
+        for (GoalLifecycleListener listener : listeners) {
+            try {
+                listener.onGoalFinished(goal);
+            } catch (RuntimeException e) {
+                log.error("A goal lifecycle listener failed handling goal {} finishing as {}",
+                        goal.getId(), goal.getStatus(), e);
+            }
+        }
     }
 
     // ---- Rules ------------------------------------------------------------------------------

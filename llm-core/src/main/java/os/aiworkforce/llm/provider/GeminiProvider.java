@@ -28,6 +28,7 @@ import os.aiworkforce.llm.model.ProviderException;
 import os.aiworkforce.llm.model.ProviderFailure;
 import os.aiworkforce.llm.model.TokenUsage;
 import os.aiworkforce.llm.model.ToolCall;
+import os.aiworkforce.llm.model.ToolNames;
 import os.aiworkforce.llm.spi.ChatChunk;
 import os.aiworkforce.llm.spi.ChatProvider;
 
@@ -154,7 +155,7 @@ public class GeminiProvider implements ChatProvider {
                 node.put("role", "user");
                 ObjectNode part = node.putArray("parts").addObject();
                 ObjectNode response = part.putObject("functionResponse");
-                response.put("name", message.name() == null ? "tool" : message.name());
+                response.put("name", message.name() == null ? "tool" : ToolNames.toWire(message.name()));
                 ObjectNode responseBody = response.putObject("response");
                 try {
                     responseBody.set("result", json.readTree(message.content()));
@@ -170,7 +171,7 @@ public class GeminiProvider implements ChatProvider {
             }
             for (ToolCall call : message.toolCalls()) {
                 ObjectNode functionCall = parts.addObject().putObject("functionCall");
-                functionCall.put("name", call.name());
+                functionCall.put("name", ToolNames.toWire(call.name()));
                 try {
                     functionCall.set("args", json.readTree(call.argumentsJson()));
                 } catch (Exception e) {
@@ -208,7 +209,7 @@ public class GeminiProvider implements ChatProvider {
             ArrayNode declarations = body.putArray("tools").addObject().putArray("functionDeclarations");
             request.tools().forEach(tool -> {
                 ObjectNode node = declarations.addObject();
-                node.put("name", tool.name());
+                node.put("name", ToolNames.toWire(tool.name()));
                 node.put("description", tool.description());
                 try {
                     node.set("parameters", json.readTree(tool.parametersJson()));
@@ -254,7 +255,7 @@ public class GeminiProvider implements ChatProvider {
                 JsonNode call = part.path("functionCall");
                 calls.add(new ToolCall(
                         "call_" + callIndex++,
-                        call.path("name").asText(""),
+                        ToolNames.fromWire(call.path("name").asText("")),
                         call.path("args").toString()));
             }
         }
@@ -330,7 +331,7 @@ public class GeminiProvider implements ChatProvider {
                     JsonNode call = part.path("functionCall");
                     state.calls.add(new ToolCall(
                             "call_" + state.calls.size(),
-                            call.path("name").asText(""),
+                            ToolNames.fromWire(call.path("name").asText("")),
                             call.path("args").toString()));
                 }
             }

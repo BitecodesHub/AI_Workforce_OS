@@ -37,6 +37,10 @@ public class Agent extends OrgScopedEntity {
     @Column(name = "owner_id")
     private UUID ownerId;
 
+    /** The ElevenLabs voice this agent speaks with. Null means the browser's own voice is used. */
+    @Column(name = "voice_id")
+    private String voiceId;
+
     public boolean isActive() {
         return "active".equals(status);
     }
@@ -87,5 +91,13 @@ public class Agent extends OrgScopedEntity {
 
     public void setOwnerId(UUID ownerId) {
         this.ownerId = ownerId;
+    }
+
+    public String getVoiceId() {
+        return voiceId;
+    }
+
+    public void setVoiceId(String voiceId) {
+        this.voiceId = voiceId;
     }
 }

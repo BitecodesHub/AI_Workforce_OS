@@ -1713,3 +1713,1068 @@
     padding: var(--space-2) var(--space-4);
   }
 }
+
+/* ---- Orchestrator ---------------------------------------------------------------------------
+ * The live coordination map, its two-hour timeline, and the goal board beneath them: flow-map
+ * nodes and edges, swimlane bars, board columns and cards, and the agent strip. Every keyframe is
+ * prefixed `orc-` and is switched off under prefers-reduced-motion below, on top of the global
+ * rule in tokens.css that already collapses every animation's duration to nothing.
+ */
+
+.orc-live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.orc-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--green);
+  animation: orc-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes orc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(1.5);
+  }
+}
+
+/* ---- Flow map ---------------------------------------------------------------------------------- */
+
+.orc-flowmap {
+  position: relative;
+}
+
+.orc-flowmap-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 320px;
+}
+
+.orc-hub circle {
+  fill: var(--blue-light);
+  stroke: var(--blue);
+  stroke-width: 1.5;
+}
+
+.orc-hub-label {
+  font-size: 8px;
+  font-weight: var(--weight-strong);
+  fill: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.orc-node {
+  cursor: pointer;
+}
+
+.orc-node-circle {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.5;
+  transition: stroke-width var(--transition);
+}
+
+.orc-node[data-category='operations'] .orc-node-circle {
+  stroke: var(--category-operations);
+}
+
+.orc-node[data-category='engineering'] .orc-node-circle {
+  stroke: var(--category-engineering);
+}
+
+.orc-node[data-category='growth'] .orc-node-circle {
+  stroke: var(--category-growth);
+}
+
+.orc-node[data-category='support'] .orc-node-circle {
+  stroke: var(--category-support);
+}
+
+.orc-node[data-selected='true'] .orc-node-circle {
+  stroke-width: 2.6;
+}
+
+.orc-node:focus-visible .orc-node-circle {
+  stroke: var(--blue);
+  stroke-width: 2.6;
+  outline: none;
+}
+
+.orc-node-initials {
+  font-size: 10px;
+  font-weight: var(--weight-strong);
+  fill: var(--ink);
+}
+
+.orc-node-label {
+  font-size: 8.5px;
+  fill: var(--muted);
+}
+
+.orc-node[data-status='paused'] .orc-node-circle {
+  opacity: 0.55;
+}
+
+.orc-pause-glyph rect {
+  fill: var(--muted);
+}
+
+.orc-ring {
+  fill: none;
+  stroke-width: 2;
+}
+
+.orc-ring-running {
+  stroke: var(--blue);
+  stroke-dasharray: 5 4;
+  animation: orc-flow 1s linear infinite;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--blue) 55%, transparent));
+}
+
+.orc-ring-waiting {
+  stroke: var(--warning-ink);
+  stroke-dasharray: 3 3;
+}
+
+@keyframes orc-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+
+.orc-edge {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.6;
+}
+
+.orc-edge-done {
+  stroke: var(--green);
+  opacity: 0.4;
+}
+
+.orc-edge-active {
+  stroke: var(--blue);
+  stroke-dasharray: 6 5;
+  animation: orc-flow 0.9s linear infinite;
+}
+
+.orc-edge-dot {
+  fill: var(--blue);
+}
+
+.orc-tooltip {
+  position: absolute;
+  z-index: 4;
+  min-width: 160px;
+  max-width: 220px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-hover);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 14px));
+}
+
+.orc-tooltip-name {
+  margin-bottom: 2px;
+  font-weight: var(--weight-strong);
+}
+
+.orc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.orc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.orc-legend-ring {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+}
+
+.orc-legend-ring.orc-ring-running {
+  border: 2px solid var(--blue);
+}
+
+.orc-legend-ring.orc-ring-waiting {
+  border: 2px dashed var(--warning-ink);
+}
+
+.orc-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+  opacity: 0.55;
+}
+
+/* ---- Swimlanes --------------------------------------------------------------------------------- */
+
+.orc-swimlanes-scroll {
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.orc-swimlanes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 560px;
+}
+
+.orc-lane,
+.orc-lane-ticks {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.orc-lane-label {
+  overflow: hidden;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orc-lane-track {
+  position: relative;
+  height: 26px;
+  border-bottom: 1px solid var(--line);
+}
+
+.orc-lane-ticks .orc-lane-track {
+  height: 20px;
+  border-bottom: none;
+}
+
+.orc-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--line);
+}
+
+.orc-tick-label {
+  position: absolute;
+  top: 0;
+  left: var(--space-1);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.orc-now-line {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  border-left: 1px dashed var(--blue);
+}
+
+.orc-now-label {
+  position: absolute;
+  top: -15px;
+  right: 0;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-strong);
+  color: var(--blue);
+  white-space: nowrap;
+}
+
+.orc-bar {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  min-width: 3px;
+  border-radius: var(--radius-pill);
+}
+
+.orc-bar-running {
+  background-color: var(--blue);
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.35) 0 6px, transparent 6px 12px);
+  background-size: 28px 100%;
+  animation: orc-stripes 1s linear infinite;
+}
+
+@keyframes orc-stripes {
+  to {
+    background-position: 28px 0;
+  }
+}
+
+.orc-bar-waiting {
+  background: var(--warning-ink);
+  opacity: 0.85;
+}
+
+.orc-bar-completed {
+  background: var(--green);
+}
+
+.orc-bar-failed {
+  background: var(--danger);
+}
+
+.orc-bar-cancelled {
+  background: var(--muted);
+  opacity: 0.55;
+}
+
+/* ---- Board columns ------------------------------------------------------------------------------ */
+
+.orc-columns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  align-items: start;
+  gap: var(--space-5);
+}
+
+.orc-column-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.orc-card {
+  width: 100%;
+  text-align: left;
+}
+
+.orc-chain,
+.orc-chain-step {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.orc-chain-arrow {
+  margin: 0 var(--space-1);
+  color: var(--muted);
+}
+
+.orc-chain-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.orc-chain-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.orc-chain-dot[data-done] {
+  background: var(--green);
+}
+
+/* ---- Agents strip -------------------------------------------------------------------------------- */
+
+.orc-agents-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.orc-agent-chip {
+  min-width: 168px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+}
+
+@media (max-width: 720px) {
+  .orc-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .orc-lane,
+  .orc-lane-ticks {
+    grid-template-columns: 84px 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orc-live-dot,
+  .orc-ring-running,
+  .orc-edge-active,
+  .orc-bar-running {
+    animation: none;
+  }
+}
+
+/* ---- Schedules and voice ---------------------------------------------------------------------- */
+
+/* A small live indicator beside a Preview button while a voice clip is actually playing - the
+   button's own loading spinner covers the wait for audio to arrive, and this dot covers the part
+   that still needs a signal once playback has started. */
+.sch-speaking-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+  animation: sch-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes sch-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sch-speaking-dot {
+    animation: none;
+  }
+}
+
+/* ---- Workforce chat ----------------------------------------------------------------------------
+ * The Chat screen: the conversation rail, the thread of message cards, the goal chain a progress
+ * card draws, and the composer with its @mention popover. Every keyframe here is prefixed chat-
+ * and turned off under prefers-reduced-motion, on top of the global rule in tokens.css that
+ * already shortens every animation to nothing for that preference.
+ */
+
+.chat-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: var(--space-5);
+  align-items: stretch;
+  height: calc(100vh - 300px);
+  min-height: 460px;
+  margin-top: var(--space-5);
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: var(--space-4);
+}
+
+.chat-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  background: var(--surface);
+}
+
+/* ---- Conversation rail --------------------------------------------------------------------- */
+
+.chat-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  background: var(--surface);
+}
+
+.chat-rail-new {
+  width: 100%;
+  justify-content: center;
+}
+
+.chat-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.chat-rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  gap: 2px;
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control-lg);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.chat-rail-item:hover {
+  background: var(--paper);
+}
+
+.chat-rail-item[aria-current='true'] {
+  background: var(--blue-light);
+  border-color: transparent;
+}
+
+.chat-rail-item-title {
+  font-weight: var(--weight-emphasis);
+  font-size: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.chat-rail-item-preview {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.chat-rail-item-time {
+  margin-top: 2px;
+}
+
+.chat-rail-compact {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .chat-layout {
+    grid-template-columns: 1fr;
+    height: calc(100vh - 340px);
+  }
+
+  .chat-rail {
+    display: none;
+  }
+
+  .chat-rail-compact {
+    display: flex;
+    gap: var(--space-3);
+  }
+
+  .chat-rail-compact .select {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* ---- Welcome ------------------------------------------------------------------------------- */
+
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.chat-welcome-agents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-4);
+}
+
+.chat-welcome-agent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.chat-welcome-agent-name {
+  display: block;
+  font-weight: var(--weight-emphasis);
+}
+
+.chat-welcome-agent-summary {
+  display: block;
+  margin-top: 2px;
+}
+
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.chat-suggestion-chip {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+  max-width: 320px;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+.chat-suggestion-chip:hover {
+  border-color: var(--border-hover);
+  background: var(--paper);
+}
+
+/* ---- Message thread ------------------------------------------------------------------------- */
+
+.chat-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.chat-bubble-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+
+.chat-bubble-row-user {
+  justify-content: flex-end;
+}
+
+.chat-bubble-row-agent {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: min(72ch, 100%);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control-lg);
+  border: 1px solid var(--line);
+}
+
+.chat-bubble-user {
+  background: var(--blue-light);
+  border-color: transparent;
+  margin-left: auto;
+}
+
+.chat-bubble-agent {
+  background: var(--surface);
+}
+
+/* A grouped bubble (the same author's next line) sits closer to the one above it and drops the
+   name row, which the first bubble in the run already carries. */
+.chat-bubble-grouped {
+  margin-top: calc(var(--space-3) * -1 + 2px);
+}
+
+.chat-bubble-agent-name {
+  font-weight: var(--weight-emphasis);
+  margin-bottom: var(--space-2);
+}
+
+.chat-bubble-agent-actions {
+  margin-top: var(--space-3);
+  align-items: center;
+}
+
+/* ---- Agent avatar --------------------------------------------------------------------------- */
+
+.chat-avatar {
+  background: color-mix(in srgb, var(--chat-avatar-colour, var(--muted)) 16%, white);
+  color: var(--chat-avatar-colour, var(--muted));
+  flex: none;
+}
+
+/* ---- Routing receipt ------------------------------------------------------------------------ */
+
+.chat-routing-agents {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chat-routing-instruction {
+  margin-top: var(--space-1);
+}
+
+.chat-routing-matched {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.chat-routing-matched-chip {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-3);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.chat-routing-choices {
+  margin-top: var(--space-4);
+}
+
+.chat-routing-menu {
+  margin-top: var(--space-4);
+}
+
+.chat-routing-menu-trigger {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---- Documents card -------------------------------------------------------------------------- */
+
+.chat-passages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat-passage {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  padding: var(--space-4);
+}
+
+/* ---- Schedule suggestion card ------------------------------------------------------------------ */
+
+.chat-schedule-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: var(--space-3) 0 0;
+}
+
+.chat-schedule-facts div {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.chat-schedule-facts dt {
+  color: var(--muted);
+}
+
+.chat-schedule-facts dd {
+  margin: 0;
+}
+
+.chat-schedule-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-caption);
+}
+
+/* ---- Progress card and goal chain --------------------------------------------------------------- */
+
+.chat-chain {
+  list-style: none;
+  margin: var(--space-4) 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-chain-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-chain-arrow {
+  color: var(--line);
+  display: inline-flex;
+}
+
+.chat-chain-arrow-active {
+  color: var(--blue);
+}
+
+.chat-chain-step {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-chain-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+.chat-chain-pill:hover {
+  border-color: var(--border-hover);
+}
+
+.chat-chain-pill-current {
+  border-color: var(--blue);
+}
+
+.chat-chain-pill-name {
+  font-weight: var(--weight-medium);
+}
+
+.chat-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+  animation: chat-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes chat-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.chat-chain-step-body {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  background: var(--paper);
+}
+
+.chat-inline-approval {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  background: var(--warning-bg);
+}
+
+.chat-inline-approval-payload {
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pulse-dot {
+    animation: none;
+  }
+}
+
+/* ---- Composer -------------------------------------------------------------------------------- */
+
+.chat-composer {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  background: var(--surface);
+}
+
+.chat-composer-voice-error {
+  color: var(--danger);
+  margin: 0 0 var(--space-2);
+}
+
+.chat-mention-chips {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chat-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+.chat-mention-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-composer-field {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.chat-composer-input {
+  flex: 1;
+  min-height: 40px;
+  max-height: none;
+  resize: none;
+  padding: var(--space-3) var(--space-4);
+  line-height: 1.5;
+}
+
+.chat-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding-bottom: 2px;
+}
+
+.chat-composer-hint {
+  margin: var(--space-2) 0 0;
+}
+
+.chat-mention-popover {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 220px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-hover);
+}
+
+.chat-mention-empty {
+  padding: var(--space-2) var(--space-3);
+}
+
+.chat-mention-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-mention-option:hover,
+.chat-mention-option[data-active] {
+  background: var(--blue-light);
+}
+
+@media (max-width: 900px) {
+  .chat-composer-field {
+    flex-wrap: wrap;
+  }
+
+  .chat-composer-input {
+    flex-basis: 100%;
+  }
+
+  .chat-composer-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* ---- Workforce chat: pending reply ---- */
+.chat-pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-body);
+}

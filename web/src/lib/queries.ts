@@ -41,6 +41,8 @@ export type Agent = {
   summary?: string | null
   /** The distinct tool servers this agent is granted, by server name (show them with serverLabel). */
   tools?: string[] | null
+  /** The ElevenLabs voice id this agent speaks with. Null (or absent) reads as the browser voice. */
+  voiceId?: string | null
 }
 
 export type AgentGrant = {
@@ -74,6 +76,10 @@ export type Run = {
   startedAt: string
   completedAt?: string | null
   failureReason?: string | null
+  /** The goal this run's task belongs to, when it has one. */
+  goalId?: string | null
+  /** Who asked for this: the goal's requester, carried onto every run of its tasks. */
+  requestedBy?: string | null
 }
 
 /** What starting a run returns (AgentController.RunStarted). The run's id is `runId`. */
@@ -123,6 +129,10 @@ export type Task = {
   agentId: string | null
   title: string
   status: string
+  /** Where the task sits in its goal's chain, from 0. Also the fallback run order when dependsOn is empty. */
+  position: number
+  /** The task ids this one waits on. Empty when it simply follows the previous position. */
+  dependsOn: string[]
   attempt: number
   maxAttempts: number
   result: string | null
@@ -133,6 +143,9 @@ export type Task = {
   runId: string | null
 }
 
+/** How a goal came to exist: typed in directly, routed from a chat conversation, or a schedule firing. */
+export type GoalSource = 'manual' | 'chat' | 'schedule'
+
 export type Goal = {
   id: string
   title: string
@@ -140,6 +153,13 @@ export type Goal = {
   status: string
   createdAt: string
   completedAt: string | null
+  source: GoalSource
+  /** Who asked for this goal: the person in Tasks, the chat sender, or the schedule's owner. */
+  requestedBy: string | null
+  /** The conversation this goal answers, for a chat-sourced goal. */
+  conversationId: string | null
+  /** The schedule that created this goal, for a schedule-sourced goal. */
+  scheduleId: string | null
   tasks: Task[]
 }
 
@@ -250,6 +270,204 @@ export type Passage = {
   heading: string | null
   content: string
   score: number
+}
+
+/* ---- Chat --------------------------------------------------------------------------------------- */
+
+export type Conversation = {
+  id: string
+  title: string
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  lastMessagePreview: string
+}
+
+export type ChatAuthorKind = 'user' | 'coordinator' | 'agent' | 'system'
+export type ChatMessageKind = 'text' | 'routing' | 'documents' | 'progress' | 'answer' | 'schedule_suggestion' | 'error'
+
+export type RoutingAgent = { id: string; name: string; instruction: string }
+export type RoutingAlternative = { id: string; name: string; score: number }
+
+/**
+ * Every field any message kind's `detail` can carry. Which ones are set follows from `kind` (see
+ * the EXACT API CONTRACTS list this was built from): a `routing` message has `mode`/`agents`/
+ * `reason`/`matched`/`alternatives`/`needsChoice`; `documents` has `query`/`grounded`/`passages`;
+ * `progress` has `goalId`; `answer` has `taskId`/`runId`/`agentId`; `schedule_suggestion` has
+ * `text`/`kind`/`cron`/`runAt`/`description`/`timezone`/`nextRuns`/`agentId`/`agentName`/
+ * `instruction`/`name`; `error` has `reason`. Read only the fields your message kind defines.
+ */
+export type ChatMessageDetail = {
+  mode?: 'mention' | 'model' | 'rules' | 'manual'
+  agents?: RoutingAgent[]
+  reason?: string
+  matched?: string[]
+  alternatives?: RoutingAlternative[]
+  needsChoice?: boolean
+  query?: string
+  grounded?: boolean
+  passages?: Passage[]
+  goalId?: string
+  taskId?: string
+  runId?: string
+  agentId?: string
+  text?: string
+  kind?: 'recurring' | 'once'
+  cron?: string | null
+  runAt?: string | null
+  description?: string
+  timezone?: string
+  nextRuns?: string[]
+  agentName?: string
+  instruction?: string
+  name?: string
+}
+
+export type ChatMessage = {
+  id: string
+  position: number
+  authorKind: ChatAuthorKind
+  authorId: string | null
+  agentId: string | null
+  kind: ChatMessageKind
+  content: string
+  detail: ChatMessageDetail
+  goalId: string | null
+  createdAt: string
+}
+
+export type ConversationDetail = {
+  conversation: Conversation
+  messages: ChatMessage[]
+  goals: Goal[]
+}
+
+/* ---- Orchestrator board --------------------------------------------------------------------------- */
+
+export type BoardStats = {
+  running: number
+  waitingApproval: number
+  queued: number
+  held: number
+  completedToday: number
+  failedToday: number
+  spendToday: number
+}
+
+export type BoardAgent = {
+  id: string
+  name: string
+  category: string
+  status: string
+  runningRunIds: string[]
+  waitingRunIds: string[]
+  queued: number
+}
+
+/** A goal's task, as the board shows it: everything Task has, plus its latest run's own facts. */
+export type BoardTask = Task & {
+  runStatus: string | null
+  stepCount: number | null
+  cost: number | null
+}
+
+export type BoardGoal = Omit<Goal, 'tasks'> & { tasks: BoardTask[] }
+
+export type QueueReason = 'ready' | 'waiting_on_earlier_task' | 'agent_paused'
+
+export type BoardQueueEntry = {
+  goalId: string
+  goalTitle: string
+  taskId: string
+  agentId: string | null
+  position: number
+  reason: QueueReason
+  requestedBy: string | null
+  source: GoalSource
+  createdAt: string
+}
+
+export type BoardTimelineEntry = {
+  runId: string
+  agentId: string
+  goalId: string | null
+  status: string
+  startedAt: string
+  completedAt: string | null
+}
+
+export type Board = {
+  generatedAt: string
+  timezone: string
+  stats: BoardStats
+  agents: BoardAgent[]
+  goals: BoardGoal[]
+  queue: BoardQueueEntry[]
+  timeline: BoardTimelineEntry[]
+}
+
+export type StopAllResult = {
+  runsCancelled: number
+  tasksCancelled: number
+  approvalsWithdrawn: number
+}
+
+/* ---- Schedules ------------------------------------------------------------------------------------ */
+
+export type ScheduleKind = 'recurring' | 'once'
+export type OverlapPolicy = 'skip' | 'queue'
+
+export type Schedule = {
+  id: string
+  name: string
+  agentId: string
+  agentName: string
+  instruction: string
+  kind: ScheduleKind
+  cron: string | null
+  runAt: string | null
+  timezone: string
+  description: string
+  enabled: boolean
+  overlapPolicy: OverlapPolicy
+  nextRunAt: string | null
+  lastRunAt: string | null
+  lastStatus: string | null
+  /** The goal the schedule most recently fired, for a "see it on the board" link. */
+  lastGoalId: string | null
+  consecutiveFailures: number
+  pausedReason: string | null
+  createdBy: string | null
+  createdAt: string
+}
+
+/** What POST /api/schedules/preview returns for a readable phrase: an echo, not a saved schedule. */
+export type SchedulePreview = {
+  kind: ScheduleKind
+  cron: string | null
+  runAt: string | null
+  description: string
+  timezone: string
+  /** Up to five ISO instants: the schedule's next runs, in its own timezone. */
+  nextRuns: string[]
+}
+
+/* ---- Voice ------------------------------------------------------------------------------------------ */
+
+export type VoiceStatus = {
+  provider: 'elevenlabs' | 'browser'
+  keyStored: boolean
+  tier?: string | null
+  charactersUsed?: number | null
+  characterLimit?: number | null
+}
+
+export type Voice = {
+  voiceId: string
+  name: string
+  category: string
+  description?: string | null
+  previewUrl?: string | null
 }
 
 export type IngestResult = {
@@ -399,11 +617,50 @@ const agentDetailRow = (agent: AgentDetail): AgentDetail =>
   withNulls(agent, ['revision', 'systemPrompt', 'goals', 'maxSteps'])
 const taskRow = (task: Task): Task =>
   withNulls(task, ['agentId', 'result', 'failureReason', 'startedAt', 'completedAt', 'runId'])
-const goalRow = (goal: Goal): Goal => ({ ...withNulls(goal, ['completedAt']), tasks: goal.tasks.map(taskRow) })
+const goalRow = (goal: Goal): Goal => ({
+  ...withNulls(goal, ['completedAt', 'requestedBy', 'conversationId', 'scheduleId']),
+  tasks: goal.tasks.map(taskRow),
+})
 const approvalRow = (approval: Approval): Approval => withNulls(approval, ['tool'])
 const sourceRow = (source: Source): Source => withNulls(source, ['lastIngestedAt', 'lastError'])
 const documentRow = (document: SourceDocument): SourceDocument => withNulls(document, ['skipReason', 'indexedAt'])
 const passageRow = (passage: Passage): Passage => withNulls(passage, ['uri', 'pageNumber', 'heading'])
+
+const conversationRow = (conversation: Conversation): Conversation => withNulls(conversation, ['createdBy'])
+const chatMessageRow = (message: ChatMessage): ChatMessage => withNulls(message, ['authorId', 'agentId', 'goalId'])
+const conversationDetailRow = (detail: ConversationDetail): ConversationDetail => ({
+  conversation: conversationRow(detail.conversation),
+  messages: detail.messages.map(chatMessageRow),
+  goals: detail.goals.map(goalRow),
+})
+
+const boardTaskRow = (task: BoardTask): BoardTask =>
+  withNulls(task, [
+    'agentId',
+    'result',
+    'failureReason',
+    'startedAt',
+    'completedAt',
+    'runId',
+    'runStatus',
+    'stepCount',
+    'cost',
+  ])
+const boardGoalRow = (goal: BoardGoal): BoardGoal => ({
+  ...withNulls(goal, ['completedAt', 'requestedBy', 'conversationId', 'scheduleId']),
+  tasks: goal.tasks.map(boardTaskRow),
+})
+const boardQueueRow = (entry: BoardQueueEntry): BoardQueueEntry => withNulls(entry, ['agentId', 'requestedBy'])
+const boardTimelineRow = (entry: BoardTimelineEntry): BoardTimelineEntry => withNulls(entry, ['goalId', 'completedAt'])
+const boardRow = (board: Board): Board => ({
+  ...board,
+  goals: board.goals.map(boardGoalRow),
+  queue: board.queue.map(boardQueueRow),
+  timeline: board.timeline.map(boardTimelineRow),
+})
+
+const scheduleRow = (schedule: Schedule): Schedule =>
+  withNulls(schedule, ['cron', 'runAt', 'nextRunAt', 'lastRunAt', 'lastStatus', 'lastGoalId', 'pausedReason', 'createdBy'])
 
 const uniqueRuns = uniquePages<Run>((run) => run.id)
 const uniqueGoals = uniquePages<Goal>((goal) => goal.id)
@@ -552,6 +809,241 @@ export const useGoal = (id: string | null | undefined, options: QueryOptions = {
     refetchInterval: (query) => (isGoalActive(query.state.data) ? 5_000 : false),
     enabled: Boolean(id) && (options.enabled ?? true),
   })
+
+/* ---- Chat -------------------------------------------------------------------------------------- */
+
+/** Every conversation in the workspace, newest activity first (chat:use). */
+export const useConversations = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['conversations'],
+    queryFn: async () => (await api<Conversation[]>('/api/conversations')).map(conversationRow),
+    enabled: options.enabled ?? true,
+  })
+
+/**
+ * One conversation, its thread and the goals it has started. Polls every 3 seconds while a linked
+ * goal, or a task inside one, is still active, so a reply and its progress arrive on their own.
+ */
+export function useConversation(id: string | null | undefined, options: QueryOptions = {}) {
+  return useQuery({
+    queryKey: ['conversations', id ?? ''],
+    queryFn: async () => conversationDetailRow(await api<ConversationDetail>(`/api/conversations/${id ?? ''}`)),
+    enabled: Boolean(id) && (options.enabled ?? true),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (!data) return false
+      const active = data.goals.some(
+        (goal) => isGoalActive(goal) || goal.tasks.some((task) => ACTIVE_RUN_STATUSES.has(task.status.toLowerCase())),
+      )
+      return active ? 3_000 : false
+    },
+  })
+}
+
+export function useCreateConversation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { title?: string } = {}) =>
+      conversationRow(await api<Conversation>('/api/conversations', { method: 'POST', body: input })),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['conversations'] }),
+  })
+}
+
+/** Sends a message in a conversation. Resolves to the messages the request created (the person's, then any coordinator replies). */
+export function useSendMessage(conversationId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { text: string; agentIds?: string[] }) => {
+      const result = await api<{ messages: ChatMessage[] }>(`/api/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        body: input,
+      })
+      return result.messages.map(chatMessageRow)
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['conversations', conversationId] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+    },
+  })
+}
+
+/** Sends one routed message to a different agent instead, cancelling the goal it started if that goal is still open. */
+export function useReroute(conversationId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { messageId: string; agentId: string }) => {
+      const result = await api<{ messages: ChatMessage[] }>(
+        `/api/conversations/${conversationId}/messages/${input.messageId}/reroute`,
+        { method: 'POST', body: { agentId: input.agentId } },
+      )
+      return result.messages.map(chatMessageRow)
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['conversations', conversationId] })
+      client.invalidateQueries({ queryKey: ['board'] })
+    },
+  })
+}
+
+/** Deletes a conversation. The service refuses this for anyone but the person who created it. */
+export function useDeleteConversation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/api/conversations/${id}`, { method: 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['conversations'] }),
+  })
+}
+
+/* ---- Orchestrator board -------------------------------------------------------------------------- */
+
+/** The whole live board: agents, active goals, the queue and the last two hours' timeline (run:read). */
+export const useBoard = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['board'],
+    queryFn: async () => boardRow(await api<Board>('/api/orchestrator/board')),
+    refetchInterval: 3_000,
+    enabled: options.enabled ?? true,
+  })
+
+/** Cancels every active run, pending approval and open task in the workspace (run:cancel). */
+export function useStopAll() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<StopAllResult>('/api/orchestrator/stop-all', { method: 'POST' }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['runs'] })
+      client.invalidateQueries({ queryKey: ['goals'] })
+      client.invalidateQueries({ queryKey: ['approvals'] })
+    },
+  })
+}
+
+/** Pauses an agent (agent:update): its queued and future tasks stay pending, held rather than failed. */
+export function usePauseAgent(id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async () => agentRow(await api<Agent>(`/api/agents/${id}/pause`, { method: 'POST' })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['agents'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+    },
+  })
+}
+
+export function useResumeAgent(id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async () => agentRow(await api<Agent>(`/api/agents/${id}/resume`, { method: 'POST' })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['agents'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+    },
+  })
+}
+
+/* ---- Schedules ----------------------------------------------------------------------------------- */
+
+/** Every schedule in the workspace (task:read), refreshed every 30 seconds. */
+export const useSchedules = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['schedules'],
+    queryFn: async () => (await api<Schedule[]>('/api/schedules')).map(scheduleRow),
+    refetchInterval: 30_000,
+    enabled: options.enabled ?? true,
+  })
+
+/** Reads a plain-English phrase back as a schedule, without saving anything (task:read). */
+export function useSchedulePreview() {
+  return useMutation({
+    mutationFn: (input: { text: string; timezone?: string }) =>
+      api<SchedulePreview>('/api/schedules/preview', { method: 'POST', body: input }),
+  })
+}
+
+export function useCreateSchedule() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { name: string; agentId: string; instruction: string; text: string }) =>
+      scheduleRow(await api<Schedule>('/api/schedules', { method: 'POST', body: input })),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['schedules'] }),
+  })
+}
+
+export function useUpdateSchedule(id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { name?: string; agentId?: string; instruction?: string; text?: string }) =>
+      scheduleRow(await api<Schedule>(`/api/schedules/${id}`, { method: 'PUT', body: input })),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['schedules'] }),
+  })
+}
+
+/** Shared by pause/resume/run-now: each just posts to its own path and refreshes the same queries. */
+function useScheduleAction(id: string, action: 'pause' | 'resume' | 'run-now') {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async () => scheduleRow(await api<Schedule>(`/api/schedules/${id}/${action}`, { method: 'POST' })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['schedules'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['goals'] })
+    },
+  })
+}
+
+export const usePauseSchedule = (id: string) => useScheduleAction(id, 'pause')
+export const useResumeSchedule = (id: string) => useScheduleAction(id, 'resume')
+/** Fires the schedule now, outside its own timetable. The returned ScheduleView carries the new goal in `lastGoalId`. */
+export const useRunScheduleNow = (id: string) => useScheduleAction(id, 'run-now')
+
+export function useDeleteSchedule() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/api/schedules/${id}`, { method: 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['schedules'] }),
+  })
+}
+
+/** A schedule's own run history: the goals it created, newest first (task:read). */
+export const useScheduleRuns = (id: string, options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['schedules', id, 'runs'],
+    queryFn: async () => (await api<Goal[]>(`/api/schedules/${id}/runs`)).map(goalRow),
+    enabled: Boolean(id) && (options.enabled ?? true),
+  })
+
+/* ---- Voice --------------------------------------------------------------------------------------- */
+
+/** Whether ElevenLabs is configured for this workspace, and today's quota (chat:use). */
+export const useVoiceStatus = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['voice', 'status'],
+    queryFn: () => api<VoiceStatus>('/api/voice/status'),
+    enabled: options.enabled ?? true,
+  })
+
+/** The voices ElevenLabs offers. Empty without a stored key (chat:use). */
+export const useVoices = (options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['voice', 'voices'],
+    queryFn: () => api<Voice[]>('/api/voice/voices'),
+    enabled: options.enabled ?? true,
+  })
+
+/** Sets, or clears with null, the voice an agent speaks with (agent:update). */
+export function useSetAgentVoice(agentId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (voiceId: string | null) =>
+      agentRow(await api<Agent>(`/api/agents/${agentId}/voice`, { method: 'PUT', body: { voiceId } })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['agents'] })
+      client.invalidateQueries({ queryKey: ['agents', agentId] })
+    },
+  })
+}
 
 export const useProviders = (options: QueryOptions = {}) =>
   useQuery({
@@ -935,10 +1427,6 @@ export function useAcceptInvitation() {
         body: input,
       }),
   })
-}
-
-export function useChat() {
-  throw new Error('useChat: /api/chat endpoint not implemented yet')
 }
 
 export type AuditEvent = {

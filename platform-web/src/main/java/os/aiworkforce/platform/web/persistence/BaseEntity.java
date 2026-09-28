@@ -97,6 +97,21 @@ public abstract class BaseEntity implements Persistable<UUID> {
         return version;
     }
 
+    /**
+     * Adopts the version of the copy a save returned.
+     *
+     * <p>Saving an entity that is not attached to the current persistence context (one kept
+     * across several short transactions, such as a run driven step by step) merges it: the
+     * repository returns a different managed copy carrying the incremented version, and the
+     * original keeps the old one. Saving the original again would then fail an optimistic-lock
+     * check against its own earlier write. Calling this with the returned copy keeps them in step.
+     */
+    public void adoptVersion(BaseEntity saved) {
+        if (saved != null && saved != this) {
+            this.version = saved.version;
+        }
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }

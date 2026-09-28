@@ -135,7 +135,11 @@ public class SandboxServerAdapter implements McpServerAdapter {
                 // Said plainly, because an agent reporting "email sent" when nothing left the
                 // machine is exactly the confusion the sandbox must not create.
                 result.put("sandbox", true);
-                summary = "Recorded a " + collection + " record in the sandbox. Nothing left this machine.";
+                // The voice tool writes a script, not an email or a ticket, so it earns its own
+                // sentence rather than the generic "record in the sandbox" one.
+                summary = "voice_note".equals(collection)
+                        ? "Saved a voice note script (" + arguments.path("text").asText("").length() + " characters)."
+                        : "Recorded a " + collection + " record in the sandbox. Nothing left this machine.";
             }
             default -> {
                 result.put("tool", invocation.qualifiedName());

@@ -41,7 +41,8 @@ public class SandboxServerRegistry {
                 new SandboxServerAdapter("slack", slackTools(), json),
                 new SandboxServerAdapter("github", githubTools(), json),
                 new SandboxServerAdapter("jira", jiraTools(), json),
-                new SandboxServerAdapter("drive", driveTools(), json));
+                new SandboxServerAdapter("drive", driveTools(), json),
+                new SandboxServerAdapter("voice", voiceTools(), json));
         log.info("Sandbox tool servers registered: {} servers, {} tools",
                 servers.size(), servers.stream().mapToInt(s -> s.tools().size()).sum());
         return servers;
@@ -158,6 +159,14 @@ public class SandboxServerRegistry {
                 write("jira", "update_issue", "Update a Jira issue.",
                         schema("\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}", "id"),
                         "write:jira-work"));
+    }
+
+    private List<ToolDefinition> voiceTools() {
+        // No scopes: this is a workspace capability, not an external account an agent connects
+        // to, so there is no consent screen whose grant could be missing.
+        return List.of(write("voice", "create_voice_note",
+                "Write a short script for a voice note to be read aloud.",
+                schema("\"text\":{\"type\":\"string\",\"maxLength\":2500}", "text")));
     }
 
     private List<ToolDefinition> driveTools() {

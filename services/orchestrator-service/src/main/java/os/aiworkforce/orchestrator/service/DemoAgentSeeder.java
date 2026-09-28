@@ -52,7 +52,8 @@ public class DemoAgentSeeder {
                     List.of(
                             new Grant("gmail", List.of("list_messages", "get_message", "draft_message", "send_message"),
                                     List.of("gmail.readonly", "gmail.compose", "gmail.send")),
-                            new Grant("calendar", List.of(), List.of("calendar.readonly", "calendar.events")))),
+                            new Grant("calendar", List.of(), List.of("calendar.readonly", "calendar.events")),
+                            new Grant("voice", List.of("create_voice_note"), List.of()))),
             new DemoAgent("engineering-manager", "Engineering Manager", "engineering",
                     """
                     You keep an engineering team's tickets current, summarise open pull requests, \
@@ -75,7 +76,8 @@ public class DemoAgentSeeder {
                             new Grant("gmail", List.of("list_messages", "get_message", "draft_message", "send_message"),
                                     List.of("gmail.readonly", "gmail.compose", "gmail.send")),
                             new Grant("slack", List.of("get_messages", "post_message"),
-                                    List.of("channels:history", "chat:write")))));
+                                    List.of("channels:history", "chat:write")),
+                            new Grant("voice", List.of("create_voice_note"), List.of()))));
 
     private final Agents agents;
     private final AgentVersions versions;

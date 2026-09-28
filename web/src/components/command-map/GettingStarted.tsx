@@ -135,14 +135,13 @@ export function GettingStarted() {
     })
   }
 
-  // Chat's search needs knowledge:query as well; without it the step would open a locked screen.
-  if (can('chat:use') && can('knowledge:query')) {
+  if (can('chat:use')) {
     steps.push({
       id: 'search-documents',
       kind: 'link',
       href: '/chat',
-      title: 'Search your documents',
-      body: 'Ask a question and see the passages from your documents that match it.',
+      title: 'Ask the workforce',
+      body: 'Chat routes what you ask to the right agent, or agents, and also searches your documents when it reads as a question about them.',
       satisfied: done.has('search-documents'),
     })
   }

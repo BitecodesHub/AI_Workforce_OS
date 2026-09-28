@@ -59,6 +59,14 @@ public interface Runs extends JpaRepository<Run, UUID> {
     Optional<Run> findFirstByTaskIdOrderByStartedAtDesc(UUID taskId);
 
     /**
+     * The same runs {@link #findFirstByTaskIdOrderByStartedAtDesc} would return one at a time, for
+     * every task id a caller already has in hand, in one query - ordered so that a caller grouping
+     * by task id and keeping only the first row per group ends up with each task's latest run,
+     * exactly as the single-task lookup does.
+     */
+    List<Run> findByTaskIdInOrderByTaskIdAscStartedAtDesc(java.util.Collection<UUID> taskIds);
+
+    /**
      * Runs whose worker stopped renewing the lease.
      *
      * <p>Used by the reaper. Without it, a process killed mid-run leaves work that shows as

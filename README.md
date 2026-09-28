@@ -111,7 +111,11 @@ merely compiled in isolation.
 | Knowledge: chunking, embeddings, Qdrant, hybrid retrieval with citations | Built and live-verified, including the dense half |
 | Integrations: connections, scopes, tool invocation records | Built and verified |
 | Analytics: audit hash chain, live-emitted events, dashboards | Built and verified |
-| Web client: 20 screens, design system, design-system tests, a usability pass for first-time evaluators | Built and tested |
+| Web client: 22 screens, design system, design-system tests, a usability pass for first-time evaluators | Built and tested |
+| Workforce Chat: one conversation with every agent; @mention, model-planned or keyword routing, each reply saying who took the work and why; multi-agent chains with handoffs; inline approvals; document questions answered from Knowledge | Built and live-verified against OpenRouter |
+| Orchestrator: live flow map of the coordinator and agents, per-agent swimlanes, a board of queued, working, waiting and finished work with who asked for it, pause per agent, stop everything | Built and live-verified |
+| Schedules: plain-English timetables ("every weekday at 9am", "tomorrow at 3pm") echoed back with the next five runs in the workspace timezone; pause, resume, run now; auto-pause after three failures | Built and live-verified |
+| Voice (ElevenLabs): speak to Chat and hear replies, a voice per agent, and a voice-note tool for agents; the browser's own speech is used until a key is stored | Built; verified live with the browser fallback, ElevenLabs path unit-tested against a mocked API (no key available) |
 | Public home page: interactive console, approval-gate, provider-failover, audit-chain and cited-answer demos, role explorer | Built, tested, and adversarially reviewed |
 | Gateway: routing, JWT verification, Redis-backed rate limiting | Built and live-verified |
 | Containers, compose stack, Kubernetes manifests, CI | Built |
@@ -152,8 +156,18 @@ been approved for, so the model repeated the same request indefinitely. Fixed by
 tool call's id and arguments and reconstructing the exchange correctly on resume — confirmed live,
 where the HR agent's send-email flow had looped three times before and completed in one afterward.
 
+The workforce Chat, Orchestrator and Schedules work first had to fix the engine underneath them. A
+run used to execute inside one database transaction, so nobody else could see it or cancel it
+until it ended; an approved action was never actually carried out after approval (the model was
+told it had been); task dependencies were declared but ignored, and no result passed from one
+agent to the next. Each is fixed and tested: steps commit as they happen, an approved call runs
+exactly once when its run resumes, tasks run as a dependency graph with the earlier agents' results
+handed over, and work started from Chat or a schedule runs in the background. Verifying it live
+against OpenRouter also found that tool names with a dot were rejected by some models, and that
+an out-of-credit reply (HTTP 402) was misfiled as an unknown error; both are fixed.
+
 See [`docs/2026-09-25_Test-and-Fix-Plan_v1.md`](docs/2026-09-25_Test-and-Fix-Plan_v1.md) for the
-full defect register (76 entries, all fixed) and the journeys walked to close it, including a
+full defect register (84 entries, all fixed) and the journeys walked to close it, including a
 full role-by-role walkthrough (owner, admin, manager, employee, viewer, each signed in for real)
 that found and fixed six more defects: two permission-gate bugs that hid data a role legitimately
 had access to, one backend endpoint gated too strictly for a page every role should be able to

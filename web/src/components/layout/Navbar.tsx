@@ -28,12 +28,10 @@ type NavItem = { label: string; href: string; needs?: readonly string[] }
 
 const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Command Map', href: '/' },
+  { label: 'Chat', href: '/chat', needs: ['chat:use'] },
+  { label: 'Orchestrator', href: '/orchestrator', needs: ['run:read'] },
   { label: 'Agents', href: '/agents', needs: ['agent:read'] },
-  { label: 'Tasks', href: '/tasks', needs: ['task:read'] },
   { label: 'Runs', href: '/runs', needs: ['run:read'] },
-  // Chat opens with chat:use, but the search behind it needs knowledge:query; without that the
-  // screen can only say the role does not allow it.
-  { label: 'Chat', href: '/chat', needs: ['chat:use', 'knowledge:query'] },
   { label: 'Knowledge', href: '/knowledge', needs: ['knowledge:read'] },
 ] as const
 
@@ -45,9 +43,16 @@ const NAV_ITEMS: readonly NavItem[] = [
  */
 const MENU_GROUPS = [
   {
+    heading: 'Work',
+    items: [
+      { label: 'Tasks', href: '/tasks', note: 'Goals and the tasks they break into', needs: 'task:read' },
+      { label: 'Schedules', href: '/schedules', note: 'Work that runs on its own timetable', needs: 'task:read' },
+      { label: 'Approvals', href: '/approvals', note: 'Actions waiting on a decision', needs: 'approval:read' },
+    ],
+  },
+  {
     heading: 'Oversight',
     items: [
-      { label: 'Approvals', href: '/approvals', note: 'Actions waiting on a decision', needs: 'approval:read' },
       { label: 'Audit log', href: '/audit', note: 'Approvals and run outcomes', needs: 'audit:read' },
       { label: 'Analytics', href: '/analytics', note: 'Activity and outcomes from the audit log', needs: 'analytics:read' },
     ],

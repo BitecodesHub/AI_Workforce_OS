@@ -172,6 +172,20 @@ class OpenAiCompatibleProviderTest {
         assertThat(failure.failure().operatorActionRequired()).isTrue();
     }
 
+    @Test
+    @DisplayName("classifies a 402 as not enough credit for this model, without condemning the whole key")
+    void insufficientCredit() {
+        stub(402, """
+                {"error":{"message":"This request requires more credits","code":402}}
+                """);
+
+        ProviderException failure = expectFailure(request("hello"));
+
+        assertThat(failure.failure()).isEqualTo(ProviderFailure.INSUFFICIENT_CREDIT);
+        assertThat(failure.failure().retrySameCandidate()).isFalse();
+        assertThat(failure.failure().tryNextCandidate()).isTrue();
+    }
+
     // ---- The three meanings of a 400 ---------------------------------------------------------
 
     @Test

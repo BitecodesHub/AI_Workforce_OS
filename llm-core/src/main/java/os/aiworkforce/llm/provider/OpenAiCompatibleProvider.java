@@ -31,6 +31,7 @@ import os.aiworkforce.llm.model.ProviderException;
 import os.aiworkforce.llm.model.ProviderFailure;
 import os.aiworkforce.llm.model.TokenUsage;
 import os.aiworkforce.llm.model.ToolCall;
+import os.aiworkforce.llm.model.ToolNames;
 import os.aiworkforce.llm.model.ToolSpec;
 
 /**
@@ -177,7 +178,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 node.put("tool_call_id", message.toolCallId());
             }
             if (message.name() != null && message.role() == ChatMessage.Role.TOOL) {
-                node.put("name", message.name());
+                node.put("name", ToolNames.toWire(message.name()));
             }
             if (message.hasToolCalls()) {
                 ArrayNode calls = node.putArray("tool_calls");
@@ -186,7 +187,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                     callNode.put("id", call.id());
                     callNode.put("type", "function");
                     ObjectNode function = callNode.putObject("function");
-                    function.put("name", call.name());
+                    function.put("name", ToolNames.toWire(call.name()));
                     function.put("arguments", call.argumentsJson());
                 }
             }
@@ -200,7 +201,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             ObjectNode node = array.addObject();
             node.put("type", "function");
             ObjectNode function = node.putObject("function");
-            function.put("name", tool.name());
+            function.put("name", ToolNames.toWire(tool.name()));
             function.put("description", tool.description());
             try {
                 function.set("parameters", json.readTree(tool.parametersJson()));
@@ -284,7 +285,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             JsonNode function = node.path("function");
             calls.add(new ToolCall(
                     node.path("id").asText("call_" + calls.size()),
-                    function.path("name").asText(""),
+                    ToolNames.fromWire(function.path("name").asText("")),
                     function.path("arguments").asText("{}")));
         }
         return calls;
@@ -377,7 +378,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 }
                 JsonNode function = call.path("function");
                 if (function.hasNonNull("name")) {
-                    builder.name = function.path("name").asText();
+                    builder.name = ToolNames.fromWire(function.path("name").asText());
                 }
                 if (function.hasNonNull("arguments")) {
                     builder.arguments.append(function.path("arguments").asText());
@@ -487,6 +488,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         ProviderFailure failure = switch (status) {
             case 400 -> classifyBadRequest(body);
             case 401 -> ProviderFailure.AUTHENTICATION_FAILED;
+            case 402 -> ProviderFailure.INSUFFICIENT_CREDIT;
             case 403 -> ProviderFailure.AUTHORISATION_FAILED;
             case 404 -> ProviderFailure.MODEL_NOT_FOUND;
             case 408 -> ProviderFailure.TIMEOUT;

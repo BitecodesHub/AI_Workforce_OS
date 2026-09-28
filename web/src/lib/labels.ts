@@ -196,6 +196,31 @@ export function categoryTone(category?: string | null): TagTone {
     : 'neutral'
 }
 
+/* ---- Goals -------------------------------------------------------------------------------------- */
+
+const GOAL_SOURCE: Record<string, StatusEntry> = {
+  manual: entry('neutral', 'Started by hand'),
+  chat: entry('blue', 'From Chat'),
+  schedule: entry('operations', 'Scheduled'),
+}
+
+/** How a goal came to exist: typed in directly, routed from a chat conversation, or a schedule firing. */
+export function goalSourceLabel(source?: string | null): StatusEntry {
+  if (!source) return GOAL_SOURCE.manual!
+  return GOAL_SOURCE[source.trim().toLowerCase()] ?? entry('neutral', sentenceCase(source))
+}
+
+/* ---- Schedules ---------------------------------------------------------------------------------- */
+
+/**
+ * A schedule's own state. Not a stored status (the schedules table has no such column): the
+ * console reads this straight from `enabled`, so 'Active' and 'Paused' mean exactly what the
+ * toggle shows.
+ */
+export function scheduleStateLabel(enabled: boolean): StatusEntry {
+  return enabled ? entry('success', 'Active') : entry('neutral', 'Paused')
+}
+
 /* ---- Roles ------------------------------------------------------------------------------------- */
 
 const SYSTEM_ROLES: Record<string, string> = {

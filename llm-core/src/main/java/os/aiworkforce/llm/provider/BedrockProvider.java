@@ -54,6 +54,7 @@ import os.aiworkforce.llm.model.ProviderException;
 import os.aiworkforce.llm.model.ProviderFailure;
 import os.aiworkforce.llm.model.TokenUsage;
 import os.aiworkforce.llm.model.ToolCall;
+import os.aiworkforce.llm.model.ToolNames;
 import os.aiworkforce.llm.spi.ChatChunk;
 import os.aiworkforce.llm.spi.ChatProvider;
 
@@ -204,7 +205,7 @@ public class BedrockProvider implements ChatProvider {
             for (ToolCall call : message.toolCalls()) {
                 blocks.add(ContentBlock.fromToolUse(ToolUseBlock.builder()
                         .toolUseId(call.id())
-                        .name(call.name())
+                        .name(ToolNames.toWire(call.name()))
                         .input(toDocument(call.argumentsJson()))
                         .build()));
             }
@@ -235,7 +236,7 @@ public class BedrockProvider implements ChatProvider {
         if (request.usesTools() && model.supportsTools()) {
             List<Tool> tools = request.tools().stream()
                     .map(tool -> Tool.fromToolSpec(ToolSpecification.builder()
-                            .name(tool.name())
+                            .name(ToolNames.toWire(tool.name()))
                             .description(tool.description())
                             .inputSchema(ToolInputSchema.fromJson(toDocument(tool.parametersJson())))
                             .build()))
@@ -261,7 +262,7 @@ public class BedrockProvider implements ChatProvider {
                 }
                 if (block.toolUse() != null) {
                     ToolUseBlock use = block.toolUse();
-                    calls.add(new ToolCall(use.toolUseId(), use.name(), documentToJson(use.input())));
+                    calls.add(new ToolCall(use.toolUseId(), ToolNames.fromWire(use.name()), documentToJson(use.input())));
                 }
             }
         }

@@ -39,12 +39,30 @@ public interface Tasks extends JpaRepository<Task, UUID> {
 
     List<Task> findByGoalIdOrderByPosition(UUID goalId);
 
+    /**
+     * The same tasks {@link #findByGoalIdOrderByPosition} would return for each goal, fetched in
+     * one query for every goal a caller already has in hand - a board refresh or a claim sweep
+     * reading many goals at once builds its own {@code goalId -> tasks} map from this by grouping
+     * while preserving order, rather than issuing one query per goal.
+     */
+    List<Task> findByGoalIdInOrderByPositionAsc(java.util.Collection<UUID> goalIds);
+
     Optional<Task> findByIdAndOrgId(UUID id, UUID orgId);
 
-    /** Candidates for the next run, oldest first. Read without a lock; {@link #claim} takes one. */
+    /**
+     * Candidates for the next run, oldest first. Read without a lock; {@link #claim} takes one.
+     *
+     * <p>A task assigned to a paused (or retired) agent is left out entirely rather than returned
+     * and skipped: a caller asks for a bounded window of candidates, and a workspace with many
+     * tasks stuck behind one paused agent must not starve every other goal's work out of that
+     * window. A task with no agent at all is still a candidate - it is claimed and then reported
+     * as unable to start, which is a different failure to leaving it pending forever.
+     */
     @Query("""
             select t from Task t
             where t.orgId = :orgId and t.status in ('pending', 'ready')
+              and (t.agentId is null or exists (
+                    select 1 from Agent a where a.id = t.agentId and a.status = 'active'))
             order by t.createdAt
             """)
     List<Task> findClaimable(@Param("orgId") UUID orgId, Pageable pageable);

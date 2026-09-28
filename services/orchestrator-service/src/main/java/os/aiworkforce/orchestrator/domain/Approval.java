@@ -37,6 +37,10 @@ public class Approval extends OrgScopedEntity {
     @Column(name = "tool")
     private String tool;
 
+    /** The model's own id for the tool call this approval answers, so a resumed run can invoke it. */
+    @Column(name = "tool_call_id")
+    private String toolCallId;
+
     @Column(name = "summary", nullable = false, columnDefinition = "text")
     private String summary;
 
@@ -111,6 +115,14 @@ public class Approval extends OrgScopedEntity {
 
     public void setTool(String tool) {
         this.tool = tool;
+    }
+
+    public String getToolCallId() {
+        return toolCallId;
+    }
+
+    public void setToolCallId(String toolCallId) {
+        this.toolCallId = toolCallId;
     }
 
     public String getSummary() {

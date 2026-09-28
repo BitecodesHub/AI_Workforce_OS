@@ -12,6 +12,8 @@ import { Runs } from './routes/Runs'
 import { RunDetail } from './routes/RunDetail'
 import { Approvals } from './routes/Approvals'
 import { Chat } from './routes/Chat'
+import { Orchestrator } from './routes/Orchestrator'
+import { Schedules } from './routes/Schedules'
 import { Knowledge } from './routes/Knowledge'
 import { SourceDetail } from './routes/SourceDetail'
 import { Integrations } from './routes/Integrations'
@@ -56,8 +58,10 @@ const PRIVATE: Array<[string, RouteMeta]> = [
   ['/agents', { permission: 'agent:read', screen: () => <Agents /> }],
   ['/agents/:id', { permission: 'agent:read', screen: (p) => <AgentDetail id={p.id!} /> }],
   ['/tasks', { permission: 'task:read', screen: () => <Tasks /> }],
+  ['/schedules', { permission: 'task:read', screen: () => <Schedules /> }],
   ['/runs', { permission: 'run:read', screen: () => <Runs /> }],
   ['/runs/:id', { permission: 'run:read', screen: (p) => <RunDetail id={p.id!} /> }],
+  ['/orchestrator', { permission: 'run:read', screen: () => <Orchestrator /> }],
   ['/approvals', { permission: 'approval:read', screen: () => <Approvals /> }],
   ['/chat', { permission: 'chat:use', screen: () => <Chat /> }],
   ['/knowledge', { permission: 'knowledge:read', screen: () => <Knowledge /> }],
@@ -203,8 +207,10 @@ function titleFor(pattern: string): string {
     '/agents': 'Agents',
     '/agents/:id': 'Agent',
     '/tasks': 'Tasks',
+    '/schedules': 'Schedules',
     '/runs': 'Runs',
     '/runs/:id': 'Run',
+    '/orchestrator': 'Orchestrator',
     '/approvals': 'Approvals',
     '/chat': 'Chat',
     '/knowledge': 'Knowledge',

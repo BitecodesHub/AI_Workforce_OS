@@ -8,6 +8,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static os.aiworkforce.orchestrator.service.WorkFixture.attempt;
 import static os.aiworkforce.orchestrator.service.WorkFixture.runFor;
 
+import java.util.List;
+import java.util.UUID;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,7 +35,7 @@ class TaskProgressTest {
     @BeforeEach
     void setUp() {
         work = new WorkFixture();
-        progress = new TaskProgress(work.tasks, work.goals);
+        progress = new TaskProgress(work.tasks, work.goals, java.util.List.of());
     }
 
     @Nested
@@ -305,6 +308,48 @@ class TaskProgressTest {
 
             assertThat(goal.getStatus()).isEqualTo("running");
             verify(work.goals, never()).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("notifying goal lifecycle listeners")
+    class Listeners {
+
+        @Test
+        @DisplayName("a listener hears a task finish and the goal close, and a failing listener does not stop the other")
+        void listenersNotified() {
+            List<String> taskCalls = new java.util.ArrayList<>();
+            List<UUID> goalCalls = new java.util.ArrayList<>();
+            GoalLifecycleListener recording = new GoalLifecycleListener() {
+                @Override
+                public void onTaskFinished(Goal goal, Task task, String status) {
+                    taskCalls.add(status);
+                }
+
+                @Override
+                public void onGoalFinished(Goal goal) {
+                    goalCalls.add(goal.getId());
+                }
+            };
+            GoalLifecycleListener broken = new GoalLifecycleListener() {
+                @Override
+                public void onTaskFinished(Goal goal, Task task, String status) {
+                    throw new IllegalStateException("boom");
+                }
+
+                @Override
+                public void onGoalFinished(Goal goal) {
+                    throw new IllegalStateException("boom");
+                }
+            };
+            TaskProgress withListeners = new TaskProgress(work.tasks, work.goals, List.of(broken, recording));
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "running");
+
+            withListeners.onRunFinished(runFor(task, "completed"), "completed", "Done.", null);
+
+            assertThat(taskCalls).containsExactly("completed");
+            assertThat(goalCalls).containsExactly(goal.getId());
         }
     }
 

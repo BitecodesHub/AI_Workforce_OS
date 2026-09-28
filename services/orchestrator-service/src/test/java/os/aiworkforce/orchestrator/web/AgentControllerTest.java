@@ -1,8 +1,10 @@
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import jakarta.validation.Validation;
@@ -25,6 +27,8 @@ import os.aiworkforce.orchestrator.repository.ToolGrants;
 import os.aiworkforce.orchestrator.service.AgentRunner;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
+import os.aiworkforce.platform.error.ApiException;
+import os.aiworkforce.platform.error.ErrorCode;
 
 class AgentControllerTest {
 
@@ -130,5 +134,65 @@ class AgentControllerTest {
         AgentToolGrant grant = new AgentToolGrant();
         grant.setServer(server);
         return grant;
+    }
+
+    @Test
+    @DisplayName("pausing an agent sets its status so its queued tasks wait")
+    void pauseSetsStatus() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = new AgentController(
+                agents, mock(AgentVersions.class), mock(AgentRunner.class), mock(ToolGrants.class));
+        Agent agent = activeAgent();
+        when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
+        RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
+
+        AgentController.AgentView view = controller.pause(agent.getId());
+
+        assertThat(view.status()).isEqualTo("paused");
+        assertThat(agent.getStatus()).isEqualTo("paused");
+        verify(agents).save(agent);
+    }
+
+    @Test
+    @DisplayName("resuming a paused agent sets it back to active")
+    void resumeSetsStatus() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = new AgentController(
+                agents, mock(AgentVersions.class), mock(AgentRunner.class), mock(ToolGrants.class));
+        Agent agent = activeAgent();
+        agent.setStatus("paused");
+        when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
+        RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
+
+        AgentController.AgentView view = controller.resume(agent.getId());
+
+        assertThat(view.status()).isEqualTo("active");
+        assertThat(agent.getStatus()).isEqualTo("active");
+    }
+
+    @Test
+    @DisplayName("a retired agent cannot be paused or resumed")
+    void retiredAgentRefused() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = new AgentController(
+                agents, mock(AgentVersions.class), mock(AgentRunner.class), mock(ToolGrants.class));
+        Agent agent = activeAgent();
+        agent.setStatus("retired");
+        when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
+        RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
+
+        assertThatThrownBy(() -> controller.pause(agent.getId()))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
+        assertThat(agent.getStatus()).isEqualTo("retired");
+    }
+
+    private static Agent activeAgent() {
+        Agent agent = new Agent();
+        agent.setId(UUID.randomUUID());
+        agent.setOrgId(ORG);
+        agent.setKey("support");
+        agent.setName("Customer Support");
+        agent.setStatus("active");
+        return agent;
     }
 }

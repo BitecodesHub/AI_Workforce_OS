@@ -481,6 +481,14 @@ Status: **Open** · **Fixed, verify** (changed in code, not yet walked in the br
 | D74 | P2 | Web | The hero's simulated console had a screen-reader description asserting "four agents running", true of only one possible frame; the routing-trace panel rendered its placeholder rows at `visibility: hidden`, so the panel looked completely blank (not just quiet) for 0.8s at the start of every 10s loop and 1.2s at the end of each one, including on first paint | `hero/HeroConsole.tsx`, `styles/landing/hero.css` | Fixed |
 | D75 | P0 | Backend | A resumed run rebuilt its conversation from the trace, but only a tool call's *name* was persisted, never its id or arguments - so the model's own tool-call turn was silently dropped from history and the approval step became a bare "you're approved, continue" message tied to nothing. Live testing found the actual consequence: approving "HR: send a welcome email" produced a second, near-identical send request, and then a third after approving that one too - a real, observed infinite approval loop for any agent that uses a tool needing approval, not a sandbox-only quirk. Fixed by persisting each call's id and arguments (`toolCallRecords` on the `model_call` step, `toolCallId` on `tool_call`/`approval` steps) and reconstructing the assistant's real tool-call turn, with a correctly linked tool-result turn, on resume. Verified live end to end: a fresh HR run drafted, asked to send, parked, and finished in exactly one approval after the fix, where it had looped three times before | `services/orchestrator-service/.../service/AgentRunner.java` | Fixed |
 | D76 | P1 | Backend | A model provider occasionally answers 200 with empty content and no recognised finish reason - observed live, once, from OpenRouter's free routed Llama 3.3 70B - and the run completed anyway with a silent blank answer and nothing to say anything had gone wrong. Now treated as a failure with a clear reason ("The model returned no answer..."), so the task's existing retry rule tries again rather than a person seeing a completed run with nothing in it | `services/orchestrator-service/.../service/AgentRunner.java` | Fixed | |
+| D77 | P0 | Backend | An approved action was never carried out: resuming a run after approval replayed the trace and told the model the action "was carried out", but never invoked the tool. The resumed run now executes exactly the approved call (same arguments, idempotency key `runId:callId`), records a real `tool_call` step, and only then continues. Verified live: an approved `gmail.send_message` produced a SUCCEEDED tool step after the approval | `orchestrator/service/AgentRunner.java`, `ApprovalService.java` | Fixed |
+| D78 | P0 | Backend | A whole run executed inside one database transaction (and `GoalService.runNextTask` wrapped another around it), so a run was invisible to every other session until it ended, could not be cancelled, held a pooled connection and a row lock for minutes, and was lost entirely on a crash. Steps now commit as they happen, claiming a task is its own short transaction, and each loop step re-reads the run so a cancel from another request stops it | `AgentRunner.java`, `GoalService.java` | Fixed |
+| D79 | P1 | Backend | Saving the detached run between steps merged it and left the loop holding a stale version, so the next save failed an optimistic-lock check and the run stuck at "running" until the reaper abandoned it. `BaseEntity.adoptVersion` plus `saveAndFlush` keep the copy in step | `platform-web/.../BaseEntity.java`, `AgentRunner.java` | Fixed |
+| D80 | P1 | Backend | Task dependencies (`tasks.depends_on`) were in the schema but not mapped, and no result passed between tasks. Tasks now run as a dependency graph, a task whose dependency did not complete is skipped rather than left pending forever, and each task starts with the earlier agents' results and a recorded `handoff` step | `domain/Task.java`, `GoalService.java`, `repository/Tasks.java` | Fixed |
+| D81 | P1 | Backend | Tool names are `server.tool`, which some function-calling models reject (Gemini through OpenRouter answered every tool-bearing request with an error), silently pushing tool-using runs down the fallback chain. All four adapters now send `server__tool` and map calls back | `llm-core/model/ToolNames.java`, the four provider adapters | Fixed |
+| D82 | P1 | Backend | An out-of-credit reply (HTTP 402) was classified as an unknown error and never logged, so the reason a model was skipped was invisible. It is now `INSUFFICIENT_CREDIT`, which sets that one model aside for a while without condemning the whole key (a cheaper model on the same key may still answer), and every provider failure is logged with the provider's own message | `OpenAiCompatibleProvider.java`, `ModelRouter.java`, `ProviderFailure.java` | Fixed |
+| D83 | P2 | Web | Relative times read "in less than a minute" for something that had just happened, because the shared clock ticks every 30 to 60 seconds and lags new server timestamps; a moment within one tick ahead is now the present. Schedule run times were shown in the reader's own zone (4:30 am for a 9 am Melbourne schedule) and are now shown in the schedule's timezone | `lib/format.ts`, `components/ui/index.tsx`, `components/schedules/ScheduleDialog.tsx`, `components/chat/ScheduleCard.tsx` | Fixed |
+| D84 | P2 | Web | In Chat, a model-routed message showed nothing for several seconds, an inline approval told a manager who could decide that "someone" else must (the cached approvals list had not caught up), and a rejected request ended with no word in the thread. The message now appears at once with "Finding the right agent", the approval list refetches while a request is missing, and a stopped task posts why it stopped | `routes/Chat.tsx`, `components/chat/ProgressCard.tsx`, `orchestrator/chat/ChatGoalListener.java` | Fixed |
 
 Fixed during the last iteration and verified through the API: persist-versus-merge conflict that
 broke creating a goal; internal service tokens rejected by every internal endpoint; members and
@@ -602,6 +610,33 @@ manager (task creation, an approval that previously would have looped, its resol
 Runs list, Knowledge, Chat, Model Routing, Members, Audit Log), as admin (Audit Log content), and
 as viewer (getting-started guide correctly narrowed to three read-only steps, no task or approval
 actions offered) - plus a deliberate wrong-password sign-in to confirm error handling.
+
+
+**Workforce Chat, Orchestrator, Schedules and voice, 28 September 2026.** Planned from three
+code surveys and a survey of comparable products (Copilot Studio, Relevance AI, Lindy, Dust, Devin,
+Manus, LangGraph, the OpenAI Agents SDK, n8n, watsonx). The must-haves taken from that survey: a
+routing receipt on every reply (who took it and why, with a way to send it to someone else),
+@mentions, approvals inside the conversation, a live board with who asked for each piece of work,
+pause and stop controls, live cost, and schedules typed in plain words and echoed back with the
+next five run times. Built by twelve agents working to one written contract (engine first, then
+chat with the board, schedules and voice in parallel, then the web foundation and three screens,
+then adversarial checks and an integration pass), then verified live in the browser with the
+stored OpenRouter key. That live pass found D78's second half, D79, D81, D82 and D83 to D84, none
+of which the unit tests could see.
+
+What is live: Chat routes by @mention, by a live model when one answers (it planned Research then
+Engineering Manager for "research our competitors, then draft a note"), or by keywords offline;
+chains hand earlier results on; approvals are decided inline and the approved action then really
+runs; the Orchestrator shows the flow map, swimlanes and board updating every three seconds;
+schedules fire on time in the workspace timezone and can be run now; voice uses the browser's
+speech until an ElevenLabs key is stored (the ElevenLabs path is unit-tested against a mocked API,
+because no key was available to test with).
+
+Worth knowing: the stored OpenRouter key does not have credit for Gemini 2.5 Flash (HTTP 402), so
+the workspace routing policy runs Llama 3.3 70B first with Gemini second; Llama's answers are
+serviceable but occasionally poor, and a funded key or a stronger first model would improve them.
+Checks at the end of this pass: full Maven reactor `clean install` green (281 tests), web `tsc`,
+lint, 268 tests and the production build green.
 
 ---
 

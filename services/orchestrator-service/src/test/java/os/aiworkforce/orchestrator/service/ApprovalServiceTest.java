@@ -52,7 +52,7 @@ class ApprovalServiceTest {
         runs = mock(Runs.class);
         audit = mock(AuditClient.class);
         service = new ApprovalService(
-                approvals, runs, new ObjectMapper(), audit, new TaskProgress(work.tasks, work.goals));
+                approvals, runs, new ObjectMapper(), audit, new TaskProgress(work.tasks, work.goals, List.of()));
         RequestContext.setActor(Actor.user(
                 UUID.randomUUID().toString(), ORG.toString(), "role", Set.of("approval:decide"), 0L));
     }

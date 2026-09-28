@@ -55,6 +55,37 @@ export function formatDateTime(iso?: string | null): string {
   return date ? `${datePart(date)}, ${timePart(date)}` : EMPTY
 }
 
+/**
+ * '29 Sep 2026, 9:00 am' as the clock reads in `timeZone` (an IANA name such as
+ * 'Australia/Melbourne'), not in the browser's own zone.
+ *
+ * A schedule set for "9 am" in the workspace timezone must show 9 am, even to someone reading it
+ * in another country; the browser-local form would show 4:30 am and look wrong. Falls back to the
+ * browser's zone when the name is unknown.
+ */
+export function formatDateTimeIn(iso: string | null | undefined, timeZone: string | null | undefined): string {
+  const date = parse(iso)
+  if (!date) return EMPTY
+  if (!timeZone) return formatDateTime(iso)
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      day: 'numeric',
+      month: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+    const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? '0')
+    const hours = get('hour')
+    const hour12 = hours % 12 === 0 ? 12 : hours % 12
+    return `${get('day')} ${MONTHS[get('month') - 1]} ${get('year')}, ${hour12}:${pad2(get('minute'))} ${hours < 12 ? 'am' : 'pm'}`
+  } catch {
+    return formatDateTime(iso)
+  }
+}
+
 /** '27 Sep 2026', or an em dash. */
 export function formatDate(iso?: string | null): string {
   const date = parse(iso)
@@ -91,6 +122,19 @@ export function formatRelative(iso?: string | null, now: number = Date.now()): s
   else return future ? `on ${datePart(date)}` : datePart(date)
 
   return future ? `in ${amount}` : `${amount} ago`
+}
+
+/**
+ * formatRelative against a shared clock that ticks every `tickMs`.
+ *
+ * That clock can lag up to one tick behind the real time, so a timestamp the server wrote a
+ * moment ago can look like it lies in the future and read 'in less than a minute'. A moment no
+ * more than one tick ahead of the clock is treated as the present.
+ */
+export function formatRelativeTicked(iso: string | null | undefined, now: number, tickMs: number): string {
+  const at = iso ? Date.parse(iso) : Number.NaN
+  const reference = Number.isFinite(at) && at > now && at - now <= tickMs ? at : now
+  return formatRelative(iso, reference)
 }
 
 /* ---- Durations ------------------------------------------------------------------------------- */

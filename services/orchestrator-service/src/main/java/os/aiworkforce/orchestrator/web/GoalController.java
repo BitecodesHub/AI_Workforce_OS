@@ -61,7 +61,8 @@ public class GoalController {
     }
 
     public record TaskView(
-            UUID id, UUID agentId, String title, String status, int attempt, int maxAttempts,
+            UUID id, UUID agentId, String title, String status, int position, List<UUID> dependsOn,
+            int attempt, int maxAttempts,
             String result, String failureReason, Instant startedAt, Instant completedAt,
             /**
              * The most recent run against this task, so the interface can link straight to its
@@ -71,6 +72,7 @@ public class GoalController {
 
     public record GoalView(
             UUID id, String title, String description, String status,
+            UUID requestedBy, String source, UUID conversationId, UUID scheduleId,
             Instant createdAt, Instant completedAt, List<TaskView> tasks) {}
 
     public record TaskInput(@NotNull UUID agentId, @NotBlank @Size(max = 200) String title,
@@ -142,6 +144,7 @@ public class GoalController {
                 .map(this::toView)
                 .toList();
         return new GoalView(goal.getId(), goal.getTitle(), goal.getDescription(), goal.getStatus(),
+                goal.getRequestedBy(), goal.getSource(), goal.getConversationId(), goal.getScheduleId(),
                 goal.getCreatedAt(), goal.getCompletedAt(), taskViews);
     }
 
@@ -150,6 +153,7 @@ public class GoalController {
                 .map(run -> run.getId())
                 .orElse(null);
         return new TaskView(task.getId(), task.getAgentId(), task.getTitle(), task.getStatus(),
+                task.getPosition(), task.getDependsOn(),
                 task.getAttempt(), task.getMaxAttempts(), task.getResult(), task.getFailureReason(),
                 task.getStartedAt(), task.getCompletedAt(), runId);
     }

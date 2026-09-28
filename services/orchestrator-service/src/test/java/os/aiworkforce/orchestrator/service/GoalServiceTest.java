@@ -1,6 +1,7 @@
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -29,12 +30,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import os.aiworkforce.orchestrator.domain.Approval;
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
 import os.aiworkforce.orchestrator.domain.RunStep;
 import os.aiworkforce.orchestrator.domain.Task;
+import os.aiworkforce.orchestrator.repository.Agents;
 import os.aiworkforce.orchestrator.repository.Approvals;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
@@ -52,6 +55,8 @@ class GoalServiceTest {
     private Approvals approvalRows;
     private final List<Approval> allApprovals = new ArrayList<>();
     private ApprovalService approvals;
+    private Agents agents;
+    private RunExecutor executor;
     private GoalService service;
 
     @BeforeEach
@@ -69,9 +74,11 @@ class GoalServiceTest {
                 .filter(approval -> approval.getId().equals(call.getArgument(0)))
                 .findFirst());
 
-        TaskProgress progress = new TaskProgress(work.tasks, work.goals);
+        TaskProgress progress = new TaskProgress(work.tasks, work.goals, List.of());
         approvals = new ApprovalService(approvalRows, runs, new ObjectMapper(), mock(AuditClient.class), progress);
-        service = new GoalService(work.goals, work.tasks, runs, steps, runner, approvals, progress);
+        agents = mock(Agents.class);
+        executor = mock(RunExecutor.class);
+        service = new GoalService(work.goals, work.tasks, runs, steps, runner, approvals, progress, agents, executor);
     }
 
     @AfterEach
@@ -156,6 +163,90 @@ class GoalServiceTest {
     }
 
     @Nested
+    @DisplayName("creating a goal")
+    class CreateGoal {
+
+        @Test
+        @DisplayName("sets source, links and requester, and maps dependsOn positions to task ids")
+        void createGoalSetsFieldsAndDependencies() {
+            UUID conversationId = UUID.randomUUID();
+            UUID requestedBy = UUID.randomUUID();
+            GoalService.NewGoal spec = new GoalService.NewGoal(
+                    "Answer the customer", "", requestedBy, "chat", conversationId, null,
+                    List.of(
+                            new GoalService.NewTask(UUID.randomUUID(), "Research", "Look into it", List.of()),
+                            new GoalService.NewTask(UUID.randomUUID(), "Reply", "Write back", List.of(0))));
+
+            Goal goal = service.createGoal(ORG, spec, false);
+
+            assertThat(goal.getSource()).isEqualTo("chat");
+            assertThat(goal.getConversationId()).isEqualTo(conversationId);
+            assertThat(goal.getRequestedBy()).isEqualTo(requestedBy);
+            assertThat(goal.getStatus()).isEqualTo("running");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Task>> saved = ArgumentCaptor.forClass(List.class);
+            verify(work.tasks).saveAll(saved.capture());
+            List<Task> created = saved.getValue();
+            assertThat(created).hasSize(2);
+            assertThat(created.get(1).getDependsOn()).containsExactly(created.get(0).getId());
+            verify(executor, never()).submitNextTasks(any());
+        }
+
+        @Test
+        @DisplayName("submits the goal's tasks through the run executor when asked to run without waiting")
+        void asyncGoalSubmitsThroughExecutor() {
+            GoalService.NewGoal spec = new GoalService.NewGoal(
+                    "Draft a reply", "", null, "chat", null, null,
+                    List.of(new GoalService.NewTask(UUID.randomUUID(), "Reply", "Write it", List.of())));
+
+            service.createGoal(ORG, spec, true);
+
+            verify(executor).submitNextTasks(ORG);
+        }
+
+        @Test
+        @DisplayName("refuses more than five tasks started from a chat message")
+        void chatGuardLimitsTaskCount() {
+            List<GoalService.NewTask> chatTasks = new ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                chatTasks.add(new GoalService.NewTask(UUID.randomUUID(), "Task " + i, "Do it", List.of()));
+            }
+            GoalService.NewGoal spec = new GoalService.NewGoal("Chat goal", "", null, "chat", null, null, chatTasks);
+
+            assertThatThrownBy(() -> service.createGoal(ORG, spec, false))
+                    .isInstanceOfSatisfying(ApiException.class,
+                            e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+        }
+
+        @Test
+        @DisplayName("a manual goal may still hold more than five tasks")
+        void manualGoalIgnoresChatLimit() {
+            List<GoalService.NewTask> manualTasks = new ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                manualTasks.add(new GoalService.NewTask(UUID.randomUUID(), "Task " + i, "Do it", List.of()));
+            }
+            GoalService.NewGoal spec = new GoalService.NewGoal("Plan", "", null, "manual", null, null, manualTasks);
+
+            assertThatCode(() -> service.createGoal(ORG, spec, false)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("refuses a chain where one agent appears more than twice")
+        void agentRepeatGuardRefuses() {
+            UUID agentId = UUID.randomUUID();
+            List<GoalService.NewTask> repeated = List.of(
+                    new GoalService.NewTask(agentId, "One", "Do", List.of()),
+                    new GoalService.NewTask(agentId, "Two", "Do", List.of()),
+                    new GoalService.NewTask(agentId, "Three", "Do", List.of()));
+            GoalService.NewGoal spec = new GoalService.NewGoal("Loop", "", null, "manual", null, null, repeated);
+
+            assertThatThrownBy(() -> service.createGoal(ORG, spec, false))
+                    .isInstanceOfSatisfying(ApiException.class,
+                            e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+        }
+    }
+
+    @Nested
     @DisplayName("running the next task")
     class RunNext {
 
@@ -201,6 +292,68 @@ class GoalServiceTest {
 
             verify(work.tasks, never()).claim(any());
             verify(runner, never()).start(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("hands off a completed predecessor's result, and records it as a hand-off")
+        void handsOffCompletedPredecessor() {
+            Goal goal = work.goal("running");
+            Task done = work.task(goal, 0, "completed");
+            done.setResult("Drafted the welcome email.");
+            Task next = work.task(goal, 1, "pending");
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(next));
+            when(work.tasks.claim(next.getId())).thenReturn(Optional.of(next));
+
+            assertThat(service.runNextTask(ORG)).isTrue();
+
+            ArgumentCaptor<String> instruction = ArgumentCaptor.forClass(String.class);
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Map<String, Object>>> handoffs = ArgumentCaptor.forClass(List.class);
+            verify(runner).start(eq(ORG), eq(next.getAgentId()), eq(next.getId()),
+                    instruction.capture(), eq("task"), handoffs.capture());
+            assertThat(instruction.getValue())
+                    .contains("Work already done for this request:")
+                    .contains("Drafted the welcome email.")
+                    .contains("Your part:")
+                    .contains(next.getInstruction());
+            assertThat(handoffs.getValue()).hasSize(1);
+            assertThat(handoffs.getValue().getFirst())
+                    .containsEntry("fromTaskId", done.getId().toString())
+                    .containsEntry("summary", "Drafted the welcome email.");
+        }
+
+        @Test
+        @DisplayName("skips a task whose dependency failed rather than leaving it pending forever")
+        void skipsTaskBlockedByFailedDependency() {
+            Goal goal = work.goal("running");
+            work.task(goal, 0, "failed");
+            Task next = work.task(goal, 1, "pending");
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(next));
+            when(work.tasks.claim(next.getId())).thenReturn(Optional.of(next));
+
+            assertThat(service.runNextTask(ORG)).isFalse();
+
+            assertThat(next.getStatus()).isEqualTo("skipped");
+            assertThat(next.getFailureReason()).isEqualTo(TaskProgress.EARLIER_TASK_UNFINISHED);
+            verify(runner, never()).start(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("waits for the tasks named in dependsOn rather than every earlier position")
+        void explicitDependsOnOverridesPositionOrder() {
+            Goal goal = work.goal("running");
+            work.task(goal, 0, "pending");
+            Task dependency = work.task(goal, 1, "completed");
+            dependency.setResult("Researched the competitors.");
+            Task next = work.task(goal, 2, "pending");
+            next.setDependsOn(List.of(dependency.getId()));
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(next));
+            when(work.tasks.claim(next.getId())).thenReturn(Optional.of(next));
+
+            assertThat(service.runNextTask(ORG)).isTrue();
+
+            verify(runner).start(eq(ORG), eq(next.getAgentId()), eq(next.getId()),
+                    anyString(), eq("task"), any());
         }
 
         @Test

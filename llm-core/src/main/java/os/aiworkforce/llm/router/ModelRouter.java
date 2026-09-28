@@ -322,6 +322,10 @@ public class ModelRouter {
             } catch (Exception e) {
                 ProviderException failure = asProviderException(e, provider, model);
                 lastFailure = failure.failure();
+                // The trace keeps only the failure's category; the provider's own words are what
+                // an operator needs to fix a rejected request, so they go to the log as well.
+                log.warn("Provider {} model {} failed ({}, HTTP {}): {}",
+                        provider.id(), model.modelId(), lastFailure, failure.httpStatus(), failure.getMessage());
 
                 Duration took = Duration.between(startedAt, Instant.now());
                 AttemptRecord record = AttemptRecord.failed(
@@ -364,6 +368,10 @@ public class ModelRouter {
             case MODEL_NOT_FOUND -> registry.markModelUnavailable(
                     context.orgId(), provider.id(), model.modelId(),
                     MODEL_UNAVAILABLE_COOLDOWN, failure.getMessage());
+            case INSUFFICIENT_CREDIT -> registry.markModelUnavailable(
+                    context.orgId(), provider.id(), model.modelId(),
+                    MODEL_UNAVAILABLE_COOLDOWN,
+                    "The provider account does not have enough credit for this model.");
             case AUTHENTICATION_FAILED, AUTHORISATION_FAILED, QUOTA_EXHAUSTED ->
                     registry.markCredentialInvalid(context.orgId(), provider.id(), failure.getMessage());
             default -> {

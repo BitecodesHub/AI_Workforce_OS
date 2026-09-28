@@ -4,9 +4,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
-import os.aiworkforce.orchestrator.repository.Tasks;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
 
 /**
@@ -37,6 +40,16 @@ public class Task extends OrgScopedEntity {
 
     @Column(name = "position", nullable = false)
     private int position = 0;
+
+    /**
+     * The tasks within the same goal this one waits on, by id.
+     *
+     * <p>Empty means the old, simpler rule still applies: wait for every earlier position in the
+     * goal instead. A goal built from a plan with real branches sets this explicitly.
+     */
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "depends_on", nullable = false)
+    private List<UUID> dependsOn = List.of();
 
     /** Incremented on each try, so a task that keeps failing stops rather than looping. */
     @Column(name = "attempt", nullable = false)
@@ -103,6 +116,14 @@ public class Task extends OrgScopedEntity {
 
     public void setPosition(int position) {
         this.position = position;
+    }
+
+    public List<UUID> getDependsOn() {
+        return dependsOn == null ? List.of() : dependsOn;
+    }
+
+    public void setDependsOn(List<UUID> dependsOn) {
+        this.dependsOn = dependsOn == null ? List.of() : dependsOn;
     }
 
     public int getAttempt() {

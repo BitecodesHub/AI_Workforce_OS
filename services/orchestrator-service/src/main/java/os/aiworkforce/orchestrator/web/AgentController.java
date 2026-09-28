@@ -73,7 +73,7 @@ public class AgentController {
      */
     public record AgentView(
             UUID id, String key, String name, String category, String status, Integer revision,
-            String summary, List<String> tools) {}
+            String summary, List<String> tools, String voiceId) {}
 
     public record CreateAgentRequest(
             @NotBlank @Size(max = 60) String key,
@@ -101,7 +101,7 @@ public class AgentController {
     public record AgentDetail(
             UUID id, String key, String name, String category, String status,
             Integer revision, String systemPrompt, String goals, Integer maxSteps,
-            boolean sealed, List<GrantView> grants, String summary, List<String> tools) {}
+            boolean sealed, List<GrantView> grants, String summary, List<String> tools, String voiceId) {}
 
     public record RunStarted(UUID runId, String status, String answer) {}
 
@@ -136,7 +136,8 @@ public class AgentController {
                 version != null && version.isSealed(),
                 grantViews,
                 version == null ? null : summarise(version.getSystemPrompt()),
-                serverNames(granted));
+                serverNames(granted),
+                agent.getVoiceId());
     }
 
     @PostMapping
@@ -202,6 +203,42 @@ public class AgentController {
         return versions.findByAgentIdOrderByRevisionDesc(agentId);
     }
 
+    /**
+     * Pauses an agent so its queued tasks wait rather than run.
+     *
+     * <p>A task already in progress finishes; only claiming a new one is affected. A paused
+     * agent's queued work is held, not lost - it stays pending and is picked up again the moment
+     * the agent resumes.
+     */
+    @PostMapping("/{agentId}/pause")
+    @RequiresPermission(Permission.Codes.AGENT_UPDATE)
+    @Transactional
+    @Operation(summary = "Pause an agent so its queued tasks wait rather than run")
+    public AgentView pause(@PathVariable UUID agentId) {
+        return setStatus(agentId, "paused");
+    }
+
+    @PostMapping("/{agentId}/resume")
+    @RequiresPermission(Permission.Codes.AGENT_UPDATE)
+    @Transactional
+    @Operation(summary = "Resume a paused agent")
+    public AgentView resume(@PathVariable UUID agentId) {
+        return setStatus(agentId, "active");
+    }
+
+    private AgentView setStatus(UUID agentId, String status) {
+        Agent agent = agents.findByIdAndOrgId(agentId, orgId())
+                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        if ("retired".equals(agent.getStatus())) {
+            throw new ApiException(
+                    os.aiworkforce.platform.error.ErrorCode.CONFLICT,
+                    "A retired agent cannot be paused or resumed.");
+        }
+        agent.setStatus(status);
+        agents.save(agent);
+        return toView(agent, currentVersionOf(agent));
+    }
+
     @PostMapping("/{agentId}/runs")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @RequiresPermission(Permission.Codes.AGENT_RUN)
@@ -232,7 +269,8 @@ public class AgentController {
                 agent.getId(), agent.getKey(), agent.getName(), agent.getCategory(), agent.getStatus(),
                 version == null ? null : version.getRevision(),
                 version == null ? null : summarise(version.getSystemPrompt()),
-                serverNames(grants.findByAgentIdAndEnabledTrue(agent.getId())));
+                serverNames(grants.findByAgentIdAndEnabledTrue(agent.getId())),
+                agent.getVoiceId());
     }
 
     private AgentVersion currentVersionOf(Agent agent) {

@@ -78,6 +78,15 @@ public enum ProviderFailure {
     /** The account is out of credit, or a hard spend cap was hit at the provider. */
     QUOTA_EXHAUSTED(false, true, true),
 
+    /**
+     * The remaining credit does not cover this model's request (OpenRouter's 402).
+     *
+     * <p>Unlike {@link #QUOTA_EXHAUSTED} this is about one model, not the whole account: a cheaper
+     * model on the same key may still answer, so the credential stays usable and only this model
+     * is set aside for a while.
+     */
+    INSUFFICIENT_CREDIT(false, true, true),
+
     /** This Bedrock region is unavailable; other regions for the same model may work. */
     REGION_UNAVAILABLE(false, true, false),
 

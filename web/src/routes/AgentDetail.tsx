@@ -11,6 +11,7 @@ import {
   LoadingState,
   Notice,
   PageHeader,
+  Select,
   StatRow,
   StatTile,
   StatusTag,
@@ -30,8 +31,11 @@ import {
   useModels,
   useProviders,
   useRunList,
+  useSetAgentVoice,
   useTaskIndex,
   useUpdateAgent,
+  useVoiceStatus,
+  useVoices,
   type AgentDetail as AgentDetailData,
   type AgentGrant,
   type Run,
@@ -40,6 +44,7 @@ import { useDocumentTitle } from '../lib/router'
 import { useToast } from '../lib/toast'
 import { can } from '../lib/session'
 import { useNow } from '../lib/useNow'
+import { useSpeaker } from '../lib/voice'
 
 /** How many of the agent's runs the page lists before pointing at the full list. */
 const RECENT_RUNS = 10
@@ -421,6 +426,130 @@ function AgentRouting({ agentId }: { agentId: string }) {
   )
 }
 
+/* ---- Voice ------------------------------------------------------------------------------------------ */
+
+/** The words a preview says, naming the agent so two agents previewed back to back are told apart. */
+const previewLine = (agentName: string) => `Hello, I am ${agentName}. This is how I will sound.`
+
+function AgentVoiceCard({ agent }: { agent: AgentDetailData }) {
+  const toast = useToast()
+  const canSetVoice = can('agent:update')
+  const status = useVoiceStatus()
+  const elevenlabs = status.data?.provider === 'elevenlabs'
+  const voicesQuery = useVoices({ enabled: elevenlabs })
+  const setVoice = useSetAgentVoice(agent.id)
+  const speaker = useSpeaker()
+
+  const [selected, setSelected] = useState(agent.voiceId ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const dirty = selected !== (agent.voiceId ?? '')
+
+  const voices = voicesQuery.data ?? []
+  // Without a stored key every agent speaks with the browser voice, whatever voiceId it once had
+  // saved, so the name lookup only matters while ElevenLabs is actually the one speaking.
+  const currentVoiceName =
+    !elevenlabs || !agent.voiceId
+      ? 'Browser voice'
+      : (voices.find((voice) => voice.voiceId === agent.voiceId)?.name ?? 'A stored voice')
+
+  const handlePreview = () => {
+    void speaker.speak(previewLine(agent.name), agent.id)
+  }
+
+  const handleSave = async () => {
+    setError(null)
+    try {
+      await setVoice.mutateAsync(selected || null)
+      toast.success(`${agent.name}'s voice was saved`)
+    } catch (err) {
+      setError(describeApiError(err))
+    }
+  }
+
+  return (
+    <Card as="section">
+      <Eyebrow as="h2">Voice</Eyebrow>
+      <p className="muted" style={{ marginBottom: 'var(--space-5)' }}>
+        What this agent sounds like when it speaks in Chat or leaves a voice note.
+      </p>
+
+      {error && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Notice tone="warning" live>
+            {error}
+          </Notice>
+        </div>
+      )}
+
+      <div className="row" style={{ justifyContent: 'space-between', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+        <span className="muted">Current voice</span>
+        <span>{status.isLoading ? '—' : currentVoiceName}</span>
+      </div>
+
+      {status.isLoading ? (
+        <LoadingState rows={2} label="Loading this workspace's voice status" />
+      ) : status.error ? (
+        <Notice tone="warning">Its voice status could not be loaded. {describeApiError(status.error)}</Notice>
+      ) : elevenlabs ? (
+        <div className="stack" style={{ gap: 'var(--space-4)' }}>
+          <Select
+            label="Voice"
+            value={selected}
+            onChange={(event) => setSelected(event.target.value)}
+            disabled={voicesQuery.isLoading || setVoice.isPending}
+            hint="Chosen from the voices stored for this workspace's ElevenLabs account."
+          >
+            <option value="">Browser voice</option>
+            {voicesQuery.isLoading && <option disabled>Loading voices…</option>}
+            {voices.map((voice) => (
+              <option key={voice.voiceId} value={voice.voiceId}>
+                {voice.name}
+              </option>
+            ))}
+          </Select>
+          <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center' }}>
+            <Button variant="outline" onClick={handlePreview} loading={speaker.speaking} disabled={speaker.provider === 'none'}>
+              Preview
+            </Button>
+            {speaker.speaking && (
+              <span className="row" style={{ gap: 'var(--space-2)', alignItems: 'center' }}>
+                <span className="sch-speaking-dot" aria-hidden="true" />
+                <span className="caption">Speaking</span>
+              </span>
+            )}
+            {canSetVoice && (
+              <Button onClick={() => void handleSave()} loading={setVoice.isPending} disabled={!dirty}>
+                Save voice
+              </Button>
+            )}
+          </div>
+          {dirty && (
+            <p className="caption">Preview plays the voice already saved for this agent. Save this choice to hear it instead.</p>
+          )}
+        </div>
+      ) : (
+        <div className="stack" style={{ gap: 'var(--space-4)' }}>
+          <Notice tone="info">
+            No ElevenLabs key is stored for this workspace, so every agent speaks with your browser's built-in
+            voice instead. A key can be added from Integrations.
+          </Notice>
+          <div className="row" style={{ gap: 'var(--space-2)', alignItems: 'center' }}>
+            <Button variant="outline" onClick={handlePreview} loading={speaker.speaking} disabled={speaker.provider === 'none'}>
+              Preview
+            </Button>
+            {speaker.speaking && (
+              <span className="row" style={{ gap: 'var(--space-2)', alignItems: 'center' }}>
+                <span className="sch-speaking-dot" aria-hidden="true" />
+                <span className="caption">Speaking</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 /* ---- Page ----------------------------------------------------------------------------------------- */
 
 export function AgentDetail({ id }: { id: string }) {
@@ -577,6 +706,10 @@ export function AgentDetail({ id }: { id: string }) {
 
               <div style={{ marginTop: 'var(--space-6)' }}>
                 <AgentRouting agentId={agent.id} />
+              </div>
+
+              <div style={{ marginTop: 'var(--space-6)' }}>
+                <AgentVoiceCard agent={agent} />
               </div>
 
               {canEdit && <EditInstructionsDialog open={editOpen} onClose={() => setEditOpen(false)} agent={agent} />}

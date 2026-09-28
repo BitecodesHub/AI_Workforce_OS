@@ -74,7 +74,7 @@ spring:
             - id: orchestrator
               uri: ${AIWOS_URL_ORCHESTRATOR:http://localhost:8083}
               predicates:
-                - Path=/api/agents/**,/api/goals/**,/api/tasks/**,/api/runs/**,/api/approvals/**,/api/providers/**,/api/chat/**,/api/model-policy,/api/model-policy/**
+                - Path=/api/agents/**,/api/goals/**,/api/tasks/**,/api/runs/**,/api/approvals/**,/api/providers/**,/api/chat/**,/api/model-policy,/api/model-policy/**,/api/conversations,/api/conversations/**,/api/orchestrator/**,/api/schedules,/api/schedules/**,/api/voice/**
 
             - id: memory
               uri: ${AIWOS_URL_MEMORY:http://localhost:8084}

@@ -89,6 +89,7 @@ public enum ErrorCode {
             502,
             false,
             "The tool did not confirm the result, so the action was not repeated automatically."),
+    VOICE_NOT_CONFIGURED(409, false, "No ElevenLabs key is stored for this workspace."),
 
     // ---- Knowledge base ------------------------------------------------------------------
     DOCUMENT_NOT_INDEXABLE(422, false, "That document holds no text that can be indexed."),

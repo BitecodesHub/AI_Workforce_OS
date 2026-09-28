@@ -40,6 +40,13 @@ final class WorkFixture {
                 .filter(task -> task.getGoalId().equals(call.getArgument(0)))
                 .sorted(Comparator.comparingInt(Task::getPosition))
                 .toList());
+        lenient().when(tasks.findByGoalIdInOrderByPositionAsc(any())).thenAnswer(call -> {
+            java.util.Collection<?> goalIds = call.getArgument(0);
+            return allTasks.stream()
+                    .filter(task -> goalIds.contains(task.getGoalId()))
+                    .sorted(Comparator.comparingInt(Task::getPosition))
+                    .toList();
+        });
         lenient().when(goals.findById(any())).thenAnswer(call -> find(call.getArgument(0)));
         lenient().when(goals.findByIdAndOrgId(any(), any())).thenAnswer(call -> find(call.getArgument(0)));
     }

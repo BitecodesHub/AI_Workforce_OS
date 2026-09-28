@@ -47,6 +47,9 @@ export function CommandMap() {
   const runsQuery = useRuns()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const canCreate = can('task:create')
+  const canReadIntegrations = can('integration:read')
+  const canChat = can('chat:use')
+  const canOrchestrate = can('run:read')
   const giveTask = canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>Give an agent a task</Button> : undefined
 
   return (
@@ -55,7 +58,26 @@ export function CommandMap() {
         eyebrow="Your workforce, in focus"
         title="Command Map"
         description="What your agents have been doing recently, and anything waiting on a decision."
-        action={giveTask}
+        action={
+          <>
+            {canChat && (
+              <a className="button button-outline" href="/chat">
+                Chat
+              </a>
+            )}
+            {canOrchestrate && (
+              <a className="button button-outline" href="/orchestrator">
+                Orchestrator
+              </a>
+            )}
+            {canReadIntegrations && (
+              <a className="button button-outline" href="/integrations">
+                Integrations
+              </a>
+            )}
+            {giveTask}
+          </>
+        }
       />
 
       {/* No onSuccess: once the task starts, the dialog opens its run, or its goal if no run started. */}

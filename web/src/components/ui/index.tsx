@@ -8,7 +8,7 @@ import type {
 } from 'react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useRouter } from '../../lib/router'
-import { LOCALE, formatDateTime, formatRelative, sentenceCase } from '../../lib/format'
+import { LOCALE, formatDateTime, formatRelativeTicked, sentenceCase } from '../../lib/format'
 import { statusLabel, type StatusKind, type TagTone } from '../../lib/labels'
 import { usePermissionCatalogue } from '../../lib/queries'
 import { useNow } from '../../lib/useNow'
@@ -263,7 +263,7 @@ function RelativeTime({ iso, className }: { iso: string; className: string | und
   const now = useNow(30_000)
   return (
     <time className={className} dateTime={iso} title={formatDateTime(iso)}>
-      {formatRelative(iso, now)}
+      {formatRelativeTicked(iso, now, 30_000)}
     </time>
   )
 }

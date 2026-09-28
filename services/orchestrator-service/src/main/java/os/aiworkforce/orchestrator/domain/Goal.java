@@ -30,6 +30,18 @@ public class Goal extends OrgScopedEntity {
     @Column(name = "requested_by")
     private UUID requestedBy;
 
+    /** Where this goal came from: a person creating it directly, chat, or a schedule firing. */
+    @Column(nullable = false)
+    private String source = "manual";
+
+    /** The chat conversation this goal was created from, when {@code source} is {@code chat}. */
+    @Column(name = "conversation_id")
+    private UUID conversationId;
+
+    /** The schedule that created this goal, when {@code source} is {@code schedule}. */
+    @Column(name = "schedule_id")
+    private UUID scheduleId;
+
     @Column(name = "completed_at")
     private Instant completedAt;
 
@@ -63,6 +75,30 @@ public class Goal extends OrgScopedEntity {
 
     public void setRequestedBy(UUID requestedBy) {
         this.requestedBy = requestedBy;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source == null ? "manual" : source;
+    }
+
+    public UUID getConversationId() {
+        return conversationId;
+    }
+
+    public void setConversationId(UUID conversationId) {
+        this.conversationId = conversationId;
+    }
+
+    public UUID getScheduleId() {
+        return scheduleId;
+    }
+
+    public void setScheduleId(UUID scheduleId) {
+        this.scheduleId = scheduleId;
     }
 
     public Instant getCompletedAt() {

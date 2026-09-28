@@ -4,6 +4,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,10 +23,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
 
+import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
 import os.aiworkforce.orchestrator.domain.RunStep;
+import os.aiworkforce.orchestrator.domain.Task;
+import os.aiworkforce.orchestrator.repository.Goals;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
+import os.aiworkforce.orchestrator.repository.Tasks;
 import os.aiworkforce.orchestrator.service.ApprovalService;
 import os.aiworkforce.orchestrator.service.TaskProgress;
 import os.aiworkforce.platform.context.RequestContext;
@@ -52,16 +59,22 @@ public class RunController {
 
     private final Runs runs;
     private final RunSteps steps;
+    private final Tasks tasks;
+    private final Goals goals;
     private final ApprovalService approvals;
     private final TaskProgress progress;
 
     public RunController(
             Runs runs,
             RunSteps steps,
+            Tasks tasks,
+            Goals goals,
             ApprovalService approvals,
             TaskProgress progress) {
         this.runs = runs;
         this.steps = steps;
+        this.tasks = tasks;
+        this.goals = goals;
         this.approvals = approvals;
         this.progress = progress;
     }
@@ -78,7 +91,11 @@ public class RunController {
             BigDecimal cost,
             Instant startedAt,
             Instant completedAt,
-            String failureReason) {}
+            String failureReason,
+            /** The goal this run's task belongs to. Null for a run started directly on an agent. */
+            UUID goalId,
+            /** Who asked for the goal this run belongs to. Null when that is not on record. */
+            UUID requestedBy) {}
 
     public record StepView(
             UUID id,
@@ -124,15 +141,16 @@ public class RunController {
         } else {
             result = runs.findByOrgIdOrderByStartedAtDesc(orgId, pageable);
         }
-        return result.map(RunController::toView).toList();
+        return toViews(result.getContent());
     }
 
     @GetMapping("/{runId}")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "One run")
     public RunView get(@PathVariable UUID runId) {
-        return toView(runs.findByIdAndOrgId(runId, orgId())
-                .orElseThrow(() -> ApiException.notFound("run", runId)));
+        Run run = runs.findByIdAndOrgId(runId, orgId())
+                .orElseThrow(() -> ApiException.notFound("run", runId));
+        return toViews(List.of(run)).getFirst();
     }
 
     @GetMapping("/{runId}/steps")
@@ -163,14 +181,45 @@ public class RunController {
         // one would resume a run somebody has already stopped.
         approvals.cancelForRun(runId);
         progress.onRunFinished(run, "cancelled", null, "The run for this task was stopped before it finished.");
-        return toView(run);
+        return toViews(List.of(run)).getFirst();
     }
 
-    private static RunView toView(Run run) {
-        return new RunView(
-                run.getId(), run.getAgentId(), run.getTaskId(), run.getStatus(), run.getTrigger(),
-                run.getStepCount(), run.getTotalPromptTokens(), run.getTotalCompletionTokens(),
-                run.getTotalCost(), run.getStartedAt(), run.getCompletedAt(), run.getFailureReason());
+    /**
+     * Views for a batch of runs, with the goal and requester behind each one's task loaded in two
+     * extra queries total rather than one pair per run.
+     */
+    private List<RunView> toViews(List<Run> runList) {
+        Set<UUID> taskIds = new HashSet<>();
+        for (Run run : runList) {
+            if (run.getTaskId() != null) {
+                taskIds.add(run.getTaskId());
+            }
+        }
+        Map<UUID, UUID> taskGoal = new HashMap<>();
+        if (!taskIds.isEmpty()) {
+            for (Task task : tasks.findAllById(taskIds)) {
+                taskGoal.put(task.getId(), task.getGoalId());
+            }
+        }
+        Set<UUID> goalIds = new HashSet<>(taskGoal.values());
+        Map<UUID, UUID> goalRequestedBy = new HashMap<>();
+        if (!goalIds.isEmpty()) {
+            for (Goal goal : goals.findAllById(goalIds)) {
+                goalRequestedBy.put(goal.getId(), goal.getRequestedBy());
+            }
+        }
+
+        List<RunView> views = new ArrayList<>();
+        for (Run run : runList) {
+            UUID goalId = run.getTaskId() == null ? null : taskGoal.get(run.getTaskId());
+            UUID requestedBy = goalId == null ? null : goalRequestedBy.get(goalId);
+            views.add(new RunView(
+                    run.getId(), run.getAgentId(), run.getTaskId(), run.getStatus(), run.getTrigger(),
+                    run.getStepCount(), run.getTotalPromptTokens(), run.getTotalCompletionTokens(),
+                    run.getTotalCost(), run.getStartedAt(), run.getCompletedAt(), run.getFailureReason(),
+                    goalId, requestedBy));
+        }
+        return views;
     }
 
     private static StepView toStepView(RunStep step) {

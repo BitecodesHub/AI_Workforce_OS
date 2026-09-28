@@ -106,6 +106,15 @@ server:
 
 aiwos:
   service-name: orchestrator
+  voice:
+    elevenlabs:
+      base-url: ${AIWOS_VOICE_ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
+      tts-model: ${AIWOS_VOICE_ELEVENLABS_TTS_MODEL:eleven_flash_v2_5}
+      stt-model: ${AIWOS_VOICE_ELEVENLABS_STT_MODEL:scribe_v2}
+      output-format: ${AIWOS_VOICE_ELEVENLABS_OUTPUT_FORMAT:mp3_44100_128}
+      max-characters: ${AIWOS_VOICE_ELEVENLABS_MAX_CHARACTERS:2500}
+      timeout: ${AIWOS_VOICE_ELEVENLABS_TIMEOUT:PT30S}
+      credential-ref: elevenlabs
 
 springdoc:
   api-docs:

@@ -27,6 +27,7 @@ import os.aiworkforce.llm.model.ProviderException;
 import os.aiworkforce.llm.model.ProviderFailure;
 import os.aiworkforce.llm.model.TokenUsage;
 import os.aiworkforce.llm.model.ToolCall;
+import os.aiworkforce.llm.model.ToolNames;
 import os.aiworkforce.llm.spi.ChatChunk;
 import os.aiworkforce.llm.spi.ChatProvider;
 
@@ -157,7 +158,7 @@ public class AnthropicProvider implements ChatProvider {
                     ObjectNode use = content.addObject();
                     use.put("type", "tool_use");
                     use.put("id", call.id());
-                    use.put("name", call.name());
+                    use.put("name", ToolNames.toWire(call.name()));
                     try {
                         use.set("input", json.readTree(call.argumentsJson()));
                     } catch (Exception e) {
@@ -173,7 +174,7 @@ public class AnthropicProvider implements ChatProvider {
             ArrayNode tools = body.putArray("tools");
             request.tools().forEach(tool -> {
                 ObjectNode node = tools.addObject();
-                node.put("name", tool.name());
+                node.put("name", ToolNames.toWire(tool.name()));
                 node.put("description", tool.description());
                 try {
                     node.set("input_schema", json.readTree(tool.parametersJson()));
@@ -195,7 +196,7 @@ public class AnthropicProvider implements ChatProvider {
             } else if ("tool_use".equals(type)) {
                 calls.add(new ToolCall(
                         block.path("id").asText(""),
-                        block.path("name").asText(""),
+                        ToolNames.fromWire(block.path("name").asText("")),
                         block.path("input").toString()));
             }
         }
@@ -287,7 +288,7 @@ public class AnthropicProvider implements ChatProvider {
                     if ("tool_use".equals(block.path("type").asText(""))) {
                         int index = node.path("index").asInt(0);
                         state.toolIdentity.put(index, new String[] {
-                            block.path("id").asText(""), block.path("name").asText("")
+                            block.path("id").asText(""), ToolNames.fromWire(block.path("name").asText(""))
                         });
                         state.partialInputs.put(index, new StringBuilder());
                     }

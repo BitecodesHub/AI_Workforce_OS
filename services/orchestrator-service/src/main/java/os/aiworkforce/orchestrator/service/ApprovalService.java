@@ -72,6 +72,7 @@ public class ApprovalService {
         approval.setTaskId(run.getTaskId());
         approval.setAgentId(agent.getId());
         approval.setTool(invocation.qualifiedName());
+        approval.setToolCallId(call.id());
         approval.setActionClass("OUTBOUND");
         approval.setSummary(await.reason());
         approval.setPayload(toJsonPayload(invocation.argumentsJson()));
@@ -88,6 +89,12 @@ public class ApprovalService {
     @Transactional(readOnly = true)
     public List<Approval> pending(UUID orgId) {
         return approvals.findPending(orgId);
+    }
+
+    /** One approval, for a caller that already knows its workspace - the resumed run, for one. */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Approval> find(UUID orgId, UUID approvalId) {
+        return approvals.findByIdAndOrgId(approvalId, orgId);
     }
 
     /**

@@ -1,298 +1,349 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import type { FormEvent, KeyboardEvent } from 'react'
-import { Button, Card, EmptyState, Eyebrow, Notice, PageHeader, Textarea, Time } from '../components/ui'
-import { EmptyIcon, PermissionState } from '../components/ui/QueryState'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { AnswerBubble } from '../components/chat/AnswerBubble'
+import { Composer } from '../components/chat/Composer'
+import { ConversationRail } from '../components/chat/ConversationRail'
+import { DocumentsCard } from '../components/chat/DocumentsCard'
+import { ErrorCard } from '../components/chat/ErrorCard'
+import { ProgressCard } from '../components/chat/ProgressCard'
+import { RoutingCard } from '../components/chat/RoutingCard'
+import { ScheduleCard } from '../components/chat/ScheduleCard'
+import { UserBubble } from '../components/chat/UserBubble'
+import { WelcomeScreen } from '../components/chat/WelcomeScreen'
+import { groupMessages, newMessageIds } from '../components/chat/chatModel'
+import { IconButton, Notice, PageHeader, Spinner } from '../components/ui'
+import { QueryState } from '../components/ui/QueryState'
 import { useReducedMotion } from '../hooks/useReducedMotion'
-import { ApiError, describeApiError } from '../lib/api'
-import { formatCount, nameList } from '../lib/format'
-import { useSearch, useSources } from '../lib/queries'
-import type { Passage, Source } from '../lib/queries'
+import { api, describeApiError } from '../lib/api'
+import {
+  useAgentNames,
+  useAgents,
+  useConversation,
+  useConversations,
+  useCreateConversation,
+  useReroute,
+  useSendMessage,
+} from '../lib/queries'
+import type { ChatMessage, Goal } from '../lib/queries'
+import { useRouter } from '../lib/router'
 import { can } from '../lib/session'
+import { useToast } from '../lib/toast'
+import { useNow } from '../lib/useNow'
+import { useSpeaker } from '../lib/voice'
 
 /*
- * Search over the workspace's documents.
+ * Talk to the whole workforce. A message goes to the coordinator, which either mentions the
+ * agent already named in it, asks a live model which agent (or agents, in a chain) should take
+ * it, or falls back to matching it by keywords - and says which of those it did, on every reply.
  *
- * The screen is called Chat, but nothing here writes an answer: the service finds the passages
- * that best match the question and returns them with where each came from. Every word on the
- * screen says that, so nobody mistakes a quoted passage for something an agent concluded.
+ * The thread is a list of ChatMessage kinds (see queries.ts's own note on the shape), each
+ * rendered by its own small card in components/chat/. This file is the thin layer that wires the
+ * conversation, the composer and the live-region announcements together; it holds no rendering
+ * rules of its own beyond dispatching a message to its card.
  */
 
-type Message =
-  | { id: string; role: 'question'; text: string; timestamp: string }
-  | { id: string; role: 'results'; timestamp: string; passages: Passage[] }
+const NEAR_BOTTOM_PX = 140
 
-const MAX_QUESTION_LENGTH = 1000
-
-const countOf = (count: number, noun: string) => `${formatCount(count)} ${noun}${count === 1 ? '' : 's'}`
-
-const PAGE_EYEBROW = 'Search your documents'
-const PAGE_DESCRIPTION =
-  "Finds the passages in this workspace's documents that best match your question, and shows where each came from."
-
-export function Chat() {
-  const canUseChat = can('chat:use')
-  // The search itself is guarded by knowledge:query, which a custom role can lack even with chat:use.
-  const canQuery = can('knowledge:query')
-
-  if (!canUseChat || !canQuery) {
-    return (
-      <div className="page">
-        <PageHeader eyebrow={PAGE_EYEBROW} title="Chat" description={PAGE_DESCRIPTION} />
-        {canUseChat ? (
-          <PermissionState permission="knowledge:query" what="searching documents" />
-        ) : (
-          <PermissionState permission="chat:use" what="chat" />
-        )}
-      </div>
-    )
+function MessageItem({
+  message,
+  grouped,
+  goals,
+  agentNames,
+  speaker,
+  now,
+  onReroute,
+  reroutingId,
+}: {
+  message: ChatMessage
+  grouped: boolean
+  goals: Goal[]
+  agentNames: ReturnType<typeof useAgentNames>
+  speaker: ReturnType<typeof useSpeaker>
+  now: number
+  onReroute: (messageId: string, agentId: string) => void
+  reroutingId: string | null
+}) {
+  switch (message.kind) {
+    case 'text':
+      return message.authorKind === 'user' ? (
+        <UserBubble message={message} grouped={grouped} />
+      ) : (
+        <p className="caption muted">{message.content}</p>
+      )
+    case 'routing':
+      return (
+        <RoutingCard
+          message={message}
+          agentNames={agentNames}
+          onReroute={(agentId) => onReroute(message.id, agentId)}
+          rerouting={reroutingId === message.id}
+        />
+      )
+    case 'documents':
+      return <DocumentsCard message={message} />
+    case 'progress': {
+      const goal = message.detail.goalId ? goals.find((candidate) => candidate.id === message.detail.goalId) : undefined
+      return goal ? <ProgressCard goal={goal} agentNames={agentNames} now={now} /> : null
+    }
+    case 'answer':
+      return (
+        <AnswerBubble
+          message={message}
+          agent={message.agentId ? agentNames[message.agentId] : undefined}
+          speaker={speaker}
+          grouped={grouped}
+        />
+      )
+    case 'schedule_suggestion':
+      return <ScheduleCard message={message} />
+    case 'error':
+      return <ErrorCard message={message} />
+    default:
+      return null
   }
-
-  return <DocumentSearch />
 }
 
-function DocumentSearch() {
-  const [question, setQuestion] = useState('')
-  const [history, setHistory] = useState<Message[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
-  const [announcement, setAnnouncement] = useState('')
-  const search = useSearch()
-  const sourcesQuery = useSources({ enabled: can('knowledge:read') })
+export function Chat() {
+  const { search, navigate } = useRouter()
+  const toast = useToast()
+  const client = useQueryClient()
   const reduceMotion = useReducedMotion()
-  const listRef = useRef<HTMLDivElement>(null)
-  const fieldRef = useRef<HTMLDivElement>(null)
-  const seenCount = useRef(0)
-  const hintId = useId()
+  const speaker = useSpeaker()
 
-  // Brings the newest card into view when one arrives, never on first render: landing on the
-  // page must not scroll it.
+  const selectedId = search.get('c')
+
+  const conversationsQuery = useConversations()
+  const conversationQuery = useConversation(selectedId)
+  const agentsQuery = useAgents()
+  const agentNames = useAgentNames()
+  const activeAgents = useMemo(() => (agentsQuery.data ?? []).filter((agent) => agent.status === 'active'), [agentsQuery.data])
+
+  const createConversation = useCreateConversation()
+  const sendMessage = useSendMessage(selectedId ?? '')
+  const reroute = useReroute(selectedId ?? '')
+
+  const [sending, setSending] = useState(false)
+  // What the person just sent, shown straight away while the coordinator decides who takes it,
+  // so a model-routed reply that takes several seconds never looks like nothing happened.
+  const [pending, setPending] = useState<{ text: string; mentioned: string[] } | null>(null)
+  const [reroutingId, setReroutingId] = useState<string | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+
+  const now = useNow(5_000)
+  const detail = conversationQuery.data
+  // Stable identities: an effect below depends on `messages`, and `?? []` would otherwise hand it
+  // a fresh empty array every render there is no conversation loaded yet.
+  const messages = useMemo(() => detail?.messages ?? [], [detail])
+  const goals = useMemo(() => detail?.goals ?? [], [detail])
+
+  const canCreateWork = can('task:create')
+
+  /* ---- Scroll: stick to the bottom only when the reader was already near it ----------------- */
+  const threadRef = useRef<HTMLDivElement | null>(null)
+  const nearBottomRef = useRef(true)
   useEffect(() => {
-    const grew = history.length > seenCount.current
-    seenCount.current = history.length
-    if (!grew || history.length === 0) return
-    const newest = listRef.current?.lastElementChild
-    newest?.scrollIntoView?.({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
-  }, [history, reduceMotion])
-
-  function focusField() {
-    fieldRef.current?.querySelector('textarea')?.focus()
-  }
-
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    const currentQuestion = question.trim()
-    if (!currentQuestion || isSearching) return
-
-    const asked: Message = {
-      id: `question-${Date.now()}`,
-      role: 'question',
-      text: currentQuestion,
-      timestamp: new Date().toISOString(),
+    const el = threadRef.current
+    if (!el) return
+    const onScroll = () => {
+      nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
     }
-    setHistory((previous) => [...previous, asked])
-    setQuestion('')
-    setFailure(null)
-    setAnnouncement('')
-    setIsSearching(true)
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+  useEffect(() => {
+    const el = threadRef.current
+    if (!el || !nearBottomRef.current) return
+    el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' })
+  }, [messages, reduceMotion])
 
-    try {
-      const result = await search.mutateAsync(currentQuestion)
-      setHistory((previous) => [
-        ...previous,
-        { id: `results-${Date.now()}`, role: 'results', timestamp: new Date().toISOString(), passages: result.passages },
-      ])
+  /* ---- New agent replies: announced once, and read aloud once when auto-read is on ---------- */
+  const previousMessages = useRef<ChatMessage[] | undefined>(undefined)
+  useEffect(() => {
+    const seenBefore = previousMessages.current !== undefined
+    const newAnswerIds = newMessageIds(previousMessages.current, messages, 'answer')
+    if (seenBefore && newAnswerIds.length > 0) {
+      const fresh = messages.filter((message) => newAnswerIds.includes(message.id))
       setAnnouncement(
-        result.passages.length > 0 ? `Found ${countOf(result.passages.length, 'matching passage')}.` : 'No matching passages.',
+        fresh
+          .map((message) => `New reply from ${(message.agentId && agentNames[message.agentId]?.name) || 'an agent'}.`)
+          .join(' '),
       )
-    } catch (err) {
-      // Nothing was found and nothing was answered: take the question back off the page and put
-      // it in the box again, so it can be sent again without retyping it.
-      setHistory((previous) => previous.filter((message) => message.id !== asked.id))
-      setQuestion(currentQuestion)
-      setFailure(err instanceof ApiError ? describeApiError(err) : 'The search could not be completed. Try again.')
+      // Several agents can answer at once; each speak() call stops the one before it, so only
+      // the most recent new answer is actually heard. That is the one a person is most likely to
+      // still be looking at.
+      const last = fresh[fresh.length - 1]
+      if (last) void speaker.speak(last.content, last.agentId)
+    }
+    previousMessages.current = messages
+  }, [messages, agentNames, speaker])
+
+  function selectConversation(id: string | null) {
+    navigate(id ? `/chat?c=${id}` : '/chat', { replace: true })
+  }
+
+  async function handleSend(text: string, agentIds: string[]) {
+    setSending(true)
+    setPending({
+      text,
+      mentioned: agentIds.map((id) => agentNames[id]?.name).filter((name): name is string => Boolean(name)),
+    })
+    try {
+      const agentIdsField = agentIds.length > 0 ? { agentIds } : {}
+      let conversationId = selectedId
+      if (conversationId) {
+        await sendMessage.mutateAsync({ text, ...agentIdsField })
+      } else {
+        // A conversation is created the moment the first message needs one, and opened before
+        // the message is sent, so the thread (and the pending message in it) shows at once.
+        // useSendMessage is bound to the conversation id it was given when this component last
+        // rendered, which cannot yet be this new one, so this call goes straight to the platform.
+        const created = await createConversation.mutateAsync({})
+        conversationId = created.id
+        selectConversation(created.id)
+        await api<{ messages: ChatMessage[] }>(`/api/conversations/${created.id}/messages`, {
+          method: 'POST',
+          body: { text, ...agentIdsField },
+        })
+        void client.invalidateQueries({ queryKey: ['conversations'] })
+        void client.invalidateQueries({ queryKey: ['board'] })
+      }
+      // Waits for the thread to refetch, so the real messages replace the pending one without
+      // a blank moment in between.
+      await client.invalidateQueries({ queryKey: ['conversations', conversationId] })
+    } catch (error) {
+      toast.error(describeApiError(error))
     } finally {
-      setIsSearching(false)
-      focusField()
+      setPending(null)
+      setSending(false)
     }
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    // Enter searches and Shift+Enter starts a new line. Enter that confirms an IME composition
-    // (Japanese, Chinese, Korean input) belongs to the composition, not to the form.
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
-    event.preventDefault()
-    event.currentTarget.form?.requestSubmit()
+  async function handleReroute(messageId: string, agentId: string) {
+    setReroutingId(messageId)
+    try {
+      await reroute.mutateAsync({ messageId, agentId })
+    } catch (error) {
+      toast.error(describeApiError(error))
+    } finally {
+      setReroutingId(null)
+    }
   }
 
   return (
-    <div className="page">
-      <PageHeader eyebrow={PAGE_EYEBROW} title="Chat" description={PAGE_DESCRIPTION} />
+    <div className="page chat-page">
+      <PageHeader
+        eyebrow="Talk to the workforce"
+        title="Chat"
+        description="Ask for work in plain words. The right agent picks it up, hands over to others when the job needs it, and asks before anything leaves the workspace."
+        action={
+          speaker.provider !== 'none' ? (
+            <IconButton
+              label={speaker.muted ? 'Turn on reading replies aloud' : 'Turn off reading replies aloud'}
+              title={speaker.muted ? 'Replies are not read aloud' : 'New replies are read aloud'}
+              aria-pressed={!speaker.muted}
+              data-active={!speaker.muted || undefined}
+              onClick={() => speaker.setMuted(!speaker.muted)}
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M3 6h2.3L9 3.2v9.6L5.3 10H3z" fill="currentColor" />
+                {speaker.muted ? (
+                  <path d="M11 6.5l3 3M14 6.5l-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                ) : (
+                  <path d="M11.2 5.3a4 4 0 0 1 0 5.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                )}
+              </svg>
+            </IconButton>
+          ) : undefined
+        }
+      />
 
-      <Notice tone="info">Results are passages quoted from your documents, not a written answer.</Notice>
+      {!canCreateWork && (
+        <Notice tone="info">
+          Your role can ask document questions here, but cannot start agents on new work. Someone whose role can
+          create tasks can do that.
+        </Notice>
+      )}
 
       <p className="visually-hidden" role="status">
         {announcement}
       </p>
 
-      <div style={{ marginTop: 'var(--space-6)' }}>
-        {history.length === 0 ? (
-          <Card as="section">
-            <SearchIntro sources={sourcesQuery.data} />
-          </Card>
-        ) : (
-          <div ref={listRef} className="stack" style={{ gap: 'var(--space-5)' }}>
-            {history.map((message) => (
-              <Card key={message.id} as="article">
-                {message.role === 'question' ? (
-                  <>
-                    <Eyebrow>You asked</Eyebrow>
-                    <p>{message.text}</p>
-                  </>
-                ) : (
-                  <SearchResults passages={message.passages} />
-                )}
-                <p className="caption" style={{ marginTop: 'var(--space-3)', textAlign: 'right' }}>
-                  <Time iso={message.timestamp} />
-                </p>
-              </Card>
-            ))}
+      <div className="chat-layout">
+        <ConversationRail
+          conversations={conversationsQuery.data}
+          loading={conversationsQuery.isLoading}
+          selectedId={selectedId}
+          onSelect={selectConversation}
+          onNew={() => selectConversation(null)}
+        />
+
+        <div className="chat-main">
+          <div className="chat-thread" ref={threadRef}>
+            {!selectedId && pending ? (
+              <ol className="chat-messages">
+                <li>
+                  <PendingMessage text={pending.text} mentioned={pending.mentioned} />
+                </li>
+              </ol>
+            ) : !selectedId ? (
+              <WelcomeScreen agents={agentsQuery.data} onPick={(text) => void handleSend(text, [])} />
+            ) : (
+              <QueryState query={conversationQuery} permission="chat:use" what="this conversation" rows={4}>
+                {() =>
+                  messages.length === 0 && !pending ? (
+                    <WelcomeScreen agents={agentsQuery.data} onPick={(text) => void handleSend(text, [])} />
+                  ) : (
+                    <ol className="chat-messages">
+                      {groupMessages(messages).map(({ message, grouped }) => (
+                        <li key={message.id}>
+                          <MessageItem
+                            message={message}
+                            grouped={grouped}
+                            goals={goals}
+                            agentNames={agentNames}
+                            speaker={speaker}
+                            now={now}
+                            onReroute={(messageId, agentId) => void handleReroute(messageId, agentId)}
+                            reroutingId={reroutingId}
+                          />
+                        </li>
+                      ))}
+                      {pending && (
+                        <li>
+                          <PendingMessage text={pending.text} mentioned={pending.mentioned} />
+                        </li>
+                      )}
+                    </ol>
+                  )
+                }
+              </QueryState>
+            )}
           </div>
-        )}
+
+          <Composer agents={activeAgents} onSend={(text, agentIds) => void handleSend(text, agentIds)} sending={sending} />
+        </div>
       </div>
-
-      {failure && (
-        <div style={{ marginTop: 'var(--space-6)' }}>
-          <Notice tone="warning" live>
-            {failure}
-          </Notice>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="stack" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
-        <div ref={fieldRef}>
-          <Textarea
-            label="Your question"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about a policy, a client or a process"
-            rows={3}
-            maxLength={MAX_QUESTION_LENGTH}
-            readOnly={isSearching}
-            aria-busy={isSearching || undefined}
-            aria-describedby={hintId}
-          />
-        </div>
-        <div className="row" style={{ justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-          <p className="caption" id={hintId}>
-            Enter to search, Shift+Enter for a new line.
-          </p>
-          <Button type="submit" loading={isSearching} disabled={question.trim().length === 0}>
-            Search
-          </Button>
-        </div>
-      </form>
     </div>
   )
 }
 
-/** What there is to search, before the first question. */
-function SearchIntro({ sources }: { sources: Source[] | undefined }) {
-  const icon = <EmptyIcon kind="search" />
-
-  // Sources could not be read (still loading, or the role cannot list them): no claim about them.
-  if (!sources) {
-    return (
-      <EmptyState
-        icon={icon}
-        title="Ask a question about your documents"
-        body="Results are the passages that best match it, each with the document it came from."
-      />
-    )
-  }
-
-  const withDocuments = sources.filter((source) => source.documentCount > 0)
-  const documents = withDocuments.reduce((sum, source) => sum + source.documentCount, 0)
-
-  if (documents === 0) {
-    const canAdd = can('knowledge:source_manage')
-    return (
-      <EmptyState
-        icon={icon}
-        title="There are no documents to search yet"
-        body={
-          canAdd
-            ? 'Upload documents to a source in Knowledge, then search them here.'
-            : 'Ask a manager or admin to add documents in Knowledge.'
-        }
-        action={
-          canAdd && (
-            <a className="button button-outline" href="/knowledge">
-              Add documents in Knowledge
-            </a>
-          )
-        }
-      />
-    )
-  }
-
-  return (
-    <EmptyState
-      icon={icon}
-      title="Ask a question about your documents"
-      body={`Searches ${countOf(documents, 'document')} in ${nameList(withDocuments.map((source) => source.name))}.`}
-      action={
-        <a className="link" href="/knowledge">
-          See sources
-        </a>
-      }
-    />
-  )
-}
-
-function SearchResults({ passages }: { passages: Passage[] }) {
-  if (passages.length === 0) {
-    return (
-      <>
-        <Eyebrow>Search results</Eyebrow>
-        <p>No document in this workspace matches that question.</p>
-        <p className="caption" style={{ marginTop: 'var(--space-2)' }}>
-          Try other words, or check in Knowledge that the document you expect has been indexed.
-        </p>
-      </>
-    )
-  }
-
+/** The message just sent, and what the coordinator is doing with it, until the reply arrives. */
+function PendingMessage({ text, mentioned }: { text: string; mentioned: string[] }) {
   return (
     <>
-      <Eyebrow>Search results</Eyebrow>
-      <p style={{ marginBottom: 'var(--space-5)' }}>
-        {passages.length === 1 ? 'This passage matches best.' : 'These passages match best.'}
-      </p>
-      <ol className="stack" style={{ gap: 'var(--space-3)', margin: 0, padding: 0, listStyle: 'none' }}>
-        {passages.map((passage) => (
-          <li
-            key={passage.chunkId}
-            style={{
-              border: '1px solid var(--line)',
-              borderRadius: 'var(--radius-control-lg)',
-              padding: 'var(--space-4)',
-            }}
-          >
-            <div className="row" style={{ gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-              <span className="section-heading" style={{ fontSize: '12px' }}>
-                {passage.documentTitle}
-              </span>
-              {/* Estimated from where the passage sits in the text, so it can be one page out. */}
-              {passage.pageNumber != null && <span className="caption">About page {passage.pageNumber}</span>}
-              {passage.heading && <span className="caption">{passage.heading}</span>}
-            </div>
-            <blockquote style={{ margin: 0 }}>
-              <p>{passage.content}</p>
-            </blockquote>
-          </li>
-        ))}
-      </ol>
+      <div className="chat-bubble-row chat-bubble-row-user">
+        <div className="chat-bubble chat-bubble-user">
+          <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0 }}>{text}</p>
+        </div>
+      </div>
+      <div className="chat-pending" role="status">
+        <Spinner />
+        <span>
+          {mentioned.length > 0
+            ? `Handing this to ${mentioned.join(' and ')}.`
+            : 'Finding the right agent for this.'}
+        </span>
+      </div>
     </>
   )
 }
