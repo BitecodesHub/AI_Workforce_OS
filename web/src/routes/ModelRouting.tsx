@@ -468,15 +468,11 @@ function RoutingPolicyCard({
               const knownProvider = choosable.some((provider) => provider.id === candidate.providerId)
               const knownModel = providerModels.some((model) => model.modelId === candidate.modelId)
               return (
-                <div
-                  key={candidate.key}
-                  className="row"
-                  style={{ gap: 'var(--space-3)', alignItems: 'flex-end', flexWrap: 'wrap' }}
-                >
-                  <span className="mono muted" style={{ minWidth: '20px', paddingBottom: '12px' }} aria-hidden="true">
+                <div key={candidate.key} className="row candidate-row">
+                  <span className="candidate-index mono muted" aria-hidden="true">
                     {number}.
                   </span>
-                  <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                  <div className="policy-field">
                     <Select
                       label={`Candidate ${number} provider`}
                       value={candidate.providerId}
@@ -497,7 +493,7 @@ function RoutingPolicyCard({
                       })}
                     </Select>
                   </div>
-                  <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                  <div className="policy-field">
                     <Select
                       label={`Candidate ${number} model`}
                       value={candidate.modelId}
@@ -511,7 +507,7 @@ function RoutingPolicyCard({
                       ))}
                     </Select>
                   </div>
-                  <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap', paddingBottom: '4px' }}>
+                  <div className="row action-group" style={{ flexWrap: 'wrap', paddingBottom: '4px' }}>
                     {readinessTag(candidate.providerId)}
                     <Button
                       variant="outline"
@@ -757,7 +753,7 @@ export function ModelRouting() {
         const replacing = hasStoredKey(row)
         const toggling = toggleProvider.isPending && toggleProvider.variables?.id === row.id
         return (
-          <div className="row" style={{ gap: 'var(--space-2)' }}>
+          <div className="row action-group">
             {row.credentialRef && (
               <Button
                 variant="outline"
@@ -788,7 +784,7 @@ export function ModelRouting() {
   const replacingKey = keyTarget ? hasStoredKey(keyTarget) : false
 
   return (
-    <div className="page">
+    <div className="page admin-model-routing">
       <PageHeader
         eyebrow="Where the thinking happens"
         title="Model routing"
@@ -919,9 +915,9 @@ export function ModelRouting() {
                     const embedding = providerModels.filter((model) => isEmbeddingModel(model))
                     return (
                       <div key={provider.id} style={{ marginBottom: 'var(--space-6)' }}>
-                        <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: 'var(--space-3)' }}>
+                        <h3 style={{ fontSize: 'var(--text-body)', fontWeight: 'var(--weight-strong)', marginBottom: 'var(--space-3)' }}>
                           {provider.displayName}{' '}
-                          <span className="caption" style={{ fontWeight: 400 }}>
+                          <span className="caption" style={{ fontWeight: 'var(--weight-regular)' }}>
                             {providerKindLabel(provider.kind)}
                             {provider.enabled ? '' : ', turned off'}
                           </span>

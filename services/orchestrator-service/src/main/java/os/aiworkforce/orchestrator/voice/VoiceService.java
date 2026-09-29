@@ -69,7 +69,10 @@ public class VoiceService {
         try {
             ElevenLabsClient.Subscription subscription = client.subscription(key.get());
             return new StatusView(
-                    "elevenlabs", true, subscription.tier(), subscription.characterCount(),
+                    "elevenlabs",
+                    true,
+                    subscription.tier(),
+                    subscription.characterCount(),
                     subscription.characterLimit());
         } catch (ApiException e) {
             // A stored key the provider currently rejects is still a stored key: the person sees
@@ -128,8 +131,19 @@ public class VoiceService {
         }
     }
 
-    /** Speaks {@code text} in the voice this agent (or the workspace default) would use. */
+    /**
+     * Speaks {@code text} in the voice this agent (or the workspace default) would use.
+     *
+     * <p>Checked before {@link #resolveVoiceId}, not after: with no key stored, {@code voices()}
+     * is always empty and resolution always returns null, which reads exactly like the rarer case
+     * of a stored key with no voices on it. The two are different problems - one is fixed by
+     * storing a key, the other by choosing a voice in the ElevenLabs account - so only the second
+     * is reported as a voiceId validation failure; the first keeps the contract's own code.
+     */
     public byte[] speech(UUID orgId, String text, Agent agent) {
+        if (!keyStored(orgId)) {
+            throw new ApiException(ErrorCode.VOICE_NOT_CONFIGURED);
+        }
         String voiceId = resolveVoiceId(orgId, agent);
         if (voiceId == null) {
             throw ApiException.validation("voiceId", "No voice is available from the stored ElevenLabs key.");
@@ -143,8 +157,7 @@ public class VoiceService {
             throw ApiException.validation("text", "Text must not be blank.");
         }
         if (text.length() > properties.maxCharacters()) {
-            throw ApiException.validation(
-                    "text", "Text is longer than " + properties.maxCharacters() + " characters.");
+            throw ApiException.validation("text", "Text is longer than " + properties.maxCharacters() + " characters.");
         }
         return client.speech(requireKey(orgId), voiceId, text);
     }
@@ -154,7 +167,8 @@ public class VoiceService {
     }
 
     private String requireKey(UUID orgId) {
-        return credentials.resolve(orgId.toString(), properties.credentialRef())
+        return credentials
+                .resolve(orgId.toString(), properties.credentialRef())
                 .orElseThrow(() -> new ApiException(ErrorCode.VOICE_NOT_CONFIGURED));
     }
 }

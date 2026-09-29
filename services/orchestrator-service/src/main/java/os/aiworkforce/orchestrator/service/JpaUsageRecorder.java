@@ -55,7 +55,8 @@ public class JpaUsageRecorder implements UsageRecorder {
         record.setModelId(attempt.model());
         record.setOutcome(attempt.outcome().name());
         record.setFailure(attempt.failure() == null ? null : attempt.failure().name());
-        record.setSkipReason(attempt.skipReason() == null ? null : attempt.skipReason().name());
+        record.setSkipReason(
+                attempt.skipReason() == null ? null : attempt.skipReason().name());
         record.setPromptTokens(attempt.usage().promptTokens());
         record.setCachedTokens(attempt.usage().cachedPromptTokens());
         record.setCompletionTokens(attempt.usage().completionTokens());
@@ -65,7 +66,8 @@ public class JpaUsageRecorder implements UsageRecorder {
 
         if (attempt.outcome() == AttemptRecord.Outcome.SUCCEEDED
                 && providers.clearRejectedCredential(attempt.provider(), Instant.now()) > 0) {
-            log.info("Credential for provider {} was accepted again; its earlier rejection is cleared",
+            log.info(
+                    "Credential for provider {} was accepted again; its earlier rejection is cleared",
                     attempt.provider());
         }
     }

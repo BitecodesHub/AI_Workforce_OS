@@ -1,16 +1,17 @@
 package os.aiworkforce.identity.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import java.time.Instant;
+import java.util.Set;
+import java.util.UUID;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import java.time.Instant;
-import java.util.Set;
-import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -59,10 +60,7 @@ public class AuthController {
             @NotBlank @Size(max = 120) String displayName,
             @NotBlank @Size(min = 12, max = 256) String password) {}
 
-    public record SignInRequest(
-            @NotBlank @Email String email,
-            @NotBlank String password,
-            UUID workspaceId) {}
+    public record SignInRequest(@NotBlank @Email String email, @NotBlank String password, UUID workspaceId) {}
 
     /**
      * @param accessToken bearer token for subsequent requests
@@ -94,11 +92,9 @@ public class AuthController {
 
     @PostMapping("/sign-in")
     @Operation(summary = "Sign in and start a session")
-    public ResponseEntity<SessionResponse> signIn(
-            @Valid @RequestBody SignInRequest request, HttpServletRequest http) {
+    public ResponseEntity<SessionResponse> signIn(@Valid @RequestBody SignInRequest request, HttpServletRequest http) {
         AuthService.AuthResult result = auth.signIn(
-                request.email(), request.password(), request.workspaceId(),
-                http.getHeader(HttpHeaders.USER_AGENT));
+                request.email(), request.password(), request.workspaceId(), http.getHeader(HttpHeaders.USER_AGENT));
         return respond(result);
     }
 
@@ -111,8 +107,7 @@ public class AuthController {
         if (cookieToken == null || cookieToken.isBlank()) {
             throw new ApiException(ErrorCode.NOT_AUTHENTICATED);
         }
-        AuthService.AuthResult result =
-                auth.refresh(cookieToken, workspaceId, http.getHeader(HttpHeaders.USER_AGENT));
+        AuthService.AuthResult result = auth.refresh(cookieToken, workspaceId, http.getHeader(HttpHeaders.USER_AGENT));
         return respond(result);
     }
 
@@ -133,7 +128,9 @@ public class AuthController {
 
     private ResponseEntity<SessionResponse> respond(AuthService.AuthResult result) {
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, refreshCookie(result.refreshToken()).toString())
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        refreshCookie(result.refreshToken()).toString())
                 .body(new SessionResponse(
                         result.accessToken(),
                         result.expiresAt(),

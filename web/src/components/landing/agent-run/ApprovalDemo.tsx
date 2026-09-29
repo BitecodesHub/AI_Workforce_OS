@@ -3,6 +3,7 @@ import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react'
 import { Button, Eyebrow, Spinner, Tag } from '../../ui'
 import type { TagTone } from '../../ui'
 import { DemoFrame } from '../shared/DemoFrame'
+import type { DemoVoice } from '../shared/voice'
 import { SegmentedControl } from '../shared/SegmentedControl'
 import { Icon } from '../shared/Icon'
 import type { IconName } from '../shared/Icon'
@@ -92,11 +93,108 @@ const RESULT: Record<Outcome, { icon: IconName; title: string; body: string }> =
   },
 }
 
+/* ---- Plain voice -------------------------------------------------------------------------
+ * The home page speaks to people choosing a product, not to engineers: the same run and the same
+ * decisions, described without tool names or permission codes, and the email shown as an email.
+ * The technical voice, kept for the page for IT teams, shows exactly what the platform logs.
+ */
+
+const PLAIN_LEAD =
+  'Reading and drafting happen on their own. Sending an email, posting a message or deleting something stops here and waits for a person to approve it.'
+
+const PLAIN_STEP_COPY: Record<StepId, { label: string; detail: string }> = {
+  plan: { label: 'Plans the email', detail: 'Reads the new starter’s details and works out what to say.' },
+  draft: { label: 'Writes a draft', detail: 'Drafting happens on its own.' },
+  gate: { label: 'Asks before sending', detail: 'Sending leaves the business, so it waits here for a person.' },
+  send: { label: 'Sends the email', detail: 'In this demo it goes to a practice mailbox. Nothing leaves your browser.' },
+  summary: { label: 'Wraps up', detail: 'Writes a short note of what it did.' },
+}
+
+const PLAIN_RESULT: Record<Outcome, { icon: IconName; title: string; body: string }> = {
+  completed: {
+    icon: 'check',
+    title: 'Approved and sent',
+    body: 'You approved it as a manager, so the email went out and the job finished. In this demo it went to a practice mailbox, so nothing left your browser.',
+  },
+  rejected: { icon: 'x', title: 'Stopped. Nothing was sent', body: 'The request was rejected, so the email was never sent.' },
+  expired: {
+    icon: 'clock',
+    title: 'Stopped. Nothing was sent',
+    body: 'Nobody answered in time, so the request expired and the email was never sent.',
+  },
+}
+
+const PLAIN_EMPLOYEE_NOTE = 'An employee can see this request but cannot approve it. Managers, admins and owners can.'
+
+const PLAIN_VIEWER_NOTE =
+  'A viewer does not see approval requests at all. The email waits until someone who can approve it answers.'
+
+const PLAIN_STEPS = [
+  'Pick who is deciding: a manager, an employee or a viewer.',
+  'Approve or reject the email, or let the deadline pass.',
+  'See what happens next: the email is sent, or safely stopped.',
+] as const
+
+const TECHNICAL_STEPS = [
+  'Choose who is deciding: Manager, Employee or Viewer.',
+  'Approve or reject the email, or let the deadline pass.',
+  'Watch the run carry on, or stop, because of that decision.',
+] as const
+
+type Copy = {
+  name: string
+  title: string
+  lead: string
+  footnote: string
+  steps: readonly string[]
+  legend: string
+  start: string
+  runHeading: string
+  cardEyebrow: string
+  stepCopy: Record<StepId, { label: string; detail: string }>
+  result: Record<Outcome, { icon: IconName; title: string; body: string }>
+  employeeNote: string
+  viewerNote: string
+}
+
 const EMPLOYEE_NOTE =
   'Your role can see this approval but cannot decide it. Deciding needs approval:decide, which the manager, admin and owner roles hold.'
 
 const VIEWER_NOTE =
   'A viewer does not see the approval queue, because the role lacks approval:read. The run stays parked until someone who holds approval:decide answers.'
+
+const COPY: Record<DemoVoice, Copy> = {
+  technical: {
+    name: 'Approval gate',
+    title: 'It asks before it acts',
+    lead: LEAD,
+    footnote: 'Time is compressed. A real approval waits until its deadline.',
+    steps: TECHNICAL_STEPS,
+    legend: 'Deciding as',
+    start: 'Start the run',
+    runHeading: 'Run · HR agent',
+    cardEyebrow: 'Approval requested · gmail.send_message',
+    stepCopy: STEP_COPY,
+    result: RESULT,
+    employeeNote: EMPLOYEE_NOTE,
+    viewerNote: VIEWER_NOTE,
+  },
+  plain: {
+    name: 'Approvals',
+    title: 'It asks before it sends',
+    lead: PLAIN_LEAD,
+    footnote: 'Time is sped up here. A real request waits until its deadline.',
+    steps: PLAIN_STEPS,
+    legend: 'Who is deciding',
+    start: 'Start the demo',
+    runHeading: 'HR assistant at work',
+    cardEyebrow: 'Approval needed · outgoing email',
+    stepCopy: PLAIN_STEP_COPY,
+    result: PLAIN_RESULT,
+    employeeNote: PLAIN_EMPLOYEE_NOTE,
+    viewerNote: PLAIN_VIEWER_NOTE,
+  },
+}
 
 const BAR_STYLE = { '--lp-bar-ms': '1200ms' } as CSSProperties
 
@@ -116,8 +214,16 @@ function deadlineRun(state: ApprovalState): 'full' | 'drain' | 'empty' {
   return 'full'
 }
 
-function StepRow({ id, stepState }: { id: StepId; stepState: StepState }): ReactElement {
-  const copy = STEP_COPY[id]
+function StepRow({
+  id,
+  stepState,
+  stepCopy,
+}: {
+  id: StepId
+  stepState: StepState
+  stepCopy: Copy['stepCopy']
+}): ReactElement {
+  const copy = stepCopy[id]
   const view = STEP_VIEW[stepState]
   let glyph: ReactNode = null
   if (view.glyph === 'spinner') glyph = <Spinner size={12} />
@@ -152,12 +258,14 @@ function RunResult({
   outcome,
   headingRef,
   onReset,
+  result,
 }: {
   outcome: Outcome
   headingRef: RefObject<HTMLHeadingElement | null>
   onReset: () => void
+  result: Copy['result']
 }): ReactElement {
-  const copy = RESULT[outcome]
+  const copy = result[outcome]
   return (
     <div className="lp-run-result lp-anim-fade" data-outcome={outcome}>
       <h4 ref={headingRef} tabIndex={-1} className="lp-run-result-title">
@@ -174,7 +282,30 @@ function RunResult({
   )
 }
 
-export function ApprovalDemo(): ReactElement {
+/** The email the approval would release, set out as an email rather than as data. */
+function EmailPreview({ payload }: { payload: typeof PAYLOAD }): ReactElement {
+  return (
+    <dl className="lp-email" aria-label="Email that will be sent">
+      <div>
+        <dt>To</dt>
+        <dd>{payload.to}</dd>
+      </div>
+      <div>
+        <dt>Subject</dt>
+        <dd>{payload.subject}</dd>
+      </div>
+      <div>
+        <dt>Message</dt>
+        <dd>{payload.body}</dd>
+      </div>
+    </dl>
+  )
+}
+
+export type ApprovalDemoProps = { voice?: DemoVoice }
+
+export function ApprovalDemo({ voice = 'technical' }: ApprovalDemoProps = {}): ReactElement {
+  const copy = COPY[voice]
   const { reduced } = useLandingMotion()
   const [state, dispatch] = useReducer(approvalReducer, reduced, initApprovalState)
   const { play, cancel } = useSequence()
@@ -242,7 +373,7 @@ export function ApprovalDemo(): ReactElement {
     </Button>
   )
   const result = outcome ? (
-    <RunResult outcome={outcome} headingRef={resultHeadingRef} onReset={onReset} />
+    <RunResult outcome={outcome} headingRef={resultHeadingRef} onReset={onReset} result={copy.result} />
   ) : null
 
   // A viewer lacks approval:read, so before a decision exists the card must not reveal what it
@@ -258,7 +389,7 @@ export function ApprovalDemo(): ReactElement {
         <>
           <p className="lp-approval-note">
             <Icon name="lock" />
-            <span>{VIEWER_NOTE}</span>
+            <span>{copy.viewerNote}</span>
           </p>
           <div className="lp-demo-actions lp-approval-actions">{letPass}</div>
         </>
@@ -284,7 +415,7 @@ export function ApprovalDemo(): ReactElement {
           <>
             <p className="lp-approval-note">
               <Icon name="lock" />
-              <span>{EMPLOYEE_NOTE}</span>
+              <span>{copy.employeeNote}</span>
             </p>
             <div className="lp-demo-actions lp-approval-actions">{letPass}</div>
           </>
@@ -305,7 +436,11 @@ export function ApprovalDemo(): ReactElement {
           </div>
           <div className="lp-approval-payload">
             <p className="lp-micro">Exactly what will be sent</p>
-            <PayloadView payload={PAYLOAD} label="Email that will be sent" />
+            {voice === 'plain' ? (
+              <EmailPreview payload={PAYLOAD} />
+            ) : (
+              <PayloadView payload={PAYLOAD} label="Email that will be sent" />
+            )}
           </div>
           {actions}
         </>
@@ -317,17 +452,19 @@ export function ApprovalDemo(): ReactElement {
     <DemoFrame
       area="approval"
       index="01"
-      name="Approval gate"
-      title="It asks before it acts"
-      lead={LEAD}
+      name={copy.name}
+      title={copy.title}
+      lead={copy.lead}
       status={state.announcement}
-      footnote="Time is compressed. A real approval waits until its deadline."
+      footnote={copy.footnote}
+      steps={copy.steps}
+      showIndex={voice === 'technical'}
       busy={busy}
     >
       <div className="lp-run-controls">
         <div className="lp-run-decider">
           <SegmentedControl
-            legend="Deciding as"
+            legend={copy.legend}
             value={decider}
             options={DECIDERS}
             onChange={(next) => dispatch({ type: 'SET_DECIDER', decider: next })}
@@ -336,7 +473,7 @@ export function ApprovalDemo(): ReactElement {
         </div>
         {phase === 'idle' && !state.autoplayed && (
           <Button variant="primary" className="lp-run-start" icon={<Icon name="play" />} onClick={onStart}>
-            Start the run
+            {copy.start}
           </Button>
         )}
       </div>
@@ -345,13 +482,13 @@ export function ApprovalDemo(): ReactElement {
         <section className="lp-run-timeline lp-inset" aria-labelledby="run-timeline-title">
           <div className="lp-run-timeline-head">
             <h4 id="run-timeline-title" ref={timelineHeadingRef} tabIndex={-1} className="lp-mono">
-              Run · HR agent
+              {copy.runHeading}
             </h4>
             <Tag tone={runStatus.tone}>{runStatus.label}</Tag>
           </div>
           <ol className="lp-run-steps">
             {STEP_ORDER.map((id) => (
-              <StepRow key={id} id={id} stepState={state.steps[id]} />
+              <StepRow key={id} id={id} stepState={state.steps[id]} stepCopy={copy.stepCopy} />
             ))}
           </ol>
         </section>
@@ -367,7 +504,7 @@ export function ApprovalDemo(): ReactElement {
               data-status={card}
               aria-labelledby="approval-card-title"
             >
-              <Eyebrow>{viewerBlind ? 'Approval pending' : 'Approval requested · gmail.send_message'}</Eyebrow>
+              <Eyebrow>{viewerBlind ? 'Approval pending' : copy.cardEyebrow}</Eyebrow>
               <h4
                 id="approval-card-title"
                 ref={cardHeadingRef}

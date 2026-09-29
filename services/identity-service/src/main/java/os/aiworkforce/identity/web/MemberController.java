@@ -1,9 +1,5 @@
 package os.aiworkforce.identity.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +7,11 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -65,8 +66,7 @@ public class MemberController {
             Instant joinedAt,
             Instant lastSignInAt) {}
 
-    public record MeView(
-            UUID userId, String displayName, String email, String role, List<String> permissions) {}
+    public record MeView(UUID userId, String displayName, String email, String role, List<String> permissions) {}
 
     public record UpdateRoleRequest(@NotBlank String roleName) {}
 
@@ -77,20 +77,25 @@ public class MemberController {
         UUID orgId = UUID.fromString(RequestContext.requireOrgId());
         List<Membership> all = memberships.findByOrgIdAndStatus(orgId, "active");
 
-        Map<UUID, User> people = users.findByIdIn(all.stream().map(Membership::getUserId).toList())
+        Map<UUID, User> people = users
+                .findByIdIn(all.stream().map(Membership::getUserId).toList())
                 .stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
-        Map<UUID, String> roleNames = roles.findAvailableTo(orgId).stream()
-                .collect(Collectors.toMap(Role::getId, Role::getName));
+        Map<UUID, String> roleNames =
+                roles.findAvailableTo(orgId).stream().collect(Collectors.toMap(Role::getId, Role::getName));
 
         return all.stream()
                 .filter(membership -> people.containsKey(membership.getUserId()))
                 .map(membership -> {
                     User user = people.get(membership.getUserId());
                     return new MemberView(
-                            user.getId(), user.getDisplayName(), user.getEmail(),
+                            user.getId(),
+                            user.getDisplayName(),
+                            user.getEmail(),
                             roleNames.getOrDefault(membership.getRoleId(), "unknown"),
-                            membership.getStatus(), membership.getJoinedAt(), user.getLastLoginAt());
+                            membership.getStatus(),
+                            membership.getJoinedAt(),
+                            user.getLastLoginAt());
                 })
                 .sorted(java.util.Comparator.comparing(MemberView::displayName))
                 .toList();
@@ -105,9 +110,14 @@ public class MemberController {
                 .orElseThrow(() -> os.aiworkforce.platform.error.ApiException.notFound("user", actor.id()));
         String role = actor.roleId() == null
                 ? null
-                : roles.findById(UUID.fromString(actor.roleId())).map(Role::getName).orElse(null);
+                : roles.findById(UUID.fromString(actor.roleId()))
+                        .map(Role::getName)
+                        .orElse(null);
         return new MeView(
-                user.getId(), user.getDisplayName(), user.getEmail(), role,
+                user.getId(),
+                user.getDisplayName(),
+                user.getEmail(),
+                role,
                 actor.permissions().stream().sorted().toList());
     }
 
@@ -117,7 +127,8 @@ public class MemberController {
     @Operation(summary = "Change the role a member holds")
     public MemberView updateRole(@PathVariable UUID userId, @Valid @RequestBody UpdateRoleRequest request) {
         UUID orgId = UUID.fromString(RequestContext.requireOrgId());
-        Membership membership = memberships.findByUserIdAndOrgId(userId, orgId)
+        Membership membership = memberships
+                .findByUserIdAndOrgId(userId, orgId)
                 .orElseThrow(() -> ApiException.notFound("member", userId));
 
         Role newRole = roles.findAvailableTo(orgId).stream()
@@ -132,8 +143,13 @@ public class MemberController {
 
         User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("user", userId));
         return new MemberView(
-                user.getId(), user.getDisplayName(), user.getEmail(), newRole.getName(),
-                membership.getStatus(), membership.getJoinedAt(), user.getLastLoginAt());
+                user.getId(),
+                user.getDisplayName(),
+                user.getEmail(),
+                newRole.getName(),
+                membership.getStatus(),
+                membership.getJoinedAt(),
+                user.getLastLoginAt());
     }
 
     @DeleteMapping("/{userId}")
@@ -143,7 +159,8 @@ public class MemberController {
     @Operation(summary = "Remove a member from the workspace")
     public void remove(@PathVariable UUID userId) {
         UUID orgId = UUID.fromString(RequestContext.requireOrgId());
-        Membership membership = memberships.findByUserIdAndOrgId(userId, orgId)
+        Membership membership = memberships
+                .findByUserIdAndOrgId(userId, orgId)
                 .orElseThrow(() -> ApiException.notFound("member", userId));
 
         // Kept, never deleted: this is the historical fact that the person was once a member,

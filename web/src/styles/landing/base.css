@@ -28,12 +28,13 @@
   --lp-bar-h: 56px;
   --lp-scroll-offset: 84px;
 
-  /* Type */
-  --lp-text-display: 44px;
-  --lp-text-h2: 24px;
+  /* Type. The page reads at the console's body size or larger: nothing that is read, as opposed
+     to a label, sits under 14px. */
+  --lp-text-display: 56px;
+  --lp-text-h2: 30px;
   --lp-text-h3: 16px;
-  --lp-text-lead: 14px;
-  --lp-text-copy: 13.5px;
+  --lp-text-lead: 15px;
+  --lp-text-copy: 14px;
 
   /* Surfaces */
   --lp-glass-strong: rgba(255, 255, 255, 0.9);
@@ -76,7 +77,8 @@
 
 @media (max-width: 1179px) {
   .lp {
-    --lp-text-display: 40px;
+    --lp-text-display: 48px;
+    --lp-text-h2: 28px;
   }
 }
 
@@ -91,8 +93,8 @@
     --lp-gutter: 16px;
     --lp-gap: 32px;
     --lp-tile-pad: 16px;
-    --lp-text-display: 32px;
-    --lp-text-h2: 20px;
+    --lp-text-display: 36px;
+    --lp-text-h2: 24px;
   }
 }
 
@@ -134,38 +136,46 @@
   padding-top: 32px;
 }
 
+/* Every section opens on one centred axis: eyebrow, heading, then the lead under it. Short lines,
+   so centring costs nothing in reading; the content below keeps its own left edge. */
 .lp-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-  align-items: end;
-  gap: 22px;
-  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 auto 32px;
+  text-align: center;
+}
+
+.lp-head .eyebrow {
+  margin-bottom: 0;
 }
 
 .lp-head-main,
 .lp-head-aside {
   min-width: 0;
+  max-width: 100%;
+}
+
+.lp-head-main .lp-h2 {
+  margin-top: 8px;
 }
 
 .lp-head-aside {
-  justify-self: end;
-  max-width: 44ch;
-  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 62ch;
 }
 
 .lp-head-aside > * + * {
-  margin-top: 6px;
+  margin-top: 12px;
 }
 
-@media (max-width: 899px) {
+@media (max-width: 599px) {
   .lp-head {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-
-  .lp-head-aside {
-    justify-self: start;
-    text-align: left;
+    margin-bottom: 24px;
   }
 }
 
@@ -181,7 +191,7 @@
 }
 
 .lp-h2-band {
-  font-size: 16px;
+  font-size: calc(var(--lp-text-h2) * 0.8);
 }
 
 .lp-h3 {
@@ -204,14 +214,14 @@
 
 .lp-mono {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: var(--weight-regular);
   overflow-wrap: anywhere;
 }
 
 .lp-micro {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -412,86 +422,231 @@
   }
 }
 
-/* ---- Bento -------------------------------------------------------------------------------- */
+/* ---- Demo stage --------------------------------------------------------------------------
+ * The four demos behind one row of tabs over a single stage (see DemoStage.tsx). The tabs are a
+ * glass capsule with a white thumb that slides to the selected tab; on a phone they fold into a
+ * two-by-two grid and the thumb moves in both directions.
+ */
 
-.lp-bento {
+.lp-stage {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--lp-grid-gap);
-  align-items: stretch;
-}
-
-.lp-bento > * {
+  /* A fixed column: with an auto one, the tabs' max-content width stretched the whole stage,
+     panel included, past the edge of a phone screen. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
   min-width: 0;
-  grid-column: span 12;
 }
 
-.lp-bento > [data-area='approval'] {
-  grid-column: span 7;
+.lp-stage-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--lp-stage-count, 4), minmax(0, 1fr));
+  gap: 4px;
+  /* Equal columns, each as wide as the longest name, so no name is cut off. */
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 5px;
+  background: var(--lp-glass-strong);
+  -webkit-backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
+  border: 1px solid rgba(210, 221, 238, 0.9);
+  border-radius: var(--radius-pill);
 }
 
-.lp-bento > [data-area='failover'] {
-  grid-column: span 5;
+.lp-stage-thumb {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 10px - (var(--lp-stage-count, 4) - 1) * 4px) / var(--lp-stage-count, 4));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 18px -12px rgba(26, 42, 74, 0.4);
+  transform: translateX(calc(var(--lp-stage-active, 0) * (100% + 4px)));
+  pointer-events: none;
 }
 
-.lp-bento > [data-area='audit'] {
-  grid-column: span 5;
+.lp-stage-tab {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: var(--weight-emphasis);
+  line-height: 1.2;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: color var(--lp-quick) ease;
 }
 
-.lp-bento > [data-area='cited'] {
-  grid-column: span 7;
+.lp-stage-tab:hover {
+  color: var(--ink);
 }
 
-@media (max-width: 1179px) {
-  .lp-bento > [data-area='approval'],
-  .lp-bento > [data-area='cited'] {
-    grid-column: span 12;
+.lp-stage-tab[aria-selected='true'] {
+  color: var(--ink);
+}
+
+.lp-stage-tab:focus-visible {
+  outline-offset: -3px;
+}
+
+.lp-stage-tab-icon {
+  display: inline-flex;
+  color: var(--eyebrow);
+  transition: color var(--lp-quick) ease;
+}
+
+.lp-stage-tab[aria-selected='true'] .lp-stage-tab-icon {
+  color: var(--blue);
+}
+
+.lp-stage-tab-index {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+  color: var(--eyebrow);
+}
+
+.lp-stage-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-stage-panels,
+.lp-stage-panel {
+  min-width: 0;
+}
+
+@media (max-width: 1023px) {
+  .lp-stage-tab-index {
+    display: none;
+  }
+}
+
+/* On a phone, three or four tabs fold into a two-by-two grid and the thumb moves in both
+   directions; two tabs stay as one row, and a long name wraps rather than being cut off. */
+@media (max-width: 699px) {
+  .lp-stage-tabs {
+    border-radius: var(--radius-tile);
   }
 
-  .lp-bento > [data-area='failover'],
-  .lp-bento > [data-area='audit'] {
-    grid-column: span 6;
+  .lp-stage-tabs:not([data-count='1']):not([data-count='2']) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lp-stage-tabs:not([data-count='1']):not([data-count='2']) .lp-stage-thumb {
+    bottom: auto;
+    width: calc((100% - 10px - 4px) / 2);
+    height: calc((100% - 10px - 4px) / 2);
+    transform: translate(
+      calc(var(--lp-stage-col, 0) * (100% + 4px)),
+      calc(var(--lp-stage-row, 0) * (100% + 4px))
+    );
+  }
+
+  .lp-stage-thumb {
+    border-radius: var(--radius-control-lg);
+  }
+
+  .lp-stage-tab {
+    justify-content: flex-start;
+    border-radius: var(--radius-control-lg);
+    font-size: 13.5px;
+    text-align: left;
+  }
+
+  .lp-stage-tab-name {
+    white-space: normal;
   }
 }
 
-@media (max-width: 899px) {
-  .lp-bento > [data-area='approval'],
-  .lp-bento > [data-area='failover'],
-  .lp-bento > [data-area='audit'],
-  .lp-bento > [data-area='cited'] {
-    grid-column: span 12;
-  }
-}
-
-/* ---- Demo frame --------------------------------------------------------------------------- */
+/* ---- Demo frame --------------------------------------------------------------------------
+ * One demo at the full width of the stage: what it shows on the left, the working demo on the
+ * right, the polite status line across the foot. The demo's own body is the container its
+ * internal layouts query, so they respond to the column they are actually drawn in.
+ */
 
 .lp-demo {
-  container-type: inline-size;
   position: relative;
   isolation: isolate;
-  /* A demo tile is also an in-page link target (the hero's fact strip and console link straight
-     to one), and only .lp-section had this before - a tile scrolled to on its own landed with its
-     head, including the required "Simulated" tag, under the sticky glass bar. */
-  scroll-margin-top: var(--lp-scroll-offset);
-  display: flex;
-  flex-direction: column;
+  /* A demo is also an in-page link target (the hero's fact strip and console link straight to
+     one), so it lands clear of the sticky glass bar, "Simulated" tag included. */
+  scroll-margin-top: calc(var(--lp-scroll-offset) + 72px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
-  padding: var(--lp-tile-pad);
-  transition:
-    border-color 220ms ease,
-    box-shadow 220ms ease;
+  padding: 28px;
 }
 
-/* No lift on a demo tile: only the border and the hover shadow respond. */
-@media (hover: hover) {
-  .lp-demo:hover {
-    border-color: var(--border-hover);
-    box-shadow: var(--shadow-hover);
+@media (min-width: 900px) {
+  .lp-demo {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 2.15fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'head body'
+      'title body'
+      'lead body'
+      'try body'
+      'foot body'
+      'status status';
+    column-gap: var(--lp-gap);
+    row-gap: 12px;
+    align-items: start;
+  }
+
+  .lp-demo-head {
+    grid-area: head;
+  }
+
+  .lp-demo-title {
+    grid-area: title;
+  }
+
+  .lp-demo-lead {
+    grid-area: lead;
+  }
+
+  .lp-demo-body {
+    grid-area: body;
+  }
+
+  .lp-demo-try {
+    grid-area: try;
+  }
+
+  .lp-demo-foot {
+    grid-area: foot;
+    align-self: end;
+  }
+
+  .lp-demo-status {
+    grid-area: status;
   }
 }
 
-/* Reserved: the light pool, brighter once the tile has been seen. */
+@media (max-width: 599px) {
+  .lp-demo {
+    padding: var(--lp-tile-pad);
+  }
+}
+
+/* Reserved: the light pool behind the brief. */
 .lp-demo::before {
   content: '';
   position: absolute;
@@ -500,7 +655,7 @@
   z-index: -1;
   pointer-events: none;
   background: radial-gradient(
-    420px 240px at 14% 0%,
+    520px 320px at 10% 0%,
     color-mix(in srgb, var(--blue) 10%, transparent),
     transparent 72%
   );
@@ -526,22 +681,67 @@
 }
 
 .lp-demo-title {
-  font-size: 16px;
+  font-size: 22px;
   font-weight: var(--weight-strong);
-  line-height: 1.3;
-  letter-spacing: -0.01em;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
   color: var(--ink);
+  text-wrap: balance;
 }
 
 .lp-demo-lead {
-  font-size: 12.5px;
-  line-height: 1.55;
+  font-size: var(--lp-text-copy);
+  line-height: 1.6;
   color: var(--muted);
-  max-width: 64ch;
+  max-width: 60ch;
+}
+
+.lp-demo-try {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: var(--lp-inset-fill);
+  border: 1px solid rgba(210, 221, 238, 0.7);
+  border-radius: var(--radius-tile);
+}
+
+.lp-demo-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-demo-steps > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.lp-demo-step-index {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 0;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  color: var(--blue);
+  background: var(--surface);
+  border: 1px solid rgba(210, 221, 238, 0.9);
 }
 
 .lp-demo-body {
-  flex: 1;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -550,20 +750,21 @@
 
 .lp-demo-status {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-regular);
   line-height: 16px;
   /* One 16px line of text, plus the rule and the padding above it, is always reserved, so an
-     announcement appearing never pushes the tile taller. */
-  min-height: calc(16px + 8px + 1px);
+     announcement appearing never pushes the stage taller. */
+  min-height: calc(16px + 10px + 1px);
   color: var(--ink);
   border-top: 1px solid var(--line);
-  padding-top: 8px;
+  padding-top: 10px;
   overflow-wrap: anywhere;
 }
 
 .lp-demo-foot {
   font-size: var(--text-caption);
+  line-height: 1.5;
   color: var(--muted);
 }
 
@@ -632,7 +833,7 @@
   background: var(--surface);
   border-radius: var(--radius-pill);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-regular);
   line-height: 1.3;
   color: var(--ink);
@@ -671,7 +872,7 @@
   background: var(--surface);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--text-caption);
   cursor: pointer;
 }
 
@@ -700,7 +901,7 @@
   margin: 0;
   padding: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1085,6 +1286,17 @@
   .lp[data-motion='on'] .lp-reveal[data-inview='true'] {
     animation: lp-rise var(--lp-enter) var(--lp-ease-out) backwards;
     animation-delay: calc(min(var(--i, 0), 6) * var(--lp-stagger));
+  }
+
+  /* Demo stage: the thumb slides to the chosen tab, and the panel fades in each time it is shown
+     (a hidden panel has no animation, so un-hiding it plays this again). The demo inside rises
+     in the first time through its own reveal, so the panel only fades. */
+  .lp[data-motion='on'] .lp-stage-thumb {
+    transition: transform var(--lp-state) var(--lp-ease-out);
+  }
+
+  .lp[data-motion='on'] .lp-stage-panel:not([hidden]) {
+    animation: lp-fade var(--lp-state) var(--lp-ease-out) backwards;
   }
 
   /* Freshly mounted or keyed elements */

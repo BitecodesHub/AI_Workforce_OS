@@ -6,8 +6,6 @@ import {
   DataTable,
   EmptyState,
   Eyebrow,
-  FilterBar,
-  FilterEmpty,
   Notice,
   PageHeader,
   StatRow,
@@ -17,6 +15,10 @@ import {
 } from '../components/ui'
 import type { Column } from '../components/ui'
 import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
+// Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
+// the barrel is also part of the main bundle, so going through it created a circular chunk
+// dependency (Rollup warned of a "broken execution order").
+import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { ApiError, describeApiError } from '../lib/api'
 import { formatCount, formatRelative, nameList } from '../lib/format'
 import { embeddingProviderLabel, mediaTypeLabel, sourceKindLabel } from '../lib/labels'
@@ -74,7 +76,7 @@ const COLUMNS: Column<SourceDocument>[] = [
     header: 'Document',
     sortValue: (row) => row.title,
     render: (row) => (
-      <div>
+      <div className="stack" style={{ gap: 'var(--space-1)' }}>
         <span>{row.title}</span>
         {row.skipReason && <p className="caption">{row.skipReason}</p>}
       </div>

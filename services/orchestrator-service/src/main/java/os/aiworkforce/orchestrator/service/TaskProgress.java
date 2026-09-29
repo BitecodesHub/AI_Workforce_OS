@@ -3,11 +3,16 @@ package os.aiworkforce.orchestrator.service;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
@@ -40,6 +45,8 @@ public class TaskProgress {
     private final Tasks tasks;
     private final Goals goals;
     private final List<GoalLifecycleListener> listeners;
+    /** Each listener's own transaction, after the write commits. Null in unit tests. */
+    private TransactionTemplate listenerTransaction;
 
     public TaskProgress(Tasks tasks, Goals goals, List<GoalLifecycleListener> listeners) {
         this.tasks = tasks;
@@ -47,10 +54,16 @@ public class TaskProgress {
         this.listeners = listeners == null ? List.of() : listeners;
     }
 
+    @Autowired(required = false)
+    void setTransactionManager(PlatformTransactionManager transactionManager) {
+        this.listenerTransaction = new TransactionTemplate(transactionManager);
+        this.listenerTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
     /**
      * Applies a run's terminal outcome to its task.
      *
-     * <p>Only a task that is still running or waiting for an approval changes. A task that has
+     * <p>Only a task that is still running or waiting for a person changes. A task that has
      * finished, or that was already put back to wait for another attempt, belongs to a later
      * decision, and a late report about an earlier run must not undo it.
      *
@@ -87,8 +100,11 @@ public class TaskProgress {
                 task.setCompletedAt(now);
             }
             default -> {
-                log.warn("Run {} reported {}, which is not a finished state; task {} left as it was",
-                        run.getId(), status, task.getId());
+                log.warn(
+                        "Run {} reported {}, which is not a finished state; task {} left as it was",
+                        run.getId(),
+                        status,
+                        task.getId());
                 return;
             }
         }
@@ -97,18 +113,25 @@ public class TaskProgress {
         afterTaskChanged(task);
     }
 
-    /** The run stopped to wait for a person, so its task is waiting too. */
+    /**
+     * The run stopped to wait for a person, so its task is waiting too, for the same thing: an
+     * approval ({@code waiting_approval}) or an answer ({@code waiting_input}).
+     */
     @Transactional
     public void onRunParked(Run run) {
-        Task task = activeTaskOf(run);
-        if (task == null || "waiting_approval".equals(task.getStatus())) {
+        String parked = run == null ? null : run.getStatus();
+        if (!"waiting_approval".equals(parked) && !"waiting_input".equals(parked)) {
             return;
         }
-        task.setStatus("waiting_approval");
+        Task task = activeTaskOf(run);
+        if (task == null || parked.equals(task.getStatus())) {
+            return;
+        }
+        task.setStatus(parked);
         tasks.save(task);
     }
 
-    /** The approval was granted and the run picked up again. */
+    /** The approval was granted, or the question answered, and the run picked up again. */
     @Transactional
     public void onRunResumed(Run run) {
         Task task = activeTaskOf(run);
@@ -159,7 +182,16 @@ public class TaskProgress {
 
     // ---- Lifecycle listeners ------------------------------------------------------------------
 
-    /** Every listener is called, and one throwing must not stop the task from being recorded. */
+    /**
+     * Every listener is called once the task's change commits, and one throwing must not stop the
+     * task from being recorded.
+     *
+     * <p>After commit rather than inline: a listener that joined this write (chat's, which takes a
+     * lock on its conversation) could mark the run's finish rollback-only by failing, even though
+     * the failure is caught here, and a task that completed would then be reaped and reported as
+     * failed. The status is captured now, because the task can change again before the listener
+     * runs.
+     */
     private void notifyTaskFinished(Task task) {
         if (listeners.isEmpty()) {
             return;
@@ -168,23 +200,32 @@ public class TaskProgress {
         if (goal == null) {
             return;
         }
-        for (GoalLifecycleListener listener : listeners) {
-            try {
-                listener.onTaskFinished(goal, task, task.getStatus());
-            } catch (RuntimeException e) {
-                log.error("A goal lifecycle listener failed handling task {} reaching {}",
-                        task.getId(), task.getStatus(), e);
-            }
-        }
+        String status = task.getStatus();
+        LifecycleAnnouncer.afterCommit(() -> dispatch(
+                listener -> listener.onTaskFinished(goal, task, status),
+                "task " + task.getId() + " reaching " + status));
     }
 
     private void notifyGoalFinished(Goal goal) {
+        if (listeners.isEmpty()) {
+            return;
+        }
+        String status = goal.getStatus();
+        LifecycleAnnouncer.afterCommit(() -> dispatch(
+                listener -> listener.onGoalFinished(goal), "goal " + goal.getId() + " finishing as " + status));
+    }
+
+    /** Each listener in its own REQUIRES_NEW transaction, and one failing never touches another. */
+    private void dispatch(Consumer<GoalLifecycleListener> call, String what) {
         for (GoalLifecycleListener listener : listeners) {
             try {
-                listener.onGoalFinished(goal);
+                if (listenerTransaction == null) {
+                    call.accept(listener);
+                } else {
+                    listenerTransaction.executeWithoutResult(status -> call.accept(listener));
+                }
             } catch (RuntimeException e) {
-                log.error("A goal lifecycle listener failed handling goal {} finishing as {}",
-                        goal.getId(), goal.getStatus(), e);
+                log.error("A goal lifecycle listener failed handling {}", what, e);
             }
         }
     }
@@ -233,7 +274,9 @@ public class TaskProgress {
             return null;
         }
         return tasks.findById(run.getTaskId())
-                .filter(task -> "running".equals(task.getStatus()) || "waiting_approval".equals(task.getStatus()))
+                .filter(task -> "running".equals(task.getStatus())
+                        || "waiting_approval".equals(task.getStatus())
+                        || "waiting_input".equals(task.getStatus()))
                 .orElse(null);
     }
 }

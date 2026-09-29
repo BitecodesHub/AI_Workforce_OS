@@ -37,8 +37,7 @@ public class ProviderException extends RuntimeException {
         this.rawBody = rawBody;
     }
 
-    public static ProviderException of(
-            ProviderFailure failure, String provider, String model, String message) {
+    public static ProviderException of(ProviderFailure failure, String provider, String model, String message) {
         return new ProviderException(failure, provider, model, message, null, null, null, null);
     }
 

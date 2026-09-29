@@ -1,0 +1,54 @@
+/*
+ * The one typeface: Aperçu, by Colophon Foundry.
+ *
+ * Aperçu is a commercial font, so it is not fetched from a font CDN. The licensed web files are
+ * served by this app from web/public/fonts/, under exactly these names:
+ *
+ *   apercu-regular.woff2   apercu-medium.woff2   apercu-bold.woff2
+ *
+ * A machine that has Aperçu installed uses its own copy first (the local() names), which is also
+ * how it can be previewed before the web files are added.
+ *
+ * The design system's weights map onto the three cuts through the weight ranges below: body text
+ * (400) is Regular; labels, emphasis and headings (500 to 600) are Medium; the wordmark (650) is
+ * Bold. Nothing is synthesised: a weight with no cut of its own takes the nearest real one.
+ */
+
+@font-face {
+  font-family: 'Aperçu';
+  src:
+    local('Aperçu Regular'),
+    local('Aperçu Pro Regular'),
+    local('Apercu-Regular'),
+    local('ApercuPro-Regular'),
+    url('/fonts/apercu-regular.woff2') format('woff2');
+  font-weight: 100 449;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Aperçu';
+  src:
+    local('Aperçu Medium'),
+    local('Aperçu Pro Medium'),
+    local('Apercu-Medium'),
+    local('ApercuPro-Medium'),
+    url('/fonts/apercu-medium.woff2') format('woff2');
+  font-weight: 450 649;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Aperçu';
+  src:
+    local('Aperçu Bold'),
+    local('Aperçu Pro Bold'),
+    local('Apercu-Bold'),
+    local('ApercuPro-Bold'),
+    url('/fonts/apercu-bold.woff2') format('woff2');
+  font-weight: 650 1000;
+  font-style: normal;
+  font-display: swap;
+}

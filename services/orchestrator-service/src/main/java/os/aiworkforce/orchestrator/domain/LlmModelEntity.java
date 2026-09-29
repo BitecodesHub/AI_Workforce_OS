@@ -1,15 +1,16 @@
 package os.aiworkforce.orchestrator.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.IdClass;
-import jakarta.persistence.Table;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.IdClass;
+import jakarta.persistence.Table;
 
 /**
  * One model offered by one provider.

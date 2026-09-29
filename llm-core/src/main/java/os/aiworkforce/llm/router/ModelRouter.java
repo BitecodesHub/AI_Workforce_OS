@@ -1,7 +1,5 @@
 package os.aiworkforce.llm.router;
 
-import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -10,8 +8,9 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import reactor.core.publisher.Mono;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -106,15 +105,15 @@ public class ModelRouter {
         }
 
         List<AttemptRecord> history = new ArrayList<>();
-        Instant deadline = policy.overallDeadline() == null
-                ? Instant.MAX
-                : Instant.now().plus(policy.overallDeadline());
+        Instant deadline =
+                policy.overallDeadline() == null ? Instant.MAX : Instant.now().plus(policy.overallDeadline());
         ChatRequest current = request;
 
         for (RoutingPolicy.Candidate candidate : policy.candidates()) {
             if (Instant.now().isAfter(deadline)) {
                 history.add(AttemptRecord.skipped(
-                        candidate.providerId(), candidate.modelId(),
+                        candidate.providerId(),
+                        candidate.modelId(),
                         AttemptRecord.SkipReason.RATE_LIMIT_COOLDOWN,
                         "The overall deadline for this call had already passed."));
                 break;
@@ -157,11 +156,7 @@ public class ModelRouter {
     // ---- Stage one: disqualification -----------------------------------------------------
 
     private record Resolution(
-            ProviderDescriptor provider,
-            ModelSpec model,
-            ChatProvider adapter,
-            String credential,
-            AttemptRecord skip) {
+            ProviderDescriptor provider, ModelSpec model, ChatProvider adapter, String credential, AttemptRecord skip) {
 
         static Resolution skipped(AttemptRecord record) {
             return new Resolution(null, null, null, null, record);
@@ -182,7 +177,9 @@ public class ModelRouter {
         Optional<ProviderDescriptor> maybeProvider = registry.provider(context.orgId(), providerId);
         if (maybeProvider.isEmpty() || !maybeProvider.get().enabled()) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.PROVIDER_DISABLED,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.PROVIDER_DISABLED,
                     "The provider is not configured or is switched off for this workspace."));
         }
         ProviderDescriptor provider = maybeProvider.get();
@@ -190,21 +187,27 @@ public class ModelRouter {
         Optional<ModelSpec> maybeModel = registry.model(context.orgId(), providerId, modelId);
         if (maybeModel.isEmpty() || !maybeModel.get().enabled()) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.MODEL_DISABLED,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.MODEL_DISABLED,
                     "The model is not configured or is switched off."));
         }
         ModelSpec model = maybeModel.get();
 
         if (model.isCurrentlyUnavailable()) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.MODEL_MARKED_UNAVAILABLE,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.MODEL_MARKED_UNAVAILABLE,
                     "The provider recently reported that this model does not exist."));
         }
 
         ChatProvider adapter = adapters.get(provider.kind());
         if (adapter == null) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.PROVIDER_DISABLED,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.PROVIDER_DISABLED,
                     "No adapter is installed for this provider kind."));
         }
 
@@ -212,22 +215,27 @@ public class ModelRouter {
         // secret for a model that cannot do what this call needs.
         if (request.requireToolSupport() && !model.supportsTools()) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.TOOLS_UNSUPPORTED,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.TOOLS_UNSUPPORTED,
                     "This task needs tool calling, which the model does not support."));
         }
         if (request.jsonMode() && !model.supportsJsonMode()) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.JSON_MODE_UNSUPPORTED,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.JSON_MODE_UNSUPPORTED,
                     "This task needs a strict JSON answer, which the model does not support."));
         }
 
         int promptTokens = request.estimatedPromptTokens();
-        Integer requestedOutput = candidate.maxOutputTokens() != null
-                ? candidate.maxOutputTokens()
-                : request.maxOutputTokens();
+        Integer requestedOutput =
+                candidate.maxOutputTokens() != null ? candidate.maxOutputTokens() : request.maxOutputTokens();
         if (!model.canHold(promptTokens, requestedOutput)) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.CONTEXT_TOO_SMALL,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.CONTEXT_TOO_SMALL,
                     "The conversation needs about " + promptTokens + " tokens and the model holds "
                             + model.contextWindowTokens() + "."));
         }
@@ -235,7 +243,9 @@ public class ModelRouter {
         CircuitBreaker breaker = resilience.circuitBreaker("provider." + providerId);
         if (breaker.getState() == CircuitBreaker.State.OPEN) {
             return Resolution.skipped(AttemptRecord.skipped(
-                    providerId, modelId, AttemptRecord.SkipReason.CIRCUIT_OPEN,
+                    providerId,
+                    modelId,
+                    AttemptRecord.SkipReason.CIRCUIT_OPEN,
                     "Calls to this provider are paused after repeated failures."));
         }
 
@@ -244,14 +254,16 @@ public class ModelRouter {
             Optional<String> resolved = credentials.resolve(context.orgId(), provider.credentialRef());
             if (resolved.isEmpty() || resolved.get().isBlank()) {
                 return Resolution.skipped(AttemptRecord.skipped(
-                        providerId, modelId, AttemptRecord.SkipReason.CREDENTIAL_MISSING,
+                        providerId,
+                        modelId,
+                        AttemptRecord.SkipReason.CREDENTIAL_MISSING,
                         "No credential is stored for this provider."));
             }
             credential = resolved.get();
         }
 
-        BigDecimal estimate = model.estimateCost(
-                promptTokens, requestedOutput != null ? requestedOutput : ASSUMED_OUTPUT_TOKENS);
+        BigDecimal estimate =
+                model.estimateCost(promptTokens, requestedOutput != null ? requestedOutput : ASSUMED_OUTPUT_TOKENS);
         BudgetGuard.Decision decision = budget.check(context.orgId(), context.agentId(), estimate);
         if (!decision.allowed()) {
             return Resolution.skipped(AttemptRecord.skipped(
@@ -301,7 +313,9 @@ public class ModelRouter {
 
                 if (response == null) {
                     throw ProviderException.of(
-                            ProviderFailure.MALFORMED_RESPONSE, provider.id(), model.modelId(),
+                            ProviderFailure.MALFORMED_RESPONSE,
+                            provider.id(),
+                            model.modelId(),
                             "The provider returned nothing.");
                 }
 
@@ -315,7 +329,9 @@ public class ModelRouter {
             } catch (CallNotPermittedException e) {
                 // The breaker opened between the check and the call, which is ordinary under load.
                 history.add(AttemptRecord.skipped(
-                        provider.id(), model.modelId(), AttemptRecord.SkipReason.CIRCUIT_OPEN,
+                        provider.id(),
+                        model.modelId(),
+                        AttemptRecord.SkipReason.CIRCUIT_OPEN,
                         "Calls to this provider were paused while this request was in flight."));
                 return Outcome.failed(ProviderFailure.SERVER_ERROR, false);
 
@@ -324,13 +340,24 @@ public class ModelRouter {
                 lastFailure = failure.failure();
                 // The trace keeps only the failure's category; the provider's own words are what
                 // an operator needs to fix a rejected request, so they go to the log as well.
-                log.warn("Provider {} model {} failed ({}, HTTP {}): {}",
-                        provider.id(), model.modelId(), lastFailure, failure.httpStatus(), failure.getMessage());
+                log.warn(
+                        "Provider {} model {} failed ({}, HTTP {}): {}",
+                        provider.id(),
+                        model.modelId(),
+                        lastFailure,
+                        failure.httpStatus(),
+                        failure.getMessage());
 
                 Duration took = Duration.between(startedAt, Instant.now());
                 AttemptRecord record = AttemptRecord.failed(
-                        provider.id(), model.modelId(), lastFailure, failure.getMessage(),
-                        startedAt, took, failure.httpStatus(), TokenUsage.NONE);
+                        provider.id(),
+                        model.modelId(),
+                        lastFailure,
+                        failure.getMessage(),
+                        startedAt,
+                        took,
+                        failure.httpStatus(),
+                        TokenUsage.NONE);
                 history.add(record);
                 accountFor(context, record, model, TokenUsage.NONE);
 
@@ -365,25 +392,28 @@ public class ModelRouter {
     private void reactToFailure(
             ProviderException failure, ProviderDescriptor provider, ModelSpec model, CallContext context) {
         switch (failure.failure()) {
-            case MODEL_NOT_FOUND -> registry.markModelUnavailable(
-                    context.orgId(), provider.id(), model.modelId(),
-                    MODEL_UNAVAILABLE_COOLDOWN, failure.getMessage());
-            case INSUFFICIENT_CREDIT -> registry.markModelUnavailable(
-                    context.orgId(), provider.id(), model.modelId(),
-                    MODEL_UNAVAILABLE_COOLDOWN,
-                    "The provider account does not have enough credit for this model.");
+            case MODEL_NOT_FOUND ->
+                registry.markModelUnavailable(
+                        context.orgId(),
+                        provider.id(),
+                        model.modelId(),
+                        MODEL_UNAVAILABLE_COOLDOWN,
+                        failure.getMessage());
+            case INSUFFICIENT_CREDIT ->
+                registry.markModelUnavailable(
+                        context.orgId(),
+                        provider.id(),
+                        model.modelId(),
+                        MODEL_UNAVAILABLE_COOLDOWN,
+                        "The provider account does not have enough credit for this model.");
             case AUTHENTICATION_FAILED, AUTHORISATION_FAILED, QUOTA_EXHAUSTED ->
-                    registry.markCredentialInvalid(context.orgId(), provider.id(), failure.getMessage());
+                registry.markCredentialInvalid(context.orgId(), provider.id(), failure.getMessage());
             default -> {
                 /* Nothing to write back for a transient failure. */
             }
         }
         if (failure.failure().operatorActionRequired()) {
-            log.error(
-                    "Provider {} needs attention: {} ({})",
-                    provider.id(),
-                    failure.failure(),
-                    failure.getMessage());
+            log.error("Provider {} needs attention: {} ({})", provider.id(), failure.failure(), failure.getMessage());
         }
     }
 
@@ -400,21 +430,41 @@ public class ModelRouter {
         ChatProvider sandbox = adapters.get(ProviderDescriptor.Kind.SANDBOX);
         if (sandbox == null) {
             throw new ApiException(ErrorCode.NO_MODEL_AVAILABLE)
-                    .with("attempts", history.stream().map(AttemptRecord::summary).toList());
+                    .with(
+                            "attempts",
+                            history.stream().map(AttemptRecord::summary).toList());
         }
         ProviderDescriptor descriptor = new ProviderDescriptor(
-                "sandbox", "Offline sandbox", ProviderDescriptor.Kind.SANDBOX,
-                "", null, true, Map.of(), List.of(), null, null, 999);
+                "sandbox",
+                "Offline sandbox",
+                ProviderDescriptor.Kind.SANDBOX,
+                "",
+                null,
+                true,
+                Map.of(),
+                List.of(),
+                null,
+                null,
+                999);
         ModelSpec model = new ModelSpec(
-                "sandbox", "sandbox-1", "Offline sandbox", 128_000, 4096,
-                true, true, true, false,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, null);
-        ChatResponse response = sandbox.complete(descriptor, model, request, null).block(Duration.ofSeconds(10));
-        history.add(AttemptRecord.succeeded(
-                "sandbox", "sandbox-1", Instant.now(), Duration.ZERO, TokenUsage.NONE));
-        return response == null
-                ? null
-                : response.withAttempts(List.copyOf(history));
+                "sandbox",
+                "sandbox-1",
+                "Offline sandbox",
+                128_000,
+                4096,
+                true,
+                true,
+                true,
+                false,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                true,
+                null);
+        ChatResponse response =
+                sandbox.complete(descriptor, model, request, null).block(Duration.ofSeconds(10));
+        history.add(AttemptRecord.succeeded("sandbox", "sandbox-1", Instant.now(), Duration.ZERO, TokenUsage.NONE));
+        return response == null ? null : response.withAttempts(List.copyOf(history));
     }
 
     private ApiException terminal(ProviderFailure failure, List<AttemptRecord> history) {
@@ -422,8 +472,7 @@ public class ModelRouter {
                 .with("attempts", history.stream().map(AttemptRecord::summary).toList());
     }
 
-    private static ProviderException asProviderException(
-            Exception e, ProviderDescriptor provider, ModelSpec model) {
+    private static ProviderException asProviderException(Exception e, ProviderDescriptor provider, ModelSpec model) {
         Throwable current = e;
         while (current != null) {
             if (current instanceof ProviderException provided) {
@@ -432,8 +481,11 @@ public class ModelRouter {
             current = current.getCause();
         }
         return ProviderException.of(
-                ProviderFailure.UNKNOWN, provider.id(), model.modelId(),
-                "The provider call failed: " + e.getClass().getSimpleName(), e);
+                ProviderFailure.UNKNOWN,
+                provider.id(),
+                model.modelId(),
+                "The provider call failed: " + e.getClass().getSimpleName(),
+                e);
     }
 
     private static Duration remaining(Instant deadline) {

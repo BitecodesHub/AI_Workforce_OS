@@ -1,8 +1,9 @@
 package os.aiworkforce.orchestrator.voice;
 
+import java.time.Duration;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
-import java.time.Duration;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;

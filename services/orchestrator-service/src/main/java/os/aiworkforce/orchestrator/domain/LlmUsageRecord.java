@@ -1,12 +1,13 @@
 package os.aiworkforce.orchestrator.domain;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.util.UUID;
 
 import os.aiworkforce.platform.web.persistence.UuidV7;
 

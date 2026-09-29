@@ -2,6 +2,7 @@ package os.aiworkforce.mcp.spi;
 
 import java.util.List;
 import java.util.Optional;
+
 import reactor.core.publisher.Mono;
 
 import os.aiworkforce.mcp.model.ToolDefinition;
@@ -38,7 +39,10 @@ public interface McpServerAdapter {
 
     /** Scopes this server needs in total, for the consent screen. */
     default List<String> allScopes() {
-        return tools().stream().flatMap(tool -> tool.requiredScopes().stream()).distinct().toList();
+        return tools().stream()
+                .flatMap(tool -> tool.requiredScopes().stream())
+                .distinct()
+                .toList();
     }
 
     default Optional<ToolDefinition> tool(String name) {

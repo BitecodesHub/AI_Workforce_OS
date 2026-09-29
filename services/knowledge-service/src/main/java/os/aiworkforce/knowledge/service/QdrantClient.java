@@ -1,15 +1,15 @@
 package os.aiworkforce.knowledge.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -79,7 +79,12 @@ public class QdrantClient {
 
             int currentSize = existing == null
                     ? 0
-                    : existing.path("result").path("config").path("params").path("vectors").path("size").asInt(0);
+                    : existing.path("result")
+                            .path("config")
+                            .path("params")
+                            .path("vectors")
+                            .path("size")
+                            .asInt(0);
 
             if (currentSize > 0) {
                 if (currentSize != dimension) {
@@ -247,13 +252,14 @@ public class QdrantClient {
     public boolean isReachable() {
         try {
             return client.get()
-                    .uri("/healthz")
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(5))
-                    .map(body -> true)
-                    .onErrorReturn(false)
-                    .block() == Boolean.TRUE;
+                            .uri("/healthz")
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .timeout(Duration.ofSeconds(5))
+                            .map(body -> true)
+                            .onErrorReturn(false)
+                            .block()
+                    == Boolean.TRUE;
         } catch (RuntimeException e) {
             return false;
         }

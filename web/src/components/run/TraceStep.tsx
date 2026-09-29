@@ -12,6 +12,7 @@ import {
   detailText,
   isInstruction,
   isSandboxStep,
+  questionItemsOf,
   readableAttempt,
   stepDescription,
   stepHeading,
@@ -80,6 +81,27 @@ export function TraceStep({ step }: { step: RunStep }) {
         <p className="muted" style={{ ...PROSE, marginBottom: 'var(--space-3)' }}>
           {description}
         </p>
+      )}
+
+      {step.kind === 'question' && (
+        <ul className="stack" style={{ gap: 'var(--space-3)', margin: 0, marginBottom: 'var(--space-3)', padding: 0, listStyle: 'none' }}>
+          {questionItemsOf(step.detail).map((item, index) => (
+            <li key={item.id ?? index}>
+              <p style={{ marginBottom: 'var(--space-1)' }}>
+                <Tag>{item.header}</Tag> <span style={PROSE}>{item.question}</span>
+              </p>
+              <ul className="stack" style={{ gap: 'var(--space-1)', margin: 0, paddingLeft: 'var(--space-5)' }}>
+                {item.options.map((option) => (
+                  <li key={option.label} className="caption muted">
+                    {option.label}
+                    {option.recommended ? ' — Recommended' : ''}
+                    {option.description ? `: ${option.description}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
       )}
 
       {toolCalls.length > 0 && (

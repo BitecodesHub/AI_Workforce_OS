@@ -2,22 +2,22 @@ package os.aiworkforce.mcp.policy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import os.aiworkforce.llm.model.ToolSpec;
+import os.aiworkforce.mcp.model.ToolDefinition;
 import os.aiworkforce.mcp.model.ToolInvocation;
 import os.aiworkforce.mcp.model.ToolResult;
 import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
 import os.aiworkforce.platform.config.PlatformProperties;
 import os.aiworkforce.platform.resilience.ResiliencePresets;
-import os.aiworkforce.mcp.model.ToolDefinition;
 
 /**
  * The governance path, asserted.
@@ -55,7 +55,8 @@ class ToolGatewayTest {
         List<ToolDefinition> offered = gateway.availableTools(List.of(
                 grant("gmail", List.of("list_messages", "draft_message"), List.of("gmail.readonly", "gmail.compose"))));
 
-        assertThat(offered).extracting(ToolDefinition::name)
+        assertThat(offered)
+                .extracting(ToolDefinition::name)
                 .containsExactlyInAnyOrder("list_messages", "draft_message")
                 // Not merely refused when called: a model that can see send_message will keep
                 // reaching for it, and every attempt costs a turn and an error a person reads.
@@ -67,8 +68,8 @@ class ToolGatewayTest {
     void toolsMissingScopesAreNotOffered() {
         // The grant names the tool but the connection never got the scope it needs - which
         // happens whenever somebody declines one permission at a consent screen.
-        List<ToolDefinition> offered = gateway.availableTools(List.of(
-                grant("gmail", List.of("send_message"), List.of("gmail.readonly"))));
+        List<ToolDefinition> offered =
+                gateway.availableTools(List.of(grant("gmail", List.of("send_message"), List.of("gmail.readonly"))));
 
         assertThat(offered).isEmpty();
     }
@@ -76,20 +77,32 @@ class ToolGatewayTest {
     @Test
     @DisplayName("an empty tool list in a grant means the whole server")
     void emptyToolListCoversServer() {
-        List<ToolDefinition> offered = gateway.availableTools(List.of(
-                grant("calendar", List.of(), List.of("calendar.readonly", "calendar.events"))));
+        List<ToolDefinition> offered = gateway.availableTools(
+                List.of(grant("calendar", List.of(), List.of("calendar.readonly", "calendar.events"))));
 
-        assertThat(offered).extracting(ToolDefinition::name)
+        assertThat(offered)
+                .extracting(ToolDefinition::name)
                 .containsExactlyInAnyOrder("list_events", "create_event", "delete_event");
     }
 
     @Test
     @DisplayName("a disabled grant offers nothing, without being removed")
     void disabledGrantOffersNothing() {
-        ToolGrant disabled = new ToolGrant(
-                AGENT, "gmail", List.of(), List.of("gmail.readonly"), false, null, false);
+        ToolGrant disabled = new ToolGrant(AGENT, "gmail", List.of(), List.of("gmail.readonly"), false, null, false);
 
         assertThat(gateway.availableTools(List.of(disabled))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("no server may register as 'person', the name questions to a person are sent under")
+    void personServerNameIsReserved() {
+        ObjectMapper json = new ObjectMapper();
+        SandboxServerAdapter impostor = new SandboxServerAdapter("person", gmailTools(), json);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ToolGateway(
+                        List.of(impostor), new ArgumentValidator(json), new ResiliencePresets(properties())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("reserved");
     }
 
     // ---- The approval gate -----------------------------------------------------------------------
@@ -159,8 +172,7 @@ class ToolGatewayTest {
     @Test
     @DisplayName("a grant can add a gate for one server without affecting the others")
     void grantCanRequireApproval() {
-        ToolGrant cautious = new ToolGrant(
-                AGENT, "gmail", List.of(), List.of("gmail.readonly"), true, null, true);
+        ToolGrant cautious = new ToolGrant(AGENT, "gmail", List.of(), List.of("gmail.readonly"), true, null, true);
 
         assertThat(gateway.evaluate(invocation("gmail", "list_messages", "{}"), List.of(cautious), false))
                 .isInstanceOf(ApprovalDecision.AwaitApproval.class);
@@ -176,8 +188,8 @@ class ToolGatewayTest {
                 List.of(grant("gmail", List.of("list_messages"), List.of("gmail.readonly"))),
                 false);
 
-        assertThat(decision).isInstanceOfSatisfying(ApprovalDecision.Refuse.class, refuse ->
-                assertThat(refuse.reason()).contains("gmail.send_message"));
+        assertThat(decision).isInstanceOfSatisfying(ApprovalDecision.Refuse.class, refuse -> assertThat(refuse.reason())
+                .contains("gmail.send_message"));
     }
 
     @Test
@@ -188,19 +200,21 @@ class ToolGatewayTest {
                 List.of(grant("gmail", List.of("send_message"), List.of("gmail.readonly"))),
                 false);
 
-        assertThat(decision).isInstanceOfSatisfying(ApprovalDecision.Refuse.class, refuse ->
-                // "Permission denied" alone sends somebody hunting through a consent screen.
-                assertThat(refuse.reason()).contains("gmail.send"));
+        assertThat(decision)
+                .isInstanceOfSatisfying(
+                        ApprovalDecision.Refuse.class,
+                        refuse ->
+                                // "Permission denied" alone sends somebody hunting through a consent screen.
+                                assertThat(refuse.reason()).contains("gmail.send"));
     }
 
     @Test
     @DisplayName("a tool on a server that is not connected is refused")
     void unknownServerIsRefused() {
-        ApprovalDecision decision = gateway.evaluate(
-                invocation("salesforce", "create_lead", "{}"), List.of(), false);
+        ApprovalDecision decision = gateway.evaluate(invocation("salesforce", "create_lead", "{}"), List.of(), false);
 
-        assertThat(decision).isInstanceOfSatisfying(ApprovalDecision.Refuse.class, refuse ->
-                assertThat(refuse.reason()).contains("salesforce"));
+        assertThat(decision).isInstanceOfSatisfying(ApprovalDecision.Refuse.class, refuse -> assertThat(refuse.reason())
+                .contains("salesforce"));
     }
 
     @Test
@@ -219,13 +233,10 @@ class ToolGatewayTest {
     @Test
     @DisplayName("arguments that do not match the schema are refused before anything is sent")
     void invalidArgumentsAreCaughtBeforeTheCall() {
-        ToolResult result = gateway
-                .invoke(
+        ToolResult result = gateway.invoke(
                         // The schema requires to, subject and body. A model producing two of three
                         // is an ordinary occurrence, not an exception.
-                        invocation("gmail", "draft_message", "{\"to\":\"a@b.com\"}"),
-                        ApprovalDecision.PROCEED,
-                        null)
+                        invocation("gmail", "draft_message", "{\"to\":\"a@b.com\"}"), ApprovalDecision.PROCEED, null)
                 .block(Duration.ofSeconds(5));
 
         assertThat(result).isNotNull();
@@ -236,8 +247,7 @@ class ToolGatewayTest {
     @Test
     @DisplayName("arguments that are not JSON at all are reported in words the model can act on")
     void malformedJsonIsReportedUsefully() {
-        ToolResult result = gateway
-                .invoke(
+        ToolResult result = gateway.invoke(
                         invocation("gmail", "draft_message", "Here is the email: {to: a@b.com"),
                         ApprovalDecision.PROCEED,
                         null)
@@ -252,9 +262,10 @@ class ToolGatewayTest {
     @Test
     @DisplayName("valid arguments run and the sandbox says nothing left the machine")
     void validArgumentsRun() {
-        ToolResult result = gateway
-                .invoke(
-                        invocation("gmail", "draft_message",
+        ToolResult result = gateway.invoke(
+                        invocation(
+                                "gmail",
+                                "draft_message",
                                 "{\"to\":\"a@b.com\",\"subject\":\"Welcome\",\"body\":\"Hello\"}"),
                         ApprovalDecision.PROCEED,
                         null)
@@ -270,11 +281,8 @@ class ToolGatewayTest {
     @Test
     @DisplayName("a refused decision cannot be turned into a call")
     void refusedDecisionDoesNotReachTheProvider() {
-        ToolResult result = gateway
-                .invoke(
-                        invocation("gmail", "send_message", "{}"),
-                        new ApprovalDecision.Refuse("not granted"),
-                        null)
+        ToolResult result = gateway.invoke(
+                        invocation("gmail", "send_message", "{}"), new ApprovalDecision.Refuse("not granted"), null)
                 .block(Duration.ofSeconds(5));
 
         assertThat(result).isNotNull();
@@ -286,8 +294,7 @@ class ToolGatewayTest {
     @Test
     @DisplayName("an undecided approval cannot be turned into a call either")
     void pendingApprovalDoesNotReachTheProvider() {
-        ToolResult result = gateway
-                .invoke(
+        ToolResult result = gateway.invoke(
                         invocation("gmail", "send_message", "{}"),
                         new ApprovalDecision.AwaitApproval("send an email", "approval:decide"),
                         null)
@@ -300,25 +307,21 @@ class ToolGatewayTest {
     @Test
     @DisplayName("a per-run ceiling stops an agent looping a tool")
     void runCeilingIsEnforced() {
-        ToolGrant capped = new ToolGrant(
-                AGENT, "gmail", List.of(), List.of("gmail.readonly"), false, 2, true);
+        ToolGrant capped = new ToolGrant(AGENT, "gmail", List.of(), List.of("gmail.readonly"), false, 2, true);
         ToolInvocation call = invocation("gmail", "list_messages", "{}");
 
         for (int i = 0; i < 2; i++) {
-            assertThat(gateway.evaluate(call, List.of(capped), false))
-                    .isInstanceOf(ApprovalDecision.Proceed.class);
+            assertThat(gateway.evaluate(call, List.of(capped), false)).isInstanceOf(ApprovalDecision.Proceed.class);
             gateway.invoke(call, ApprovalDecision.PROCEED, null).block(Duration.ofSeconds(5));
         }
 
         // The third is refused: one looping agent must not be able to exhaust a workspace's
         // quota with a vendor.
-        assertThat(gateway.evaluate(call, List.of(capped), false))
-                .isInstanceOf(ApprovalDecision.Refuse.class);
+        assertThat(gateway.evaluate(call, List.of(capped), false)).isInstanceOf(ApprovalDecision.Refuse.class);
 
         // Releasing the run resets the counter, so the next task starts with a clean budget.
         gateway.releaseRun("run-1");
-        assertThat(gateway.evaluate(call, List.of(capped), false))
-                .isInstanceOf(ApprovalDecision.Proceed.class);
+        assertThat(gateway.evaluate(call, List.of(capped), false)).isInstanceOf(ApprovalDecision.Proceed.class);
     }
 
     @Test
@@ -326,9 +329,10 @@ class ToolGatewayTest {
     void indeterminateOutcomeIsNotRetried() {
         // The sandbox is asked to time out. Sending is not idempotent, so the result must say
         // the outcome is unknown rather than that the call failed.
-        ToolResult result = gateway
-                .invoke(
-                        invocation("gmail", "send_message",
+        ToolResult result = gateway.invoke(
+                        invocation(
+                                "gmail",
+                                "send_message",
                                 "{\"to\":\"[[fault:timeout]]\",\"subject\":\"s\",\"body\":\"b\"}"),
                         ApprovalDecision.PROCEED,
                         null)
@@ -355,55 +359,143 @@ class ToolGatewayTest {
                 + "\"subject\":{\"type\":\"string\"},\"body\":{\"type\":\"string\"}},"
                 + "\"required\":[\"to\",\"subject\",\"body\"]}";
         return List.of(
-                new ToolDefinition("gmail", "list_messages", "List messages",
-                        "{\"type\":\"object\",\"properties\":{}}", ToolSpec.SideEffect.READ,
-                        List.of("gmail.readonly"), true, Duration.ofSeconds(5), 60),
-                new ToolDefinition("gmail", "draft_message", "Prepare an email", schema,
-                        ToolSpec.SideEffect.WRITE, List.of("gmail.compose"), false, Duration.ofSeconds(5), 30),
-                new ToolDefinition("gmail", "send_message", "Send an email", schema,
-                        ToolSpec.SideEffect.OUTBOUND, List.of("gmail.send"), false, Duration.ofMillis(300), 20));
+                new ToolDefinition(
+                        "gmail",
+                        "list_messages",
+                        "List messages",
+                        "{\"type\":\"object\",\"properties\":{}}",
+                        ToolSpec.SideEffect.READ,
+                        List.of("gmail.readonly"),
+                        true,
+                        Duration.ofSeconds(5),
+                        60),
+                new ToolDefinition(
+                        "gmail",
+                        "draft_message",
+                        "Prepare an email",
+                        schema,
+                        ToolSpec.SideEffect.WRITE,
+                        List.of("gmail.compose"),
+                        false,
+                        Duration.ofSeconds(5),
+                        30),
+                new ToolDefinition(
+                        "gmail",
+                        "send_message",
+                        "Send an email",
+                        schema,
+                        ToolSpec.SideEffect.OUTBOUND,
+                        List.of("gmail.send"),
+                        false,
+                        Duration.ofMillis(300),
+                        20));
     }
 
     private static List<ToolDefinition> calendarTools() {
         return List.of(
-                new ToolDefinition("calendar", "list_events", "List events",
-                        "{\"type\":\"object\",\"properties\":{}}", ToolSpec.SideEffect.READ,
-                        List.of("calendar.readonly"), true, Duration.ofSeconds(5), 60),
-                new ToolDefinition("calendar", "create_event", "Create an event",
+                new ToolDefinition(
+                        "calendar",
+                        "list_events",
+                        "List events",
+                        "{\"type\":\"object\",\"properties\":{}}",
+                        ToolSpec.SideEffect.READ,
+                        List.of("calendar.readonly"),
+                        true,
+                        Duration.ofSeconds(5),
+                        60),
+                new ToolDefinition(
+                        "calendar",
+                        "create_event",
+                        "Create an event",
                         "{\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"}}}",
-                        ToolSpec.SideEffect.WRITE, List.of("calendar.events"), false, Duration.ofSeconds(5), 30),
-                new ToolDefinition("calendar", "delete_event", "Remove an event",
+                        ToolSpec.SideEffect.WRITE,
+                        List.of("calendar.events"),
+                        false,
+                        Duration.ofSeconds(5),
+                        30),
+                new ToolDefinition(
+                        "calendar",
+                        "delete_event",
+                        "Remove an event",
                         "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
-                        ToolSpec.SideEffect.DESTRUCTIVE, List.of("calendar.events"), false,
-                        Duration.ofSeconds(5), 5));
+                        ToolSpec.SideEffect.DESTRUCTIVE,
+                        List.of("calendar.events"),
+                        false,
+                        Duration.ofSeconds(5),
+                        5));
     }
 
     private static PlatformProperties properties() {
         return new PlatformProperties(
-                PlatformProperties.Environment.TEST, "test", "0.0.1",
+                PlatformProperties.Environment.TEST,
+                "test",
+                "0.0.1",
                 new PlatformProperties.Security(
-                        "aiwos", "aiwos-api", "http://localhost/jwks", Duration.ofMinutes(10),
-                        Duration.ofMinutes(5), null, null, Duration.ofMinutes(15), Duration.ofDays(30),
-                        Duration.ofSeconds(60), Duration.ofSeconds(30), "test-secret", "test-internal-secret",
+                        "aiwos",
+                        "aiwos-api",
+                        "http://localhost/jwks",
+                        Duration.ofMinutes(10),
+                        Duration.ofMinutes(5),
+                        null,
+                        null,
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        Duration.ofSeconds(60),
+                        Duration.ofSeconds(30),
+                        "test-secret",
+                        "test-internal-secret",
                         new PlatformProperties.Argon2(1, 1024, 1, 16, 32),
                         new PlatformProperties.Encryption(null, "test", "AES/GCM/NoPadding", 12, 128),
-                        12, 8, Duration.ofMinutes(15), false),
+                        12,
+                        8,
+                        Duration.ofMinutes(15),
+                        false),
                 new PlatformProperties.Http(
-                        Duration.ofSeconds(5), Duration.ofSeconds(60), Duration.ofSeconds(15),
-                        100, 20, 10_485_760, List.of("http://localhost"), true, Duration.ofMinutes(30)),
+                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(60),
+                        Duration.ofSeconds(15),
+                        100,
+                        20,
+                        10_485_760,
+                        List.of("http://localhost"),
+                        true,
+                        Duration.ofMinutes(30)),
                 new PlatformProperties.RateLimit(true, 600, 60, 30, 10, true),
                 new PlatformProperties.Events(
-                        false, "aiwos", 3, (short) 1, Duration.ofSeconds(30), 4,
-                        List.of(Duration.ofSeconds(1)), true, Duration.ofDays(7)),
+                        false,
+                        "aiwos",
+                        3,
+                        (short) 1,
+                        Duration.ofSeconds(30),
+                        4,
+                        List.of(Duration.ofSeconds(1)),
+                        true,
+                        Duration.ofDays(7)),
                 new PlatformProperties.Resilience(
-                        50, 10, 5, Duration.ofSeconds(30), 3, 3,
-                        Duration.ofMillis(1), Duration.ofMillis(5), 2.0, false, 25,
-                        Duration.ofSeconds(60), Map.of()),
+                        50,
+                        10,
+                        5,
+                        Duration.ofSeconds(30),
+                        3,
+                        3,
+                        Duration.ofMillis(1),
+                        Duration.ofMillis(5),
+                        2.0,
+                        false,
+                        25,
+                        Duration.ofSeconds(60),
+                        Map.of()),
                 new PlatformProperties.Observability(
                         "INFO", "console", false, 1.0, "http://localhost", false, List.of("password"), false),
                 new PlatformProperties.RuntimeConfig(false, Duration.ofSeconds(60), "channel", true),
                 new PlatformProperties.Services(
-                        "http://localhost", "http://localhost", "http://localhost", "http://localhost",
-                        "http://localhost", "http://localhost", "http://localhost", "http://localhost"));
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost"));
     }
 }

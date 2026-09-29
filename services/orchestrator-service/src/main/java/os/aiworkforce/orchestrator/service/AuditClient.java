@@ -83,7 +83,10 @@ public class AuditClient {
         } catch (RuntimeException e) {
             log.warn(
                     "Could not record audit event '{}' for {} {}: {}",
-                    action, resourceType, resourceId, e.getMessage());
+                    action,
+                    resourceType,
+                    resourceId,
+                    e.getMessage());
         }
     }
 }

@@ -1,18 +1,14 @@
 package os.aiworkforce.identity.repository;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
 import os.aiworkforce.identity.domain.Membership;
-import os.aiworkforce.identity.domain.PermissionRecord;
-import os.aiworkforce.identity.domain.Role;
-import os.aiworkforce.identity.domain.Session;
-import os.aiworkforce.identity.domain.User;
 
 /*
  * Spring Data scans for top-level repository interfaces. A repository nested inside a holder
@@ -36,7 +32,8 @@ public interface Memberships extends JpaRepository<Membership, UUID> {
      * anybody the authority to fix it, so the state is unrecoverable without a support
      * intervention - which is why it is prevented rather than repaired.
      */
-    @Query("""
+    @Query(
+            """
             select count(m) from Membership m
             where m.orgId = :orgId and m.roleId = :roleId and m.status = 'active'
             """)

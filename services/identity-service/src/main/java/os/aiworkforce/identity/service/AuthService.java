@@ -88,8 +88,7 @@ public class AuthService {
             // The address is already taken, and saying so out loud turns registration into an
             // account-enumeration oracle. The caller is told to sign in or reset instead.
             throw new ApiException(
-                    ErrorCode.ALREADY_EXISTS,
-                    "If that address can be used, you will receive an email shortly.");
+                    ErrorCode.ALREADY_EXISTS, "If that address can be used, you will receive an email shortly.");
         }
         User user = new User();
         user.setEmail(normalised);
@@ -152,15 +151,16 @@ public class AuthService {
     @Transactional
     public AuthResult refresh(String refreshToken, UUID requestedOrgId, String userAgent) {
         String hash = tokens.hashRefreshToken(refreshToken);
-        Session session = sessions.findByRefreshTokenHash(hash)
-                .orElseThrow(() -> new ApiException(ErrorCode.TOKEN_INVALID));
+        Session session =
+                sessions.findByRefreshTokenHash(hash).orElseThrow(() -> new ApiException(ErrorCode.TOKEN_INVALID));
 
         if (session.isReplayed()) {
-            int revoked = sessions.revokeFamily(
-                    session.getFamilyId(), Instant.now(), "refresh token reused");
+            int revoked = sessions.revokeFamily(session.getFamilyId(), Instant.now(), "refresh token reused");
             log.warn(
                     "Refresh token reuse detected for user {}; revoked {} session(s) in family {}",
-                    session.getUserId(), revoked, session.getFamilyId());
+                    session.getUserId(),
+                    revoked,
+                    session.getFamilyId());
             throw new ApiException(ErrorCode.SESSION_REUSE_DETECTED);
         }
         if (!session.isUsable()) {
@@ -170,8 +170,7 @@ public class AuthService {
         session.markUsed();
         sessions.save(session);
 
-        User user = users.findById(session.getUserId())
-                .orElseThrow(() -> new ApiException(ErrorCode.TOKEN_INVALID));
+        User user = users.findById(session.getUserId()).orElseThrow(() -> new ApiException(ErrorCode.TOKEN_INVALID));
         if (!user.isActive()) {
             sessions.revokeFamily(session.getFamilyId(), Instant.now(), "account is no longer active");
             throw new ApiException(ErrorCode.ACCOUNT_DISABLED);
@@ -242,15 +241,21 @@ public class AuthService {
         session.setRefreshTokenHash(tokens.hashRefreshToken(refreshToken));
         sessions.save(session);
 
-        TokenService.IssuedToken access = tokens.issueAccessToken(
-                user.getId(), orgId, roleId, permissions, permissionVersion, session.getId());
+        TokenService.IssuedToken access =
+                tokens.issueAccessToken(user.getId(), orgId, roleId, permissions, permissionVersion, session.getId());
 
         // The interface needs to say who is signed in. Without the name in the session it fell
         // back to a hard-coded one, so every demo account appeared as the same person.
         return new AuthResult(
-                access.token(), refreshToken, access.expiresAt(),
-                user.getId(), orgId, permissions,
-                user.getDisplayName(), user.getEmail(), roleName);
+                access.token(),
+                refreshToken,
+                access.expiresAt(),
+                user.getId(),
+                orgId,
+                permissions,
+                user.getDisplayName(),
+                user.getEmail(),
+                roleName);
     }
 
     private static String truncate(String value) {

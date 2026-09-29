@@ -6,8 +6,6 @@ import {
   DataTable,
   Dialog,
   Eyebrow,
-  FilterBar,
-  FilterEmpty,
   Input,
   Notice,
   PageHeader,
@@ -17,6 +15,10 @@ import {
   Time,
 } from '../components/ui'
 import { QueryState } from '../components/ui/QueryState'
+// Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
+// the barrel is also part of the main bundle, so going through it created a circular chunk
+// dependency (Rollup warned of a "broken execution order").
+import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { ApiError, describeApiError } from '../lib/api'
 import { formatCount, sentenceCase } from '../lib/format'
 import { roleLabel, statusLabel } from '../lib/labels'
@@ -185,12 +187,9 @@ function PermissionPicker({
       {catalogue === undefined ? (
         <p className="muted">Loading the permissions…</p>
       ) : (
-        <div
-          className="stack"
-          style={{ gap: 'var(--space-4)', maxHeight: '260px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}
-        >
+        <div className="stack permission-list">
           {groups.map(([resource, permissions]) => (
-            <div key={resource} className="stack" style={{ gap: 'var(--space-2)' }}>
+            <div key={resource} className="stack permission-group">
               <p className="caption">{sentenceCase(resource)}</p>
               {permissions.map((permission) => (
                 <label
@@ -370,7 +369,7 @@ export function Members() {
         key: 'actions',
         header: 'Actions',
         render: (row) => (
-          <div className="row" style={{ gap: 'var(--space-2)' }}>
+          <div className="row action-group">
             {canUpdateMember && (
               <Button
                 variant="outline"
@@ -424,7 +423,7 @@ export function Members() {
         render: (row) => {
           const name = roleLabel(row.name)
           return (
-            <div className="row" style={{ gap: 'var(--space-2)' }}>
+            <div className="row action-group">
               {canUpdateRole && !row.system && (
                 <Button
                   variant="outline"
@@ -665,7 +664,7 @@ export function Members() {
   )
 
   return (
-    <div className="page">
+    <div className="page admin-members">
       <PageHeader
         eyebrow="Who can do what"
         title="Members and roles"

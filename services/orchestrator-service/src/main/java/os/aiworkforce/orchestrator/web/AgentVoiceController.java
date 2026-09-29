@@ -1,10 +1,10 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -58,8 +58,8 @@ public class AgentVoiceController {
     @Operation(summary = "Set or clear the ElevenLabs voice an agent speaks with")
     public AgentController.AgentView setVoice(@PathVariable UUID agentId, @RequestBody SetVoiceRequest request) {
         UUID orgId = orgId();
-        Agent agent = agents.findByIdAndOrgId(agentId, orgId)
-                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId).orElseThrow(() -> ApiException.notFound("agent", agentId));
 
         String voiceId = request.voiceId() == null || request.voiceId().isBlank() ? null : request.voiceId();
         if (voiceId != null) {
@@ -72,11 +72,16 @@ public class AgentVoiceController {
                 ? null
                 : versions.findById(agent.getCurrentVersionId()).orElse(null);
         return new AgentController.AgentView(
-                agent.getId(), agent.getKey(), agent.getName(), agent.getCategory(), agent.getStatus(),
+                agent.getId(),
+                agent.getKey(),
+                agent.getName(),
+                agent.getCategory(),
+                agent.getStatus(),
                 version == null ? null : version.getRevision(),
                 version == null ? null : AgentController.summarise(version.getSystemPrompt()),
                 serverNames(agentId),
-                agent.getVoiceId());
+                agent.getVoiceId(),
+                os.aiworkforce.orchestrator.service.GeneralEmployee.isFallback(agent));
     }
 
     private List<String> serverNames(UUID agentId) {

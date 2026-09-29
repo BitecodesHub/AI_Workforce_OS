@@ -2,10 +2,10 @@ package os.aiworkforce.mcp.sandbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -22,14 +22,27 @@ class SandboxServerAdapterTest {
     void voiceNoteSummaryNamesTheScriptLength() {
         ObjectMapper json = new ObjectMapper();
         ToolDefinition createVoiceNote = new ToolDefinition(
-                "voice", "create_voice_note", "Write a script.",
-                "{\"type\":\"object\"}", ToolSpec.SideEffect.WRITE, List.of(), false, Duration.ofSeconds(30), 30);
+                "voice",
+                "create_voice_note",
+                "Write a script.",
+                "{\"type\":\"object\"}",
+                ToolSpec.SideEffect.WRITE,
+                List.of(),
+                false,
+                Duration.ofSeconds(30),
+                30);
         SandboxServerAdapter adapter = new SandboxServerAdapter("voice", List.of(createVoiceNote), json);
 
-        ToolResult result = adapter
-                .invoke(new ToolInvocation(
-                        "org-1", "agent-1", "run-1", "voice", "create_voice_note",
-                        "{\"text\":\"Hello there.\"}", "run-1:call-1", java.util.Map.of()),
+        ToolResult result = adapter.invoke(
+                        new ToolInvocation(
+                                "org-1",
+                                "agent-1",
+                                "run-1",
+                                "voice",
+                                "create_voice_note",
+                                "{\"text\":\"Hello there.\"}",
+                                "run-1:call-1",
+                                java.util.Map.of()),
                         "unused-credential")
                 .block();
 

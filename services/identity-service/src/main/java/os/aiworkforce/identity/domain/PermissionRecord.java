@@ -1,10 +1,11 @@
 package os.aiworkforce.identity.domain;
 
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.Instant;
 
 /**
  * A permission code, mirrored into the database from the build's registry.
@@ -39,8 +40,7 @@ public class PermissionRecord {
 
     protected PermissionRecord() {}
 
-    public PermissionRecord(
-            String code, String resource, String action, String description, boolean administrative) {
+    public PermissionRecord(String code, String resource, String action, String description, boolean administrative) {
         this.code = code;
         this.resource = resource;
         this.action = action;

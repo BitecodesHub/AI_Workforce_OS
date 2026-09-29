@@ -8,12 +8,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import reactor.core.publisher.Mono;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
+import os.aiworkforce.llm.model.ToolNames;
 import os.aiworkforce.mcp.model.ToolDefinition;
 import os.aiworkforce.mcp.model.ToolInvocation;
 import os.aiworkforce.mcp.model.ToolResult;
@@ -56,9 +57,15 @@ public class ToolGateway {
      * per request. Cleared when the run ends. */
     private final Map<String, Map<String, AtomicInteger>> runCallCounts = new ConcurrentHashMap<>();
 
-    public ToolGateway(
-            List<McpServerAdapter> servers, ArgumentValidator validator, ResiliencePresets resilience) {
-        servers.forEach(adapter -> adapters.put(adapter.server(), adapter));
+    public ToolGateway(List<McpServerAdapter> servers, ArgumentValidator validator, ResiliencePresets resilience) {
+        servers.forEach(adapter -> {
+            // person.* is answered by a person inside the orchestrator, not by a server. An
+            // adapter under that name would make a question to a person look like a tool call.
+            if (ToolNames.PERSON_SERVER.equals(adapter.server())) {
+                throw new IllegalStateException("The server name 'person' is reserved for questions to a person.");
+            }
+            adapters.put(adapter.server(), adapter);
+        });
         this.validator = validator;
         this.resilience = resilience;
         log.info("Tool gateway ready with {} server(s): {}", adapters.size(), adapters.keySet());
@@ -83,7 +90,8 @@ public class ToolGateway {
      * anything, and so the same decision can be re-evaluated after an approval without the
      * checks being duplicated in two places.
      */
-    public ApprovalDecision evaluate(ToolInvocation invocation, List<ToolGrant> grants, boolean policyRequiresApproval) {
+    public ApprovalDecision evaluate(
+            ToolInvocation invocation, List<ToolGrant> grants, boolean policyRequiresApproval) {
         McpServerAdapter adapter = adapters.get(invocation.server());
         if (adapter == null) {
             return new ApprovalDecision.Refuse("No server named " + invocation.server() + " is connected.");
@@ -112,15 +120,14 @@ public class ToolGateway {
         }
 
         if (exceedsRunLimit(invocation, grant)) {
-            return new ApprovalDecision.Refuse(
-                    "This agent has already used " + tool.qualifiedName() + " the maximum number of times in this run.");
+            return new ApprovalDecision.Refuse("This agent has already used " + tool.qualifiedName()
+                    + " the maximum number of times in this run.");
         }
 
         // The tool's own nature outranks the policy. A workspace can add a gate; it cannot
         // remove the one on sending or deleting.
         if (tool.alwaysRequiresApproval() || grant.requireApproval() || policyRequiresApproval) {
-            return new ApprovalDecision.AwaitApproval(
-                    describe(tool, invocation), "approval:decide");
+            return new ApprovalDecision.AwaitApproval(describe(tool, invocation), "approval:decide");
         }
 
         return ApprovalDecision.PROCEED;
@@ -165,7 +172,10 @@ public class ToolGateway {
                 .onErrorResume(error -> Mono.just(classify(tool, error, startedAt)))
                 .doOnNext(result -> log.info(
                         "{} for agent {} in run {}: {}",
-                        tool.qualifiedName(), invocation.agentId(), invocation.runId(), result.status()));
+                        tool.qualifiedName(),
+                        invocation.agentId(),
+                        invocation.runId(),
+                        result.status()));
     }
 
     /**
@@ -181,7 +191,8 @@ public class ToolGateway {
 
         if (timedOut && !tool.idempotent()) {
             return ToolResult.indeterminate(
-                    "The provider did not confirm the result within " + tool.defaultTimeout().toSeconds()
+                    "The provider did not confirm the result within "
+                            + tool.defaultTimeout().toSeconds()
                             + " seconds. The action was not repeated because it cannot be undone.",
                     took);
         }
@@ -237,9 +248,8 @@ public class ToolGateway {
         if (grant.maxCallsPerRun() == null || invocation.runId() == null) {
             return false;
         }
-        AtomicInteger count = runCallCounts
-                .getOrDefault(invocation.runId(), Map.of())
-                .get(invocation.qualifiedName());
+        AtomicInteger count =
+                runCallCounts.getOrDefault(invocation.runId(), Map.of()).get(invocation.qualifiedName());
         return count != null && count.get() >= grant.maxCallsPerRun();
     }
 

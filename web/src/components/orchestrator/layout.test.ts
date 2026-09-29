@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildBoardCards,
+  columnTitle,
+  countCards,
   edgePath,
   flowEdges,
+  flowLabelMax,
   HUB,
   laneBarRect,
   laneTicks,
@@ -11,6 +14,8 @@ import {
   queueReasonText,
   ringLayout,
   stepLabel,
+  tickStepFor,
+  tooltipPlacement,
 } from './layout'
 import type { BoardGoal, BoardQueueEntry, BoardTask } from '../../lib/queries'
 
@@ -70,6 +75,16 @@ describe('ringLayout', () => {
   })
 })
 
+describe('flowLabelMax', () => {
+  it('gives a small ring generous room per label', () => {
+    expect(flowLabelMax(3)).toBeGreaterThan(flowLabelMax(6))
+  })
+
+  it('shrinks as more agents share the ring', () => {
+    expect(flowLabelMax(6)).toBeGreaterThan(flowLabelMax(12))
+  })
+})
+
 describe('edgePath', () => {
   it('starts and ends at the given points', () => {
     const d = edgePath({ x: 0, y: 0 }, { x: 100, y: 0 })
@@ -81,6 +96,16 @@ describe('edgePath', () => {
     const d = edgePath({ x: 0, y: 0 }, { x: 100, y: 0 })
     const controlY = Number(d.split(' ')[4])
     expect(controlY).not.toBe(0)
+  })
+})
+
+describe('tooltipPlacement', () => {
+  it('opens below a node near the top of the canvas, so the tooltip is not clipped', () => {
+    expect(tooltipPlacement({ x: 300, y: 40 })).toBe('below')
+  })
+
+  it('opens above a node with room above it', () => {
+    expect(tooltipPlacement({ x: 300, y: 200 })).toBe('above')
   })
 })
 
@@ -98,6 +123,15 @@ describe('flowEdges', () => {
     expect(edges).toHaveLength(2)
     expect(edges[0]).toMatchObject({ fromAgentId: null, toAgentId: 'hr', completed: true, active: false })
     expect(edges[1]).toMatchObject({ fromAgentId: 'hr', toAgentId: 'support', active: true })
+  })
+
+  it('treats a task waiting for an answer as an active edge too', () => {
+    const g = goal({
+      id: 'g1b',
+      status: 'waiting',
+      tasks: [task({ id: 't1', agentId: 'hr', position: 0, status: 'waiting_input' })],
+    })
+    expect(flowEdges([g])[0]).toMatchObject({ active: true })
   })
 
   it('skips a goal that has already finished', () => {
@@ -118,8 +152,13 @@ describe('flowEdges', () => {
 describe('swimlane geometry', () => {
   const window = laneWindow(Date.parse('2026-09-28T12:00:00Z'))
 
-  it('spans exactly two hours ending now', () => {
+  it('spans exactly two hours ending now, with the old single-argument call', () => {
     expect(window.end - window.start).toBe(2 * 60 * 60 * 1000)
+  })
+
+  it('spans whatever window a caller asks for', () => {
+    const sixHours = laneWindow(Date.parse('2026-09-28T12:00:00Z'), 360)
+    expect(sixHours.end - sixHours.start).toBe(6 * 60 * 60 * 1000)
   })
 
   it('clamps a run that started before the window to its left edge', () => {
@@ -138,10 +177,15 @@ describe('swimlane geometry', () => {
     expect(rect.widthPct).toBeGreaterThan(0)
   })
 
-  it('produces a tick every fifteen minutes', () => {
+  it('produces a tick every fifteen minutes with the old single-argument call', () => {
     const ticks = laneTicks(window)
     expect(ticks).toHaveLength(9)
     expect(ticks[1]! - ticks[0]!).toBe(15 * 60 * 1000)
+  })
+
+  it('produces ticks at whatever step a caller asks for', () => {
+    const ticks = laneTicks(window, 60 * 60 * 1000)
+    expect(ticks[1]! - ticks[0]!).toBe(60 * 60 * 1000)
   })
 
   it('places "now" at the right edge', () => {
@@ -149,8 +193,24 @@ describe('swimlane geometry', () => {
   })
 })
 
+describe('tickStepFor', () => {
+  it('keeps a quarter-hour step for the shorter windows', () => {
+    expect(tickStepFor('PT1H')).toBe(15 * 60 * 1000)
+    expect(tickStepFor('PT2H')).toBe(15 * 60 * 1000)
+  })
+
+  it('widens to an hour for six hours', () => {
+    expect(tickStepFor('PT6H')).toBe(60 * 60 * 1000)
+  })
+
+  it('widens to three hours for a full day and for today', () => {
+    expect(tickStepFor('PT24H')).toBe(3 * 60 * 60 * 1000)
+    expect(tickStepFor('TODAY')).toBe(3 * 60 * 60 * 1000)
+  })
+})
+
 describe('buildBoardCards', () => {
-  it('puts a waiting-approval task ahead of a running one for the same goal', () => {
+  it('makes exactly one card per goal, keyed by the goal id (D1)', () => {
     const g = goal({
       id: 'g1',
       tasks: [
@@ -160,41 +220,70 @@ describe('buildBoardCards', () => {
     })
     const cards = buildBoardCards({ goals: [g], queue: [] })
     expect(cards).toHaveLength(1)
-    expect(cards[0]!.column).toBe('waiting')
+    expect(cards[0]!.id).toBe('g1')
   })
 
-  it('reads a finished goal into the finished column with its last task', () => {
+  it('reads a task waiting for an answer or an approval into the renamed needs_you column', () => {
+    const waitingForAnswer = goal({
+      id: 'g1',
+      tasks: [task({ id: 't1', position: 0, status: 'waiting_input' })],
+    })
+    const waitingForApproval = goal({
+      id: 'g1b',
+      tasks: [task({ id: 't1', position: 0, status: 'waiting_approval' })],
+    })
+    const [answerCard] = buildBoardCards({ goals: [waitingForAnswer], queue: [] })
+    const [approvalCard] = buildBoardCards({ goals: [waitingForApproval], queue: [] })
+    expect(answerCard).toMatchObject({ column: 'needs_you', statusKey: 'needs_you', waitingKind: 'answer' })
+    expect(approvalCard).toMatchObject({ column: 'needs_you', statusKey: 'needs_you', waitingKind: 'approval' })
+  })
+
+  it('reads a failed goal into the finished column with its ending task and a failed status key (D3)', () => {
     const g = goal({
       id: 'g2',
+      status: 'failed',
+      tasks: [
+        task({ id: 't1', position: 0, status: 'failed' }),
+        task({ id: 't2', position: 1, status: 'cancelled' }),
+      ],
+    })
+    const [card] = buildBoardCards({ goals: [g], queue: [] })
+    expect(card!.column).toBe('finished')
+    expect(card!.statusKey).toBe('failed')
+    // The first failed or cancelled task by position, not the last task in the chain.
+    expect(card!.task?.id).toBe('t1')
+  })
+
+  it('reads a completed goal into the finished column with its last completed task', () => {
+    const g = goal({
+      id: 'g2b',
       status: 'completed',
       tasks: [task({ id: 't1', position: 0, status: 'completed' }), task({ id: 't2', position: 1, status: 'completed' })],
     })
     const [card] = buildBoardCards({ goals: [g], queue: [] })
     expect(card!.column).toBe('finished')
+    expect(card!.statusKey).toBe('finished')
     expect(card!.task?.id).toBe('t2')
   })
 
-  it('makes one queued card per queue entry, carrying its reason and its rank in the shared queue', () => {
+  it('makes a held card for a queue entry paused on its agent', () => {
     const g = goal({ id: 'g3', status: 'planning', tasks: [task({ id: 't1', position: 0, status: 'pending' })] })
     const entry: BoardQueueEntry = {
       goalId: 'g3',
       goalTitle: 'Goal',
       taskId: 't1',
       agentId: 'agent-1',
-      // The task's own step within its goal (0) must not leak through as its queue rank - a card
-      // reading "#1 in the queue" for every goal's own first task, however far back it really sits,
-      // would be a lie the board tells with a straight face.
       position: 0,
-      reason: 'waiting_on_earlier_task',
+      reason: 'agent_paused',
       requestedBy: null,
       source: 'manual',
       createdAt: '2026-09-28T00:00:00Z',
     }
     const [card] = buildBoardCards({ goals: [g], queue: [entry] })
-    expect(card).toMatchObject({ column: 'queued', reason: 'waiting_on_earlier_task', queuePosition: 0 })
+    expect(card).toMatchObject({ column: 'queued', statusKey: 'held', reason: 'agent_paused', queuePosition: 0 })
   })
 
-  it('ranks a queued task by its place in the one shared queue, not its own goal\'s task position', () => {
+  it('ranks a queued goal by its place in the one shared queue, not its own task\'s stored position', () => {
     // Two goals, each queuing a task whose own chain position is 0 - the same number the sweep
     // would report for the first task of any goal. The one actually further back in line (behind
     // an entry from another goal) must read a higher rank, however identical their own positions.
@@ -220,7 +309,22 @@ describe('buildBoardCards', () => {
   it('shows a brand-new goal as ready before the sweep has queued it', () => {
     const g = goal({ id: 'g4', status: 'planning', tasks: [task({ id: 't1', position: 0, status: 'pending' })] })
     const [card] = buildBoardCards({ goals: [g], queue: [] })
-    expect(card).toMatchObject({ column: 'queued', reason: 'ready', queuePosition: null })
+    expect(card).toMatchObject({ column: 'queued', statusKey: 'queued', reason: 'ready', queuePosition: null })
+  })
+})
+
+describe('countCards', () => {
+  it('equals the number of cards each tile\'s own filter would show', () => {
+    const goals = [
+      goal({ id: 'g1', tasks: [task({ id: 't1', position: 0, status: 'running' })] }),
+      goal({ id: 'g2', tasks: [task({ id: 't2', position: 0, status: 'waiting_input' })] }),
+      goal({ id: 'g3', status: 'planning', tasks: [task({ id: 't3', position: 0, status: 'pending' })] }),
+    ]
+    const cards = buildBoardCards({ goals, queue: [] })
+    expect(countCards(cards, 'working')).toBe(cards.filter((c) => c.statusKey === 'working').length)
+    expect(countCards(cards, 'needs_you')).toBe(1)
+    expect(countCards(cards, 'queued')).toBe(1)
+    expect(countCards(cards, 'held')).toBe(0)
   })
 })
 
@@ -243,5 +347,19 @@ describe('queueReasonText', () => {
     expect(queueReasonText('ready')).toBe('Ready to start')
     expect(queueReasonText('waiting_on_earlier_task')).toBe('Waiting on an earlier step')
     expect(queueReasonText('agent_paused')).toBe('Held: agent paused')
+  })
+})
+
+describe('columnTitle', () => {
+  it('names the finished column by the window it covers', () => {
+    expect(columnTitle('finished', 'PT2H', 120)).toBe('Finished (last 2 h)')
+    expect(columnTitle('finished', 'PT6H', 360)).toBe('Finished (last 6 h)')
+    expect(columnTitle('finished', 'TODAY', 300)).toBe('Finished (today)')
+  })
+
+  it('names the other columns plainly', () => {
+    expect(columnTitle('needs_you', 'PT2H', 120)).toBe('Needs you')
+    expect(columnTitle('queued', 'PT2H', 120)).toBe('Queued')
+    expect(columnTitle('working', 'PT2H', 120)).toBe('Working')
   })
 })

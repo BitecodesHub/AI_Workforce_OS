@@ -2,17 +2,30 @@ import { formatDateTimeIn } from '../../lib/format'
 import { useState } from 'react'
 import { Button, Card, Eyebrow, Notice } from '../ui'
 import { describeApiError } from '../../lib/api'
-import { useCreateSchedule } from '../../lib/queries'
+import { readStored, writeStored } from '../../lib/persist'
+import { useCreateSchedule, useSchedules } from '../../lib/queries'
 import type { ChatMessage } from '../../lib/queries'
 import { can } from '../../lib/session'
 
-/** A schedule read back in plain words, with next runs and a one-click way to save it. */
+/** A schedule read back in plain words, with next runs and a one-click way to save it (D10). */
 export function ScheduleCard({ message }: { message: ChatMessage }) {
   const detail = message.detail
   const createSchedule = useCreateSchedule()
+  const schedulesQuery = useSchedules()
   const [created, setCreated] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canCreate = can('task:create')
+
+  const alreadySaved =
+    created ||
+    readStored(`chat.schedule.${message.id}`, false, (v): v is boolean => typeof v === 'boolean') ||
+    (schedulesQuery.data ?? []).some(
+      (schedule) =>
+        schedule.agentId === detail.agentId &&
+        schedule.instruction === detail.instruction &&
+        schedule.cron === (detail.cron ?? null) &&
+        schedule.runAt === (detail.runAt ?? null),
+    )
 
   const nextRuns = detail.nextRuns ?? []
 
@@ -27,6 +40,7 @@ export function ScheduleCard({ message }: { message: ChatMessage }) {
         text: detail.text,
       })
       setCreated(true)
+      writeStored(`chat.schedule.${message.id}`, true)
     } catch (err) {
       setError(describeApiError(err))
     }
@@ -73,9 +87,9 @@ export function ScheduleCard({ message }: { message: ChatMessage }) {
       )}
 
       <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
-        {created ? (
+        {alreadySaved ? (
           <p className="caption">
-            Schedule created.{' '}
+            Saved as a schedule.{' '}
             <a className="link" href="/schedules">
               Open Schedules
             </a>

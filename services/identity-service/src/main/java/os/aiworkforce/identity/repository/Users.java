@@ -1,17 +1,13 @@
 package os.aiworkforce.identity.repository;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import os.aiworkforce.identity.domain.Membership;
-import os.aiworkforce.identity.domain.PermissionRecord;
-import os.aiworkforce.identity.domain.Role;
-import os.aiworkforce.identity.domain.Session;
+
 import os.aiworkforce.identity.domain.User;
 
 /*

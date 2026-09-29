@@ -1,13 +1,13 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,10 +41,7 @@ public class ProviderController {
     private final Models models;
     private final ModelRouter router;
 
-    public ProviderController(
-            Providers providers,
-            Models models,
-            ModelRouter router) {
+    public ProviderController(Providers providers, Models models, ModelRouter router) {
         this.providers = providers;
         this.models = models;
         this.router = router;
@@ -124,23 +121,38 @@ public class ProviderController {
     }
 
     private ProviderView setEnabled(String providerId, boolean enabled) {
-        LlmProviderEntity provider = providers.findById(providerId)
-                .orElseThrow(() -> ApiException.notFound("provider", providerId));
+        LlmProviderEntity provider =
+                providers.findById(providerId).orElseThrow(() -> ApiException.notFound("provider", providerId));
         provider.setEnabled(enabled);
         providers.save(provider);
         return new ProviderView(
-                provider.getId(), provider.getDisplayName(), provider.getKind(), provider.isEnabled(),
-                provider.getCredentialRef(), provider.getCredentialStatus(), provider.getCredentialCheckedAt(),
-                "UNKNOWN", provider.getRegions(), models.findByProviderIdAndEnabledTrue(providerId).size());
+                provider.getId(),
+                provider.getDisplayName(),
+                provider.getKind(),
+                provider.isEnabled(),
+                provider.getCredentialRef(),
+                provider.getCredentialStatus(),
+                provider.getCredentialCheckedAt(),
+                "UNKNOWN",
+                provider.getRegions(),
+                models.findByProviderIdAndEnabledTrue(providerId).size());
     }
 
     private static ModelView toView(LlmModelEntity model) {
         return new ModelView(
-                model.getProviderId(), model.getModelId(), model.getDisplayName(),
-                model.getContextWindow(), model.getMaxOutputTokens(), model.isSupportsTools(),
-                model.isSupportsJsonMode(), model.isSupportsStreaming(),
-                model.getInputCostPerMillion(), model.getOutputCostPerMillion(),
-                model.isEnabled(), model.getUnavailableUntil(), model.getUnavailableReason());
+                model.getProviderId(),
+                model.getModelId(),
+                model.getDisplayName(),
+                model.getContextWindow(),
+                model.getMaxOutputTokens(),
+                model.isSupportsTools(),
+                model.isSupportsJsonMode(),
+                model.isSupportsStreaming(),
+                model.getInputCostPerMillion(),
+                model.getOutputCostPerMillion(),
+                model.isEnabled(),
+                model.getUnavailableUntil(),
+                model.getUnavailableReason());
     }
 
     private static UUID orgId() {

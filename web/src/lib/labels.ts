@@ -38,6 +38,7 @@ export type StatusKind =
   | 'outcome'
   | 'circuit'
   | 'toolCall'
+  | 'question'
 
 export type StatusEntry = { tone: TagTone; label: string }
 
@@ -46,6 +47,7 @@ const entry = (tone: TagTone, label: string): StatusEntry => ({ tone, label })
 const RUN_LIKE = {
   running: entry('blue', 'Running'),
   waiting_approval: entry('warning', 'Waiting for approval'),
+  waiting_input: entry('warning', 'Waiting for an answer'),
   completed: entry('success', 'Completed'),
   failed: entry('danger', 'Failed'),
   cancelled: entry('neutral', 'Cancelled'),
@@ -142,6 +144,12 @@ const STATUS: Record<StatusKind, Record<string, StatusEntry>> = {
     // A call that timed out on a tool that cannot safely be repeated: it may or may not have
     // happened, and the console must not guess which.
     indeterminate: entry('warning', 'Outcome unknown'),
+  },
+  question: {
+    pending: entry('warning', 'Waiting for an answer'),
+    answered: entry('success', 'Answered'),
+    expired: entry('neutral', 'Expired'),
+    cancelled: entry('neutral', 'Withdrawn'),
   },
 }
 
@@ -242,6 +250,12 @@ export function roleLabel(name?: string | null): string {
 const AUDIT_ACTIONS: Record<string, string> = {
   'run.complete': 'Run completed',
   'run.fail': 'Run failed',
+  'question.ask': 'Agent asked a question',
+  'question.answer': 'Answered an agent’s question',
+  'question.expire': 'Question closed without an answer',
+  'question.extend': 'Kept a question open longer',
+  'goal.retry': 'Tried a goal again',
+  'conversation.delete': 'Deleted a conversation',
 }
 
 /** 'run.fail' reads 'Run failed'; an approval decision says which way it went when it can. */
@@ -320,6 +334,7 @@ const SERVERS: Record<string, string> = {
   github: 'GitHub',
   jira: 'Jira',
   drive: 'Google Drive',
+  person: 'A person',
 }
 
 /** A tool server's name: its display name when it has a real one, else a known product name. */
@@ -329,9 +344,10 @@ export function serverLabel(server?: string | null, displayName?: string | null)
   return SERVERS[server.toLowerCase()] ?? sentenceCase(server)
 }
 
-/** 'gmail.send_message' reads 'Gmail · send message'. */
+/** 'gmail.send_message' reads 'Gmail · send message'. The internal ask tool reads on its own. */
 export function toolLabel(qualified?: string | null): string {
   if (!qualified || !qualified.trim()) return 'Unknown tool'
+  if (qualified === 'person.ask_question') return 'Asked a question'
   const dot = qualified.indexOf('.')
   if (dot <= 0 || dot === qualified.length - 1) return sentenceCase(qualified)
   const tool = sentenceCase(qualified.slice(dot + 1)).toLowerCase()

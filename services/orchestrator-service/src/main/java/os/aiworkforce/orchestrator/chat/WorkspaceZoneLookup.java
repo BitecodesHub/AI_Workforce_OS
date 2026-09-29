@@ -69,7 +69,9 @@ public class WorkspaceZoneLookup {
                     .bodyToMono(WorkspaceResponse.class)
                     .timeout(Duration.ofSeconds(5))
                     .block();
-            return response == null || response.timezone() == null || response.timezone().isBlank()
+            return response == null
+                            || response.timezone() == null
+                            || response.timezone().isBlank()
                     ? FALLBACK
                     : parseOrFallback(response.timezone());
         } catch (RuntimeException e) {

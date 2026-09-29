@@ -1,10 +1,11 @@
 package os.aiworkforce.orchestrator.domain;
 
+import java.util.List;
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import java.util.List;
-import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;

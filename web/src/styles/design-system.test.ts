@@ -196,3 +196,35 @@ describe('landing styles', () => {
     }
   })
 })
+
+/* Screen polish stylesheets refine components.css and follow exactly its rules. */
+describe('polish styles', () => {
+  const POLISH_DIR = join(SRC, 'styles/polish')
+  const files = walk(POLISH_DIR, ['.css']).map((file) => ({ file, source: readFileSync(file, 'utf8') }))
+  const RADIUS = /^((0|var\(--radius-[a-z-]+\))(\s+(0|var\(--radius-[a-z-]+\))){0,3}|inherit)$/
+
+  it('imports every polish stylesheet from index.css', () => {
+    const index = readFileSync(join(POLISH_DIR, 'index.css'), 'utf8')
+    for (const entry of readdirSync(POLISH_DIR).filter((name) => name.endsWith('.css') && name !== 'index.css')) {
+      expect(index, `index.css does not import ${entry}`).toContain(`@import './${entry}'`)
+    }
+  })
+
+  it('draws borders from --line, radii from tokens, and no raw hex', () => {
+    for (const { file, source } of files) {
+      for (const m of source.matchAll(/border(?:-\w+)?:\s*1px solid ([^;]+);/g)) {
+        const border = m[1]!.trim()
+        expect(
+          border.includes('var(--line)') || border.includes('rgba(210, 221, 238') || border === 'transparent',
+          `${file} border "${border}" is not --line`,
+        ).toBe(true)
+      }
+      for (const m of source.matchAll(/border-radius:\s*([^;]+);/g)) {
+        expect(m[1]!.trim(), `${file} uses border-radius "${m[1]}"`).toMatch(RADIUS)
+      }
+      const hexes = source.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []
+      expect(hexes, `${file} contains a raw colour: ${hexes.join(', ')}`).toHaveLength(0)
+    }
+  })
+})
+

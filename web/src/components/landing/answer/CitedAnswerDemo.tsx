@@ -2,6 +2,7 @@ import { Fragment, useEffect, useReducer } from 'react'
 import type { Dispatch, ReactElement } from 'react'
 import { Button, Tag } from '../../ui'
 import { DemoFrame } from '../shared/DemoFrame'
+import type { DemoVoice } from '../shared/voice'
 import { Icon } from '../shared/Icon'
 import { useLandingMotion } from '../shared/LandingRoot'
 import { useInView } from '../../../hooks/useInView'
@@ -202,16 +203,47 @@ function AnswerText({ segments, state, dispatch }: { segments: ReadonlyArray<Seg
   )
 }
 
-function retrievalLine(state: State): string | null {
-  if (state.phase === 'declined') return '0 passages matched'
-  if (state.hits.length > 0) return 'keyword 2 · vector 2 · merged 2 passages'
+function retrievalLine(state: State, voice: DemoVoice): string | null {
+  if (state.phase === 'declined') return voice === 'plain' ? 'Nothing in the document covers this' : '0 passages matched'
+  if (state.hits.length > 0) return voice === 'plain' ? 'Found 2 matching passages' : 'keyword 2 · vector 2 · merged 2 passages'
   if (state.phase === 'retrieving') return 'Searching…'
   return null
 }
 
+/* The same demo in the two voices: the plain one for the home page, the technical one for IT. */
+const COPY: Record<DemoVoice, { name: string; lead: string; footnote: string; source: string; steps: readonly string[] }> = {
+  technical: {
+    name: 'Cited answers',
+    lead: 'Hybrid keyword and vector retrieval over the workspace documents, with the document and page behind every claim.',
+    footnote:
+      'Illustrative: the real screen replies with a short sentence and lists passages like these below it. Retrieval is replayed here, not run.',
+    source: 'answering from 1 indexed document',
+    steps: [
+      'Ask what happens when an agent wants to send an email.',
+      'Follow each numbered citation to its page in the document.',
+      'Ask about Jupiter: with nothing to cite, the agent declines.',
+    ],
+  },
+  plain: {
+    name: 'Answers with sources',
+    lead: 'Ask a question and it answers from your own documents, pointing to the page behind each part of the answer.',
+    footnote:
+      'For illustration: in the product, the reply is a short sentence with the matching passages listed under it. The search is replayed here.',
+    source: 'answering from 1 document',
+    steps: [
+      'Ask what happens when an assistant wants to send an email.',
+      'Follow each numbered source to its page in the document.',
+      'Ask about Jupiter. Nothing in the document covers it, so it says so.',
+    ],
+  },
+}
+
 /* ---- Demo ------------------------------------------------------------------------------------------ */
 
-export function CitedAnswerDemo(): ReactElement {
+export type CitedAnswerDemoProps = { voice?: DemoVoice }
+
+export function CitedAnswerDemo({ voice = 'technical' }: CitedAnswerDemoProps = {}): ReactElement {
+  const copy = COPY[voice]
   const { reduced } = useLandingMotion()
   const [state, dispatch] = useReducer(reducer, reduced, init)
   const { play, cancel } = useSequence()
@@ -231,16 +263,18 @@ export function CitedAnswerDemo(): ReactElement {
   const answering = state.phase === 'answering'
   const showsAnswer = answering || state.phase === 'answered'
   const activePage = state.active === null ? null : PASSAGES[state.active].page
-  const retrieval = retrievalLine(state)
+  const retrieval = retrievalLine(state, voice)
 
   return (
     <DemoFrame
       area="cited"
       index="04"
-      name="Cited answers"
+      name={copy.name}
       title="It answers from your documents"
-      lead="Hybrid keyword and vector retrieval over the workspace documents, with the document and page behind every claim."
-      footnote="Illustrative: the real screen replies with a short sentence and lists passages like these below it. Retrieval is replayed here, not run."
+      lead={copy.lead}
+      footnote={copy.footnote}
+      steps={copy.steps}
+      showIndex={voice === 'technical'}
       status={state.announcement}
       busy={answering}
     >
@@ -280,7 +314,7 @@ export function CitedAnswerDemo(): ReactElement {
                   <Tag tone="growth" withDot>
                     Research
                   </Tag>
-                  <span className="caption">answering from 1 indexed document</span>
+                  <span className="caption">{copy.source}</span>
                 </div>
                 {state.phase === 'declined' ? (
                   <>

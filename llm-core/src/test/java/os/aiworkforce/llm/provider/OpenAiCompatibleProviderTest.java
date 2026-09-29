@@ -6,14 +6,14 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,12 +57,32 @@ class OpenAiCompatibleProviderTest {
 
         provider = new OpenAiCompatibleProvider(WebClient.builder(), new ObjectMapper());
         descriptor = new ProviderDescriptor(
-                "openrouter", "OpenRouter", ProviderDescriptor.Kind.OPENAI_COMPATIBLE,
-                server.baseUrl(), "provider:openrouter", true, Map.of(), List.of(), null, null, 0);
+                "openrouter",
+                "OpenRouter",
+                ProviderDescriptor.Kind.OPENAI_COMPATIBLE,
+                server.baseUrl(),
+                "provider:openrouter",
+                true,
+                Map.of(),
+                List.of(),
+                null,
+                null,
+                0);
         model = new ModelSpec(
-                "openrouter", "meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B",
-                128_000, 8_192, true, true, true, false,
-                BigDecimal.ONE, null, BigDecimal.ONE, true, null);
+                "openrouter",
+                "meta-llama/llama-3.3-70b-instruct",
+                "Llama 3.3 70B",
+                128_000,
+                8_192,
+                true,
+                true,
+                true,
+                false,
+                BigDecimal.ONE,
+                null,
+                BigDecimal.ONE,
+                true,
+                null);
     }
 
     @AfterEach
@@ -75,7 +95,9 @@ class OpenAiCompatibleProviderTest {
     @Test
     @DisplayName("parses a plain answer, its usage and its finish reason")
     void parsesAnswer() {
-        stub(200, """
+        stub(
+                200,
+                """
                 {"id":"gen-1","choices":[{"message":{"role":"assistant","content":"Two business days."},
                 "finish_reason":"stop"}],
                 "usage":{"prompt_tokens":120,"completion_tokens":18,
@@ -97,7 +119,9 @@ class OpenAiCompatibleProviderTest {
     @Test
     @DisplayName("parses tool calls and reports the finish reason as a tool call")
     void parsesToolCalls() {
-        stub(200, """
+        stub(
+                200,
+                """
                 {"id":"gen-2","choices":[{"message":{"role":"assistant","content":null,
                 "tool_calls":[{"id":"call_abc","type":"function",
                 "function":{"name":"gmail.draft_message","arguments":"{\\"to\\":\\"a@b.com\\"}"}}]},
@@ -121,7 +145,9 @@ class OpenAiCompatibleProviderTest {
     @Test
     @DisplayName("reports a truncated answer as truncated rather than complete")
     void reportsTruncation() {
-        stub(200, """
+        stub(
+                200,
+                """
                 {"id":"gen-3","choices":[{"message":{"role":"assistant","content":"The policy is"},
                 "finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":4}}
                 """);
@@ -158,7 +184,9 @@ class OpenAiCompatibleProviderTest {
     @Test
     @DisplayName("classifies an out-of-credit 429 as quota exhausted, which is not retryable")
     void quotaExhausted() {
-        stub(429, """
+        stub(
+                429,
+                """
                 {"error":{"message":"You exceeded your current quota, please check your billing details",
                 "code":"insufficient_quota"}}
                 """);
@@ -175,7 +203,9 @@ class OpenAiCompatibleProviderTest {
     @Test
     @DisplayName("classifies a 402 as not enough credit for this model, without condemning the whole key")
     void insufficientCredit() {
-        stub(402, """
+        stub(
+                402,
+                """
                 {"error":{"message":"This request requires more credits","code":402}}
                 """);
 
@@ -191,7 +221,9 @@ class OpenAiCompatibleProviderTest {
     @Test
     @DisplayName("classifies a context overflow reported as a 400")
     void contextLengthExceeded() {
-        stub(400, """
+        stub(
+                400,
+                """
                 {"error":{"message":"This model's maximum context length is 128000 tokens. However, your
                 messages resulted in 131204 tokens. Please reduce the length of the messages.",
                 "code":"context_length_exceeded"}}
@@ -208,7 +240,9 @@ class OpenAiCompatibleProviderTest {
     @Test
     @DisplayName("classifies a safety refusal and refuses to fail over")
     void contentFiltered() {
-        stub(400, """
+        stub(
+                400,
+                """
                 {"error":{"message":"Your request was rejected as a result of our safety system",
                 "code":"content_policy_violation"}}
                 """);
@@ -267,7 +301,9 @@ class OpenAiCompatibleProviderTest {
     void errorEnvelopeInsideSuccess() {
         // OpenRouter and several proxies wrap an upstream failure in their own envelope and
         // answer 200. Treating it as success hands the person an empty answer and no explanation.
-        stub(200, """
+        stub(
+                200,
+                """
                 {"error":{"message":"Provider returned error","code":429},"user_id":"u-1"}
                 """);
 
@@ -306,10 +342,7 @@ class OpenAiCompatibleProviderTest {
     @DisplayName("classifies a deadline overrun as a timeout")
     void timeout() {
         server.stubFor(post(urlPathEqualTo("/chat/completions"))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withFixedDelay(2_000)
-                        .withBody("{}")));
+                .willReturn(aResponse().withStatus(200).withFixedDelay(2_000).withBody("{}")));
 
         ChatRequest slow = ChatRequest.builder()
                 .messages(List.of(ChatMessage.user("hello")))
@@ -332,13 +365,15 @@ class OpenAiCompatibleProviderTest {
                         .withHeader("Content-Type", "text/event-stream")
                         .withBody("{\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n")));
 
-        provider.stream(descriptor, model, request("hello"), "key").collectList().block(Duration.ofSeconds(5));
+        provider.stream(descriptor, model, request("hello"), "key")
+                .collectList()
+                .block(Duration.ofSeconds(5));
 
         // Without stream_options.include_usage, most of this family report no usage at all on a
         // streamed call, and the attempt is recorded as having cost nothing.
-        server.verify(com.github.tomakehurst.wiremock.client.WireMock
-                .postRequestedFor(urlPathEqualTo("/chat/completions"))
-                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.containing("include_usage")));
+        server.verify(
+                com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor(urlPathEqualTo("/chat/completions"))
+                        .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.containing("include_usage")));
     }
 
     // ---- Helpers -----------------------------------------------------------------------------------
@@ -356,8 +391,7 @@ class OpenAiCompatibleProviderTest {
     }
 
     private ProviderException expectFailure(ChatRequest request) {
-        return (ProviderException) org.assertj.core.api.Assertions
-                .catchThrowable(() -> complete(request));
+        return (ProviderException) org.assertj.core.api.Assertions.catchThrowable(() -> complete(request));
     }
 
     private static ChatRequest request(String text) {
@@ -370,8 +404,8 @@ class OpenAiCompatibleProviderTest {
     private static ChatRequest withTools(String text) {
         return ChatRequest.builder()
                 .messages(List.of(ChatMessage.user(text)))
-                .tools(List.of(new ToolSpec(
-                        "gmail.draft_message", "Prepare an email", null, ToolSpec.SideEffect.WRITE)))
+                .tools(List.of(
+                        new ToolSpec("gmail.draft_message", "Prepare an email", null, ToolSpec.SideEffect.WRITE)))
                 .timeout(Duration.ofSeconds(5))
                 .build();
     }
@@ -389,7 +423,6 @@ class OpenAiCompatibleProviderTest {
                         .isTrue();
             }
         }
-        assertThatThrownBy(() -> ProviderFailure.valueOf("NOT_A_FAILURE"))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ProviderFailure.valueOf("NOT_A_FAILURE")).isInstanceOf(IllegalArgumentException.class);
     }
 }

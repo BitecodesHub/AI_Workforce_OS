@@ -63,7 +63,9 @@ public class RoutingPolicyResolver {
                 .map(candidate -> new RoutingPolicy.Candidate(
                         candidate.getProviderId(),
                         candidate.getModelId(),
-                        candidate.getTemperature() == null ? null : candidate.getTemperature().doubleValue(),
+                        candidate.getTemperature() == null
+                                ? null
+                                : candidate.getTemperature().doubleValue(),
                         candidate.getMaxOutputTokens(),
                         candidate.getWeight()))
                 .toList();

@@ -14,7 +14,6 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -102,7 +101,8 @@ class ScheduleServiceTest {
             UUID personId = UUID.randomUUID();
             RequestContext.setActor(Actor.user(personId.toString(), ORG.toString(), null, Set.of(), 0L));
 
-            Schedule created = service.create(ORG, "Daily standup summary", agentId, "Summarise standup", "daily at 9am");
+            Schedule created =
+                    service.create(ORG, "Daily standup summary", agentId, "Summarise standup", "daily at 9am");
 
             assertThat(created.getKind()).isEqualTo("recurring");
             assertThat(created.getCron()).isEqualTo("0 0 9 * * *");
@@ -128,7 +128,8 @@ class ScheduleServiceTest {
             when(agents.findByIdAndOrgId(otherAgent, ORG)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.create(ORG, "x", otherAgent, "y", "daily at 9am"))
-                    .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
         }
 
         @Test
@@ -137,8 +138,8 @@ class ScheduleServiceTest {
             agent.setStatus("paused");
 
             assertThatThrownBy(() -> service.create(ORG, "x", agentId, "y", "daily at 9am"))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
         }
 
         @Test
@@ -187,7 +188,8 @@ class ScheduleServiceTest {
         void missingSchedule() {
             when(schedules.findByIdAndOrgId(any(), any())).thenReturn(Optional.empty());
             assertThatThrownBy(() -> service.update(ORG, UUID.randomUUID(), "x", null, null, null))
-                    .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
         }
     }
 
@@ -358,7 +360,8 @@ class ScheduleServiceTest {
             when(schedules.findDue(any(), any())).thenReturn(List.of(due));
             Goal stillRunning = new Goal();
             stillRunning.setStatus("running");
-            lenient().when(scheduleGoals.findFirstByScheduleIdOrderByCreatedAtDesc(due.getId()))
+            lenient()
+                    .when(scheduleGoals.findFirstByScheduleIdOrderByCreatedAtDesc(due.getId()))
                     .thenReturn(Optional.of(stillRunning));
             when(goalService.createGoal(any(), any(), anyBoolean())).thenAnswer(call -> {
                 Goal goal = new Goal();
@@ -422,8 +425,8 @@ class ScheduleServiceTest {
         @DisplayName("an unreadable phrase surfaces the parser's own validation error")
         void surfacesParserError() {
             assertThatThrownBy(() -> service.preview(ORG, "whenever suits", null))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            e -> assertThat(e.details()).containsKey("examples"));
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.details()).containsKey("examples"));
         }
     }
 }

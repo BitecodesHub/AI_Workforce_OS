@@ -6,25 +6,33 @@ import { LandingSection, Reveal } from '../components/landing/shared/LandingSect
 import { SIMULATED_PAGE_NOTICE } from '../components/landing/shared/landingFacts'
 import { LandingBar } from '../components/landing/hero/LandingBar'
 import { Hero } from '../components/landing/hero/Hero'
+import { HowItWorks } from '../components/landing/sections/HowItWorks'
 import { AgentsSection } from '../components/landing/sections/AgentsSection'
-import { ApprovalDemo } from '../components/landing/agent-run/ApprovalDemo'
-import { FailoverDemo } from '../components/landing/failover/FailoverDemo'
-import { AuditChainDemo } from '../components/landing/sections/AuditChainDemo'
-import { CitedAnswerDemo } from '../components/landing/answer/CitedAnswerDemo'
-import { RoleSwitcher } from '../components/landing/roles/RoleSwitcher'
-import { PlatformBand } from '../components/landing/sections/PlatformBand'
-import { LimitsAndCta } from '../components/landing/sections/LimitsAndCta'
+import { DemoStage } from '../components/landing/sections/DemoStage'
+import type { StageItem } from '../components/landing/sections/DemoStage'
+import { SafetySection } from '../components/landing/sections/SafetySection'
+import { Faq } from '../components/landing/sections/Faq'
+import { FinalCta } from '../components/landing/sections/FinalCta'
 import { LandingFooter } from '../components/landing/sections/LandingFooter'
 
 /*
- * The public home page.
+ * The public home page, written for the people who choose the product rather than the engineers
+ * who will run it.
  *
- * It explains what the product is by showing it: what an agent may do, what stops it, what
- * happens when a provider fails, and who can see what. Every demo runs in the browser, says it is
- * simulated, and sends nothing; where a demo waits, time is compressed. The claims come from
- * landingFacts.ts and the owners' data files, which match the code the platform ships, and the
- * limits sit beside the final call to action so nobody reaches the button without reading them.
+ * It says what the AI team does and the promise that matters most to a business - nothing is sent
+ * or deleted without a person's yes - then shows it: how it works in three steps, the ready-made
+ * assistants, two demos anybody can follow, why it is safe to switch on, and the questions buyers
+ * ask. The technical detail an IT team reviews (the permission map, provider failover, the audit
+ * chain, what actually runs) lives on its own page, /trust, linked from the footer.
+ *
+ * Every demo runs in the browser, says it is simulated, and sends nothing; where a demo waits,
+ * time is compressed. Every claim matches what the platform ships.
  */
+
+const HOME_DEMOS: readonly StageItem[] = [
+  { id: 'approval', name: 'It asks before it sends' },
+  { id: 'cited', name: 'It answers from your documents' },
+]
 
 export function Landing(): ReactElement {
   return (
@@ -38,33 +46,29 @@ export function Landing(): ReactElement {
           indication of where they landed. */}
       <main id="main" className="lp-main" tabIndex={-1}>
         <Hero />
+        <HowItWorks />
         <AgentsSection />
         <LandingSection id="demos" labelledBy="demos-title">
           <Reveal className="lp-head">
             <div className="lp-head-main">
-              <Eyebrow>Try it here</Eyebrow>
+              <Eyebrow>See it work</Eyebrow>
               <h2 id="demos-title" className="lp-h2">
-                Four things that make it safe to switch on
+                Try it right here
               </h2>
             </div>
             <div className="lp-head-aside">
+              <p className="lp-lead">Two short demos you can use now. Where one waits, time is sped up.</p>
               <p className="lp-notice-pill">
                 <span className="lp-dot lp-dot-green" aria-hidden="true" />
                 {SIMULATED_PAGE_NOTICE}
               </p>
-              <p className="caption">Where a demo waits, time is compressed.</p>
             </div>
           </Reveal>
-          <div className="lp-bento">
-            <ApprovalDemo />
-            <FailoverDemo />
-            <AuditChainDemo />
-            <CitedAnswerDemo />
-          </div>
+          <DemoStage items={HOME_DEMOS} voice="plain" />
         </LandingSection>
-        <RoleSwitcher />
-        <PlatformBand />
-        <LimitsAndCta />
+        <SafetySection />
+        <Faq />
+        <FinalCta />
       </main>
       <LandingFooter />
     </LandingRoot>

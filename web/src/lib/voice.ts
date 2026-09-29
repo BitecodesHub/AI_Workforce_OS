@@ -73,7 +73,8 @@ export async function fetchAudio(
 export type VoiceInputProvider = 'elevenlabs' | 'browser' | 'none'
 
 type RecognitionResultLike = { transcript: string }
-type RecognitionEventLike = { results: ArrayLike<ArrayLike<RecognitionResultLike>> }
+type RecognitionResultEntryLike = ArrayLike<RecognitionResultLike> & { isFinal?: boolean }
+type RecognitionEventLike = { results: ArrayLike<RecognitionResultEntryLike>; resultIndex?: number }
 type RecognitionLike = {
   lang: string
   continuous: boolean
@@ -100,6 +101,14 @@ function canRecord(): boolean {
   )
 }
 
+/** The audio type this browser's MediaRecorder actually supports, tried in order, or null (D16). */
+export function pickRecorderType(candidates: readonly string[]): string | null {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return null
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? null
+}
+
+const RECORDER_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg'] as const
+
 /**
  * Turns speech into text in the composer: ElevenLabs' own transcription when a key is stored and
  * the microphone is available, otherwise the browser's built-in recognition, otherwise neither.
@@ -113,6 +122,7 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
 
   const [listening, setListening] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [interim, setInterim] = useState('')
   const recognitionRef = useRef<RecognitionLike | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -136,17 +146,22 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
   const start = useCallback(async () => {
     setError(null)
     if (provider === 'elevenlabs') {
+      const mimeType = pickRecorderType(RECORDER_TYPES)
+      if (!mimeType) {
+        setError("This browser cannot record audio here. Use the browser's speech recognition, or type instead.")
+        return
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         streamRef.current = stream
         chunksRef.current = []
-        const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+        const recorder = new MediaRecorder(stream, { mimeType })
         recorder.ondataavailable = (event) => {
           if (event.data.size > 0) chunksRef.current.push(event.data)
         }
         recorder.onstop = () => {
           stream.getTracks().forEach((track) => track.stop())
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+          const blob = new Blob(chunksRef.current, { type: mimeType })
           setListening(false)
           void transcribe(blob)
         }
@@ -164,14 +179,29 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
       const recognition = new Ctor()
       recognition.lang = typeof navigator !== 'undefined' ? navigator.language : 'en-US'
       recognition.continuous = false
-      recognition.interimResults = false
+      recognition.interimResults = true
       recognition.onresult = (event) => {
-        const last = event.results[event.results.length - 1]
-        const transcript = last?.[0]?.transcript
-        if (typeof transcript === 'string' && transcript.trim()) onTextRef.current(transcript.trim())
+        const startAt = event.resultIndex ?? 0
+        let finalTranscript = ''
+        let interimTranscript = ''
+        for (let i = startAt; i < event.results.length; i += 1) {
+          const result = event.results[i]
+          const transcript = result?.[0]?.transcript ?? ''
+          if (result?.isFinal) finalTranscript += transcript
+          else interimTranscript += transcript
+        }
+        if (finalTranscript.trim()) {
+          setInterim('')
+          onTextRef.current(finalTranscript.trim())
+        } else {
+          setInterim(interimTranscript)
+        }
       }
       recognition.onerror = () => setError('Speech recognition could not understand that. Try again.')
-      recognition.onend = () => setListening(false)
+      recognition.onend = () => {
+        setListening(false)
+        setInterim('')
+      }
       recognitionRef.current = recognition
       try {
         recognition.start()
@@ -190,6 +220,7 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
     recognitionRef.current?.stop()
     recognitionRef.current = null
     setListening(false)
+    setInterim('')
   }, [])
 
   useEffect(
@@ -201,7 +232,7 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
     [],
   )
 
-  return { supported, provider, listening, start, stop, error }
+  return { supported, provider, listening, start, stop, error, interim }
 }
 
 /* ---- Speaking: ElevenLabs audio or the browser's own voices --------------------------------------- */
@@ -273,13 +304,16 @@ export function useSpeaker() {
   const provider: SpeakerProvider = elevenlabsReady ? 'elevenlabs' : supportsBrowser ? 'browser' : 'none'
 
   const [speaking, setSpeaking] = useState(false)
+  const [speakingKey, setSpeakingKey] = useState<string | null>(null)
   const [muted, setMutedState] = useState(readMuted)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const urlRef = useRef<string | null>(null)
-  // Set false the moment this hook's owner unmounts (a route change away from Chat, say), so a
-  // synthesis request already in flight is not turned into audible sound for a screen nobody is
-  // looking at any more, with no control left to stop it.
-  const mountedRef = useRef(true)
+  // True only while this hook's owner is actually mounted, so a synthesis request already in
+  // flight is not turned into audible sound for a screen nobody is looking at any more, with no
+  // control left to stop it. Set in the mount effect itself (D3), not just at useRef's initial
+  // value, so React 19 StrictMode's mount-unmount-remount in development leaves it true again
+  // after the throwaway first mount's cleanup set it false.
+  const mountedRef = useRef(false)
 
   const cleanup = useCallback(() => {
     if (urlRef.current) {
@@ -294,17 +328,20 @@ export function useSpeaker() {
     audioRef.current?.pause()
     cleanup()
     setSpeaking(false)
+    setSpeakingKey(null)
   }, [cleanup])
 
   const speak = useCallback(
-    async (text: string, agentId?: string | null) => {
-      if (muted || !text.trim() || provider === 'none') return
+    async (text: string, agentId?: string | null, opts?: { force?: boolean; key?: string }) => {
+      if ((muted && !opts?.force) || !text.trim() || provider === 'none') return
       stop()
       const clipped = text.slice(0, MAX_SPEECH_CHARACTERS)
+      const key = opts?.key ?? agentId ?? null
 
       if (provider === 'elevenlabs') {
         try {
           setSpeaking(true)
+          setSpeakingKey(key)
           const blob = await fetchAudio('/api/voice/speech', { body: { text: clipped, agentId: agentId ?? null } })
           // The component that asked for this may be long gone by the time synthesis returns.
           if (!mountedRef.current) return
@@ -314,15 +351,18 @@ export function useSpeaker() {
           audioRef.current = audio
           audio.onended = () => {
             setSpeaking(false)
+            setSpeakingKey(null)
             cleanup()
           }
           audio.onerror = () => {
             setSpeaking(false)
+            setSpeakingKey(null)
             cleanup()
           }
           await audio.play()
         } catch {
           setSpeaking(false)
+          setSpeakingKey(null)
           cleanup()
         }
         return
@@ -333,9 +373,16 @@ export function useSpeaker() {
       const voice = pickBrowserVoice(window.speechSynthesis.getVoices(), agentId ?? '', lang)
       if (voice) utterance.voice = voice
       utterance.pitch = pickPitch(agentId ?? '')
-      utterance.onend = () => setSpeaking(false)
-      utterance.onerror = () => setSpeaking(false)
+      utterance.onend = () => {
+        setSpeaking(false)
+        setSpeakingKey(null)
+      }
+      utterance.onerror = () => {
+        setSpeaking(false)
+        setSpeakingKey(null)
+      }
       setSpeaking(true)
+      setSpeakingKey(key)
       window.speechSynthesis.speak(utterance)
     },
     [muted, provider, stop, cleanup],
@@ -350,13 +397,13 @@ export function useSpeaker() {
     [stop],
   )
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
       mountedRef.current = false
       stop()
-    },
-    [stop],
-  )
+    }
+  }, [stop])
 
-  return { speak, stop, speaking, provider, muted, setMuted }
+  return { speak, stop, speaking, speakingKey, provider, muted, setMuted }
 }

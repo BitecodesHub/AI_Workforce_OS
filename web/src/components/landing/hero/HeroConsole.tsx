@@ -37,6 +37,25 @@ const STAT_CELLS: ReadonlyArray<{ key: keyof HeroFrame['stats']; label: string }
   { key: 'completed', label: 'Completed' },
 ]
 
+/* The trace in plain words: what happened to each provider, not the router's own terms. */
+const TRACE_VERB: Record<HeroFrame['trace'][number]['verb'], string> = {
+  skip: 'Skipped',
+  fail: 'Busy',
+  ok: 'Answered',
+}
+
+const TRACE_DETAIL: Record<HeroFrame['trace'][number]['verb'], string> = {
+  skip: 'Not responding, so it moved on',
+  fail: 'Too busy, so it tried the next one',
+  ok: 'Took over and replied',
+}
+
+const TRACE_PROVIDER: Record<string, string> = {
+  groq: 'Groq',
+  openrouter: 'OpenRouter',
+  gemini: 'Google Gemini',
+}
+
 const STATUS_TAG: Record<HeroRow['status'], { tone: TagTone; label: string }> = {
   running: { tone: 'blue', label: 'Running' },
   waiting: { tone: 'warning', label: 'Waiting' },
@@ -161,7 +180,7 @@ function BackLayer({ frame }: { frame: HeroFrame }): ReactElement {
 function TraceLayer({ frame }: { frame: HeroFrame }): ReactElement {
   return (
     <div className="lp-console-layer lp-console-trace lp-glass" aria-hidden="true">
-      <Eyebrow>Routing trace · sample run</Eyebrow>
+      <Eyebrow>Backup AI · switched on its own</Eyebrow>
       <ol className="lp-console-lines">
         {TRACE_SLOTS.map((slot) => {
           const line = frame.trace.find((entry) => entry.id === slot.id)
@@ -174,9 +193,9 @@ function TraceLayer({ frame }: { frame: HeroFrame }): ReactElement {
               data-state={line ? 'shown' : 'pending'}
               data-verb={shown.verb}
             >
-              <span className="lp-console-verb">{shown.verb}</span>
-              <span className="lp-console-provider">{shown.provider}</span>
-              <span className="lp-console-detail">{shown.detail}</span>
+              <span className="lp-console-verb">{TRACE_VERB[shown.verb]}</span>
+              <span className="lp-console-provider">{TRACE_PROVIDER[shown.provider] ?? shown.provider}</span>
+              <span className="lp-console-detail">{TRACE_DETAIL[shown.verb]}</span>
             </li>
           )
         })}
@@ -247,7 +266,7 @@ export function HeroConsole(): ReactElement {
           >
             <Eyebrow>
               <span className="lp-dot lp-dot-warning lp-pulse" aria-hidden="true" />
-              gmail.send_message
+              Outgoing email
             </Eyebrow>
             <p className="lp-console-approval-title">Send the welcome email</p>
             <div className="lp-console-tags">
@@ -272,7 +291,7 @@ export function HeroConsole(): ReactElement {
               </div>
             </dl>
             <a className="lp-link" href="#approval" onClick={inPage}>
-              Decide it yourself
+              Try deciding it yourself
               <Icon name="arrow-right" />
             </a>
           </div>
@@ -280,8 +299,8 @@ export function HeroConsole(): ReactElement {
       </div>
 
       <p className="visually-hidden">
-        The Command Map showing each agent's current status, a routing trace that skipped an unavailable provider,
-        and an email waiting for a person to approve it.
+        The Command Map showing what each AI assistant is working on, a backup AI provider taking over when the
+        first two were unavailable, and an email waiting for a person to approve it.
       </p>
 
       {!reduced && (

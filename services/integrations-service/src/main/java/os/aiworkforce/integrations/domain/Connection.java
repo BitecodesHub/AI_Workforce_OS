@@ -1,12 +1,13 @@
 package os.aiworkforce.integrations.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -104,7 +105,9 @@ public class Connection extends OrgScopedEntity {
     }
 
     public List<String> missingScopes() {
-        return requestedScopes.stream().filter(scope -> !grantedScopes.contains(scope)).toList();
+        return requestedScopes.stream()
+                .filter(scope -> !grantedScopes.contains(scope))
+                .toList();
     }
 
     public String getServer() {

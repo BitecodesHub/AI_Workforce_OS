@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -195,24 +194,24 @@ class ScheduleParserTest {
             ParsedSchedule parsed = ScheduleParser.parse("tomorrow at 3pm", ZONE, NOW);
             assertThat(parsed.kind()).isEqualTo("once");
             assertThat(parsed.description()).isEqualTo("Once, on Tue 29 Sep 2026 at 3:00 pm");
-            assertThat(parsed.runAt()).isEqualTo(
-                    ZonedDateTime.of(2026, 9, 29, 15, 0, 0, 0, ZONE).toInstant());
+            assertThat(parsed.runAt())
+                    .isEqualTo(ZonedDateTime.of(2026, 9, 29, 15, 0, 0, 0, ZONE).toInstant());
         }
 
         @Test
         @DisplayName("today at a time still ahead of now")
         void todayStillAhead() {
             ParsedSchedule parsed = ScheduleParser.parse("today at 5pm", ZONE, NOW);
-            assertThat(parsed.runAt()).isEqualTo(
-                    ZonedDateTime.of(2026, 9, 28, 17, 0, 0, 0, ZONE).toInstant());
+            assertThat(parsed.runAt())
+                    .isEqualTo(ZonedDateTime.of(2026, 9, 28, 17, 0, 0, 0, ZONE).toInstant());
         }
 
         @Test
         @DisplayName("today at a time already passed is refused")
         void todayAlreadyPassed() {
             assertThatThrownBy(() -> ScheduleParser.parse("today at 9am", ZONE, NOW))
-                    .isInstanceOfSatisfying(ApiException.class,
-                            e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
         }
 
         @Test
@@ -240,16 +239,16 @@ class ScheduleParserTest {
         @DisplayName("on 1 October at 9am, no year, rolls to the next occurrence ahead of now")
         void onDayMonthNoYear() {
             ParsedSchedule parsed = ScheduleParser.parse("on 1 October at 9am", ZONE, NOW);
-            assertThat(parsed.runAt()).isEqualTo(
-                    ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant());
+            assertThat(parsed.runAt())
+                    .isEqualTo(ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant());
         }
 
         @Test
         @DisplayName("on 2026-10-01 09:00, an explicit date and time")
         void onIsoDateAndTime() {
             ParsedSchedule parsed = ScheduleParser.parse("on 2026-10-01 09:00", ZONE, NOW);
-            assertThat(parsed.runAt()).isEqualTo(
-                    ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant());
+            assertThat(parsed.runAt())
+                    .isEqualTo(ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant());
         }
 
         @Test
@@ -335,7 +334,8 @@ class ScheduleParserTest {
         @Test
         @DisplayName("tryParse answers empty rather than throwing")
         void tryParseIsEmptyOnFailure() {
-            assertThat(ScheduleParser.tryParse("whenever it feels right", ZONE, NOW)).isEmpty();
+            assertThat(ScheduleParser.tryParse("whenever it feels right", ZONE, NOW))
+                    .isEmpty();
             assertThat(ScheduleParser.tryParse("every day at 9am", ZONE, NOW)).isPresent();
         }
     }
@@ -362,10 +362,11 @@ class ScheduleParserTest {
         void monthly() {
             ParsedSchedule parsed = ScheduleParser.parse("every month on the 1st at 9am", ZONE, NOW);
             List<Instant> runs = ScheduleParser.nextRuns(parsed, ZONE, NOW, 3);
-            assertThat(runs).containsExactly(
-                    ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant(),
-                    ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZONE).toInstant(),
-                    ZonedDateTime.of(2026, 12, 1, 9, 0, 0, 0, ZONE).toInstant());
+            assertThat(runs)
+                    .containsExactly(
+                            ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant(),
+                            ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZONE).toInstant(),
+                            ZonedDateTime.of(2026, 12, 1, 9, 0, 0, 0, ZONE).toInstant());
         }
 
         @Test
@@ -373,8 +374,9 @@ class ScheduleParserTest {
         void lastDayOfShortMonth() {
             ParsedSchedule parsed = ScheduleParser.parse("on the last day of every month at 5pm", ZONE, NOW);
             List<Instant> runs = ScheduleParser.nextRuns(parsed, ZONE, NOW, 1);
-            assertThat(runs).containsExactly(
-                    ZonedDateTime.of(2026, 9, 30, 17, 0, 0, 0, ZONE).toInstant());
+            assertThat(runs)
+                    .containsExactly(
+                            ZonedDateTime.of(2026, 9, 30, 17, 0, 0, 0, ZONE).toInstant());
         }
 
         @Test
@@ -395,7 +397,8 @@ class ScheduleParserTest {
         @DisplayName("across the daylight-saving change, a daily 9am schedule keeps firing at 9am local time")
         void daylightSavingBoundary() {
             // Australia/Melbourne moves to daylight saving on the first Sunday of October 2026.
-            Instant lateSeptember = ZonedDateTime.of(2026, 9, 29, 9, 0, 0, 0, ZONE).toInstant();
+            Instant lateSeptember =
+                    ZonedDateTime.of(2026, 9, 29, 9, 0, 0, 0, ZONE).toInstant();
             ParsedSchedule parsed = ScheduleParser.parse("every day at 9am", ZONE, lateSeptember);
             List<Instant> runs = ScheduleParser.nextRuns(parsed, ZONE, lateSeptember, 7);
             for (Instant run : runs) {

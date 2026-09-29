@@ -1,9 +1,10 @@
 package os.aiworkforce.orchestrator.domain;
 
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import java.util.UUID;
 
 import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
 
@@ -41,8 +42,24 @@ public class Agent extends OrgScopedEntity {
     @Column(name = "voice_id")
     private String voiceId;
 
+    /**
+     * Whether this is the workspace's General Employee, the agent that takes a request no
+     * specialist fits. Found by this flag, never by its key, so a custom agent someone keyed
+     * "general" is never mistaken for it. At most one per workspace (V8).
+     */
+    @Column(name = "is_fallback", nullable = false)
+    private boolean fallback;
+
     public boolean isActive() {
         return "active".equals(status);
+    }
+
+    public boolean isFallback() {
+        return fallback;
+    }
+
+    public void setFallback(boolean fallback) {
+        this.fallback = fallback;
     }
 
     public String getKey() {

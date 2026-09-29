@@ -1,8 +1,8 @@
 package os.aiworkforce.orchestrator.voice;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
@@ -98,7 +98,8 @@ public class ElevenLabsClient {
     public List<VoiceDto> voices(String apiKey) {
         try {
             VoicesResponse response = client.get()
-                    .uri(uri -> uri.path("/v2/voices").queryParam("page_size", 100).build())
+                    .uri(uri ->
+                            uri.path("/v2/voices").queryParam("page_size", 100).build())
                     .header(KEY_HEADER, apiKey)
                     .retrieve()
                     .body(VoicesResponse.class);
@@ -136,8 +137,7 @@ public class ElevenLabsClient {
             return new ApiException(ErrorCode.PROVIDER_CREDENTIAL_INVALID, "ElevenLabs refused the stored key.", e);
         }
         if (status.value() == 429) {
-            return new ApiException(
-                    ErrorCode.RATE_LIMITED, "ElevenLabs is rate limiting or the quota is used up.", e);
+            return new ApiException(ErrorCode.RATE_LIMITED, "ElevenLabs is rate limiting or the quota is used up.", e);
         }
         log.warn("ElevenLabs returned {}: {}", status, e.getResponseBodyAsString());
         return new ApiException(ErrorCode.UPSTREAM_ERROR, "ElevenLabs returned an unexpected response.", e);
@@ -148,7 +148,9 @@ public class ElevenLabsClient {
     }
 
     private record SpeechRequest(
-            String text, @JsonProperty("model_id") String modelId, @JsonProperty("voice_settings") VoiceSettings voiceSettings) {}
+            String text,
+            @JsonProperty("model_id") String modelId,
+            @JsonProperty("voice_settings") VoiceSettings voiceSettings) {}
 
     private record VoiceSettings(double stability, @JsonProperty("similarity_boost") double similarityBoost) {
         static final VoiceSettings DEFAULT = new VoiceSettings(0.5, 0.75);

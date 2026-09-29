@@ -58,6 +58,8 @@ public enum ErrorCode {
     APPROVAL_REQUIRED(202, false, "This action is waiting for approval."),
     APPROVAL_EXPIRED(409, false, "The approval window closed before a decision was made."),
     APPROVAL_ALREADY_DECIDED(409, false, "That approval has already been decided."),
+    QUESTION_ALREADY_ANSWERED(409, false, "That question has already been answered."),
+    QUESTION_CLOSED(409, false, "That question is no longer open."),
     POLICY_VIOLATION(403, false, "Workspace policy does not allow that action."),
 
     // ---- Upstream dependencies -----------------------------------------------------------
@@ -86,25 +88,22 @@ public enum ErrorCode {
     INTEGRATION_CONSENT_REQUIRED(409, false, "Reconnect the integration to continue."),
     INTEGRATION_SCOPE_MISSING(403, false, "The integration is missing a permission this tool needs."),
     TOOL_OUTCOME_INDETERMINATE(
-            502,
-            false,
-            "The tool did not confirm the result, so the action was not repeated automatically."),
+            502, false, "The tool did not confirm the result, so the action was not repeated automatically."),
     VOICE_NOT_CONFIGURED(409, false, "No ElevenLabs key is stored for this workspace."),
 
     // ---- Knowledge base ------------------------------------------------------------------
     DOCUMENT_NOT_INDEXABLE(422, false, "That document holds no text that can be indexed."),
     INGESTION_FAILED(500, true, "The document could not be processed."),
     NO_EVIDENCE_FOUND(404, false, "No source document supports an answer to that question."),
-    EMBEDDING_DIMENSION_MISMATCH(
-            409, false, "The index was built with a different embedding model."),
+    EMBEDDING_DIMENSION_MISMATCH(409, false, "The index was built with a different embedding model."),
 
     // ---- Catch all -----------------------------------------------------------------------
     INTERNAL_ERROR(500, false, "Something went wrong. The incident has been recorded."),
     NOT_IMPLEMENTED(501, false, "That capability is not available yet."),
     SERVICE_UNAVAILABLE(503, true, "The service is starting up or shutting down.");
 
-    private static final Map<String, ErrorCode> BY_WIRE = Arrays.stream(values())
-            .collect(Collectors.toUnmodifiableMap(ErrorCode::wire, Function.identity()));
+    private static final Map<String, ErrorCode> BY_WIRE =
+            Arrays.stream(values()).collect(Collectors.toUnmodifiableMap(ErrorCode::wire, Function.identity()));
 
     private final int status;
     private final boolean retryable;

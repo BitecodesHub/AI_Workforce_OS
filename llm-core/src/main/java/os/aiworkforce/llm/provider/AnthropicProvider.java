@@ -1,21 +1,21 @@
 package os.aiworkforce.llm.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import os.aiworkforce.llm.model.ChatMessage;
 import os.aiworkforce.llm.model.ChatRequest;
@@ -96,9 +96,10 @@ public class AnthropicProvider implements ChatProvider {
         ObjectNode body = json.createObjectNode();
         body.put("model", "claude-haiku-4-5-20251001");
         body.put("max_tokens", 1);
-        body.set("messages", json.createArrayNode().add(json.createObjectNode()
-                .put("role", "user")
-                .put("content", "ping")));
+        body.set(
+                "messages",
+                json.createArrayNode()
+                        .add(json.createObjectNode().put("role", "user").put("content", "ping")));
         return client(provider, credential)
                 .post()
                 .uri("/v1/messages")
@@ -117,9 +118,11 @@ public class AnthropicProvider implements ChatProvider {
     private ObjectNode buildBody(ModelSpec model, ChatRequest request, boolean streaming) {
         ObjectNode body = json.createObjectNode();
         body.put("model", model.modelId());
-        body.put("max_tokens", request.maxOutputTokens() != null
-                ? Math.min(request.maxOutputTokens(), model.maxOutputTokens())
-                : Math.min(DEFAULT_MAX_TOKENS, model.maxOutputTokens()));
+        body.put(
+                "max_tokens",
+                request.maxOutputTokens() != null
+                        ? Math.min(request.maxOutputTokens(), model.maxOutputTokens())
+                        : Math.min(DEFAULT_MAX_TOKENS, model.maxOutputTokens()));
 
         String system = request.systemPrompt();
         if (system != null) {
@@ -205,13 +208,16 @@ public class AnthropicProvider implements ChatProvider {
         FinishReason finish = mapStopReason(stopReason, !calls.isEmpty());
         if (finish == FinishReason.CONTENT_FILTER) {
             throw ProviderException.of(
-                    ProviderFailure.CONTENT_FILTERED, provider.id(), model.modelId(),
+                    ProviderFailure.CONTENT_FILTERED,
+                    provider.id(),
+                    model.modelId(),
                     "The provider's safety system declined this request.");
         }
 
         JsonNode usage = node.path("usage");
         TokenUsage tokens = new TokenUsage(
-                usage.path("input_tokens").asInt(0) + usage.path("cache_read_input_tokens").asInt(0),
+                usage.path("input_tokens").asInt(0)
+                        + usage.path("cache_read_input_tokens").asInt(0),
                 usage.path("cache_read_input_tokens").asInt(0),
                 usage.path("output_tokens").asInt(0),
                 0);
@@ -264,13 +270,13 @@ public class AnthropicProvider implements ChatProvider {
                 toolIdentity.forEach((index, identity) -> {
                     StringBuilder arguments = partialInputs.get(index);
                     calls.add(new ToolCall(
-                            identity[0], identity[1],
+                            identity[0],
+                            identity[1],
                             arguments == null || arguments.isEmpty() ? "{}" : arguments.toString()));
                 });
                 chunks.add(ChatChunk.tools(calls));
             }
-            chunks.add(ChatChunk.terminal(
-                    finishReason != null ? finishReason : FinishReason.INCOMPLETE, usage));
+            chunks.add(ChatChunk.terminal(finishReason != null ? finishReason : FinishReason.INCOMPLETE, usage));
             return chunks;
         }
     }
@@ -288,7 +294,8 @@ public class AnthropicProvider implements ChatProvider {
                     if ("tool_use".equals(block.path("type").asText(""))) {
                         int index = node.path("index").asInt(0);
                         state.toolIdentity.put(index, new String[] {
-                            block.path("id").asText(""), ToolNames.fromWire(block.path("name").asText(""))
+                            block.path("id").asText(""),
+                            ToolNames.fromWire(block.path("name").asText(""))
                         });
                         state.partialInputs.put(index, new StringBuilder());
                     }
@@ -315,9 +322,12 @@ public class AnthropicProvider implements ChatProvider {
                                 usage.path("output_tokens").asInt(0), 0);
                     }
                 }
-                case "error" -> throw ProviderException.of(
-                        ProviderFailure.SERVER_ERROR, "anthropic", "",
-                        node.path("error").path("message").asText("Stream error"));
+                case "error" ->
+                    throw ProviderException.of(
+                            ProviderFailure.SERVER_ERROR,
+                            "anthropic",
+                            "",
+                            node.path("error").path("message").asText("Stream error"));
                 default -> {
                     /* message_start, ping, content_block_stop and message_stop carry no output. */
                 }
@@ -331,10 +341,8 @@ public class AnthropicProvider implements ChatProvider {
     }
 
     private WebClient client(ProviderDescriptor provider, String credential) {
-        WebClient.Builder builder = webClientBuilder
-                .clone()
-                .baseUrl(provider.baseUrl())
-                .defaultHeader("anthropic-version", API_VERSION);
+        WebClient.Builder builder =
+                webClientBuilder.clone().baseUrl(provider.baseUrl()).defaultHeader("anthropic-version", API_VERSION);
         if (credential != null && !credential.isBlank()) {
             builder.defaultHeader("x-api-key", credential);
         }
@@ -347,34 +355,51 @@ public class AnthropicProvider implements ChatProvider {
             return error;
         }
         if (error instanceof java.util.concurrent.TimeoutException) {
-            return new ProviderException(ProviderFailure.TIMEOUT, provider.id(), model.modelId(),
-                    "The provider did not answer inside the deadline.", null, null, null, error);
+            return new ProviderException(
+                    ProviderFailure.TIMEOUT,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider did not answer inside the deadline.",
+                    null,
+                    null,
+                    null,
+                    error);
         }
         if (error instanceof WebClientRequestException) {
-            return new ProviderException(ProviderFailure.NETWORK_ERROR, provider.id(), model.modelId(),
-                    "The provider could not be reached.", null, null, null, error);
+            return new ProviderException(
+                    ProviderFailure.NETWORK_ERROR,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider could not be reached.",
+                    null,
+                    null,
+                    null,
+                    error);
         }
         if (error instanceof WebClientResponseException response) {
             int status = response.getStatusCode().value();
             String body = truncate(response.getResponseBodyAsString());
             String lower = body == null ? "" : body.toLowerCase(java.util.Locale.ROOT);
-            ProviderFailure failure = switch (status) {
-                case 400 -> lower.contains("prompt is too long") || lower.contains("max_tokens")
-                        ? ProviderFailure.CONTEXT_LENGTH_EXCEEDED
-                        : ProviderFailure.INVALID_REQUEST;
-                case 401 -> ProviderFailure.AUTHENTICATION_FAILED;
-                case 403 -> ProviderFailure.AUTHORISATION_FAILED;
-                case 404 -> ProviderFailure.MODEL_NOT_FOUND;
-                case 413 -> ProviderFailure.CONTEXT_LENGTH_EXCEEDED;
-                case 429 -> lower.contains("credit") || lower.contains("quota")
-                        ? ProviderFailure.QUOTA_EXHAUSTED
-                        : ProviderFailure.RATE_LIMITED;
-                // 529 is Anthropic's "overloaded", distinct from a 500 and worth retrying sooner.
-                case 529 -> ProviderFailure.OVERLOADED;
-                case 500, 502, 503 -> ProviderFailure.SERVER_ERROR;
-                case 504 -> ProviderFailure.TIMEOUT;
-                default -> status >= 500 ? ProviderFailure.SERVER_ERROR : ProviderFailure.UNKNOWN;
-            };
+            ProviderFailure failure =
+                    switch (status) {
+                        case 400 ->
+                            lower.contains("prompt is too long") || lower.contains("max_tokens")
+                                    ? ProviderFailure.CONTEXT_LENGTH_EXCEEDED
+                                    : ProviderFailure.INVALID_REQUEST;
+                        case 401 -> ProviderFailure.AUTHENTICATION_FAILED;
+                        case 403 -> ProviderFailure.AUTHORISATION_FAILED;
+                        case 404 -> ProviderFailure.MODEL_NOT_FOUND;
+                        case 413 -> ProviderFailure.CONTEXT_LENGTH_EXCEEDED;
+                        case 429 ->
+                            lower.contains("credit") || lower.contains("quota")
+                                    ? ProviderFailure.QUOTA_EXHAUSTED
+                                    : ProviderFailure.RATE_LIMITED;
+                        // 529 is Anthropic's "overloaded", distinct from a 500 and worth retrying sooner.
+                        case 529 -> ProviderFailure.OVERLOADED;
+                        case 500, 502, 503 -> ProviderFailure.SERVER_ERROR;
+                        case 504 -> ProviderFailure.TIMEOUT;
+                        default -> status >= 500 ? ProviderFailure.SERVER_ERROR : ProviderFailure.UNKNOWN;
+                    };
             Duration retryAfter = null;
             String header = response.getHeaders().getFirst("retry-after");
             if (header != null) {
@@ -384,11 +409,25 @@ public class AnthropicProvider implements ChatProvider {
                     retryAfter = null;
                 }
             }
-            return new ProviderException(failure, provider.id(), model.modelId(),
-                    "Provider responded " + status, status, retryAfter, body, response);
+            return new ProviderException(
+                    failure,
+                    provider.id(),
+                    model.modelId(),
+                    "Provider responded " + status,
+                    status,
+                    retryAfter,
+                    body,
+                    response);
         }
-        return new ProviderException(ProviderFailure.UNKNOWN, provider.id(), model.modelId(),
-                "The provider call failed.", null, null, null, error);
+        return new ProviderException(
+                ProviderFailure.UNKNOWN,
+                provider.id(),
+                model.modelId(),
+                "The provider call failed.",
+                null,
+                null,
+                null,
+                error);
     }
 
     private static String truncate(String value) {

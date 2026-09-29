@@ -1,18 +1,16 @@
 package os.aiworkforce.llm.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -20,6 +18,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import os.aiworkforce.llm.model.ChatMessage;
 import os.aiworkforce.llm.model.ChatRequest;
@@ -124,8 +124,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // ---- Request building ----------------------------------------------------------------
 
-    private ObjectNode buildBody(
-            ProviderDescriptor provider, ModelSpec model, ChatRequest request, boolean streaming) {
+    private ObjectNode buildBody(ProviderDescriptor provider, ModelSpec model, ChatRequest request, boolean streaming) {
         ObjectNode body = json.createObjectNode();
         body.put("model", model.modelId());
         body.set("messages", buildMessages(request));
@@ -161,12 +160,14 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         ArrayNode messages = json.createArrayNode();
         for (ChatMessage message : request.messages()) {
             ObjectNode node = messages.addObject();
-            node.put("role", switch (message.role()) {
-                case SYSTEM -> "system";
-                case USER -> "user";
-                case ASSISTANT -> "assistant";
-                case TOOL -> "tool";
-            });
+            node.put(
+                    "role",
+                    switch (message.role()) {
+                        case SYSTEM -> "system";
+                        case USER -> "user";
+                        case ASSISTANT -> "assistant";
+                        case TOOL -> "tool";
+                    });
             if (message.content() != null) {
                 node.put("content", message.content());
             } else if (!message.hasToolCalls()) {
@@ -236,31 +237,44 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // ---- Response parsing ----------------------------------------------------------------
 
-    private ChatResponse parseResponse(
-            ProviderDescriptor provider, ModelSpec model, JsonNode node, Instant startedAt) {
+    private ChatResponse parseResponse(ProviderDescriptor provider, ModelSpec model, JsonNode node, Instant startedAt) {
         // OpenRouter and some proxies answer 200 with an error envelope. Treating that as a
         // success hands the person an empty answer with no explanation.
         if (node.has("error") && !node.path("error").isNull()) {
             JsonNode error = node.path("error");
-            throw classifyBody(provider, model, error.path("message").asText("Provider returned an error"),
-                    error.path("code").asText(null), null);
+            throw classifyBody(
+                    provider,
+                    model,
+                    error.path("message").asText("Provider returned an error"),
+                    error.path("code").asText(null),
+                    null);
         }
 
         JsonNode choice = node.path("choices").path(0);
         if (choice.isMissingNode()) {
             throw new ProviderException(
-                    ProviderFailure.MALFORMED_RESPONSE, provider.id(), model.modelId(),
-                    "The provider returned no choices.", null, null, truncate(node.toString()), null);
+                    ProviderFailure.MALFORMED_RESPONSE,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider returned no choices.",
+                    null,
+                    null,
+                    truncate(node.toString()),
+                    null);
         }
 
         JsonNode message = choice.path("message");
-        String content = message.path("content").isNull() ? null : message.path("content").asText(null);
+        String content = message.path("content").isNull()
+                ? null
+                : message.path("content").asText(null);
         List<ToolCall> toolCalls = parseToolCalls(message.path("tool_calls"));
         FinishReason finishReason = mapFinishReason(choice.path("finish_reason").asText(null), !toolCalls.isEmpty());
 
         if (finishReason == FinishReason.CONTENT_FILTER) {
             throw ProviderException.of(
-                    ProviderFailure.CONTENT_FILTERED, provider.id(), model.modelId(),
+                    ProviderFailure.CONTENT_FILTERED,
+                    provider.id(),
+                    model.modelId(),
                     "The provider's safety system declined this request.");
         }
 
@@ -296,7 +310,8 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             return TokenUsage.NONE;
         }
         int cached = usage.path("prompt_tokens_details").path("cached_tokens").asInt(0);
-        int reasoning = usage.path("completion_tokens_details").path("reasoning_tokens").asInt(0);
+        int reasoning =
+                usage.path("completion_tokens_details").path("reasoning_tokens").asInt(0);
         return new TokenUsage(
                 usage.path("prompt_tokens").asInt(0),
                 cached,
@@ -462,20 +477,38 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         }
         if (error instanceof java.util.concurrent.TimeoutException) {
             return new ProviderException(
-                    ProviderFailure.TIMEOUT, provider.id(), model.modelId(),
-                    "The provider did not answer inside the deadline.", null, null, null, error);
+                    ProviderFailure.TIMEOUT,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider did not answer inside the deadline.",
+                    null,
+                    null,
+                    null,
+                    error);
         }
         if (error instanceof WebClientRequestException) {
             return new ProviderException(
-                    ProviderFailure.NETWORK_ERROR, provider.id(), model.modelId(),
-                    "The provider could not be reached.", null, null, null, error);
+                    ProviderFailure.NETWORK_ERROR,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider could not be reached.",
+                    null,
+                    null,
+                    null,
+                    error);
         }
         if (error instanceof WebClientResponseException response) {
             return classifyHttp(provider, model, response);
         }
         return new ProviderException(
-                ProviderFailure.UNKNOWN, provider.id(), model.modelId(),
-                "The provider call failed: " + error.getClass().getSimpleName(), null, null, null, error);
+                ProviderFailure.UNKNOWN,
+                provider.id(),
+                model.modelId(),
+                "The provider call failed: " + error.getClass().getSimpleName(),
+                null,
+                null,
+                null,
+                error);
     }
 
     private ProviderException classifyHttp(
@@ -485,26 +518,32 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         String providerCode = extractCode(body);
         Duration retryAfter = parseRetryAfter(response);
 
-        ProviderFailure failure = switch (status) {
-            case 400 -> classifyBadRequest(body);
-            case 401 -> ProviderFailure.AUTHENTICATION_FAILED;
-            case 402 -> ProviderFailure.INSUFFICIENT_CREDIT;
-            case 403 -> ProviderFailure.AUTHORISATION_FAILED;
-            case 404 -> ProviderFailure.MODEL_NOT_FOUND;
-            case 408 -> ProviderFailure.TIMEOUT;
-            case 413 -> ProviderFailure.CONTEXT_LENGTH_EXCEEDED;
-            case 422 -> classifyBadRequest(body);
-            case 429 -> classifyThrottle(body);
-            case 500, 502, 503 -> ProviderFailure.SERVER_ERROR;
-            case 504 -> ProviderFailure.TIMEOUT;
-            case 529 -> ProviderFailure.OVERLOADED;
-            default -> status >= 500 ? ProviderFailure.SERVER_ERROR : ProviderFailure.UNKNOWN;
-        };
+        ProviderFailure failure =
+                switch (status) {
+                    case 400 -> classifyBadRequest(body);
+                    case 401 -> ProviderFailure.AUTHENTICATION_FAILED;
+                    case 402 -> ProviderFailure.INSUFFICIENT_CREDIT;
+                    case 403 -> ProviderFailure.AUTHORISATION_FAILED;
+                    case 404 -> ProviderFailure.MODEL_NOT_FOUND;
+                    case 408 -> ProviderFailure.TIMEOUT;
+                    case 413 -> ProviderFailure.CONTEXT_LENGTH_EXCEEDED;
+                    case 422 -> classifyBadRequest(body);
+                    case 429 -> classifyThrottle(body);
+                    case 500, 502, 503 -> ProviderFailure.SERVER_ERROR;
+                    case 504 -> ProviderFailure.TIMEOUT;
+                    case 529 -> ProviderFailure.OVERLOADED;
+                    default -> status >= 500 ? ProviderFailure.SERVER_ERROR : ProviderFailure.UNKNOWN;
+                };
 
         return new ProviderException(
-                failure, provider.id(), model.modelId(),
+                failure,
+                provider.id(),
+                model.modelId(),
                 "Provider responded " + status + (providerCode == null ? "" : " (" + providerCode + ")"),
-                status, retryAfter, body, response);
+                status,
+                retryAfter,
+                body,
+                response);
     }
 
     /**
@@ -519,17 +558,24 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             return ProviderFailure.INVALID_REQUEST;
         }
         String lower = body.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("context length") || lower.contains("context_length")
-                || lower.contains("maximum context") || lower.contains("too many tokens")
+        if (lower.contains("context length")
+                || lower.contains("context_length")
+                || lower.contains("maximum context")
+                || lower.contains("too many tokens")
                 || lower.contains("reduce the length")) {
             return ProviderFailure.CONTEXT_LENGTH_EXCEEDED;
         }
-        if (lower.contains("content_filter") || lower.contains("content policy")
-                || lower.contains("safety") || lower.contains("blocked")) {
+        if (lower.contains("content_filter")
+                || lower.contains("content policy")
+                || lower.contains("safety")
+                || lower.contains("blocked")) {
             return ProviderFailure.CONTENT_FILTERED;
         }
-        if (lower.contains("model") && (lower.contains("not found") || lower.contains("does not exist")
-                || lower.contains("decommissioned") || lower.contains("deprecated"))) {
+        if (lower.contains("model")
+                && (lower.contains("not found")
+                        || lower.contains("does not exist")
+                        || lower.contains("decommissioned")
+                        || lower.contains("deprecated"))) {
             return ProviderFailure.MODEL_NOT_FOUND;
         }
         return ProviderFailure.INVALID_REQUEST;
@@ -547,8 +593,10 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             return ProviderFailure.RATE_LIMITED;
         }
         String lower = body.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("quota") || lower.contains("insufficient_quota")
-                || lower.contains("credit") || lower.contains("billing")
+        if (lower.contains("quota")
+                || lower.contains("insufficient_quota")
+                || lower.contains("credit")
+                || lower.contains("billing")
                 || lower.contains("exceeded your current")) {
             return ProviderFailure.QUOTA_EXHAUSTED;
         }
@@ -573,11 +621,13 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         }
         try {
             if (header.endsWith("ms")) {
-                return Duration.ofMillis(Long.parseLong(header.substring(0, header.length() - 2).trim()));
+                return Duration.ofMillis(
+                        Long.parseLong(header.substring(0, header.length() - 2).trim()));
             }
             if (header.endsWith("s")) {
-                return Duration.ofMillis(
-                        (long) (Double.parseDouble(header.substring(0, header.length() - 1).trim()) * 1000));
+                return Duration.ofMillis((long) (Double.parseDouble(
+                                header.substring(0, header.length() - 1).trim())
+                        * 1000));
             }
             return Duration.ofSeconds(Long.parseLong(header.trim()));
         } catch (NumberFormatException e) {

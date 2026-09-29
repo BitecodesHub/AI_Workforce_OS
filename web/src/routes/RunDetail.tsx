@@ -5,6 +5,7 @@ import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { AnswerCard } from '../components/run/AnswerCard'
 import { RunStats } from '../components/run/RunStats'
 import { TraceStep } from '../components/run/TraceStep'
+import { WaitingForAnswer } from '../components/run/WaitingForAnswer'
 import { WaitingForApproval } from '../components/run/WaitingForApproval'
 import { answerStep, isInstruction, CANCELLED_BY, detailText } from '../components/run/traceModel'
 import { describeApiError } from '../lib/api'
@@ -140,7 +141,9 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
           // interrupt a model or tool call already under way, so that is not promised.
           run.status === 'waiting_approval'
             ? 'The run ends here, and the approval it is waiting on is withdrawn.'
-            : 'The run is marked as stopped. A model or tool call already under way is not interrupted.'
+            : run.status === 'waiting_input'
+              ? 'The run ends here, and the question it is waiting on is withdrawn.'
+              : 'The run is marked as stopped. A model or tool call already under way is not interrupted.'
         }
         confirmLabel="Stop run"
         cancelLabel="Keep it running"
@@ -153,6 +156,7 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
         {failureText && <Notice tone={run.status === 'cancelled' ? 'info' : 'warning'}>{failureText}</Notice>}
 
         {run.status === 'waiting_approval' && <WaitingForApproval run={run} steps={steps} />}
+        {run.status === 'waiting_input' && <WaitingForAnswer run={run} />}
 
         {answer && <AnswerCard step={answer} instruction={instructionText} />}
 

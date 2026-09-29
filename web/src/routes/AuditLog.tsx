@@ -1,7 +1,11 @@
 import { useCallback, useMemo } from 'react'
-import { Button, Card, DataTable, EmptyState, Eyebrow, FilterBar, FilterEmpty, Notice, PageHeader, Tag, Time } from '../components/ui'
+import { Button, Card, DataTable, EmptyState, Eyebrow, Notice, PageHeader, Tag, Time } from '../components/ui'
 import type { Column } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+// Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
+// the barrel is also part of the main bundle, so going through it created a circular chunk
+// dependency (Rollup warned of a "broken execution order").
+import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { describeApiError } from '../lib/api'
 import { formatCount, sentenceCase, shortId, truncateWords } from '../lib/format'
 import { OUTCOME_LABEL, OUTCOME_TONE, auditActionLabel, toolLabel, type AuditOutcome } from '../lib/labels'
@@ -212,7 +216,7 @@ export function AuditLog() {
   const moreToLoad = Boolean(auditQuery.hasNextPage)
 
   return (
-    <div className="page">
+    <div className="page admin-audit">
       <PageHeader
         eyebrow="Everything that happened"
         title="Audit log"

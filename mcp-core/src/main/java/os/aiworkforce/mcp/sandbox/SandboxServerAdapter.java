@@ -1,8 +1,5 @@
 package os.aiworkforce.mcp.sandbox;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -10,10 +7,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 import os.aiworkforce.mcp.model.ToolDefinition;
 import os.aiworkforce.mcp.model.ToolInvocation;
@@ -92,8 +92,8 @@ public class SandboxServerAdapter implements McpServerAdapter {
             return switch (fault) {
                 case "timeout" -> throw new RuntimeException(new java.util.concurrent.TimeoutException());
                 case "failed" -> ToolResult.failed("The sandbox was asked to fail.");
-                case "indeterminate" -> ToolResult.indeterminate(
-                        "The sandbox was asked to return an unknown outcome.", Duration.ZERO);
+                case "indeterminate" ->
+                    ToolResult.indeterminate("The sandbox was asked to return an unknown outcome.", Duration.ZERO);
                 default -> ToolResult.failed("Unknown sandbox fault: " + fault);
             };
         }
@@ -138,7 +138,8 @@ public class SandboxServerAdapter implements McpServerAdapter {
                 // The voice tool writes a script, not an email or a ticket, so it earns its own
                 // sentence rather than the generic "record in the sandbox" one.
                 summary = "voice_note".equals(collection)
-                        ? "Saved a voice note script (" + arguments.path("text").asText("").length() + " characters)."
+                        ? "Saved a voice note script ("
+                                + arguments.path("text").asText("").length() + " characters)."
                         : "Recorded a " + collection + " record in the sandbox. Nothing left this machine.";
             }
             default -> {
@@ -183,6 +184,8 @@ public class SandboxServerAdapter implements McpServerAdapter {
             return null;
         }
         int end = text.indexOf("]]", start);
-        return end < 0 ? null : text.substring(start + FAULT_MARKER.length(), end).trim().toLowerCase(Locale.ROOT);
+        return end < 0
+                ? null
+                : text.substring(start + FAULT_MARKER.length(), end).trim().toLowerCase(Locale.ROOT);
     }
 }

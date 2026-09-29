@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Button, Card, Eyebrow, Input, Notice, Select, Tag } from '../components/ui'
-import { Brand } from '../components/layout/Brand'
+import { Button, Eyebrow, Input, Notice, PasswordInput, Select } from '../components/ui'
+import { AuthShell } from '../components/auth/AuthShell'
+import { Stepper } from '../components/auth/Stepper'
+import { Icon } from '../components/landing/shared/Icon'
 import { api, ApiError, describeApiError } from '../lib/api'
 import { saveSession } from '../lib/session'
 import { useRouter } from '../lib/router'
@@ -21,6 +23,14 @@ import { useRouter } from '../lib/router'
  */
 
 const STEPS = ['You', 'Workspace', 'Working hours', 'Models'] as const
+
+/** Each step's heading and the one line under it, in the same order as STEPS. */
+const STEP_COPY: ReadonlyArray<{ title: string; lead: string }> = [
+  { title: 'Create your account', lead: 'You become the workspace owner, and can invite everyone else afterwards.' },
+  { title: 'Name your workspace', lead: 'Everybody you invite sees this name.' },
+  { title: 'Choose a timezone', lead: 'Schedules use it to decide when to run.' },
+  { title: 'Ready to start', lead: 'Nothing needs configuring before your first agent runs.' },
+]
 
 const MIN_PASSWORD = 12
 
@@ -54,6 +64,8 @@ type SignInResponse = {
 export function CreateWorkspace() {
   const { navigate } = useRouter()
   const [step, setStep] = useState(0)
+  /** Which way the last step change went, so the new step slides in from that side. */
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward')
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -109,6 +121,7 @@ export function CreateWorkspace() {
       document.getElementById(id)?.focus()
     } else {
       focusAfterStep.current = id
+      setDirection(fieldStep < step ? 'back' : 'forward')
       setStep(fieldStep)
     }
   }
@@ -142,6 +155,7 @@ export function CreateWorkspace() {
     }
     setFieldErrors({})
     if (step < STEPS.length - 1) {
+      setDirection('forward')
       setStep(step + 1)
       return
     }
@@ -225,6 +239,7 @@ export function CreateWorkspace() {
         // neither does this; it offers both ways forward.
         setTakenEmail(address)
         focusAfterStep.current = FIELDS.email.id
+        setDirection('back')
         setStep(0)
       } else if (thrown instanceof ApiError) {
         const serverFields = Object.fromEntries(
@@ -242,65 +257,49 @@ export function CreateWorkspace() {
     }
   }
 
+  const copy = STEP_COPY[step]!
+  const last = step === STEPS.length - 1
+  // A short running count while the password is too short, so the rule is met without a failed
+  // attempt. Quiet on purpose: announcing every keystroke would drown out the typing.
+  const passwordHint =
+    password.length > 0 && password.length < MIN_PASSWORD
+      ? `${password.length} of ${MIN_PASSWORD} characters`
+      : 'At least 12 characters. A passphrase is easier to remember and harder to guess.'
+
   return (
-    <main id="main" className="auth-page">
-      <div className="auth-atmosphere" aria-hidden="true" />
-      <div className="auth-grid" aria-hidden="true" />
-      <div style={{ position: 'relative', zIndex: 1, padding: 'var(--space-8) var(--space-6)' }}>
-      <div style={{ maxWidth: '560px', margin: '0 auto' }}>
-        <div style={{ marginBottom: 'var(--space-8)', display: 'flex', justifyContent: 'center' }}>
-          <Brand />
+    <AuthShell footer={<a href="/home">About the platform</a>}>
+      <div className="auth-solo">
+        <Stepper steps={STEPS} current={step} />
+
+        <div className="auth-intro">
+          <Eyebrow>
+            Set up your workspace · step {step + 1} of {STEPS.length}
+          </Eyebrow>
+          <h1 ref={headingRef} tabIndex={-1} className="auth-title">
+            {copy.title}
+          </h1>
+          <p className="auth-subtitle">{copy.lead}</p>
         </div>
 
-        <Eyebrow>Set up your workspace, step {step + 1} of {STEPS.length}</Eyebrow>
-        <h1 ref={headingRef} tabIndex={-1} className="page-title" style={{ fontSize: '30px', marginBottom: 'var(--space-6)' }}>
-          {STEPS[step]}
-        </h1>
-
-        {/* Where the person is, said in words as well as colour: the current step carries a dot,
-            finished steps a tick, and a screen reader hears "completed". */}
-        <ol
-          aria-label="Progress"
-          className="row"
-          style={{ gap: 'var(--space-3)', margin: '0 0 var(--space-6)', padding: 0, listStyle: 'none', flexWrap: 'wrap' }}
-        >
-          {STEPS.map((label, index) => (
-            <li key={label} aria-current={index === step ? 'step' : undefined}>
-              <Tag tone={index === step ? 'blue' : index < step ? 'success' : 'neutral'} withDot={index === step}>
-                {index < step && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" style={{ marginRight: '4px' }}>
-                    <path d="M2 5.2l2 2 4-4.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-                {label}
-                {index < step && <span className="visually-hidden">, completed</span>}
-              </Tag>
-            </li>
-          ))}
-        </ol>
-
         {error && (
-          <div style={{ marginBottom: 'var(--space-5)' }}>
-            <Notice tone="warning" live>
-              {error}
-            </Notice>
-          </div>
+          <Notice tone="warning" live>
+            {error}
+          </Notice>
         )}
         {takenEmail && (
-          <div style={{ marginBottom: 'var(--space-5)' }}>
-            <Notice tone="warning" live>
-              An account may already use this address.{' '}
-              <a href={`/sign-in?email=${encodeURIComponent(takenEmail)}`}>Sign in instead</a>, or use a
-              different address.
-            </Notice>
-          </div>
+          <Notice tone="warning" live>
+            An account may already use this address.{' '}
+            <a href={`/sign-in?email=${encodeURIComponent(takenEmail)}`}>Sign in instead</a>, or use a different
+            address.
+          </Notice>
         )}
 
-        {/* One form around whichever step is showing, so Enter continues from any field. */}
-        <form noValidate onSubmit={handleSubmit}>
-          {step === 0 && (
-            <Card>
-              <div className="stack" style={{ gap: 'var(--space-5)' }}>
+        {/* One form around whichever step is showing, so Enter continues from any field. The
+            step's fields are keyed by step, so each one slides in from the side it came from. */}
+        <form noValidate onSubmit={handleSubmit} className="auth-wizard">
+          <div key={step} className="auth-step-panel" data-direction={direction}>
+            {step === 0 && (
+              <>
                 <Input
                   id={FIELDS.displayName.id}
                   label="Your name"
@@ -318,6 +317,7 @@ export function CreateWorkspace() {
                   id={FIELDS.email.id}
                   label="Email address"
                   type="email"
+                  inputMode="email"
                   autoComplete="email"
                   required
                   value={email}
@@ -328,10 +328,9 @@ export function CreateWorkspace() {
                   placeholder="priya@example.com"
                   error={fieldErrors.email}
                 />
-                <Input
+                <PasswordInput
                   id={FIELDS.password.id}
                   label="Password"
-                  type="password"
                   autoComplete="new-password"
                   required
                   value={password}
@@ -339,16 +338,14 @@ export function CreateWorkspace() {
                     setPassword(event.target.value)
                     clearFieldError('password')
                   }}
-                  hint="At least 12 characters. A passphrase is easier to remember and harder to guess."
+                  hint={passwordHint}
                   error={fieldErrors.password}
                 />
-              </div>
-            </Card>
-          )}
+              </>
+            )}
 
-          {step === 1 && (
-            <Card>
-              <div className="stack" style={{ gap: 'var(--space-5)' }}>
+            {step === 1 && (
+              <>
                 <Input
                   id={FIELDS.name.id}
                   label="Workspace name"
@@ -369,76 +366,87 @@ export function CreateWorkspace() {
                   readOnly
                   hint="Derived from the name. If it is already taken, a number is added."
                 />
-              </div>
-            </Card>
-          )}
+              </>
+            )}
 
-          {step === 2 && (
-            <Card>
-              <div className="stack" style={{ gap: 'var(--space-5)' }}>
-                <Select
-                  id={FIELDS.timezone.id}
-                  label="Timezone"
-                  value={timezone}
-                  onChange={(event) => {
-                    setTimezone(event.target.value)
-                    clearFieldError('timezone')
-                  }}
-                  hint="Stored with the workspace. It cannot yet be changed from the console."
-                  error={fieldErrors.timezone}
-                >
-                  <option value="Australia/Melbourne">Australia/Melbourne</option>
-                  <option value="Australia/Sydney">Australia/Sydney</option>
-                  <option value="Australia/Perth">Australia/Perth</option>
-                  <option value="Asia/Kolkata">Asia/Kolkata</option>
-                  <option value="UTC">UTC</option>
-                </Select>
-              </div>
-            </Card>
-          )}
+            {step === 2 && (
+              <Select
+                id={FIELDS.timezone.id}
+                label="Timezone"
+                value={timezone}
+                onChange={(event) => {
+                  setTimezone(event.target.value)
+                  clearFieldError('timezone')
+                }}
+                hint="Stored with the workspace. It cannot yet be changed from the console."
+                error={fieldErrors.timezone}
+              >
+                <option value="Australia/Melbourne">Australia/Melbourne</option>
+                <option value="Australia/Sydney">Australia/Sydney</option>
+                <option value="Australia/Perth">Australia/Perth</option>
+                <option value="Asia/Kolkata">Asia/Kolkata</option>
+                <option value="UTC">UTC</option>
+              </Select>
+            )}
 
-          {step === 3 && (
-            <Card>
-              <div className="stack" style={{ gap: 'var(--space-5)' }}>
-                <Notice tone="info">
-                  Nothing needs configuring to start. Every agent answers on an offline model until
-                  you add a provider key, and the interface says so wherever an answer comes from it.
-                </Notice>
-                <p className="muted">
-                  When you are ready, add a key for OpenRouter, Groq, NVIDIA, Gemini, Bedrock,
-                  Anthropic or OpenAI in Model routing. Each agent can then be given an ordered
-                  chain, so a provider being unavailable moves the work to the next one rather than
-                  stopping it.
-                </p>
-              </div>
-            </Card>
-          )}
+            {step === 3 && (
+              <ul className="auth-checklist">
+                <li>
+                  <span className="auth-checklist-mark">
+                    <Icon name="check" />
+                  </span>
+                  <span>
+                    Every agent answers on an offline model until you add a provider key, and the interface says so
+                    wherever an answer comes from it.
+                  </span>
+                </li>
+                <li>
+                  <span className="auth-checklist-mark">
+                    <Icon name="check" />
+                  </span>
+                  <span>
+                    When you are ready, add a key for OpenRouter, Groq, NVIDIA, Gemini, Bedrock, Anthropic or OpenAI in
+                    Model routing.
+                  </span>
+                </li>
+                <li>
+                  <span className="auth-checklist-mark">
+                    <Icon name="check" />
+                  </span>
+                  <span>
+                    Each agent can be given an ordered chain, so a provider being unavailable moves the work to the
+                    next one rather than stopping it.
+                  </span>
+                </li>
+              </ul>
+            )}
+          </div>
 
-          <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
-            {step > 0 && (
+          <div className="auth-actions">
+            {step > 0 ? (
               <Button
                 variant="outline"
                 type="button"
                 onClick={() => {
                   setFieldErrors({})
+                  setDirection('back')
                   setStep(step - 1)
                 }}
                 disabled={busy}
               >
                 Back
               </Button>
+            ) : (
+              <span className="auth-actions-note">
+                Have an account? <a href="/sign-in">Sign in</a>
+              </span>
             )}
             <Button type="submit" loading={busy}>
-              {step < STEPS.length - 1 ? 'Continue' : 'Create workspace'}
+              {last ? 'Create workspace' : 'Continue'}
             </Button>
           </div>
         </form>
-
-        <p className="caption" style={{ marginTop: 'var(--space-6)' }}>
-          Already have an account? <a href="/sign-in">Sign in</a>.
-        </p>
       </div>
-      </div>
-    </main>
+    </AuthShell>
   )
 }

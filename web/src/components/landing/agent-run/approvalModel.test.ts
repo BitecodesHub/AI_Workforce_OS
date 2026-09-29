@@ -144,7 +144,7 @@ describe('role guard', () => {
       'Deciding as an employee. This role can see the approval but cannot decide it.',
     )
     expect(approvalReducer(viewer, { type: 'SET_DECIDER', decider: 'manager' }).announcement).toBe(
-      'Deciding as a manager. This role holds approval:decide.',
+      'Deciding as a manager, who can approve this.',
     )
   })
 })

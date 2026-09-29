@@ -56,11 +56,16 @@ public class InternalTokenProvider {
                 .uri("/internal/tokens")
                 .header("X-Internal-Secret", internalSecret)
                 .bodyValue(Map.of(
-                        "audience", service,
-                        "actorId", actor.id(),
-                        "actorKind", actor.kind().name(),
-                        "orgId", actor.orgId() == null ? "" : actor.orgId(),
-                        "onBehalfOf", actor.humanId() == null ? "" : actor.humanId()))
+                        "audience",
+                        service,
+                        "actorId",
+                        actor.id(),
+                        "actorKind",
+                        actor.kind().name(),
+                        "orgId",
+                        actor.orgId() == null ? "" : actor.orgId(),
+                        "onBehalfOf",
+                        actor.humanId() == null ? "" : actor.humanId()))
                 .retrieve()
                 .bodyToMono(TokenResponse.class)
                 .timeout(Duration.ofSeconds(5))

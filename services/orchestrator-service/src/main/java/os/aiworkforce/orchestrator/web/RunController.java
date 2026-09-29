@@ -1,7 +1,5 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,6 +11,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,7 +21,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.transaction.annotation.Transactional;
 
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
@@ -31,11 +30,10 @@ import os.aiworkforce.orchestrator.repository.Goals;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.Tasks;
-import os.aiworkforce.orchestrator.service.ApprovalService;
-import os.aiworkforce.orchestrator.service.TaskProgress;
+import os.aiworkforce.orchestrator.service.GoalService;
+import os.aiworkforce.orchestrator.service.QuestionService;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
-import os.aiworkforce.platform.error.ErrorCode;
 import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 
@@ -53,7 +51,7 @@ public class RunController {
 
     /** Every value the runs_status_valid constraint allows. */
     static final Set<String> RUN_STATUSES =
-            Set.of("running", "waiting_approval", "completed", "failed", "cancelled", "abandoned");
+            Set.of("running", "waiting_approval", "waiting_input", "completed", "failed", "cancelled", "abandoned");
 
     static final String RUN_STOPPED = "A person stopped this run before it finished.";
 
@@ -61,22 +59,17 @@ public class RunController {
     private final RunSteps steps;
     private final Tasks tasks;
     private final Goals goals;
-    private final ApprovalService approvals;
-    private final TaskProgress progress;
+    private final QuestionService questions;
+    private final GoalService goalService;
 
     public RunController(
-            Runs runs,
-            RunSteps steps,
-            Tasks tasks,
-            Goals goals,
-            ApprovalService approvals,
-            TaskProgress progress) {
+            Runs runs, RunSteps steps, Tasks tasks, Goals goals, QuestionService questions, GoalService goalService) {
         this.runs = runs;
         this.steps = steps;
         this.tasks = tasks;
         this.goals = goals;
-        this.approvals = approvals;
-        this.progress = progress;
+        this.questions = questions;
+        this.goalService = goalService;
     }
 
     public record RunView(
@@ -125,10 +118,12 @@ public class RunController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) UUID agentId) {
         UUID orgId = orgId();
-        String wanted = status == null || status.isBlank() ? null : status.strip().toLowerCase(Locale.ROOT);
+        String wanted =
+                status == null || status.isBlank() ? null : status.strip().toLowerCase(Locale.ROOT);
         if (wanted != null && !RUN_STATUSES.contains(wanted)) {
             throw ApiException.validation(
-                    "status", "must be one of running, waiting_approval, completed, failed, cancelled or abandoned");
+                    "status",
+                    "must be one of running, waiting_approval, waiting_input, completed, failed, cancelled or abandoned");
         }
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, 100));
         Page<Run> result;
@@ -148,8 +143,7 @@ public class RunController {
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "One run")
     public RunView get(@PathVariable UUID runId) {
-        Run run = runs.findByIdAndOrgId(runId, orgId())
-                .orElseThrow(() -> ApiException.notFound("run", runId));
+        Run run = runs.findByIdAndOrgId(runId, orgId()).orElseThrow(() -> ApiException.notFound("run", runId));
         return toViews(List.of(run)).getFirst();
     }
 
@@ -163,24 +157,26 @@ public class RunController {
                 .toList();
     }
 
+    @GetMapping("/{runId}/questions")
+    @RequiresPermission(Permission.Codes.RUN_READ)
+    @Operation(summary = "The questions this run asked, oldest first")
+    public List<QuestionService.QuestionView> questions(@PathVariable UUID runId) {
+        UUID orgId = orgId();
+        runs.findByIdAndOrgId(runId, orgId).orElseThrow(() -> ApiException.notFound("run", runId));
+        return questions.views(questions.forRun(orgId, runId), RequestContext.requireActor());
+    }
+
     @PostMapping("/{runId}/cancel")
     @RequiresPermission(Permission.Codes.RUN_CANCEL)
-    @Transactional
     @Operation(summary = "Stop a run in progress")
     public RunView cancel(@PathVariable UUID runId) {
-        Run run = runs.findByIdAndOrgId(runId, orgId())
-                .orElseThrow(() -> ApiException.notFound("run", runId));
-        if (!run.isActive()) {
-            throw new ApiException(ErrorCode.CONFLICT, "That run has already finished.");
-        }
+        UUID orgId = orgId();
         // The reason is shown on the trace as it is, so it is written for a person to read. Who
         // stopped the run is kept on the row itself (updated_by), not spelled out as an identifier.
-        run.finish("cancelled", RUN_STOPPED);
-        runs.save(run);
-        // Open approvals for a cancelled run must not stay in the queue: an approver deciding
-        // one would resume a run somebody has already stopped.
-        approvals.cancelForRun(runId);
-        progress.onRunFinished(run, "cancelled", null, "The run for this task was stopped before it finished.");
+        // The stop locks the run and withdraws any approval or question it was waiting on, so
+        // nobody deciding or answering one can resume a run somebody has already stopped.
+        goalService.stopRun(orgId, runId, RUN_STOPPED);
+        Run run = runs.findByIdAndOrgId(runId, orgId).orElseThrow(() -> ApiException.notFound("run", runId));
         return toViews(List.of(run)).getFirst();
     }
 
@@ -214,19 +210,36 @@ public class RunController {
             UUID goalId = run.getTaskId() == null ? null : taskGoal.get(run.getTaskId());
             UUID requestedBy = goalId == null ? null : goalRequestedBy.get(goalId);
             views.add(new RunView(
-                    run.getId(), run.getAgentId(), run.getTaskId(), run.getStatus(), run.getTrigger(),
-                    run.getStepCount(), run.getTotalPromptTokens(), run.getTotalCompletionTokens(),
-                    run.getTotalCost(), run.getStartedAt(), run.getCompletedAt(), run.getFailureReason(),
-                    goalId, requestedBy));
+                    run.getId(),
+                    run.getAgentId(),
+                    run.getTaskId(),
+                    run.getStatus(),
+                    run.getTrigger(),
+                    run.getStepCount(),
+                    run.getTotalPromptTokens(),
+                    run.getTotalCompletionTokens(),
+                    run.getTotalCost(),
+                    run.getStartedAt(),
+                    run.getCompletedAt(),
+                    run.getFailureReason(),
+                    goalId,
+                    requestedBy));
         }
         return views;
     }
 
     private static StepView toStepView(RunStep step) {
         return new StepView(
-                step.getId(), step.getPosition(), step.getKind(), step.getDetail(),
-                step.getProviderId(), step.getModelId(), step.getPromptTokens(),
-                step.getCompletionTokens(), step.getDurationMs(), step.getOccurredAt());
+                step.getId(),
+                step.getPosition(),
+                step.getKind(),
+                step.getDetail(),
+                step.getProviderId(),
+                step.getModelId(),
+                step.getPromptTokens(),
+                step.getCompletionTokens(),
+                step.getDurationMs(),
+                step.getOccurredAt());
     }
 
     private static UUID orgId() {

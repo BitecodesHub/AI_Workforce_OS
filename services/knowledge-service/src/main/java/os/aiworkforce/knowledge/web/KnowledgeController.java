@@ -1,14 +1,15 @@
 package os.aiworkforce.knowledge.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -81,10 +82,7 @@ public class KnowledgeController {
             Instant indexedAt,
             boolean removedAtSource) {}
 
-    public record SearchRequest(
-            @NotBlank @Size(max = 1_000) String query,
-            Integer limit,
-            List<UUID> sourceIds) {}
+    public record SearchRequest(@NotBlank @Size(max = 1_000) String query, Integer limit, List<UUID> sourceIds) {}
 
     /**
      * @param passages what supports an answer, with enough detail to cite each one
@@ -114,8 +112,7 @@ public class KnowledgeController {
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Documents in a source, including the ones that could not be indexed")
     public List<DocumentView> listDocuments(@PathVariable UUID sourceId) {
-        sources.findByIdAndOrgId(sourceId, orgId())
-                .orElseThrow(() -> ApiException.notFound("source", sourceId));
+        sources.findByIdAndOrgId(sourceId, orgId()).orElseThrow(() -> ApiException.notFound("source", sourceId));
         return documents.findBySourceIdOrderByTitle(sourceId).stream()
                 .map(KnowledgeController::toView)
                 .toList();
@@ -151,15 +148,13 @@ public class KnowledgeController {
     @PostMapping(value = "/sources/{sourceId}/documents", consumes = "multipart/form-data")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
     @Operation(summary = "Upload a document and index it")
-    public IngestionService.IngestResult upload(
-            @PathVariable UUID sourceId, @RequestParam("file") MultipartFile file) {
+    public IngestionService.IngestResult upload(@PathVariable UUID sourceId, @RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
             throw ApiException.validation("file", "must not be empty");
         }
         if (file.getSize() > MAX_UPLOAD_BYTES) {
             throw ApiException.validation(
-                    "file", "must be 25 MB or smaller; this file is "
-                            + (file.getSize() / (1024 * 1024)) + " MB");
+                    "file", "must be 25 MB or smaller; this file is " + (file.getSize() / (1024 * 1024)) + " MB");
         }
         try {
             String name = file.getOriginalFilename();
@@ -168,11 +163,13 @@ public class KnowledgeController {
         } catch (java.io.IOException e) {
             throw new ApiException(
                     os.aiworkforce.platform.error.ErrorCode.INGESTION_FAILED,
-                    "The uploaded file could not be read.", e);
+                    "The uploaded file could not be read.",
+                    e);
         }
     }
 
-    public record ReindexResponse(UUID sourceId, String status, int documentsQueued, boolean vectorised, String detail) {}
+    public record ReindexResponse(
+            UUID sourceId, String status, int documentsQueued, boolean vectorised, String detail) {}
 
     /**
      * Re-embeds a source from its already-stored text, for when the vector store was down
@@ -184,15 +181,13 @@ public class KnowledgeController {
     @Operation(summary = "Retry vector indexing for every document already in a source")
     public ReindexResponse reindex(@PathVariable UUID sourceId) {
         IngestionService.ReindexResult result = ingestion.reindex(orgId(), sourceId);
-        return new ReindexResponse(
-                sourceId, "reindexed", result.documentCount(), result.vectorised(), result.detail());
+        return new ReindexResponse(sourceId, "reindexed", result.documentCount(), result.vectorised(), result.detail());
     }
 
     @GetMapping("/knowledge/health")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Whether the knowledge base can currently answer")
-    public java.util.Map<String, Object> health(
-            @RequestParam(defaultValue = "false") boolean includeCounts) {
+    public java.util.Map<String, Object> health(@RequestParam(defaultValue = "false") boolean includeCounts) {
         List<Source> all = sources.findByOrgIdOrderByName(orgId());
         long ready = all.stream().filter(Source::isReady).count();
         java.util.Map<String, Object> status = new java.util.LinkedHashMap<>();
@@ -200,7 +195,8 @@ public class KnowledgeController {
         status.put("ready", ready);
         status.put("needingAttention", all.size() - ready);
         if (includeCounts) {
-            status.put("documents", all.stream().mapToInt(Source::getDocumentCount).sum());
+            status.put(
+                    "documents", all.stream().mapToInt(Source::getDocumentCount).sum());
             status.put("passages", all.stream().mapToInt(Source::getChunkCount).sum());
         }
         return status;
@@ -208,16 +204,28 @@ public class KnowledgeController {
 
     private static SourceView toView(Source source) {
         return new SourceView(
-                source.getId(), source.getName(), source.getKind(), source.getStatus(),
-                source.getDocumentCount(), source.getChunkCount(),
-                source.getEmbeddingProvider(), source.getEmbeddingModel(), source.getEmbeddingDimension(),
-                source.getLastIngestedAt(), source.getLastError());
+                source.getId(),
+                source.getName(),
+                source.getKind(),
+                source.getStatus(),
+                source.getDocumentCount(),
+                source.getChunkCount(),
+                source.getEmbeddingProvider(),
+                source.getEmbeddingModel(),
+                source.getEmbeddingDimension(),
+                source.getLastIngestedAt(),
+                source.getLastError());
     }
 
     private static DocumentView toView(Document document) {
         return new DocumentView(
-                document.getId(), document.getTitle(), document.getMediaType(), document.getStatus(),
-                document.getSkipReason(), document.getChunkCount(), document.getIndexedAt(),
+                document.getId(),
+                document.getTitle(),
+                document.getMediaType(),
+                document.getStatus(),
+                document.getSkipReason(),
+                document.getChunkCount(),
+                document.getIndexedAt(),
                 document.getTombstonedAt() != null);
     }
 

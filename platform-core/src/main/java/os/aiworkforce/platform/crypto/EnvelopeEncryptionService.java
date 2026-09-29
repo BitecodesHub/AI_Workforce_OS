@@ -5,6 +5,7 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -108,8 +109,7 @@ public class EnvelopeEncryptionService {
         } catch (GeneralSecurityException e) {
             // Authentication failure and a wrong organisation are indistinguishable on purpose:
             // both mean this ciphertext is not readable here.
-            throw new ApiException(
-                    ErrorCode.INTERNAL_ERROR, "The stored value could not be decrypted.", e);
+            throw new ApiException(ErrorCode.INTERNAL_ERROR, "The stored value could not be decrypted.", e);
         }
     }
 

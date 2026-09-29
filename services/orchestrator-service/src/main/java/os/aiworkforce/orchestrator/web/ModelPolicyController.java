@@ -1,7 +1,11 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -11,12 +15,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -91,7 +92,9 @@ public class ModelPolicyController {
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
     @Operation(summary = "The workspace's default routing policy")
     public ModelPolicyView workspaceDefault() {
-        return policies.findWorkspaceDefault(orgId()).map(ModelPolicyController::toView).orElseGet(ModelPolicyController::unset);
+        return policies.findWorkspaceDefault(orgId())
+                .map(ModelPolicyController::toView)
+                .orElseGet(ModelPolicyController::unset);
     }
 
     @PutMapping("/model-policy")
@@ -116,7 +119,9 @@ public class ModelPolicyController {
     public ModelPolicyView forAgent(@PathVariable UUID agentId) {
         UUID orgId = orgId();
         requireAgent(orgId, agentId);
-        return policies.findByOrgIdAndAgentId(orgId, agentId).map(ModelPolicyController::toView).orElseGet(ModelPolicyController::unset);
+        return policies.findByOrgIdAndAgentId(orgId, agentId)
+                .map(ModelPolicyController::toView)
+                .orElseGet(ModelPolicyController::unset);
     }
 
     @PutMapping("/agents/{agentId}/model-policy")
@@ -126,12 +131,13 @@ public class ModelPolicyController {
     public ModelPolicyView setForAgent(@PathVariable UUID agentId, @Valid @RequestBody ModelPolicyRequest request) {
         UUID orgId = orgId();
         requireAgent(orgId, agentId);
-        ModelPolicyEntity policy = policies.findByOrgIdAndAgentId(orgId, agentId).orElseGet(() -> {
-            ModelPolicyEntity fresh = new ModelPolicyEntity();
-            fresh.setOrgId(orgId);
-            fresh.setAgentId(agentId);
-            return fresh;
-        });
+        ModelPolicyEntity policy = policies.findByOrgIdAndAgentId(orgId, agentId)
+                .orElseGet(() -> {
+                    ModelPolicyEntity fresh = new ModelPolicyEntity();
+                    fresh.setOrgId(orgId);
+                    fresh.setAgentId(agentId);
+                    return fresh;
+                });
         apply(policy, request);
         policies.save(policy);
         return toView(policy);
@@ -150,7 +156,8 @@ public class ModelPolicyController {
         List<ModelPolicyCandidate> candidates = new ArrayList<>();
         for (int position = 0; position < inputs.size(); position++) {
             CandidateInput input = inputs.get(position);
-            if (models.findById(new LlmModelEntity.Key(input.providerId(), input.modelId())).isEmpty()) {
+            if (models.findById(new LlmModelEntity.Key(input.providerId(), input.modelId()))
+                    .isEmpty()) {
                 throw ApiException.validation(
                         "candidates[" + position + "]",
                         "Unknown model " + input.providerId() + "/" + input.modelId() + ".");

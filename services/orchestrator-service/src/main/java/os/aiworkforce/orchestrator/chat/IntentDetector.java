@@ -26,20 +26,61 @@ public final class IntentDetector {
     }
 
     /** Words and phrases that mark a sentence as naming a recurrence or a time, not just an action. */
-    private static final Pattern TIMING_MARKER = Pattern.compile(
-            "(?i)\\b(every|each|daily|weekly|monthly|tomorrow|today)\\b|\\bat\\s+\\d|\\bin\\s+\\d+\\s*"
+    private static final Pattern TIMING_MARKER =
+            Pattern.compile("(?i)\\b(every|each|daily|weekly|monthly|tomorrow|today)\\b|\\bat\\s+\\d|\\bin\\s+\\d+\\s*"
                     + "(minute|minutes|hour|hours)\\b");
 
-    private static final Set<String> QUESTION_STARTERS = Set.of(
-            "what", "who", "where", "when", "why", "how", "which", "does", "do", "is", "are", "can");
+    private static final Set<String> QUESTION_STARTERS =
+            Set.of("what", "who", "where", "when", "why", "how", "which", "does", "do", "is", "are", "can");
 
     private static final Set<String> ACTION_VERBS = Set.of(
-            "draft", "send", "write", "create", "schedule", "book", "post", "summarise", "summarize",
-            "prepare", "update", "open", "file", "reply", "email", "research", "compile", "review", "triage");
+            "draft",
+            "send",
+            "write",
+            "create",
+            "schedule",
+            "book",
+            "post",
+            "summarise",
+            "summarize",
+            "prepare",
+            "update",
+            "open",
+            "file",
+            "reply",
+            "email",
+            "research",
+            "compile",
+            "review",
+            "triage",
+            "plan",
+            "help",
+            "explain",
+            "make",
+            "give",
+            "tell",
+            "calculate",
+            "translate",
+            "list",
+            "suggest",
+            "fix",
+            "check",
+            "rewrite",
+            "edit",
+            "improve",
+            "brainstorm",
+            "outline",
+            "analyse",
+            "analyze",
+            "organise",
+            "organize",
+            "decide",
+            "recommend",
+            "estimate");
 
     /** A phrase that pins down when the work should happen, so it can be lifted out of an instruction. */
-    private static final Pattern TIMING_PHRASE = Pattern.compile(
-            "(?i)\\b(every\\s+[\\p{L}]+(\\s+(at|on)\\s+[\\p{L}0-9:]+)?"
+    private static final Pattern TIMING_PHRASE =
+            Pattern.compile("(?i)\\b(every\\s+[\\p{L}]+(\\s+(at|on)\\s+[\\p{L}0-9:]+)?"
                     + "|each\\s+[\\p{L}]+(\\s+at\\s+[\\p{L}0-9:]+)?"
                     + "|daily(\\s+at\\s+[\\p{L}0-9:]+)?"
                     + "|weekly(\\s+at\\s+[\\p{L}0-9:]+)?"
@@ -86,7 +127,9 @@ public final class IntentDetector {
 
     private static boolean containsActionVerb(String lower) {
         for (String verb : ACTION_VERBS) {
-            if (Pattern.compile("\\b" + Pattern.quote(verb) + "\\b").matcher(lower).find()) {
+            if (Pattern.compile("\\b" + Pattern.quote(verb) + "\\b")
+                    .matcher(lower)
+                    .find()) {
                 return true;
             }
         }

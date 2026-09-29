@@ -1,8 +1,9 @@
 package os.aiworkforce.platform.web.security;
 
+import java.util.Arrays;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.Arrays;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
@@ -46,8 +47,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
         Actor actor = RequestContext.requireActor();
 
         if (!required.allowWithoutOrganisation() && actor.orgId() == null) {
-            throw new ApiException(
-                    ErrorCode.ORGANISATION_MISMATCH, "No workspace is selected for this session.");
+            throw new ApiException(ErrorCode.ORGANISATION_MISMATCH, "No workspace is selected for this session.");
         }
 
         String[] codes = required.value();
@@ -74,8 +74,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
     public static void validate(String[] codes) {
         for (String code : codes) {
             if (!Permission.isKnown(code)) {
-                throw new IllegalStateException(
-                        "@RequiresPermission references unknown permission code: " + code);
+                throw new IllegalStateException("@RequiresPermission references unknown permission code: " + code);
             }
         }
     }

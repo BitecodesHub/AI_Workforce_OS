@@ -1,0 +1,603 @@
+/*
+ * UI/UX polish: the chat screen (B1.13). Loaded after components.css, so rules here refine it.
+ * Legacy rules in components.css (the v1 rail, `.chat-bubble*`, `.chat-routing*`, `.chat-chain*`,
+ * `.chat-composer*` and friends) stay in place and are reused; this file adds the v2 shell, the
+ * sidebar, the scroll region, the dock and the small pieces v1 never had.
+ */
+
+/* ---- Shell: sidebar | thread | work panel, sized to the real viewport (D11, D12) -------------- */
+.chat-shell {
+  display: grid;
+  grid-template-columns: var(--chat-sidebar-current) minmax(0, 1fr) var(--chat-panel-current, 0px);
+  height: calc(var(--chat-vvh, 100dvh) - var(--navbar-height));
+  min-height: 420px;
+  background: var(--surface);
+  --chat-sidebar-width: 272px;
+  --chat-rail-width: 56px;
+  --chat-column-max: 760px;
+  --chat-composer-max: min(240px, 40dvh);
+  position: relative;
+}
+
+.chat-shell[data-sidebar='panel'] {
+  --chat-sidebar-current: var(--chat-sidebar-width);
+}
+
+.chat-shell[data-sidebar='rail'],
+.chat-shell[data-sidebar='overlay'] {
+  --chat-sidebar-current: var(--chat-rail-width);
+}
+
+.chat-shell[data-sidebar='sheet'] {
+  --chat-sidebar-current: 0px;
+}
+
+@media (min-width: 1440px) {
+  .chat-shell[data-panel='open'] {
+    --chat-panel-current: 320px;
+  }
+}
+
+@media (max-width: 767px) {
+  .chat-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- Skip link ---------------------------------------------------------------------------- */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: var(--space-4);
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-4);
+  transition: top var(--transition);
+}
+
+.skip-link:focus {
+  top: var(--space-3);
+}
+
+/* ---- Sidebar (panel, rail and overlay variants) -------------------------------------------- */
+.chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  padding: var(--space-4) var(--space-3);
+  gap: var(--space-4);
+  overflow: hidden;
+}
+
+.chat-sidebar[data-variant='overlay'] {
+  position: absolute;
+  inset: 0 auto 0 var(--chat-rail-width);
+  width: var(--chat-sidebar-width);
+  z-index: 20;
+  box-shadow: var(--shadow-hover);
+}
+
+.chat-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.chat-sidebar-new {
+  flex: 1 1 auto;
+}
+
+.chat-sidebar-search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-sidebar-search-field svg {
+  position: absolute;
+  left: var(--space-3);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.chat-sidebar-search-field .input {
+  padding-left: calc(var(--space-3) * 2 + 15px);
+  padding-right: calc(var(--space-3) * 2 + 40px);
+}
+
+.chat-sidebar-search-kbd {
+  position: absolute;
+  right: var(--space-3);
+}
+
+.chat-sidebar-scope {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.chat-scope-button {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--text-caption);
+}
+
+.chat-scope-button[aria-pressed='true'] {
+  background: var(--blue-light);
+  border-color: transparent;
+}
+
+.chat-sidebar-archived-link {
+  margin-left: auto;
+}
+
+.chat-sidebar-list {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.chat-sidebar-empty {
+  padding: var(--space-5) var(--space-3);
+}
+
+/* ---- Rail (icon-only sidebar, 768-1023px) -------------------------------------------------- */
+.chat-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+}
+
+/* ---- Conversation groups and rows ----------------------------------------------------------- */
+.chat-sidebar-groups {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-group-toggle {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 28px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--paper);
+  font-size: var(--text-micro);
+  color: var(--eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: none;
+  padding: var(--space-2) var(--space-2);
+}
+
+.chat-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-row-item {
+  list-style: none;
+}
+
+.chat-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-control-lg);
+}
+
+.chat-row:hover {
+  background: var(--surface-hover);
+}
+
+.chat-row-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 52px;
+  justify-content: center;
+  padding: var(--space-2) var(--space-3);
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-control-lg);
+  outline-offset: -2px;
+}
+
+.chat-row[data-current] {
+  background: var(--blue-light);
+}
+
+.chat-row[data-current]::before {
+  content: '';
+  position: absolute;
+  inset-block: var(--space-3);
+  inset-inline-start: 0;
+  width: 3px;
+  background: var(--blue);
+  border-radius: var(--radius-pill);
+}
+
+.chat-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.chat-row-title {
+  font-weight: var(--weight-emphasis);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-row-unread {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+
+.chat-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-row-meta > span:not(.chat-row-dot) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-row-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+}
+
+.chat-row-dot[data-activity='needs_answer'],
+.chat-row-dot[data-activity='needs_approval'] {
+  background: var(--blue);
+}
+
+.chat-row-match {
+  background: transparent;
+  color: inherit;
+  font-weight: var(--weight-emphasis);
+  text-decoration: underline;
+  text-decoration-color: var(--blue);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+.chat-row-menu {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.chat-row:hover .chat-row-menu,
+.chat-row:focus-within .chat-row-menu,
+.chat-row[data-current] .chat-row-menu {
+  opacity: 1;
+}
+
+.chat-sidebar-more {
+  list-style: none;
+  padding: var(--space-3);
+}
+
+/* ---- Thread header -------------------------------------------------------------------------- */
+.chat-thread-header {
+  min-height: 52px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+
+.chat-thread-heading {
+  min-width: 0;
+}
+
+.chat-thread-title {
+  font-size: var(--text-lead);
+  font-weight: var(--weight-emphasis);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  max-width: 40ch;
+}
+
+.chat-thread-agents {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-thread-agents li {
+  display: flex;
+}
+
+.chat-thread-header-actions {
+  margin-left: auto;
+  gap: var(--space-2);
+}
+
+.chat-thread-mobile-only {
+  display: none;
+}
+
+.chat-thread-rename {
+  min-width: 220px;
+}
+
+@media (max-width: 767px) {
+  .chat-thread-mobile-only {
+    display: inline-flex;
+  }
+}
+
+/* ---- Scroll region and reading column --------------------------------------------------------- */
+.chat-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.chat-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  scroll-padding-bottom: 24px;
+}
+
+.chat-scroll[data-jump-visible] {
+  scroll-padding-bottom: 64px;
+}
+
+.chat-column {
+  max-width: var(--chat-column-max);
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-6) var(--space-6);
+}
+
+@media (max-width: 767px) {
+  .chat-column {
+    padding-inline: var(--space-5);
+  }
+}
+
+.chat-item {
+  scroll-margin-top: 48px;
+}
+
+.chat-item article {
+  outline: none;
+}
+
+.chat-item-time {
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.chat-item:hover .chat-item-time,
+.chat-item:focus-within .chat-item-time,
+.chat-item[data-latest] .chat-item-time {
+  opacity: 1;
+}
+
+.chat-day {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  list-style: none;
+  margin: var(--space-5) 0;
+}
+
+.chat-day::before,
+.chat-day::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.chat-bubble-author {
+  font-weight: var(--weight-emphasis);
+}
+
+/* ---- Choice buttons (needs-choice routing card) ------------------------------------------------ */
+.chat-choice {
+  min-height: 48px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  background: var(--surface);
+  padding: var(--space-3) var(--space-4);
+}
+
+.chat-choice:hover {
+  background: var(--surface-hover);
+}
+
+.chat-choice:disabled {
+  opacity: 0.6;
+}
+
+/* ---- Dock: jump pill, work strip and composer -------------------------------------------------- */
+.chat-dock {
+  padding: 0 var(--space-6) var(--space-5);
+  background: linear-gradient(to top, var(--surface) 75%, transparent);
+  position: relative;
+}
+
+.chat-jump {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, calc(-100% - var(--space-4)));
+  min-height: 36px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hover);
+  padding: 0 var(--space-5);
+}
+
+.chat-workstrip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.chat-workstrip-line {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-caption);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  padding: 0 var(--space-4);
+  background: var(--paper);
+}
+
+.chat-workstrip-disclosure {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.chat-composer-reply {
+  color: var(--muted);
+  margin: 0 0 var(--space-2);
+}
+
+.chat-composer-voice-status {
+  color: var(--muted);
+  margin: 0 0 var(--space-2);
+}
+
+.chat-composer-count-warning {
+  color: var(--danger);
+}
+
+/* ---- Work panel (1440px and wider) -------------------------------------------------------------- */
+.chat-work-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  padding: var(--space-4);
+  gap: var(--space-4);
+}
+
+.chat-panel-questions,
+.chat-panel-participants {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat-panel-question {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  padding: var(--space-3);
+}
+
+@media (max-width: 1439px) {
+  .chat-work-panel {
+    display: none;
+  }
+}
+
+/* ---- Mention popover: keep every row one line, whatever the agent's name is ------------------
+ * At the larger body size a long agent name and its category tag no longer both fit on one line
+ * at composer width on a phone; without a stop the name wraps and pushes the tag to its own
+ * line, so rows in the same list end up different heights.
+ */
+.chat-mention-option > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-mention-option .tag {
+  flex: none;
+}
+
+/* ---- Routing receipt: "Send to someone else" needs a real tap target -------------------------
+ * It is styled as inline text (no button chrome), so on a touch screen its hit area was only the
+ * line of text itself - well under the 44px a thumb hits reliably. Padding is added on the
+ * vertical axis alone, so the link stays flush with the card's own left edge, matching how
+ * .back-link solves the same problem elsewhere in the product.
+ */
+@media (pointer: coarse) {
+  .chat-routing-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: var(--space-2) 0;
+  }
+
+  .chat-group-toggle,
+  .chat-scope-button,
+  .chat-sidebar-archived-link,
+  .chat-jump,
+  .chat-workstrip-line button,
+  .chat-work-panel button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pulse-soft,
+  .chat-arrive,
+  .skip-link {
+    animation: none;
+    transition: none;
+  }
+}

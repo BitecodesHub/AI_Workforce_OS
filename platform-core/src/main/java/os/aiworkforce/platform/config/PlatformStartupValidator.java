@@ -39,11 +39,10 @@ public class PlatformStartupValidator {
             return;
         }
         problems.forEach(problem -> log.error("Configuration problem: {}", problem));
-        throw new IllegalStateException(
-                "Refusing to serve traffic with "
-                        + problems.size()
-                        + " configuration problem(s) in "
-                        + properties.environment()
-                        + " mode. See the errors above.");
+        throw new IllegalStateException("Refusing to serve traffic with "
+                + problems.size()
+                + " configuration problem(s) in "
+                + properties.environment()
+                + " mode. See the errors above.");
     }
 }

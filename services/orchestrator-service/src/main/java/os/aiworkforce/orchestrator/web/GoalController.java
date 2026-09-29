@@ -1,15 +1,16 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,9 +62,18 @@ public class GoalController {
     }
 
     public record TaskView(
-            UUID id, UUID agentId, String title, String status, int position, List<UUID> dependsOn,
-            int attempt, int maxAttempts,
-            String result, String failureReason, Instant startedAt, Instant completedAt,
+            UUID id,
+            UUID agentId,
+            String title,
+            String status,
+            int position,
+            List<UUID> dependsOn,
+            int attempt,
+            int maxAttempts,
+            String result,
+            String failureReason,
+            Instant startedAt,
+            Instant completedAt,
             /**
              * The most recent run against this task, so the interface can link straight to its
              * trace. Null only for a task that has never actually run yet.
@@ -71,12 +81,23 @@ public class GoalController {
             UUID runId) {}
 
     public record GoalView(
-            UUID id, String title, String description, String status,
-            UUID requestedBy, String source, UUID conversationId, UUID scheduleId,
-            Instant createdAt, Instant completedAt, List<TaskView> tasks) {}
+            UUID id,
+            String title,
+            String description,
+            String status,
+            UUID requestedBy,
+            String source,
+            UUID conversationId,
+            UUID scheduleId,
+            Instant createdAt,
+            Instant completedAt,
+            List<TaskView> tasks) {}
 
-    public record TaskInput(@NotNull UUID agentId, @NotBlank @Size(max = 200) String title,
-            @NotBlank @Size(max = 10_000) String instruction, List<Integer> dependsOn) {}
+    public record TaskInput(
+            @NotNull UUID agentId,
+            @NotBlank @Size(max = 200) String title,
+            @NotBlank @Size(max = 10_000) String instruction,
+            List<Integer> dependsOn) {}
 
     public record CreateGoalRequest(
             @NotBlank @Size(max = 200) String title,
@@ -105,8 +126,7 @@ public class GoalController {
     @RequiresPermission(Permission.Codes.TASK_READ)
     @Operation(summary = "One goal and its tasks")
     public GoalView get(@PathVariable UUID goalId) {
-        return toView(goals.findByIdAndOrgId(goalId, orgId())
-                .orElseThrow(() -> ApiException.notFound("goal", goalId)));
+        return toView(goals.findByIdAndOrgId(goalId, orgId()).orElseThrow(() -> ApiException.notFound("goal", goalId)));
     }
 
     @PostMapping
@@ -115,7 +135,10 @@ public class GoalController {
     @Operation(summary = "Create a goal and start it")
     public GoalView create(@Valid @RequestBody CreateGoalRequest request) {
         UUID orgId = orgId();
-        Goal goal = service.create(orgId, request.title(), request.description(),
+        Goal goal = service.create(
+                orgId,
+                request.title(),
+                request.description(),
                 request.tasks().stream()
                         .map(task -> new GoalService.TaskRequest(
                                 task.title(), task.instruction(), task.agentId(), task.dependsOn()))
@@ -129,33 +152,61 @@ public class GoalController {
         return toView(goals.findById(goal.getId()).orElse(goal));
     }
 
+    @PostMapping("/{goalId}/retry")
+    @RequiresPermission(Permission.Codes.TASK_CREATE)
+    @Operation(summary = "Try a failed or stopped goal again, from the step that did not finish")
+    public GoalView retry(@PathVariable UUID goalId) {
+        UUID orgId = orgId();
+        // The person who asked for the work, or someone who can cancel work, else 403.
+        service.retry(orgId, goalId, RequestContext.requireActor());
+        return toView(goals.findByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId)));
+    }
+
     @PostMapping("/{goalId}/cancel")
     @RequiresPermission(Permission.Codes.TASK_CANCEL)
     @Operation(summary = "Cancel a goal and every task still open under it")
     public GoalView cancel(@PathVariable UUID goalId) {
         UUID orgId = orgId();
         service.cancel(orgId, goalId);
-        return toView(goals.findByIdAndOrgId(goalId, orgId)
-                .orElseThrow(() -> ApiException.notFound("goal", goalId)));
+        return toView(goals.findByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId)));
     }
 
     private GoalView toView(Goal goal) {
         List<TaskView> taskViews = tasks.findByGoalIdOrderByPosition(goal.getId()).stream()
                 .map(this::toView)
                 .toList();
-        return new GoalView(goal.getId(), goal.getTitle(), goal.getDescription(), goal.getStatus(),
-                goal.getRequestedBy(), goal.getSource(), goal.getConversationId(), goal.getScheduleId(),
-                goal.getCreatedAt(), goal.getCompletedAt(), taskViews);
+        return new GoalView(
+                goal.getId(),
+                goal.getTitle(),
+                goal.getDescription(),
+                goal.getStatus(),
+                goal.getRequestedBy(),
+                goal.getSource(),
+                goal.getConversationId(),
+                goal.getScheduleId(),
+                goal.getCreatedAt(),
+                goal.getCompletedAt(),
+                taskViews);
     }
 
     private TaskView toView(Task task) {
         UUID runId = runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId())
                 .map(run -> run.getId())
                 .orElse(null);
-        return new TaskView(task.getId(), task.getAgentId(), task.getTitle(), task.getStatus(),
-                task.getPosition(), task.getDependsOn(),
-                task.getAttempt(), task.getMaxAttempts(), task.getResult(), task.getFailureReason(),
-                task.getStartedAt(), task.getCompletedAt(), runId);
+        return new TaskView(
+                task.getId(),
+                task.getAgentId(),
+                task.getTitle(),
+                task.getStatus(),
+                task.getPosition(),
+                task.getDependsOn(),
+                task.getAttempt(),
+                task.getMaxAttempts(),
+                task.getResult(),
+                task.getFailureReason(),
+                task.getStartedAt(),
+                task.getCompletedAt(),
+                runId);
     }
 
     private static UUID orgId() {

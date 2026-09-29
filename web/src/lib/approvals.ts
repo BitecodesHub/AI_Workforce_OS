@@ -34,6 +34,8 @@ export function runOutcome(runStatus: string | null | undefined): string {
       return 'The run finished.'
     case 'waiting_approval':
       return 'The run is waiting for another approval.'
+    case 'waiting_input':
+      return 'The run is waiting for an answer to a question.'
     case 'failed':
       return 'The run failed.'
     case 'cancelled':

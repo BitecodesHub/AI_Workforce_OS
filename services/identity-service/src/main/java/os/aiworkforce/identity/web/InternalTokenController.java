@@ -1,15 +1,16 @@
 package os.aiworkforce.identity.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -52,8 +53,7 @@ public class InternalTokenController {
 
     /** The services allowed to be named as an audience. An unknown name is refused. */
     private static final Set<String> KNOWN_SERVICES = Set.of(
-            "gateway", "identity", "organisation", "orchestrator",
-            "memory", "knowledge", "integrations", "analytics");
+            "gateway", "identity", "organisation", "orchestrator", "memory", "knowledge", "integrations", "analytics");
 
     private final TokenService tokens;
     private final PlatformProperties properties;
@@ -64,11 +64,7 @@ public class InternalTokenController {
     }
 
     public record InternalTokenRequest(
-            @NotBlank String audience,
-            String actorId,
-            String actorKind,
-            String orgId,
-            String onBehalfOf) {}
+            @NotBlank String audience, String actorId, String actorKind, String orgId, String onBehalfOf) {}
 
     public record InternalTokenResponse(String token, Instant expiresAt) {}
 

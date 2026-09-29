@@ -670,7 +670,7 @@ export function AgentDetail({ id }: { id: string }) {
                   )}
                   {agent.goals?.trim() && (
                     <>
-                      <h3 className="section-heading" style={{ fontSize: '15px', margin: 'var(--space-6) 0 var(--space-3)' }}>
+                      <h3 className="section-heading" style={{ margin: 'var(--space-6) 0 var(--space-3)' }}>
                         Goals
                       </h3>
                       <p style={{ whiteSpace: 'pre-wrap' }}>{agent.goals}</p>

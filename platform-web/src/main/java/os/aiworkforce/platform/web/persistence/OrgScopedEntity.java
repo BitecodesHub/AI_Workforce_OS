@@ -1,8 +1,9 @@
 package os.aiworkforce.platform.web.persistence;
 
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.MappedSuperclass;
-import java.util.UUID;
 
 import org.hibernate.annotations.Filter;
 import org.hibernate.annotations.FilterDef;

@@ -1,0 +1,12 @@
+/*
+ * Screen-level polish, one file per area, loaded after components.css. Held to the same rules
+ * as components.css by design-system.test.ts: tokens only, borders from --line, radii from the
+ * token families, no resting card shadow, motion disabled under reduced motion.
+ */
+@import './shell.css';
+@import './work.css';
+@import './knowledge.css';
+@import './admin.css';
+@import './chat.css';
+@import './orchestrator.css';
+@import './auth.css';

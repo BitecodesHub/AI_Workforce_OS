@@ -31,8 +31,13 @@ import os.aiworkforce.platform.error.ErrorCode;
 class ElevenLabsClientTest {
 
     private static final VoiceProperties PROPERTIES = new VoiceProperties(
-            "https://api.elevenlabs.io", "eleven_flash_v2_5", "scribe_v2", "mp3_44100_128", 2_500,
-            Duration.ofSeconds(5), "elevenlabs");
+            "https://api.elevenlabs.io",
+            "eleven_flash_v2_5",
+            "scribe_v2",
+            "mp3_44100_128",
+            2_500,
+            Duration.ofSeconds(5),
+            "elevenlabs");
 
     private MockRestServiceServer server;
     private ElevenLabsClient client;

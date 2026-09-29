@@ -1,16 +1,17 @@
 package os.aiworkforce.analytics.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -82,8 +83,7 @@ public class InternalAuditController {
     public synchronized AuditEventResponse append(@Valid @RequestBody AuditEventRequest request) {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() == Actor.Kind.USER) {
-            throw new ApiException(
-                    ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
         if (!VALID_OUTCOMES.contains(request.outcome())) {
             throw ApiException.validation("outcome", "must be one of " + VALID_OUTCOMES);

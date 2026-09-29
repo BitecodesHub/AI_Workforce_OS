@@ -38,7 +38,8 @@ class GatewayRoutesTest {
     @Test
     @DisplayName("every prefix the dev proxy routes reaches the same service through the gateway")
     void gatewayCoversDevProxy() throws IOException {
-        Path vite = Path.of("").toAbsolutePath().resolve("../../web/vite.config.ts").normalize();
+        Path vite =
+                Path.of("").toAbsolutePath().resolve("../../web/vite.config.ts").normalize();
         // The check needs the whole repository. A build of the services alone has nothing to compare.
         assumeTrue(Files.exists(vite), "web/vite.config.ts is not present in this checkout");
 
@@ -87,7 +88,9 @@ class GatewayRoutesTest {
     @SuppressWarnings("unchecked")
     private static List<Route> gatewayRoutes() throws IOException {
         try (InputStream in = GatewayRoutesTest.class.getResourceAsStream("/application.yml")) {
-            assertThat(in).as("the gateway's application.yml on the test classpath").isNotNull();
+            assertThat(in)
+                    .as("the gateway's application.yml on the test classpath")
+                    .isNotNull();
             List<Route> routes = new ArrayList<>();
             for (Object document : new Yaml().loadAll(in)) {
                 Object list = walk(document, "spring", "cloud", "gateway", "server", "webflux", "routes");
@@ -101,11 +104,11 @@ class GatewayRoutesTest {
                     for (Object predicate : (List<Object>) route.getOrDefault("predicates", List.of())) {
                         String text = String.valueOf(predicate);
                         if (text.startsWith("Path=")) {
-                            patterns.addAll(List.of(text.substring("Path=".length()).split(",")));
+                            patterns.addAll(
+                                    List.of(text.substring("Path=".length()).split(",")));
                         }
                     }
-                    routes.add(new Route(
-                            String.valueOf(route.get("id")), port.find() ? port.group(1) : "", patterns));
+                    routes.add(new Route(String.valueOf(route.get("id")), port.find() ? port.group(1) : "", patterns));
                 }
             }
             return routes;

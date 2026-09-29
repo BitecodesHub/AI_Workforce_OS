@@ -16,24 +16,28 @@ import { useInPageLink } from '../shared/useInPageLink'
  * observer does not exist, the bar stays transparent, no link is marked and the button shows.
  */
 
-const SECTIONS = [
-  { id: 'agents', label: 'Agents' },
-  { id: 'demos', label: 'Demos' },
-  { id: 'roles', label: 'Roles' },
-  { id: 'limits', label: 'Limits' },
-] as const
+export type BarSection = { id: string; label: string }
 
-type SectionId = (typeof SECTIONS)[number]['id']
+/** The home page's sections, in page order. */
+export const HOME_SECTIONS: readonly BarSection[] = [
+  { id: 'how', label: 'How it works' },
+  { id: 'team', label: 'AI team' },
+  { id: 'demos', label: 'See it work' },
+  { id: 'safety', label: 'Safety' },
+  { id: 'faq', label: 'Questions' },
+]
 
 /** A 5% band just above the middle of the viewport decides which section is being read. */
 const SCROLLSPY_MARGIN = '-45% 0px -50% 0px'
 
-export function LandingBar(): ReactElement {
+export type LandingBarProps = { sections?: readonly BarSection[] }
+
+export function LandingBar({ sections = HOME_SECTIONS }: LandingBarProps): ReactElement {
   const inPage = useInPageLink()
   const sentinelRef = useRef<HTMLDivElement>(null)
   const [solid, setSolid] = useState(false)
   const [ctaVisible, setCtaVisible] = useState<boolean>(() => typeof IntersectionObserver === 'undefined')
-  const [current, setCurrent] = useState<SectionId | null>(null)
+  const [current, setCurrent] = useState<string | null>(null)
 
   // 1. The bar turns solid once the sentinel at the very top of the page has scrolled away.
   useEffect(() => {
@@ -67,7 +71,7 @@ export function LandingBar(): ReactElement {
   // 3. Scrollspy: the first listed section crossing the band is the current one.
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return undefined
-    const targets = SECTIONS.map((section) => document.getElementById(section.id)).filter(
+    const targets = sections.map((section) => document.getElementById(section.id)).filter(
       (node): node is HTMLElement => node !== null,
     )
     if (targets.length === 0) return undefined
@@ -79,14 +83,14 @@ export function LandingBar(): ReactElement {
           if (entry.isIntersecting) crossing.add(entry.target.id)
           else crossing.delete(entry.target.id)
         }
-        const match = SECTIONS.find((section) => crossing.has(section.id))
+        const match = sections.find((section) => crossing.has(section.id))
         setCurrent(match ? match.id : null)
       },
       { rootMargin: SCROLLSPY_MARGIN },
     )
     for (const target of targets) observer.observe(target)
     return () => observer.disconnect()
-  }, [])
+  }, [sections])
 
   return (
     <>
@@ -95,7 +99,7 @@ export function LandingBar(): ReactElement {
         <div className="lp-bar-inner">
           <Brand />
           <nav aria-label="On this page" className="nav-capsule lp-bar-nav">
-            {SECTIONS.map((section) => (
+            {sections.map((section) => (
               <a
                 key={section.id}
                 className="nav-pill"

@@ -1,10 +1,11 @@
 package os.aiworkforce.platform.web.filter;
 
+import java.io.IOException;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
 
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
@@ -39,8 +40,7 @@ public class ActorContextFilter extends OncePerRequestFilter {
     private static final int MAX_HEADER_LENGTH = 128;
 
     @Override
-    protected void doFilterInternal(
-            HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         try {
             String requestId = sanitise(request.getHeader(REQUEST_ID_HEADER));

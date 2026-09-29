@@ -76,7 +76,8 @@
 }
 
 .page-description {
-  font-size: 13px;
+  font-size: var(--text-lead);
+  line-height: 1.55;
   color: var(--muted);
   margin-top: var(--space-2);
   max-width: 62ch;
@@ -179,10 +180,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-3);
   font-size: var(--text-caption);
   color: var(--muted);
   margin-bottom: var(--space-4);
+}
+
+/* A long label (six tiles in a row, or a caption grown by the type scale) wraps onto its own
+   line instead of overflowing the tile, wherever a stat row is used. */
+.stat-label > span:first-child {
+  min-width: 0;
 }
 
 .stat-value {
@@ -392,7 +400,7 @@
 }
 
 .button-quiet:hover:not(:disabled) {
-  background: #f2f5fb;
+  background: var(--surface-hover);
   color: var(--ink);
 }
 
@@ -410,7 +418,7 @@
   height: 30px;
   border: none;
   background: transparent;
-  color: #54617a;
+  color: var(--icon-ink);
   border-radius: var(--radius-pill);
   cursor: pointer;
   position: relative;
@@ -418,7 +426,7 @@
 }
 
 .icon-button:hover:not(:disabled) {
-  background: #f2f5fb;
+  background: var(--surface-hover);
   color: var(--ink);
 }
 
@@ -493,6 +501,49 @@
   margin-top: var(--space-2);
 }
 
+/* A control inside the field's right edge, such as a password's show and hide button. The
+   input keeps its own border and focus ring; the button sits over its padding. */
+.input-affix {
+  position: relative;
+}
+
+.input.input-has-trailing {
+  padding-right: 48px;
+}
+
+.input-trailing {
+  position: absolute;
+  top: 0;
+  right: var(--space-1);
+  bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.input-reveal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--icon-ink);
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.input-reveal:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.input-reveal[aria-pressed='true'] {
+  color: var(--blue);
+}
+
 /* ---- Notices ---------------------------------------------------------------------------------
  * One sentence, disclosed once per page, never sitting beside the number it qualifies - a
  * caveat printed next to a figure is read as part of the figure.
@@ -507,6 +558,12 @@
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-control-lg);
   border: 1px solid;
+}
+
+.notice-body {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .notice-info {
@@ -616,7 +673,7 @@
 
 .mono {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
 }
 
 .muted {
@@ -780,14 +837,14 @@
   border-radius: var(--radius-pill);
   font-size: var(--text-nav);
   font-weight: var(--weight-emphasis);
-  color: #5b6678;
+  color: var(--nav-ink);
   text-decoration: none;
   white-space: nowrap;
   transition: background-color var(--transition), color var(--transition);
 }
 
 .nav-pill:hover {
-  background: #f2f5fb;
+  background: var(--surface-hover);
   color: var(--ink);
 }
 
@@ -817,15 +874,15 @@
   position: absolute;
   top: -2px;
   right: -2px;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: var(--radius-pill);
   background: var(--blue);
   color: var(--surface);
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: var(--weight-strong);
-  line-height: 17px;
+  line-height: 18px;
   text-align: center;
   box-shadow: 0 0 0 2px var(--surface);
 }
@@ -837,8 +894,8 @@
   width: 30px;
   height: 30px;
   border-radius: var(--radius-pill);
-  background: #eef2f8;
-  color: #536380;
+  background: var(--avatar-bg);
+  color: var(--avatar-ink);
   font-size: var(--text-caption);
   font-weight: var(--weight-strong);
 }
@@ -978,7 +1035,7 @@
 }
 
 .menu-item:hover {
-  background: #f2f5fb;
+  background: var(--surface-hover);
 }
 
 .menu-item[aria-current='page'] {
@@ -1070,196 +1127,8 @@
   background: color-mix(in srgb, var(--danger) 8%, white);
 }
 
-/* ---- Demo account picker ----------------------------------------------------------------------
- * A card rather than a list of links: each one is a real action that signs somebody in, and it
- * should look like something you press.
- */
-
-.demo-account {
-  display: grid;
-  grid-template-columns: 34px 1fr;
-  column-gap: var(--space-4);
-  row-gap: var(--space-1);
-  width: 100%;
-  text-align: left;
-  padding: var(--space-4);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control-lg);
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition: border-color var(--transition), background-color var(--transition);
-}
-
-.demo-account:hover:not(:disabled) {
-  border-color: var(--border-hover);
-  background: var(--blue-light);
-}
-
-.demo-account:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* Tinted the same way a Tag is (--avatar-colour mixed into a background and a darkened
-   foreground), so a role's initials and its role tag always read as the same colour. Set with
-   an inline custom property rather than the tag-* classes, so this never inherits a tag's own
-   background override (tag-warning draws a flat fill, not a mix). */
-.demo-account-avatar {
-  grid-row: 1 / 4;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-caption);
-  font-weight: var(--weight-strong);
-  background: color-mix(in srgb, var(--avatar-colour, var(--muted)) 15%, white);
-  color: color-mix(in srgb, var(--avatar-colour, var(--muted)) 70%, black);
-}
-
-/* ---- Auth atmosphere ---------------------------------------------------------------------------
- * The one place a signed-out person arrives cold, so it is the one console screen allowed a
- * static field of colour behind it - no motion, the console's rule still holds, just light and
- * depth instead of bare grey. Every colour here is a token or a color-mix over one.
- */
-
-.auth-page {
-  position: relative;
-  min-height: 100vh;
-  overflow: hidden;
-  background: var(--paper);
-}
-
-.auth-atmosphere {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.auth-atmosphere::before,
-.auth-atmosphere::after {
-  content: '';
-  position: absolute;
-  border-radius: var(--radius-pill);
-  filter: blur(70px);
-}
-
-.auth-atmosphere::before {
-  width: 620px;
-  height: 620px;
-  top: -260px;
-  right: -180px;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--blue) 16%, transparent), transparent);
-}
-
-.auth-atmosphere::after {
-  width: 460px;
-  height: 460px;
-  bottom: -220px;
-  left: -140px;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--category-engineering) 12%, transparent), transparent);
-}
-
-.auth-grid {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--blue) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--blue) 6%, transparent) 1px, transparent 1px);
-  background-size: 44px 44px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 10%, transparent 70%);
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 10%, transparent 70%);
-}
-
-.auth-header {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-  padding: var(--space-7) var(--space-6) 0;
-}
-
-.auth-panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  padding: var(--space-7);
-}
-
-@media (max-width: 520px) {
-  .auth-panel {
-    padding: var(--space-6);
-    border-left: none;
-    border-right: none;
-    border-radius: 0;
-  }
-}
-
-/* ---- Split sign-in ---------------------------------------------------------------------------
- * The form sits on the right and the explanation on the left, so the eye lands on the content
- * first and the action second.
- */
-
-.auth-split {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-8);
-  align-items: center;
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: var(--space-7) var(--space-6) var(--space-8);
-}
-
-.auth-aside {
-  position: sticky;
-  top: var(--space-8);
-}
-
-/* The form comes first in the document, so keyboard and screen reader users reach it first; on a
-   wide screen the explanation is still drawn on the left. */
-@media (min-width: 901px) {
-  .auth-aside {
-    order: -1;
-  }
-}
-
-@media (max-width: 900px) {
-  .auth-split {
-    grid-template-columns: 1fr;
-    gap: var(--space-7);
-    padding-top: var(--space-6);
-  }
-
-  .auth-aside {
-    position: static;
-    /* The form comes first on a phone: somebody on a small screen who wants to sign in should
-       not scroll past the pitch to reach the field. The brand mark is shown separately, above
-       both, so the screen still reads as this product's from the first paint. */
-    order: 2;
-  }
-}
-
-/* ---- Sign-in supporting points ---------------------------------------------------------------- */
-
-.auth-points {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.auth-points li {
-  padding-left: var(--space-5);
-  border-left: 1px solid var(--line);
-}
+/* The signed-out screens (sign in, create a workspace, accept an invitation) are styled in
+   polish/auth.css. */
 
 /* ---- Spinner, skeleton and state panels ------------------------------------------------------- */
 
@@ -1279,7 +1148,7 @@
 .skeleton {
   height: 14px;
   border-radius: var(--radius-tag);
-  background: linear-gradient(90deg, var(--line) 25%, #f1f4f8 50%, var(--line) 75%);
+  background: linear-gradient(90deg, var(--line) 25%, var(--skeleton-highlight) 50%, var(--line) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.3s ease-in-out infinite;
 }
@@ -1333,6 +1202,9 @@
   margin: auto;
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);
+  /* Content taller than the viewport scrolls inside the box instead of overflowing it - without
+     this a long form's footer buttons could sit unreachable below the fold on a small screen. */
+  overflow-y: auto;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-dialog);
@@ -1416,7 +1288,8 @@
 .toast-region {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  /* Chat lifts this above its composer (--toast-offset); everywhere else it sits at the default. */
+  bottom: var(--toast-offset, 24px);
   transform: translateX(-50%);
   z-index: 100;
   display: flex;
@@ -1586,7 +1459,7 @@
 .avatar-large {
   width: 48px;
   height: 48px;
-  font-size: 14px;
+  font-size: var(--text-body);
 }
 
 .back-link svg {
@@ -1598,7 +1471,7 @@
 }
 
 .table tbody tr[data-href]:hover td {
-  background: var(--surface-hover, rgba(0, 0, 0, 0.02));
+  background: var(--surface-hover);
 }
 
 .table-row-link {
@@ -1693,10 +1566,28 @@
  */
 
 @media (pointer: coarse) {
+  /* 44px is the smallest target a thumb hits reliably (WCAG 2.5.5, Apple HIG). */
   .icon-button,
   .avatar {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .button {
+    min-height: 44px;
+  }
+
+  .input,
+  .select {
+    height: 44px;
+  }
+
+  /* Below 16px, iOS Safari zooms the whole page when a field takes focus. */
+  .input,
+  .select,
+  .textarea,
+  textarea {
+    font-size: 16px;
   }
 
   .toast-close {
@@ -1709,7 +1600,7 @@
   }
 
   .filter-chip {
-    min-height: 40px;
+    min-height: 44px;
     padding: var(--space-2) var(--space-4);
   }
 }
@@ -1861,9 +1752,13 @@
   stroke-width: 1.6;
 }
 
+/* A short dash pattern, not colour alone, is what marks a goal as done: a person who cannot tell
+   the muted green from the neutral line still sees a different stroke shape. */
 .orc-edge-done {
   stroke: var(--green);
-  opacity: 0.4;
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
+  opacity: 0.55;
 }
 
 .orc-edge-active {
@@ -1967,7 +1862,7 @@
 
 .orc-lane-track {
   position: relative;
-  height: 26px;
+  height: 33px; /* 24px bars after the 4px insets and this 1px rule */
   border-bottom: 1px solid var(--line);
 }
 
@@ -2013,7 +1908,9 @@
   position: absolute;
   top: 4px;
   bottom: 4px;
-  min-width: 3px;
+  /* Every bar is a link, so even a run of a few seconds gets a 24px square target (WCAG 2.5.8).
+     Its start stays exact; only a very short run is drawn longer than it lasted. */
+  min-width: 24px;
   border-radius: var(--radius-pill);
 }
 
@@ -2420,7 +2317,8 @@
 
 .chat-avatar {
   background: color-mix(in srgb, var(--chat-avatar-colour, var(--muted)) 16%, white);
-  color: var(--chat-avatar-colour, var(--muted));
+  /* Darkened like a Tag's text: the raw category colour on its own tint measured 2.7:1. */
+  color: color-mix(in srgb, var(--chat-avatar-colour, var(--muted)) 60%, black);
   flex: none;
 }
 
@@ -2589,11 +2487,9 @@
   0%,
   100% {
     opacity: 0.35;
-    transform: scale(0.85);
   }
   50% {
     opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -2605,6 +2501,9 @@
   background: var(--paper);
 }
 
+/* `.inline-approval` is the name components/run/InlineApproval.tsx uses; `.chat-inline-approval`
+   is kept as an alias so the progress card's existing markup still resolves the same rules. */
+.inline-approval,
 .chat-inline-approval {
   margin-top: var(--space-4);
   padding: var(--space-4);
@@ -2613,6 +2512,7 @@
   background: var(--warning-bg);
 }
 
+.inline-approval-payload,
 .chat-inline-approval-payload {
   margin: var(--space-2) 0;
   padding: var(--space-3);
@@ -2620,7 +2520,7 @@
   border-radius: var(--radius-control);
   background: var(--surface);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-caption);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -2777,4 +2677,560 @@
   background: var(--surface);
   color: var(--muted);
   font-size: var(--text-body);
+}
+
+/* ---- Shared components (WP3) -------------------------------------------------------------------
+ * Markdown, the question card, the sheet, the overflow menu's checkbox and radio items, the
+ * pressed stat tile, the copy button, the keyboard key and the collapsible card's toggle. Every
+ * screen that needs one of these imports the component from its own module path (B4.3); this file
+ * is the one place their classes are drawn.
+ */
+
+/* ---- Markdown (components/ui/Markdown.tsx) ------------------------------------------------------
+ * The safe subset lib/markdown.ts parses. Headings step down to h4 and h5, so an agent's answer or
+ * a person's message never outranks the heading structure of the page it sits inside.
+ */
+
+.md {
+  font-size: inherit;
+  line-height: 1.6;
+}
+
+.md > * + * {
+  margin-top: var(--space-4);
+}
+
+.md p {
+  margin: 0;
+}
+
+.md-heading {
+  margin: 0;
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+}
+
+h4.md-heading {
+  font-size: var(--text-h2);
+}
+
+h5.md-heading {
+  font-size: var(--text-body);
+  font-weight: var(--weight-emphasis);
+}
+
+.md ul,
+.md ol {
+  margin: 0;
+  padding-left: var(--space-6);
+}
+
+.md li + li {
+  margin-top: var(--space-2);
+}
+
+.md li > .md {
+  margin-top: var(--space-2);
+}
+
+.md blockquote {
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+
+.md hr {
+  height: 1px;
+  margin: 0;
+  border: none;
+  background: var(--line);
+}
+
+.md-inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-tag);
+  background: var(--paper);
+}
+
+.md a {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+.md-code {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.md-code pre {
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;
+}
+
+.md-code code {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--ink);
+  white-space: pre;
+}
+
+.md-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.md-table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.md-table-scroll th,
+.md-table-scroll td {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: var(--text-body);
+}
+
+.md-table-scroll th {
+  font-weight: var(--weight-emphasis);
+  color: var(--muted);
+}
+
+/* ---- Question card (components/run/QuestionCard.tsx) --------------------------------------------
+ * An agent's clarifying question, answered from Chat, the Orchestrator sheet or Approvals. One
+ * component renders every state (open, answered, expired, cancelled, read-only); these classes
+ * carry all of them.
+ */
+
+.question-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  background: var(--surface);
+}
+
+.question-card-closed {
+  color: var(--muted);
+}
+
+.question-card-new {
+  animation: question-arrive 1.2s ease-out;
+}
+
+@keyframes question-arrive {
+  from {
+    background: var(--blue-light);
+  }
+  to {
+    background: var(--surface);
+  }
+}
+
+.question-block {
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  border: none;
+}
+
+.question-block legend {
+  padding: 0;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.question-block:first-of-type {
+  margin-top: var(--space-4);
+}
+
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: 12px 16px;
+  margin-top: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  cursor: pointer;
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.question-option:first-of-type {
+  margin-top: 0;
+}
+
+.question-option:hover {
+  border-color: var(--border-hover);
+}
+
+/* A selected row is marked by its own background and weight, never by a coloured border (0.2). */
+.question-option:has(input:checked) {
+  background: var(--blue-light);
+  font-weight: var(--weight-emphasis);
+}
+
+.question-option input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.question-option-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.question-option-description {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  font-weight: var(--weight-regular);
+}
+
+.question-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .question-card-new {
+    animation: none;
+  }
+}
+
+/* ---- Sheet (components/ui/Sheet.tsx) -------------------------------------------------------------
+ * A panel pinned to one edge of the screen, for a record that stays open beside a list (the
+ * Orchestrator's goal and run sheets) rather than replacing the page. Built on the same native
+ * <dialog> as .dialog, so Escape, the backdrop and focus come from the browser.
+ */
+
+.sheet {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  margin: 0;
+  height: 100vh;
+  max-height: 100vh;
+  width: min(520px, 100vw);
+  padding: 0;
+  border: none;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-hover);
+  overflow-y: auto;
+}
+
+.sheet[data-side='right'] {
+  right: 0;
+  left: auto;
+  border-left: 1px solid var(--line);
+}
+
+.sheet[data-side='left'] {
+  left: 0;
+  right: auto;
+  border-right: 1px solid var(--line);
+}
+
+.sheet[data-width='sm'] {
+  width: min(440px, 100vw);
+}
+
+.sheet[data-width='md'] {
+  width: min(520px, 100vw);
+}
+
+.sheet[data-width='full'] {
+  width: 100vw;
+  border: none;
+}
+
+.sheet::backdrop {
+  background: rgba(32, 39, 53, 0.32);
+  backdrop-filter: blur(2px);
+}
+
+.sheet[open] {
+  animation: dialog-in var(--transition-slow);
+}
+
+.sheet:focus-visible {
+  outline: none;
+}
+
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: var(--space-6);
+}
+
+.sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.sheet-heading {
+  min-width: 0;
+}
+
+.sheet-title {
+  font-size: 18px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.sheet-content {
+  flex: 1;
+  margin-top: var(--space-6);
+}
+
+.sheet-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+/* ---- Collapsible (components/ui/Collapsible.tsx) ------------------------------------------------- */
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.collapsible-heading {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.collapsible-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: var(--weight-emphasis);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.collapsible-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform var(--transition);
+}
+
+.collapsible-chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.collapsible-summary {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.collapsible-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (pointer: coarse) {
+  .collapsible-toggle {
+    min-height: 44px;
+  }
+}
+
+/* ---- Copy button and stale banner ----------------------------------------------------------------- */
+
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.stale-banner {
+  margin-bottom: var(--space-4);
+}
+
+/* ---- Keyboard key (components/ui/index.tsx: Kbd) --------------------------------------------------- */
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+/* ---- Pressed stat tile (SummaryStrip's filters, B2.3) ---------------------------------------------- */
+
+.stat-tile-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+}
+
+.stat-tile[aria-pressed='true'] {
+  background: var(--blue-light);
+}
+
+.stat-tile[aria-pressed='true']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-5);
+  right: var(--space-5);
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+
+.stat-tile[aria-pressed='true'] .stat-value {
+  font-weight: var(--weight-emphasis);
+}
+
+.stat-tile-check {
+  flex-shrink: 0;
+  color: var(--blue);
+}
+
+/* ---- Menu: checkbox and radio items (components/ui/Menu.tsx) --------------------------------------
+ * A plain menu item closes the menu on select; these stay open, so several can be set in one
+ * visit, and carry a check glyph of their own rather than relying on colour alone.
+ */
+
+.menu-separator {
+  height: 1px;
+  margin: var(--space-2) 0;
+  background: var(--line);
+}
+
+.menu-trigger-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--blue);
+  cursor: pointer;
+}
+
+.menu-item[role='menuitemcheckbox'],
+.menu-item[role='menuitemradio'] {
+  position: relative;
+  padding-left: calc(var(--space-4) + 22px);
+}
+
+.menu-item[role='menuitemcheckbox']::before,
+.menu-item[role='menuitemradio']::before {
+  content: '';
+  position: absolute;
+  left: var(--space-4);
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.menu-item[role='menuitemcheckbox']::before {
+  border-radius: var(--radius-tag);
+}
+
+.menu-item[role='menuitemradio']::before {
+  border-radius: var(--radius-pill);
+}
+
+.menu-item[aria-checked='true']::before {
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+.menu-item[role='menuitemcheckbox'][aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--space-4) + 4px);
+  top: 50%;
+  width: 5px;
+  height: 8px;
+  transform: translateY(-70%) rotate(45deg);
+  border: solid var(--surface);
+  border-width: 0 1.5px 1.5px 0;
+}
+
+.menu-item[role='menuitemradio'][aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--space-4) + 5px);
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+/* ---- Avatar sizes and the fallback tint (components/ui/AgentAvatar.tsx) --------------------------- */
+
+.avatar-sm {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.avatar-fallback {
+  background: var(--avatar-bg);
+  color: var(--avatar-ink);
 }

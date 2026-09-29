@@ -1,12 +1,13 @@
 package os.aiworkforce.platform.runtimeconfig;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.JsonNode;
 
 /**
  * A setting an operator can change while the platform is running.
@@ -73,8 +74,7 @@ public record ConfigKey(
         return new ConfigKey(name, scope, Type.BOOLEAN, defaultValue, description, null, null, null, false);
     }
 
-    public static ConfigKey integer(
-            String name, Scope scope, int defaultValue, int min, int max, String description) {
+    public static ConfigKey integer(String name, Scope scope, int defaultValue, int min, int max, String description) {
         return new ConfigKey(name, scope, Type.INTEGER, defaultValue, description, min, max, null, false);
     }
 

@@ -1,12 +1,13 @@
 package os.aiworkforce.identity.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,15 +73,16 @@ public class InternalMembershipController {
             // A person's own token, whatever it carries, must never be able to grant a role by
             // calling this directly - only a sibling service acting through the internal token
             // flow may.
-            throw new ApiException(
-                    ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
 
         Role ownerRole = roles.findSystemRole("owner")
                 .orElseThrow(() -> new ApiException(
                         ErrorCode.INTERNAL_ERROR, "The owner role has not been seeded on this platform."));
 
-        Membership existing = memberships.findByUserIdAndOrgId(request.userId(), request.orgId()).orElse(null);
+        Membership existing = memberships
+                .findByUserIdAndOrgId(request.userId(), request.orgId())
+                .orElse(null);
         if (existing != null) {
             return new MembershipResponse(existing.getId(), request.orgId(), request.userId(), "owner");
         }
@@ -112,16 +114,16 @@ public class InternalMembershipController {
     public MembershipResponse bootstrapMember(@Valid @RequestBody BootstrapMemberRequest request) {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() == Actor.Kind.USER) {
-            throw new ApiException(
-                    ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
 
         Role role = roles.findByOrgAndName(request.orgId(), request.roleName())
                 .or(() -> roles.findSystemRole(request.roleName()))
-                .orElseThrow(() -> ApiException.validation(
-                        "roleName", "no such role is available to this workspace"));
+                .orElseThrow(() -> ApiException.validation("roleName", "no such role is available to this workspace"));
 
-        Membership existing = memberships.findByUserIdAndOrgId(request.userId(), request.orgId()).orElse(null);
+        Membership existing = memberships
+                .findByUserIdAndOrgId(request.userId(), request.orgId())
+                .orElse(null);
         if (existing != null) {
             return new MembershipResponse(existing.getId(), request.orgId(), request.userId(), role.getName());
         }

@@ -67,8 +67,9 @@ public record ToolResult(
             case SUCCEEDED -> contentJson;
             case FAILED -> "{\"error\":\"" + escape(summary) + "\"}";
             case BLOCKED -> "{\"error\":\"" + escape(summary) + "\",\"retry\":false}";
-            case INDETERMINATE -> "{\"error\":\"" + escape(summary)
-                    + "\",\"retry\":false,\"note\":\"The outcome is unknown. Do not repeat this action.\"}";
+            case INDETERMINATE ->
+                "{\"error\":\"" + escape(summary)
+                        + "\",\"retry\":false,\"note\":\"The outcome is unknown. Do not repeat this action.\"}";
         };
     }
 

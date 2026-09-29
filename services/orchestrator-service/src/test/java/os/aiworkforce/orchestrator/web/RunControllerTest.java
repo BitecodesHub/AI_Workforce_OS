@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -26,13 +27,14 @@ import org.springframework.data.domain.Pageable;
 
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
+import os.aiworkforce.orchestrator.domain.RunQuestion;
 import os.aiworkforce.orchestrator.domain.Task;
 import os.aiworkforce.orchestrator.repository.Goals;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.Tasks;
-import os.aiworkforce.orchestrator.service.ApprovalService;
-import os.aiworkforce.orchestrator.service.TaskProgress;
+import os.aiworkforce.orchestrator.service.GoalService;
+import os.aiworkforce.orchestrator.service.QuestionService;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
@@ -47,8 +49,8 @@ class RunControllerTest {
     private Runs runs;
     private Tasks tasks;
     private Goals goals;
-    private ApprovalService approvals;
-    private TaskProgress progress;
+    private QuestionService questions;
+    private GoalService goalService;
     private RunController controller;
 
     @BeforeEach
@@ -56,9 +58,9 @@ class RunControllerTest {
         runs = mock(Runs.class);
         tasks = mock(Tasks.class);
         goals = mock(Goals.class);
-        approvals = mock(ApprovalService.class);
-        progress = mock(TaskProgress.class);
-        controller = new RunController(runs, mock(RunSteps.class), tasks, goals, approvals, progress);
+        questions = mock(QuestionService.class);
+        goalService = mock(GoalService.class);
+        controller = new RunController(runs, mock(RunSteps.class), tasks, goals, questions, goalService);
         RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
     }
 
@@ -116,7 +118,8 @@ class RunControllerTest {
         when(runs.findByOrgIdAndStatusOrderByStartedAtDesc(eq(ORG), eq("failed"), any()))
                 .thenReturn(page(run("failed")));
 
-        assertThat(controller.list(0, 25, "failed", null)).extracting(RunController.RunView::status)
+        assertThat(controller.list(0, 25, "failed", null))
+                .extracting(RunController.RunView::status)
                 .containsExactly("failed");
     }
 
@@ -162,17 +165,54 @@ class RunControllerTest {
     }
 
     @Test
-    @DisplayName("cancelling a run withdraws its approval and cancels its task")
-    void cancelReportsToTask() {
-        Run run = run("waiting_approval");
+    @DisplayName("cancelling a run goes through the one stop path, which locks it and withdraws what it waits on")
+    void cancelDelegatesToStopRun() {
+        Run run = run("waiting_input");
+        when(goalService.stopRun(ORG, run.getId(), RunController.RUN_STOPPED)).thenAnswer(call -> {
+            run.finish("cancelled", RunController.RUN_STOPPED);
+            return new GoalService.CancelCounts(0, 1, 0, 1);
+        });
         when(runs.findByIdAndOrgId(run.getId(), ORG)).thenReturn(Optional.of(run));
 
         RunController.RunView view = controller.cancel(run.getId());
 
+        verify(goalService).stopRun(ORG, run.getId(), RunController.RUN_STOPPED);
         assertThat(view.status()).isEqualTo("cancelled");
         assertThat(view.failureReason()).isEqualTo(RunController.RUN_STOPPED);
-        verify(approvals).cancelForRun(run.getId());
-        verify(progress).onRunFinished(eq(run), eq("cancelled"), eq(null), any());
+    }
+
+    @Test
+    @DisplayName("a run waiting for an answer can be listed by that status")
+    void listAcceptsWaitingInput() {
+        when(runs.findByOrgIdAndStatusOrderByStartedAtDesc(eq(ORG), eq("waiting_input"), any()))
+                .thenReturn(page(run("waiting_input")));
+
+        assertThat(controller.list(0, 25, "waiting_input", null))
+                .extracting(RunController.RunView::status)
+                .containsExactly("waiting_input");
+    }
+
+    @Test
+    @DisplayName("a run's questions are only read after the run is found in the caller's workspace")
+    void questionsForRunRequiresOrgRun() {
+        UUID elsewhere = UUID.randomUUID();
+        when(runs.findByIdAndOrgId(elsewhere, ORG)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> controller.questions(elsewhere))
+                .isInstanceOfSatisfying(
+                        ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
+        verify(questions, never()).forRun(any(), any());
+
+        Run run = run("waiting_input");
+        RunQuestion question = new RunQuestion();
+        question.setId(UUID.randomUUID());
+        when(runs.findByIdAndOrgId(run.getId(), ORG)).thenReturn(Optional.of(run));
+        when(questions.forRun(ORG, run.getId())).thenReturn(List.of(question));
+        when(questions.views(eq(List.of(question)), any())).thenReturn(List.of());
+
+        controller.questions(run.getId());
+
+        verify(questions).forRun(ORG, run.getId());
     }
 
     private static Page<Run> page(Run... rows) {

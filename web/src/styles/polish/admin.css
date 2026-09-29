@@ -1,0 +1,84 @@
+/* UI/UX polish: admin screens (Model routing, Members, Audit log, Analytics).
+ * Loaded after components.css, so rules here refine it by selector. Every rule below is scoped
+ * under one of the four root classes the owning routes carry on their outer `.page` element, so
+ * nothing here reaches a screen this file does not own.
+ *
+ * Context: the shared type scale was raised site-wide (body 12.5px -> 14px, captions 11 -> 12.5,
+ * table headers 10 -> 11.5). The rules below are the fallout from that change on these four
+ * screens: rows that were tuned to the old, smaller line-heights and now read as cramped or
+ * misaligned, plus two touch-target gaps that were under the 8px minimum (ux rule: 8px+ spacing
+ * between adjacent touch targets) even before the type change.
+ */
+
+/* ---- Routing policy editor (ModelRouting) -----------------------------------------------------
+ * Each candidate row holds two selects, a readiness tag and three buttons. At 375-480px two
+ * selects shrinking to fit side by side became unreadably narrow once their labels and option
+ * text grew with the type scale - a provider name plus its readiness suffix ("Anthropic (key
+ * expired)") needs real width to stay legible instead of the browser's own ellipsis. Below 480px
+ * each field now takes the full row width and stacks instead, which is exactly what a one-column
+ * phone layout should do for a two-field group (ux: mobile-first, no cramped rows).
+ */
+
+.admin-model-routing .policy-field {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.admin-model-routing .candidate-row {
+  gap: var(--space-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+/* The row number ("1.") was pinned to the bottom of the row with a hand-tuned padding that lined
+   it up with the select boxes at the old, shorter label height. The taller field label pushes the
+   select down a couple more pixels, and once fields stack on a phone the row is much taller still,
+   so bottom-pinning the number leaves it stranded far below the first field's label. */
+.admin-model-routing .candidate-index {
+  min-width: 20px;
+  padding-bottom: 12px;
+}
+
+@media (max-width: 480px) {
+  .admin-model-routing .policy-field {
+    flex: 1 1 100%;
+  }
+
+  .admin-model-routing .candidate-row {
+    align-items: flex-start;
+  }
+
+  .admin-model-routing .candidate-index {
+    padding-bottom: 0;
+    padding-top: 2px;
+  }
+}
+
+/* ---- Touch-target spacing (ModelRouting + Members) --------------------------------------------
+ * Two groups of adjacent buttons (a provider's "Store key" / "Enable" pair, and a candidate row's
+ * Up / Down / Remove) used the 6px spacing step between separate touch targets. 8px is the
+ * accepted minimum gap so a light tap does not land on the wrong control (ux: touch & interaction,
+ * WCAG 2.5.5 target spacing). Applied only to this file's own action groups.
+ */
+.admin-model-routing .action-group,
+.admin-members .action-group {
+  gap: var(--space-3);
+}
+
+/* ---- Members: permission picker ----------------------------------------------------------------
+ * A scrollable list of checkbox rows inside the role dialog. Its max-height was tuned for 12.5px
+ * body text; at 14px each row is taller, so the same 260px now shows noticeably fewer permissions
+ * before the list scrolls. Raised enough to keep roughly the same number of rows in view. The
+ * vertical gap between rows also gets the 8px touch-target minimum, since each row starts with its
+ * own checkbox.
+ */
+.admin-members .permission-list {
+  gap: var(--space-4);
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}
+
+.admin-members .permission-group {
+  gap: var(--space-3);
+}

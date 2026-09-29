@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import os.aiworkforce.llm.budget.BudgetGuard;
 import os.aiworkforce.orchestrator.domain.Budget;
 import os.aiworkforce.orchestrator.repository.Budgets;
-import os.aiworkforce.orchestrator.repository.Runs;
 
 /**
  * Enforces a workspace's spending cap.
@@ -55,9 +54,7 @@ public class JpaBudgetGuard implements BudgetGuard {
             return Decision.allow(null);
         }
         if (remaining.compareTo(estimatedCost) < 0) {
-            log.info(
-                    "Workspace {} is at its monthly cap: {} remaining, {} needed",
-                    orgId, remaining, estimatedCost);
+            log.info("Workspace {} is at its monthly cap: {} remaining, {} needed", orgId, remaining, estimatedCost);
             return Decision.deny(
                     "The workspace has reached its monthly model budget. Raise the cap in Settings to continue.",
                     remaining);

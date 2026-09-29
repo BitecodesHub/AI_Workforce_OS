@@ -100,7 +100,8 @@ public final class MentionParser {
         }
         cleaned.append(text.substring(consumedUpTo));
 
-        String withoutMentions = cleaned.toString().replaceAll("[ \\t]{2,}", " ").strip();
+        String withoutMentions =
+                cleaned.toString().replaceAll("[ \\t]{2,}", " ").strip();
         return new Result(List.copyOf(found), withoutMentions);
     }
 

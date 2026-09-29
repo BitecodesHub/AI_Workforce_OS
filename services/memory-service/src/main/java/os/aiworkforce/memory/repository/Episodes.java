@@ -3,11 +3,13 @@ package os.aiworkforce.memory.repository;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
 import os.aiworkforce.memory.domain.Episode;
 
 /*
@@ -28,15 +30,15 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
      * an observation from this morning, and an agent given only the latter will keep
      * relitigating settled questions.
      */
-    @Query("""
+    @Query(
+            """
             select e from Episode e
             where e.orgId = :orgId
               and (:agentId is null or e.agentId = :agentId)
               and e.compacted = false
             order by e.importance desc, e.occurredAt desc
             """)
-    List<Episode> findRecent(
-            @Param("orgId") UUID orgId, @Param("agentId") UUID agentId, Pageable pageable);
+    List<Episode> findRecent(@Param("orgId") UUID orgId, @Param("agentId") UUID agentId, Pageable pageable);
 
     /**
      * Full-text search over the summary, using the index built in the migration.
@@ -45,7 +47,9 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
      * word means a question phrased naturally recalls nothing, and an agent told nothing is
      * remembered will ask a colleague the same thing twice a week.
      */
-    @Query(value = """
+    @Query(
+            value =
+                    """
             with terms as (
                 select string_agg(quote_literal(lexeme), ' | ') as query
                 from unnest(to_tsvector('english', :query))
@@ -58,10 +62,12 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
               and to_tsvector('english', e.summary) @@ to_tsquery('english', terms.query)
             order by ts_rank(to_tsvector('english', e.summary), to_tsquery('english', terms.query)) desc,
                      e.occurred_at desc
-            """, nativeQuery = true)
+            """,
+            nativeQuery = true)
     List<Episode> search(@Param("orgId") UUID orgId, @Param("query") String query, Pageable pageable);
 
-    @Query("""
+    @Query(
+            """
             select e from Episode e
             where e.orgId = :orgId
               and e.occurredAt < :before
@@ -81,11 +87,14 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
     int markCompacted(@Param("ids") List<UUID> ids);
 
     @Modifying
-    @Query(value = """
+    @Query(
+            value =
+                    """
             delete from episodes
             where id in (
                 select id from episodes where expires_at is not null and expires_at < :now limit :batch
             )
-            """, nativeQuery = true)
+            """,
+            nativeQuery = true)
     int deleteExpired(@Param("now") Instant now, @Param("batch") int batch);
 }

@@ -7,6 +7,7 @@
  */
 
 @import 'tailwindcss';
+@import './fonts.css';
 
 :root {
   /* ---- Colour ------------------------------------------------------------------------------ */
@@ -41,9 +42,22 @@
   /* Eyebrow text sits slightly cooler than body text so it recedes without going faint. */
   --eyebrow: #5a6f91;
 
+  /* A handful of greys that pre-dated the token system and had drifted into raw hex directly in
+     components.css. Named here instead, with the exact same values, so nothing renders
+     differently and no new colour enters the palette - see design-system.test.ts's raw-hex rule. */
+  --surface-hover: #f2f5fb;   /* hover tint for a quiet button, icon button, nav pill, menu item */
+  --icon-ink: #54617a;        /* resting colour of an icon-button's glyph */
+  --nav-ink: #5b6678;         /* resting colour of a nav pill's label */
+  --avatar-bg: #eef2f8;       /* the initials-bubble background where no category colour applies */
+  --avatar-ink: #536380;      /* the initials-bubble text, paired with --avatar-bg */
+  --skeleton-highlight: #f1f4f8; /* the lighter band that sweeps across a loading skeleton */
+
   /* ---- Type -------------------------------------------------------------------------------- */
-  --font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* One typeface for everything: Aperçu (see fonts.css). The mono token is kept as a name so
+     labels, code and hashes keep their own styling, but it draws the same family: there is no
+     second typeface in the product. The system stack is only a fallback while a cut loads. */
+  --font-body: 'Aperçu', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-body);
 
   /* Fractional weights are deliberate: 550 carries emphasis without the heaviness of 600, and
      700 never appears inside content. */
@@ -55,13 +69,14 @@
 
   --text-h1: 36px;
   --text-h1-compact: 28px;  /* page titles below 600px, so a title does not fill a phone screen */
-  --text-h2: 13.5px;
-  --text-body: 12.5px;
-  --text-caption: 11px;     /* labels, captions and tags; 10px was below comfortable reading size */
-  --text-micro: 10px;       /* table headers, the smallest text in the product */
+  --text-h2: 15px;
+  --text-lead: 15px;       /* an intro sentence under a title, one step up from body copy - not a heading */
+  --text-body: 14px;       /* 12.5px read as fine print on a laptop; 14px is the readable floor for a dense console */
+  --text-caption: 12.5px;   /* labels, captions and tags; 11px and below strained on laptop screens */
+  --text-micro: 11.5px;     /* table headers, the smallest text in the product */
   --text-stat: 30px;
-  --text-unit: 11px;
-  --text-nav: 12.5px;
+  --text-unit: 12px;
+  --text-nav: 14px;
   --text-brand: 28px;
   --text-brand-compact: 22px; /* the wordmark below 480px, so the top bar fits a 375px screen */
 

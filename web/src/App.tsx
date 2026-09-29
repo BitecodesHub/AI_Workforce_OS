@@ -1,25 +1,9 @@
 import type { ReactElement, ReactNode } from 'react'
-import { useEffect, useLayoutEffect, useReducer, useRef } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useReducer, useRef } from 'react'
 import { Navbar } from './components/layout/Navbar'
 import { match, useRouter } from './lib/router'
 import { isSignedIn, can, SESSION_EVENT } from './lib/session'
 import { CommandMap } from './routes/CommandMap'
-import { Agents } from './routes/Agents'
-import { AgentDetail } from './routes/AgentDetail'
-import { ModelRouting } from './routes/ModelRouting'
-import { Tasks } from './routes/Tasks'
-import { Runs } from './routes/Runs'
-import { RunDetail } from './routes/RunDetail'
-import { Approvals } from './routes/Approvals'
-import { Chat } from './routes/Chat'
-import { Orchestrator } from './routes/Orchestrator'
-import { Schedules } from './routes/Schedules'
-import { Knowledge } from './routes/Knowledge'
-import { SourceDetail } from './routes/SourceDetail'
-import { Integrations } from './routes/Integrations'
-import { Members } from './routes/Members'
-import { AuditLog } from './routes/AuditLog'
-import { Analytics } from './routes/Analytics'
 import { SignIn } from './routes/SignIn'
 import { CreateWorkspace } from './routes/CreateWorkspace'
 import { AcceptInvite } from './routes/AcceptInvite'
@@ -27,6 +11,32 @@ import { Landing } from './routes/Landing'
 import { Profile } from './routes/Profile'
 import { NotFound } from './routes/NotFound'
 import { PageHeader, PermissionState } from './components/ui'
+
+/*
+ * Every screen below is fetched only when it is actually visited: a first-time visitor to the
+ * marketing page never downloads Chat or Orchestrator, and a signed-in user landing on the
+ * Command Map never downloads the technical page for IT teams. The two default screens above
+ * (Command Map for a signed-in visit to "/", Landing for a signed-out one) and the small,
+ * always-on-the-critical-path auth screens stay in the main bundle, so neither common first paint
+ * adds a round trip.
+ */
+const Trust = lazy(() => import('./routes/Trust').then((m) => ({ default: m.Trust })))
+const Agents = lazy(() => import('./routes/Agents').then((m) => ({ default: m.Agents })))
+const AgentDetail = lazy(() => import('./routes/AgentDetail').then((m) => ({ default: m.AgentDetail })))
+const ModelRouting = lazy(() => import('./routes/ModelRouting').then((m) => ({ default: m.ModelRouting })))
+const Tasks = lazy(() => import('./routes/Tasks').then((m) => ({ default: m.Tasks })))
+const Runs = lazy(() => import('./routes/Runs').then((m) => ({ default: m.Runs })))
+const RunDetail = lazy(() => import('./routes/RunDetail').then((m) => ({ default: m.RunDetail })))
+const Approvals = lazy(() => import('./routes/Approvals').then((m) => ({ default: m.Approvals })))
+const Chat = lazy(() => import('./routes/Chat').then((m) => ({ default: m.Chat })))
+const Orchestrator = lazy(() => import('./routes/Orchestrator').then((m) => ({ default: m.Orchestrator })))
+const Schedules = lazy(() => import('./routes/Schedules').then((m) => ({ default: m.Schedules })))
+const Knowledge = lazy(() => import('./routes/Knowledge').then((m) => ({ default: m.Knowledge })))
+const SourceDetail = lazy(() => import('./routes/SourceDetail').then((m) => ({ default: m.SourceDetail })))
+const Integrations = lazy(() => import('./routes/Integrations').then((m) => ({ default: m.Integrations })))
+const Members = lazy(() => import('./routes/Members').then((m) => ({ default: m.Members })))
+const AuditLog = lazy(() => import('./routes/AuditLog').then((m) => ({ default: m.AuditLog })))
+const Analytics = lazy(() => import('./routes/Analytics').then((m) => ({ default: m.Analytics })))
 
 /*
  * The application shell and its routes.
@@ -48,6 +58,7 @@ type RouteMeta = {
 
 const PUBLIC: Array<[string, RouteMeta]> = [
   ['/home', { permission: null, screen: () => <Landing /> }],
+  ['/trust', { permission: null, screen: () => <Trust /> }],
   ['/sign-in', { permission: null, screen: () => <SignIn /> }],
   ['/create-workspace', { permission: null, screen: () => <CreateWorkspace /> }],
   ['/accept-invite', { permission: null, screen: () => <AcceptInvite /> }],
@@ -144,7 +155,11 @@ export function App() {
   }, [path])
 
   if (!signedIn && path === '/') return <Landing />
-  if (publicRoute) return publicRoute.meta.screen(publicRoute.params)
+  if (publicRoute) {
+    return (
+      <Suspense fallback={<div className="page" aria-busy="true" />}>{publicRoute.meta.screen(publicRoute.params)}</Suspense>
+    )
+  }
   if (redirectToSignIn) return <div className="page" aria-busy="true" />
 
   const current = privateRoute
@@ -172,7 +187,11 @@ export function App() {
     )
   }
 
-  return <Shell path={path}>{meta.screen(params)}</Shell>
+  return (
+    <Shell path={path}>
+      <Suspense fallback={<div className="page" aria-busy="true" />}>{meta.screen(params)}</Suspense>
+    </Shell>
+  )
 }
 
 /** Writes the browser tab title for a route pattern. It lives outside App because it writes a global. */
@@ -200,7 +219,8 @@ function focusMainHeading(): void {
 function titleFor(pattern: string): string {
   const titles: Record<string, string> = {
     '/': 'Command Map',
-    '/home': 'A governed AI workforce',
+    '/home': 'AI employees for your business',
+    '/trust': 'Technical details',
     '/sign-in': 'Sign in',
     '/create-workspace': 'Create a workspace',
     '/accept-invite': 'Join the workspace',

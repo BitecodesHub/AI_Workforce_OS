@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import os.aiworkforce.orchestrator.domain.Agent;
@@ -30,9 +31,11 @@ import os.aiworkforce.orchestrator.repository.Goals;
 import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.Tasks;
+import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
+import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
 /**
@@ -65,7 +68,12 @@ public class GoalService {
     private static final int MAX_HANDOFFS = 3;
     /** How far the claim window reaches past tasks whose agent is paused, so they cannot starve it. */
     private static final int CLAIM_WINDOW = 100;
+
     static final String GOAL_CANCELLED = "The goal this run belonged to was cancelled.";
+    static final String PERSON_CANCELLED = "A person cancelled this goal.";
+    static final String TASK_RUN_STOPPED = "The run for this task was stopped before it finished.";
+    /** The steps a retry starts again from: the first that did not finish. */
+    private static final Set<String> RETRY_FROM = Set.of("failed", "cancelled", "skipped");
 
     private final Goals goals;
     private final Tasks tasks;
@@ -76,6 +84,9 @@ public class GoalService {
     private final TaskProgress progress;
     private final Agents agents;
     private final RunExecutor runExecutor;
+    private final QuestionService questions;
+    private final LifecycleAnnouncer announcer;
+    private final AuditClient audit;
 
     public GoalService(
             Goals goals,
@@ -86,7 +97,10 @@ public class GoalService {
             ApprovalService approvals,
             TaskProgress progress,
             Agents agents,
-            @Lazy RunExecutor runExecutor) {
+            @Lazy RunExecutor runExecutor,
+            QuestionService questions,
+            LifecycleAnnouncer announcer,
+            AuditClient audit) {
         this.goals = goals;
         this.tasks = tasks;
         this.runs = runs;
@@ -96,7 +110,16 @@ public class GoalService {
         this.progress = progress;
         this.agents = agents;
         this.runExecutor = runExecutor;
+        this.questions = questions;
+        this.announcer = announcer;
+        this.audit = audit;
     }
+
+    /** How much a stop withdrew, for a caller that reports it. */
+    public record CancelCounts(int tasks, int runs, int approvals, int questions) {}
+
+    /** The goal as it stands after a retry, and the step it starts again from. */
+    public record RetryResult(Goal goal, Task fromTask) {}
 
     /**
      * @param title what the person asked for
@@ -144,6 +167,34 @@ public class GoalService {
     }
 
     /**
+     * Checks a goal can be created, without writing anything.
+     *
+     * <p>Public and outside any transaction, so a caller such as the chat coordinator can refuse a
+     * request before it opens its own write, rather than having a refusal mark that write
+     * rollback-only. {@link #createGoal} makes the same checks first.
+     */
+    public void validate(NewGoal spec) {
+        List<NewTask> taskSpecs = spec.tasks();
+        if (taskSpecs == null || taskSpecs.isEmpty()) {
+            throw ApiException.validation("tasks", "a goal needs at least one task");
+        }
+        if (taskSpecs.size() > MAX_TASKS_PER_GOAL) {
+            // An unbounded graph is an unbounded spend, and a person cannot read a plan of two
+            // hundred steps well enough to approve it anyway.
+            throw ApiException.validation("tasks", "a goal may hold at most " + MAX_TASKS_PER_GOAL + " tasks");
+        }
+        String source = spec.source() == null ? "manual" : spec.source();
+        if ("chat".equals(source) && taskSpecs.size() > MAX_CHAT_TASKS) {
+            // A chat reply chains agents; a chain longer than this is not one a person composed
+            // by mentioning or answering - it is a routing mistake, and refusing it here is safer
+            // than running five minutes of work nobody asked for.
+            throw ApiException.validation("tasks", "a chat message may start at most " + MAX_CHAT_TASKS + " tasks");
+        }
+        validateAgentRepeats(taskSpecs);
+        validateNoCycles(taskSpecs);
+    }
+
+    /**
      * Turns a request into a goal and its tasks, and optionally starts it without waiting.
      *
      * <p>{@code runAsync} exists because the callers need different things from the same method:
@@ -154,26 +205,9 @@ public class GoalService {
      */
     @Transactional
     public Goal createGoal(UUID orgId, NewGoal spec, boolean runAsync) {
+        validate(spec);
         List<NewTask> taskSpecs = spec.tasks();
-        if (taskSpecs == null || taskSpecs.isEmpty()) {
-            throw ApiException.validation("tasks", "a goal needs at least one task");
-        }
-        if (taskSpecs.size() > MAX_TASKS_PER_GOAL) {
-            // An unbounded graph is an unbounded spend, and a person cannot read a plan of two
-            // hundred steps well enough to approve it anyway.
-            throw ApiException.validation(
-                    "tasks", "a goal may hold at most " + MAX_TASKS_PER_GOAL + " tasks");
-        }
         String source = spec.source() == null ? "manual" : spec.source();
-        if ("chat".equals(source) && taskSpecs.size() > MAX_CHAT_TASKS) {
-            // A chat reply chains agents; a chain longer than this is not one a person composed
-            // by mentioning or answering - it is a routing mistake, and refusing it here is safer
-            // than running five minutes of work nobody asked for.
-            throw ApiException.validation(
-                    "tasks", "a chat message may start at most " + MAX_CHAT_TASKS + " tasks");
-        }
-        validateAgentRepeats(taskSpecs);
-        validateNoCycles(taskSpecs);
 
         Goal goal = new Goal();
         goal.setId(UuidV7.generate());
@@ -206,8 +240,10 @@ public class GoalService {
         for (int index = 0; index < taskSpecs.size(); index++) {
             List<Integer> dependsOnPositions = taskSpecs.get(index).dependsOnPositions();
             if (dependsOnPositions != null && !dependsOnPositions.isEmpty()) {
-                created.get(index).setDependsOn(
-                        dependsOnPositions.stream().map(position -> created.get(position).getId()).toList());
+                created.get(index)
+                        .setDependsOn(dependsOnPositions.stream()
+                                .map(position -> created.get(position).getId())
+                                .toList());
             }
         }
         tasks.saveAll(created);
@@ -332,9 +368,8 @@ public class GoalService {
         // one transaction across the whole agent run would keep a pooled connection and the
         // task's row lock for minutes, and several chat messages or schedules firing together
         // would exhaust the pool.
-        Optional<TaskStart> start = claimTransaction == null
-                ? claimNext(orgId)
-                : claimTransaction.execute(status -> claimNext(orgId));
+        Optional<TaskStart> start =
+                claimTransaction == null ? claimNext(orgId) : claimTransaction.execute(status -> claimNext(orgId));
         if (start == null || start.isEmpty()) {
             return false;
         }
@@ -344,9 +379,13 @@ public class GoalService {
             if (claimed.predecessors().isEmpty()) {
                 runner.start(orgId, task.getAgentId(), task.getId(), task.getInstruction(), "task");
             } else {
-                runner.start(orgId, task.getAgentId(), task.getId(),
+                runner.start(
+                        orgId,
+                        task.getAgentId(),
+                        task.getId(),
                         withHandoffPreamble(task.getInstruction(), claimed.predecessors()),
-                        "task", handoffDetails(task, claimed.predecessors()));
+                        "task",
+                        handoffDetails(task, claimed.predecessors()));
             }
         } catch (ApiException e) {
             if (claimTransaction == null) {
@@ -375,11 +414,14 @@ public class GoalService {
         // candidate: the claim window is 100 tasks wide, and candidates routinely share a goal
         // (a chat chain's later tasks are all still pending together), so fetching per-candidate
         // would otherwise repeat the same goal's task list many times over in the same call.
-        Set<UUID> goalIds = candidates.stream().map(Task::getGoalId).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Set<UUID> goalIds = candidates.stream()
+                .map(Task::getGoalId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         Map<UUID, List<Task>> siblingsByGoal = goalIds.isEmpty()
                 ? Map.of()
                 : tasks.findByGoalIdInOrderByPositionAsc(goalIds).stream()
-                        .collect(java.util.stream.Collectors.groupingBy(Task::getGoalId, LinkedHashMap::new, java.util.stream.Collectors.toList()));
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                Task::getGoalId, LinkedHashMap::new, java.util.stream.Collectors.toList()));
 
         for (Task candidate : candidates) {
             List<Task> siblings = siblingsByGoal.getOrDefault(candidate.getGoalId(), List.of());
@@ -426,7 +468,11 @@ public class GoalService {
         return Optional.empty();
     }
 
-    private enum Readiness { READY, WAITING, BLOCKED }
+    private enum Readiness {
+        READY,
+        WAITING,
+        BLOCKED
+    }
 
     /**
      * Whether a task can start yet, is still waiting on something unfinished, or is blocked for
@@ -451,9 +497,13 @@ public class GoalService {
     private static List<Task> predecessorsOf(Task task, List<Task> siblings) {
         List<UUID> dependsOn = task.getDependsOn();
         if (!dependsOn.isEmpty()) {
-            return siblings.stream().filter(sibling -> dependsOn.contains(sibling.getId())).toList();
+            return siblings.stream()
+                    .filter(sibling -> dependsOn.contains(sibling.getId()))
+                    .toList();
         }
-        return siblings.stream().filter(sibling -> sibling.getPosition() < task.getPosition()).toList();
+        return siblings.stream()
+                .filter(sibling -> sibling.getPosition() < task.getPosition())
+                .toList();
     }
 
     /**
@@ -492,7 +542,11 @@ public class GoalService {
         for (Task predecessor : predecessors) {
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("fromTaskId", predecessor.getId().toString());
-            detail.put("fromAgentId", predecessor.getAgentId() == null ? null : predecessor.getAgentId().toString());
+            detail.put(
+                    "fromAgentId",
+                    predecessor.getAgentId() == null
+                            ? null
+                            : predecessor.getAgentId().toString());
             detail.put("fromAgentName", agentNameOf(predecessor.getAgentId()));
             detail.put("toAgentId", task.getAgentId().toString());
             detail.put("toAgentName", agentNameOf(task.getAgentId()));
@@ -537,14 +591,29 @@ public class GoalService {
         int repaired = 0;
         for (Task task : tasks.findStranded(PageRequest.of(0, limit))) {
             Run run = runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId()).orElse(null);
+            // Active includes a run parked for an approval or an answer: that task is waiting,
+            // not stranded.
             if (run == null || run.isActive()) {
+                continue;
+            }
+            // A run from an earlier attempt says nothing about this one. A retried or re-claimed
+            // task is running from its claim before its new run exists, and settling it from the
+            // old run would put it back to pending while the new run starts.
+            if (run.getStartedAt() != null
+                    && task.getStartedAt() != null
+                    && run.getStartedAt().isBefore(task.getStartedAt())) {
                 continue;
             }
             String was = task.getStatus();
             String answer = "completed".equals(run.getStatus()) ? finalAnswer(run) : null;
             progress.onRunFinished(run, run.getStatus(), answer, run.getFailureReason());
-            log.info("Task {} was {} although its run {} had ended as {}; now {}",
-                    task.getId(), was, run.getId(), run.getStatus(), task.getStatus());
+            log.info(
+                    "Task {} was {} although its run {} had ended as {}; now {}",
+                    task.getId(),
+                    was,
+                    run.getId(),
+                    run.getStatus(),
+                    task.getStatus());
             repaired++;
         }
         return repaired;
@@ -565,37 +634,181 @@ public class GoalService {
     }
 
     /**
-     * Cancels a goal and everything still open under it.
+     * Cancels a goal and everything still open under it, for the default reason.
      *
-     * <p>A task's run is stopped too, and any approval it was waiting on is withdrawn. Otherwise
-     * the run would stay "waiting for approval", the approval would stay in the queue, and
-     * approving it would resume work for a goal the person had cancelled.
+     * <p>Kept with its signature so every existing caller stays as it is; see {@link
+     * #cancel(UUID, UUID, String)}.
      */
     @Transactional
     public void cancel(UUID orgId, UUID goalId) {
-        Goal goal = goals.findByIdAndOrgId(goalId, orgId)
-                .orElseThrow(() -> ApiException.notFound("goal", goalId));
+        cancel(orgId, goalId, PERSON_CANCELLED);
+    }
+
+    /**
+     * Cancels a goal and everything still open under it.
+     *
+     * <p>A task's run is stopped too, and any approval or question it was waiting on is withdrawn.
+     * Otherwise the run would stay parked, the approval or question would stay in the queue, and
+     * deciding or answering it would resume work for a goal the person had cancelled.
+     *
+     * <p>The runs are locked first, before the tasks are read, following the one lock order every
+     * writer uses (run, then question or approval, then task, then goal). A resume claiming a run
+     * at the same moment waits behind the lock and then finds it cancelled; a run finishing at the
+     * same moment commits first, and its task is then read as already settled and left alone.
+     * The withdrawals are conditional bulk updates, so an answer or a decision committing at the
+     * same moment wins or loses cleanly and never fails the cancel.
+     *
+     * @param reason shown on every task this cancels, written for a person to read
+     */
+    @Transactional
+    public CancelCounts cancel(UUID orgId, UUID goalId, String reason) {
+        Goal goal = goals.findByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId));
         if (goal.isFinished()) {
             throw new ApiException(ErrorCode.CONFLICT, "That goal has already finished.");
         }
-        tasks.findByGoalIdOrderByPosition(goalId).stream()
-                .filter(task -> !task.isTerminal())
-                .forEach(task -> {
-                    runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId())
-                            .filter(Run::isActive)
-                            .ifPresent(run -> {
-                                run.finish("cancelled", GOAL_CANCELLED);
-                                runs.save(run);
-                                approvals.cancelForRun(run.getId());
-                            });
-                    // Marked directly rather than through TaskProgress, and before the goal is
-                    // closed, so the goal ends as cancelled rather than as the sum of its tasks.
-                    task.setStatus("cancelled");
-                    task.setCompletedAt(Instant.now());
-                    tasks.save(task);
-                });
+        List<Run> active = runs.lockActiveByGoal(goalId);
+        List<Task> all = tasks.findByGoalIdOrderByPosition(goalId);
+
+        int approvalsWithdrawn = 0;
+        int questionsWithdrawn = 0;
+        for (Run run : active) {
+            run.finish("cancelled", GOAL_CANCELLED);
+            runs.save(run);
+            approvalsWithdrawn += approvals.withdrawForRun(run.getId());
+            questionsWithdrawn += questions.cancelForRun(run.getId(), GOAL_CANCELLED);
+        }
+
+        Instant now = Instant.now();
+        int tasksCancelled = 0;
+        for (Task task : all) {
+            if (task.isTerminal()) {
+                continue;
+            }
+            // Marked directly rather than through TaskProgress, and before the goal is closed,
+            // so the goal ends as cancelled rather than as the sum of its tasks.
+            task.setStatus("cancelled");
+            task.setFailureReason(reason);
+            task.setCompletedAt(now);
+            tasks.save(task);
+            tasksCancelled++;
+        }
         goal.setStatus("cancelled");
-        goal.setCompletedAt(Instant.now());
+        goal.setCompletedAt(now);
         goals.save(goal);
+        log.info("Goal {} cancelled: {} task(s), {} run(s)", goalId, tasksCancelled, active.size());
+
+        LifecycleAnnouncer.afterCommit(() -> announcer.goalCancelled(goalId, reason));
+        return new CancelCounts(tasksCancelled, active.size(), approvalsWithdrawn, questionsWithdrawn);
+    }
+
+    /**
+     * Cancels a goal when it is still in progress, in a transaction of its own, and does nothing
+     * when it is missing or has already finished. For callers that stop many goals in turn - Stop
+     * everything, deleting a conversation - so one goal finishing meanwhile is not an error.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<CancelCounts> cancelIfActive(UUID orgId, UUID goalId, String reason) {
+        Goal goal = goals.findByIdAndOrgId(goalId, orgId).orElse(null);
+        if (goal == null || goal.isFinished()) {
+            return Optional.empty();
+        }
+        return Optional.of(cancel(orgId, goalId, reason));
+    }
+
+    /**
+     * Stops one run: the single way to do it, for the run page and for Stop everything.
+     *
+     * <p>The run is locked first, so a resume claiming it at the same moment waits and then loses.
+     * Its approvals and question are withdrawn with conditional bulk updates, and a task's run
+     * settles its task as cancelled.
+     */
+    @Transactional
+    public CancelCounts stopRun(UUID orgId, UUID runId, String reason) {
+        Run run = runs.lockByIdAndOrgId(runId, orgId).orElseThrow(() -> ApiException.notFound("run", runId));
+        if (!run.isActive()) {
+            throw new ApiException(ErrorCode.CONFLICT, "That run has already finished.");
+        }
+        run.finish("cancelled", reason);
+        runs.save(run);
+        int approvalsWithdrawn = approvals.withdrawForRun(runId);
+        int questionsWithdrawn = questions.cancelForRun(runId, reason);
+        int tasksCancelled = 0;
+        if (run.getTaskId() != null) {
+            progress.onRunFinished(run, "cancelled", null, TASK_RUN_STOPPED);
+            tasksCancelled = 1;
+        }
+        log.info("Run {} stopped: {}", runId, reason);
+        return new CancelCounts(tasksCancelled, 1, approvalsWithdrawn, questionsWithdrawn);
+    }
+
+    /** Stops a run when it is still active, in a transaction of its own; nothing when it is not. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<CancelCounts> stopRunIfActive(UUID orgId, UUID runId, String reason) {
+        Run run = runs.lockByIdAndOrgId(runId, orgId).orElse(null);
+        if (run == null || !run.isActive()) {
+            return Optional.empty();
+        }
+        // Re-reads the row this transaction already holds locked, so there is no second wait.
+        return Optional.of(stopRun(orgId, runId, reason));
+    }
+
+    /**
+     * Tries a failed or stopped goal again, from its first step that did not finish.
+     *
+     * <p>Completed steps keep their results, and earlier runs stay in the history. Restarting
+     * someone else's work repeats its side effects, so it takes the same authority as stopping
+     * it: the person who asked for it, or someone who can cancel work.
+     *
+     * <p>The goal is locked here, the one exception to locking runs first: a goal that failed or
+     * was stopped has no active run, so nothing can hold a run or task lock and wait for this one.
+     * A second retry at the same moment waits, then finds the goal running and gets a conflict.
+     */
+    @Transactional
+    public RetryResult retry(UUID orgId, UUID goalId, Actor actor) {
+        Goal goal = goals.lockByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId));
+        boolean requester = actor != null
+                && goal.getRequestedBy() != null
+                && goal.getRequestedBy().toString().equals(actor.humanId());
+        if (!requester && (actor == null || !actor.hasPermission(Permission.Codes.TASK_CANCEL))) {
+            throw new ApiException(
+                            ErrorCode.PERMISSION_DENIED,
+                            "Only the person who asked for this work, or someone who can cancel work, can try it again.")
+                    .with("requiredPermission", Permission.Codes.TASK_CANCEL);
+        }
+        if (!"failed".equals(goal.getStatus()) && !"cancelled".equals(goal.getStatus())) {
+            throw new ApiException(ErrorCode.CONFLICT, "Only a goal that failed or was stopped can be tried again.");
+        }
+        List<Task> all = tasks.findByGoalIdOrderByPosition(goalId);
+        Task from = all.stream()
+                .filter(task -> RETRY_FROM.contains(task.getStatus()))
+                .findFirst()
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.CONFLICT, "Every step of this goal completed, so there is nothing to try again."));
+        for (Task task : all) {
+            if (task.getPosition() >= from.getPosition() && !"completed".equals(task.getStatus())) {
+                task.setStatus("pending");
+                task.setAttempt(0);
+                task.setResult(null);
+                task.setFailureReason(null);
+                task.setStartedAt(null);
+                task.setCompletedAt(null);
+                tasks.save(task);
+            }
+        }
+        goal.setStatus("running");
+        goal.setCompletedAt(null);
+        goals.save(goal);
+        log.info("Goal {} tried again from task {}", goalId, from.getId());
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("fromTaskId", from.getId().toString());
+        detail.put("fromPosition", from.getPosition());
+        UUID fromTaskId = from.getId();
+        // Three separate actions, so one failing after the commit never stops the others.
+        LifecycleAnnouncer.afterCommit(() -> runExecutor.submitNextTasks(orgId));
+        LifecycleAnnouncer.afterCommit(() -> announcer.goalRetried(goalId, fromTaskId));
+        LifecycleAnnouncer.afterCommit(
+                () -> audit.record(orgId, actor, "goal.retry", "goal", goalId.toString(), "succeeded", detail));
+        return new RetryResult(goal, from);
     }
 }

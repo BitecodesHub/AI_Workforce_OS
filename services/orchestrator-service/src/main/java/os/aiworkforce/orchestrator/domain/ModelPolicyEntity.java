@@ -1,5 +1,9 @@
 package os.aiworkforce.orchestrator.domain;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -8,9 +12,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
 
 import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
 

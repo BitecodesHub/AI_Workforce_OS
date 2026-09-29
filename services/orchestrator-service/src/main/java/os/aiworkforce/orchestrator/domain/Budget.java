@@ -1,10 +1,11 @@
 package os.aiworkforce.orchestrator.domain;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import java.math.BigDecimal;
-import java.time.Instant;
 
 import os.aiworkforce.platform.web.persistence.BaseEntity;
 

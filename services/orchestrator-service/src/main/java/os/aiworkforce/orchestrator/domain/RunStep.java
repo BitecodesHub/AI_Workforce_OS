@@ -1,13 +1,14 @@
 package os.aiworkforce.orchestrator.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -80,8 +81,13 @@ public class RunStep {
         return step;
     }
 
-    public RunStep withModel(String providerId, String modelId, int promptTokens, int completionTokens,
-            BigDecimal cost, long durationMs) {
+    public RunStep withModel(
+            String providerId,
+            String modelId,
+            int promptTokens,
+            int completionTokens,
+            BigDecimal cost,
+            long durationMs) {
         this.providerId = providerId;
         this.modelId = modelId;
         this.promptTokens = promptTokens;

@@ -1,11 +1,12 @@
 package os.aiworkforce.orchestrator.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -179,7 +180,9 @@ public class Task extends OrgScopedEntity {
     }
 
     public boolean isTerminal() {
-        return "completed".equals(status) || "failed".equals(status)
-                || "cancelled".equals(status) || "skipped".equals(status);
+        return "completed".equals(status)
+                || "failed".equals(status)
+                || "cancelled".equals(status)
+                || "skipped".equals(status);
     }
 }

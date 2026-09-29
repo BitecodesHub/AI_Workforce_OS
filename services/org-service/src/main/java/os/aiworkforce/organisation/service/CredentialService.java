@@ -42,8 +42,7 @@ public class CredentialService {
     private final Credentials credentials;
     private final EnvelopeEncryptionService encryption;
 
-    public CredentialService(
-            Credentials credentials, EnvelopeEncryptionService encryption) {
+    public CredentialService(Credentials credentials, EnvelopeEncryptionService encryption) {
         this.credentials = credentials;
         this.encryption = encryption;
     }
@@ -59,12 +58,7 @@ public class CredentialService {
      * @param lastUsedAt when the platform last needed it
      */
     public record CredentialView(
-            String ref,
-            String kind,
-            String fingerprint,
-            boolean present,
-            Instant expiresAt,
-            Instant lastUsedAt) {}
+            String ref, String kind, String fingerprint, boolean present, Instant expiresAt, Instant lastUsedAt) {}
 
     @Transactional
     public CredentialView store(UUID orgId, String ref, String kind, String plaintext, Instant expiresAt) {
@@ -91,7 +85,9 @@ public class CredentialService {
         // The value is never logged; the reference and who stored it are.
         log.info(
                 "Credential {} stored for workspace {} by {}",
-                ref, orgId, RequestContext.actor().map(actor -> actor.id()).orElse("system"));
+                ref,
+                orgId,
+                RequestContext.actor().map(actor -> actor.id()).orElse("system"));
         return describe(credential);
     }
 
@@ -124,13 +120,15 @@ public class CredentialService {
 
     @Transactional(readOnly = true)
     public List<CredentialView> list(UUID orgId) {
-        return credentials.findByOrgIdOrderByRef(orgId).stream().map(this::describe).toList();
+        return credentials.findByOrgIdOrderByRef(orgId).stream()
+                .map(this::describe)
+                .toList();
     }
 
     @Transactional
     public void delete(UUID orgId, String ref) {
-        Credential credential = credentials.findByOrgIdAndRef(orgId, ref)
-                .orElseThrow(() -> ApiException.notFound("credential", ref));
+        Credential credential =
+                credentials.findByOrgIdAndRef(orgId, ref).orElseThrow(() -> ApiException.notFound("credential", ref));
         credentials.delete(credential);
         log.info("Credential {} removed from workspace {}", ref, orgId);
     }
@@ -177,7 +175,6 @@ public class CredentialService {
     }
 
     static ApiException notConfigured(String ref) {
-        return new ApiException(ErrorCode.PROVIDER_NOT_CONFIGURED)
-                .with("credentialRef", ref);
+        return new ApiException(ErrorCode.PROVIDER_NOT_CONFIGURED).with("credentialRef", ref);
     }
 }

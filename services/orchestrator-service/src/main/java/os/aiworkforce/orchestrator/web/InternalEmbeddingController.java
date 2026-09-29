@@ -1,15 +1,16 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.Size;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -73,17 +74,15 @@ public class InternalEmbeddingController {
             @Valid @RequestBody EmbedRequest request, @RequestHeader("X-Workspace-Id") UUID workspaceId) {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() == Actor.Kind.USER) {
-            throw new ApiException(
-                    ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
 
         String orgId = workspaceId.toString();
         ProviderDescriptor provider = registry.provider(orgId, request.providerId())
-                .orElseThrow(() -> new ApiException(ErrorCode.PROVIDER_NOT_CONFIGURED)
-                        .with("provider", request.providerId()));
+                .orElseThrow(() ->
+                        new ApiException(ErrorCode.PROVIDER_NOT_CONFIGURED).with("provider", request.providerId()));
         ModelSpec model = registry.model(orgId, request.providerId(), request.modelId())
-                .orElseThrow(() -> new ApiException(ErrorCode.MODEL_NOT_FOUND)
-                        .with("model", request.modelId()));
+                .orElseThrow(() -> new ApiException(ErrorCode.MODEL_NOT_FOUND).with("model", request.modelId()));
 
         ChatProvider adapter = providers.stream()
                 .filter(candidate -> candidate.kind() == provider.kind())
@@ -107,8 +106,7 @@ public class InternalEmbeddingController {
             // A provider returning a different number of vectors than texts would misalign every
             // citation after it, which is far worse than failing here.
             throw new ApiException(
-                    ErrorCode.UPSTREAM_ERROR,
-                    "The embedding provider returned an unexpected number of vectors.");
+                    ErrorCode.UPSTREAM_ERROR, "The embedding provider returned an unexpected number of vectors.");
         }
         return new EmbedResponse(vectors, vectors.isEmpty() ? 0 : vectors.get(0).length);
     }

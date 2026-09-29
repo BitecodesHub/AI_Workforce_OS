@@ -72,8 +72,8 @@ class MentionParserTest {
     @Test
     @DisplayName("collects several mentions in the order written, without duplicates")
     void collectsSeveralMentionsInOrder() {
-        MentionParser.Result result = MentionParser.parse(
-                "@research find competitors then @support draft a reply, cc @research", agents);
+        MentionParser.Result result =
+                MentionParser.parse("@research find competitors then @support draft a reply, cc @research", agents);
 
         assertThat(result.agents()).containsExactly(research, support);
     }

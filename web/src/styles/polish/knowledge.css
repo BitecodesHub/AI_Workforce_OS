@@ -1,0 +1,22 @@
+/* UI/UX polish: knowledge screens. Loaded after components.css, so rules here refine it. */
+
+/* ---- Upload dropzone (SourceDetail) ---------------------------------------------------------
+ * `.dropzone` is used only here. While a batch of files is uploading the zone stays clickable in
+ * markup (so a keyboard user tabbing through does not lose the control) but must not look like it
+ * is: without this, the dashed border still brightens on hover and the cursor still reads as
+ * "click me" while a click is silently ignored, which reads as a stuck or broken control rather
+ * than one that is busy. This is the one visible state the component itself never set.
+ */
+.dropzone[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+.dropzone[aria-disabled='true']:hover {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.dropzone[aria-disabled='true'] svg,
+.dropzone[aria-disabled='true'] p {
+  opacity: 0.55;
+}

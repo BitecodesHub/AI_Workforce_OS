@@ -1,11 +1,12 @@
 package os.aiworkforce.orchestrator.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 
 import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
 
@@ -176,8 +177,14 @@ public class Run extends OrgScopedEntity {
         this.failureReason = failureReason;
     }
 
+    /** Still going: working, or parked waiting for a person's approval or answer. */
     public boolean isActive() {
-        return "running".equals(status) || "waiting_approval".equals(status);
+        return "running".equals(status) || isParked();
+    }
+
+    /** Parked waiting for a person, either to approve an action or to answer a question. */
+    public boolean isParked() {
+        return "waiting_approval".equals(status) || "waiting_input".equals(status);
     }
 
     /** Extends the lease. Called after every step, so a long run is not reaped mid-flight. */

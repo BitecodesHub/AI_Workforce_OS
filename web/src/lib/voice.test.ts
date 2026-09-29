@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { hash, pickBrowserVoice } from './voice'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { createElement } from 'react'
+import type { ReactNode } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { hash, pickBrowserVoice, pickRecorderType, useSpeaker } from './voice'
 
 /*
  * Only the pure helpers are tested here. useVoiceInput and useSpeaker depend on MediaRecorder,
@@ -7,6 +11,10 @@ import { hash, pickBrowserVoice } from './voice'
  * project's test setup (no user-event, no signed-in screen harness - see queries.ts's own
  * comment); their no-op-without-the-API behaviour is exercised in practice by the modules that
  * mount them, per the routing/mentions style of keeping logic pure and testable in lib/.
+ *
+ * The forced-speak path (D1, B1.12) is the one behaviour worth exercising through the real hook:
+ * a manual "Read aloud" press must reach speechSynthesis even while replies are muted. A minimal
+ * speechSynthesis double is installed for that one describe block only.
  */
 
 function voice(name: string, lang: string): SpeechSynthesisVoice {
@@ -56,5 +64,98 @@ describe('pickBrowserVoice', () => {
       ['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e'].map((id) => pickBrowserVoice(voices, id, 'en-AU')?.name),
     )
     expect(names.size).toBeGreaterThan(1)
+  })
+})
+
+describe('pickRecorderType', () => {
+  const original = (globalThis as { MediaRecorder?: unknown }).MediaRecorder
+
+  afterEach(() => {
+    if (original) (globalThis as { MediaRecorder?: unknown }).MediaRecorder = original
+    else delete (globalThis as { MediaRecorder?: unknown }).MediaRecorder
+  })
+
+  it('returns null when MediaRecorder does not exist at all', () => {
+    delete (globalThis as { MediaRecorder?: unknown }).MediaRecorder
+    expect(pickRecorderType(['audio/webm', 'audio/mp4'])).toBeNull()
+  })
+
+  it('picks the first candidate the browser reports as supported', () => {
+    Object.defineProperty(globalThis, 'MediaRecorder', {
+      configurable: true,
+      value: { isTypeSupported: (type: string) => type === 'audio/mp4' },
+    })
+    expect(pickRecorderType(['audio/webm', 'audio/mp4', 'audio/ogg'])).toBe('audio/mp4')
+  })
+
+  it('returns null when nothing on the list is supported (D16)', () => {
+    Object.defineProperty(globalThis, 'MediaRecorder', {
+      configurable: true,
+      value: { isTypeSupported: () => false },
+    })
+    expect(pickRecorderType(['audio/webm', 'audio/mp4', 'audio/ogg'])).toBeNull()
+  })
+})
+
+class FakeUtterance {
+  text: string
+  voice: SpeechSynthesisVoice | null = null
+  pitch = 1
+  onend: (() => void) | null = null
+  onerror: (() => void) | null = null
+  constructor(text: string) {
+    this.text = text
+  }
+}
+
+function wrapper({ children }: { children: ReactNode }) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return createElement(QueryClientProvider, { client }, children)
+}
+
+describe('useSpeaker forced speak (D1)', () => {
+  let speakSpy: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('No network in tests')))
+    speakSpy = vi.fn()
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: { getVoices: () => [], speak: speakSpy, cancel: vi.fn() },
+    })
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, value: FakeUtterance })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    delete (window as { speechSynthesis?: unknown }).speechSynthesis
+    delete (window as { SpeechSynthesisUtterance?: unknown }).SpeechSynthesisUtterance
+  })
+
+  it('speaks even while muted, when the caller forces it', async () => {
+    const { result } = renderHook(() => useSpeaker(), { wrapper })
+
+    act(() => result.current.setMuted(true))
+    await waitFor(() => expect(result.current.muted).toBe(true))
+
+    await act(async () => {
+      await result.current.speak('Hello there', 'agent-1', { force: true, key: 'm1' })
+    })
+
+    expect(speakSpy).toHaveBeenCalledTimes(1)
+    expect(result.current.speakingKey).toBe('m1')
+  })
+
+  it('stays silent while muted without force', async () => {
+    const { result } = renderHook(() => useSpeaker(), { wrapper })
+
+    act(() => result.current.setMuted(true))
+    await waitFor(() => expect(result.current.muted).toBe(true))
+
+    await act(async () => {
+      await result.current.speak('Hello there', 'agent-1')
+    })
+
+    expect(speakSpy).not.toHaveBeenCalled()
   })
 })

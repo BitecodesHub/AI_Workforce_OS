@@ -1,13 +1,14 @@
 package os.aiworkforce.platform.config;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -196,10 +197,9 @@ public record PlatformProperties(
              * Keys whose values are removed from logs, traces, audit payloads and stored request
              * captures. Matching is on the key, case-insensitively, at any depth.
              */
-            @DefaultValue(
-                            "password,secret,token,api_key,apiKey,authorization,refresh_token,"
-                                    + "access_token,client_secret,private_key,credential,cookie,"
-                                    + "set-cookie,x-api-key,ssn,card_number")
+            @DefaultValue("password,secret,token,api_key,apiKey,authorization,refresh_token,"
+                            + "access_token,client_secret,private_key,credential,cookie,"
+                            + "set-cookie,x-api-key,ssn,card_number")
                     List<String> redactKeys,
             @DefaultValue("true") boolean redactEmailAddresses) {}
 

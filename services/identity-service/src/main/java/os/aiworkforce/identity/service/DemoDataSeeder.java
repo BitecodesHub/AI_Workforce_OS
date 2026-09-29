@@ -58,15 +58,30 @@ public class DemoDataSeeder {
     private record DemoAccount(String email, String displayName, String role, String describes) {}
 
     private static final List<DemoAccount> ACCOUNTS = List.of(
-            new DemoAccount("owner@demo.aiworkforce.os", "Ava Owner", "owner",
+            new DemoAccount(
+                    "owner@demo.aiworkforce.os",
+                    "Ava Owner",
+                    "owner",
                     "Everything, including billing and closing the workspace"),
-            new DemoAccount("admin@demo.aiworkforce.os", "Arjun Admin", "admin",
+            new DemoAccount(
+                    "admin@demo.aiworkforce.os",
+                    "Arjun Admin",
+                    "admin",
                     "Manages people, agents, integrations and settings"),
-            new DemoAccount("manager@demo.aiworkforce.os", "Maya Manager", "manager",
+            new DemoAccount(
+                    "manager@demo.aiworkforce.os",
+                    "Maya Manager",
+                    "manager",
                     "Runs agents and approves their actions, but cannot change who may"),
-            new DemoAccount("employee@demo.aiworkforce.os", "Eli Employee", "employee",
+            new DemoAccount(
+                    "employee@demo.aiworkforce.os",
+                    "Eli Employee",
+                    "employee",
                     "Asks questions and hands routine work to agents"),
-            new DemoAccount("viewer@demo.aiworkforce.os", "Vik Viewer", "viewer",
+            new DemoAccount(
+                    "viewer@demo.aiworkforce.os",
+                    "Vik Viewer",
+                    "viewer",
                     "Reads dashboards and traces, changes nothing"));
 
     private final Users users;
@@ -139,9 +154,7 @@ public class DemoDataSeeder {
         }
 
         if (created > 0) {
-            log.info(
-                    "Created {} demo account(s) in workspace {}. Password: {}",
-                    created, DEMO_ORG_ID, DEMO_PASSWORD);
+            log.info("Created {} demo account(s) in workspace {}. Password: {}", created, DEMO_ORG_ID, DEMO_PASSWORD);
         }
     }
 

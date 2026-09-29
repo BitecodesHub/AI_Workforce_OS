@@ -2,12 +2,16 @@ package os.aiworkforce.platform.web.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
+import java.util.Date;
+import java.util.List;
+
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -17,10 +21,6 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
-import java.time.Instant;
-import java.util.Date;
-import java.util.List;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -72,8 +72,7 @@ class TokenVerificationTest {
 
         // Asymmetric signing is what stops any other service minting tokens. If this passed, a
         // disclosure in the least sensitive service would compromise every workspace.
-        org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> new NimbusJwtDecoder(processor).decode(token))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new NimbusJwtDecoder(processor).decode(token))
                 .isInstanceOf(org.springframework.security.oauth2.jwt.JwtException.class);
     }
 

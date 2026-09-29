@@ -39,12 +39,19 @@ import os.aiworkforce.platform.config.PlatformProperties;
 public class GatewaySecurityConfig {
 
     private static final String[] PUBLIC_PATHS = {
-        "/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
-        "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**",
+        "/actuator/health",
+        "/actuator/health/**",
+        "/actuator/info",
+        "/actuator/prometheus",
+        "/v3/api-docs",
+        "/v3/api-docs/**",
+        "/swagger-ui.html",
+        "/swagger-ui/**",
         "/api/*/v3/api-docs",
         // Authentication itself cannot require a token: a person who cannot sign in has none to
         // present. The identity service enforces its own rate limit on these underneath.
-        "/api/auth/**", "/.well-known/**",
+        "/api/auth/**",
+        "/.well-known/**",
         // Same reasoning as /api/auth/**: accepting an invitation is how a brand-new person gets
         // their first token. The endpoint checks the invitation's own hashed token itself.
         "/api/invitations/accept",

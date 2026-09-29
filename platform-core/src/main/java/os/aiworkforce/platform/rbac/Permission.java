@@ -31,8 +31,7 @@ import java.util.stream.Stream;
  * @param description one sentence shown beside the checkbox in the console
  * @param administrative whether holding this permission lets an account widen its own authority
  */
-public record Permission(
-        String code, String resource, String action, String description, boolean administrative) {
+public record Permission(String code, String resource, String action, String description, boolean administrative) {
 
     public Permission {
         Objects.requireNonNull(code, "code");
@@ -50,12 +49,10 @@ public record Permission(
     }
 
     // ---- Workspace -----------------------------------------------------------------------
-    public static final Permission WORKSPACE_READ =
-            of("workspace", "read", "View workspace details and settings.");
+    public static final Permission WORKSPACE_READ = of("workspace", "read", "View workspace details and settings.");
     public static final Permission WORKSPACE_UPDATE =
             admin("workspace", "update", "Change workspace name, working hours and general settings.");
-    public static final Permission WORKSPACE_DELETE =
-            admin("workspace", "delete", "Permanently close the workspace.");
+    public static final Permission WORKSPACE_DELETE = admin("workspace", "delete", "Permanently close the workspace.");
 
     // ---- Members and roles ---------------------------------------------------------------
     public static final Permission MEMBER_READ = of("member", "read", "See who belongs to the workspace.");
@@ -68,8 +65,7 @@ public record Permission(
     public static final Permission ROLE_UPDATE = admin("role", "update", "Change the permissions a role carries.");
     public static final Permission ROLE_DELETE = admin("role", "delete", "Delete a role that nobody holds.");
     public static final Permission API_KEY_READ = of("api_key", "read", "List machine keys and their scopes.");
-    public static final Permission API_KEY_MANAGE =
-            admin("api_key", "manage", "Create and revoke machine keys.");
+    public static final Permission API_KEY_MANAGE = admin("api_key", "manage", "Create and revoke machine keys.");
 
     // ---- Agents --------------------------------------------------------------------------
     public static final Permission AGENT_READ = of("agent", "read", "View agents and how they are configured.");
@@ -132,24 +128,55 @@ public record Permission(
 
     /** Every permission the build understands, in console display order. */
     public static final List<Permission> ALL = List.of(
-            WORKSPACE_READ, WORKSPACE_UPDATE, WORKSPACE_DELETE,
-            MEMBER_READ, MEMBER_INVITE, MEMBER_UPDATE, MEMBER_REMOVE,
-            ROLE_READ, ROLE_CREATE, ROLE_UPDATE, ROLE_DELETE,
-            API_KEY_READ, API_KEY_MANAGE,
-            AGENT_READ, AGENT_CREATE, AGENT_UPDATE, AGENT_DELETE, AGENT_RUN,
-            AGENT_GRANT_TOOLS, AGENT_SET_MODEL_POLICY, AGENT_SET_APPROVAL_POLICY,
-            TASK_READ, TASK_CREATE, TASK_CANCEL,
-            RUN_READ, RUN_CANCEL, RUN_REPLAY, CHAT_USE,
-            APPROVAL_READ, APPROVAL_DECIDE,
-            KNOWLEDGE_READ, KNOWLEDGE_QUERY, KNOWLEDGE_SOURCE_MANAGE,
-            INTEGRATION_READ, INTEGRATION_CONNECT, INTEGRATION_DISCONNECT,
-            PROVIDER_READ, PROVIDER_MANAGE, BUDGET_READ, BUDGET_MANAGE,
-            AUDIT_READ, ANALYTICS_READ, SETTINGS_READ, SETTINGS_UPDATE,
-            MEMORY_READ, MEMORY_PURGE);
+            WORKSPACE_READ,
+            WORKSPACE_UPDATE,
+            WORKSPACE_DELETE,
+            MEMBER_READ,
+            MEMBER_INVITE,
+            MEMBER_UPDATE,
+            MEMBER_REMOVE,
+            ROLE_READ,
+            ROLE_CREATE,
+            ROLE_UPDATE,
+            ROLE_DELETE,
+            API_KEY_READ,
+            API_KEY_MANAGE,
+            AGENT_READ,
+            AGENT_CREATE,
+            AGENT_UPDATE,
+            AGENT_DELETE,
+            AGENT_RUN,
+            AGENT_GRANT_TOOLS,
+            AGENT_SET_MODEL_POLICY,
+            AGENT_SET_APPROVAL_POLICY,
+            TASK_READ,
+            TASK_CREATE,
+            TASK_CANCEL,
+            RUN_READ,
+            RUN_CANCEL,
+            RUN_REPLAY,
+            CHAT_USE,
+            APPROVAL_READ,
+            APPROVAL_DECIDE,
+            KNOWLEDGE_READ,
+            KNOWLEDGE_QUERY,
+            KNOWLEDGE_SOURCE_MANAGE,
+            INTEGRATION_READ,
+            INTEGRATION_CONNECT,
+            INTEGRATION_DISCONNECT,
+            PROVIDER_READ,
+            PROVIDER_MANAGE,
+            BUDGET_READ,
+            BUDGET_MANAGE,
+            AUDIT_READ,
+            ANALYTICS_READ,
+            SETTINGS_READ,
+            SETTINGS_UPDATE,
+            MEMORY_READ,
+            MEMORY_PURGE);
 
     private static final Map<String, Permission> BY_CODE =
             ALL.stream().collect(Collectors.toUnmodifiableMap(Permission::code, Function.identity()));
-
 
     /**
      * The same codes as compile-time string constants.
@@ -236,6 +263,9 @@ public record Permission(
 
     /** Codes that let an account widen its own authority; the console warns before granting them. */
     public static List<String> administrativeCodes() {
-        return ALL.stream().filter(Permission::administrative).map(Permission::code).toList();
+        return ALL.stream()
+                .filter(Permission::administrative)
+                .map(Permission::code)
+                .toList();
     }
 }

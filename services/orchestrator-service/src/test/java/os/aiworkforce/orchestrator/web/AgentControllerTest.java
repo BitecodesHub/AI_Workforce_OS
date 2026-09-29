@@ -7,12 +7,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +26,7 @@ import os.aiworkforce.orchestrator.repository.AgentVersions;
 import os.aiworkforce.orchestrator.repository.Agents;
 import os.aiworkforce.orchestrator.repository.ToolGrants;
 import os.aiworkforce.orchestrator.service.AgentRunner;
+import os.aiworkforce.orchestrator.service.GeneralEmployee;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
@@ -42,7 +44,8 @@ class AgentControllerTest {
     @Test
     @DisplayName("the summary is the first sentence of the prompt, with its line breaks collapsed")
     void firstSentence() {
-        String prompt = """
+        String prompt =
+                """
                 You handle people operations for a small care provider. Screen applications \
                 against the stated requirements of the role.
                 Leave email as a draft.""";
@@ -67,13 +70,16 @@ class AgentControllerTest {
 
         String summary = AgentController.summarise(sentence);
 
-        assertThat(summary).hasSizeLessThanOrEqualTo(AgentController.SUMMARY_LIMIT).endsWith("…");
+        assertThat(summary)
+                .hasSizeLessThanOrEqualTo(AgentController.SUMMARY_LIMIT)
+                .endsWith("…");
         assertThat(summary.substring(0, summary.length() - 1)).doesNotEndWith(" ");
         assertThat(sentence).startsWith(summary.substring(0, summary.length() - 1));
     }
 
     @Test
-    @DisplayName("a prompt with no sentence ending is returned whole when short, and nothing is invented for an empty one")
+    @DisplayName(
+            "a prompt with no sentence ending is returned whole when short, and nothing is invented for an empty one")
     void edges() {
         assertThat(AgentController.summarise("You answer questions")).isEqualTo("You answer questions");
         assertThat(AgentController.summarise("   ")).isNull();
@@ -86,7 +92,8 @@ class AgentControllerTest {
         Agents agents = mock(Agents.class);
         AgentVersions versions = mock(AgentVersions.class);
         ToolGrants grants = mock(ToolGrants.class);
-        AgentController controller = new AgentController(agents, versions, mock(AgentRunner.class), grants);
+        AgentController controller =
+                new AgentController(agents, versions, mock(AgentRunner.class), grants, mock(GeneralEmployee.class));
 
         Agent agent = new Agent();
         agent.setId(UUID.randomUUID());
@@ -141,7 +148,11 @@ class AgentControllerTest {
     void pauseSetsStatus() {
         Agents agents = mock(Agents.class);
         AgentController controller = new AgentController(
-                agents, mock(AgentVersions.class), mock(AgentRunner.class), mock(ToolGrants.class));
+                agents,
+                mock(AgentVersions.class),
+                mock(AgentRunner.class),
+                mock(ToolGrants.class),
+                mock(GeneralEmployee.class));
         Agent agent = activeAgent();
         when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
         RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
@@ -158,7 +169,11 @@ class AgentControllerTest {
     void resumeSetsStatus() {
         Agents agents = mock(Agents.class);
         AgentController controller = new AgentController(
-                agents, mock(AgentVersions.class), mock(AgentRunner.class), mock(ToolGrants.class));
+                agents,
+                mock(AgentVersions.class),
+                mock(AgentRunner.class),
+                mock(ToolGrants.class),
+                mock(GeneralEmployee.class));
         Agent agent = activeAgent();
         agent.setStatus("paused");
         when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
@@ -175,15 +190,56 @@ class AgentControllerTest {
     void retiredAgentRefused() {
         Agents agents = mock(Agents.class);
         AgentController controller = new AgentController(
-                agents, mock(AgentVersions.class), mock(AgentRunner.class), mock(ToolGrants.class));
+                agents,
+                mock(AgentVersions.class),
+                mock(AgentRunner.class),
+                mock(ToolGrants.class),
+                mock(GeneralEmployee.class));
         Agent agent = activeAgent();
         agent.setStatus("retired");
         when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
         RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
 
         assertThatThrownBy(() -> controller.pause(agent.getId()))
-                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
+                .isInstanceOfSatisfying(
+                        ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
         assertThat(agent.getStatus()).isEqualTo("retired");
+    }
+
+    @Test
+    @DisplayName("listing agents ensures the workspace has a General Employee before reading them")
+    void listEnsuresGeneralEmployee() {
+        Agents agents = mock(Agents.class);
+        GeneralEmployee generalEmployee = mock(GeneralEmployee.class);
+        AgentController controller = new AgentController(
+                agents, mock(AgentVersions.class), mock(AgentRunner.class), mock(ToolGrants.class), generalEmployee);
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of());
+        RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
+
+        controller.list();
+
+        verify(generalEmployee).ensure(ORG);
+    }
+
+    @Test
+    @DisplayName("the view marks the workspace's General Employee, found by its flag rather than its key")
+    void viewMarksFallback() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = new AgentController(
+                agents,
+                mock(AgentVersions.class),
+                mock(AgentRunner.class),
+                mock(ToolGrants.class),
+                mock(GeneralEmployee.class));
+        Agent general = activeAgent();
+        general.setKey("general");
+        general.setFallback(true);
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(general));
+        RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
+
+        AgentController.AgentView view = controller.list().getFirst();
+
+        assertThat(view.fallback()).isTrue();
     }
 
     private static Agent activeAgent() {

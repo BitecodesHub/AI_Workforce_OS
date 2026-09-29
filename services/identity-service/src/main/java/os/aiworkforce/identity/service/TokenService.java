@@ -1,15 +1,5 @@
 package os.aiworkforce.identity.service;
 
-import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -20,6 +10,16 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -72,12 +72,7 @@ public class TokenService {
      * version and rejects a token that is behind.
      */
     public IssuedToken issueAccessToken(
-            UUID userId,
-            UUID orgId,
-            UUID roleId,
-            Set<String> permissions,
-            long permissionVersion,
-            UUID sessionId) {
+            UUID userId, UUID orgId, UUID roleId, Set<String> permissions, long permissionVersion, UUID sessionId) {
         Instant now = Instant.now();
         Instant expiry = now.plus(config.accessTokenTtl());
 

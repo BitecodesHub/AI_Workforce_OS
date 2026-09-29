@@ -3,7 +3,6 @@ package os.aiworkforce.llm.router;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -11,12 +10,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import os.aiworkforce.llm.budget.BudgetGuard;
 import os.aiworkforce.llm.model.AttemptRecord;
@@ -34,7 +34,6 @@ import os.aiworkforce.llm.spi.ChatChunk;
 import os.aiworkforce.llm.spi.ChatProvider;
 import os.aiworkforce.llm.spi.CredentialResolver;
 import os.aiworkforce.llm.spi.ProviderRegistry;
-import os.aiworkforce.llm.usage.UsageRecorder;
 import os.aiworkforce.platform.config.PlatformProperties;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
@@ -51,8 +50,7 @@ import os.aiworkforce.platform.resilience.ResiliencePresets;
 class ModelRouterTest {
 
     private static final String ORG = "org-1";
-    private static final ModelRouter.CallContext CONTEXT =
-            new ModelRouter.CallContext(ORG, "agent-1", "run-1");
+    private static final ModelRouter.CallContext CONTEXT = new ModelRouter.CallContext(ORG, "agent-1", "run-1");
 
     private StubRegistry registry;
     private ResiliencePresets resilience;
@@ -81,12 +79,11 @@ class ModelRouterTest {
         assertThat(response.usedFallback()).isTrue();
         // The failure must remain visible: a silent recovery leaves nobody knowing which vendor
         // to chase when the bill or the latency is questioned.
-        assertThat(response.attempts())
-                .anySatisfy(attempt -> {
-                    assertThat(attempt.provider()).isEqualTo("fast");
-                    assertThat(attempt.outcome()).isEqualTo(AttemptRecord.Outcome.FAILED);
-                    assertThat(attempt.failure()).isEqualTo(ProviderFailure.RATE_LIMITED);
-                });
+        assertThat(response.attempts()).anySatisfy(attempt -> {
+            assertThat(attempt.provider()).isEqualTo("fast");
+            assertThat(attempt.outcome()).isEqualTo(AttemptRecord.Outcome.FAILED);
+            assertThat(attempt.failure()).isEqualTo(ProviderFailure.RATE_LIMITED);
+        });
     }
 
     @Test
@@ -100,8 +97,7 @@ class ModelRouterTest {
                 new ScriptedProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE, ProviderFailure.CONTENT_FILTERED),
                 new ScriptedProvider(ProviderDescriptor.Kind.ANTHROPIC, null, secondCalls));
 
-        assertThatThrownBy(() ->
-                        router.route(request("blocked"), policy("first/model-a", "second/model-b"), CONTEXT))
+        assertThatThrownBy(() -> router.route(request("blocked"), policy("first/model-a", "second/model-b"), CONTEXT))
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).code())
                 .isEqualTo(ErrorCode.CONTENT_FILTERED);
@@ -124,18 +120,15 @@ class ModelRouterTest {
         ChatRequest withTools = ChatRequest.builder()
                 .messages(List.of(ChatMessage.user("use a tool")))
                 .tools(List.of(new os.aiworkforce.llm.model.ToolSpec(
-                        "send_email", "Sends an email", null,
-                        os.aiworkforce.llm.model.ToolSpec.SideEffect.OUTBOUND)))
+                        "send_email", "Sends an email", null, os.aiworkforce.llm.model.ToolSpec.SideEffect.OUTBOUND)))
                 .build();
 
-        ChatResponse response =
-                router.route(withTools, policy("noTools/model-a", "withTools/model-b"), CONTEXT);
+        ChatResponse response = router.route(withTools, policy("noTools/model-a", "withTools/model-b"), CONTEXT);
 
         assertThat(response.provider()).isEqualTo("withTools");
         assertThat(firstCalls.get()).isZero();
-        assertThat(response.attempts())
-                .anySatisfy(attempt -> assertThat(attempt.skipReason())
-                        .isEqualTo(AttemptRecord.SkipReason.TOOLS_UNSUPPORTED));
+        assertThat(response.attempts()).anySatisfy(attempt -> assertThat(attempt.skipReason())
+                .isEqualTo(AttemptRecord.SkipReason.TOOLS_UNSUPPORTED));
     }
 
     @Test
@@ -152,9 +145,8 @@ class ModelRouterTest {
                 router.route(request("x".repeat(4_000)), policy("tiny/model-a", "large/model-b"), CONTEXT);
 
         assertThat(response.provider()).isEqualTo("large");
-        assertThat(response.attempts())
-                .anySatisfy(attempt -> assertThat(attempt.skipReason())
-                        .isEqualTo(AttemptRecord.SkipReason.CONTEXT_TOO_SMALL));
+        assertThat(response.attempts()).anySatisfy(attempt -> assertThat(attempt.skipReason())
+                .isEqualTo(AttemptRecord.SkipReason.CONTEXT_TOO_SMALL));
     }
 
     @Test
@@ -172,9 +164,8 @@ class ModelRouterTest {
                 router.route(request("hello"), policy("unconfigured/model-a", "configured/model-b"), CONTEXT);
 
         assertThat(response.provider()).isEqualTo("configured");
-        assertThat(response.attempts())
-                .anySatisfy(attempt -> assertThat(attempt.skipReason())
-                        .isEqualTo(AttemptRecord.SkipReason.CREDENTIAL_MISSING));
+        assertThat(response.attempts()).anySatisfy(attempt -> assertThat(attempt.skipReason())
+                .isEqualTo(AttemptRecord.SkipReason.CREDENTIAL_MISSING));
     }
 
     @Test
@@ -259,12 +250,23 @@ class ModelRouterTest {
     void sandboxIsDeterministic() {
         SandboxProvider sandbox = new SandboxProvider(new ObjectMapper());
         ProviderDescriptor descriptor = new ProviderDescriptor(
-                "sandbox", "Sandbox", ProviderDescriptor.Kind.SANDBOX, "", null,
-                true, Map.of(), List.of(), null, null, 0);
+                "sandbox",
+                "Sandbox",
+                ProviderDescriptor.Kind.SANDBOX,
+                "",
+                null,
+                true,
+                Map.of(),
+                List.of(),
+                null,
+                null,
+                0);
         ModelSpec model = spec("sandbox", "sandbox-1", true, 128_000);
 
-        ChatResponse first = sandbox.complete(descriptor, model, request("same question"), null).block();
-        ChatResponse second = sandbox.complete(descriptor, model, request("same question"), null).block();
+        ChatResponse first = sandbox.complete(descriptor, model, request("same question"), null)
+                .block();
+        ChatResponse second = sandbox.complete(descriptor, model, request("same question"), null)
+                .block();
 
         assertThat(first).isNotNull();
         assertThat(second).isNotNull();
@@ -298,43 +300,99 @@ class ModelRouterTest {
             list.add(RoutingPolicy.Candidate.of(parts[0], parts[1]));
         }
         // One attempt per candidate keeps the tests fast; retry behaviour is asserted separately.
-        return new RoutingPolicy(
-                list, RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, 1, Duration.ofSeconds(20), true);
+        return new RoutingPolicy(list, RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, 1, Duration.ofSeconds(20), true);
     }
 
     private static ModelSpec spec(String providerId, String modelId, boolean tools, int window) {
         return new ModelSpec(
-                providerId, modelId, modelId, window, 4096, tools, true, true, false,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, null);
+                providerId,
+                modelId,
+                modelId,
+                window,
+                4096,
+                tools,
+                true,
+                true,
+                false,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                true,
+                null);
     }
 
     private static PlatformProperties defaultProperties() {
         return new PlatformProperties(
-                PlatformProperties.Environment.TEST, "test", "0.0.1",
+                PlatformProperties.Environment.TEST,
+                "test",
+                "0.0.1",
                 new PlatformProperties.Security(
-                        "aiwos", "aiwos-api", "http://localhost/jwks", Duration.ofMinutes(10),
-                        Duration.ofMinutes(5), null, null, Duration.ofMinutes(15), Duration.ofDays(30),
-                        Duration.ofSeconds(60), Duration.ofSeconds(30), "test-secret", "test-internal-secret",
+                        "aiwos",
+                        "aiwos-api",
+                        "http://localhost/jwks",
+                        Duration.ofMinutes(10),
+                        Duration.ofMinutes(5),
+                        null,
+                        null,
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        Duration.ofSeconds(60),
+                        Duration.ofSeconds(30),
+                        "test-secret",
+                        "test-internal-secret",
                         new PlatformProperties.Argon2(1, 1024, 1, 16, 32),
                         new PlatformProperties.Encryption(null, "test", "AES/GCM/NoPadding", 12, 128),
-                        12, 8, Duration.ofMinutes(15), false),
+                        12,
+                        8,
+                        Duration.ofMinutes(15),
+                        false),
                 new PlatformProperties.Http(
-                        Duration.ofSeconds(5), Duration.ofSeconds(60), Duration.ofSeconds(15),
-                        100, 20, 10_485_760, List.of("http://localhost"), true, Duration.ofMinutes(30)),
+                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(60),
+                        Duration.ofSeconds(15),
+                        100,
+                        20,
+                        10_485_760,
+                        List.of("http://localhost"),
+                        true,
+                        Duration.ofMinutes(30)),
                 new PlatformProperties.RateLimit(true, 600, 60, 30, 10, true),
                 new PlatformProperties.Events(
-                        false, "aiwos", 3, (short) 1, Duration.ofSeconds(30), 4,
-                        List.of(Duration.ofSeconds(1)), true, Duration.ofDays(7)),
+                        false,
+                        "aiwos",
+                        3,
+                        (short) 1,
+                        Duration.ofSeconds(30),
+                        4,
+                        List.of(Duration.ofSeconds(1)),
+                        true,
+                        Duration.ofDays(7)),
                 new PlatformProperties.Resilience(
-                        50, 10, 5, Duration.ofSeconds(30), 3, 3,
-                        Duration.ofMillis(1), Duration.ofMillis(5), 2.0, false, 25,
-                        Duration.ofSeconds(60), Map.of()),
+                        50,
+                        10,
+                        5,
+                        Duration.ofSeconds(30),
+                        3,
+                        3,
+                        Duration.ofMillis(1),
+                        Duration.ofMillis(5),
+                        2.0,
+                        false,
+                        25,
+                        Duration.ofSeconds(60),
+                        Map.of()),
                 new PlatformProperties.Observability(
                         "INFO", "console", false, 1.0, "http://localhost", false, List.of("password"), false),
                 new PlatformProperties.RuntimeConfig(false, Duration.ofSeconds(60), "channel", true),
                 new PlatformProperties.Services(
-                        "http://localhost", "http://localhost", "http://localhost", "http://localhost",
-                        "http://localhost", "http://localhost", "http://localhost", "http://localhost"));
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost",
+                        "http://localhost"));
     }
 
     /** A registry and credential resolver in one, so a test wires two dependencies with one object. */
@@ -349,9 +407,20 @@ class ModelRouterTest {
         }
 
         void add(String providerId, ProviderDescriptor.Kind kind, String modelId, boolean tools, int window) {
-            providers.put(providerId, new ProviderDescriptor(
-                    providerId, providerId, kind, "http://localhost", "ref-" + providerId,
-                    true, Map.of(), List.of(), null, null, 0));
+            providers.put(
+                    providerId,
+                    new ProviderDescriptor(
+                            providerId,
+                            providerId,
+                            kind,
+                            "http://localhost",
+                            "ref-" + providerId,
+                            true,
+                            Map.of(),
+                            List.of(),
+                            null,
+                            null,
+                            0));
             models.put(providerId + "/" + modelId, spec(providerId, modelId, tools, window));
         }
 
@@ -372,8 +441,7 @@ class ModelRouterTest {
         @Override
         public Optional<ModelSpec> model(String orgId, String providerId, String modelId) {
             if (unavailable.containsKey(providerId + "/" + modelId)) {
-                return Optional.of(models.get(providerId + "/" + modelId)
-                        .markUnavailableFor(Duration.ofHours(1)));
+                return Optional.of(models.get(providerId + "/" + modelId).markUnavailableFor(Duration.ofHours(1)));
             }
             return Optional.ofNullable(models.get(providerId + "/" + modelId));
         }
@@ -430,9 +498,15 @@ class ModelRouterTest {
                 return Mono.error(ProviderException.of(failure, provider.id(), model.modelId(), "scripted"));
             }
             return Mono.just(new ChatResponse(
-                    "answer from " + provider.id(), List.of(), FinishReason.STOP,
-                    TokenUsage.of(10, 5), provider.id(), model.modelId(),
-                    Duration.ofMillis(1), List.of(), Map.of()));
+                    "answer from " + provider.id(),
+                    List.of(),
+                    FinishReason.STOP,
+                    TokenUsage.of(10, 5),
+                    provider.id(),
+                    model.modelId(),
+                    Duration.ofMillis(1),
+                    List.of(),
+                    Map.of()));
         }
 
         @Override

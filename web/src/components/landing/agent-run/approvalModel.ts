@@ -103,7 +103,7 @@ export const ANNOUNCE = {
 } as const
 
 export const DECIDER_ANNOUNCEMENT: Record<Decider, string> = {
-  manager: 'Deciding as a manager. This role holds approval:decide.',
+  manager: 'Deciding as a manager, who can approve this.',
   employee: 'Deciding as an employee. This role can see the approval but cannot decide it.',
   viewer: 'Deciding as a viewer. This role does not see the approval queue.',
 }

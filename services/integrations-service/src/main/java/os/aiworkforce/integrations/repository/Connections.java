@@ -4,10 +4,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
 import os.aiworkforce.integrations.domain.Connection;
 
 /*
@@ -29,7 +31,8 @@ public interface Connections extends JpaRepository<Connection, UUID> {
      * <p>Refreshed ahead of time by a background sweep, so a person's action never fails
      * because a token lapsed a minute ago.
      */
-    @Query("""
+    @Query(
+            """
             select c from Connection c
             where c.status = 'connected'
               and c.reconnectRequired = false

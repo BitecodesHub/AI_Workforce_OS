@@ -2,23 +2,26 @@ import type { ReactElement } from 'react'
 import { Eyebrow } from '../../ui'
 import { revealStyle } from '../../../hooks/useReveal'
 import { Icon } from '../shared/Icon'
-import { AGENTS, CTA, PERMISSION_CODE_COUNT, PROVIDERS, TOOL_SERVERS } from '../shared/landingFacts'
+import type { IconName } from '../shared/Icon'
+import { CTA } from '../shared/landingFacts'
 import { useInPageLink } from '../shared/useInPageLink'
 import { HeroConsole } from './HeroConsole'
 
 /*
  * The first screen: what this is, the two ways in, and a working picture of it.
  *
- * The copy column states the offer and four figures, each a link to the part of the page that
- * proves it. The console beside it is a simulation of the product doing that work, labelled as
+ * Written for the person choosing the product, not the one who will run it: what the AI team
+ * does, and the one promise that matters most to a business - nothing is sent or deleted without
+ * a person's yes. Four plain benefits sit under the offer, each a link to the part of the page
+ * that shows it. The console beneath is a simulation of the product doing that work, labelled as
  * one. The copy rises in on load, one line after another, only when motion is on.
  */
 
-const FACTS: ReadonlyArray<{ value: string; label: string; href: string }> = [
-  { value: String(AGENTS.length), label: 'agents', href: '#agents' },
-  { value: `${PROVIDERS.length} + 1`, label: 'providers + sandbox', href: '#failover' },
-  { value: String(TOOL_SERVERS.length), label: 'tool servers', href: '#approval' },
-  { value: String(PERMISSION_CODE_COUNT), label: 'permission codes', href: '#roles' },
+const BENEFITS: ReadonlyArray<{ icon: IconName; label: string; href: string }> = [
+  { icon: 'gate', label: 'Asks before it sends', href: '#approval' },
+  { icon: 'document', label: 'Shows its sources', href: '#cited' },
+  { icon: 'lock', label: 'The right access for everyone', href: '#safety' },
+  { icon: 'check', label: 'A record of every action', href: '#safety' },
 ]
 
 export function Hero(): ReactElement {
@@ -29,15 +32,15 @@ export function Hero(): ReactElement {
       <div className="lp-shell lp-hero-grid">
         <div className="lp-hero-copy">
           {/* The eyebrow is first in the stagger, index 0, which is also the default. */}
-          <Eyebrow>A governed AI workforce</Eyebrow>
+          <Eyebrow>AI employees for your business</Eyebrow>
 
           <h1 id="hero-title" className="lp-hero-title" style={revealStyle(1)}>
-            A team of AI employees your company can <span className="lp-hero-accent">actually authorise</span>
+            Hand the busywork to AI. <span className="lp-hero-accent">Keep the final say.</span>
           </h1>
 
           <p className="lp-hero-lead" style={revealStyle(2)}>
-            Configure agents for the roles you already have, let them work from your own documents and your real
-            tools, and keep a person in front of every action that cannot be taken back.
+            Your AI team drafts emails, sorts customer questions, prepares reports and keeps routine work moving.
+            You ask in plain words, and nothing is sent or deleted until a person says yes.
           </p>
 
           <div id="lp-hero-ctas" className="lp-hero-ctas" style={revealStyle(3)}>
@@ -52,20 +55,22 @@ export function Hero(): ReactElement {
 
           <p className="lp-hero-caption" style={revealStyle(4)}>
             <span className="lp-dot lp-dot-green" aria-hidden="true" />
-            <span>Runs on an offline sandbox model out of the box. No API key is needed to look around.</span>
+            <span>Try it with sample data. Nothing to install, and no technical skills needed.</span>
           </p>
-
-          <ul className="lp-facts lp-glass" style={revealStyle(5)}>
-            {FACTS.map((fact) => (
-              <li key={fact.href}>
-                <a className="lp-fact" href={fact.href} onClick={inPage}>
-                  <span className="lp-fact-value">{fact.value}</span>{' '}
-                  <span className="lp-fact-label lp-micro">{fact.label}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
         </div>
+
+        <ul className="lp-benefits" style={revealStyle(5)}>
+          {BENEFITS.map((benefit) => (
+            <li key={benefit.label}>
+              <a className="lp-benefit" href={benefit.href} onClick={inPage}>
+                <span className="lp-benefit-icon">
+                  <Icon name={benefit.icon} size={16} />
+                </span>
+                <span>{benefit.label}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
 
         <HeroConsole />
       </div>

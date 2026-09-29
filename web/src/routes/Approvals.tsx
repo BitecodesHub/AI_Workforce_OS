@@ -5,8 +5,6 @@ import {
   ConfirmDialog,
   EmptyState,
   Eyebrow,
-  FilterBar,
-  FilterEmpty,
   Notice,
   PageHeader,
   Tag,
@@ -15,12 +13,27 @@ import {
 } from '../components/ui'
 import type { FilterFacet, TagTone } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+// Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
+// the barrel is also part of the main bundle, so going through it created a circular chunk
+// dependency (Rollup warned of a "broken execution order").
+import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
+import { QuestionCard } from '../components/run/QuestionCard'
 import { decisionError, formatPayload, readableSummary, runOutcome } from '../lib/approvals'
+import { shortId } from '../lib/format'
 import { actionClassLabel, categoryTone, toolLabel } from '../lib/labels'
-import { useAgentNames, useAgents, useApprovals, useDecideApproval, type Agent, type Approval } from '../lib/queries'
+import {
+  useAgentNames,
+  useAgents,
+  useApprovals,
+  useDecideApproval,
+  useMemberNames,
+  useQuestions,
+  type Agent,
+  type Approval,
+} from '../lib/queries'
 import { useRouter } from '../lib/router'
 import { useToast } from '../lib/toast'
-import { can } from '../lib/session'
+import { can, profile } from '../lib/session'
 import { useListFilter } from '../lib/useListFilter'
 
 const ACTION_TONE: Record<string, TagTone> = { OUTBOUND: 'warning', DESTRUCTIVE: 'danger', WRITE: 'blue' }
@@ -81,7 +94,7 @@ function ApprovalCard({
             marginBottom: 'var(--space-4)',
           }}
         >
-          <h2 className="section-heading" style={{ fontSize: '15px' }}>
+          <h2 className="section-heading" style={{ overflowWrap: 'anywhere' }}>
             {readableSummary(approval)}
           </h2>
           <Tag tone={ACTION_TONE[actionClass] ?? 'neutral'}>{actionClassLabel(approval.actionClass)}</Tag>
@@ -118,17 +131,21 @@ function ApprovalCard({
           <p className="caption muted" style={{ marginBottom: 'var(--space-2)' }}>
             Exactly what will be sent
           </p>
-          <pre
-            style={{
-              margin: 0,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '12px',
-            }}
-          >
-            {formatPayload(approval.payload)}
-          </pre>
+          {/* Scrolls in place once a payload runs long, so the Approve and Reject buttons below
+              stay reachable without paging through the whole request first. */}
+          <div className="approval-payload" role="region" aria-label="Payload to be sent" tabIndex={0}>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 'var(--text-caption)',
+              }}
+            >
+              {formatPayload(approval.payload)}
+            </pre>
+          </div>
         </div>
 
         <div className="row" style={{ flexWrap: 'wrap', gap: 'var(--space-3)' }}>
@@ -148,6 +165,41 @@ function ApprovalCard({
         </div>
       </Card>
     </div>
+  )
+}
+
+/** Questions agents have asked, shown above the approvals queue: another way work waits on a person. */
+function QuestionsWaiting() {
+  const canRead = can('run:read')
+  const questions = useQuestions({ status: 'pending' }, { enabled: canRead })
+  const agentNames = useAgentNames()
+  const members = useMemberNames({ enabled: can('member:read') })
+  const nameOf = (userId: string) => members[userId]?.displayName ?? shortId(userId)
+  const me = profile()?.userId ?? null
+
+  if (!canRead || !questions.data || questions.data.length === 0) return null
+
+  return (
+    <section aria-labelledby="approvals-questions-heading" style={{ marginBottom: 'var(--space-7)' }}>
+      <Eyebrow as="h2" id="approvals-questions-heading">
+        Questions waiting for an answer
+      </Eyebrow>
+      <div className="stack" style={{ gap: 'var(--space-5)', marginTop: 'var(--space-4)' }}>
+        {questions.data.map((question) => (
+          <QuestionCard
+            key={question.id}
+            question={question}
+            agentName={agentNames[question.agentId]?.name ?? 'The agent'}
+            agentCategory={agentNames[question.agentId]?.category}
+            agentFallback={agentNames[question.agentId]?.fallback}
+            via="approvals"
+            compact
+            me={me}
+            nameOf={nameOf}
+          />
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -313,8 +365,10 @@ export function Approvals() {
       <PageHeader
         eyebrow="Waiting on a decision"
         title="Approvals"
-        description="Agents stop here before doing anything that leaves the workspace or cannot be undone."
+        description="Agents stop here before doing anything that leaves the workspace or cannot be undone. Questions agents asked are here too."
       />
+
+      <QuestionsWaiting />
 
       {/* A role that cannot read the queue gets only the permission panel below, not notices
           about requests it cannot see. */}

@@ -1,16 +1,18 @@
 package os.aiworkforce.identity.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.transaction.annotation.Transactional;
 
 import os.aiworkforce.identity.domain.Role;
 import os.aiworkforce.identity.repository.Memberships;
@@ -64,9 +65,7 @@ public class RoleController {
             String code, String resource, String action, String description, boolean administrative) {}
 
     public record SaveRoleRequest(
-            @NotBlank @Size(max = 60) String name,
-            @Size(max = 300) String description,
-            Set<String> permissions) {}
+            @NotBlank @Size(max = 60) String name, @Size(max = 300) String description, Set<String> permissions) {}
 
     @GetMapping
     @RequiresPermission(Permission.Codes.ROLE_READ)
@@ -90,8 +89,7 @@ public class RoleController {
         // Served from the build's registry rather than the table: these are the codes the running
         // code actually checks, which is the only list that means anything.
         return Permission.ALL.stream()
-                .map(p -> new PermissionView(
-                        p.code(), p.resource(), p.action(), p.description(), p.administrative()))
+                .map(p -> new PermissionView(p.code(), p.resource(), p.action(), p.description(), p.administrative()))
                 .toList();
     }
 
@@ -106,14 +104,16 @@ public class RoleController {
 
         // Looked up as it will be stored, so " Manager" cannot slip past the check for "Manager".
         String name = request.name().strip();
-        if (roles.findByOrgAndName(orgId, name).isPresent() || roles.findSystemRole(name).isPresent()) {
+        if (roles.findByOrgAndName(orgId, name).isPresent()
+                || roles.findSystemRole(name).isPresent()) {
             throw new ApiException(ErrorCode.ALREADY_EXISTS, "A role with that name already exists.");
         }
 
         Role role = new Role();
         role.setOrgId(orgId);
         role.setName(name);
-        role.setDescription(request.description() == null ? "" : request.description().strip());
+        role.setDescription(
+                request.description() == null ? "" : request.description().strip());
         role.setSystem(false);
         role.setPermissions(new LinkedHashSet<>(request.permissions()));
         return toView(roles.save(role));
@@ -131,8 +131,7 @@ public class RoleController {
         // change what "manager" means for everybody, so a workspace copies it instead.
         if (role.isSystem()) {
             throw new ApiException(
-                    ErrorCode.IMMUTABLE_RESOURCE,
-                    "Built-in roles cannot be changed. Create a workspace role instead.");
+                    ErrorCode.IMMUTABLE_RESOURCE, "Built-in roles cannot be changed. Create a workspace role instead.");
         }
         if (!orgId.equals(role.getOrgId())) {
             throw new ApiException(ErrorCode.ORGANISATION_MISMATCH);
@@ -151,7 +150,8 @@ public class RoleController {
         }
 
         role.setName(name);
-        role.setDescription(request.description() == null ? "" : request.description().strip());
+        role.setDescription(
+                request.description() == null ? "" : request.description().strip());
         // replacePermissions bumps the permission version, which invalidates every token already
         // issued under this role. That is what makes narrowing a role take effect at once.
         role.replacePermissions(new LinkedHashSet<>(request.permissions()));
@@ -177,8 +177,7 @@ public class RoleController {
         if (holders > 0) {
             // Deleting it would leave those people with a dangling role and no permissions at
             // all, which reads as a platform fault rather than as an administrator's decision.
-            throw new ApiException(ErrorCode.RESOURCE_IN_USE)
-                    .with("holders", holders);
+            throw new ApiException(ErrorCode.RESOURCE_IN_USE).with("holders", holders);
         }
         roles.delete(role);
     }
@@ -194,7 +193,10 @@ public class RoleController {
         if (codes == null || codes.isEmpty()) {
             throw ApiException.validation("permissions", "a role must carry at least one permission");
         }
-        List<String> unknown = codes.stream().filter(code -> !Permission.isKnown(code)).sorted().toList();
+        List<String> unknown = codes.stream()
+                .filter(code -> !Permission.isKnown(code))
+                .sorted()
+                .toList();
         if (!unknown.isEmpty()) {
             throw ApiException.validation("permissions", "unknown permission code(s): " + String.join(", ", unknown));
         }

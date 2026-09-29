@@ -72,6 +72,7 @@ const STATUS_CONSTRAINTS: Record<string, StatusKind> = {
   memberships_status_valid: 'member',
   audit_outcome_valid: 'outcome',
   tool_invocations_status_valid: 'toolCall',
+  run_questions_status_valid: 'question',
 }
 
 /** Status constraints the console never shows, and why, so a new one cannot slip past unnoticed. */
@@ -89,6 +90,7 @@ describe('status labels cover the database', () => {
   it('finds the migrations', () => {
     expect(CONSTRAINTS.length).toBeGreaterThan(10)
     expect(valuesOf('runs_status_valid')).toContain('waiting_approval')
+    expect(valuesOf('runs_status_valid')).toContain('waiting_input')
   })
 
   for (const [constraint, kind] of Object.entries(STATUS_CONSTRAINTS)) {
@@ -157,6 +159,9 @@ describe('statusLabel', () => {
     expect(statusLabel('source', 'ready')).toEqual({ tone: 'success', label: 'Ready' })
     expect(statusLabel('agent', 'retired').label).toBe('Retired')
     expect(statusLabel('run', 'waiting_approval')).toEqual({ tone: 'warning', label: 'Waiting for approval' })
+    expect(statusLabel('run', 'waiting_input')).toEqual({ tone: 'warning', label: 'Waiting for an answer' })
+    expect(statusLabel('question', 'pending')).toEqual({ tone: 'warning', label: 'Waiting for an answer' })
+    expect(statusLabel('question', 'cancelled')).toEqual({ tone: 'neutral', label: 'Withdrawn' })
   })
 
   it('ignores case and hyphens', () => {
@@ -230,6 +235,11 @@ describe('other labels', () => {
     expect(toolLabel('github.list_issues')).toBe('GitHub · list issues')
     expect(toolLabel('')).toBe('Unknown tool')
     expect(toolLabel(null)).toBe('Unknown tool')
+  })
+
+  it('names the ask tool', () => {
+    expect(serverLabel('person')).toBe('A person')
+    expect(toolLabel('person.ask_question')).toBe('Asked a question')
   })
 
   it('names provider kinds and action classes', () => {

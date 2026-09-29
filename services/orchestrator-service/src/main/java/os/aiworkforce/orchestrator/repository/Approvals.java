@@ -4,25 +4,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import os.aiworkforce.orchestrator.domain.Agent;
-import os.aiworkforce.orchestrator.domain.AgentToolGrant;
-import os.aiworkforce.orchestrator.domain.AgentVersion;
+
 import os.aiworkforce.orchestrator.domain.Approval;
-import os.aiworkforce.orchestrator.domain.Budget;
-import os.aiworkforce.orchestrator.domain.Goal;
-import os.aiworkforce.orchestrator.domain.LlmModelEntity;
-import os.aiworkforce.orchestrator.domain.LlmProviderEntity;
-import os.aiworkforce.orchestrator.domain.LlmUsageRecord;
-import os.aiworkforce.orchestrator.domain.ModelPolicyEntity;
-import os.aiworkforce.orchestrator.domain.Run;
-import os.aiworkforce.orchestrator.domain.RunStep;
-import os.aiworkforce.orchestrator.domain.Task;
 
 /*
  * Spring Data scans for top-level repository interfaces. A repository nested inside a holder
@@ -33,7 +22,8 @@ import os.aiworkforce.orchestrator.domain.Task;
 
 public interface Approvals extends JpaRepository<Approval, UUID> {
 
-    @Query("""
+    @Query(
+            """
             select a from Approval a
             where a.orgId = :orgId and a.status = 'pending'
             order by a.requestedAt
@@ -47,4 +37,28 @@ public interface Approvals extends JpaRepository<Approval, UUID> {
     /** Pending approvals past their deadline, for the expiry sweep. */
     @Query("select a from Approval a where a.status = 'pending' and a.expiresAt < :now")
     List<Approval> findExpired(@Param("now") Instant now, Pageable pageable);
+
+    /**
+     * Approved approvals whose run is still parked, for the resume sweep. Only the run's newest approval counts: a run
+     * that had an earlier approval granted and is now parked on a newer, pending one must never be resumed by it.
+     */
+    @Query(
+            """
+            select a from Approval a where a.status = 'approved' and a.decidedAt < :cutoff
+              and exists (select 1 from Run r where r.id = a.runId and r.status = 'waiting_approval')
+              and not exists (select 1 from Approval p where p.runId = a.runId and p.requestedAt > a.requestedAt)
+            """)
+    List<Approval> findApprovedAwaitingResume(@Param("cutoff") Instant cutoff, Pageable page);
+
+    /**
+     * Withdraws a run's pending approvals without loading them, so a decision committing at the
+     * same moment simply wins or loses and never rolls back the stop with a version conflict.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(
+            """
+            update Approval a set a.status = 'cancelled', a.decidedAt = :now, a.version = a.version + 1, a.updatedAt = :now
+            where a.runId = :runId and a.status = 'pending'
+            """)
+    int withdrawPending(@Param("runId") UUID runId, @Param("now") Instant now);
 }

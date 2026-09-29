@@ -55,11 +55,7 @@ public final class RequestContext {
 
     /** Serialisable context, for an event envelope or a job payload. */
     public record Snapshot(
-            String requestId,
-            String traceId,
-            String idempotencyKey,
-            Actor actor,
-            Map<String, String> attributes) {}
+            String requestId, String traceId, String idempotencyKey, Actor actor, Map<String, String> attributes) {}
 
     private static State state() {
         State s = HOLDER.get();
@@ -129,8 +125,7 @@ public final class RequestContext {
     public static String requireOrgId() {
         Actor actor = requireActor();
         if (actor.orgId() == null) {
-            throw new ApiException(
-                    ErrorCode.ORGANISATION_MISMATCH, "No workspace is selected for this session.");
+            throw new ApiException(ErrorCode.ORGANISATION_MISMATCH, "No workspace is selected for this session.");
         }
         return actor.orgId();
     }

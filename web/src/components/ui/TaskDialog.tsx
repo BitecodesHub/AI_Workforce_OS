@@ -120,9 +120,17 @@ const canStart = (agent: Agent) => agent.status === 'active' && agent.revision !
 function agentOptionLabel(agent: Agent): string {
   const category = CATEGORY_LABEL[agent.category] ?? sentenceCase(agent.category)
   const base = category ? `${agent.name} — ${category}` : agent.name
+  // General Employee is marked by its own flag, not by status: it takes any request no
+  // specialist covers, and that is worth saying every time it appears in the list.
+  if (agent.fallback) return `${base} (default)`
   if (agent.status !== 'active') return `${base} (${statusLabel('agent', agent.status).label.toLowerCase()})`
   if (agent.revision == null) return `${base} (not set up yet)`
   return base
+}
+
+/** General Employee first, everyone else in the order the API gave them. */
+function withGeneralFirst(agents: Agent[]): Agent[] {
+  return [...agents].sort((a, b) => Number(Boolean(b.fallback)) - Number(Boolean(a.fallback)))
 }
 
 type Outcome = { tone: 'success' | 'info'; message: string }
@@ -134,6 +142,8 @@ function runOutcome(status: string): Outcome {
       return { tone: 'success', message: 'The agent finished.' }
     case 'waiting_approval':
       return { tone: 'info', message: 'The agent is waiting for an approval.' }
+    case 'waiting_input':
+      return { tone: 'info', message: 'The agent asked a question. You can answer it on the goal.' }
     case 'failed':
     case 'abandoned':
       return { tone: 'info', message: 'The run failed. The trace shows why.' }
@@ -204,13 +214,15 @@ function TaskForm({ agentId, onSuccess, busy, onBusyChange, onError, onCancel, o
 
   const needsAgentPicker = !agentId
   const agentsQuery = useAgents()
-  const agents = agentsQuery.data ?? []
+  const agents = withGeneralFirst(agentsQuery.data ?? [])
   const startable = agents.filter(canStart)
 
-  // Until somebody picks, the agent used last time is the default if it can still take work,
-  // else the first one that can. The choice stays visible and can be changed.
+  // Until somebody picks, the agent used last time is the default if it can still take work.
+  // Failing that, General Employee, the workspace's default for anything no specialist covers,
+  // and only then the first agent that can start at all. The choice stays visible and can change.
   const rememberedAgent = startable.find((agent) => agent.id === lastAgentId)
-  const selectedAgentId = chosenAgentId || rememberedAgent?.id || startable[0]?.id || ''
+  const generalAgent = startable.find((agent) => agent.fallback)
+  const selectedAgentId = chosenAgentId || rememberedAgent?.id || generalAgent?.id || startable[0]?.id || ''
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId)
   const effectiveAgentId = agentId ?? selectedAgentId
   const createRunMutation = useCreateRun(effectiveAgentId || 'unselected')

@@ -95,15 +95,16 @@ function VoiceIntegrationCard() {
           className="row"
           style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}
         >
-          <h2 className="section-heading" style={{ fontSize: '15px' }}>
-            Voice — ElevenLabs
-          </h2>
+          <h2 className="section-heading">Voice — ElevenLabs</h2>
           {status.data && (
             <StatusTag kind="integration" status={keyStored ? 'connected' : 'disconnected'} />
           )}
         </div>
 
-        <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)', fontSize: '13px' }}>
+        <div
+          className="stack"
+          style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)', fontSize: 'var(--text-caption)' }}
+        >
           {status.isLoading ? (
             <p className="muted">Reading its status.</p>
           ) : status.error ? (
@@ -249,16 +250,17 @@ function IntegrationCard({ integration }: { integration: Integration }) {
         className="row"
         style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}
       >
-        <h2 className="section-heading" style={{ fontSize: '15px' }}>
-          {serverLabel(integration.server, integration.displayName)}
-        </h2>
+        <h2 className="section-heading">{serverLabel(integration.server, integration.displayName)}</h2>
         <StatusTag kind="integration" status={status} />
       </div>
 
       {/* A sandbox server has no account, no granted permissions and was never connected, so
           those rows would only ever say "none". */}
       {!integration.sandbox && (
-        <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)', fontSize: '13px' }}>
+        <div
+          className="stack"
+          style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)', fontSize: 'var(--text-caption)' }}
+        >
           {integration.accountLabel && (
             <div className="row" style={{ justifyContent: 'space-between', gap: 'var(--space-3)' }}>
               <span className="muted">Account</span>

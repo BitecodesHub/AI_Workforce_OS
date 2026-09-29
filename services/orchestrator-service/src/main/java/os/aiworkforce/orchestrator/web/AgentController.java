@@ -1,18 +1,19 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import os.aiworkforce.orchestrator.domain.AgentVersion;
 import os.aiworkforce.orchestrator.repository.AgentVersions;
 import os.aiworkforce.orchestrator.repository.Agents;
 import os.aiworkforce.orchestrator.service.AgentRunner;
+import os.aiworkforce.orchestrator.service.GeneralEmployee;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.rbac.Permission;
@@ -46,16 +48,19 @@ public class AgentController {
     private final AgentVersions versions;
     private final AgentRunner runner;
     private final os.aiworkforce.orchestrator.repository.ToolGrants grants;
+    private final GeneralEmployee generalEmployee;
 
     public AgentController(
             Agents agents,
             AgentVersions versions,
             AgentRunner runner,
-            os.aiworkforce.orchestrator.repository.ToolGrants grants) {
+            os.aiworkforce.orchestrator.repository.ToolGrants grants,
+            GeneralEmployee generalEmployee) {
         this.agents = agents;
         this.versions = versions;
         this.runner = runner;
         this.grants = grants;
+        this.generalEmployee = generalEmployee;
     }
 
     /** The longest summary returned, so a card can show it without a layout of its own. */
@@ -70,10 +75,19 @@ public class AgentController {
      *     {@value #SUMMARY_LIMIT} characters; an excerpt of the agent's own instructions, usually
      *     written in the second person. Null when the agent has no configuration.
      * @param tools the distinct tool servers the agent is granted, sorted; empty when it has none
+     * @param fallback whether this is the workspace's General Employee, found by its flag
      */
     public record AgentView(
-            UUID id, String key, String name, String category, String status, Integer revision,
-            String summary, List<String> tools, String voiceId) {}
+            UUID id,
+            String key,
+            String name,
+            String category,
+            String status,
+            Integer revision,
+            String summary,
+            List<String> tools,
+            String voiceId,
+            boolean fallback) {}
 
     public record CreateAgentRequest(
             @NotBlank @Size(max = 60) String key,
@@ -95,13 +109,24 @@ public class AgentController {
     public record RunRequest(@NotBlank @Size(max = 10_000) String instruction) {}
 
     public record GrantView(
-            String server, List<String> tools, List<String> scopes, boolean requireApproval,
-            Integer maxCallsPerRun) {}
+            String server, List<String> tools, List<String> scopes, boolean requireApproval, Integer maxCallsPerRun) {}
 
     public record AgentDetail(
-            UUID id, String key, String name, String category, String status,
-            Integer revision, String systemPrompt, String goals, Integer maxSteps,
-            boolean sealed, List<GrantView> grants, String summary, List<String> tools, String voiceId) {}
+            UUID id,
+            String key,
+            String name,
+            String category,
+            String status,
+            Integer revision,
+            String systemPrompt,
+            String goals,
+            Integer maxSteps,
+            boolean sealed,
+            List<GrantView> grants,
+            String summary,
+            List<String> tools,
+            String voiceId,
+            boolean fallback) {}
 
     public record RunStarted(UUID runId, String status, String answer) {}
 
@@ -110,6 +135,7 @@ public class AgentController {
     @Operation(summary = "List the agents in this workspace")
     public List<AgentView> list() {
         UUID orgId = orgId();
+        generalEmployee.ensure(orgId);
         return agents.findByOrgIdOrderByName(orgId).stream()
                 .map(agent -> toView(agent, currentVersionOf(agent)))
                 .toList();
@@ -119,16 +145,24 @@ public class AgentController {
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "One agent, with its current configuration and tool grants")
     public AgentDetail get(@PathVariable UUID agentId) {
-        Agent agent = agents.findByIdAndOrgId(agentId, orgId())
-                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId()).orElseThrow(() -> ApiException.notFound("agent", agentId));
         AgentVersion version = currentVersionOf(agent);
         List<AgentToolGrant> granted = grants.findByAgentIdAndEnabledTrue(agentId);
         List<GrantView> grantViews = granted.stream()
-                .map(grant -> new GrantView(grant.getServer(), grant.getAllowedTools(), grant.getScopes(),
-                        grant.isRequireApproval(), grant.getMaxCallsPerRun()))
+                .map(grant -> new GrantView(
+                        grant.getServer(),
+                        grant.getAllowedTools(),
+                        grant.getScopes(),
+                        grant.isRequireApproval(),
+                        grant.getMaxCallsPerRun()))
                 .toList();
         return new AgentDetail(
-                agent.getId(), agent.getKey(), agent.getName(), agent.getCategory(), agent.getStatus(),
+                agent.getId(),
+                agent.getKey(),
+                agent.getName(),
+                agent.getCategory(),
+                agent.getStatus(),
                 version == null ? null : version.getRevision(),
                 version == null ? null : version.getSystemPrompt(),
                 version == null ? null : version.getGoals(),
@@ -137,7 +171,8 @@ public class AgentController {
                 grantViews,
                 version == null ? null : summarise(version.getSystemPrompt()),
                 serverNames(granted),
-                agent.getVoiceId());
+                agent.getVoiceId(),
+                GeneralEmployee.isFallback(agent));
     }
 
     @PostMapping
@@ -161,8 +196,8 @@ public class AgentController {
         agent.setCategory(request.category());
         agents.save(agent);
 
-        AgentVersion version = newVersion(
-                agent, request.systemPrompt(), request.goals(), null, null, DEFAULT_MAX_STEPS);
+        AgentVersion version =
+                newVersion(agent, request.systemPrompt(), request.goals(), null, null, DEFAULT_MAX_STEPS);
         agent.setCurrentVersionId(version.getId());
         agents.save(agent);
 
@@ -181,12 +216,15 @@ public class AgentController {
     @Operation(summary = "Save a new revision of an agent's configuration")
     public AgentView updateConfiguration(
             @PathVariable UUID agentId, @Valid @RequestBody UpdateConfigurationRequest request) {
-        Agent agent = agents.findByIdAndOrgId(agentId, orgId())
-                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId()).orElseThrow(() -> ApiException.notFound("agent", agentId));
 
         AgentVersion version = newVersion(
-                agent, request.systemPrompt(), request.goals(),
-                request.temperature(), request.maxOutputTokens(),
+                agent,
+                request.systemPrompt(),
+                request.goals(),
+                request.temperature(),
+                request.maxOutputTokens(),
                 request.maxSteps() == null ? DEFAULT_MAX_STEPS : request.maxSteps());
         agent.setCurrentVersionId(version.getId());
         agents.save(agent);
@@ -198,8 +236,7 @@ public class AgentController {
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "Every revision of this agent's configuration")
     public List<AgentVersion> versions(@PathVariable UUID agentId) {
-        agents.findByIdAndOrgId(agentId, orgId())
-                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        agents.findByIdAndOrgId(agentId, orgId()).orElseThrow(() -> ApiException.notFound("agent", agentId));
         return versions.findByAgentIdOrderByRevisionDesc(agentId);
     }
 
@@ -227,12 +264,11 @@ public class AgentController {
     }
 
     private AgentView setStatus(UUID agentId, String status) {
-        Agent agent = agents.findByIdAndOrgId(agentId, orgId())
-                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId()).orElseThrow(() -> ApiException.notFound("agent", agentId));
         if ("retired".equals(agent.getStatus())) {
             throw new ApiException(
-                    os.aiworkforce.platform.error.ErrorCode.CONFLICT,
-                    "A retired agent cannot be paused or resumed.");
+                    os.aiworkforce.platform.error.ErrorCode.CONFLICT, "A retired agent cannot be paused or resumed.");
         }
         agent.setStatus(status);
         agents.save(agent);
@@ -266,11 +302,16 @@ public class AgentController {
 
     private AgentView toView(Agent agent, AgentVersion version) {
         return new AgentView(
-                agent.getId(), agent.getKey(), agent.getName(), agent.getCategory(), agent.getStatus(),
+                agent.getId(),
+                agent.getKey(),
+                agent.getName(),
+                agent.getCategory(),
+                agent.getStatus(),
                 version == null ? null : version.getRevision(),
                 version == null ? null : summarise(version.getSystemPrompt()),
                 serverNames(grants.findByAgentIdAndEnabledTrue(agent.getId())),
-                agent.getVoiceId());
+                agent.getVoiceId(),
+                GeneralEmployee.isFallback(agent));
     }
 
     private AgentVersion currentVersionOf(Agent agent) {

@@ -6,8 +6,6 @@ import {
   Dialog,
   EmptyState,
   Eyebrow,
-  FilterBar,
-  FilterEmpty,
   Input,
   PageHeader,
   Select,
@@ -15,6 +13,10 @@ import {
   Textarea,
 } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+// Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
+// the barrel is also part of the main bundle, so going through it created a circular chunk
+// dependency (Rollup warned of a "broken execution order").
+import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { ApiError, describeApiError } from '../lib/api'
 import { sentenceCase } from '../lib/format'
 import { serverLabel } from '../lib/labels'
@@ -77,11 +79,12 @@ function AgentCard({ agent }: { agent: Agent }) {
         style={{
           justifyContent: 'space-between',
           alignItems: 'flex-start',
-          gap: 'var(--space-3)',
+          flexWrap: 'wrap',
+          gap: 'var(--space-2) var(--space-3)',
           marginBottom: 'var(--space-3)',
         }}
       >
-        <h2 className="section-heading" style={{ fontSize: '15px' }}>
+        <h2 className="section-heading" style={{ overflowWrap: 'anywhere' }}>
           {agent.name}
         </h2>
         <StatusTag kind="agent" status={agent.status} />

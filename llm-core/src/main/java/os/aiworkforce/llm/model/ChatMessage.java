@@ -1,8 +1,9 @@
 package os.aiworkforce.llm.model;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 import java.util.Objects;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * One turn in a conversation, in a shape every provider can be translated into.
@@ -20,8 +21,7 @@ import java.util.Objects;
  * @param name optional speaker name, used by some providers for multi-participant chats
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record ChatMessage(
-        Role role, String content, List<ToolCall> toolCalls, String toolCallId, String name) {
+public record ChatMessage(Role role, String content, List<ToolCall> toolCalls, String toolCallId, String name) {
 
     public enum Role {
         SYSTEM,

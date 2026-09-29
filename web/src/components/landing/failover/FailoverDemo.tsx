@@ -301,6 +301,11 @@ export function FailoverDemo(): ReactElement {
       title="It keeps working when a provider does not"
       lead="Each agent has an ordered chain of provider candidates. Break one and watch the router skip it, record why, and try the next."
       footnote="Example chain. Out of the box, agents answer on the offline sandbox model. The failures are ones you inject and say nothing about any real provider."
+      steps={[
+        'Load a scenario such as Throttled, or set each provider yourself.',
+        'Press Send a request.',
+        'Read the trace: every attempt, every skip, and why.',
+      ]}
       status={state.announcement}
     >
       <div className="lp-route-presets" role="group" aria-label="Load a scenario">

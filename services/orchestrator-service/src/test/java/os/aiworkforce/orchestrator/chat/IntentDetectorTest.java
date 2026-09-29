@@ -71,6 +71,20 @@ class IntentDetectorTest {
     }
 
     @Test
+    @DisplayName("a help request with no document in it is work, not a documents search")
+    void helpRequestIsWork() {
+        assertThat(IntentDetector.detect("Can you help me plan my week?", ZONE, NOW, NEVER_PARSES))
+                .isEqualTo(IntentDetector.Intent.WORK);
+    }
+
+    @Test
+    @DisplayName("a plain policy question is a documents search")
+    void policyQuestionIsDocuments() {
+        assertThat(IntentDetector.detect("What is our leave policy?", ZONE, NOW, NEVER_PARSES))
+                .isEqualTo(IntentDetector.Intent.DOCUMENTS);
+    }
+
+    @Test
     @DisplayName("an ordinary instruction is work")
     void ordinaryInstructionIsWork() {
         assertThat(IntentDetector.detect("draft a welcome email for Priya", ZONE, NOW, NEVER_PARSES))
@@ -89,6 +103,7 @@ class IntentDetectorTest {
     @Test
     @DisplayName("text with no recognisable timing phrase is returned whole, just stripped")
     void withoutTimingPhraseLeavesOrdinaryTextAlone() {
-        assertThat(IntentDetector.withoutTimingPhrase("  draft a welcome email  ")).isEqualTo("draft a welcome email");
+        assertThat(IntentDetector.withoutTimingPhrase("  draft a welcome email  "))
+                .isEqualTo("draft a welcome email");
     }
 }

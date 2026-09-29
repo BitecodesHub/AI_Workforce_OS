@@ -17,6 +17,8 @@ export function requesterLabel(
   return members[goal.requestedBy]?.displayName ?? 'Former member'
 }
 
+const CURRENT_TASK_STATUS = new Set(['running', 'waiting_approval', 'waiting_input'])
+
 /** The task an agent is in the middle of right now, if any, with the goal it belongs to. */
 export function currentTaskFor(
   board: { goals: readonly BoardGoal[] },
@@ -24,9 +26,7 @@ export function currentTaskFor(
 ): { goal: BoardGoal; task: BoardTask } | null {
   for (const goal of board.goals) {
     const task = goal.tasks.find(
-      (candidate) =>
-        candidate.agentId === agentId &&
-        (candidate.status.toLowerCase() === 'running' || candidate.status.toLowerCase() === 'waiting_approval'),
+      (candidate) => candidate.agentId === agentId && CURRENT_TASK_STATUS.has(candidate.status.toLowerCase()),
     )
     if (task) return { goal, task }
   }

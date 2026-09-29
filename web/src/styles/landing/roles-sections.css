@@ -169,7 +169,7 @@
   gap: 8px;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   line-height: 1.5;
   letter-spacing: 0.02em;
   color: var(--eyebrow);
@@ -192,7 +192,7 @@
   border-radius: var(--radius-tag);
   background: var(--surface);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   line-height: 1.5;
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -328,14 +328,14 @@
   grid-area: count;
   align-self: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   color: var(--eyebrow);
   white-space: nowrap;
 }
 
 .lp-roles-tab-desc {
   grid-area: desc;
-  font-size: 10px;
+  font-size: var(--text-micro);
   line-height: 1.35;
   color: var(--muted);
 }
@@ -444,7 +444,7 @@
 
 .lp-roles-compare-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -491,7 +491,7 @@
 
 .lp-roles-tally {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-micro);
   color: var(--eyebrow);
 }
 
@@ -545,7 +545,7 @@
 
 .lp-roles-check-codes {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   color: var(--eyebrow);
   overflow-wrap: anywhere;
 }
@@ -621,7 +621,7 @@
   border-radius: var(--radius-tag);
   background: transparent;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-regular);
   line-height: 1.3;
   color: var(--muted);
@@ -662,7 +662,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 11px;
+  font-size: var(--text-micro);
   line-height: 1.4;
   color: var(--muted);
 }
@@ -747,11 +747,11 @@
   }
 
   .lp-roles-tab-name {
-    font-size: 11px;
+    font-size: var(--text-micro);
   }
 
   .lp-roles-tab-count {
-    font-size: 9px;
+    font-size: var(--text-micro);
   }
 
   .lp-roles-tab-desc {
@@ -790,13 +790,17 @@
 .lp-platform-stat {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
+  padding-block: 16px;
+  text-align: center;
 }
 
 .lp-platform-figure {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
+  justify-content: center;
   gap: 0 6px;
   min-width: 0;
 }
@@ -810,40 +814,43 @@
 }
 
 .lp-platform-unit {
-  font-size: 11px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   color: var(--muted);
 }
 
 .lp-platform-note {
-  font-size: 11px;
+  font-size: var(--text-micro);
   line-height: 1.4;
   color: var(--muted);
 }
 
+/* Two matching columns, each its label over its chips, on the band's centre line. */
 .lp-platform-rows {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px 22px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 22px;
 }
 
 .lp-platform-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  gap: 6px 10px;
+  gap: 10px;
   min-width: 0;
+  padding: 8px 12px 4px;
+  text-align: center;
 }
 
 .lp-platform-label {
   flex: none;
-  min-width: 13ch;
 }
 
 .lp-platform-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  justify-content: center;
+  gap: 6px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -858,7 +865,7 @@
   border-radius: var(--radius-tag);
   background: var(--surface);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-micro);
   line-height: 1.5;
   color: var(--ink);
 }
@@ -898,36 +905,23 @@
   }
 }
 
-/* ---- Limits and the call to action -------------------------------------------------------- */
-
-.lp-limits-split {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: var(--lp-grid-gap);
-  align-items: stretch;
-}
-
-.lp-limits-split > * {
-  min-width: 0;
-}
+/* ---- Limits and the call to action --------------------------------------------------------
+ * The four limits as one row of equal cells, then the call to action centred beneath them.
+ */
 
 .lp-limits {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
-  padding: 22px;
 }
 
 .lp-limits-list {
-  flex: 1 1 auto;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .lp-limits-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  padding: 20px;
 }
 
 .lp-limits-mark {
@@ -938,7 +932,7 @@
 
 .lp-limits-index {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   letter-spacing: 0.06em;
   color: var(--eyebrow);
@@ -949,8 +943,8 @@
 }
 
 .lp-limits-text {
-  font-size: 12.5px;
-  line-height: 1.55;
+  font-size: var(--lp-text-copy);
+  line-height: 1.6;
   color: var(--ink);
 }
 
@@ -959,24 +953,26 @@
 .lp-cta-wrap {
   position: relative;
   display: flex;
+  justify-content: center;
   min-width: 0;
 }
 
 .lp-cta-aurora {
-  top: -60px;
-  right: -80px;
+  top: -90px;
+  left: calc(50% - 260px);
   z-index: -1;
 }
 
 /* The tint is 6% rather than 10% so the eyebrow and caption keep 4.5:1 in the top corner. */
 .lp-cta {
-  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
   min-width: 0;
-  padding: 32px 22px;
+  padding: 56px 32px;
+  text-align: center;
   border-radius: var(--radius-card);
   background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 6%, white), var(--lp-glass));
 }
@@ -986,38 +982,39 @@
 }
 
 .lp-cta-copy {
-  max-width: 46ch;
+  max-width: 56ch;
   color: var(--ink);
 }
 
 .lp-cta-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .lp-cta-hedge {
-  max-width: 52ch;
+  max-width: 56ch;
 }
 
-@media (max-width: 899px) {
-  .lp-limits-split {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 1023px) {
+  .lp-limits-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 599px) {
-  .lp-limits {
-    padding: 16px;
-  }
-
   .lp-limits-list {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .lp-limits-item {
+    padding: 16px;
+  }
+
   .lp-cta {
-    padding: 24px 16px;
+    padding: 36px 18px;
   }
 
   .lp-cta-actions {
@@ -1033,15 +1030,17 @@
 
 .lp-footer {
   display: block;
+  margin-top: 56px;
 }
 
-.lp-footer-row {
+.lp-footer-inner {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  min-height: 64px;
+  gap: 12px;
+  padding-block: 28px 40px;
   border-top: 1px solid var(--line);
+  text-align: center;
 }
 
 .lp-footer-caption {
@@ -1051,15 +1050,8 @@
 .lp-footer-nav {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 4px;
-}
-
-@media (max-width: 599px) {
-  .lp-footer-row {
-    flex-wrap: wrap;
-    gap: 8px;
-    padding-block: 12px;
-  }
 }
 
 /* ---- Motion: only when the visitor allows it and the page has switched it on --------------- */

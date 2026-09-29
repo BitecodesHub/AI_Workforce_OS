@@ -140,7 +140,7 @@ public enum ProviderFailure {
         return switch (this) {
             case RATE_LIMITED -> os.aiworkforce.platform.error.ErrorCode.RATE_LIMITED;
             case AUTHENTICATION_FAILED, AUTHORISATION_FAILED ->
-                    os.aiworkforce.platform.error.ErrorCode.PROVIDER_CREDENTIAL_INVALID;
+                os.aiworkforce.platform.error.ErrorCode.PROVIDER_CREDENTIAL_INVALID;
             case MODEL_NOT_FOUND -> os.aiworkforce.platform.error.ErrorCode.MODEL_NOT_FOUND;
             case CONTEXT_LENGTH_EXCEEDED -> os.aiworkforce.platform.error.ErrorCode.CONTEXT_LENGTH_EXCEEDED;
             case CONTENT_FILTERED -> os.aiworkforce.platform.error.ErrorCode.CONTENT_FILTERED;

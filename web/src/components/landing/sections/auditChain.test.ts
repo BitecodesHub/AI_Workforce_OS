@@ -1,4 +1,5 @@
 import { createElement } from 'react'
+import type { ComponentType } from 'react'
 import axe from 'axe-core'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
@@ -7,8 +8,13 @@ import { AuditChainDemo } from './AuditChainDemo'
 import { AGENT_GRANTS, defaultGrant } from './agentGrants'
 import { AgentsSection } from './AgentsSection'
 import { PlatformBand } from './PlatformBand'
-import { LimitsAndCta } from './LimitsAndCta'
+import { LimitsSection } from './LimitsSection'
+import { FinalCta } from './FinalCta'
 import { LandingFooter } from './LandingFooter'
+import { HowItWorks } from './HowItWorks'
+import { SafetySection } from './SafetySection'
+import { Faq } from './Faq'
+import { ROLE_ORDER, holdsAll } from '../roles/roleData'
 
 /*
  * The audit chain model, the demo built on it, and render checks for the other sections this
@@ -63,7 +69,7 @@ describe('AuditChainDemo', () => {
   }
 
   it('starts silent and verified, then exposes the edit and recovers', () => {
-    render(createElement(AuditChainDemo))
+    const { container } = render(createElement(AuditChainDemo))
     expect(screen.getByText('Simulated')).toBeInTheDocument()
     expect(status().textContent).toBe('')
     expect(screen.queryByText('Chain broken here')).not.toBeInTheDocument()
@@ -78,7 +84,8 @@ describe('AuditChainDemo', () => {
     expect(status()).toHaveTextContent(
       /^Entry 3 records the previous hash [0-9a-f]{8}, but entry 2 now hashes to [0-9a-f]{8}\. The alteration is detectable\.$/,
     )
-    const entries = screen.getAllByRole('listitem')
+    // The chain's own entries: the demo's "Try this" guide is a list too.
+    const entries = within(container.querySelector('.lp-audit-list') as HTMLElement).getAllByRole('listitem')
     expect(within(entries[1] as HTMLElement).getByText('Altered')).toBeInTheDocument()
     expect(within(entries[2] as HTMLElement).getByText('Chain broken here')).toBeInTheDocument()
     expect(entries[1]?.querySelector('del')).toHaveTextContent('approved')
@@ -110,8 +117,8 @@ describe('sections', () => {
     render(createElement(AgentsSection))
     expect(screen.getAllByRole('article')).toHaveLength(4)
     const hrTools = screen.getByRole('radiogroup', { name: 'HR tools' })
-    const gmail = within(hrTools).getByRole('radio', { name: 'gmail' })
-    const calendar = within(hrTools).getByRole('radio', { name: 'calendar' })
+    const gmail = within(hrTools).getByRole('radio', { name: 'Gmail' })
+    const calendar = within(hrTools).getByRole('radio', { name: 'Calendar' })
     expect(gmail).toHaveAttribute('aria-checked', 'true')
     expect(gmail).toHaveAttribute('tabindex', '0')
     expect(calendar).toHaveAttribute('tabindex', '-1')
@@ -120,7 +127,7 @@ describe('sections', () => {
     fireEvent.keyDown(gmail, { key: 'ArrowRight' })
     expect(calendar).toHaveAttribute('aria-checked', 'true')
     expect(calendar).toHaveFocus()
-    expect(screen.getByText(/calendar\.delete_event, waits for a person/)).toBeInTheDocument()
+    expect(screen.getByText(/Deleting one waits for approval/)).toBeInTheDocument()
   })
 
   it('renders the platform counts with their final values for assistive technology', () => {
@@ -131,23 +138,68 @@ describe('sections', () => {
     expect(container.querySelectorAll('.lp-platform [tabindex], .lp-platform a, .lp-platform button')).toHaveLength(0)
   })
 
-  it('states the four limits beside real call-to-action links', () => {
-    render(createElement(LimitsAndCta))
+  it('states the four limits', () => {
+    render(createElement(LimitsSection))
     expect(screen.getByRole('heading', { level: 2, name: /Stated plainly/ })).toBeInTheDocument()
     expect(screen.getAllByRole('listitem')).toHaveLength(4)
-    expect(screen.getByRole('link', { name: 'Try a demo account' })).toHaveAttribute('href', '/sign-in')
-    expect(screen.getByRole('link', { name: 'Create a workspace' })).toHaveAttribute('href', '/create-workspace')
   })
 
-  it('closes with the footer links', () => {
+  it('closes with real call-to-action links', () => {
+    render(createElement(FinalCta))
+    expect(screen.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/sign-in')
+    expect(screen.getByRole('link', { name: 'Create your workspace' })).toHaveAttribute('href', '/create-workspace')
+  })
+
+  it('closes with the footer links, including the page for IT teams', () => {
     render(createElement(LandingFooter))
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in')
-    expect(screen.getByRole('link', { name: 'Create a workspace' })).toHaveAttribute('href', '/create-workspace')
+    expect(screen.getByRole('link', { name: 'Create your workspace' })).toHaveAttribute('href', '/create-workspace')
+    expect(screen.getByRole('link', { name: 'Technical details for IT teams' })).toHaveAttribute('href', '/trust')
+  })
+
+  it('explains how it works in three steps', () => {
+    render(createElement(HowItWorks))
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.getByRole('heading', { level: 3, name: 'Approve what matters' })).toBeInTheDocument()
+  })
+
+  it('draws who can do what from the same role data as the permission map', () => {
+    render(createElement(SafetySection))
+    const table = screen.getByRole('table')
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(6)
+    // Row "Approve what gets sent" (approval:decide): owner, admin and manager only.
+    const approve = rows.find((row) => within(row).queryByRole('rowheader', { name: 'Approve what gets sent' }))
+    expect(approve).toBeDefined()
+    const cells = within(approve as HTMLElement).getAllByRole('cell')
+    expect(cells.map((cell) => cell.getAttribute('data-held'))).toEqual(
+      ROLE_ORDER.map((role) => String(holdsAll(role, ['approval:decide']))),
+    )
+    expect(cells.map((cell) => cell.getAttribute('data-held'))).toEqual(['true', 'true', 'true', 'false', 'false'])
+    expect(within(approve as HTMLElement).getByText('Employee cannot approve what gets sent')).toBeInTheDocument()
+  })
+
+  it('answers the buyer questions as native disclosures, without promising live connections', () => {
+    const { container } = render(createElement(Faq))
+    const items = container.querySelectorAll('details')
+    expect(items.length).toBeGreaterThanOrEqual(6)
+    expect(screen.getByText(/Today they run in a sandbox, so nothing real is sent/)).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/permission code|approval:decide|MCP|Spring Boot/)
   })
 
   it('has no axe violations in any section', async () => {
     const options = { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } }
-    for (const component of [AgentsSection, AuditChainDemo, PlatformBand, LimitsAndCta, LandingFooter]) {
+    for (const component of [
+      AgentsSection,
+      AuditChainDemo,
+      PlatformBand,
+      LimitsSection,
+      FinalCta,
+      LandingFooter,
+      HowItWorks,
+      SafetySection,
+      Faq,
+    ] as ReadonlyArray<ComponentType<object>>) {
       const { container, unmount } = render(createElement(component))
       expect((await axe.run(container, options)).violations).toEqual([])
       unmount()

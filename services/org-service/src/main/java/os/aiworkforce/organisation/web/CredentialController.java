@@ -1,14 +1,15 @@
 package os.aiworkforce.organisation.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,7 +21,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import os.aiworkforce.organisation.repository.Credentials;
 import os.aiworkforce.organisation.service.CredentialService;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
@@ -49,9 +49,7 @@ public class CredentialController {
     }
 
     public record StoreCredentialRequest(
-            @NotBlank @Size(max = 120) String kind,
-            @NotBlank @Size(max = 8_000) String value,
-            Instant expiresAt) {}
+            @NotBlank @Size(max = 120) String kind, @NotBlank @Size(max = 8_000) String value, Instant expiresAt) {}
 
     public record InternalCredential(String value) {}
 
@@ -88,16 +86,13 @@ public class CredentialController {
      */
     @GetMapping("/internal/credentials/{ref}")
     @Operation(summary = "Internal: resolve a credential for a sibling service")
-    public InternalCredential reveal(
-            @PathVariable String ref, @RequestHeader("X-Workspace-Id") UUID workspaceId) {
+    public InternalCredential reveal(@PathVariable String ref, @RequestHeader("X-Workspace-Id") UUID workspaceId) {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() == Actor.Kind.USER) {
             // A person's token must never reach this endpoint, whatever permissions it carries.
-            throw new ApiException(
-                    ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
-        return new InternalCredential(
-                credentials.reveal(workspaceId, ref).orElse(null));
+        return new InternalCredential(credentials.reveal(workspaceId, ref).orElse(null));
     }
 
     private static UUID orgId() {

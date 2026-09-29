@@ -47,8 +47,7 @@ public class ScheduleGoalListener implements GoalLifecycleListener {
                 if (failures >= MAX_CONSECUTIVE_FAILURES) {
                     schedule.setEnabled(false);
                     schedule.setPausedReason(PAUSED_REASON);
-                    log.warn("Schedule {} paused itself after {} failed runs in a row",
-                            schedule.getId(), failures);
+                    log.warn("Schedule {} paused itself after {} failed runs in a row", schedule.getId(), failures);
                 }
             }
             // A cancelled goal (a person cancelled this one occurrence) says nothing about

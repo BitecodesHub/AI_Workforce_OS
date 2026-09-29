@@ -116,8 +116,11 @@ public class TranscriptCompactor {
      * the model has no way to tell that the summary is the unreliable part.
      */
     private String summarise(List<ChatMessage> older) {
-        long userTurns = older.stream().filter(m -> m.role() == ChatMessage.Role.USER).count();
-        long assistantTurns = older.stream().filter(m -> m.role() == ChatMessage.Role.ASSISTANT).count();
+        long userTurns =
+                older.stream().filter(m -> m.role() == ChatMessage.Role.USER).count();
+        long assistantTurns = older.stream()
+                .filter(m -> m.role() == ChatMessage.Role.ASSISTANT)
+                .count();
         List<String> toolsUsed = older.stream()
                 .flatMap(message -> message.toolCalls().stream())
                 .map(call -> call.name())
@@ -132,7 +135,9 @@ public class TranscriptCompactor {
                 .append(assistantTurns)
                 .append(" reply or replies were removed to fit the model's context window.");
         if (!toolsUsed.isEmpty()) {
-            summary.append(" Tools used during that part: ").append(String.join(", ", toolsUsed)).append(".");
+            summary.append(" Tools used during that part: ")
+                    .append(String.join(", ", toolsUsed))
+                    .append(".");
         }
 
         // The first request is kept verbatim: it is the task, and losing it is how an agent

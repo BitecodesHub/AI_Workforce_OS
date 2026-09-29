@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import type { MouseEvent } from 'react'
 import { useLandingMotion } from './LandingRoot'
+import { REVEAL_EVENT, type RevealDetail } from './revealEvent'
 
 /*
  * Click handler for links to a section of this page, such as href="#roles".
@@ -30,6 +31,9 @@ export function useInPageLink(): (event: MouseEvent<HTMLAnchorElement>) => void 
       if (!target || typeof target.scrollIntoView !== 'function') return
 
       event.preventDefault()
+      // A demo waits behind a tab. Naming it first lets its stage open the tab synchronously, so
+      // the scroll below lands on a laid-out panel. Anything else ignores the event.
+      window.dispatchEvent(new CustomEvent<RevealDetail>(REVEAL_EVENT, { detail: { id } }))
       target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
       if (typeof window.history?.pushState === 'function') window.history.pushState(null, '', `#${id}`)
 

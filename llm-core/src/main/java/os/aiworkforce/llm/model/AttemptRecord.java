@@ -65,8 +65,16 @@ public record AttemptRecord(
 
     public static AttemptRecord skipped(String provider, String model, SkipReason reason, String message) {
         return new AttemptRecord(
-                provider, model, Outcome.SKIPPED, reason, null, message,
-                Instant.now(), Duration.ZERO, TokenUsage.NONE, null);
+                provider,
+                model,
+                Outcome.SKIPPED,
+                reason,
+                null,
+                message,
+                Instant.now(),
+                Duration.ZERO,
+                TokenUsage.NONE,
+                null);
     }
 
     public static AttemptRecord failed(
@@ -79,14 +87,21 @@ public record AttemptRecord(
             Integer httpStatus,
             TokenUsage usage) {
         return new AttemptRecord(
-                provider, model, Outcome.FAILED, null, failure, message,
-                startedAt, duration, usage == null ? TokenUsage.NONE : usage, httpStatus);
+                provider,
+                model,
+                Outcome.FAILED,
+                null,
+                failure,
+                message,
+                startedAt,
+                duration,
+                usage == null ? TokenUsage.NONE : usage,
+                httpStatus);
     }
 
     public static AttemptRecord succeeded(
             String provider, String model, Instant startedAt, Duration duration, TokenUsage usage) {
-        return new AttemptRecord(
-                provider, model, Outcome.SUCCEEDED, null, null, null, startedAt, duration, usage, 200);
+        return new AttemptRecord(provider, model, Outcome.SUCCEEDED, null, null, null, startedAt, duration, usage, 200);
     }
 
     /** A short line for the run trace in the interface. */

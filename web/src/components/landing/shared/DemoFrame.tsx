@@ -24,6 +24,10 @@ export type DemoFrameProps = {
   children: ReactNode
   footnote?: string
   busy?: boolean
+  /** A short "Try this" guide beside the demo: what to press, in order. */
+  steps?: readonly string[]
+  /** False where the demo's number means nothing to the reader, as on the home page. */
+  showIndex?: boolean
 }
 
 const REVEAL_ORDER: Record<DemoArea, number> = { approval: 0, failover: 1, audit: 2, cited: 3 }
@@ -38,6 +42,8 @@ export function DemoFrame({
   children,
   footnote,
   busy,
+  steps,
+  showIndex = true,
 }: DemoFrameProps): ReactElement {
   const revealRef = useReveal<HTMLElement>()
   const spotRef = usePointerSpot<HTMLElement>()
@@ -65,15 +71,30 @@ export function DemoFrame({
       aria-labelledby={`${area}-title`}
     >
       <header className="lp-demo-head">
-        <Eyebrow>
-          {index} · {name}
-        </Eyebrow>
+        <Eyebrow>{showIndex ? `${index} · ${name}` : name}</Eyebrow>
         <Tag tone="neutral">Simulated</Tag>
       </header>
       <h3 id={`${area}-title`} className="lp-demo-title">
         {title}
       </h3>
       <p className="lp-demo-lead">{lead}</p>
+      {steps && steps.length > 0 && (
+        <div className="lp-demo-try">
+          <p className="lp-micro" id={`${area}-try`}>
+            Try this
+          </p>
+          <ol className="lp-demo-steps" aria-labelledby={`${area}-try`}>
+            {steps.map((step, position) => (
+              <li key={step}>
+                <span className="lp-demo-step-index" aria-hidden="true">
+                  {position + 1}
+                </span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       <div className="lp-demo-body" aria-busy={busy || undefined}>
         {children}
       </div>

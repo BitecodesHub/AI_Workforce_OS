@@ -65,7 +65,9 @@ public record ChatRequest(
 
     /** The conversation without system turns, for providers that take them separately. */
     public List<ChatMessage> conversation() {
-        return messages.stream().filter(m -> m.role() != ChatMessage.Role.SYSTEM).toList();
+        return messages.stream()
+                .filter(m -> m.role() != ChatMessage.Role.SYSTEM)
+                .toList();
     }
 
     public boolean usesTools() {
@@ -79,15 +81,33 @@ public record ChatRequest(
     /** The same request with a different conversation, used when the transcript is compacted. */
     public ChatRequest withMessages(List<ChatMessage> replacement) {
         return new ChatRequest(
-                replacement, tools, requireToolSupport, jsonMode, jsonSchema, maxOutputTokens,
-                temperature, stopSequences, timeout, metadata, idempotencyKey);
+                replacement,
+                tools,
+                requireToolSupport,
+                jsonMode,
+                jsonSchema,
+                maxOutputTokens,
+                temperature,
+                stopSequences,
+                timeout,
+                metadata,
+                idempotencyKey);
     }
 
     /** The same request with tools removed, for a candidate that cannot call them. */
     public ChatRequest withoutTools() {
         return new ChatRequest(
-                messages, List.of(), false, jsonMode, jsonSchema, maxOutputTokens,
-                temperature, stopSequences, timeout, metadata, idempotencyKey);
+                messages,
+                List.of(),
+                false,
+                jsonMode,
+                jsonSchema,
+                maxOutputTokens,
+                temperature,
+                stopSequences,
+                timeout,
+                metadata,
+                idempotencyKey);
     }
 
     public static final class Builder {
@@ -164,8 +184,17 @@ public record ChatRequest(
 
         public ChatRequest build() {
             return new ChatRequest(
-                    messages, tools, requireToolSupport, jsonMode, jsonSchema, maxOutputTokens,
-                    temperature, stopSequences, timeout, metadata, idempotencyKey);
+                    messages,
+                    tools,
+                    requireToolSupport,
+                    jsonMode,
+                    jsonSchema,
+                    maxOutputTokens,
+                    temperature,
+                    stopSequences,
+                    timeout,
+                    metadata,
+                    idempotencyKey);
         }
     }
 }

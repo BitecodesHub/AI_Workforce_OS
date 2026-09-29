@@ -1,13 +1,13 @@
 package os.aiworkforce.platform.runtimeconfig;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -130,8 +130,7 @@ public class RuntimeConfigService {
         try {
             return json.readTree(resolve(key, orgId));
         } catch (Exception e) {
-            throw new ApiException(
-                    ErrorCode.INTERNAL_ERROR, "Setting " + key.name() + " does not hold valid JSON.", e);
+            throw new ApiException(ErrorCode.INTERNAL_ERROR, "Setting " + key.name() + " does not hold valid JSON.", e);
         }
     }
 
@@ -189,7 +188,8 @@ public class RuntimeConfigService {
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {
-            throw ApiException.validation(key.name(), "is not a valid " + key.type().name().toLowerCase());
+            throw ApiException.validation(
+                    key.name(), "is not a valid " + key.type().name().toLowerCase());
         }
     }
 
@@ -234,7 +234,10 @@ public class RuntimeConfigService {
             }
         }
 
-        local.put(cacheKey, new CachedValue(value, System.currentTimeMillis() + config.cacheTtl().toMillis()));
+        local.put(
+                cacheKey,
+                new CachedValue(
+                        value, System.currentTimeMillis() + config.cacheTtl().toMillis()));
         return value;
     }
 

@@ -4,15 +4,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import os.aiworkforce.identity.domain.Membership;
-import os.aiworkforce.identity.domain.PermissionRecord;
-import os.aiworkforce.identity.domain.Role;
+
 import os.aiworkforce.identity.domain.Session;
-import os.aiworkforce.identity.domain.User;
 
 /*
  * Spring Data scans for top-level repository interfaces. A repository nested inside a holder
@@ -35,14 +33,12 @@ public interface Sessions extends JpaRepository<Session, UUID> {
      * can use it again.
      */
     @Modifying
-    @Query("""
+    @Query(
+            """
             update Session s set s.revokedAt = :now, s.revokedReason = :reason
             where s.familyId = :familyId and s.revokedAt is null
             """)
-    int revokeFamily(
-            @Param("familyId") UUID familyId,
-            @Param("now") Instant now,
-            @Param("reason") String reason);
+    int revokeFamily(@Param("familyId") UUID familyId, @Param("now") Instant now, @Param("reason") String reason);
 
     @Modifying
     @Query("delete from Session s where s.expiresAt < :before")

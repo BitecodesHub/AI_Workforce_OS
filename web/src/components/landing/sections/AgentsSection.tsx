@@ -5,13 +5,13 @@ import { revealStyle, useReveal } from '../../../hooks/useReveal'
 import { usePointerSpot } from '../../../hooks/usePointerSpot'
 import { Icon } from '../shared/Icon'
 import { LandingSection, SectionHead } from '../shared/LandingSection'
-import { AGENTS } from '../shared/landingFacts'
+import { AGENTS, TOOL_LABEL } from '../shared/landingFacts'
 import type { AgentFact, ToolServer } from '../shared/landingFacts'
 import { AGENT_GRANTS, defaultGrant } from './agentGrants'
 
 /*
- * The four demo agents, each with the tool servers it is granted and what it may do on each
- * without a person.
+ * The AI team: the four ready-made assistants, each with the tools it works in and what it may do
+ * in each without a person.
  *
  * The chips are toggle buttons in a roving group: one tab stop per tile, Left and Right (and Home
  * and End) move between servers and select as they go. The sentence below them is a polite live
@@ -20,12 +20,12 @@ import { AGENT_GRANTS, defaultGrant } from './agentGrants'
 
 export function AgentsSection(): ReactElement {
   return (
-    <LandingSection id="agents" labelledBy="agents-title" tight>
+    <LandingSection id="team" labelledBy="team-title">
       <SectionHead
-        eyebrow="What it is for"
-        title="Four agents, working the way a person would"
-        titleId="agents-title"
-        lead="Each agent is given a role, a set of tools and a limit on what it may do unsupervised."
+        eyebrow="Your AI team"
+        title="Ready-made assistants for the work your team repeats"
+        titleId="team-title"
+        lead="Each one has a job, the tools it needs and a clear line it will not cross without asking. Pick a tool to see what it may do there."
       />
       <div className="lp-agents-grid">
         {AGENTS.map((agent, index) => (
@@ -124,7 +124,7 @@ function AgentTile({ agent, index }: { agent: AgentFact; index: number }): React
               onClick={() => choose(grant.server, false)}
               onKeyDown={(event) => onChipKeyDown(event, position)}
             >
-              {grant.server}
+              {TOOL_LABEL[grant.server]}
             </button>
           )
         })}

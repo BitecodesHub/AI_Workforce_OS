@@ -1,10 +1,10 @@
 package os.aiworkforce.orchestrator.voice;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -60,8 +60,13 @@ public class VoiceClipService {
             }
             byte[] audio = voice.speechWithVoice(run.getOrgId(), text, voiceId);
             VoiceClip clip = VoiceClip.of(
-                    run.getOrgId(), run.getId(), agent == null ? null : agent.getId(),
-                    text, voiceId, "audio/mpeg", audio);
+                    run.getOrgId(),
+                    run.getId(),
+                    agent == null ? null : agent.getId(),
+                    text,
+                    voiceId,
+                    "audio/mpeg",
+                    audio);
             clips.save(clip);
             return Optional.of(clip.getId());
         } catch (RuntimeException e) {

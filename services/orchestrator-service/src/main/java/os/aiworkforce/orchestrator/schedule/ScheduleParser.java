@@ -53,21 +53,44 @@ public final class ScheduleParser {
             "in 2 hours",
             "on 1 October at 9am");
 
-    private static final Map<String, Integer> DAY_ORDER = Map.of(
-            "MON", 0, "TUE", 1, "WED", 2, "THU", 3, "FRI", 4, "SAT", 5, "SUN", 6);
+    private static final Map<String, Integer> DAY_ORDER =
+            Map.of("MON", 0, "TUE", 1, "WED", 2, "THU", 3, "FRI", 4, "SAT", 5, "SUN", 6);
 
     private static final Map<String, String> DAY_ABBREVIATION = Map.ofEntries(
-            Map.entry("mon", "MON"), Map.entry("monday", "MON"),
-            Map.entry("tue", "TUE"), Map.entry("tues", "TUE"), Map.entry("tuesday", "TUE"),
-            Map.entry("wed", "WED"), Map.entry("weds", "WED"), Map.entry("wednesday", "WED"),
-            Map.entry("thu", "THU"), Map.entry("thur", "THU"), Map.entry("thurs", "THU"), Map.entry("thursday", "THU"),
-            Map.entry("fri", "FRI"), Map.entry("friday", "FRI"),
-            Map.entry("sat", "SAT"), Map.entry("saturday", "SAT"),
-            Map.entry("sun", "SUN"), Map.entry("sunday", "SUN"));
+            Map.entry("mon", "MON"),
+            Map.entry("monday", "MON"),
+            Map.entry("tue", "TUE"),
+            Map.entry("tues", "TUE"),
+            Map.entry("tuesday", "TUE"),
+            Map.entry("wed", "WED"),
+            Map.entry("weds", "WED"),
+            Map.entry("wednesday", "WED"),
+            Map.entry("thu", "THU"),
+            Map.entry("thur", "THU"),
+            Map.entry("thurs", "THU"),
+            Map.entry("thursday", "THU"),
+            Map.entry("fri", "FRI"),
+            Map.entry("friday", "FRI"),
+            Map.entry("sat", "SAT"),
+            Map.entry("saturday", "SAT"),
+            Map.entry("sun", "SUN"),
+            Map.entry("sunday", "SUN"));
 
     private static final Map<String, String> DAY_FULL_NAME = Map.of(
-            "MON", "Monday", "TUE", "Tuesday", "WED", "Wednesday", "THU", "Thursday",
-            "FRI", "Friday", "SAT", "Saturday", "SUN", "Sunday");
+            "MON",
+            "Monday",
+            "TUE",
+            "Tuesday",
+            "WED",
+            "Wednesday",
+            "THU",
+            "Thursday",
+            "FRI",
+            "Friday",
+            "SAT",
+            "Saturday",
+            "SUN",
+            "Sunday");
 
     private static final Map<String, Month> MONTH_NAME = buildMonthNames();
 
@@ -82,8 +105,7 @@ public final class ScheduleParser {
 
     // ---- Time-of-day -----------------------------------------------------------------------
 
-    private static final Pattern TIME = Pattern.compile(
-            "(?i)^(noon|midnight|(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?)$");
+    private static final Pattern TIME = Pattern.compile("(?i)^(noon|midnight|(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?)$");
 
     private static LocalTime parseTime(String token) {
         Matcher m = TIME.matcher(token.strip());
@@ -180,9 +202,7 @@ public final class ScheduleParser {
     /** The next {@code count} times a parsed schedule fires, in the given zone. */
     public static List<Instant> nextRuns(ParsedSchedule schedule, ZoneId zone, Instant from, int count) {
         if ("once".equals(schedule.kind())) {
-            return schedule.runAt() != null && schedule.runAt().isAfter(from)
-                    ? List.of(schedule.runAt())
-                    : List.of();
+            return schedule.runAt() != null && schedule.runAt().isAfter(from) ? List.of(schedule.runAt()) : List.of();
         }
         CronExpression cron = CronExpression.parse(schedule.cron());
         List<Instant> runs = new ArrayList<>();
@@ -205,8 +225,8 @@ public final class ScheduleParser {
 
     // ---- ISO instant and raw cron, tried before any natural-language pattern ----------------
 
-    private static final Pattern ISO_INSTANT = Pattern.compile(
-            "^\\d{4}-\\d{2}-\\d{2}[tT ]\\d{2}:\\d{2}(:\\d{2})?(\\.\\d+)?([zZ]|[+-]\\d{2}:?\\d{2})$");
+    private static final Pattern ISO_INSTANT =
+            Pattern.compile("^\\d{4}-\\d{2}-\\d{2}[tT ]\\d{2}:\\d{2}(:\\d{2})?(\\.\\d+)?([zZ]|[+-]\\d{2}:?\\d{2})$");
 
     private static Optional<ParsedSchedule> tryIsoInstant(String original, ZoneId zone, Instant now) {
         if (!ISO_INSTANT.matcher(original).matches()) {
@@ -216,7 +236,8 @@ public final class ScheduleParser {
         try {
             Instant runAt = Instant.parse(normalised);
             if (!runAt.isAfter(now)) {
-                throw ApiException.validation("text", "That time has already passed.").with("examples", EXAMPLES);
+                throw ApiException.validation("text", "That time has already passed.")
+                        .with("examples", EXAMPLES);
             }
             return Optional.of(new ParsedSchedule("once", null, runAt, describeOnce(runAt, zone)));
         } catch (DateTimeParseException notAnInstant) {
@@ -239,7 +260,8 @@ public final class ScheduleParser {
         if (!CronExpression.isValidExpression(candidate)) {
             return Optional.empty();
         }
-        return Optional.of(new ParsedSchedule("recurring", candidate, null, "As set by the cron expression " + candidate));
+        return Optional.of(
+                new ParsedSchedule("recurring", candidate, null, "As set by the cron expression " + candidate));
     }
 
     // ---- Recurring phrases ------------------------------------------------------------------
@@ -250,15 +272,15 @@ public final class ScheduleParser {
     private static final Pattern DAILY = Pattern.compile("^(?:every\\s+day|daily)(?:\\s+at\\s+(.+))?$");
     private static final Pattern WEEKDAYS = Pattern.compile("^(?:every\\s+weekday|weekdays)(?:\\s+at\\s+(.+))?$");
     private static final Pattern WEEKENDS = Pattern.compile("^(?:every\\s+weekend|weekends)(?:\\s+at\\s+(.+))?$");
-    private static final Pattern DAY_LIST = Pattern.compile(
-            "^every\\s+([a-z]+(?:(?:\\s*,\\s*|\\s+and\\s+)[a-z]+)*)\\s+at\\s+(.+)$");
+    private static final Pattern DAY_LIST =
+            Pattern.compile("^every\\s+([a-z]+(?:(?:\\s*,\\s*|\\s+and\\s+)[a-z]+)*)\\s+at\\s+(.+)$");
     private static final Pattern WEEK_ON_DAY = Pattern.compile("^every\\s+week\\s+on\\s+([a-z]+)\\s+at\\s+(.+)$");
-    private static final Pattern MONTH_ON_NTH = Pattern.compile(
-            "^every\\s+month\\s+on\\s+the\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+at\\s+(.+)$");
-    private static final Pattern NTH_OF_MONTH = Pattern.compile(
-            "^on\\s+the\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+of\\s+every\\s+month\\s+at\\s+(.+)$");
-    private static final Pattern LAST_DAY_OF_MONTH = Pattern.compile(
-            "^on\\s+the\\s+last\\s+day\\s+of\\s+every\\s+month\\s+at\\s+(.+)$");
+    private static final Pattern MONTH_ON_NTH =
+            Pattern.compile("^every\\s+month\\s+on\\s+the\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+at\\s+(.+)$");
+    private static final Pattern NTH_OF_MONTH =
+            Pattern.compile("^on\\s+the\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+of\\s+every\\s+month\\s+at\\s+(.+)$");
+    private static final Pattern LAST_DAY_OF_MONTH =
+            Pattern.compile("^on\\s+the\\s+last\\s+day\\s+of\\s+every\\s+month\\s+at\\s+(.+)$");
 
     private static Optional<ParsedSchedule> tryRecurring(String lower, ZoneId zone, Instant now) {
         Matcher m;
@@ -281,8 +303,7 @@ public final class ScheduleParser {
         if ((m = DAILY.matcher(lower)).matches()) {
             LocalTime time = timeOrDefault(m.group(1));
             return Optional.of(recurring(
-                    "0 " + time.getMinute() + " " + time.getHour() + " * * *",
-                    "Every day at " + describeTime(time)));
+                    "0 " + time.getMinute() + " " + time.getHour() + " * * *", "Every day at " + describeTime(time)));
         }
         if ((m = WEEKDAYS.matcher(lower)).matches()) {
             LocalTime time = timeOrDefault(m.group(1));
@@ -307,10 +328,10 @@ public final class ScheduleParser {
             List<String> days = splitDayList(m.group(1));
             LocalTime time = parseTime(m.group(2));
             String cronDays = String.join(",", days);
-            String description = "Every " + joinWords(days.stream().map(DAY_FULL_NAME::get).toList())
-                    + " at " + describeTime(time);
-            return Optional.of(recurring(
-                    "0 " + time.getMinute() + " " + time.getHour() + " * * " + cronDays, description));
+            String description =
+                    "Every " + joinWords(days.stream().map(DAY_FULL_NAME::get).toList()) + " at " + describeTime(time);
+            return Optional.of(
+                    recurring("0 " + time.getMinute() + " " + time.getHour() + " * * " + cronDays, description));
         }
         if ((m = MONTH_ON_NTH.matcher(lower)).matches()) {
             int day = requireDayOfMonth(Integer.parseInt(m.group(1)));
@@ -404,23 +425,26 @@ public final class ScheduleParser {
 
     // ---- One-off phrases --------------------------------------------------------------------
 
-    private static final Pattern IN_DURATION = Pattern.compile("^in\\s+(\\d+)\\s+(minute|minutes|hour|hours|day|days)$");
+    private static final Pattern IN_DURATION =
+            Pattern.compile("^in\\s+(\\d+)\\s+(minute|minutes|hour|hours|day|days)$");
     private static final Pattern TOMORROW = Pattern.compile("^tomorrow(?:\\s+at\\s+(.+))?$");
     private static final Pattern TODAY = Pattern.compile("^today\\s+at\\s+(.+)$");
-    private static final Pattern ON_ISO_DATE = Pattern.compile("^on\\s+(\\d{4}-\\d{2}-\\d{2})(?:[ t](\\d{1,2}:\\d{2}))?$");
-    private static final Pattern ON_DAY_MONTH = Pattern.compile(
-            "^on\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+([a-z]+)(?:\\s+(\\d{4}))?(?:\\s+at\\s+(.+))?$");
+    private static final Pattern ON_ISO_DATE =
+            Pattern.compile("^on\\s+(\\d{4}-\\d{2}-\\d{2})(?:[ t](\\d{1,2}:\\d{2}))?$");
+    private static final Pattern ON_DAY_MONTH =
+            Pattern.compile("^on\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+([a-z]+)(?:\\s+(\\d{4}))?(?:\\s+at\\s+(.+))?$");
 
     private static Optional<ParsedSchedule> tryOnce(String lower, ZoneId zone, Instant now) {
         Matcher m;
 
         if ((m = IN_DURATION.matcher(lower)).matches()) {
             long n = Long.parseLong(m.group(1));
-            Duration duration = switch (m.group(2)) {
-                case "minute", "minutes" -> Duration.ofMinutes(n);
-                case "hour", "hours" -> Duration.ofHours(n);
-                default -> Duration.ofDays(n);
-            };
+            Duration duration =
+                    switch (m.group(2)) {
+                        case "minute", "minutes" -> Duration.ofMinutes(n);
+                        case "hour", "hours" -> Duration.ofHours(n);
+                        default -> Duration.ofDays(n);
+                    };
             Instant runAt = now.plus(duration);
             return Optional.of(once(runAt, zone));
         }
@@ -476,7 +500,8 @@ public final class ScheduleParser {
 
     private static Instant requireFuture(Instant runAt, Instant now) {
         if (!runAt.isAfter(now)) {
-            throw ApiException.validation("text", "That time has already passed today; try a later time or a later date.")
+            throw ApiException.validation(
+                            "text", "That time has already passed today; try a later time or a later date.")
                     .with("examples", EXAMPLES);
         }
         return runAt;

@@ -1,9 +1,10 @@
 package os.aiworkforce.platform.event;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import os.aiworkforce.platform.context.RequestContext;
 
@@ -82,8 +83,18 @@ public record EventEnvelope<T>(
     /** The same event, marked as one delivery attempt later. */
     public EventEnvelope<T> nextAttempt() {
         return new EventEnvelope<>(
-                eventId, type, version, occurredAt, orgId, subjectId,
-                correlationId, causationId, actor, payload, attempt + 1, headers);
+                eventId,
+                type,
+                version,
+                occurredAt,
+                orgId,
+                subjectId,
+                correlationId,
+                causationId,
+                actor,
+                payload,
+                attempt + 1,
+                headers);
     }
 
     /**

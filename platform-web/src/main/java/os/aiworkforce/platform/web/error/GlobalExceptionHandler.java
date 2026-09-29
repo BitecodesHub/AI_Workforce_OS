@@ -1,10 +1,11 @@
 package os.aiworkforce.platform.web.error;
 
-import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,13 +84,14 @@ public class GlobalExceptionHandler {
                         jakarta.validation.ConstraintViolation::getMessage,
                         (first, second) -> first,
                         LinkedHashMap::new));
-        return respond(
-                new ApiException(
-                        ErrorCode.VALIDATION_FAILED, null, fields, null, null, false), request);
+        return respond(new ApiException(ErrorCode.VALIDATION_FAILED, null, fields, null, null, false), request);
     }
 
-    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class})
+    @ExceptionHandler({
+        HttpMessageNotReadableException.class,
+        MethodArgumentTypeMismatchException.class,
+        MissingServletRequestParameterException.class
+    })
     public ResponseEntity<ProblemResponse> handleMalformed(Exception e, HttpServletRequest request) {
         // The parser's own message can quote the request body, so it is logged, not returned.
         log.debug("Malformed request to {}: {}", request.getRequestURI(), e.getMessage());
@@ -122,21 +124,21 @@ public class GlobalExceptionHandler {
      * below and is reported as an internal error. That turns "you asked for a route that does not
      * exist" into "the platform is broken", which sends somebody debugging the wrong thing.
      */
-    @ExceptionHandler({NoHandlerFoundException.class,
-            org.springframework.web.servlet.resource.NoResourceFoundException.class})
+    @ExceptionHandler({
+        NoHandlerFoundException.class,
+        org.springframework.web.servlet.resource.NoResourceFoundException.class
+    })
     public ResponseEntity<ProblemResponse> handleNoHandler(Exception e, HttpServletRequest request) {
         return respond(new ApiException(ErrorCode.NOT_FOUND), request);
     }
 
     @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<ProblemResponse> handleAuthentication(
-            AuthenticationException e, HttpServletRequest request) {
+    public ResponseEntity<ProblemResponse> handleAuthentication(AuthenticationException e, HttpServletRequest request) {
         return respond(new ApiException(ErrorCode.NOT_AUTHENTICATED), request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ProblemResponse> handleAccessDenied(
-            AccessDeniedException e, HttpServletRequest request) {
+    public ResponseEntity<ProblemResponse> handleAccessDenied(AccessDeniedException e, HttpServletRequest request) {
         return respond(new ApiException(ErrorCode.PERMISSION_DENIED), request);
     }
 

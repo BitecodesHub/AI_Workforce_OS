@@ -33,8 +33,11 @@ public class PasswordService {
     public PasswordService(PlatformProperties properties) {
         PlatformProperties.Argon2 argon2 = properties.security().argon2();
         this.encoder = new Argon2PasswordEncoder(
-                argon2.saltLength(), argon2.hashLength(),
-                argon2.parallelism(), argon2.memoryKib(), argon2.iterations());
+                argon2.saltLength(),
+                argon2.hashLength(),
+                argon2.parallelism(),
+                argon2.memoryKib(),
+                argon2.iterations());
         this.minimumLength = properties.security().passwordMinLength();
     }
 
@@ -67,8 +70,7 @@ public class PasswordService {
             throw ApiException.validation("password", "must not be empty");
         }
         if (rawPassword.length() < minimumLength) {
-            throw ApiException.validation(
-                    "password", "must be at least " + minimumLength + " characters");
+            throw ApiException.validation("password", "must be at least " + minimumLength + " characters");
         }
         // Argon2 accepts any length, but an unbounded password is an unbounded amount of hashing
         // work that an anonymous caller gets to choose.
@@ -79,8 +81,10 @@ public class PasswordService {
 
     /** Spends comparable time when no account exists, so timing does not reveal which emails do. */
     public void wasteTime() {
-        encoder.matches("not-a-real-password", "$argon2id$v=19$m=65536,t=3,p=4$"
-                + "c29tZXNhbHR2YWx1ZQ$UqE5Y3JhY2tpbmdpc3Nsb3d3aXRoYXJnb24yaWQxMjM0NTY");
+        encoder.matches(
+                "not-a-real-password",
+                "$argon2id$v=19$m=65536,t=3,p=4$"
+                        + "c29tZXNhbHR2YWx1ZQ$UqE5Y3JhY2tpbmdpc3Nsb3d3aXRoYXJnb24yaWQxMjM0NTY");
     }
 
     static ApiException invalidCredentials() {

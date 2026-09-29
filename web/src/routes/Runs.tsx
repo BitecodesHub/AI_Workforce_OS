@@ -4,8 +4,6 @@ import {
   Card,
   DataTable,
   EmptyState,
-  FilterBar,
-  FilterEmpty,
   LoadingState,
   Notice,
   PageHeader,
@@ -16,6 +14,10 @@ import {
 import type { Column } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
+// Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
+// the barrel is also part of the main bundle, so going through it created a circular chunk
+// dependency (Rollup warned of a "broken execution order").
+import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { formatCount, formatDateTime, formatRunElapsed, truncateWords } from '../lib/format'
 import { categoryTone, startedByLabel, statusLabel } from '../lib/labels'
 import { isRunActive, useAgentNames, useRunList, useTaskIndex, type Run } from '../lib/queries'
@@ -37,7 +39,7 @@ import { useNow } from '../lib/useNow'
  * opening a run and coming Back, and can be shared as a link.
  */
 
-const RUN_STATUSES = ['running', 'waiting_approval', 'completed', 'failed', 'cancelled', 'abandoned']
+const RUN_STATUSES = ['running', 'waiting_approval', 'waiting_input', 'completed', 'failed', 'cancelled', 'abandoned']
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

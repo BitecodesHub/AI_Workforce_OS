@@ -1,14 +1,15 @@
 package os.aiworkforce.orchestrator.voice;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -64,8 +65,7 @@ public class VoiceController {
     public VoiceStatusView status() {
         VoiceService.StatusView status = voice.status(orgId());
         return new VoiceStatusView(
-                status.provider(), status.keyStored(), status.tier(), status.charactersUsed(),
-                status.characterLimit());
+                status.provider(), status.keyStored(), status.tier(), status.charactersUsed(), status.characterLimit());
     }
 
     @GetMapping("/voices")
@@ -118,8 +118,8 @@ public class VoiceController {
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "The audio for one clip a run produced")
     public ResponseEntity<byte[]> clip(@PathVariable UUID clipId) {
-        VoiceClip clip = clips.findByIdAndOrgId(clipId, orgId())
-                .orElseThrow(() -> ApiException.notFound("voice clip", clipId));
+        VoiceClip clip =
+                clips.findByIdAndOrgId(clipId, orgId()).orElseThrow(() -> ApiException.notFound("voice clip", clipId));
         return ResponseEntity.ok()
                 .contentType(MediaType.valueOf(clip.getContentType()))
                 .body(clip.getAudio());

@@ -6,6 +6,7 @@ import { isRunActive, useRun, useRunSteps } from '../../lib/queries'
 import type { RunStep } from '../../lib/queries'
 import { AnswerCard } from './AnswerCard'
 import { ClipAudio } from './ClipAudio'
+import { WaitingForAnswer } from './WaitingForAnswer'
 import { WaitingForApproval } from './WaitingForApproval'
 import {
   STEP_KIND,
@@ -79,12 +80,18 @@ export function RunTraceCompact({
   runId,
   headingLevel = 'h3',
   limit = 6,
+  showAnswer = true,
+  onGoToQuestion,
 }: {
   runId: string
   /** The heading level for "What happened", so this nests correctly under whatever wraps it. */
   headingLevel?: 'h3' | 'h4'
   /** The most recent steps to show, instruction aside. The full trace is always one click away. */
   limit?: number
+  /** False where the caller already shows the finished answer elsewhere, to avoid showing it twice. */
+  showAnswer?: boolean
+  /** Where "Go to question" (shown while the run is waiting for an answer) should take the person. */
+  onGoToQuestion?: (questionId: string) => void
 }) {
   const runQuery = useRun(runId)
   const run = runQuery.data
@@ -105,8 +112,9 @@ export function RunTraceCompact({
   return (
     <div className="stack" style={{ gap: 'var(--space-4)' }}>
       {run.status === 'waiting_approval' && <WaitingForApproval run={run} steps={steps} />}
+      {run.status === 'waiting_input' && <WaitingForAnswer run={run} mode="notice" onGoToQuestion={onGoToQuestion} />}
 
-      {answer && <AnswerCard step={answer} instruction={instructionText} />}
+      {showAnswer && answer && <AnswerCard step={answer} instruction={instructionText} />}
 
       {shown.length > 0 && (
         <div>

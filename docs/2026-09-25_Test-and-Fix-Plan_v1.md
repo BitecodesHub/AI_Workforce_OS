@@ -638,6 +638,217 @@ serviceable but occasionally poor, and a funded key or a stronger first model wo
 Checks at the end of this pass: full Maven reactor `clean install` green (281 tests), web `tsc`,
 lint, 268 tests and the production build green.
 
+### UI/UX polish pass (28 September 2026)
+
+The whole console was reviewed against the UI UX Pro Max guidelines (accessibility, touch
+targets, typography floors, responsive layout); the brand palette was kept. Changes:
+
+- **Type scale:** body text rose from 12.5px to 14px, captions to 12.5px, and the smallest text to 11.5px. The landing page's 10px micro labels now use the same token.
+- **Touch screens:** buttons, inputs, icon buttons and avatars are at least 44px, and inputs use 16px text so iOS does not zoom on focus.
+- **Layout fixes:**
+  - The nav collapses between 901px and 980px instead of overflowing.
+  - Approval payloads scroll inside a bounded region.
+  - Model Routing and Members fields stack on phones.
+  - The Chat thread height is measured, so the composer is never pushed off-screen.
+  - The mention list truncates long names.
+  - The Orchestrator flow map keeps legible nodes on phones.
+- **Final live check:**
+  - No page scrolls sideways at 385px or at 1440px, across the 15 main console routes, the landing page and the sign-in pages. Wide tables scroll inside their own frame.
+  - That check caught two more problems, both fixed. On a phone the Orchestrator stat tiles stacked one per row; they now sit two per row. The Chat placeholder was cut off mid-word; it is now shorter.
+  - The Chat read-aloud control is now a worded toggle, not a bare speaker icon.
+- **Checks:** web `tsc`, lint, 272 tests and the production build are green. The design-system tests now cover the new `styles/polish/` files.
+
+### Accessibility audit (axe-core 4.13, 28 September 2026)
+
+- **Scope:**
+  - Rule sets: WCAG 2.0, 2.1 and 2.2 at levels A and AA, plus axe best practices.
+  - Widths: laptop (1366px) and mobile (375px).
+  - Pages: the 15 main console routes, the agent, run and source detail pages, the landing page, sign-in, create-workspace, and accept-invite with and without a token.
+  - Opened states: the phone menu, settings menu, account menu, approvals bell, "Give an agent a task" dialog with its validation errors, new-schedule dialog, and the Chat mention list with and without matches.
+- **Found and fixed:**
+  - Chat avatar initials measured 2.7:1 contrast; they are now darkened to meet AA.
+  - The Chat composer textarea carried `role="combobox"`, which ARIA does not allow on a textarea. It now uses `aria-autocomplete`, `aria-controls` and `aria-activedescendant`.
+  - The mention list had list items between the listbox and its options, and a bare-text "no match" message. The list items are now presentational, and the message is a disabled option. Arrow-key selection was re-verified live.
+  - The Orchestrator flow map was `role="img"` with focusable agent nodes inside it. It is now `role="group"`.
+  - Timeline bars for short runs were 3–7px wide links. Each bar now has a 24px minimum width and height, and a covered bar comes to the front on hover or focus.
+- **Result:** every audited page and state has zero violations, except one case. Two runs seconds apart in the same lane still overlap. Each of those runs is also linked from the board and from Runs, which is WCAG 2.5.8's "equivalent control" exception.
+- **Regression test:** `Composer.test.tsx` runs axe against the mention list.
+- **Limits:**
+  - Contrast was checked in a real browser, not in jsdom.
+  - Screen-reader behaviour was not tested with VoiceOver or NVDA.
+
+### Home page and sign-in redesign for business buyers (28 September 2026)
+
+The home page had been written for engineers evaluating the platform: permission codes, service counts, hashes. It was rewritten for the people who buy the product, applying the UI UX Pro Max guidance (the "Product Demo + Features" pattern, plain language, a 44px touch floor, readable type).
+
+- **Home page (`/home`):**
+  - A centred hero: "Hand the busywork to AI. Keep the final say."
+  - Four benefit links in place of the technical counts.
+  - How it works in three steps.
+  - The AI team, in plain words, with product names for tools.
+  - Two demos behind tabs, each with a "Try this" guide.
+  - Six safety promises.
+  - A who-can-do-what table computed from `roleData.ts`.
+  - An FAQ that states the same limits as answers.
+  - A centred call to action.
+  - A test fails if technical jargon (permission codes, tool names, "hash", "MCP") appears on the page.
+- **Technical page (`/trust`):**
+  - All four demos in the technical voice.
+  - The permission explorer, the platform band and the limits, verbatim.
+- **Demo stage:**
+  - The four stacked demos, about 1,400px on a laptop, became one tabbed stage of about 600px.
+  - Tabs follow the ARIA pattern, with arrow keys, Home and End.
+  - Links and hash deep links open the right tab through an `lp:reveal` event.
+  - Hidden demos keep their state and start only when shown.
+- **Demo voice:** the approval and cited-answer demos take a `voice` prop, `plain` or `technical`. The plain voice shows the approval's email as an email, not JSON.
+- **Hero console:** the Command Map sits on top, with the approval and backup-provider cards as an even pair beneath. They no longer cover table text.
+- **Sign-in family:**
+  - One shared shell.
+  - Sign-in is a single card of two equal halves.
+  - The five tall demo-account cards became one row of role tiles with a live description.
+  - A show-password control, via `PasswordInput`.
+  - A stepper with direction-aware transitions for create-workspace.
+  - Blue in-text links.
+  - A compact layout for laptop-height screens.
+- **Defects found and fixed:**
+  - `Notice` laid text and inline elements out as flex columns. This broke the demo-password sentence, the "Sign in instead" notice and the Approvals role notice. Its children are now wrapped in one block.
+  - The demo stage's auto grid column let the tab row's `max-content` width stretch the panel past a phone screen.
+  - The role table's scroll region was not keyboard reachable.
+- **Font:** Aperçu is now the only typeface. DM Sans and IBM Plex Mono were removed, along with the Google Fonts request. The licensed WOFF2 files still need adding to `web/public/fonts/`; see the README.
+- **Checks:** web `tsc`, lint, 299 tests and the build are green. Live axe audits of `/home` and `/trust` show zero violations at 1366px and 375px with every tab and FAQ answer open. No element overflows at 375, 390, 1366 or 1440px.
+
+### Final production sweep (28 September 2026)
+
+A full-system audit before declaring the platform shippable: the whole reactor (`mvn clean
+install`), the whole web client (`tsc`, lint, vitest, build), a secrets scan, a scan for stray
+debug statements, and a live walkthrough of every route against the running services. Two real
+defects were found and fixed, both confirmed live against the running backend; one architectural
+improvement was made; and three items carried in memory as "known minor" were checked and closed
+out, either fixed or found to already be correct.
+
+**D85 — speech without a key returned 422, not the contract's 409.** `VoiceService.speech()`
+resolved the voice to use before checking whether a key was stored at all; with no key, the voice
+list is always empty, so the "no voice available" branch fired first and reported a 422 field
+validation error on `voiceId`. `POST /api/voice/speech` with no key stored now correctly returns
+409 `voice_not_configured`, matching the documented contract and `transcribe()`'s own behaviour.
+Fixed in `VoiceService.java`; a regression test was added (`speechWithoutKeyAndNoAgentIs409`) for
+the exact case that was wrong — no agent named, no key stored, the common path from Chat. Verified
+live: `curl -X POST /api/voice/speech` with a real session token, before the fix, returned
+`422 {"field":"voiceId","problem":"No voice is available..."}`; after rebuilding and restarting
+orchestrator-service, the same request returns `409 {"code":"voice_not_configured"}`.
+
+**D86 — a chat reply's screen-reader announcement could permanently say "an agent".** The
+live-region text naming who replied depends on a separate query (`useAgentNames`) that had not
+necessarily finished loading when a poll first brought in a new answer; because the code advanced
+its "already seen" watermark past that answer regardless, the wrong generic wording was never
+revisited even once the real name arrived a moment later — only the visible bubble corrected
+itself. Fixed by extracting the readiness check into a pure, tested function,
+`readyAnswers()` in `chatModel.ts`: a new answer whose agent name is not yet known is held back
+(the watermark does not advance past it) so the same effect retries it on the next render, up to
+`ANSWER_NAME_TIMEOUT_MS` (8s, longer than the 3s conversation poll) before falling back to the
+honest generic wording for a genuinely-removed agent, so a reply is never silently left
+unannounced either. Six new unit tests cover it. Live-verified: asked Chat to "Summarise the last
+sprint standup for engineering", the model routed it to Engineering Manager, and the announcement
+read exactly "New reply from Engineering Manager." once the name resolved.
+
+**Route-level code splitting.** The whole console (18 screens) and the public home page were one
+657 kB bundle (196 kB gzipped) that every visitor downloaded regardless of which one screen they
+needed. Every route except the two default landing screens (Command Map for a signed-in visit to
+`/`, Landing for a signed-out one) and the small always-needed auth screens is now `React.lazy`,
+behind one `Suspense` boundary reusing the existing "brief transition" empty state. The main bundle
+is now 458.9 kB (140.2 kB gzipped), a 30% cut, with each route a separate 1–26 kB chunk fetched
+only when visited. Fixing this exposed a real, if latent, hazard: three routes and one shared
+component imported `FilterBar`/`FilterEmpty` through the `components/ui` barrel, which is also
+part of the eager main bundle — Rollup warned this would produce a circular chunk dependency with
+"broken execution order" once those routes were split out. Every such import was repointed at
+`FilterBar`'s own module instead of the barrel; the warning is now absent from a clean build.
+Verified: all 14 lazy routes render correctly with zero console errors in a real, fully signed-in
+walkthrough; the structural fix was independently confirmed by the warning's absence, which Rollup
+only omits when no such circular relationship exists.
+
+**Closed out from the known-minor list:**
+- A handful of literal px font-sizes that happened to equal an existing token (`.page-description`,
+  `.mono`, the chat inline-approval JSON preview, `.avatar-large`, the sign-in illustration's
+  title) now reference a token — a new `--text-lead: 15px` token was added for the two that were
+  an intro paragraph, not a heading, so they are not tied to `--text-h2` by coincidence.
+- `.visually-hidden`: read again and confirmed to already be the standard, correct
+  clip-and-1px-box accessible pattern; nothing to fix.
+- The sign-in demo list's inline `--text-micro` font size no longer exists — the whole component
+  was rewritten in the home/sign-in redesign earlier this session.
+
+**Checked and found to be correct, not a defect:** the Employee role lacking `analytics:read`
+while Viewer holds it, which an earlier report in this session had flagged — Viewer's stated
+purpose is read-only dashboards (which analytics is), Employee's is doing work through chat, so
+the split matches each role's own description in `PermissionSeeder.java`.
+
+**Final state:** full backend reactor build green (`mvn clean install`, exit 0, all modules); web
+`tsc`, lint, 306 tests (7 new) and the production build green; no secrets, no stray
+`console.log`/`printStackTrace`, no `TODO`/`FIXME` in either codebase; all 8 services plus the
+gateway and web client verified healthy and running together.
+
+### Clarifying questions, General Employee and the Chat/Orchestrator redesign (29 September 2026)
+
+The workforce now asks clarifying questions mid-run instead of failing or guessing, and every
+request always lands somewhere: an unmatched message goes to a new **General Employee**, a
+fallback agent found by an `is_fallback` flag rather than by name or key, so it survives a rename.
+Built to a written contract (`docs/` companion spec, not checked in) across five work packages,
+each landing on a green build before the next started.
+
+**Backend engine.** A run can now pause in a new `waiting_input` status when an agent calls an
+internal `person.ask_question` tool, and resume **exactly once** with the answer as the tool
+result — never past a newer open question or approval, verified by tests simulating two
+concurrent resumes. Questions are a new `run_questions` table (`V8__questions_and_chat.sql`) with
+one pending question per run, a 24-hour default window extendable to 7 days, and a conditional
+bulk-update withdrawal (never load-and-save) so a Stop always wins cleanly against a
+simultaneous answer. `GoalService.retry` lets a failed or stopped goal run again from its first
+unfinished step. 396 orchestrator-service tests pass (up from 282), plus the reactor and gateway.
+
+**General Employee, chat and the board.** `GeneralEmployee.ensure(orgId)` lazily creates the
+fallback agent in every workspace (on first chat, agent list, or board read; the demo workspace
+gets it at boot). Routing never dead-ends: the old "Choose one" text is gone, and an unmatched
+message is routed to General with an honest routing line. The Orchestrator's board contract grew
+`questions`, `waiting_input` counts, and `canDecide` on approvals; conversations gained search,
+pin, archive with undo, and per-person unread tracking.
+
+**Chat page.** Rebuilt for space and interaction: a full-height shell with a collapsible sidebar
+(rail at narrow widths, a Work panel at 1440px and wider), grouped conversations (Pinned, Needs
+you, then by date), a `QuestionCard` component that renders a clarifying question as native
+radio/checkbox fieldsets with a recommended option, an "Other" free-text fallback, and a "Let the
+agent decide" escape hatch. The composer answers the open question directly when one is pending,
+with "Send as a new request instead" to opt out. Keyboard shortcuts, roving-tabindex lists, and a
+polite live-region announcement (never moving focus) round it out.
+
+**Orchestrator page.** Rebuilt around a "Needs you" inbox — the questions and approvals a person
+can act on, ordered by urgency — above a summary strip whose tile counts always equal the cards
+each one filters. The old goal drawer is now a right-hand sheet with Up/Down between goals. Board,
+List and Timeline views share one dataset; a flow map shows a dashed ring for an agent waiting on
+an answer.
+
+**Infrastructure note.** The local Postgres data directory had been created under a session
+scratchpad path (`/private/tmp/claude-.../scratchpad/pgdata`) in an earlier session — a mistake,
+since that path is not durable. An overnight cleanup of `/private/tmp` swept small,
+rarely-touched files (`PG_VERSION` markers, `postmaster.pid`) while leaving the larger data files
+in place, corrupting the cluster and taking down all seven services. Rebuilt with `initdb` at
+`/Users/mac/.aiwos-dev/pgdata` (see `build-and-run` in memory for the exact start command — it
+needs `LC_ALL=C` on this machine, or `pg_ctl` fails with "postmaster became multithreaded during
+startup"). All schema is Flyway-managed and reapplied cleanly from `V1` through the new `V8` on
+first boot; nothing but disposable local/demo data was lost.
+
+**Verified live** (Manager account, sandbox provider): sending "hi" with no specialist match
+routes to General Employee with the honest routing line and no dead end. Sending a message with an
+embedded ask produced a real clarifying-question card — header chip, three options with one
+recommended, Other — which paused the run (`waiting_input`), and choosing an option resumed it
+exactly once, showing "You answered: …" then "General Employee is continuing" and the final
+answer. The Orchestrator's summary strip, Needs-you inbox and goal count all matched. One real
+defect was found this way and fixed: two keyboard-shortcut entries in the Orchestrator's shortcuts
+dialog shared the same description text, which React logged as a duplicate-key warning — merged
+into one row listing all four keys.
+
+**Final state:** full backend reactor build green (396 orchestrator-service tests, platform-core/
+llm-core/mcp-core/gateway all green); web `tsc`, lint, 538 tests (40 files) and the production
+build green; all 8 services plus the gateway and web client verified healthy, migrated to `V8`,
+and exercised live end to end.
+
 ---
 
 ## 11. Known platform gaps outside this plan

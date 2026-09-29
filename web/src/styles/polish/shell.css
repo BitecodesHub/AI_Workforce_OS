@@ -1,0 +1,66 @@
+/* UI/UX polish: shell screens. Loaded after components.css, so rules here refine it. */
+
+/*
+ * Navbar overflow between the capsule's own collapse point and a comfortable desktop width.
+ *
+ * components.css collapses the pill capsule into the dropdown menu at 900px and below. Measured
+ * against the raised nav type scale (14px pills, six destinations, the wordmark and three icon
+ * buttons), the full bar needs about 956px to lay out without its content bleeding past the right
+ * edge - so 901-955px overflowed horizontally even though nothing here wraps onto a second line.
+ * 1024px and up already clears that with room to spare, so this closes only the gap in between,
+ * with a margin for font-rendering differences across platforms, by collapsing the same way the
+ * shared rule does a little earlier.
+ */
+@media (min-width: 901px) and (max-width: 980px) {
+  .more-menu {
+    position: static;
+  }
+
+  .menu-panel {
+    right: var(--space-5);
+    left: auto;
+  }
+
+  .nav-capsule {
+    display: none;
+  }
+
+  .nav-capsule[data-open='true'] {
+    border-radius: var(--radius-card);
+    position: absolute;
+    top: var(--navbar-height);
+    left: var(--space-5);
+    right: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    padding: var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-hover);
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .region-label {
+    display: none;
+  }
+}
+
+/*
+ * Screen-reader-only text inside a table that scrolls sideways.
+ *
+ * `.visually-hidden` is absolutely positioned with no insets, so it sits at its static position.
+ * `.table-scroll` is not a positioned element, so a hidden span in the last visible column of a wide
+ * table escaped the region's clipping and widened the whole page by a few pixels at phone width.
+ * Measured on the Command Map at 385px: the page scrolled 4px sideways. Pinning the span to its
+ * containing block's corner removes the overflow and changes nothing a reader sees or hears.
+ * Making `.table-scroll` a positioned element instead would also clip any popover opened from a row.
+ */
+.table-scroll .visually-hidden {
+  top: 0;
+  left: 0;
+}

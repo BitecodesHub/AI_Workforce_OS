@@ -1,22 +1,22 @@
 package os.aiworkforce.llm.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import os.aiworkforce.llm.model.ChatMessage;
 import os.aiworkforce.llm.model.ChatRequest;
@@ -226,21 +226,31 @@ public class GeminiProvider implements ChatProvider {
         String blockReason = node.path("promptFeedback").path("blockReason").asText(null);
         if (blockReason != null && !blockReason.isBlank()) {
             throw ProviderException.of(
-                    ProviderFailure.CONTENT_FILTERED, provider.id(), model.modelId(),
+                    ProviderFailure.CONTENT_FILTERED,
+                    provider.id(),
+                    model.modelId(),
                     "The provider's safety system declined this request (" + blockReason + ").");
         }
 
         JsonNode candidate = node.path("candidates").path(0);
         if (candidate.isMissingNode()) {
             throw new ProviderException(
-                    ProviderFailure.MALFORMED_RESPONSE, provider.id(), model.modelId(),
-                    "The provider returned no candidates.", null, null, truncate(node.toString()), null);
+                    ProviderFailure.MALFORMED_RESPONSE,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider returned no candidates.",
+                    null,
+                    null,
+                    truncate(node.toString()),
+                    null);
         }
 
         String finishReasonRaw = candidate.path("finishReason").asText(null);
         if ("SAFETY".equals(finishReasonRaw) || "PROHIBITED_CONTENT".equals(finishReasonRaw)) {
             throw ProviderException.of(
-                    ProviderFailure.CONTENT_FILTERED, provider.id(), model.modelId(),
+                    ProviderFailure.CONTENT_FILTERED,
+                    provider.id(),
+                    model.modelId(),
                     "The provider's safety system stopped the answer.");
         }
 
@@ -309,8 +319,7 @@ public class GeminiProvider implements ChatProvider {
             if (!calls.isEmpty()) {
                 chunks.add(ChatChunk.tools(List.copyOf(calls)));
             }
-            chunks.add(ChatChunk.terminal(
-                    finishReason != null ? finishReason : FinishReason.INCOMPLETE, usage));
+            chunks.add(ChatChunk.terminal(finishReason != null ? finishReason : FinishReason.INCOMPLETE, usage));
             return chunks;
         }
     }
@@ -373,42 +382,74 @@ public class GeminiProvider implements ChatProvider {
             return error;
         }
         if (error instanceof java.util.concurrent.TimeoutException) {
-            return new ProviderException(ProviderFailure.TIMEOUT, provider.id(), model.modelId(),
-                    "The provider did not answer inside the deadline.", null, null, null, error);
+            return new ProviderException(
+                    ProviderFailure.TIMEOUT,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider did not answer inside the deadline.",
+                    null,
+                    null,
+                    null,
+                    error);
         }
         if (error instanceof WebClientRequestException) {
-            return new ProviderException(ProviderFailure.NETWORK_ERROR, provider.id(), model.modelId(),
-                    "The provider could not be reached.", null, null, null, error);
+            return new ProviderException(
+                    ProviderFailure.NETWORK_ERROR,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider could not be reached.",
+                    null,
+                    null,
+                    null,
+                    error);
         }
         if (error instanceof WebClientResponseException response) {
             int status = response.getStatusCode().value();
             String body = truncate(response.getResponseBodyAsString());
             String lower = body == null ? "" : body.toLowerCase(Locale.ROOT);
-            ProviderFailure failure = switch (status) {
-                case 400 -> lower.contains("api key not valid")
-                        ? ProviderFailure.AUTHENTICATION_FAILED
-                        : lower.contains("token count") || lower.contains("too large")
-                                ? ProviderFailure.CONTEXT_LENGTH_EXCEEDED
-                                : ProviderFailure.INVALID_REQUEST;
-                case 401 -> ProviderFailure.AUTHENTICATION_FAILED;
-                // Google reports both "not entitled" and "billing disabled" as 403.
-                case 403 -> lower.contains("billing") || lower.contains("quota")
-                        ? ProviderFailure.QUOTA_EXHAUSTED
-                        : ProviderFailure.AUTHORISATION_FAILED;
-                case 404 -> ProviderFailure.MODEL_NOT_FOUND;
-                case 429 -> lower.contains("quota") && lower.contains("exceeded") && lower.contains("billing")
-                        ? ProviderFailure.QUOTA_EXHAUSTED
-                        : ProviderFailure.RATE_LIMITED;
-                case 500, 502 -> ProviderFailure.SERVER_ERROR;
-                case 503 -> ProviderFailure.OVERLOADED;
-                case 504 -> ProviderFailure.TIMEOUT;
-                default -> status >= 500 ? ProviderFailure.SERVER_ERROR : ProviderFailure.UNKNOWN;
-            };
-            return new ProviderException(failure, provider.id(), model.modelId(),
-                    "Provider responded " + status, status, null, body, response);
+            ProviderFailure failure =
+                    switch (status) {
+                        case 400 ->
+                            lower.contains("api key not valid")
+                                    ? ProviderFailure.AUTHENTICATION_FAILED
+                                    : lower.contains("token count") || lower.contains("too large")
+                                            ? ProviderFailure.CONTEXT_LENGTH_EXCEEDED
+                                            : ProviderFailure.INVALID_REQUEST;
+                        case 401 -> ProviderFailure.AUTHENTICATION_FAILED;
+                        // Google reports both "not entitled" and "billing disabled" as 403.
+                        case 403 ->
+                            lower.contains("billing") || lower.contains("quota")
+                                    ? ProviderFailure.QUOTA_EXHAUSTED
+                                    : ProviderFailure.AUTHORISATION_FAILED;
+                        case 404 -> ProviderFailure.MODEL_NOT_FOUND;
+                        case 429 ->
+                            lower.contains("quota") && lower.contains("exceeded") && lower.contains("billing")
+                                    ? ProviderFailure.QUOTA_EXHAUSTED
+                                    : ProviderFailure.RATE_LIMITED;
+                        case 500, 502 -> ProviderFailure.SERVER_ERROR;
+                        case 503 -> ProviderFailure.OVERLOADED;
+                        case 504 -> ProviderFailure.TIMEOUT;
+                        default -> status >= 500 ? ProviderFailure.SERVER_ERROR : ProviderFailure.UNKNOWN;
+                    };
+            return new ProviderException(
+                    failure,
+                    provider.id(),
+                    model.modelId(),
+                    "Provider responded " + status,
+                    status,
+                    null,
+                    body,
+                    response);
         }
-        return new ProviderException(ProviderFailure.UNKNOWN, provider.id(), model.modelId(),
-                "The provider call failed.", null, null, null, error);
+        return new ProviderException(
+                ProviderFailure.UNKNOWN,
+                provider.id(),
+                model.modelId(),
+                "The provider call failed.",
+                null,
+                null,
+                null,
+                error);
     }
 
     private static String truncate(String value) {

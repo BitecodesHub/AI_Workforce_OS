@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  formatAgo,
   formatCompactTokens,
   formatCount,
   formatDate,
@@ -10,7 +11,9 @@ import {
   formatMoney,
   formatRelative,
   formatRunElapsed,
+  formatTimeIn,
   nameList,
+  plural,
   sentenceCase,
   shortId,
   truncateWords,
@@ -126,6 +129,9 @@ describe('formatElapsed and formatRunElapsed', () => {
     expect(formatRunElapsed({ status: 'waiting_approval', startedAt: at(-(23 * HOUR + 5 * MINUTE)) }, NOW)).toBe(
       'Waiting 23 h 05 min',
     )
+    expect(formatRunElapsed({ status: 'waiting_input', startedAt: at(-(23 * HOUR + 5 * MINUTE)) }, NOW)).toBe(
+      'Waiting 23 h 05 min',
+    )
     expect(
       formatRunElapsed({ status: 'completed', startedAt: at(-90 * SECOND), completedAt: at(-30 * SECOND) }, NOW),
     ).toBe('1 min 00 s')
@@ -209,6 +215,37 @@ describe('text', () => {
   it('shortens ids to eight characters', () => {
     expect(shortId('3f2a9c1e-7b44-4d0e-9a51-0c2d1e6f7a88')).toBe('3f2a9c1e')
     expect(shortId(null)).toBe('')
+  })
+})
+
+describe('formatAgo', () => {
+  it('reads just now under two seconds', () => {
+    expect(formatAgo(0)).toBe('just now')
+    expect(formatAgo(1999)).toBe('just now')
+  })
+
+  it('counts seconds, minutes and hours', () => {
+    expect(formatAgo(4 * SECOND)).toBe('4 s ago')
+    expect(formatAgo(2 * MINUTE)).toBe('2 min ago')
+    expect(formatAgo(3 * HOUR)).toBe('3 h ago')
+  })
+})
+
+describe('formatTimeIn', () => {
+  it('reads a 24-hour clock in the given time zone', () => {
+    expect(formatTimeIn(new Date(2026, 8, 29, 9, 0).getTime())).toBe('09:00')
+  })
+
+  it('shows an em dash for a bad instant', () => {
+    expect(formatTimeIn(Number.NaN)).toBe('—')
+  })
+})
+
+describe('plural', () => {
+  it('picks the singular only at exactly one', () => {
+    expect(plural(1, 'run', 'runs')).toBe('1 run')
+    expect(plural(3, 'run', 'runs')).toBe('3 runs')
+    expect(plural(0, 'run', 'runs')).toBe('0 runs')
   })
 })
 

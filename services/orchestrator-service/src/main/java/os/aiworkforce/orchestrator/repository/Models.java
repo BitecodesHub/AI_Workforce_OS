@@ -1,28 +1,11 @@
 package os.aiworkforce.orchestrator.repository;
 
-import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import os.aiworkforce.orchestrator.domain.Agent;
-import os.aiworkforce.orchestrator.domain.AgentToolGrant;
-import os.aiworkforce.orchestrator.domain.AgentVersion;
-import os.aiworkforce.orchestrator.domain.Approval;
-import os.aiworkforce.orchestrator.domain.Budget;
-import os.aiworkforce.orchestrator.domain.Goal;
+
 import os.aiworkforce.orchestrator.domain.LlmModelEntity;
-import os.aiworkforce.orchestrator.domain.LlmProviderEntity;
-import os.aiworkforce.orchestrator.domain.LlmUsageRecord;
-import os.aiworkforce.orchestrator.domain.ModelPolicyEntity;
-import os.aiworkforce.orchestrator.domain.Run;
-import os.aiworkforce.orchestrator.domain.RunStep;
-import os.aiworkforce.orchestrator.domain.Task;
 
 /*
  * Spring Data scans for top-level repository interfaces. A repository nested inside a holder

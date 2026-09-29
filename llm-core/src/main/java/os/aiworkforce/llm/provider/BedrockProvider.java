@@ -1,19 +1,18 @@
 package os.aiworkforce.llm.provider;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -117,9 +116,14 @@ public class BedrockProvider implements ChatProvider {
             List<String> failures) {
         if (index >= regions.size()) {
             return Mono.error(new ProviderException(
-                    ProviderFailure.REGION_UNAVAILABLE, provider.id(), model.modelId(),
+                    ProviderFailure.REGION_UNAVAILABLE,
+                    provider.id(),
+                    model.modelId(),
                     "No Bedrock region answered: " + String.join("; ", failures),
-                    null, null, null, null));
+                    null,
+                    null,
+                    null,
+                    null));
         }
         String region = regions.get(index);
         Instant startedAt = Instant.now();
@@ -136,8 +140,7 @@ public class BedrockProvider implements ChatProvider {
                             || classified.failure() == ProviderFailure.SERVER_ERROR;
                     if (regional && index + 1 < regions.size()) {
                         log.info("Bedrock {} failed in {}, trying the next region", model.modelId(), region);
-                        return attemptRegions(
-                                provider, model, request, credential, regions, index + 1, failures);
+                        return attemptRegions(provider, model, request, credential, regions, index + 1, failures);
                     }
                     return Mono.error(classified);
                 });
@@ -164,7 +167,9 @@ public class BedrockProvider implements ChatProvider {
 
     @Override
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
-        String region = provider.regions().isEmpty() ? DEFAULT_REGION : provider.regions().get(0);
+        String region = provider.regions().isEmpty()
+                ? DEFAULT_REGION
+                : provider.regions().get(0);
         return Mono.fromCallable(() -> {
                     client(region, credential);
                     return true;
@@ -213,18 +218,20 @@ public class BedrockProvider implements ChatProvider {
                 blocks.add(ContentBlock.fromText(""));
             }
             messages.add(Message.builder()
-                    .role(message.role() == ChatMessage.Role.ASSISTANT
-                            ? ConversationRole.ASSISTANT
-                            : ConversationRole.USER)
+                    .role(
+                            message.role() == ChatMessage.Role.ASSISTANT
+                                    ? ConversationRole.ASSISTANT
+                                    : ConversationRole.USER)
                     .content(blocks)
                     .build());
         }
         builder.messages(messages);
 
         InferenceConfiguration.Builder inference = InferenceConfiguration.builder();
-        inference.maxTokens(request.maxOutputTokens() != null
-                ? Math.min(request.maxOutputTokens(), model.maxOutputTokens())
-                : Math.min(4096, model.maxOutputTokens()));
+        inference.maxTokens(
+                request.maxOutputTokens() != null
+                        ? Math.min(request.maxOutputTokens(), model.maxOutputTokens())
+                        : Math.min(4096, model.maxOutputTokens()));
         if (request.temperature() != null) {
             inference.temperature(request.temperature().floatValue());
         }
@@ -247,11 +254,7 @@ public class BedrockProvider implements ChatProvider {
     }
 
     private ChatResponse parse(
-            ProviderDescriptor provider,
-            ModelSpec model,
-            String region,
-            ConverseResponse response,
-            Instant startedAt) {
+            ProviderDescriptor provider, ModelSpec model, String region, ConverseResponse response, Instant startedAt) {
         StringBuilder text = new StringBuilder();
         List<ToolCall> calls = new ArrayList<>();
 
@@ -262,7 +265,8 @@ public class BedrockProvider implements ChatProvider {
                 }
                 if (block.toolUse() != null) {
                     ToolUseBlock use = block.toolUse();
-                    calls.add(new ToolCall(use.toolUseId(), ToolNames.fromWire(use.name()), documentToJson(use.input())));
+                    calls.add(
+                            new ToolCall(use.toolUseId(), ToolNames.fromWire(use.name()), documentToJson(use.input())));
                 }
             }
         }
@@ -270,7 +274,9 @@ public class BedrockProvider implements ChatProvider {
         String stopReason = response.stopReasonAsString();
         if ("content_filtered".equalsIgnoreCase(stopReason) || "guardrail_intervened".equalsIgnoreCase(stopReason)) {
             throw ProviderException.of(
-                    ProviderFailure.CONTENT_FILTERED, provider.id(), model.modelId(),
+                    ProviderFailure.CONTENT_FILTERED,
+                    provider.id(),
+                    model.modelId(),
                     "A Bedrock guardrail stopped this request.");
         }
 
@@ -315,8 +321,7 @@ public class BedrockProvider implements ChatProvider {
         };
     }
 
-    private ProviderException classify(
-            ProviderDescriptor provider, ModelSpec model, String region, Throwable error) {
+    private ProviderException classify(ProviderDescriptor provider, ModelSpec model, String region, Throwable error) {
         Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
                 ? error.getCause()
                 : error;
@@ -353,9 +358,14 @@ public class BedrockProvider implements ChatProvider {
         }
 
         return new ProviderException(
-                failure, provider.id(), model.modelId(),
+                failure,
+                provider.id(),
+                model.modelId(),
                 "Bedrock " + region + ": " + cause.getClass().getSimpleName(),
-                null, null, null, cause);
+                null,
+                null,
+                null,
+                cause);
     }
 
     /**
@@ -372,8 +382,8 @@ public class BedrockProvider implements ChatProvider {
                     BedrockRuntimeAsyncClient.builder().region(Region.of(region));
             if (credential != null && credential.contains(":")) {
                 String[] parts = credential.split(":", 2);
-                builder.credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(parts[0], parts[1])));
+                builder.credentialsProvider(
+                        StaticCredentialsProvider.create(AwsBasicCredentials.create(parts[0], parts[1])));
             } else {
                 builder.credentialsProvider(DefaultCredentialsProvider.create());
             }

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Button, Card, Eyebrow, Input, Notice } from '../components/ui'
-import { Brand } from '../components/layout/Brand'
+import { Button, Eyebrow, Input, Notice, PasswordInput } from '../components/ui'
+import { AuthShell } from '../components/auth/AuthShell'
+import { Icon } from '../components/landing/shared/Icon'
 import { ApiError, describeApiError } from '../lib/api'
 import { useAcceptInvitation } from '../lib/queries'
 import { useRouter } from '../lib/router'
@@ -95,19 +96,22 @@ export function AcceptInvite() {
       : PASSWORD_HINT
 
   return (
-    <main id="main" className="auth-page">
-      <div className="auth-atmosphere" aria-hidden="true" />
-      <div className="auth-grid" aria-hidden="true" />
-      <div style={{ position: 'relative', zIndex: 1, padding: 'var(--space-8) var(--space-6)' }}>
-      <div style={{ maxWidth: '480px', margin: '0 auto' }}>
-        <div style={{ marginBottom: 'var(--space-8)', display: 'flex', justifyContent: 'center' }}>
-          <Brand />
+    <AuthShell footer={<a href="/home">About the platform</a>}>
+      <div className="auth-solo">
+        <div className="auth-intro">
+          {token && done && (
+            <span className="auth-success-mark" aria-hidden="true">
+              <Icon name="check" size={18} />
+            </span>
+          )}
+          <Eyebrow>You have been invited</Eyebrow>
+          <h1 className="auth-title">{token && done ? 'You are in' : 'Join the workspace'}</h1>
+          <p className="auth-subtitle">
+            {token && done
+              ? 'Sign in with the password you just chose to open the workspace.'
+              : 'Choose the name people will see and a password. Joining grants the role you were invited with.'}
+          </p>
         </div>
-
-        <Eyebrow>You have been invited</Eyebrow>
-        <h1 className="page-title" style={{ fontSize: '30px', marginBottom: 'var(--space-6)' }}>
-          Join the workspace
-        </h1>
 
         {!token && (
           <Notice tone="warning">
@@ -116,82 +120,78 @@ export function AcceptInvite() {
         )}
 
         {token && done && (
-          <Card>
-            <div className="stack" style={{ gap: 'var(--space-5)' }}>
-              <Notice tone="success" live>
-                Your account is set up and you have been added to the workspace as {done.email}.
-              </Notice>
-              <Button onClick={() => navigate(`/sign-in?email=${encodeURIComponent(done.email)}`)}>
-                Continue to sign in
-              </Button>
-            </div>
-          </Card>
+          <>
+            <Notice tone="success" live>
+              Your account is set up and you have been added to the workspace as {done.email}.
+            </Notice>
+            <Button
+              className="auth-submit"
+              onClick={() => navigate(`/sign-in?email=${encodeURIComponent(done.email)}`)}
+            >
+              Continue to sign in
+            </Button>
+          </>
         )}
 
         {token && !done && (
-          <Card>
-            <form noValidate onSubmit={handleSubmit} className="stack" style={{ gap: 'var(--space-5)' }}>
-              {error && (
-                <Notice tone="warning" live>
-                  {error}
-                </Notice>
-              )}
-              <Input
-                id={FIELD_IDS.displayName}
-                label="Your name"
-                autoComplete="name"
-                required
-                value={displayName}
-                onChange={(event) => {
-                  setDisplayName(event.target.value)
-                  setFieldError('displayName', null)
-                }}
-                placeholder="Priya Shah"
-                error={fieldErrors.displayName}
-              />
-              <Input
-                id={FIELD_IDS.password}
-                label="Choose a password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(event) => {
-                  setPassword(event.target.value)
-                  setFieldError('password', null)
-                }}
-                hint={passwordHint}
-                error={fieldErrors.password}
-              />
-              <Input
-                id={FIELD_IDS.confirm}
-                label="Confirm password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={confirmPassword}
-                onChange={(event) => {
-                  setConfirmPassword(event.target.value)
-                  setFieldError('confirm', null)
-                }}
-                // Said as soon as the person leaves the field, not only after pressing Join.
-                onBlur={() => {
-                  if (confirmPassword && confirmPassword !== password) setFieldError('confirm', MISMATCH)
-                }}
-                error={fieldErrors.confirm}
-              />
-              <Button type="submit" loading={accept.isPending}>
-                Join the workspace
-              </Button>
-            </form>
-          </Card>
+          <form noValidate onSubmit={handleSubmit} className="auth-form">
+            {error && (
+              <Notice tone="warning" live>
+                {error}
+              </Notice>
+            )}
+            <Input
+              id={FIELD_IDS.displayName}
+              label="Your name"
+              autoComplete="name"
+              required
+              value={displayName}
+              onChange={(event) => {
+                setDisplayName(event.target.value)
+                setFieldError('displayName', null)
+              }}
+              placeholder="Priya Shah"
+              error={fieldErrors.displayName}
+            />
+            <PasswordInput
+              id={FIELD_IDS.password}
+              label="Choose a password"
+              autoComplete="new-password"
+              required
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setFieldError('password', null)
+              }}
+              hint={passwordHint}
+              error={fieldErrors.password}
+            />
+            <PasswordInput
+              id={FIELD_IDS.confirm}
+              label="Confirm password"
+              autoComplete="new-password"
+              required
+              value={confirmPassword}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value)
+                setFieldError('confirm', null)
+              }}
+              // Said as soon as the person leaves the field, not only after pressing Join.
+              onBlur={() => {
+                if (confirmPassword && confirmPassword !== password) setFieldError('confirm', MISMATCH)
+              }}
+              error={fieldErrors.confirm}
+            />
+            <Button type="submit" className="auth-submit" loading={accept.isPending}>
+              Join the workspace
+            </Button>
+          </form>
         )}
 
-        <p className="caption" style={{ marginTop: 'var(--space-6)' }}>
-          Already have an account? <a href="/sign-in">Sign in</a>.
+        <p className="auth-switch">
+          Already have an account? <a href="/sign-in">Sign in</a>
         </p>
       </div>
-      </div>
-    </main>
+    </AuthShell>
   )
 }

@@ -48,8 +48,7 @@ public class TextExtractor {
      * @param contentHash identifies the exact bytes, so an unchanged file is skipped on re-ingest
      * @param skipReason why it cannot be indexed, written for a person to act on
      */
-    public record Extraction(
-            String text, String mediaType, Integer pageCount, String contentHash, String skipReason) {
+    public record Extraction(String text, String mediaType, Integer pageCount, String contentHash, String skipReason) {
 
         public boolean isIndexable() {
             return skipReason == null && text != null && !text.isBlank();
@@ -76,7 +75,11 @@ public class TextExtractor {
         if (mediaType.startsWith("image/")) {
             // Detected before Tika is asked for text, because Tika returns an empty string for an
             // image and that is indistinguishable from a genuinely empty document.
-            return new Extraction("", mediaType, null, hash,
+            return new Extraction(
+                    "",
+                    mediaType,
+                    null,
+                    hash,
                     "The file is an image with no text layer. Run it through optical character "
                             + "recognition before indexing it.");
         }
@@ -84,13 +87,16 @@ public class TextExtractor {
         try (InputStream stream = new ByteArrayInputStream(content)) {
             String text = tika.parseToString(stream);
             if (text == null || text.isBlank()) {
-                return new Extraction("", mediaType, null, hash,
-                        "No readable text could be extracted from this file.");
+                return new Extraction("", mediaType, null, hash, "No readable text could be extracted from this file.");
             }
             return new Extraction(normalise(text), mediaType, null, hash, null);
         } catch (Exception e) {
             log.debug("Extraction failed for {}: {}", filename, e.toString());
-            return new Extraction("", mediaType, null, hash,
+            return new Extraction(
+                    "",
+                    mediaType,
+                    null,
+                    hash,
                     "The file could not be read: " + e.getClass().getSimpleName() + ".");
         }
     }
@@ -105,7 +111,11 @@ public class TextExtractor {
     private Extraction extractPdf(byte[] content, String hash, String mediaType) {
         try (PDDocument document = Loader.loadPDF(content)) {
             if (document.isEncrypted()) {
-                return new Extraction("", mediaType, document.getNumberOfPages(), hash,
+                return new Extraction(
+                        "",
+                        mediaType,
+                        document.getNumberOfPages(),
+                        hash,
                         "The PDF is password protected, so its contents cannot be read.");
             }
 
@@ -115,21 +125,28 @@ public class TextExtractor {
             int pages = document.getNumberOfPages();
 
             if (text == null || text.isBlank()) {
-                return new Extraction("", mediaType, pages, hash,
+                return new Extraction(
+                        "",
+                        mediaType,
+                        pages,
+                        hash,
                         "The PDF has no text layer. It is most likely a scan, and needs optical "
                                 + "character recognition before it can be indexed.");
             }
 
             if (pages > 0 && text.length() / pages < MIN_CHARS_PER_PAGE) {
-                return new Extraction("", mediaType, pages, hash,
+                return new Extraction(
+                        "",
+                        mediaType,
+                        pages,
+                        hash,
                         "The PDF holds very little text for its length, which usually means it is a "
                                 + "scan. Run optical character recognition over it before indexing.");
             }
 
             return new Extraction(normalise(text), mediaType, pages, hash, null);
         } catch (IOException e) {
-            return new Extraction("", mediaType, null, hash,
-                    "The PDF is damaged and could not be opened.");
+            return new Extraction("", mediaType, null, hash, "The PDF is damaged and could not be opened.");
         }
     }
 

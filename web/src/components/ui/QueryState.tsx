@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { ApiError, describeApiError } from '../../lib/api'
-import { EmptyState, ErrorState, LoadingState, PermissionState } from './index'
+import { formatDateTime } from '../../lib/format'
+import { Button, EmptyState, ErrorState, LoadingState, Notice, PermissionState } from './index'
 
 /*
  * The four states of any screen that loads data, rendered the same way everywhere.
@@ -15,6 +16,8 @@ type QueryLike<T> = {
   error: unknown
   isLoading: boolean
   refetch: () => unknown
+  /** When the query last succeeded, in epoch ms. Used only by `keepData`'s stale banner. */
+  dataUpdatedAt?: number
 }
 
 /**
@@ -34,6 +37,7 @@ export function QueryState<T>({
   empty,
   rows,
   notFound,
+  keepData,
   children,
 }: {
   query: QueryLike<T>
@@ -46,11 +50,37 @@ export function QueryState<T>({
   rows?: number
   /** The way out when the record does not exist, usually a BackLink to its list. */
   notFound?: ReactNode
+  /**
+   * Keeps showing the last good data behind a stale banner when a poll fails, instead of losing
+   * the screen to the error state. Meant for a screen that polls: a one-shot query has nothing
+   * behind the error worth keeping.
+   */
+  keepData?: boolean
   children: (data: T) => ReactNode
 }) {
   if (query.isLoading) return <LoadingState rows={rows ?? 4} label={`Loading ${what}`} />
 
   if (query.error) {
+    if (keepData && query.data !== undefined) {
+      const updatedAt = query.dataUpdatedAt
+      return (
+        <>
+          <div className="stale-banner">
+            <Notice tone="warning" live>
+              Lost connection.{' '}
+              {updatedAt !== undefined
+                ? `Showing what was loaded at ${formatDateTime(new Date(updatedAt).toISOString())}.`
+                : 'Showing what was loaded before.'}{' '}
+              Retrying.{' '}
+              <Button variant="quiet" onClick={() => query.refetch()}>
+                Retry now
+              </Button>
+            </Notice>
+          </div>
+          {children(query.data)}
+        </>
+      )
+    }
     const error = query.error
     if (error instanceof ApiError && error.isPermissionDenied) {
       return <PermissionState permission={permission} what={what} />

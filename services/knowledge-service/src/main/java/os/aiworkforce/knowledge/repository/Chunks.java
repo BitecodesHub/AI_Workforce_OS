@@ -1,15 +1,14 @@
 package os.aiworkforce.knowledge.repository;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
 import os.aiworkforce.knowledge.domain.Chunk;
-import os.aiworkforce.knowledge.domain.Document;
-import os.aiworkforce.knowledge.domain.Source;
 
 /*
  * Spring Data scans for top-level repository interfaces. A repository nested inside a holder
@@ -50,7 +49,9 @@ public interface Chunks extends JpaRepository<Chunk, UUID> {
      * <p>Tombstoned documents are excluded here, which is what makes a deletion take effect
      * immediately rather than when the vector purge catches up.
      */
-    @Query(value = """
+    @Query(
+            value =
+                    """
             with terms as (
                 select string_agg(quote_literal(lexeme), ' | ') as query
                 from unnest(to_tsvector('english', :query))
@@ -65,20 +66,24 @@ public interface Chunks extends JpaRepository<Chunk, UUID> {
               and ts_rank(to_tsvector('english', c.content), to_tsquery('english', terms.query))
                   >= :minimumRank
             order by ts_rank(to_tsvector('english', c.content), to_tsquery('english', terms.query)) desc
-            """, nativeQuery = true)
+            """,
+            nativeQuery = true)
     List<UUID> searchLexical(
             @Param("orgId") UUID orgId,
             @Param("query") String query,
             @Param("minimumRank") double minimumRank,
             Pageable pageable);
 
-    @Query(value = """
+    @Query(
+            value =
+                    """
             select c.id as chunkId, c.document_id as documentId, c.source_id as sourceId,
                    d.title as documentTitle, d.uri as uri, c.page_number as pageNumber,
                    c.heading as heading, c.content as content
             from chunks c
             join documents d on d.id = c.document_id
             where c.org_id = :orgId and c.id in :ids and d.tombstoned_at is null
-            """, nativeQuery = true)
+            """,
+            nativeQuery = true)
     List<CitableChunk> findCitable(@Param("orgId") UUID orgId, @Param("ids") List<UUID> ids);
 }

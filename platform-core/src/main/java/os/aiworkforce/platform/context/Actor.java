@@ -43,8 +43,8 @@ public record Actor(
     }
 
     /** The platform itself, used by schedulers and migrations. Holds no permissions. */
-    public static final Actor SYSTEM = new Actor(
-            "system", Kind.SYSTEM, null, null, Set.of(), 0L, null, null, null, Map.of());
+    public static final Actor SYSTEM =
+            new Actor("system", Kind.SYSTEM, null, null, Set.of(), 0L, null, null, null, Map.of());
 
     public Actor {
         Objects.requireNonNull(id, "id");

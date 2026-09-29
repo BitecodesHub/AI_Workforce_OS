@@ -71,12 +71,20 @@ public class AuditChain {
             if (expectedPrevious != null && !expectedPrevious.equals(entry.previousHash())) {
                 log.error(
                         "Audit chain broken at sequence {}: expected previous {} but found {}",
-                        entry.sequence(), expectedPrevious, entry.previousHash());
+                        entry.sequence(),
+                        expectedPrevious,
+                        entry.previousHash());
                 return Optional.of(entry.sequence());
             }
             String recomputed = hash(
-                    entry.previousHash(), entry.actorId(), entry.action(), entry.resourceType(),
-                    entry.resourceId(), entry.outcome(), entry.occurredAt(), entry.detail());
+                    entry.previousHash(),
+                    entry.actorId(),
+                    entry.action(),
+                    entry.resourceType(),
+                    entry.resourceId(),
+                    entry.outcome(),
+                    entry.occurredAt(),
+                    entry.detail());
             if (!recomputed.equals(entry.entryHash())) {
                 log.error("Audit entry {} has been altered since it was written", entry.sequence());
                 return Optional.of(entry.sequence());

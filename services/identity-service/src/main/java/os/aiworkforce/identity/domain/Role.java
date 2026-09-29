@@ -1,5 +1,9 @@
 package os.aiworkforce.identity.domain;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.UUID;
+
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -7,11 +11,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.UUID;
 
-import os.aiworkforce.identity.repository.Roles;
 import os.aiworkforce.platform.web.persistence.BaseEntity;
 
 /**

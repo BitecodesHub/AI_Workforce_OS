@@ -3,13 +3,12 @@ package os.aiworkforce.knowledge.repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Pageable;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import os.aiworkforce.knowledge.domain.Chunk;
+
 import os.aiworkforce.knowledge.domain.Document;
-import os.aiworkforce.knowledge.domain.Source;
 
 /*
  * Spring Data scans for top-level repository interfaces. A repository nested inside a holder
@@ -32,12 +31,12 @@ public interface Documents extends JpaRepository<Document, UUID> {
      * <p>A document deleted at the source has to stop being citable. Without this sweep, an
      * answer keeps quoting a file that no longer exists, and the citation leads nowhere.
      */
-    @Query("""
+    @Query(
+            """
             select d from Document d
             where d.sourceId = :sourceId
               and d.tombstonedAt is null
               and d.externalId not in :seen
             """)
-    List<Document> findMissingSince(
-            @Param("sourceId") UUID sourceId, @Param("seen") List<String> seenExternalIds);
+    List<Document> findMissingSince(@Param("sourceId") UUID sourceId, @Param("seen") List<String> seenExternalIds);
 }

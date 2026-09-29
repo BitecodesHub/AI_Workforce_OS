@@ -1,0 +1,373 @@
+/* UI/UX polish: orchestrator screens. Loaded after components.css, so rules here refine it. */
+
+/* ---- Page frame (B2.13) --------------------------------------------------------------------------
+ * The page caps at 1440px so the board, map and timeline never stretch past a comfortable reading
+ * width on a wide monitor. With a sheet open at 1280px and up the page keeps room at its trailing
+ * edge for the sheet (520px) plus a 16px gap, so the board reflows beside it instead of being
+ * covered.
+ */
+.orc-page {
+  max-width: 1440px;
+}
+
+@media (min-width: 1280px) {
+  .orc-page[data-sheet-open] {
+    padding-inline-end: 536px;
+  }
+}
+
+/* ---- Summary strip (B2.3) -------------------------------------------------------------------------
+ * Reuses .stat-tile and .stat-tile-button (WP3, components.css) inside its own grid rather than
+ * .stat-row's single-row column-flow, since it needs to wrap to a second row on a narrower screen
+ * without every tile shrinking to fit. The hairlines .stat-tile already draws only look right in a
+ * single row, so each row's own first tile has its left border reset here, and every tile after the
+ * first row gains a top border instead.
+ */
+.orc-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .orc-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .orc-summary .stat-tile:nth-child(4n + 1) {
+    border-left: none;
+  }
+
+  .orc-summary .stat-tile:nth-child(n + 5) {
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (min-width: 1280px) {
+  .orc-summary {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .orc-summary .stat-tile:nth-child(4n + 1) {
+    border-left: 1px solid var(--line);
+  }
+
+  .orc-summary .stat-tile:nth-child(7n + 1) {
+    border-left: none;
+  }
+
+  .orc-summary .stat-tile:nth-child(n + 5) {
+    border-top: none;
+  }
+
+  .orc-summary .stat-tile:nth-child(n + 8) {
+    border-top: 1px solid var(--line);
+  }
+}
+
+.orc-summary .stat-tile:nth-child(2n + 1) {
+  border-left: none;
+}
+
+/* ---- Needs you inbox (B2.4) ------------------------------------------------------------------- */
+
+.orc-needs {
+  border-top: 1px solid var(--line);
+}
+
+.orc-needs-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 56px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.orc-needs-text {
+  display: block;
+}
+
+/* ---- A segmented control: two or three mutually exclusive choices, such as For me / Everyone
+   or Board / List (B2.4, B2.5). ------------------------------------------------------------------ */
+
+.orc-segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.orc-segmented button {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.orc-segmented button:first-child {
+  border-left: none;
+}
+
+.orc-segmented button[aria-pressed='true'] {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+/* ---- A clamped block of text, expanded on request (GoalSheet's description, StepList's result).
+   `--orc-clamp-lines` is set inline by the caller. --------------------------------------------- */
+
+.orc-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--orc-clamp-lines, 4);
+  overflow: hidden;
+}
+
+/* ---- Flow map: a floor width on small screens ---------------------------------------------------
+ * `.orc-flowmap-svg` scales to 100% of its container by default (components.css), which reads
+ * fine down to a tablet but not below it: at a 375-430px phone width the whole ring shrinks with
+ * it, taking every node under the 44px touch target a thumb needs and its label past the point it
+ * can be read. Past this width the canvas keeps a fixed floor size instead and the row beneath it
+ * scrolls horizontally to reach it - the same trade-off `.orc-swimlanes-scroll` already makes for
+ * the timeline below.
+ *
+ * `.orc-flowmap-canvas` (not `.orc-flowmap` itself) is the positioned ancestor the tooltip's
+ * left/top percentages resolve against, so it has to be the element that is actually the SVG's own
+ * rendered width - the outer scrolling element's own box never grows past the viewport, and using
+ * it as the percentage base would misplace the tooltip the moment the canvas is scrolled.
+ */
+
+.orc-flowmap-scroll {
+  overflow-x: auto;
+}
+
+.orc-flowmap-canvas {
+  position: relative;
+}
+
+@media (max-width: 860px) {
+  .orc-flowmap-canvas {
+    min-width: 720px;
+  }
+
+  /* The desktop min-height fights a canvas now fixed to its own aspect ratio, adding empty
+     space above and below the ring instead of just letting it be the height that width implies. */
+  .orc-flowmap-svg {
+    min-height: 0;
+  }
+}
+
+/* A name like "Customer Success" read as legibly at a glance as the shorter ones beside it,
+   instead of every label sharing one small size regardless of how much a name actually needs. */
+.orc-node-label {
+  font-size: 9.5px;
+}
+
+.orc-hub-label {
+  font-size: 8.5px;
+}
+
+/* ---- Board columns: the gap between the two breakpoints components.css already sets ------------
+ * `.orc-columns` is 4 fixed-minimum columns above 720px and 1 column at or below it, with nothing
+ * in between. A tablet in that gap (a 768px or 900px-wide window, page padding included) is asked
+ * to fit four 220px-minimum columns into less width than that needs, and the row overflows the
+ * page rather than wrapping. Two columns fits every width from just above the mobile breakpoint
+ * up to where the full four already fit on their own.
+ */
+@media (min-width: 721px) and (max-width: 1024px) {
+  .orc-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- Swimlanes: overlapping bars ----------------------------------------------------------------
+ * Two runs seconds apart in one lane draw their 24px floors on top of each other. The bar under
+ * the pointer or keyboard focus comes to the front, so the covered one can still be seen whole
+ * and chosen. Each run is also linked from the board and from Runs.
+ */
+.orc-bar:hover,
+.orc-bar:focus-visible {
+  z-index: 1;
+}
+
+/* ---- Swimlanes: a taller touch target on a touch screen ----------------------------------------
+ * Each run's bar is inset 4px top and bottom inside a 26px lane, leaving an 18px tall link - about
+ * a third of the touch target a thumb reliably hits. A touch screen gets a taller lane and a
+ * fuller bar instead; the tick row above keeps its own shorter height (it holds no links), and a
+ * mouse pointer keeps the denser row height the timeline was designed at.
+ */
+@media (pointer: coarse) {
+  .orc-lane-track {
+    height: 40px;
+  }
+
+  .orc-bar {
+    top: 2px;
+    bottom: 2px;
+  }
+
+  .orc-segmented button,
+  .orc-needs-row button,
+  .filter-chip {
+    min-height: 44px;
+  }
+}
+
+/* ---- Flow map: waiting for an answer, the default agent, and a queued badge (B2.7) ------------- */
+
+.orc-ring-asking {
+  stroke: var(--blue);
+  stroke-dasharray: 3 3;
+}
+
+/* The General Employee carries no category colour of its own: a neutral fill instead of the
+   default line-coloured ring, matching the same avatar colours used everywhere else it appears. */
+.orc-node[data-fallback='true'] .orc-node-circle {
+  fill: var(--avatar-bg);
+  stroke: var(--avatar-bg);
+}
+
+.orc-node[data-fallback='true'] .orc-node-initials {
+  fill: var(--avatar-ink);
+}
+
+.orc-node-badge circle {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.2;
+}
+
+.orc-node-badge text {
+  font-size: 8px;
+  font-weight: var(--weight-strong);
+  fill: var(--ink);
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* A wide, invisible hit path: the visible edge is too thin to click or tap reliably. */
+.orc-edge-hit {
+  stroke: transparent;
+  stroke-width: 12;
+  fill: none;
+  cursor: pointer;
+}
+
+/* A tooltip anchored near the top of the canvas opens downward instead of upward, so it is never
+   clipped by the scroller's own edge (D14). */
+.orc-tooltip[data-placement='below'] {
+  transform: translate(-50%, 14px);
+}
+
+.orc-legend-pause rect {
+  fill: var(--muted);
+}
+
+/* ---- Board card: a live update that just changed, and the card open in the sheet (B2.5) -------- */
+
+.orc-card {
+  position: relative;
+  scroll-margin-top: 48px;
+}
+
+.orc-card[aria-current='true'] {
+  background: var(--blue-light);
+}
+
+.orc-card[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  left: 0;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+
+.orc-card[data-changed] {
+  animation: orc-flash 1.2s ease-out 1;
+}
+
+@keyframes orc-flash {
+  from {
+    background: var(--blue-light);
+  }
+  to {
+    background: var(--surface);
+  }
+}
+
+/* ---- Agents list (B2.9): a row per agent, replacing the earlier chip grid ----------------------- */
+
+.orc-agents-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.orc-agent-row {
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.orc-agent-row:last-child {
+  border-bottom: none;
+}
+
+/* ---- Swimlanes: waiting for an answer, and a bar's own tooltip (B2.8) --------------------------- */
+
+.orc-bar-asking {
+  background-color: var(--blue-light);
+  background-image: repeating-linear-gradient(45deg, var(--blue) 0 6px, transparent 6px 12px);
+  background-size: 28px 100%;
+  animation: orc-stripes 1s linear infinite;
+}
+
+.orc-bar-tip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 2;
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--ink);
+  box-shadow: var(--shadow-hover);
+}
+
+.orc-bar:hover .orc-bar-tip,
+.orc-bar:focus-visible .orc-bar-tip {
+  display: block;
+}
+
+.orc-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: var(--radius-control);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orc-card[data-changed] {
+    animation: none;
+  }
+
+  .orc-bar-asking {
+    animation: none;
+  }
+}

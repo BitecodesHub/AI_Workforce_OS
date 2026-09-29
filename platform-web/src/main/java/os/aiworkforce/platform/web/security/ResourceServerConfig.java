@@ -1,5 +1,10 @@
 package os.aiworkforce.platform.web.security;
 
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.List;
+
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
@@ -7,12 +12,6 @@ import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
-import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.List;
-
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -51,11 +50,18 @@ import os.aiworkforce.platform.config.PlatformProperties;
 public class ResourceServerConfig {
 
     private static final String[] PUBLIC_PATHS = {
-        "/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
-        "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**",
+        "/actuator/health",
+        "/actuator/health/**",
+        "/actuator/info",
+        "/actuator/prometheus",
+        "/v3/api-docs",
+        "/v3/api-docs/**",
+        "/swagger-ui.html",
+        "/swagger-ui/**",
         // Authentication itself cannot require a token: a person who cannot sign in has none
         // to present. The demo listing sits here for the same reason.
-        "/api/auth/**", "/.well-known/**",
+        "/api/auth/**",
+        "/.well-known/**",
         // Accepting an invitation is how a brand-new person gets their first token; they cannot
         // present one yet. The endpoint itself checks the invitation's own token, hashed and
         // matched server-side, so this is not an open door - it is the same shape as
@@ -85,12 +91,11 @@ public class ResourceServerConfig {
                         .authenticated()
                         .anyRequest()
                         .authenticated())
-                .oauth2ResourceServer(oauth2 ->
-                        oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
                 .headers(headers -> headers.frameOptions(frame -> frame.deny())
                         .contentTypeOptions(Customizer.withDefaults())
-                        .httpStrictTransportSecurity(hsts ->
-                                hsts.includeSubDomains(true).maxAgeInSeconds(31_536_000)))
+                        .httpStrictTransportSecurity(
+                                hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31_536_000)))
                 .build();
     }
 
@@ -118,31 +123,31 @@ public class ResourceServerConfig {
         PlatformProperties.Security security = properties.security();
         try {
             JWKSource<SecurityContext> keys = JWKSourceBuilder.create(new URI(security.jwksUri()).toURL())
-                    .cache(security.jwksCacheTtl().toMillis(), security.jwksRefreshCooldown().toMillis())
+                    .cache(
+                            security.jwksCacheTtl().toMillis(),
+                            security.jwksRefreshCooldown().toMillis())
                     .build();
 
             ConfigurableJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();
             processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.ES256, keys));
 
             NimbusJwtDecoder decoder = new NimbusJwtDecoder(processor);
-            decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(
-                    new OAuth2TokenValidator<Jwt>() {
-                        @Override
-                        public OAuth2TokenValidatorResult validate(Jwt token) {
-                            List<String> audience = token.getAudience();
-                            boolean audienceOk = audience != null && audience.contains(security.audience());
-                            boolean issuerOk = security.issuer().equals(token.getClaimAsString("iss"));
-                            if (audienceOk && issuerOk) {
-                                return OAuth2TokenValidatorResult.success();
-                            }
-                            return OAuth2TokenValidatorResult.failure(new OAuth2Error(
-                                    "invalid_token", "Issuer or audience does not match", null));
-                        }
-                    }));
+            decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(new OAuth2TokenValidator<Jwt>() {
+                @Override
+                public OAuth2TokenValidatorResult validate(Jwt token) {
+                    List<String> audience = token.getAudience();
+                    boolean audienceOk = audience != null && audience.contains(security.audience());
+                    boolean issuerOk = security.issuer().equals(token.getClaimAsString("iss"));
+                    if (audienceOk && issuerOk) {
+                        return OAuth2TokenValidatorResult.success();
+                    }
+                    return OAuth2TokenValidatorResult.failure(
+                            new OAuth2Error("invalid_token", "Issuer or audience does not match", null));
+                }
+            }));
             return decoder;
         } catch (URISyntaxException | MalformedURLException e) {
-            throw new IllegalStateException(
-                    "aiwos.security.jwks-uri is not a valid URL: " + security.jwksUri(), e);
+            throw new IllegalStateException("aiwos.security.jwks-uri is not a valid URL: " + security.jwksUri(), e);
         }
     }
 

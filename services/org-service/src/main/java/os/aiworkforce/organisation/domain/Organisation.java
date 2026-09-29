@@ -1,8 +1,5 @@
 package os.aiworkforce.organisation.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -11,6 +8,10 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 
 import os.aiworkforce.platform.web.persistence.BaseEntity;
 

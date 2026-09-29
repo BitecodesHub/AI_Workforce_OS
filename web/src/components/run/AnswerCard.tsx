@@ -1,4 +1,5 @@
 import { Card, Eyebrow, Tag } from '../ui'
+import { Markdown } from '../ui/Markdown'
 import { truncateWords } from '../../lib/format'
 import type { RunStep } from '../../lib/queries'
 import { detailText, isSandboxStep } from './traceModel'
@@ -17,7 +18,7 @@ export function AnswerCard({ step, instruction }: { step: RunStep; instruction: 
           Asked: {truncateWords(instruction, 200)}
         </p>
       )}
-      <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{detailText(step.detail, 'content')}</p>
+      <Markdown text={detailText(step.detail, 'content') ?? ''} />
       {sandbox && (
         <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
           A placeholder answer from the offline model, not a real model's reply.

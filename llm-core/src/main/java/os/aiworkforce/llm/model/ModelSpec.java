@@ -76,9 +76,19 @@ public record ModelSpec(
     /** Marks the model unavailable for a period, after the provider said it does not exist. */
     public ModelSpec markUnavailableFor(java.time.Duration duration) {
         return new ModelSpec(
-                providerId, modelId, displayName, contextWindowTokens, maxOutputTokens,
-                supportsTools, supportsJsonMode, supportsStreaming, supportsVision,
-                inputCostPerMillion, cachedInputCostPerMillion, outputCostPerMillion, enabled,
+                providerId,
+                modelId,
+                displayName,
+                contextWindowTokens,
+                maxOutputTokens,
+                supportsTools,
+                supportsJsonMode,
+                supportsStreaming,
+                supportsVision,
+                inputCostPerMillion,
+                cachedInputCostPerMillion,
+                outputCostPerMillion,
+                enabled,
                 System.currentTimeMillis() + duration.toMillis());
     }
 

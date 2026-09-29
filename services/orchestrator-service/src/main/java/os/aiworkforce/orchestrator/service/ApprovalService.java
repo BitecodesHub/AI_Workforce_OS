@@ -82,7 +82,10 @@ public class ApprovalService {
 
         log.info(
                 "Approval {} raised for {} by agent {} in run {}",
-                approval.getId(), invocation.qualifiedName(), agent.getName(), run.getId());
+                approval.getId(),
+                invocation.qualifiedName(),
+                agent.getName(),
+                run.getId());
         return approval;
     }
 
@@ -111,7 +114,8 @@ public class ApprovalService {
     @Transactional(noRollbackFor = ApiException.class)
     public Approval decide(UUID orgId, UUID approvalId, boolean approved, String note) {
         Actor actor = RequestContext.requireActor();
-        Approval approval = approvals.findByIdAndOrgId(approvalId, orgId)
+        Approval approval = approvals
+                .findByIdAndOrgId(approvalId, orgId)
                 .orElseThrow(() -> ApiException.notFound("approval", approvalId));
 
         if (!actor.hasPermission(approval.getRequiredPermission())) {
@@ -120,8 +124,7 @@ public class ApprovalService {
         if (!approval.isPending()) {
             // Two approvers clicking at once would otherwise both succeed, and the run would act
             // twice on one request.
-            throw new ApiException(ErrorCode.APPROVAL_ALREADY_DECIDED)
-                    .with("status", approval.getStatus());
+            throw new ApiException(ErrorCode.APPROVAL_ALREADY_DECIDED).with("status", approval.getStatus());
         }
         if (approval.hasExpired()) {
             expire(approval);
@@ -142,9 +145,7 @@ public class ApprovalService {
             });
         }
 
-        log.info(
-                "Approval {} {} by {}",
-                approval.getId(), approved ? "approved" : "rejected", actor.id());
+        log.info("Approval {} {} by {}", approval.getId(), approved ? "approved" : "rejected", actor.id());
 
         // The run is named so an investigator can go from the decision straight to its trace.
         Map<String, Object> detail = new LinkedHashMap<>();
@@ -154,13 +155,7 @@ public class ApprovalService {
             detail.put("tool", approval.getTool());
         }
         audit.record(
-                orgId,
-                actor,
-                "approval.decide",
-                "approval",
-                approval.getId().toString(),
-                "succeeded",
-                detail);
+                orgId, actor, "approval.decide", "approval", approval.getId().toString(), "succeeded", detail);
 
         return approval;
     }
@@ -201,11 +196,32 @@ public class ApprovalService {
     /** Cancels open approvals for a run that has been stopped, so the queue stays truthful. */
     @Transactional
     public void cancelForRun(UUID runId) {
-        approvals.findByRunIdAndStatus(runId, "pending").forEach(approval -> {
-            approval.setStatus("cancelled");
-            approval.setDecidedAt(Instant.now());
-            approvals.save(approval);
-        });
+        withdrawForRun(runId);
+    }
+
+    /**
+     * Withdraws a stopped run's pending approvals, and says how many there were.
+     *
+     * <p>A conditional bulk update rather than loading and saving each row: an approver deciding
+     * at the same moment then simply wins or loses, and can never make the stop itself fail with
+     * a version conflict.
+     */
+    @Transactional
+    public int withdrawForRun(UUID runId) {
+        return approvals.withdrawPending(runId, Instant.now());
+    }
+
+    /**
+     * Runs an approver approved that are still parked, for the resume sweep: the approver's own
+     * resume did not happen, most often because the service restarted in between. Only a run's
+     * newest approval counts, so a run parked again on a newer one is never resumed past it.
+     */
+    @Transactional(readOnly = true)
+    public List<RunRef> approvedAwaitingResume(Instant cutoff, int limit) {
+        return approvals.findApprovedAwaitingResume(cutoff, PageRequest.of(0, limit)).stream()
+                .map(approval -> new RunRef(approval.getOrgId(), approval.getRunId()))
+                .distinct()
+                .toList();
     }
 
     /**

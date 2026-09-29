@@ -1,6 +1,9 @@
 package os.aiworkforce.platform.web.persistence;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.Id;
@@ -9,10 +12,8 @@ import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
-import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;

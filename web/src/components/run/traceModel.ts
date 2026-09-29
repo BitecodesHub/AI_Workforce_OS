@@ -31,12 +31,35 @@ export const STEP_KIND: Record<string, { tone: TagTone; label: string }> = {
   model_call: { tone: 'blue', label: 'Model' },
   tool_call: { tone: 'operations', label: 'Tool' },
   approval: { tone: 'warning', label: 'Approval' },
+  question: { tone: 'warning', label: 'Question' },
   error: { tone: 'danger', label: 'Error' },
   handoff: { tone: 'neutral', label: 'Handoff' },
   knowledge_query: { tone: 'neutral', label: 'Knowledge search' },
   memory_read: { tone: 'neutral', label: 'Memory read' },
   memory_write: { tone: 'neutral', label: 'Memory write' },
   note: { tone: 'neutral', label: 'Note' },
+}
+
+/** One question item as a `question` step's detail carries it (AskPersonTool.Question, shaped like QuestionItem). */
+export type TraceQuestionOption = { label: string; description: string; recommended?: boolean }
+export type TraceQuestionItem = {
+  id?: string
+  header: string
+  question: string
+  multiSelect?: boolean
+  options: TraceQuestionOption[]
+}
+
+function isTraceQuestionItem(value: unknown): value is TraceQuestionItem {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Record<string, unknown>
+  return typeof item.header === 'string' && typeof item.question === 'string'
+}
+
+/** The questions a `question` step's detail carries (QuestionService.askStepDetail's `questions`). */
+export function questionItemsOf(detail: Record<string, unknown>): TraceQuestionItem[] {
+  const raw = detail['questions']
+  return Array.isArray(raw) ? raw.filter(isTraceQuestionItem) : []
 }
 
 /** The first step of every run since the platform began recording it: what the agent was asked. */
@@ -57,6 +80,10 @@ export function stepHeading(step: RunStep): string | null {
     case 'tool_call':
     case 'approval':
       return toolLabel(detailText(step.detail, 'tool'))
+    case 'question': {
+      const headers = questionItemsOf(step.detail).map((item) => item.header)
+      return headers.length > 0 ? `Asked: ${headers.join(', ')}` : 'Asked a question'
+    }
     case 'error':
       return sentenceCase(detailText(step.detail, 'code')) || 'The run stopped'
     case 'handoff': {
@@ -96,6 +123,16 @@ export function latestApprovalId(steps: RunStep[] | undefined): string | null {
   for (let index = steps.length - 1; index >= 0; index -= 1) {
     const step = steps[index]!
     if (step.kind === 'approval') return detailText(step.detail, 'approvalId')
+  }
+  return null
+}
+
+/** The question the run is paused on, from the latest question step. */
+export function latestQuestionId(steps: RunStep[] | undefined): string | null {
+  if (!steps) return null
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index]!
+    if (step.kind === 'question') return detailText(step.detail, 'questionId')
   }
   return null
 }

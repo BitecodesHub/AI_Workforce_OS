@@ -148,14 +148,25 @@ export function StatRow({ children }: { children: ReactNode }) {
   return <div className="stat-row">{children}</div>
 }
 
+/** The check glyph shown on a pressed StatTile, ahead of the label it belongs to. */
+function StatTilePressedGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="stat-tile-check">
+      <path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 /**
  * One figure in a stat row.
  *
  * The unit is a separate element, deliberately. A number with its unit fused into it cannot be
  * copied, cannot be sorted, and reads as a word rather than a quantity.
  *
- * With `href` the tile is a link to the list it counts. Its accessible name is everything on the
- * tile, so a screen reader hears "Failed 3" rather than a label without its figure.
+ * With `href` the tile is a link to the list it counts. With `onClick` it is a toggle instead - a
+ * filter such as SummaryStrip's - and `pressed` says whether that filter is active. Either way its
+ * accessible name is everything on the tile, so a screen reader hears "Failed 3" rather than a
+ * label without its figure.
  */
 export function StatTile({
   label,
@@ -164,6 +175,8 @@ export function StatTile({
   note,
   icon,
   href,
+  onClick,
+  pressed,
 }: {
   label: string
   value: string | number
@@ -171,10 +184,15 @@ export function StatTile({
   note?: string
   icon?: ReactNode
   href?: string | undefined
+  /** Makes the tile a toggle button rather than a link. Mutually exclusive with `href`. */
+  onClick?: () => void
+  /** Whether the tile's own filter is the one currently active. */
+  pressed?: boolean
 }) {
   const content = (
     <>
       <div className="stat-label">
+        {onClick && pressed && <StatTilePressedGlyph />}
         <span>{label}</span>
         {icon}
       </div>
@@ -185,6 +203,13 @@ export function StatTile({
       {note && <p className="stat-note">{note}</p>}
     </>
   )
+  if (onClick) {
+    return (
+      <button type="button" className="stat-tile stat-tile-button" aria-pressed={pressed} onClick={onClick}>
+        {content}
+      </button>
+    )
+  }
   if (href) {
     return (
       <a className="stat-tile stat-tile-link" href={href}>
@@ -312,10 +337,11 @@ export function Spinner({ size = 14 }: { size?: number }) {
 export function IconButton({
   label,
   badge,
+  badgeLabel = 'unread',
   children,
   className,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; badge?: number }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; badge?: number; badgeLabel?: string }) {
   return (
     <button
       type="button"
@@ -335,7 +361,9 @@ export function IconButton({
         </span>
       )}
       {badge !== undefined && badge > 0 && (
-        <span className="visually-hidden">{badge} unread</span>
+        <span className="visually-hidden">
+          {badge} {badgeLabel}
+        </span>
       )}
     </button>
   )
@@ -398,19 +426,68 @@ export function Input({
   optional,
   id: idProp,
   className,
+  trailing,
   ...rest
-}: InputHTMLAttributes<HTMLInputElement> & FieldProps) {
+}: InputHTMLAttributes<HTMLInputElement> & FieldProps & { trailing?: ReactNode }) {
   const { id, describedBy, invalid } = useFieldIds(idProp, hint, error)
+  const control = (
+    <input
+      id={id}
+      className={controlClass(trailing ? 'input input-has-trailing' : 'input', className)}
+      aria-invalid={invalid}
+      aria-describedby={describedBy}
+      {...rest}
+    />
+  )
   return (
     <Field id={id} label={label} optional={optional} hint={hint} error={error}>
-      <input
-        id={id}
-        className={controlClass('input', className)}
-        aria-invalid={invalid}
-        aria-describedby={describedBy}
-        {...rest}
-      />
+      {trailing ? (
+        <div className="input-affix">
+          {control}
+          <span className="input-trailing">{trailing}</span>
+        </div>
+      ) : (
+        control
+      )}
     </Field>
+  )
+}
+
+/**
+ * A password field with a show and hide control inside it, so a long passphrase can be checked
+ * before it is sent. The control's name stays "Show password"; aria-pressed carries its state.
+ */
+export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & FieldProps) {
+  const [shown, setShown] = useState(false)
+  const generated = useId()
+  const id = props.id ?? generated
+  return (
+    <Input
+      {...props}
+      id={id}
+      type={shown ? 'text' : 'password'}
+      // Shown text is still a password: no spellcheck, no autocorrect, no capitalisation.
+      spellCheck={false}
+      autoCapitalize="none"
+      autoCorrect="off"
+      trailing={
+        <button
+          type="button"
+          className="input-reveal"
+          aria-label="Show password"
+          aria-pressed={shown}
+          aria-controls={id}
+          title={shown ? 'Hide password' : 'Show password'}
+          onClick={() => setShown((current) => !current)}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" />
+            <circle cx="8" cy="8" r="2" />
+            {shown && <path d="M2.5 13.5l11-11" />}
+          </svg>
+        </button>
+      }
+    />
   )
 }
 
@@ -478,7 +555,9 @@ export function Notice({
   const role = live ? (tone === 'warning' ? 'alert' : 'status') : undefined
   return (
     <div className={`notice notice-${tone}`} role={role}>
-      {children}
+      {/* One flex child, so text mixed with a link or a code value flows as a sentence. Passed
+          straight in, every text run and inline element became its own squeezed column. */}
+      <div className="notice-body">{children}</div>
     </div>
   )
 }
@@ -518,6 +597,12 @@ function isPlainRowClick(event: ReactMouseEvent<HTMLTableRowElement>): boolean {
   const selection = window.getSelection()
   if (selection && !selection.isCollapsed && selection.toString().trim() !== '') return false
   return true
+}
+
+/** A left click with no modifier held, so a request for a new tab or window is left alone. */
+function isPlainClick(event: ReactMouseEvent): boolean {
+  if (event.defaultPrevented || event.button !== 0) return false
+  return !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
 }
 
 const collator = new Intl.Collator(LOCALE, { numeric: true, sensitivity: 'base' })
@@ -565,6 +650,7 @@ export function DataTable<T>({
   caption,
   getRowHref,
   getRowLabel,
+  onRowOpen,
 }: {
   columns: Column<T>[]
   rows: T[]
@@ -576,6 +662,12 @@ export function DataTable<T>({
   getRowHref?: (row: T) => string | undefined
   /** The row link's accessible name, when the first cell alone does not say which row it is. */
   getRowLabel?: ((row: T) => string) | undefined
+  /**
+   * Opens the row some other way than a page navigation, such as a sheet. A plain click, on the
+   * row or on the first-cell link, calls this instead of `navigate`; a modifier click still opens
+   * the link in a new tab, since the anchor's href is untouched.
+   */
+  onRowOpen?: (row: T) => void
 }) {
   const { navigate } = useRouter()
   // Nothing is sorted until somebody asks: the order the screen passes in (usually newest first)
@@ -637,9 +729,11 @@ export function DataTable<T>({
                 onClick={
                   href
                     ? (event) => {
+                        if (!isPlainRowClick(event)) return
                         // The first-cell link navigates through the router's own click handling;
                         // navigating here as well pushed a second history entry.
-                        if (isPlainRowClick(event)) navigate(href)
+                        if (onRowOpen) onRowOpen(row)
+                        else navigate(href)
                       }
                     : undefined
                 }
@@ -647,7 +741,21 @@ export function DataTable<T>({
                 {columns.map((column, index) => (
                   <td key={column.key} className={column.numeric ? 'table-numeric tabular' : undefined}>
                     {href && index === 0 ? (
-                      <a href={href} className="table-row-link" aria-label={getRowLabel?.(row)}>
+                      <a
+                        href={href}
+                        className="table-row-link"
+                        aria-label={getRowLabel?.(row)}
+                        onClick={
+                          onRowOpen
+                            ? (event) => {
+                                if (!isPlainClick(event)) return
+                                // A modifier click is left alone, so it still opens a new tab.
+                                event.preventDefault()
+                                onRowOpen(row)
+                              }
+                            : undefined
+                        }
+                      >
                         {column.render(row)}
                       </a>
                     ) : (
@@ -1027,6 +1135,7 @@ const LEGACY_STATUS: Record<string, { tone: TagTone; label: string }> = {
   pending: { tone: 'neutral', label: 'Waiting to start' },
   ready: { tone: 'neutral', label: 'Ready' },
   waiting_approval: { tone: 'warning', label: 'Waiting for approval' },
+  waiting_input: { tone: 'warning', label: 'Waiting for an answer' },
   waiting: { tone: 'warning', label: 'Waiting' },
   completed: { tone: 'success', label: 'Completed' },
   approved: { tone: 'success', label: 'Approved' },
@@ -1070,3 +1179,20 @@ export function StatusTag({
 export { FilterBar, FilterEmpty } from './FilterBar'
 export type { FilterFacet, FilterOption, FilterSelect } from './FilterBar'
 export { TaskDialog } from './TaskDialog'
+
+/* ---- Keyboard key ------------------------------------------------------------------------------
+ * A single key or chord, shown the way a shortcuts list or a hint in a control names it.
+ */
+
+export function Kbd({ children }: { children: ReactNode }) {
+  return <kbd className="kbd">{children}</kbd>
+}
+
+/*
+ * Markdown, Menu, Sheet, Collapsible, CopyButton, ShortcutsDialog and the moved AgentAvatar are
+ * deliberately not re-exported here. FilterBar's own re-export above is already a circular import
+ * (index.tsx -> FilterBar.tsx -> index.tsx) that Rollup only tolerates because FilterBar is small;
+ * Board.tsx:7-9 documents the "broken execution order" warning that came from a lazy route
+ * importing it through this barrel. These components are heavier and used from the lazy Chat and
+ * Orchestrator routes, so callers import each one from its own module path instead.
+ */

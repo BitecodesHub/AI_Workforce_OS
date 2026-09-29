@@ -33,8 +33,13 @@ function parse(iso: string | null | undefined): Date | null {
 
 const pad2 = (value: number) => String(value).padStart(2, '0')
 
-function plural(count: number, unit: string): string {
+function countedUnit(count: number, unit: string): string {
   return `${count} ${unit}${count === 1 ? '' : 's'}`
+}
+
+/** '1 run', '3 runs': `one` for exactly one, `many` otherwise. */
+export function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
 }
 
 /* ---- Dates and times ------------------------------------------------------------------------- */
@@ -86,6 +91,28 @@ export function formatDateTimeIn(iso: string | null | undefined, timeZone: strin
   }
 }
 
+/**
+ * A moment as a 24-hour clock reading, '09:00', in `timeZone` when it is given, else the browser's
+ * own zone. For a schedule's next-run chip, where the date is shown separately (see
+ * formatDateTimeIn for the same timezone rule).
+ */
+export function formatTimeIn(ms: number, timeZone?: string | null): string {
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return EMPTY
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timeZone ?? undefined,
+      hour: 'numeric',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+    const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? '0')
+    return `${pad2(get('hour'))}:${pad2(get('minute'))}`
+  } catch {
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+  }
+}
+
 /** '27 Sep 2026', or an em dash. */
 export function formatDate(iso?: string | null): string {
   const date = parse(iso)
@@ -116,9 +143,9 @@ export function formatRelative(iso?: string | null, now: number = Date.now()): s
   const days = Math.round(hours / 24)
 
   let amount: string
-  if (minutes < 60) amount = plural(minutes, 'minute')
-  else if (hours < 24) amount = plural(hours, 'hour')
-  else if (days <= 6) amount = plural(days, 'day')
+  if (minutes < 60) amount = countedUnit(minutes, 'minute')
+  else if (hours < 24) amount = countedUnit(hours, 'hour')
+  else if (days <= 6) amount = countedUnit(days, 'day')
   else return future ? `on ${datePart(date)}` : datePart(date)
 
   return future ? `in ${amount}` : `${amount} ago`
@@ -135,6 +162,21 @@ export function formatRelativeTicked(iso: string | null | undefined, now: number
   const at = iso ? Date.parse(iso) : Number.NaN
   const reference = Number.isFinite(at) && at > now && at - now <= tickMs ? at : now
   return formatRelative(iso, reference)
+}
+
+/**
+ * A short elapsed time, from milliseconds rather than an instant: 'just now' under two seconds,
+ * then '4 s ago', '2 min ago', '3 h ago'. For a caption that already has the moment in hand (a
+ * question's "Asked 2 min ago"), where formatRelative's own parsing would be redundant.
+ */
+export function formatAgo(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 2 * SECOND) return 'just now'
+  const seconds = Math.floor(ms / SECOND)
+  if (seconds < 60) return `${seconds} s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  return `${hours} h ago`
 }
 
 /* ---- Durations ------------------------------------------------------------------------------- */
@@ -182,7 +224,7 @@ export function formatRunElapsed(
 ): string {
   const status = run.status.toLowerCase()
   if (status === 'running') return `Running ${formatElapsed(run.startedAt, null, now)}`
-  if (status === 'waiting_approval') return `Waiting ${formatElapsed(run.startedAt, null, now)}`
+  if (status === 'waiting_approval' || status === 'waiting_input') return `Waiting ${formatElapsed(run.startedAt, null, now)}`
   // A finished run without an end time cannot say how long it took; measuring to now would keep
   // a finished run's clock ticking.
   if (!run.completedAt) return EMPTY

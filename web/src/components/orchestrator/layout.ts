@@ -1,12 +1,20 @@
-import type { Board, BoardGoal, BoardQueueEntry, BoardTask, GoalSource, QueueReason } from '../../lib/queries'
+import type {
+  Board,
+  BoardGoal,
+  BoardQueueEntry,
+  BoardTask,
+  BoardWindow,
+  GoalSource,
+  QueueReason,
+} from '../../lib/queries'
 import { isGoalActive } from '../../lib/queries'
 
 /*
  * Pure geometry and grouping for the orchestrator board.
  *
- * Where a node sits on the flow map, how a timeline bar is placed inside its two-hour window, and
- * which column a goal's card belongs in are all worked out here, with nothing touching the DOM,
- * so every rule can be checked directly rather than by reading pixels off a rendered page.
+ * Where a node sits on the flow map, how a timeline bar is placed inside its window, and which
+ * column a goal's card belongs in are all worked out here, with nothing touching the DOM, so every
+ * rule can be checked directly rather than by reading pixels off a rendered page.
  */
 
 export const FLOW_VIEWBOX = { width: 640, height: 340 } as const
@@ -24,6 +32,18 @@ export function ringLayout(count: number): NodePoint[] {
   })
 }
 
+/**
+ * How many characters an agent's flow-map label keeps before it is cut short with an ellipsis.
+ * The ring divides the same space among every agent on it, so the more of them there are, the
+ * less room each one's label gets before its neighbour's begins - a fixed limit either wasted
+ * space with few agents or clipped a name like "Customer Success" down to "Customer…" with many.
+ */
+export function flowLabelMax(agentCount: number): number {
+  if (agentCount <= 4) return 26
+  if (agentCount <= 8) return 18
+  return 13
+}
+
 /** A curved path between two points, bowed so that edges sharing an endpoint never overlap. */
 export function edgePath(from: NodePoint, to: NodePoint): string {
   const midX = (from.x + to.x) / 2
@@ -39,6 +59,11 @@ export function edgePath(from: NodePoint, to: NodePoint): string {
   return `M ${from.x.toFixed(1)} ${from.y.toFixed(1)} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${to.x.toFixed(1)} ${to.y.toFixed(1)}`
 }
 
+/** Where a tooltip anchored at this point should open, so it never clips past the canvas edge. */
+export function tooltipPlacement(point: NodePoint): 'above' | 'below' {
+  return point.y < 70 ? 'below' : 'above'
+}
+
 export type FlowEdge = {
   key: string
   goalId: string
@@ -49,9 +74,11 @@ export type FlowEdge = {
   completed: boolean
 }
 
+const ACTIVE_EDGE_STATUS = new Set(['running', 'waiting_approval', 'waiting_input'])
+
 /**
  * Hub-to-first-agent, then agent-to-agent handoffs, for every goal still active. A goal already
- * finished (shown on the board only because it finished in the last two hours) draws nothing: its
+ * finished (shown on the board only because it finished inside the window) draws nothing: its
  * work is done, and the map is about what is moving, not a history of everything that ever ran.
  */
 export function flowEdges(goals: readonly BoardGoal[]): FlowEdge[] {
@@ -67,7 +94,7 @@ export function flowEdges(goals: readonly BoardGoal[]): FlowEdge[] {
         goalId: goal.id,
         fromAgentId,
         toAgentId: task.agentId!,
-        active: status === 'running' || status === 'waiting_approval',
+        active: ACTIVE_EDGE_STATUS.has(status),
         completed: status === 'completed',
       })
     })
@@ -77,14 +104,14 @@ export function flowEdges(goals: readonly BoardGoal[]): FlowEdge[] {
 
 /* ---- Swimlanes ----------------------------------------------------------------------------------- */
 
-export const SWIMLANE_WINDOW_MS = 2 * 60 * 60 * 1000
-const TICK_STEP_MS = 15 * 60 * 1000
+export const SWIMLANE_WINDOW_MINUTES = 120
+const DEFAULT_TICK_STEP_MS = 15 * 60 * 1000
 
 export type TimeWindow = { start: number; end: number }
 
-/** The last two hours, ending now. */
-export function laneWindow(nowMs: number): TimeWindow {
-  return { start: nowMs - SWIMLANE_WINDOW_MS, end: nowMs }
+/** The window ending now, `windowMinutes` long (two hours unless the caller asks for another). */
+export function laneWindow(nowMs: number, windowMinutes: number = SWIMLANE_WINDOW_MINUTES): TimeWindow {
+  return { start: nowMs - windowMinutes * 60 * 1000, end: nowMs }
 }
 
 /**
@@ -105,12 +132,28 @@ export function laneBarRect(
   return { leftPct, widthPct }
 }
 
-/** Tick marks every 15 minutes across the window, as timestamps to format in the local timezone. */
-export function laneTicks(window: TimeWindow): number[] {
+/** Tick marks across the window, `stepMs` apart (15 minutes unless the caller asks for another). */
+export function laneTicks(window: TimeWindow, stepMs: number = DEFAULT_TICK_STEP_MS): number[] {
   const ticks: number[] = []
-  const first = Math.ceil(window.start / TICK_STEP_MS) * TICK_STEP_MS
-  for (let tick = first; tick <= window.end; tick += TICK_STEP_MS) ticks.push(tick)
+  const first = Math.ceil(window.start / stepMs) * stepMs
+  for (let tick = first; tick <= window.end; tick += stepMs) ticks.push(tick)
   return ticks
+}
+
+/**
+ * How far apart the timeline's tick marks should be, so a 24-hour or "today" window is not asked
+ * to draw a tick every 15 minutes: 15 min for 1 h and 2 h, 1 h for 6 h, 3 h for 24 h and today.
+ */
+export function tickStepFor(window: BoardWindow): number {
+  switch (window) {
+    case 'PT1H':
+    case 'PT2H':
+      return 15 * 60 * 1000
+    case 'PT6H':
+      return 60 * 60 * 1000
+    default:
+      return 3 * 60 * 60 * 1000
+  }
 }
 
 /** Where a moment sits across the window, in percent from the left. */
@@ -121,27 +164,39 @@ export function pctOf(atMs: number, window: TimeWindow): number {
 
 /* ---- Board columns -------------------------------------------------------------------------------- */
 
-export type BoardColumn = 'queued' | 'working' | 'waiting' | 'finished'
+export type BoardColumn = 'queued' | 'working' | 'needs_you' | 'finished'
+export type CardStatusKey = 'queued' | 'held' | 'working' | 'needs_you' | 'finished' | 'failed'
 
 export type BoardCard = {
+  /** The goal's own id: one card per goal, so the sheet stays keyed to the same card through a
+      column move instead of losing it the moment the goal's task changes state. */
   id: string
   column: BoardColumn
+  statusKey: CardStatusKey
+  waitingKind: 'answer' | 'approval' | null
   goal: BoardGoal
   task: BoardTask | null
   reason: QueueReason | null
   /** This task's rank (0-based) in the workspace's one shared claim queue, not its step within its
-   * own goal - see the comment in {@link buildBoardCards}. Null once a task is running, waiting on
-   * approval, finished, or has not been queued by the engine's own sweep yet. */
+   * own goal - see the comment below. Null once a task is running, waiting, finished, or has not
+   * been queued by the engine's own sweep yet. */
   queuePosition: number | null
 }
 
 const FINISHED_GOAL = new Set(['completed', 'failed', 'cancelled'])
+const WAITING_TASK = new Set(['waiting_input', 'waiting_approval'])
+
+function endingTask(tasks: readonly BoardTask[]): BoardTask | null {
+  const stoppedEarly = tasks.find((task) => task.status.toLowerCase() === 'failed' || task.status.toLowerCase() === 'cancelled')
+  if (stoppedEarly) return stoppedEarly
+  const lastCompleted = [...tasks].reverse().find((task) => task.status.toLowerCase() === 'completed')
+  if (lastCompleted) return lastCompleted
+  return tasks[tasks.length - 1] ?? null
+}
 
 /**
- * One card per goal, sorted into the column its current task is in: waiting beats working beats
- * finished, so a goal never shows as two things at once. A goal not yet claimed reads as queued -
- * with the real reason and position once the board's own queue lists it, or as simply "ready" in
- * the moment right after it was created and before the next sweep has queued it.
+ * One card per goal (D1), sorted into the column its state belongs in: needing a person beats
+ * working beats finished beats queued, so a goal never shows as two things at once.
  */
 export function buildBoardCards(board: Pick<Board, 'goals' | 'queue'>): BoardCard[] {
   const queueByGoal = new Map<string, BoardQueueEntry[]>()
@@ -160,37 +215,89 @@ export function buildBoardCards(board: Pick<Board, 'goals' | 'queue'>): BoardCar
   const cards: BoardCard[] = []
   for (const goal of board.goals) {
     const tasks = [...goal.tasks].sort((a, b) => a.position - b.position)
-    const waitingTask = tasks.find((task) => task.status.toLowerCase() === 'waiting_approval')
-    const runningTask = tasks.find((task) => task.status.toLowerCase() === 'running')
-    const queueEntries = queueByGoal.get(goal.id) ?? []
-
+    const waitingTask = tasks.find((task) => WAITING_TASK.has(task.status.toLowerCase()))
     if (waitingTask) {
-      cards.push({ id: `${goal.id}:waiting`, column: 'waiting', goal, task: waitingTask, reason: null, queuePosition: null })
-    } else if (runningTask) {
-      cards.push({ id: `${goal.id}:working`, column: 'working', goal, task: runningTask, reason: null, queuePosition: null })
-    } else if (FINISHED_GOAL.has(goal.status.toLowerCase())) {
-      const lastTask = tasks[tasks.length - 1] ?? null
-      cards.push({ id: `${goal.id}:finished`, column: 'finished', goal, task: lastTask, reason: null, queuePosition: null })
-    } else if (queueEntries.length > 0) {
-      for (const entry of queueEntries) {
-        const task = tasks.find((candidate) => candidate.id === entry.taskId) ?? null
-        cards.push({
-          id: `${goal.id}:${entry.taskId}`,
-          column: 'queued',
-          goal,
-          task,
-          reason: entry.reason,
-          queuePosition: rankByTask.get(entry.taskId) ?? null,
-        })
-      }
-    } else {
-      const next = tasks.find((task) => ['pending', 'ready'].includes(task.status.toLowerCase()))
-      if (next) {
-        cards.push({ id: `${goal.id}:${next.id}`, column: 'queued', goal, task: next, reason: 'ready', queuePosition: null })
-      }
+      const waitingKind = waitingTask.status.toLowerCase() === 'waiting_input' ? 'answer' : 'approval'
+      cards.push({
+        id: goal.id,
+        column: 'needs_you',
+        statusKey: 'needs_you',
+        waitingKind,
+        goal,
+        task: waitingTask,
+        reason: null,
+        queuePosition: null,
+      })
+      continue
     }
+
+    const runningTask = tasks.find((task) => task.status.toLowerCase() === 'running')
+    if (runningTask) {
+      cards.push({
+        id: goal.id,
+        column: 'working',
+        statusKey: 'working',
+        waitingKind: null,
+        goal,
+        task: runningTask,
+        reason: null,
+        queuePosition: null,
+      })
+      continue
+    }
+
+    if (FINISHED_GOAL.has(goal.status.toLowerCase())) {
+      cards.push({
+        id: goal.id,
+        column: 'finished',
+        statusKey: goal.status.toLowerCase() === 'failed' ? 'failed' : 'finished',
+        waitingKind: null,
+        goal,
+        task: endingTask(tasks),
+        reason: null,
+        queuePosition: null,
+      })
+      continue
+    }
+
+    const queueEntries = queueByGoal.get(goal.id) ?? []
+    if (queueEntries.length > 0) {
+      const best = queueEntries.reduce((lowest, candidate) =>
+        (rankByTask.get(candidate.taskId) ?? Infinity) < (rankByTask.get(lowest.taskId) ?? Infinity) ? candidate : lowest,
+      )
+      cards.push({
+        id: goal.id,
+        column: 'queued',
+        statusKey: best.reason === 'agent_paused' ? 'held' : 'queued',
+        waitingKind: null,
+        goal,
+        task: tasks.find((candidate) => candidate.id === best.taskId) ?? null,
+        reason: best.reason,
+        queuePosition: rankByTask.get(best.taskId) ?? null,
+      })
+      continue
+    }
+
+    // A brand-new goal, created after the last sweep queued anything: read as ready rather than
+    // left off the board until the next sweep catches up.
+    const next = tasks.find((task) => task.status.toLowerCase() === 'pending' || task.status.toLowerCase() === 'ready')
+    cards.push({
+      id: goal.id,
+      column: 'queued',
+      statusKey: 'queued',
+      waitingKind: null,
+      goal,
+      task: next ?? null,
+      reason: 'ready',
+      queuePosition: null,
+    })
   }
   return cards
+}
+
+/** How many of these cards carry this status key - what a SummaryStrip tile's click filters to. */
+export function countCards(cards: readonly BoardCard[], statusKey: CardStatusKey): number {
+  return cards.reduce((count, card) => count + (card.statusKey === statusKey ? 1 : 0), 0)
 }
 
 /** 'Step 2 of 3', from the task's place in the goal's own chain, not its raw stored position. */
@@ -213,11 +320,19 @@ export function queueReasonText(reason: QueueReason): string {
   return QUEUE_REASON_TEXT[reason]
 }
 
-export const COLUMN_TITLE: Record<BoardColumn, string> = {
+const COLUMN_LABEL: Record<BoardColumn, string> = {
   queued: 'Queued',
   working: 'Working',
-  waiting: 'Waiting for approval',
-  finished: 'Finished (last 2 h)',
+  needs_you: 'Needs you',
+  finished: 'Finished',
+}
+
+/** A column's heading, with the finished column naming the window it covers. */
+export function columnTitle(column: BoardColumn, window: BoardWindow, windowMinutes: number): string {
+  if (column !== 'finished') return COLUMN_LABEL[column]
+  if (window === 'TODAY') return 'Finished (today)'
+  const hours = Math.max(1, Math.round(windowMinutes / 60))
+  return `Finished (last ${hours} h)`
 }
 
 export type { GoalSource }

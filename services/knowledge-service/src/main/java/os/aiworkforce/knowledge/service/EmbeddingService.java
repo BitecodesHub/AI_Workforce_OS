@@ -38,8 +38,7 @@ public class EmbeddingService {
     private final WebClient client;
     private final InternalTokenProvider tokens;
 
-    public EmbeddingService(
-            WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
+    public EmbeddingService(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         this.client = builder.baseUrl(properties.services().orchestrator()).build();
         this.tokens = tokens;
     }
@@ -81,10 +80,11 @@ public class EmbeddingService {
                     .timeout(Duration.ofSeconds(90))
                     .block();
 
-            if (response == null || response.vectors() == null || response.vectors().size() != batch.size()) {
+            if (response == null
+                    || response.vectors() == null
+                    || response.vectors().size() != batch.size()) {
                 throw new ApiException(
-                        ErrorCode.UPSTREAM_ERROR,
-                        "The embedding service returned an unexpected number of vectors.");
+                        ErrorCode.UPSTREAM_ERROR, "The embedding service returned an unexpected number of vectors.");
             }
             all.addAll(response.vectors());
         }

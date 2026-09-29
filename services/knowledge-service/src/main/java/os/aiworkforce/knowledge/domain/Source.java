@@ -1,9 +1,10 @@
 package os.aiworkforce.knowledge.domain;
 
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import java.time.Instant;
 
 import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
 

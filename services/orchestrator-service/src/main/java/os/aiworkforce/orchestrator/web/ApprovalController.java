@@ -1,13 +1,14 @@
 package os.aiworkforce.orchestrator.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import os.aiworkforce.orchestrator.domain.Approval;
-import os.aiworkforce.orchestrator.repository.Approvals;
 import os.aiworkforce.orchestrator.service.AgentRunner;
 import os.aiworkforce.orchestrator.service.ApprovalService;
 import os.aiworkforce.platform.context.RequestContext;
@@ -63,14 +63,15 @@ public class ApprovalController {
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
     @Operation(summary = "Actions waiting for a decision")
     public List<ApprovalView> pending() {
-        return approvals.pending(orgId()).stream().map(ApprovalController::toView).toList();
+        return approvals.pending(orgId()).stream()
+                .map(ApprovalController::toView)
+                .toList();
     }
 
     @PostMapping("/{approvalId}/decision")
     @RequiresPermission(Permission.Codes.APPROVAL_DECIDE)
     @Operation(summary = "Approve or reject an action")
-    public DecisionResult decide(
-            @PathVariable UUID approvalId, @Valid @RequestBody DecisionRequest request) {
+    public DecisionResult decide(@PathVariable UUID approvalId, @Valid @RequestBody DecisionRequest request) {
         UUID orgId = orgId();
         Approval approval = approvals.decide(orgId, approvalId, request.approved(), request.note());
 

@@ -1,8 +1,9 @@
 package os.aiworkforce.platform.error;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * The error body every service returns, shaped after RFC 7807.
@@ -41,8 +42,7 @@ public record ProblemResponse(
 
     private static final String TYPE_PREFIX = "https://errors.aiworkforce.os/";
 
-    public static ProblemResponse of(
-            ApiException exception, String instance, String requestId, String traceId) {
+    public static ProblemResponse of(ApiException exception, String instance, String requestId, String traceId) {
         ErrorCode code = exception.code();
         return new ProblemResponse(
                 TYPE_PREFIX + code.wire(),

@@ -4,7 +4,6 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
-import os.aiworkforce.organisation.repository.Organisations;
 import os.aiworkforce.platform.PlatformCore;
 import os.aiworkforce.platform.web.PlatformWeb;
 
@@ -15,8 +14,7 @@ import os.aiworkforce.platform.web.PlatformWeb;
  * its own migration history, and it never reaches into another service's tables: everything it
  * needs from a sibling arrives over that sibling's published API or over an event.
  */
-@SpringBootApplication(
-        scanBasePackageClasses = {OrganisationApplication.class, PlatformCore.class, PlatformWeb.class})
+@SpringBootApplication(scanBasePackageClasses = {OrganisationApplication.class, PlatformCore.class, PlatformWeb.class})
 @ConfigurationPropertiesScan(
         basePackageClasses = {OrganisationApplication.class, PlatformCore.class, PlatformWeb.class})
 public class OrganisationApplication {

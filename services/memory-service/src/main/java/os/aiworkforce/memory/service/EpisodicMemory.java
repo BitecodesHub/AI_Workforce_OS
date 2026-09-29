@@ -46,7 +46,12 @@ public class EpisodicMemory {
 
     @Transactional
     public Episode record(
-            UUID orgId, UUID agentId, UUID runId, String kind, String summary, int importance,
+            UUID orgId,
+            UUID agentId,
+            UUID runId,
+            String kind,
+            String summary,
+            int importance,
             Map<String, Object> detail) {
         Episode episode = Episode.of(orgId, agentId, kind, summary, clamp(importance));
         episode.setRunId(runId);
@@ -89,8 +94,8 @@ public class EpisodicMemory {
     @Transactional
     public int compact(UUID orgId, int batchSize) {
         Instant before = Instant.now().minus(COMPACTION_AGE);
-        List<Episode> candidates = episodes.findCompactable(
-                orgId, before, COMPACTION_IMPORTANCE_CEILING, PageRequest.of(0, batchSize));
+        List<Episode> candidates =
+                episodes.findCompactable(orgId, before, COMPACTION_IMPORTANCE_CEILING, PageRequest.of(0, batchSize));
 
         if (candidates.size() < 2) {
             return 0;
@@ -107,8 +112,8 @@ public class EpisodicMemory {
                 continue;
             }
 
-            Episode summary = Episode.of(
-                    orgId, entry.getKey(), "summary", summarise(group), COMPACTION_IMPORTANCE_CEILING);
+            Episode summary =
+                    Episode.of(orgId, entry.getKey(), "summary", summarise(group), COMPACTION_IMPORTANCE_CEILING);
             summary.setOccurredAt(group.get(0).getOccurredAt());
             summary.setSupersedes(group.stream().map(Episode::getId).toList());
             summary.setDetail(Map.of(
@@ -136,8 +141,8 @@ public class EpisodicMemory {
      * the agent can no longer check is a confident invention waiting to be quoted back as fact.
      */
     private String summarise(List<Episode> group) {
-        Map<String, Long> byKind = group.stream()
-                .collect(Collectors.groupingBy(Episode::getKind, Collectors.counting()));
+        Map<String, Long> byKind =
+                group.stream().collect(Collectors.groupingBy(Episode::getKind, Collectors.counting()));
         List<String> parts = new ArrayList<>();
         byKind.forEach((kind, count) -> parts.add(count + " " + kind + (count == 1 ? "" : "s")));
         return "Between " + group.get(0).getOccurredAt() + " and "

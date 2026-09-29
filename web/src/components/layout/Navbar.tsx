@@ -5,7 +5,7 @@ import { IconButton } from '../ui'
 import { can, clearSession, initials as initialsOf, profile } from '../../lib/session'
 import { roleLabel } from '../../lib/labels'
 import { isGuideHidden, setGuideHidden } from '../../lib/onboarding'
-import { useApprovals } from '../../lib/queries'
+import { useApprovals, useQuestions } from '../../lib/queries'
 import { useRouter } from '../../lib/router'
 
 /*
@@ -87,9 +87,14 @@ export function Navbar({ currentPath = '/', glass = false }: { currentPath?: str
   const email = me?.email ?? ''
   const role = me?.role ?? null
   const canReadApprovals = can('approval:read')
+  const canReadQuestions = can('run:read')
   // Not requested at all for a role that cannot read approvals, rather than asked for and refused.
   const approvals = useApprovals({ enabled: canReadApprovals })
-  const unreadCount = canReadApprovals ? (approvals.data?.length ?? 0) : 0
+  // The questions the viewer themself asked for (mine=true), so a manager's badge does not grow
+  // with every employee's question.
+  const myQuestions = useQuestions({ status: 'pending', mine: true }, { enabled: canReadQuestions })
+  const unreadCount =
+    (canReadApprovals ? (approvals.data?.length ?? 0) : 0) + (canReadQuestions ? (myQuestions.data?.length ?? 0) : 0)
   const { navigate } = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -214,10 +219,8 @@ export function Navbar({ currentPath = '/', glass = false }: { currentPath?: str
           <a
             className="icon-button"
             href="/approvals"
-            aria-label={unreadCount > 0 ? `Approvals, ${unreadCount} waiting` : 'Approvals'}
-            title={
-              unreadCount > 0 ? `${unreadCount} ${unreadCount === 1 ? 'approval' : 'approvals'} waiting` : 'Approvals'
-            }
+            aria-label={unreadCount > 0 ? `Approvals, ${unreadCount} waiting for you` : 'Approvals'}
+            title={unreadCount > 0 ? `${unreadCount} waiting for you` : 'Approvals'}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path

@@ -228,9 +228,9 @@ function RecentRuns({ runs }: { runs: Run[] }) {
           <StatTile label="Recent runs" value={formatCount(runs.length)} href="/runs" />
           <StatTile label="Completed" value={formatCount(count('completed'))} href="/runs?status=completed" />
           <StatTile
-            label="Waiting for approval"
-            value={formatCount(count('waiting_approval'))}
-            href="/runs?status=waiting_approval"
+            label="Waiting for a person"
+            value={formatCount(count('waiting_approval') + count('waiting_input'))}
+            href="/approvals"
           />
           <StatTile label="Failed" value={formatCount(count('failed'))} href="/runs?status=failed" />
         </StatRow>

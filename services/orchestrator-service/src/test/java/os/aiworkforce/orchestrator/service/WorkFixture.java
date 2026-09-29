@@ -49,6 +49,8 @@ final class WorkFixture {
         });
         lenient().when(goals.findById(any())).thenAnswer(call -> find(call.getArgument(0)));
         lenient().when(goals.findByIdAndOrgId(any(), any())).thenAnswer(call -> find(call.getArgument(0)));
+        // The retry's lock answers like the plain lookup, from the same in-memory goals.
+        lenient().when(goals.lockByIdAndOrgId(any(), any())).thenAnswer(call -> find(call.getArgument(0)));
     }
 
     private Optional<Goal> find(Object id) {

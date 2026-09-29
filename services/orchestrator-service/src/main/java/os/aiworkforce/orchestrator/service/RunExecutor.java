@@ -2,6 +2,7 @@ package os.aiworkforce.orchestrator.service;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -17,6 +18,8 @@ import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.Tasks;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
+import os.aiworkforce.platform.error.ApiException;
+import os.aiworkforce.platform.error.ErrorCode;
 
 /**
  * Hands goal and resume work to a virtual thread, so the request that triggered it can answer
@@ -47,6 +50,12 @@ public class RunExecutor {
     private final Goals goals;
     private final Runs runs;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    /**
+     * Runs with a resume in flight on this instance, so an answer's own submission and the sweep
+     * do not both start one. Only saves work: the claim in the database decides which resume
+     * drives a run, on this instance or any other.
+     */
+    private final Set<UUID> resuming = ConcurrentHashMap.newKeySet();
 
     public RunExecutor(GoalService goalService, AgentRunner runner, Tasks tasks, Goals goals, Runs runs) {
         this.goalService = goalService;
@@ -77,17 +86,42 @@ public class RunExecutor {
         }));
     }
 
-    /** Resumes a run that was just approved, without making the approver's request wait for it. */
+    /**
+     * Resumes a run that was just approved or answered, without making that person's request wait
+     * for it.
+     *
+     * <p>A second submission for a run already being resumed here is ignored. The id is released
+     * however the submission ends - the resume finishing or failing, or the submission itself
+     * failing before it started - so a run is never left unresumable on this instance.
+     */
     public void submitResume(UUID orgId, UUID runId) {
-        Actor actor = actorForRun(orgId, runId);
-        executor.submit(() -> RequestContext.as(actor, () -> {
-            try {
-                runner.resume(orgId, runId);
-            } catch (RuntimeException e) {
-                log.error("Resuming run {} failed", runId, e);
-            }
-            return null;
-        }));
+        if (!resuming.add(runId)) {
+            return;
+        }
+        try {
+            Actor actor = actorForRun(orgId, runId);
+            executor.submit(() -> RequestContext.as(actor, () -> {
+                try {
+                    runner.resume(orgId, runId);
+                } catch (ApiException e) {
+                    if (e.code() == ErrorCode.CONFLICT) {
+                        // Ordinary with more than one instance or a sweep: the run was already
+                        // resumed, or is no longer waiting.
+                        log.info("Run {} was not resumed: {}", runId, e.getMessage());
+                    } else {
+                        log.error("Resuming run {} failed", runId, e);
+                    }
+                } catch (RuntimeException e) {
+                    log.error("Resuming run {} failed", runId, e);
+                } finally {
+                    resuming.remove(runId);
+                }
+                return null;
+            }));
+        } catch (RuntimeException e) {
+            resuming.remove(runId);
+            log.error("Could not submit the resume of run {}", runId, e);
+        }
     }
 
     /**
@@ -106,7 +140,9 @@ public class RunExecutor {
     private Actor actorForRun(UUID orgId, UUID runId) {
         return runs.findByIdAndOrgId(runId, orgId)
                 .map(Run::getTaskId)
-                .flatMap(taskId -> taskId == null ? java.util.Optional.<os.aiworkforce.orchestrator.domain.Task>empty() : tasks.findById(taskId))
+                .flatMap(taskId -> taskId == null
+                        ? java.util.Optional.<os.aiworkforce.orchestrator.domain.Task>empty()
+                        : tasks.findById(taskId))
                 .flatMap(task -> goals.findById(task.getGoalId()))
                 .map(goal -> asUserActor(goal, orgId))
                 .orElse(Actor.SYSTEM);

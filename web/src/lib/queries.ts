@@ -43,6 +43,8 @@ export type Agent = {
   tools?: string[] | null
   /** The ElevenLabs voice id this agent speaks with. Null (or absent) reads as the browser voice. */
   voiceId?: string | null
+  /** True for the General Employee: the org-wide fallback that exists whatever a person asks. */
+  fallback?: boolean
 }
 
 export type AgentGrant = {
@@ -272,19 +274,61 @@ export type Passage = {
   score: number
 }
 
-/* ---- Chat --------------------------------------------------------------------------------------- */
+/* ---- Clarifying questions ------------------------------------------------------------------- */
 
-export type Conversation = {
+export type QuestionStatus = 'pending' | 'answered' | 'expired' | 'cancelled'
+export type AnsweredVia = 'chat' | 'orchestrator' | 'run' | 'approvals'
+
+export type QuestionOption = { label: string; description: string; recommended?: boolean }
+export type QuestionItem = { id: string; header: string; question: string; multiSelect: boolean; options: QuestionOption[] }
+export type QuestionAnswerItem = { questionId: string; selected: string[]; other?: string | null }
+export type QuestionAnswer = { answers: QuestionAnswerItem[]; note?: string | null; skipped: boolean }
+
+export type RunQuestion = {
   id: string
-  title: string
-  createdBy: string | null
+  runId: string
+  taskId: string | null
+  goalId: string | null
+  conversationId: string | null
+  agentId: string
+  goalTitle: string | null
+  status: QuestionStatus
+  questions: QuestionItem[]
+  answer: QuestionAnswer | null
+  answeredBy: string | null
+  answeredVia: AnsweredVia | null
+  answeredAt: string | null
+  requestedBy: string | null
   createdAt: string
-  updatedAt: string
-  lastMessagePreview: string
+  expiresAt: string
+  closedReason: string | null
+  canAnswer: boolean
+  extendable: boolean
+  runStatus: string
 }
 
+export type AnswerQuestionInput = {
+  id: string
+  answers: QuestionAnswerItem[]
+  note?: string | null
+  skipped?: boolean
+  via: AnsweredVia
+}
+export type AnswerQuestionResult = { question: RunQuestion; runStatus: string }
+
+/* ---- Chat --------------------------------------------------------------------------------------- */
+
 export type ChatAuthorKind = 'user' | 'coordinator' | 'agent' | 'system'
-export type ChatMessageKind = 'text' | 'routing' | 'documents' | 'progress' | 'answer' | 'schedule_suggestion' | 'error'
+export type ChatMessageKind =
+  | 'text'
+  | 'routing'
+  | 'documents'
+  | 'progress'
+  | 'answer'
+  | 'schedule_suggestion'
+  | 'error'
+  | 'question'
+  | 'notice'
 
 export type RoutingAgent = { id: string; name: string; instruction: string }
 export type RoutingAlternative = { id: string; name: string; score: number }
@@ -293,12 +337,13 @@ export type RoutingAlternative = { id: string; name: string; score: number }
  * Every field any message kind's `detail` can carry. Which ones are set follows from `kind` (see
  * the EXACT API CONTRACTS list this was built from): a `routing` message has `mode`/`agents`/
  * `reason`/`matched`/`alternatives`/`needsChoice`; `documents` has `query`/`grounded`/`passages`;
- * `progress` has `goalId`; `answer` has `taskId`/`runId`/`agentId`; `schedule_suggestion` has
+ * `progress` has `goalId`; `answer` has `taskId`/`runId`/`agentId`/`code`/`sandbox`; `schedule_suggestion` has
  * `text`/`kind`/`cron`/`runAt`/`description`/`timezone`/`nextRuns`/`agentId`/`agentName`/
- * `instruction`/`name`; `error` has `reason`. Read only the fields your message kind defines.
+ * `instruction`/`name`; `error` has `reason`/`code`; `question` has `questionId`/`count`/`headers`/`expiresAt`;
+ * `notice` has `event`/`goalId`/`fromTaskId`. Read only the fields your message kind defines.
  */
 export type ChatMessageDetail = {
-  mode?: 'mention' | 'model' | 'rules' | 'manual'
+  mode?: 'mention' | 'model' | 'rules' | 'manual' | 'fallback'
   agents?: RoutingAgent[]
   reason?: string
   matched?: string[]
@@ -321,6 +366,17 @@ export type ChatMessageDetail = {
   agentName?: string
   instruction?: string
   name?: string
+  requestText?: string
+  rerouteOf?: string
+  fromDocumentsMessageId?: string
+  questionId?: string
+  count?: number
+  headers?: string[]
+  expiresAt?: string
+  event?: 'cancelled' | 'retried'
+  fromTaskId?: string
+  code?: string | null
+  sandbox?: boolean
 }
 
 export type ChatMessage = {
@@ -336,10 +392,55 @@ export type ChatMessage = {
   createdAt: string
 }
 
+export type ConversationActivity =
+  | 'needs_answer'
+  | 'waiting_answer'
+  | 'needs_approval'
+  | 'waiting_approval'
+  | 'working'
+  | 'idle'
+
+export type SearchMatch = { messageId: string; snippet: string }
+
+export type Conversation = {
+  id: string
+  title: string
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  lastMessagePreview: string
+  messageCount: number
+  pinned: boolean
+  archived: boolean
+  activity: ConversationActivity
+  canManage: boolean
+  unread: boolean
+  match: SearchMatch | null
+}
+
+export type ConversationPage = {
+  pinned: Conversation[]
+  needsYou: Conversation[]
+  conversations: Conversation[]
+  hasMore: boolean
+}
+
+export type ConversationScope = 'all' | 'mine' | 'archived'
+
+export type MessagesPage = { messages: ChatMessage[]; hasEarlier: boolean }
+
+export type GoalActionResult = { goalId: string; status: string; fromTaskId?: string | null }
+
+/**
+ * A conversation's thread, its board-style goals (see BoardGoal below, which is what the board
+ * shows and what the detail endpoint now returns too) and the questions asked in it.
+ */
 export type ConversationDetail = {
   conversation: Conversation
   messages: ChatMessage[]
-  goals: Goal[]
+  goals: BoardGoal[]
+  questions: RunQuestion[]
+  hasEarlier: boolean
 }
 
 /* ---- Orchestrator board --------------------------------------------------------------------------- */
@@ -347,11 +448,15 @@ export type ConversationDetail = {
 export type BoardStats = {
   running: number
   waitingApproval: number
+  waitingInput: number
   queued: number
   held: number
   completedToday: number
   failedToday: number
   spendToday: number
+  goalsCompletedToday: number
+  goalsFailedToday: number
+  directRuns: number
 }
 
 export type BoardAgent = {
@@ -359,8 +464,10 @@ export type BoardAgent = {
   name: string
   category: string
   status: string
+  fallback: boolean
   runningRunIds: string[]
   waitingRunIds: string[]
+  askingRunIds: string[]
   queued: number
 }
 
@@ -396,21 +503,51 @@ export type BoardTimelineEntry = {
   completedAt: string | null
 }
 
+/** requestedBy: the goal's requester, or a direct run's starter. canDecide: the caller holds the approval's requiredPermission. */
+export type BoardApproval = {
+  id: string
+  runId: string
+  taskId: string | null
+  goalId: string | null
+  agentId: string
+  tool: string | null
+  actionClass: string
+  summary: string
+  requestedAt: string
+  expiresAt: string
+  requestedBy: string | null
+  canDecide: boolean
+}
+
+export type BoardWindow = 'PT1H' | 'PT2H' | 'PT6H' | 'PT24H' | 'TODAY'
+
 export type Board = {
   generatedAt: string
   timezone: string
+  window: BoardWindow
+  windowMinutes: number
   stats: BoardStats
   agents: BoardAgent[]
   goals: BoardGoal[]
   queue: BoardQueueEntry[]
   timeline: BoardTimelineEntry[]
+  questions: RunQuestion[]
+  approvals: BoardApproval[]
+  /** Goals that failed since local midnight, newest first, at most 50, whatever the window. */
+  failedToday: BoardGoal[]
 }
 
 export type StopAllResult = {
   runsCancelled: number
   tasksCancelled: number
   approvalsWithdrawn: number
+  questionsWithdrawn: number
+  schedulesPaused: number
+  goalsSkipped: number
+  runsSkipped: number
 }
+
+export type AgentStatusAction = 'pause' | 'resume'
 
 /* ---- Schedules ------------------------------------------------------------------------------------ */
 
@@ -560,10 +697,12 @@ export type QueryOptions = { enabled?: boolean }
  * tab is hidden (refetchIntervalInBackground stays false) and resumes on focus.
  */
 
-const ACTIVE_RUN_STATUSES = new Set(['running', 'waiting_approval'])
+const ACTIVE_RUN_STATUSES = new Set(['running', 'waiting_approval', 'waiting_input'])
 const ACTIVE_GOAL_STATUSES = new Set(['planning', 'running', 'waiting'])
+/** A run parked for a person: an approval or a question, neither of which the agent can move past alone. */
+const PARKED_STATUSES = new Set(['waiting_approval', 'waiting_input'])
 
-/** Whether a run can still change: running, or held for an approval. */
+/** Whether a run can still change: running, waiting for approval, or waiting for an answer. */
 export function isRunActive(run?: { status: string } | null): boolean {
   return run != null && ACTIVE_RUN_STATUSES.has(run.status.toLowerCase())
 }
@@ -573,10 +712,16 @@ export function isGoalActive(goal?: { status: string } | null): boolean {
   return goal != null && ACTIVE_GOAL_STATUSES.has(goal.status.toLowerCase())
 }
 
+/** Whether a run is parked waiting on a person, rather than doing work itself. */
+export function isRunParked(run?: { status: string } | null): boolean {
+  return run != null && PARKED_STATUSES.has(run.status.toLowerCase())
+}
+
 /** Rows per page for the paged lists. A full last page means there may be more. */
 export const RUN_PAGE_SIZE = 50
 export const GOAL_PAGE_SIZE = 50
 export const AUDIT_PAGE_SIZE = 100
+export const CONVERSATION_PAGE_SIZE = 50
 
 /*
  * Paged lists are offset-based, so a row created while someone reads can push an older row onto
@@ -626,12 +771,30 @@ const sourceRow = (source: Source): Source => withNulls(source, ['lastIngestedAt
 const documentRow = (document: SourceDocument): SourceDocument => withNulls(document, ['skipReason', 'indexedAt'])
 const passageRow = (passage: Passage): Passage => withNulls(passage, ['uri', 'pageNumber', 'heading'])
 
-const conversationRow = (conversation: Conversation): Conversation => withNulls(conversation, ['createdBy'])
-const chatMessageRow = (message: ChatMessage): ChatMessage => withNulls(message, ['authorId', 'agentId', 'goalId'])
-const conversationDetailRow = (detail: ConversationDetail): ConversationDetail => ({
-  conversation: conversationRow(detail.conversation),
-  messages: detail.messages.map(chatMessageRow),
-  goals: detail.goals.map(goalRow),
+const questionRow = (question: RunQuestion): RunQuestion => ({
+  ...withNulls(question, [
+    'taskId',
+    'goalId',
+    'conversationId',
+    'goalTitle',
+    'answer',
+    'answeredBy',
+    'answeredVia',
+    'answeredAt',
+    'requestedBy',
+    'closedReason',
+  ]),
+  runStatus: question.runStatus ?? 'unknown',
+  questions: question.questions.map((item) => ({
+    ...item,
+    multiSelect: item.multiSelect ?? false,
+    options: item.options.map((option) => ({ ...option, recommended: option.recommended ?? false })),
+  })),
+})
+
+const approvalSummaryRow = (approval: BoardApproval): BoardApproval => ({
+  ...withNulls(approval, ['taskId', 'goalId', 'tool', 'requestedBy']),
+  canDecide: approval.canDecide ?? false,
 })
 
 const boardTaskRow = (task: BoardTask): BoardTask =>
@@ -654,9 +817,47 @@ const boardQueueRow = (entry: BoardQueueEntry): BoardQueueEntry => withNulls(ent
 const boardTimelineRow = (entry: BoardTimelineEntry): BoardTimelineEntry => withNulls(entry, ['goalId', 'completedAt'])
 const boardRow = (board: Board): Board => ({
   ...board,
+  agents: board.agents.map((agent) => ({ ...agent, fallback: agent.fallback ?? false, askingRunIds: agent.askingRunIds ?? [] })),
   goals: board.goals.map(boardGoalRow),
   queue: board.queue.map(boardQueueRow),
   timeline: board.timeline.map(boardTimelineRow),
+  questions: (board.questions ?? []).map(questionRow),
+  approvals: (board.approvals ?? []).map(approvalSummaryRow),
+  failedToday: (board.failedToday ?? []).map(boardGoalRow),
+  window: board.window ?? 'PT2H',
+  windowMinutes: board.windowMinutes ?? 120,
+  stats: {
+    ...board.stats,
+    waitingInput: board.stats.waitingInput ?? 0,
+    goalsCompletedToday: board.stats.goalsCompletedToday ?? 0,
+    goalsFailedToday: board.stats.goalsFailedToday ?? 0,
+    directRuns: board.stats.directRuns ?? 0,
+  },
+})
+
+const conversationRow = (conversation: Conversation): Conversation => ({
+  ...withNulls(conversation, ['createdBy']),
+  messageCount: conversation.messageCount ?? 0,
+  pinned: conversation.pinned ?? false,
+  archived: conversation.archived ?? false,
+  activity: conversation.activity ?? 'idle',
+  canManage: conversation.canManage ?? false,
+  unread: conversation.unread ?? false,
+  match: conversation.match ?? null,
+})
+const conversationPageRow = (page: ConversationPage): ConversationPage => ({
+  pinned: (page.pinned ?? []).map(conversationRow),
+  needsYou: (page.needsYou ?? []).map(conversationRow),
+  conversations: (page.conversations ?? []).map(conversationRow),
+  hasMore: page.hasMore ?? false,
+})
+const chatMessageRow = (message: ChatMessage): ChatMessage => withNulls(message, ['authorId', 'agentId', 'goalId'])
+const conversationDetailRow = (detail: ConversationDetail): ConversationDetail => ({
+  conversation: conversationRow(detail.conversation),
+  messages: detail.messages.map(chatMessageRow),
+  goals: (detail.goals ?? []).map(boardGoalRow),
+  questions: (detail.questions ?? []).map(questionRow),
+  hasEarlier: detail.hasEarlier ?? false,
 })
 
 const scheduleRow = (schedule: Schedule): Schedule =>
@@ -665,6 +866,27 @@ const scheduleRow = (schedule: Schedule): Schedule =>
 const uniqueRuns = uniquePages<Run>((run) => run.id)
 const uniqueGoals = uniquePages<Goal>((goal) => goal.id)
 const uniqueAuditEvents = uniquePages<AuditEvent>((event) => event.id)
+
+/**
+ * How often a conversation should poll: 3 s while a goal in it is actively running, 10 s while
+ * something in it is only waiting on a person (a question or an approval), otherwise not at all.
+ */
+export function conversationPollMs(detail: ConversationDetail | undefined): number | false {
+  if (!detail) return false
+  const activeGoal = detail.goals.some(isGoalActive)
+  const pendingQuestion = detail.questions.some((question) => question.status === 'pending')
+  if (!activeGoal && !pendingQuestion) return false
+  const parkedTask = detail.goals.some((goal) => goal.tasks.some((task) => PARKED_STATUSES.has(task.status.toLowerCase())))
+  return pendingQuestion || parkedTask ? 10_000 : 3_000
+}
+
+/** 3 s while any goal is active or a question or approval is pending, else 15 s. */
+export function boardPollMs(board: Board | undefined): number {
+  if (!board) return 15_000
+  const activeGoal = board.goals.some(isGoalActive)
+  const pendingQuestion = board.questions.some((question) => question.status === 'pending')
+  return activeGoal || pendingQuestion || board.approvals.length > 0 ? 3_000 : 15_000
+}
 
 /* ---- Reads ------------------------------------------------------------------------------------- */
 
@@ -810,33 +1032,117 @@ export const useGoal = (id: string | null | undefined, options: QueryOptions = {
     enabled: Boolean(id) && (options.enabled ?? true),
   })
 
-/* ---- Chat -------------------------------------------------------------------------------------- */
+/* ---- Clarifying questions ------------------------------------------------------------------- */
 
-/** Every conversation in the workspace, newest activity first (chat:use). */
-export const useConversations = (options: QueryOptions = {}) =>
-  useQuery({
-    queryKey: ['conversations'],
-    queryFn: async () => (await api<Conversation[]>('/api/conversations')).map(conversationRow),
+/** Every question in the workspace: pending ones ordered by deadline, or every one, newest first. */
+export function useQuestions(
+  filter: { status?: 'pending' | 'all'; mine?: boolean } = {},
+  options: QueryOptions = {},
+) {
+  const status = filter.status ?? 'pending'
+  const mine = filter.mine ?? false
+  return useQuery({
+    queryKey: ['questions', { status, mine }],
+    queryFn: async () => {
+      const params = new URLSearchParams({ status, mine: String(mine) })
+      return (await api<RunQuestion[]>(`/api/orchestrator/questions?${params.toString()}`)).map(questionRow)
+    },
+    refetchInterval: 15_000,
     enabled: options.enabled ?? true,
   })
+}
+
+/** A run's own questions, refreshed every 3 seconds while `active` (default: the cached run's own state). */
+export function useRunQuestions(runId: string, options: { active?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['runs', runId, 'questions'],
+    queryFn: async () => (await api<RunQuestion[]>(`/api/runs/${runId}/questions`)).map(questionRow),
+    refetchInterval: () => (options.active ? 3_000 : false),
+    enabled: Boolean(runId),
+  })
+}
+
+/** Answers a question. On settle (success or failure) refetches everywhere the question could show. */
+export function useAnswerQuestion() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: AnswerQuestionInput) => {
+      const result = await api<AnswerQuestionResult>(`/api/orchestrator/questions/${input.id}/answer`, {
+        method: 'POST',
+        body: { answers: input.answers, note: input.note ?? null, skipped: input.skipped ?? false, via: input.via },
+      })
+      return { ...result, question: questionRow(result.question) }
+    },
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: ['questions'] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['runs'] })
+      client.invalidateQueries({ queryKey: ['goals'] })
+    },
+  })
+}
+
+/** Keeps a question open another day. */
+export function useExtendQuestion() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) =>
+      questionRow(await api<RunQuestion>(`/api/orchestrator/questions/${id}/extend`, { method: 'POST' })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['questions'] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+    },
+  })
+}
+
+/* ---- Chat -------------------------------------------------------------------------------------- */
 
 /**
- * One conversation, its thread and the goals it has started. Polls every 3 seconds while a linked
- * goal, or a task inside one, is still active, so a reply and its progress arrive on their own.
+ * The workspace's conversations, in three groups (pinned, needing the caller, and the rest),
+ * searched and paged. `hasMore` on the last page means there may be another one.
+ */
+export function useConversationList(filter: { q?: string; scope?: ConversationScope } = {}) {
+  const q = filter.q?.trim() || ''
+  const scope = filter.scope ?? 'all'
+  return useInfiniteQuery({
+    queryKey: ['conversations', 'list', { q, scope }],
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({ scope, page: String(pageParam), size: String(CONVERSATION_PAGE_SIZE) })
+      if (q) params.set('q', q)
+      return conversationPageRow(await api<ConversationPage>(`/api/conversations?${params.toString()}`))
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) => (lastPage.hasMore ? lastPageParam + 1 : undefined),
+    refetchInterval: 15_000,
+  })
+}
+
+/**
+ * One conversation, its thread, its board-style goals and its questions. Polls through
+ * conversationPollMs while something in it is still moving.
  */
 export function useConversation(id: string | null | undefined, options: QueryOptions = {}) {
   return useQuery({
     queryKey: ['conversations', id ?? ''],
-    queryFn: async () => conversationDetailRow(await api<ConversationDetail>(`/api/conversations/${id ?? ''}`)),
+    queryFn: async () => conversationDetailRow(await api<ConversationDetail>(`/api/conversations/${id ?? ''}?limit=200`)),
     enabled: Boolean(id) && (options.enabled ?? true),
-    refetchInterval: (query) => {
-      const data = query.state.data
-      if (!data) return false
-      const active = data.goals.some(
-        (goal) => isGoalActive(goal) || goal.tasks.some((task) => ACTIVE_RUN_STATUSES.has(task.status.toLowerCase())),
-      )
-      return active ? 3_000 : false
+    refetchInterval: (query) => conversationPollMs(query.state.data),
+  })
+}
+
+/** Earlier pages of a conversation's thread, loaded backwards from `before`. */
+export function useEarlierMessages(id: string, before: number, options: { enabled?: boolean } = {}) {
+  return useInfiniteQuery({
+    queryKey: ['conversations', id, 'earlier'],
+    queryFn: async ({ pageParam }) => {
+      const page = await api<MessagesPage>(`/api/conversations/${id}/messages?before=${pageParam}&limit=100`)
+      return { ...page, messages: page.messages.map(chatMessageRow) }
     },
+    initialPageParam: before,
+    getNextPageParam: (lastPage) => (lastPage.hasEarlier ? lastPage.messages[0]?.position : undefined),
+    enabled: options.enabled ?? true,
   })
 }
 
@@ -881,8 +1187,36 @@ export function useReroute(conversationId: string) {
     },
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['conversations', conversationId] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
       client.invalidateQueries({ queryKey: ['board'] })
     },
+  })
+}
+
+export function useRenameConversation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, title }: { id: string; title: string }) =>
+      conversationRow(await api<Conversation>(`/api/conversations/${id}`, { method: 'PATCH', body: { title } })),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['conversations'] }),
+  })
+}
+
+export function usePinConversation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      api<void>(`/api/conversations/${id}/pin`, { method: pinned ? 'PUT' : 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['conversations'] }),
+  })
+}
+
+export function useArchiveConversation() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+      api<void>(`/api/conversations/${id}/archive`, { method: archived ? 'PUT' : 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['conversations'] }),
   })
 }
 
@@ -891,31 +1225,141 @@ export function useDeleteConversation() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api<void>(`/api/conversations/${id}`, { method: 'DELETE' }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: (_data, id) => {
+      client.invalidateQueries({ queryKey: ['conversations'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.removeQueries({ queryKey: ['conversations', id] })
+    },
   })
 }
 
-/* ---- Orchestrator board -------------------------------------------------------------------------- */
+/**
+ * Marks a conversation read up to `position`. Patches the cached list rows directly instead of
+ * refetching, so the unread dot clears at once and there is no refetch storm.
+ */
+export function useMarkConversationRead(conversationId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { position: number }) =>
+      api<void>(`/api/conversations/${conversationId}/read`, { method: 'PUT', body: input }),
+    onSuccess: () => {
+      const clearUnread = (row: Conversation): Conversation => (row.id === conversationId ? { ...row, unread: false } : row)
+      const patch = (page: ConversationPage): ConversationPage => ({
+        pinned: page.pinned.map(clearUnread),
+        needsYou: page.needsYou.map(clearUnread),
+        conversations: page.conversations.map(clearUnread),
+        hasMore: page.hasMore,
+      })
+      client.setQueriesData<InfiniteData<ConversationPage, number>>({ queryKey: ['conversations', 'list'] }, (data) =>
+        data ? { ...data, pages: data.pages.map(patch) } : data,
+      )
+    },
+  })
+}
 
-/** The whole live board: agents, active goals, the queue and the last two hours' timeline (run:read). */
-export const useBoard = (options: QueryOptions = {}) =>
+/** Stops a chat-started goal from the thread. */
+export function useStopChatGoal(conversationId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { goalId: string }) =>
+      api<GoalActionResult>(`/api/conversations/${conversationId}/goals/${input.goalId}/stop`, { method: 'POST' }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['conversations', conversationId] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['goals'] })
+      client.invalidateQueries({ queryKey: ['runs'] })
+      client.invalidateQueries({ queryKey: ['approvals'] })
+      client.invalidateQueries({ queryKey: ['questions'] })
+    },
+  })
+}
+
+/** Retries a chat-started goal from the thread. */
+export function useRetryChatGoal(conversationId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { goalId: string }) =>
+      api<GoalActionResult>(`/api/conversations/${conversationId}/goals/${input.goalId}/retry`, { method: 'POST' }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['conversations', conversationId] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['goals'] })
+      client.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+}
+
+/** Falls back to General Employee, or answers from the passages already found, for a documents message. */
+export function useAnswerFromDocuments(conversationId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { messageId: string; agentId?: string }) => {
+      const result = await api<{ messages: ChatMessage[] }>(
+        `/api/conversations/${conversationId}/messages/${input.messageId}/answer-from-documents`,
+        { method: 'POST', body: input.agentId ? { agentId: input.agentId } : {} },
+      )
+      return result.messages.map(chatMessageRow)
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['conversations', conversationId] })
+      client.invalidateQueries({ queryKey: ['board'] })
+    },
+  })
+}
+
+/**
+ * The old, flat conversation list, kept only so `routes/Chat.tsx` keeps compiling until it moves
+ * to useConversationList. Reads the first page with scope=all (the server default) and flattens
+ * pinned ahead of the rest, de-duplicated by id.
+ * @deprecated Use useConversationList.
+ */
+export const useConversations = (options: QueryOptions = {}) =>
   useQuery({
-    queryKey: ['board'],
-    queryFn: async () => boardRow(await api<Board>('/api/orchestrator/board')),
-    refetchInterval: 3_000,
+    queryKey: ['conversations'],
+    queryFn: async () => {
+      const page = conversationPageRow(await api<ConversationPage>('/api/conversations?scope=all'))
+      const seen = new Set<string>()
+      const combined: Conversation[] = []
+      for (const conversation of [...page.pinned, ...page.conversations]) {
+        if (seen.has(conversation.id)) continue
+        seen.add(conversation.id)
+        combined.push(conversation)
+      }
+      return combined
+    },
     enabled: options.enabled ?? true,
   })
+
+/* ---- Orchestrator board -------------------------------------------------------------------------- */
+
+/** The whole live board: agents, active goals, the queue, questions, approvals and the timeline (run:read). */
+export const useBoard = (options: { window?: BoardWindow; paused?: boolean } = {}) => {
+  const boardWindow = options.window ?? 'PT2H'
+  const paused = options.paused ?? false
+  return useQuery({
+    queryKey: ['board', boardWindow],
+    queryFn: async () => boardRow(await api<Board>(`/api/orchestrator/board?window=${boardWindow}`)),
+    refetchInterval: (query) => (paused ? 15_000 : boardPollMs(query.state.data)),
+  })
+}
 
 /** Cancels every active run, pending approval and open task in the workspace (run:cancel). */
 export function useStopAll() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: () => api<StopAllResult>('/api/orchestrator/stop-all', { method: 'POST' }),
+    mutationFn: (input: { pauseSchedules?: boolean } | void) =>
+      api<StopAllResult>('/api/orchestrator/stop-all', {
+        method: 'POST',
+        body: input && input.pauseSchedules !== undefined ? { pauseSchedules: input.pauseSchedules } : {},
+      }),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['board'] })
       client.invalidateQueries({ queryKey: ['runs'] })
       client.invalidateQueries({ queryKey: ['goals'] })
       client.invalidateQueries({ queryKey: ['approvals'] })
+      client.invalidateQueries({ queryKey: ['questions'] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
+      client.invalidateQueries({ queryKey: ['schedules'] })
     },
   })
 }
@@ -936,6 +1380,19 @@ export function useResumeAgent(id: string) {
   const client = useQueryClient()
   return useMutation({
     mutationFn: async () => agentRow(await api<Agent>(`/api/agents/${id}/resume`, { method: 'POST' })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['agents'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+    },
+  })
+}
+
+/** Pauses or resumes one agent, the same endpoints usePauseAgent/useResumeAgent call, chosen by `action`. */
+export function useSetAgentStatus() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { id: string; action: AgentStatusAction }) =>
+      agentRow(await api<Agent>(`/api/agents/${input.id}/${input.action}`, { method: 'POST' })),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['agents'] })
       client.invalidateQueries({ queryKey: ['board'] })
@@ -1180,6 +1637,8 @@ export function useDecideApproval() {
       client.invalidateQueries({ queryKey: ['approvals'] })
       client.invalidateQueries({ queryKey: ['runs'] })
       client.invalidateQueries({ queryKey: ['goals'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
     },
   })
 }
@@ -1213,6 +1672,9 @@ export function useCancelRun() {
       client.invalidateQueries({ queryKey: ['runs'] })
       client.invalidateQueries({ queryKey: ['approvals'] })
       client.invalidateQueries({ queryKey: ['goals'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
+      client.invalidateQueries({ queryKey: ['questions'] })
     },
   })
 }
@@ -1321,6 +1783,23 @@ export function useCancelGoal(goalId: string) {
       client.invalidateQueries({ queryKey: ['goals'] })
       client.invalidateQueries({ queryKey: ['runs'] })
       client.invalidateQueries({ queryKey: ['approvals'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
+      client.invalidateQueries({ queryKey: ['questions'] })
+    },
+  })
+}
+
+/** Tries a failed or stopped goal again, from the step that did not finish (D-7: requester or task:cancel). */
+export function useRetryGoal() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (goalId: string) => goalRow(await api<Goal>(`/api/goals/${goalId}/retry`, { method: 'POST' })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['goals'] })
+      client.invalidateQueries({ queryKey: ['runs'] })
+      client.invalidateQueries({ queryKey: ['conversations'] })
     },
   })
 }

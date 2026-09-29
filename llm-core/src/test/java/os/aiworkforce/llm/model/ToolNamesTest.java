@@ -23,4 +23,17 @@ class ToolNamesTest {
         assertThat(ToolNames.toWire(null)).isNull();
         assertThat(ToolNames.fromWire(null)).isNull();
     }
+
+    @Test
+    @DisplayName("a tool a person answers is recognised in its dotted and its wire form, and nothing else is")
+    void isPersonToolMatchesBothForms() {
+        assertThat(ToolNames.isPersonTool("person.ask_question")).isTrue();
+        assertThat(ToolNames.isPersonTool("person__ask_question")).isTrue();
+        assertThat(ToolNames.isPersonTool(ToolNames.toWire("person.ask_question")))
+                .isTrue();
+        assertThat(ToolNames.isPersonTool("gmail.send_message")).isFalse();
+        assertThat(ToolNames.isPersonTool("personnel.list")).isFalse();
+        assertThat(ToolNames.isPersonTool("person")).isFalse();
+        assertThat(ToolNames.isPersonTool(null)).isFalse();
+    }
 }

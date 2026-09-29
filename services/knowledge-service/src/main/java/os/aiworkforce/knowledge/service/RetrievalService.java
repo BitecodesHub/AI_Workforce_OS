@@ -64,11 +64,7 @@ public class RetrievalService {
     private final Chunks chunks;
     private final Sources sources;
 
-    public RetrievalService(
-            QdrantClient vectors,
-            EmbeddingService embeddings,
-            Chunks chunks,
-            Sources sources) {
+    public RetrievalService(QdrantClient vectors, EmbeddingService embeddings, Chunks chunks, Sources sources) {
         this.vectors = vectors;
         this.embeddings = embeddings;
         this.chunks = chunks;

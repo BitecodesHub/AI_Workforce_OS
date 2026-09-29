@@ -28,6 +28,8 @@ public class KnowledgeClient {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeClient.class);
     private static final int DEFAULT_LIMIT = 5;
+    /** The knowledge service caps the query at 1,000 characters; a longer one is trimmed before it is sent. */
+    private static final int MAX_QUERY_CHARS = 1_000;
 
     private final WebClient client;
 
@@ -36,8 +38,14 @@ public class KnowledgeClient {
     }
 
     public record Passage(
-            UUID chunkId, UUID documentId, String documentTitle, String uri,
-            Integer pageNumber, String heading, String content, double score) {}
+            UUID chunkId,
+            UUID documentId,
+            String documentTitle,
+            String uri,
+            Integer pageNumber,
+            String heading,
+            String content,
+            double score) {}
 
     public record SearchResult(List<Passage> passages, boolean grounded) {}
 
@@ -50,7 +58,7 @@ public class KnowledgeClient {
                     .uri("/api/knowledge/search")
                     .header("Authorization", authorizationHeader)
                     .header("X-Workspace-Id", orgId.toString())
-                    .bodyValue(Map.of("query", query, "limit", DEFAULT_LIMIT))
+                    .bodyValue(Map.of("query", truncate(query), "limit", DEFAULT_LIMIT))
                     .retrieve()
                     .bodyToMono(SearchResult.class)
                     .timeout(Duration.ofSeconds(10))
@@ -60,5 +68,9 @@ public class KnowledgeClient {
             log.warn("Document search failed for workspace {}: {}", orgId, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    private static String truncate(String query) {
+        return CoordinatorService.truncateAtWord(query, MAX_QUERY_CHARS);
     }
 }

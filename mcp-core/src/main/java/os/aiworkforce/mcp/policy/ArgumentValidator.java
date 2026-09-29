@@ -1,16 +1,16 @@
 package os.aiworkforce.mcp.policy;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 import com.networknt.schema.ValidationMessage;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
-
 import org.springframework.stereotype.Component;
 
 import os.aiworkforce.mcp.model.ToolDefinition;
@@ -30,8 +30,7 @@ import os.aiworkforce.mcp.model.ToolDefinition;
 public class ArgumentValidator {
 
     private final ObjectMapper json;
-    private final JsonSchemaFactory factory =
-            JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
+    private final JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
 
     /* Compiled schemas are cached: compiling one per invocation is pure waste on a hot path. */
     private final Map<String, JsonSchema> compiled = new ConcurrentHashMap<>();

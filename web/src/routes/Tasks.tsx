@@ -6,8 +6,6 @@ import {
   DataTable,
   EmptyState,
   Eyebrow,
-  FilterBar,
-  FilterEmpty,
   Notice,
   PageHeader,
   StatusTag,
@@ -16,9 +14,16 @@ import {
 } from '../components/ui'
 import type { Column, FilterFacet } from '../components/ui'
 import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
+// Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
+// the barrel is also part of the main bundle, so going through it created a circular chunk
+// dependency (Rollup warned of a "broken execution order").
+import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { TaskDialog } from '../components/ui/TaskDialog'
+import { WaitingForAnswer } from '../components/run/WaitingForAnswer'
+import { WaitingForApproval } from '../components/run/WaitingForApproval'
 import { describeApiError } from '../lib/api'
 import { formatCount, formatElapsed, formatRunElapsed, truncateWords } from '../lib/format'
+import { canRetryGoal } from '../lib/goals'
 import { categoryTone, statusLabel } from '../lib/labels'
 import {
   isGoalActive,
@@ -27,12 +32,14 @@ import {
   useCancelGoal,
   useGoal,
   useGoalPages,
+  useRetryGoal,
+  useRun,
   type Goal,
   type Task,
 } from '../lib/queries'
 import { useDocumentTitle, useRouter } from '../lib/router'
 import { useToast } from '../lib/toast'
-import { can } from '../lib/session'
+import { can, profile } from '../lib/session'
 import { useListFilter } from '../lib/useListFilter'
 import { useNow } from '../lib/useNow'
 
@@ -249,17 +256,50 @@ function GoalDetail({ id }: { id: string }) {
   )
 }
 
+/** Statuses a retry restarts from: the first one of these, in position order (D-7). */
+const RETRY_FROM = new Set(['failed', 'cancelled', 'skipped'])
+
+/** Whether a task's run is parked for a person, and so has a run worth showing a notice for. */
+function isWaitingTask(task: Task): task is Task & { runId: string } {
+  if (!task.runId) return false
+  const status = task.status.toLowerCase()
+  return status === 'waiting_approval' || status === 'waiting_input'
+}
+
+/** The run a paused task is waiting on, shown the same way RunDetail shows a run waiting for a decision. */
+function TaskWaiting({ task }: { task: Task & { runId: string } }) {
+  const { navigate } = useRouter()
+  const runQuery = useRun(task.runId)
+  const run = runQuery.data
+  if (!run) return null
+  const status = task.status.toLowerCase()
+  if (status === 'waiting_approval') return <WaitingForApproval run={run} steps={undefined} />
+  return <WaitingForAnswer run={run} mode="notice" onGoToQuestion={() => navigate(`/runs/${run.id}`)} />
+}
+
 function GoalView({ goal }: { goal: Goal }) {
   const toast = useToast()
+  const me = profile()?.userId ?? null
+  const agents = useAgentNames()
   const cancelGoal = useCancelGoal(goal.id)
+  const retryGoal = useRetryGoal()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  const [retryOpen, setRetryOpen] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
   const columns = useTaskColumns()
 
   const canCancel = can('task:cancel') && isGoalActive(goal)
+  const canRetry = canRetryGoal(goal, me, can)
   const unfinished = goal.tasks.filter((task) => !isTaskFinished(task)).length
   const withOutcome = goal.tasks.filter((task) => task.result || task.failureReason)
+  const waitingTasks = goal.tasks.filter(isWaitingTask)
   const description = goal.description?.trim()
+
+  // The task a retry restarts from: the first one (in order) that did not complete (D-7).
+  const retryTask = [...goal.tasks].sort((a, b) => a.position - b.position).find((task) => RETRY_FROM.has(task.status.toLowerCase()))
+  const retryStep = (retryTask?.position ?? 0) + 1
+  const retryAgent = (retryTask?.agentId && agents[retryTask.agentId]?.name) || 'The agent'
 
   const confirmCancel = async () => {
     setCancelError(null)
@@ -269,6 +309,17 @@ function GoalView({ goal }: { goal: Goal }) {
       setConfirmOpen(false)
     } catch (error) {
       setCancelError(describeApiError(error))
+    }
+  }
+
+  const confirmRetry = async () => {
+    setRetryError(null)
+    try {
+      await retryGoal.mutateAsync(goal.id)
+      toast.success('Trying again.')
+      setRetryOpen(false)
+    } catch (error) {
+      setRetryError(describeApiError(error))
     }
   }
 
@@ -292,17 +343,30 @@ function GoalView({ goal }: { goal: Goal }) {
           </>
         }
         action={
-          canCancel ? (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setCancelError(null)
-                setConfirmOpen(true)
-              }}
-            >
-              Cancel goal
-            </Button>
-          ) : undefined
+          <>
+            {canCancel && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCancelError(null)
+                  setConfirmOpen(true)
+                }}
+              >
+                Cancel goal
+              </Button>
+            )}
+            {canRetry && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setRetryError(null)
+                  setRetryOpen(true)
+                }}
+              >
+                Try again
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -331,6 +395,19 @@ function GoalView({ goal }: { goal: Goal }) {
         </Card>
       </div>
 
+      {waitingTasks.length > 0 && (
+        <div style={{ marginTop: 'var(--space-6)' }}>
+          <Card as="section">
+            <Eyebrow as="h2">Waiting for a person</Eyebrow>
+            <div className="stack" style={{ gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              {waitingTasks.map((task) => (
+                <TaskWaiting key={task.id} task={task} />
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
       {withOutcome.length > 0 && (
         <div style={{ marginTop: 'var(--space-6)' }}>
           <Card as="section">
@@ -355,6 +432,19 @@ function GoalView({ goal }: { goal: Goal }) {
         tone="danger"
         loading={cancelGoal.isPending}
         error={cancelError}
+      />
+
+      <ConfirmDialog
+        open={retryOpen}
+        onClose={() => setRetryOpen(false)}
+        onConfirm={confirmRetry}
+        eyebrow="Retry"
+        title={`Try again from step ${retryStep}?`}
+        description={`Step ${retryStep} (${retryAgent}) starts again from the beginning. Anything it already did before it stopped, such as a sent email, may happen again. Check its trace first.`}
+        confirmLabel="Try again"
+        tone="primary"
+        loading={retryGoal.isPending}
+        error={retryError}
       />
     </>
   )
@@ -392,7 +482,7 @@ function TaskOutcome({ task }: { task: Task }) {
         className="row"
         style={{ justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}
       >
-        <h3 className="section-heading" style={{ fontSize: '15px' }}>
+        <h3 className="section-heading" style={{ overflowWrap: 'anywhere' }}>
           {task.title}
         </h3>
         <StatusTag kind="task" status={task.status} />
@@ -466,8 +556,9 @@ function useTaskColumns(): Column<Task>[] {
         render: (task) => {
           if (!task.startedAt) return <span className="caption">Not started</span>
           const status = task.status.toLowerCase()
-          // A task held for an approval is not working; a clock counting up would suggest it is.
-          if (status === 'waiting_approval') {
+          // A task held for an approval or an answer is not working; a clock counting up would
+          // suggest it is.
+          if (status === 'waiting_approval' || status === 'waiting_input') {
             return (
               <span className="caption">
                 Started <Time iso={task.startedAt} />

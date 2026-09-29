@@ -93,7 +93,7 @@
   border-radius: var(--radius-pill);
   background: var(--surface);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   line-height: 1;
   color: var(--ink);
@@ -210,7 +210,7 @@
   max-height: 152px;
   overflow-y: auto;
   list-style: none;
-  font-size: 11px;
+  font-size: var(--text-micro);
   white-space: normal;
 }
 
@@ -407,7 +407,7 @@
   background: transparent;
   vertical-align: middle;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   line-height: 1;
   cursor: pointer;
@@ -465,7 +465,7 @@
   flex: 1 1 auto;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   overflow-wrap: anywhere;
 }
@@ -510,7 +510,7 @@
     10px 2px;
   background-repeat: no-repeat;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--text-micro);
   line-height: 1;
   color: var(--eyebrow);
   transition:
@@ -578,7 +578,7 @@
 
 .lp-cite-passage-head {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   line-height: 1.4;
   color: var(--eyebrow);
   overflow-wrap: anywhere;

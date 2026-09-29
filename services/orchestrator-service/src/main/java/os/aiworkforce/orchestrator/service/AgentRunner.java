@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +13,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +41,7 @@ import os.aiworkforce.orchestrator.domain.AgentToolGrant;
 import os.aiworkforce.orchestrator.domain.AgentVersion;
 import os.aiworkforce.orchestrator.domain.Approval;
 import os.aiworkforce.orchestrator.domain.Run;
+import os.aiworkforce.orchestrator.domain.RunQuestion;
 import os.aiworkforce.orchestrator.domain.RunStep;
 import os.aiworkforce.orchestrator.repository.AgentVersions;
 import os.aiworkforce.orchestrator.repository.Agents;
@@ -63,9 +67,10 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  *   <li><b>It does not stop.</b> A model that keeps calling a tool whose result never satisfies
  *       it will loop until the budget is gone. {@code maxSteps} bounds it, and exhausting the
  *       bound is reported as a failure rather than as a finished answer.
- *   <li><b>It needs permission half way through.</b> An outbound tool parks the run. The run is
- *       <em>persisted and abandoned</em>, not blocked on a thread: an approval can take a day,
- *       and a thread held for a day is a thread not serving anybody.
+ *   <li><b>It needs a person half way through.</b> An outbound tool parks the run for an
+ *       approval, and the ask tool parks it for an answer. The run is <em>persisted and
+ *       abandoned</em>, not blocked on a thread: an approval or an answer can take a day, and a
+ *       thread held for a day is a thread not serving anybody.
  *   <li><b>The worker dies.</b> Every step is written before the next begins and the lease is
  *       renewed as it goes, so a restart resumes from the last completed step instead of
  *       repeating a side effect that already happened.
@@ -99,6 +104,9 @@ public class AgentRunner {
     private final Usage usage;
     private final TaskProgress progress;
     private final VoiceClipService voiceClips;
+    private final QuestionService questions;
+    private final AskPersonTool askTool;
+    private final LifecycleAnnouncer announcer;
     private final TransactionTemplate newTransaction;
 
     public AgentRunner(
@@ -116,6 +124,9 @@ public class AgentRunner {
             Usage usage,
             TaskProgress progress,
             VoiceClipService voiceClips,
+            QuestionService questions,
+            AskPersonTool askTool,
+            LifecycleAnnouncer announcer,
             PlatformTransactionManager transactionManager) {
         this.runs = runs;
         this.steps = steps;
@@ -131,6 +142,9 @@ public class AgentRunner {
         this.usage = usage;
         this.progress = progress;
         this.voiceClips = voiceClips;
+        this.questions = questions;
+        this.askTool = askTool;
+        this.announcer = announcer;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -138,14 +152,19 @@ public class AgentRunner {
     /**
      * How a run ended.
      *
-     * @param status the run's terminal state, or {@code waiting_approval}
+     * @param status the run's terminal state, or {@code waiting_approval} or {@code waiting_input}
      * @param answer the agent's final text, when it produced one
      * @param runId the run, so a caller can poll or link to the trace
      */
     public record Outcome(String status, String answer, UUID runId) {
 
+        /** Parked for a person, to approve an action or to answer a question. */
         public boolean isWaiting() {
-            return "waiting_approval".equals(status);
+            return "waiting_approval".equals(status) || "waiting_input".equals(status);
+        }
+
+        public boolean isWaitingForInput() {
+            return "waiting_input".equals(status);
         }
     }
 
@@ -171,10 +190,14 @@ public class AgentRunner {
      *     {@code toAgentName}, {@code summary}
      */
     public Outcome start(
-            UUID orgId, UUID agentId, UUID taskId, String instruction, String trigger,
+            UUID orgId,
+            UUID agentId,
+            UUID taskId,
+            String instruction,
+            String trigger,
             List<Map<String, Object>> handoffs) {
-        Agent agent = agents.findByIdAndOrgId(agentId, orgId)
-                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId).orElseThrow(() -> ApiException.notFound("agent", agentId));
         if (!agent.isActive()) {
             throw new ApiException(ErrorCode.POLICY_VIOLATION, "That agent is paused.");
         }
@@ -186,11 +209,12 @@ public class AgentRunner {
 
         Run run = createRun(orgId, agentId, taskId, trigger, version, instruction, handoffs);
 
+        QuestionService.AskPolicy ask = questions.policyFor(run);
         List<ChatMessage> conversation = new ArrayList<>();
-        conversation.add(ChatMessage.system(buildSystemPrompt(agent, version)));
+        conversation.add(ChatMessage.system(buildSystemPrompt(agent, version, ask.allowed())));
         conversation.add(ChatMessage.user(instruction));
 
-        return driveOrFail(run, agent, version, conversation);
+        return driveOrFail(run, agent, version, conversation, ask);
     }
 
     /**
@@ -199,8 +223,13 @@ public class AgentRunner {
      * unit of persistence.
      */
     private Run createRun(
-            UUID orgId, UUID agentId, UUID taskId, String trigger, AgentVersion version,
-            String instruction, List<Map<String, Object>> handoffs) {
+            UUID orgId,
+            UUID agentId,
+            UUID taskId,
+            String trigger,
+            AgentVersion version,
+            String instruction,
+            List<Map<String, Object>> handoffs) {
         return inNewTransaction(() -> {
             // Sealing on first use is what keeps a trace readable: the prompt cannot be edited out
             // from under the record of what it produced.
@@ -229,37 +258,174 @@ public class AgentRunner {
     }
 
     /**
-     * Resumes a run that was parked waiting for an approval.
+     * Resumes a run that was parked waiting for a person: an approval that was granted, or a
+     * question that was answered or expired.
      *
-     * <p>Before the loop continues, the call that was approved is actually invoked - the defect
-     * this replaces told the model the action "was carried out" without ever making it happen. The
-     * conversation is then rebuilt from the persisted steps rather than held in memory, which is
-     * precisely what allows the approval to take a day and to be decided by a different instance
-     * of the service from the one that raised it.
+     * <p>Exactly one resume drives a run, and only on the decision it parked for. The claim - a
+     * conditional update from the parked status to {@code running} - and the check that the newest
+     * approval or question is decided and not yet delivered share one transaction. When the check
+     * fails the claim is rolled back with it, the run stays parked, and nothing is driven: a
+     * decision read before the claim could belong to an earlier park, and a resume that drove on
+     * it would carry on past a question or an approval nobody has answered.
+     *
+     * <p>The conversation is then rebuilt from the persisted steps rather than held in memory,
+     * which is precisely what allows the approval or the answer to take a day and to arrive at a
+     * different instance of the service from the one that parked the run.
      */
     public Outcome resume(UUID orgId, UUID runId) {
-        Run run = runs.findByIdAndOrgId(runId, orgId)
-                .orElseThrow(() -> ApiException.notFound("run", runId));
-        if (!"waiting_approval".equals(run.getStatus())) {
-            throw new ApiException(ErrorCode.CONFLICT, "That run is not waiting for a decision.");
-        }
-
+        Run run = runs.findByIdAndOrgId(runId, orgId).orElseThrow(() -> ApiException.notFound("run", runId));
         Agent agent = agents.findByIdAndOrgId(run.getAgentId(), orgId)
                 .orElseThrow(() -> ApiException.notFound("agent", run.getAgentId()));
         AgentVersion version = versions.findById(run.getAgentVersionId())
                 .orElseThrow(() -> ApiException.notFound("agent version", run.getAgentVersionId()));
 
-        executeApprovedCall(run);
+        return switch (run.getStatus()) {
+            case "waiting_approval" -> resumeAfterApproval(run, agent, version);
+            case "waiting_input" -> resumeAfterAnswer(run, agent, version);
+            default -> throw new ApiException(ErrorCode.CONFLICT, "That run is not waiting for a person.");
+        };
+    }
 
-        inNewTransaction(() -> {
-            run.setStatus("running");
-            run.renewLease(WORKER_ID, LEASE);
-            saveRun(run);
+    /**
+     * Claims the run, then carries out the call the approval was granted for, then drives on.
+     *
+     * <p>Claiming first is what makes the call happen at most once: two resumes of one run - the
+     * approver's own and the sweep's, or two instances - cannot both get past the claim.
+     */
+    private Outcome resumeAfterApproval(Run run, Agent agent, AgentVersion version) {
+        Instant now = Instant.now();
+        Boolean claimed = newTransaction.execute(status -> {
+            if (runs.claimParked(run.getId(), "waiting_approval", WORKER_ID, now.plus(LEASE), now) == 0) {
+                return false;
+            }
+            if (!latestApprovalReadyToExecute(run)) {
+                status.setRollbackOnly();
+                return false;
+            }
             progress.onRunResumed(run);
-            return null;
+            return true;
         });
+        if (!Boolean.TRUE.equals(claimed)) {
+            log.debug("Run {} was not resumed: it is no longer waiting on an approved action", run.getId());
+            return currentOutcome(run.getId());
+        }
+        // The claim was a bulk update, so the copy read above is stale; this one carries the
+        // version the next save must match.
+        Run fresh = runs.findById(run.getId()).orElseThrow(() -> ApiException.notFound("run", run.getId()));
+        executeApprovedCall(fresh);
+        QuestionService.AskPolicy ask = questions.policyFor(fresh);
+        return driveOrFail(fresh, agent, version, rebuildConversation(fresh, agent, version, ask.allowed()), ask);
+    }
 
-        return driveOrFail(run, agent, version, rebuildConversation(run, agent, version));
+    /**
+     * Claims the run and, in the same transaction, records the answer as the ask call's result,
+     * then drives on. The answer is delivered exactly once, and only to the question the run is
+     * parked on.
+     */
+    private Outcome resumeAfterAnswer(Run run, Agent agent, AgentVersion version) {
+        Instant now = Instant.now();
+        Boolean claimed = newTransaction.execute(status -> {
+            if (runs.claimParked(run.getId(), "waiting_input", WORKER_ID, now.plus(LEASE), now) == 0) {
+                return false;
+            }
+            // Read after the claim, so it is the state the claim was made on.
+            RunQuestion question = questions.latestForRun(run.getId()).orElse(null);
+            boolean closed = question != null
+                    && ("answered".equals(question.getStatus()) || "expired".equals(question.getStatus()));
+            boolean delivered = question != null
+                    && answeredAfter(
+                            steps.findByRunIdOrderByPosition(run.getId()), "question", question.getToolCallId());
+            if (!closed || delivered) {
+                // Still pending, withdrawn, or already delivered: nothing to resume on.
+                status.setRollbackOnly();
+                return false;
+            }
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("toolCallId", question.getToolCallId());
+            detail.put("tool", AskPersonTool.NAME);
+            detail.put("status", "SUCCEEDED");
+            detail.put("summary", questions.resultSummary(question));
+            detail.put("modelContent", questions.modelResult(question));
+            detail.put("questionId", question.getId().toString());
+            detail.put(
+                    "durationMs",
+                    question.getCreatedAt() == null
+                            ? 0L
+                            : Math.max(
+                                    0L,
+                                    Duration.between(question.getCreatedAt(), now)
+                                            .toMillis()));
+            writeStep(run, "tool_call", detail);
+            progress.onRunResumed(run);
+            return true;
+        });
+        if (!Boolean.TRUE.equals(claimed)) {
+            log.debug("Run {} was not resumed: its newest question is not ready to deliver", run.getId());
+            return currentOutcome(run.getId());
+        }
+        Run fresh = runs.findById(run.getId()).orElseThrow(() -> ApiException.notFound("run", run.getId()));
+        QuestionService.AskPolicy ask = questions.policyFor(fresh);
+        return driveOrFail(fresh, agent, version, rebuildConversation(fresh, agent, version, ask.allowed()), ask);
+    }
+
+    /** Where a run stands, for a resume that found nothing to do. */
+    private Outcome currentOutcome(UUID runId) {
+        return new Outcome(runs.findById(runId).map(Run::getStatus).orElse("unknown"), null, runId);
+    }
+
+    /**
+     * Whether the run's newest approval was granted and its call has not been made yet.
+     *
+     * <p>Only the newest approval step counts: an earlier approval that was granted says nothing
+     * about the one the run is parked on now.
+     */
+    private boolean latestApprovalReadyToExecute(Run run) {
+        List<RunStep> trace = steps.findByRunIdOrderByPosition(run.getId());
+        RunStep latestApproval = null;
+        for (int i = trace.size() - 1; i >= 0; i--) {
+            if ("approval".equals(trace.get(i).getKind())) {
+                latestApproval = trace.get(i);
+                break;
+            }
+        }
+        if (latestApproval == null) {
+            return false;
+        }
+        if (answeredAfter(trace, "approval", toolCallIdOf(latestApproval.getDetail()))) {
+            return false;
+        }
+        Object approvalIdRaw = latestApproval.getDetail().get("approvalId");
+        UUID approvalId = approvalIdRaw instanceof String text ? parseUuidOrNull(text) : null;
+        if (approvalId == null) {
+            return false;
+        }
+        return approvals
+                .find(run.getOrgId(), approvalId)
+                .map(approval -> "approved".equals(approval.getStatus()))
+                .orElse(false);
+    }
+
+    /**
+     * Whether the newest {@code kind} step for this call already has its result: a {@code
+     * tool_call} step for the same call written after it. Only steps after it count, because an
+     * old trace whose provider repeated ids can hold an earlier turn's result under the same id.
+     */
+    private static boolean answeredAfter(List<RunStep> trace, String kind, String toolCallId) {
+        int parkedAt = -1;
+        for (int i = trace.size() - 1; i >= 0; i--) {
+            RunStep step = trace.get(i);
+            if (kind.equals(step.getKind()) && toolCallId.equals(toolCallIdOf(step.getDetail()))) {
+                parkedAt = i;
+                break;
+            }
+        }
+        for (int i = parkedAt + 1; i < trace.size(); i++) {
+            RunStep step = trace.get(i);
+            if ("tool_call".equals(step.getKind()) && toolCallId.equals(toolCallIdOf(step.getDetail()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -289,9 +455,7 @@ public class AgentRunner {
         }
 
         String toolCallId = toolCallIdOf(latestApproval.getDetail());
-        boolean alreadyExecuted = trace.stream()
-                .anyMatch(step -> "tool_call".equals(step.getKind()) && toolCallId.equals(toolCallIdOf(step.getDetail())));
-        if (alreadyExecuted) {
+        if (answeredAfter(trace, "approval", toolCallId)) {
             return;
         }
 
@@ -324,7 +488,8 @@ public class AgentRunner {
         // evaluation, it is carrying out the one that was granted.
         String credential = toolCredentials.resolve(run.getOrgId(), parts[0]).orElse(null);
         Instant startedAt = Instant.now();
-        ToolResult result = tools.invoke(invocation, ApprovalDecision.PROCEED, credential).block(Duration.ofSeconds(60));
+        ToolResult result =
+                tools.invoke(invocation, ApprovalDecision.PROCEED, credential).block(Duration.ofSeconds(60));
         if (result == null) {
             result = ToolResult.indeterminate("The tool did not return a result.", Duration.ZERO);
         }
@@ -333,12 +498,15 @@ public class AgentRunner {
         ToolResult finalResult = result;
 
         inNewTransaction(() -> {
-            writeStep(run, "tool_call", Map.of(
-                    "toolCallId", toolCallId,
-                    "tool", tool,
-                    "status", finalResult.status().name(),
-                    "summary", finalResult.summary() == null ? "" : finalResult.summary(),
-                    "durationMs", durationMs));
+            writeStep(
+                    run,
+                    "tool_call",
+                    Map.of(
+                            "toolCallId", toolCallId,
+                            "tool", tool,
+                            "status", finalResult.status().name(),
+                            "summary", finalResult.summary() == null ? "" : finalResult.summary(),
+                            "durationMs", durationMs));
             return null;
         });
     }
@@ -355,9 +523,10 @@ public class AgentRunner {
      * where nothing would ever pick it up again. Recording the refusal on the trace and finishing
      * the run reports it to the task like any other failure.
      */
-    private Outcome driveOrFail(Run run, Agent agent, AgentVersion version, List<ChatMessage> conversation) {
+    private Outcome driveOrFail(
+            Run run, Agent agent, AgentVersion version, List<ChatMessage> conversation, QuestionService.AskPolicy ask) {
         try {
-            return drive(run, agent, version, conversation);
+            return drive(run, agent, version, conversation, ask);
         } catch (ApiException e) {
             if (!run.isActive()) {
                 // The run had already finished when the refusal came (from its own bookkeeping),
@@ -370,11 +539,20 @@ public class AgentRunner {
         }
     }
 
-    private Outcome drive(Run run, Agent agent, AgentVersion version, List<ChatMessage> conversation) {
+    private Outcome drive(
+            Run run, Agent agent, AgentVersion version, List<ChatMessage> conversation, QuestionService.AskPolicy ask) {
         RoutingPolicy policy = policies.resolve(run.getOrgId(), agent.getId());
         List<ToolGrant> toolGrants = loadGrants(agent.getId());
         List<ToolDefinition> available = tools.availableTools(toolGrants);
-        List<ToolSpec> specs = available.stream().map(ToolDefinition::toSpec).toList();
+        List<ToolSpec> gatewaySpecs =
+                available.stream().map(ToolDefinition::toSpec).toList();
+        // The ask tool is offered while asking is allowed, and also after a run has asked once, so
+        // the tool the conversation already references stays defined for every provider; a
+        // disallowed call is refused in runTool.
+        List<ToolSpec> specs = ask.allowed() || ask.everAsked()
+                ? Stream.concat(gatewaySpecs.stream(), Stream.of(AskPersonTool.SPEC))
+                        .toList()
+                : gatewaySpecs;
 
         ModelRouter.CallContext context = new ModelRouter.CallContext(
                 run.getOrgId().toString(), agent.getId().toString(), run.getId().toString());
@@ -385,16 +563,27 @@ public class AgentRunner {
             // by asking again. Falling back to what this loop already believes when the run cannot
             // be found is what keeps a run started inside a caller's own still-open transaction
             // (nothing committed for another connection to see yet) working exactly as before.
-            String currentStatus = runs.findById(run.getId()).map(Run::getStatus).orElse(run.getStatus());
+            String currentStatus =
+                    runs.findById(run.getId()).map(Run::getStatus).orElse(run.getStatus());
             if (!"running".equals(currentStatus)) {
                 log.info("Run {} stopped cooperatively: it is now {}", run.getId(), currentStatus);
                 return new Outcome(currentStatus, null, run.getId());
             }
 
+            // Only the ask tool on offer is not a reason to insist on a model that calls tools:
+            // one that cannot simply answers without asking. A conversation that already holds
+            // tool calls does need one, or the provider rejects its own history.
+            boolean needsToolSupport =
+                    !gatewaySpecs.isEmpty() || ask.everAsked() || conversationHasToolCalls(conversation);
             ChatRequest request = ChatRequest.builder()
                     .messages(List.copyOf(conversation))
                     .tools(specs)
-                    .temperature(version.getTemperature() == null ? null : version.getTemperature().doubleValue())
+                    // Must come after tools(), which sets it from whether any tool is offered.
+                    .requireToolSupport(needsToolSupport)
+                    .temperature(
+                            version.getTemperature() == null
+                                    ? null
+                                    : version.getTemperature().doubleValue())
                     .maxOutputTokens(version.getMaxOutputTokens())
                     .timeout(Duration.ofSeconds(120))
                     // Keyed on the run and step, so a retried HTTP request cannot pay twice for
@@ -410,21 +599,27 @@ public class AgentRunner {
                 return finish(run, "failed", e.getMessage(), null);
             }
 
-            recordModelStepAndAdvance(run, response);
+            // Rewritten before anything records the turn, so the trace, the conversation, the
+            // approvals and the questions all carry ids that are unique within this run.
+            int turn = run.getStepCount();
+            List<ToolCall> calls = uniqueCallIds(turn, response.toolCalls());
+            recordModelStepAndAdvance(run, response, calls);
 
-            if (!response.hasToolCalls()) {
+            if (calls.isEmpty()) {
                 // A truncated answer is not a finished one. Saying so lets a person ask for the
                 // rest rather than acting on half of it.
                 if (response.isTruncated()) {
-                    return finish(run, "failed",
-                            "The model's answer was cut short by the output limit.", response.content());
+                    return finish(
+                            run, "failed", "The model's answer was cut short by the output limit.", response.content());
                 }
                 // A provider occasionally answers 200 with no content and no recognised finish
                 // reason, most often a transient fault on a free-tier routed model. Completing
                 // the run anyway would hand back a silent blank answer with no sign anything
                 // went wrong; failing it lets the existing retry rule try again.
                 if (response.content() == null || response.content().isBlank()) {
-                    return finish(run, "failed",
+                    return finish(
+                            run,
+                            "failed",
                             "The model returned no answer, with no error explaining why. This is usually "
                                     + "transient; retrying the same instruction usually works.",
                             null);
@@ -432,39 +627,80 @@ public class AgentRunner {
                 return finish(run, "completed", null, response.content());
             }
 
-            conversation.add(response.asMessage());
+            conversation.add(ChatMessage.assistantToolCalls(response.content(), calls));
 
-            for (ToolCall call : response.toolCalls()) {
-                ToolOutcome outcome = runTool(run, agent, call, toolGrants, available);
+            for (int i = 0; i < calls.size(); i++) {
+                ToolCall call = calls.get(i);
+                ToolOutcome outcome = runTool(run, agent, call, toolGrants, available, ask);
                 if (outcome.parked()) {
-                    return park(run);
+                    // Every call after the parking one still gets a recorded result, so the turn
+                    // is complete when the run is rebuilt and the model knows to call it again.
+                    recordNotRun(run, calls.subList(i + 1, calls.size()));
+                    return outcome.ask() != null ? parkForInput(run, agent, call, outcome.ask()) : park(run);
                 }
-                conversation.add(ChatMessage.toolResult(call.id(), call.name(), outcome.result().forModel()));
+                conversation.add(ChatMessage.toolResult(
+                        call.id(), call.name(), outcome.result().forModel()));
             }
         }
 
         // Exhausting the step budget is a failure, not a completion. An agent that stopped
         // because it ran out of turns has not answered the question.
-        return finish(run, "failed",
-                "The agent reached its step limit of " + version.getMaxSteps() + " without finishing.", null);
+        return finish(
+                run,
+                "failed",
+                "The agent reached its step limit of " + version.getMaxSteps() + " without finishing.",
+                null);
     }
 
-    private record ToolOutcome(ToolResult result, boolean parked) {}
+    /**
+     * Gives every call in a turn an id that is unique within the run.
+     *
+     * <p>Providers repeat ids: Gemini numbers calls from zero in every response, and an
+     * OpenAI-compatible route with no id falls back to the call's index. Approvals, questions and
+     * the rebuild are all keyed on the id, so a second ask with a repeated id would find the first
+     * ask's answer. The prefix is the turn and the index; the id keeps only {@code [A-Za-z0-9_-]}
+     * and at most 40 characters, which every provider accepts back in history.
+     */
+    static List<ToolCall> uniqueCallIds(int turn, List<ToolCall> calls) {
+        List<ToolCall> out = new ArrayList<>(calls.size());
+        for (int i = 0; i < calls.size(); i++) {
+            ToolCall call = calls.get(i);
+            String original = call.id() == null ? "" : call.id().replaceAll("[^A-Za-z0-9_-]", "");
+            String id = "t" + turn + "_" + i + "_" + original;
+            out.add(new ToolCall(id.length() > 40 ? id.substring(0, 40) : id, call.name(), call.argumentsJson()));
+        }
+        return out;
+    }
+
+    private static boolean conversationHasToolCalls(List<ChatMessage> conversation) {
+        return conversation.stream()
+                .anyMatch(message -> message.hasToolCalls() || message.role() == ChatMessage.Role.TOOL);
+    }
+
+    /** @param ask the question to park on, when the call was the person's ask tool */
+    private record ToolOutcome(ToolResult result, boolean parked, AskPersonTool.Ask ask) {}
 
     /**
-     * Runs one tool the model asked for, or parks the run if a person must decide first.
+     * Runs one tool the model asked for, or parks the run if a person must decide or answer first.
      *
      * <p>The evaluation is made by the gateway, not here, so every server is governed identically.
-     * This method's only judgement is what to do with the three possible answers.
+     * This method's only judgement is what to do with the three possible answers - and the ask
+     * tool, which no server runs, is recognised before any of that.
      */
     private ToolOutcome runTool(
-            Run run, Agent agent, ToolCall call, List<ToolGrant> toolGrants, List<ToolDefinition> available) {
+            Run run,
+            Agent agent,
+            ToolCall call,
+            List<ToolGrant> toolGrants,
+            List<ToolDefinition> available,
+            QuestionService.AskPolicy ask) {
+        if (AskPersonTool.NAME.equals(call.name())) {
+            return askPerson(run, call, ask);
+        }
 
         String[] parts = call.name().split("\\.", 2);
         if (parts.length != 2) {
-            return new ToolOutcome(
-                    ToolResult.failed("Tool names must be written as server.tool, for example gmail.send_message."),
-                    false);
+            return failCall(run, call, "Tool names must be written as server.tool, for example gmail.send_message.");
         }
 
         ToolInvocation invocation = new ToolInvocation(
@@ -480,20 +716,28 @@ public class AgentRunner {
         ApprovalDecision decision = tools.evaluate(invocation, toolGrants, false);
 
         if (decision instanceof ApprovalDecision.AwaitApproval await) {
+            String reason = await.reason() == null ? "" : await.reason();
             Approval approval = approvals.raise(run, agent, invocation, await, call);
-            saveStep(run, "approval", Map.of(
-                    "approvalId", approval.getId().toString(),
-                    "toolCallId", call.id(),
-                    "tool", call.name(),
-                    "summary", await.reason()));
-            return new ToolOutcome(ToolResult.blocked(await.reason()), true);
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("approvalId", approval.getId().toString());
+            detail.put("toolCallId", call.id());
+            detail.put("tool", call.name());
+            detail.put("summary", reason);
+            saveStep(run, "approval", detail);
+            return new ToolOutcome(ToolResult.blocked(reason), true, null);
         }
 
         if (decision instanceof ApprovalDecision.Refuse refuse) {
-            saveStep(run, "tool_call", Map.of(
-                    "toolCallId", call.id(),
-                    "tool", call.name(), "status", "BLOCKED", "reason", refuse.reason()));
-            return new ToolOutcome(ToolResult.blocked(refuse.reason()), false);
+            String reason = refuse.reason() == null ? "" : refuse.reason();
+            ToolResult blocked = ToolResult.blocked(reason);
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("toolCallId", call.id());
+            detail.put("tool", call.name());
+            detail.put("status", "BLOCKED");
+            detail.put("summary", reason);
+            detail.put("modelContent", blocked.forModel());
+            saveStep(run, "tool_call", detail);
+            return new ToolOutcome(blocked, false, null);
         }
 
         String credential = toolCredentials.resolve(run.getOrgId(), parts[0]).orElse(null);
@@ -509,6 +753,9 @@ public class AgentRunner {
                 "status", result.status().name(),
                 "summary", result.summary() == null ? "" : result.summary(),
                 "durationMs", Duration.between(startedAt, Instant.now()).toMillis()));
+        // What the model was actually told, so a resumed run is told the same thing again rather
+        // than only the one-line summary.
+        detail.put("modelContent", truncate(result.forModel()));
         // A voice note is spoken, not just recorded, once the workspace has an ElevenLabs key.
         // Wrapped so a synthesis problem never fails a run that already succeeded at its own
         // tool - it only means this one clip carries no audio.
@@ -518,8 +765,9 @@ public class AgentRunner {
                 if (clipId.isPresent()) {
                     detail.put("clipId", clipId.get().toString());
                 } else if (!voiceClips.keyStored(run.getOrgId())) {
-                    detail.put("summary", detail.get("summary")
-                            + " No ElevenLabs key is stored, so no audio was created.");
+                    detail.put(
+                            "summary",
+                            detail.get("summary") + " No ElevenLabs key is stored, so no audio was created.");
                 }
             } catch (RuntimeException e) {
                 log.warn("Voice note could not be captured for run {}: {}", run.getId(), e.getMessage());
@@ -527,31 +775,98 @@ public class AgentRunner {
         }
         saveStep(run, "tool_call", detail);
 
-        return new ToolOutcome(result, false);
+        return new ToolOutcome(result, false, null);
+    }
+
+    /**
+     * The ask tool: park for an answer, or refuse with a sentence the model can act on.
+     *
+     * <p>A malformed ask and an ask the run may not make are both ordinary tool failures: the
+     * model is told why, and carries on without asking.
+     */
+    private ToolOutcome askPerson(Run run, ToolCall call, QuestionService.AskPolicy ask) {
+        AskPersonTool.Ask parsed;
+        try {
+            parsed = askTool.parse(call.argumentsJson());
+        } catch (AskPersonTool.Invalid invalid) {
+            return failCall(run, call, invalid.getMessage());
+        }
+        if (!ask.allowed()) {
+            return failCall(run, call, ask.reason());
+        }
+        return new ToolOutcome(ToolResult.blocked("Waiting for the person's answer."), true, parsed);
+    }
+
+    /** Records a call that failed before reaching anything, and tells the model why. */
+    private ToolOutcome failCall(Run run, ToolCall call, String message) {
+        String text = message == null ? "" : message;
+        ToolResult failed = ToolResult.failed(text);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("toolCallId", call.id());
+        detail.put("tool", call.name());
+        detail.put("status", "FAILED");
+        detail.put("summary", text);
+        detail.put("modelContent", failed.forModel());
+        saveStep(run, "tool_call", detail);
+        return new ToolOutcome(failed, false, null);
+    }
+
+    /**
+     * Records the calls of a turn that come after the one that parked the run, as not run.
+     *
+     * <p>Without a result each, the rebuilt turn would hold calls with no answer, which providers
+     * reject, and the model would never learn that they did not happen.
+     */
+    private void recordNotRun(Run run, List<ToolCall> remaining) {
+        if (remaining.isEmpty()) {
+            return;
+        }
+        String summary = "Not run: the run paused for a person. Call it again if it is still needed.";
+        String modelContent = ToolResult.blocked(summary).forModel();
+        inNewTransaction(() -> {
+            for (ToolCall call : remaining) {
+                Map<String, Object> detail = new LinkedHashMap<>();
+                detail.put("toolCallId", call.id());
+                detail.put("tool", call.name());
+                detail.put("status", "BLOCKED");
+                detail.put("summary", summary);
+                detail.put("modelContent", modelContent);
+                writeStep(run, "tool_call", detail);
+            }
+            return null;
+        });
     }
 
     // ---- Persistence of the trace --------------------------------------------------------
 
-    /** Records one model turn and, in the same unit of persistence, advances the run's counters. */
-    private void recordModelStepAndAdvance(Run run, ChatResponse response) {
+    /**
+     * Records one model turn and, in the same unit of persistence, advances the run's counters.
+     *
+     * @param calls the turn's tool calls with their run-unique ids, which is what the trace keeps
+     */
+    private void recordModelStepAndAdvance(Run run, ChatResponse response, List<ToolCall> calls) {
         inNewTransaction(() -> {
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("provider", response.provider());
             detail.put("model", response.model());
             detail.put("finishReason", response.finishReason().name());
             detail.put("content", truncate(response.content()));
-            detail.put("toolCalls", response.toolCalls().stream().map(ToolCall::name).toList());
+            detail.put("toolCalls", calls.stream().map(ToolCall::name).toList());
             // Kept separately from the display-only "toolCalls" names above: this is what lets a
             // resumed run reconstruct the assistant's actual tool-call turn (see
             // rebuildConversation), rather than the model losing all memory of having already made
             // the call it was approved for, and simply calling it again.
-            detail.put("toolCallRecords", response.toolCalls().stream()
-                    .map(call -> (Object) Map.of(
-                            "id", call.id(), "name", call.name(), "argumentsJson", call.argumentsJson()))
-                    .toList());
+            detail.put(
+                    "toolCallRecords",
+                    calls.stream()
+                            .map(call -> (Object)
+                                    Map.of("id", call.id(), "name", call.name(), "argumentsJson", call.argumentsJson()))
+                            .toList());
             // The failed attempts are the useful part: a run that answered on the third provider is
             // only explicable if the first two are in the record.
-            detail.put("attempts", response.attempts().stream().map(AttemptRecord::summary).toList());
+            detail.put(
+                    "attempts",
+                    response.attempts().stream().map(AttemptRecord::summary).toList());
 
             // The router has already written every attempt, with its price, before returning. The
             // step is charged the difference, so failed attempts before the answer are counted too.
@@ -568,8 +883,10 @@ public class AgentRunner {
                             response.latency() == null ? 0 : response.latency().toMillis());
             steps.save(step);
 
-            run.setTotalPromptTokens(run.getTotalPromptTokens() + response.usage().promptTokens());
-            run.setTotalCompletionTokens(run.getTotalCompletionTokens() + response.usage().completionTokens());
+            run.setTotalPromptTokens(
+                    run.getTotalPromptTokens() + response.usage().promptTokens());
+            run.setTotalCompletionTokens(
+                    run.getTotalCompletionTokens() + response.usage().completionTokens());
             run.setStepCount(run.getStepCount() + 1);
             // Renewed every step, so a long run is never reaped while it is genuinely working.
             run.renewLease(WORKER_ID, LEASE);
@@ -605,6 +922,46 @@ public class AgentRunner {
             log.info("Run {} parked waiting for approval", run.getId());
             return new Outcome("waiting_approval", null, run.getId());
         });
+    }
+
+    /**
+     * Parks the run on a question for the person it works for.
+     *
+     * <p>The question, its trace step, the run's new status and its task's all commit together,
+     * so a question is never shown for a run that is not waiting for it. Listeners hear about it
+     * only after that commit - chat posts it into the thread - and a failure there leaves the
+     * question safely parked: it is still listed everywhere questions are.
+     */
+    private Outcome parkForInput(Run run, Agent agent, ToolCall call, AskPersonTool.Ask ask) {
+        RunQuestion question = inNewTransaction(() -> {
+            // call.id() is the rewritten, run-unique id the answer will be delivered against.
+            RunQuestion raised = questions.raise(run, agent, call.id(), ask);
+            writeStep(run, "question", questions.askStepDetail(raised));
+            run.setStatus("waiting_input");
+            run.renewLease(WORKER_ID, Duration.ofDays(7));
+            run.setTotalCost(usage.costForRun(run.getId()));
+            saveRun(run);
+            progress.onRunParked(run);
+            return raised;
+        });
+        try {
+            announcer.questionAsked(question.getId());
+        } catch (RuntimeException e) {
+            log.warn("Question {} was saved but could not be announced: {}", question.getId(), e.getMessage());
+        }
+        Map<String, Object> auditDetail = new LinkedHashMap<>();
+        auditDetail.put("runId", run.getId().toString());
+        auditDetail.put("agentId", agent.getId().toString());
+        audit.record(
+                run.getOrgId(),
+                RequestContext.actor().orElse(Actor.SYSTEM),
+                "question.ask",
+                "question",
+                question.getId().toString(),
+                "succeeded",
+                auditDetail);
+        log.info("Run {} parked waiting for an answer to question {}", run.getId(), question.getId());
+        return new Outcome("waiting_input", null, run.getId());
     }
 
     private Outcome finish(Run run, String status, String failureReason, String answer) {
@@ -657,12 +1014,13 @@ public class AgentRunner {
      * standing instruction, and it exists because an agent that invents a tool result, or claims
      * to have sent something it did not, is the failure that ends trust in the whole system.
      */
-    private String buildSystemPrompt(Agent agent, AgentVersion version) {
+    private String buildSystemPrompt(Agent agent, AgentVersion version, boolean askAllowed) {
         StringBuilder prompt = new StringBuilder(version.getSystemPrompt());
         if (!version.getGoals().isBlank()) {
             prompt.append("\n\nYour standing goals:\n").append(version.getGoals());
         }
-        prompt.append("""
+        prompt.append(
+                """
 
                 How this platform works, and what is expected of you:
                 - You are %s, working inside a workspace alongside people.
@@ -672,9 +1030,29 @@ public class AgentRunner {
                 told, and you should stop rather than trying another route to the same action.
                 - If a tool reports that its outcome is unknown, do not repeat it. Say that the \
                 outcome is unknown.
-                - When you do not have enough information, say so plainly instead of guessing.
-                - Write in plain, declarative sentences. No exclamation marks.
-                """.formatted(agent.getName()));
+                """
+                        .formatted(agent.getName()));
+        if (askAllowed) {
+            prompt.append(
+                    """
+                    - When a detail is missing but a sensible default exists, choose it, do the work, \
+                    and name the assumption in one line at the end.
+                    - When the right answer depends on something only the person knows, call the \
+                    person__ask_question tool with one to four short questions, each with two to four \
+                    options and the one you recommend first. The run pauses until the person answers, \
+                    and their answer comes back as the tool's result. Do not ask in your reply text, and \
+                    do not ask what the instruction or an earlier answer already says.
+                    - Never reply only that a request is incomplete, unclear or needs more detail.
+                    """);
+        } else {
+            prompt.append(
+                    """
+                    - No person can answer questions during this run. When a detail is missing, choose \
+                    a sensible default, do the work, and say what you assumed. If the work cannot be \
+                    done without it, say exactly what is needed.
+                    """);
+        }
+        prompt.append("- Write in plain, declarative sentences. No exclamation marks.\n");
         return prompt.toString();
     }
 
@@ -682,20 +1060,57 @@ public class AgentRunner {
      * Rebuilds a conversation from the persisted trace.
      *
      * <p>Only the turns matter, not the metadata, so a resumed run sees the same conversation the
-     * model saw before it parked - including the tool results that arrived before the approval
-     * was needed.
+     * model saw before it parked - including the tool results that arrived before the approval or
+     * the question was needed.
+     *
+     * <p>Every tool result is placed directly after the assistant turn that made the call, in that
+     * turn's call order, and every call gets exactly one. The trace's own order can differ - a
+     * call recorded as not run before a parked call's approval is carried out, or an approved call
+     * executed only after the resume - and Gemini matches results to calls by position. A result
+     * belongs to the nearest earlier turn that made a call with its id, which keeps an old trace
+     * whose provider repeated ids (every turn's first call named {@code call_0}) correct.
      */
-    private List<ChatMessage> rebuildConversation(Run run, Agent agent, AgentVersion version) {
+    private List<ChatMessage> rebuildConversation(Run run, Agent agent, AgentVersion version, boolean askAllowed) {
         List<ChatMessage> conversation = new ArrayList<>();
-        conversation.add(ChatMessage.system(buildSystemPrompt(agent, version)));
+        conversation.add(ChatMessage.system(buildSystemPrompt(agent, version, askAllowed)));
 
         List<RunStep> trace = steps.findByRunIdOrderByPosition(run.getId());
-        Set<String> answered = trace.stream()
-                .filter(step -> "tool_call".equals(step.getKind()))
-                .map(step -> toolCallIdOf(step.getDetail()))
-                .collect(java.util.stream.Collectors.toSet());
 
-        for (RunStep step : trace) {
+        // First pass: which turn each result, approval and question belongs to.
+        Map<Integer, Map<String, CallRecord>> byTurn = new HashMap<>();
+        Set<Integer> attributed = new HashSet<>();
+        Map<String, Integer> latestTurnFor = new HashMap<>();
+        for (int index = 0; index < trace.size(); index++) {
+            RunStep step = trace.get(index);
+            String kind = step.getKind();
+            if ("model_call".equals(kind)) {
+                for (ToolCall call : readToolCallRecords(step.getDetail().get("toolCallRecords"))) {
+                    latestTurnFor.put(call.id(), index);
+                }
+            } else if (isCallStep(kind)) {
+                Integer turn = latestTurnFor.get(toolCallIdOf(step.getDetail()));
+                if (turn != null) {
+                    byTurn.computeIfAbsent(turn, key -> new HashMap<>())
+                            .computeIfAbsent(toolCallIdOf(step.getDetail()), key -> new CallRecord())
+                            .add(step);
+                    attributed.add(index);
+                }
+            }
+        }
+
+        // A result no turn claims - a trace written before calls were recorded with their turn -
+        // is replayed where it stands, as it always was.
+        Set<String> answeredInline = new HashSet<>();
+        for (int index = 0; index < trace.size(); index++) {
+            if (!attributed.contains(index)
+                    && "tool_call".equals(trace.get(index).getKind())) {
+                answeredInline.add(toolCallIdOf(trace.get(index).getDetail()));
+            }
+        }
+
+        // Second pass: the conversation itself.
+        for (int index = 0; index < trace.size(); index++) {
+            RunStep step = trace.get(index);
             Map<String, Object> detail = step.getDetail();
             switch (step.getKind()) {
                 case "model_call" -> {
@@ -707,25 +1122,34 @@ public class AgentRunner {
                         // knows which call it made and with what arguments - not just that some
                         // call was approved.
                         conversation.add(ChatMessage.assistantToolCalls(text, calls));
+                        Map<String, CallRecord> results = byTurn.getOrDefault(index, Map.of());
+                        for (ToolCall call : calls) {
+                            CallRecord record = results.get(call.id());
+                            conversation.add(ChatMessage.toolResult(
+                                    call.id(), call.name(), record == null ? NOT_RUN : record.content()));
+                        }
                     } else if (text != null) {
                         conversation.add(ChatMessage.assistant(text));
                     }
                 }
-                case "tool_call" -> conversation.add(ChatMessage.toolResult(
-                        toolCallIdOf(detail),
-                        String.valueOf(detail.getOrDefault("tool", "tool")),
-                        String.valueOf(detail.getOrDefault("summary", ""))));
-                case "approval" -> {
-                    // A tool_call step, wherever it falls in the trace, is the real result of this
-                    // approval and is what the model is told; two messages for one call id would
-                    // teach it there were two calls. This stub only stands in when no such step
-                    // exists yet - an approval this method could not resolve back to a call.
+                case "tool_call" -> {
+                    if (!attributed.contains(index)) {
+                        conversation.add(ChatMessage.toolResult(
+                                toolCallIdOf(detail),
+                                String.valueOf(detail.getOrDefault("tool", "tool")),
+                                resultContent(detail)));
+                    }
+                }
+                case "approval", "question" -> {
+                    // A tool_call step, wherever it falls in the trace, is the real result and is
+                    // what the model is told; two messages for one call id would teach it there
+                    // were two calls. This stub only stands in when no such step exists yet.
                     String toolCallId = toolCallIdOf(detail);
-                    if (!answered.contains(toolCallId)) {
+                    if (!attributed.contains(index) && !answeredInline.contains(toolCallId)) {
                         conversation.add(ChatMessage.toolResult(
                                 toolCallId,
                                 String.valueOf(detail.getOrDefault("tool", "tool")),
-                                "A person approved this action; its result follows."));
+                                "approval".equals(step.getKind()) ? APPROVED_STUB : WAITING_STUB));
                     }
                 }
                 case "note" -> {
@@ -744,8 +1168,56 @@ public class AgentRunner {
         return conversation;
     }
 
+    private static final String APPROVED_STUB = "A person approved this action; its result follows.";
+    private static final String WAITING_STUB = "{\"status\":\"waiting\",\"note\":\"The person has not answered yet.\"}";
+    private static final String NOT_RUN = "{\"status\":\"not_run\",\"note\":\"This call was not run.\"}";
+
+    private static boolean isCallStep(String kind) {
+        return "tool_call".equals(kind) || "approval".equals(kind) || "question".equals(kind);
+    }
+
+    /** What the model is told a call returned: what it was told at the time, when that was kept. */
+    private static String resultContent(Map<String, Object> detail) {
+        if (detail.get("modelContent") instanceof String content && !content.isBlank()) {
+            return content;
+        }
+        if (detail.get("summary") instanceof String summary) {
+            return summary;
+        }
+        return String.valueOf(detail.getOrDefault("reason", ""));
+    }
+
+    /** The steps one call produced, and the one result the rebuild gives it. */
+    private static final class CallRecord {
+        private RunStep toolCall;
+        private RunStep question;
+        private RunStep approval;
+
+        void add(RunStep step) {
+            switch (step.getKind()) {
+                case "tool_call" -> {
+                    if (toolCall == null) {
+                        toolCall = step;
+                    }
+                }
+                case "question" -> question = step;
+                default -> approval = step;
+            }
+        }
+
+        String content() {
+            if (toolCall != null) {
+                return resultContent(toolCall.getDetail());
+            }
+            if (question != null) {
+                return WAITING_STUB;
+            }
+            return approval != null ? APPROVED_STUB : NOT_RUN;
+        }
+    }
+
     /**
-     * The call a "tool_call" or "approval" step answers.
+     * The call a "tool_call", "approval" or "question" step answers.
      *
      * <p>Falls back to the tool's name for a step written before this field existed, which keeps
      * an old parked run resumable rather than throwing - it will not link to a specific call in a
@@ -753,7 +1225,9 @@ public class AgentRunner {
      */
     private static String toolCallIdOf(Map<String, Object> detail) {
         Object id = detail.get("toolCallId");
-        return id instanceof String text && !text.isBlank() ? text : String.valueOf(detail.getOrDefault("tool", "tool"));
+        return id instanceof String text && !text.isBlank()
+                ? text
+                : String.valueOf(detail.getOrDefault("tool", "tool"));
     }
 
     private static UUID parseUuidOrNull(String text) {
@@ -828,8 +1302,8 @@ public class AgentRunner {
      */
     public int reapAbandoned(int limit) {
         return inNewTransaction(() -> {
-            List<Run> abandoned = runs.findAbandoned(
-                    Instant.now(), org.springframework.data.domain.PageRequest.of(0, limit));
+            List<Run> abandoned =
+                    runs.findAbandoned(Instant.now(), org.springframework.data.domain.PageRequest.of(0, limit));
             for (Run run : abandoned) {
                 Instant leaseExpiredAt = run.getLeaseExpiresAt();
                 String reason = "The worker running this task stopped responding.";

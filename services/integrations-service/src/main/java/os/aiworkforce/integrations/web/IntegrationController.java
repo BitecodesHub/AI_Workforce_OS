@@ -1,12 +1,12 @@
 package os.aiworkforce.integrations.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -39,15 +39,18 @@ public class IntegrationController {
     private final Connections connections;
     private final ToolGateway gateway;
 
-    public IntegrationController(
-            Connections connections, ToolGateway gateway) {
+    public IntegrationController(Connections connections, ToolGateway gateway) {
         this.connections = connections;
         this.gateway = gateway;
     }
 
     public record ToolView(
-            String name, String qualifiedName, String description, String sideEffect,
-            List<String> requiredScopes, boolean alwaysRequiresApproval) {}
+            String name,
+            String qualifiedName,
+            String description,
+            String sideEffect,
+            List<String> requiredScopes,
+            boolean alwaysRequiresApproval) {}
 
     public record ConnectionView(
             String server,
@@ -77,13 +80,14 @@ public class IntegrationController {
                 .map(server -> {
                     Connection connection = stored.get(server);
                     List<ToolView> tools = gateway.adapter(server)
-                            .map(adapter -> adapter.tools().stream().map(IntegrationController::toView).toList())
+                            .map(adapter -> adapter.tools().stream()
+                                    .map(IntegrationController::toView)
+                                    .toList())
                             .orElse(List.of());
                     if (connection == null) {
                         // Never connected: shown in sandbox state so the tools are still visible.
                         return new ConnectionView(
-                                server, server, "sandbox", true, false, null,
-                                List.of(), List.of(), null, null, tools);
+                                server, server, "sandbox", true, false, null, List.of(), List.of(), null, null, tools);
                     }
                     return new ConnectionView(
                             connection.getServer(),
@@ -114,11 +118,11 @@ public class IntegrationController {
             @PathVariable String server, @RequestHeader("X-Workspace-Id") UUID workspaceId) {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() == Actor.Kind.USER) {
-            throw new ApiException(
-                    ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
 
-        return connections.findByOrgIdAndServer(workspaceId, server)
+        return connections
+                .findByOrgIdAndServer(workspaceId, server)
                 .filter(Connection::isUsable)
                 // A sandbox connection needs no credential, and returning null is the correct
                 // answer rather than an error: the sandbox adapter ignores it.

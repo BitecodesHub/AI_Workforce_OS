@@ -48,7 +48,8 @@ public interface AuditEvents extends JpaRepository<AuditEvent, UUID> {
         long getCount();
     }
 
-    @Query("""
+    @Query(
+            """
             select e.action as action, count(e) as count
             from AuditEvent e
             where e.orgId = :orgId and e.occurredAt >= :since
@@ -57,7 +58,8 @@ public interface AuditEvents extends JpaRepository<AuditEvent, UUID> {
             """)
     List<ActionCount> countByActionSince(@Param("orgId") UUID orgId, @Param("since") Instant since);
 
-    @Query("""
+    @Query(
+            """
             select e.outcome as outcome, count(e) as count
             from AuditEvent e
             where e.orgId = :orgId and e.occurredAt >= :since

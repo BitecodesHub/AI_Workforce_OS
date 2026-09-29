@@ -1,5 +1,5 @@
 import axe from 'axe-core'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 import { App } from '../../App'
@@ -60,12 +60,31 @@ describe('Landing', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   }, 30_000)
 
-  it('renders every demo at its end state under reduced motion', () => {
+  it('renders both demos at their end state under reduced motion, in plain words', () => {
     renderLanding()
     expect(within(region('approval')).getByText('Exactly what will be sent')).toBeInTheDocument()
-    expect(within(region('failover')).getAllByText('Answered').length).toBeGreaterThan(0)
+    // The plain voice shows the email as an email, not as JSON.
+    expect(within(region('approval')).getByText('Subject')).toBeInTheDocument()
     expect(within(region('cited')).getAllByText('Project_Proposal.pdf').length).toBeGreaterThan(0)
-    expect(screen.getByRole('tab', { name: /^Manager/ })).toHaveAttribute('aria-selected', 'true')
+    expect(document.getElementById('failover')).toBeNull()
+  })
+
+  it('speaks to the people choosing the product, not the engineers running it', () => {
+    renderLanding()
+    const text = screen.getByRole('main').textContent ?? ''
+    for (const jargon of [
+      'permission code',
+      'approval:decide',
+      'gmail.send_message',
+      'Spring Boot',
+      'MCP',
+      'tool server',
+      'Retry-After',
+      'hash',
+    ]) {
+      expect(text, `the home page says "${jargon}"`).not.toContain(jargon)
+    }
+    expect(screen.getByRole('link', { name: 'Technical details for IT teams' })).toHaveAttribute('href', '/trust')
   })
 
   it('has exactly one h1', () => {
@@ -86,16 +105,35 @@ describe('Landing', () => {
     const { container } = renderLanding()
     const ids = [...container.querySelectorAll('[id]')].map((element) => element.id)
     expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([])
-    const anchors = ['main', 'agents', 'demos', 'approval', 'failover', 'audit', 'cited', 'roles', 'platform', 'limits']
+    const anchors = ['main', 'how', 'team', 'demos', 'approval', 'cited', 'safety', 'faq', 'start']
     for (const id of anchors) expect(ids, `missing anchor ${id}`).toContain(id)
     const hashes = [...container.querySelectorAll('a[href^="#"]')].map((link) => link.getAttribute('href') ?? '')
     expect(hashes.length).toBeGreaterThan(0)
     for (const hash of hashes) expect(ids, `link ${hash} has no target`).toContain(hash.slice(1))
   })
 
+  it('opens a hidden demo when a link on the page points at it', () => {
+    const scroll = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scroll, configurable: true, writable: true })
+    try {
+      renderLanding()
+      expect(region('cited-tab')).toHaveAttribute('aria-selected', 'false')
+      const link = document.querySelector('.lp-benefits a[href="#cited"]') as HTMLElement
+      fireEvent.click(link)
+      expect(region('cited-tab')).toHaveAttribute('aria-selected', 'true')
+      expect(region('cited-panel')).not.toHaveAttribute('hidden')
+      expect(scroll).toHaveBeenCalled()
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+      window.history.replaceState(null, '', '/')
+    }
+  })
+
   it('gives each demo one polite status line', () => {
     renderLanding()
-    for (const id of ['approval', 'failover', 'audit', 'cited']) {
+    // One demo shows at a time, so each is opened from its tab before its status is counted.
+    for (const id of ['approval', 'cited']) {
+      fireEvent.click(region(`${id}-tab`))
       expect(within(region(id)).getAllByRole('status')).toHaveLength(1)
     }
   })
@@ -114,7 +152,7 @@ describe('App title for the public page', () => {
           <App />
         </RouterProvider>,
       )
-      expect(document.title).toBe('A governed AI workforce · AI Workforce OS')
+      expect(document.title).toBe('AI employees for your business · AI Workforce OS')
       unmount()
     }
     expect(fetchSpy).not.toHaveBeenCalled()

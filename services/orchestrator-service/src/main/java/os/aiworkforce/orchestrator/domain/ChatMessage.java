@@ -1,15 +1,20 @@
 package os.aiworkforce.orchestrator.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.springframework.data.domain.Persistable;
 
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
@@ -20,14 +25,22 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  * said is worth nothing if it can be rewritten afterwards. {@code detail} carries whatever shape
  * this kind of message needs - a routing receipt, cited passages, a schedule preview - because
  * that shape differs completely by kind.
+ *
+ * <p>Implements {@link Persistable} for the same reason {@code BaseEntity} does: the id is
+ * assigned in Java, not by the database, so Spring Data cannot tell a new row from an existing one
+ * by asking whether the id is null - it is never null. Without this, every save issues a SELECT
+ * first to decide between insert and update; a busy conversation appends many of these in a row.
  */
 @Entity
 @Table(name = "chat_messages")
-public class ChatMessage {
+public class ChatMessage implements Persistable<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)
     private UUID id = UuidV7.generate();
+
+    @Transient
+    private boolean isNew = true;
 
     @Column(name = "org_id", nullable = false)
     private UUID orgId;
@@ -64,8 +77,16 @@ public class ChatMessage {
     private Instant createdAt = Instant.now();
 
     public static ChatMessage of(
-            UUID orgId, UUID conversationId, int position, String authorKind, UUID authorId, UUID agentId,
-            String kind, String content, Map<String, Object> detail, UUID goalId) {
+            UUID orgId,
+            UUID conversationId,
+            int position,
+            String authorKind,
+            UUID authorId,
+            UUID agentId,
+            String kind,
+            String content,
+            Map<String, Object> detail,
+            UUID goalId) {
         ChatMessage message = new ChatMessage();
         message.orgId = orgId;
         message.conversationId = conversationId;
@@ -80,8 +101,20 @@ public class ChatMessage {
         return message;
     }
 
+    @Override
     public UUID getId() {
         return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostPersist
+    @PostLoad
+    void markPersisted() {
+        this.isNew = false;
     }
 
     public UUID getOrgId() {

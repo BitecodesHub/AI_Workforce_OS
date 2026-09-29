@@ -119,8 +119,7 @@ public class WorkingMemory {
 
     /** Raised when a caller has asked for working memory that must be durable. */
     static ApiException degraded() {
-        return new ApiException(
-                ErrorCode.DEPENDENCY_DEGRADED, "Short-term agent memory is temporarily unavailable.");
+        return new ApiException(ErrorCode.DEPENDENCY_DEGRADED, "Short-term agent memory is temporarily unavailable.");
     }
 
     private static String redisKey(String orgId, String scope, String key) {

@@ -1,31 +1,19 @@
 package os.aiworkforce.orchestrator.repository;
 
-import jakarta.persistence.LockModeType;
-import jakarta.persistence.QueryHint;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
+
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
-import os.aiworkforce.orchestrator.domain.Agent;
-import os.aiworkforce.orchestrator.domain.AgentToolGrant;
-import os.aiworkforce.orchestrator.domain.AgentVersion;
-import os.aiworkforce.orchestrator.domain.Approval;
-import os.aiworkforce.orchestrator.domain.Budget;
-import os.aiworkforce.orchestrator.domain.Goal;
-import os.aiworkforce.orchestrator.domain.LlmModelEntity;
-import os.aiworkforce.orchestrator.domain.LlmProviderEntity;
-import os.aiworkforce.orchestrator.domain.LlmUsageRecord;
-import os.aiworkforce.orchestrator.domain.ModelPolicyEntity;
-import os.aiworkforce.orchestrator.domain.Run;
-import os.aiworkforce.orchestrator.domain.RunStep;
+
 import os.aiworkforce.orchestrator.domain.Task;
 
 /*
@@ -58,7 +46,8 @@ public interface Tasks extends JpaRepository<Task, UUID> {
      * window. A task with no agent at all is still a candidate - it is claimed and then reported
      * as unable to start, which is a different failure to leaving it pending forever.
      */
-    @Query("""
+    @Query(
+            """
             select t from Task t
             where t.orgId = :orgId and t.status in ('pending', 'ready')
               and (t.agentId is null or exists (
@@ -91,15 +80,44 @@ public interface Tasks extends JpaRepository<Task, UUID> {
      * <p>A task has at most one active run at a time, so "has a finished run and no active one"
      * is the same as "its latest run has finished". The goal sweep repairs these, which is what
      * catches a task left behind by a run that ended before its outcome was reported to it.
+     *
+     * <p>A task waiting for an answer is active like one waiting for an approval, and is never
+     * "repaired" while its run waits. Only a run started since the task's current attempt began
+     * counts: a retried or re-claimed task is running from its claim before its new run exists,
+     * and the finished run of an earlier attempt must not settle it.
      */
-    @Query("""
+    @Query(
+            """
             select t from Task t
-            where t.status in ('running', 'waiting_approval')
-              and exists (select 1 from Run r where r.taskId = t.id
+            where t.status in ('running', 'waiting_approval', 'waiting_input')
+              and exists (select 1 from Run r where r.taskId = t.id and r.startedAt >= t.startedAt
                           and r.status in ('completed', 'failed', 'cancelled', 'abandoned'))
               and not exists (select 1 from Run r where r.taskId = t.id
-                              and r.status in ('running', 'waiting_approval'))
+                              and r.status in ('running', 'waiting_approval', 'waiting_input'))
             order by t.updatedAt
             """)
     List<Task> findStranded(Pageable pageable);
+
+    /** Pending or ready tasks, including those held behind a paused agent, for the board's queue. */
+    @Query("select t from Task t where t.orgId = :orgId and t.status in ('pending', 'ready') order by t.createdAt")
+    List<Task> findQueued(@Param("orgId") UUID orgId, Pageable page);
+
+    /** [conversationId, count] of tasks waiting for approval, per chat conversation. */
+    @Query(
+            """
+            select g.conversationId, count(t) from Task t, Goal g
+            where t.goalId = g.id and g.orgId = :orgId and g.conversationId in :ids and t.status = 'waiting_approval'
+            group by g.conversationId
+            """)
+    List<Object[]> waitingApprovalByConversation(
+            @Param("orgId") UUID orgId, @Param("ids") java.util.Collection<UUID> ids);
+
+    /** Conversations with a task waiting for approval, for the Chat "Needs you" group of an approver. */
+    @Query(
+            """
+            select distinct g.conversationId from Task t, Goal g
+            where t.goalId = g.id and g.orgId = :orgId and g.conversationId is not null
+              and t.status = 'waiting_approval'
+            """)
+    List<UUID> conversationsWaitingForApproval(@Param("orgId") UUID orgId);
 }

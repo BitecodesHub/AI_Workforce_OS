@@ -3,11 +3,20 @@ import { CATEGORY_LABEL } from '../../lib/labels'
 import { truncateWords } from '../../lib/format'
 import type { Agent } from '../../lib/queries'
 import { AgentAvatar } from './AgentAvatar'
-import { SUGGESTION_CHIPS } from './chatModel'
+import { suggestionChips } from './chatModel'
 
 /** What an empty thread shows: who is here to help, and four things worth trying. */
-export function WelcomeScreen({ agents, onPick }: { agents: Agent[] | undefined; onPick: (text: string) => void }) {
+export function WelcomeScreen({
+  agents,
+  can,
+  onPick,
+}: {
+  agents: Agent[] | undefined
+  can: (code: string) => boolean
+  onPick: (text: string) => void
+}) {
   const active = (agents ?? []).filter((agent) => agent.status === 'active')
+  const chips = suggestionChips(agents ?? [], can)
 
   return (
     <div className="chat-welcome">
@@ -34,7 +43,7 @@ export function WelcomeScreen({ agents, onPick }: { agents: Agent[] | undefined;
       </Card>
 
       <div className="chat-suggestions">
-        {SUGGESTION_CHIPS.map((text) => (
+        {chips.map((text: string) => (
           <button key={text} type="button" className="chat-suggestion-chip" onClick={() => onPick(text)}>
             {text}
           </button>

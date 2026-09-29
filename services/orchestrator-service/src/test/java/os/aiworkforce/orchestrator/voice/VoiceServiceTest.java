@@ -27,8 +27,13 @@ class VoiceServiceTest {
 
     private static final UUID ORG = UUID.randomUUID();
     private static final VoiceProperties PROPERTIES = new VoiceProperties(
-            "https://api.elevenlabs.io", "eleven_flash_v2_5", "scribe_v2", "mp3_44100_128", 2_500,
-            Duration.ofSeconds(5), "elevenlabs");
+            "https://api.elevenlabs.io",
+            "eleven_flash_v2_5",
+            "scribe_v2",
+            "mp3_44100_128",
+            2_500,
+            Duration.ofSeconds(5),
+            "elevenlabs");
 
     private ElevenLabsClient client;
     private OrgCredentialResolver credentials;
@@ -63,7 +68,8 @@ class VoiceServiceTest {
     }
 
     @Test
-    @DisplayName("speech without a stored key is refused with the voice-not-configured code")
+    @DisplayName(
+            "speech without a stored key is refused with the voice-not-configured code, even with an agent voice chosen")
     void speechWithoutKeyIs409() {
         when(credentials.resolve(ORG.toString(), "elevenlabs")).thenReturn(Optional.empty());
         Agent agent = new Agent();
@@ -75,6 +81,24 @@ class VoiceServiceTest {
                 .extracting(e -> ((ApiException) e).code())
                 .isEqualTo(ErrorCode.VOICE_NOT_CONFIGURED);
         assertThatThrownBy(() -> service.speech(ORG, "Hello there.", agent))
+                .extracting(e -> ((ApiException) e).status())
+                .isEqualTo(409);
+    }
+
+    @Test
+    @DisplayName("speech without a stored key is refused the same way with no agent at all - the common Chat case")
+    void speechWithoutKeyAndNoAgentIs409() {
+        // Regression test: resolveVoiceId(ORG, null) also returns null here, because voices(ORG)
+        // is empty with no key stored. Before this was checked first, that null was reported as
+        // "no voice is available" (422), the same message a stored key with zero voices gets,
+        // rather than the 409 the API contract promises for no key at all.
+        when(credentials.resolve(ORG.toString(), "elevenlabs")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.speech(ORG, "Hello there.", null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).code())
+                .isEqualTo(ErrorCode.VOICE_NOT_CONFIGURED);
+        assertThatThrownBy(() -> service.speech(ORG, "Hello there.", null))
                 .extracting(e -> ((ApiException) e).status())
                 .isEqualTo(409);
     }
@@ -105,10 +129,11 @@ class VoiceServiceTest {
     @DisplayName("without an agent voice, the same agent always lands on the same voice from the list")
     void defaultVoiceChoiceIsStableForOneAgent() {
         when(credentials.resolve(ORG.toString(), "elevenlabs")).thenReturn(Optional.of("secret-key"));
-        when(client.voices("secret-key")).thenReturn(List.of(
-                new ElevenLabsClient.VoiceDto("v1", "Rachel", "premade", null, null),
-                new ElevenLabsClient.VoiceDto("v2", "Adam", "premade", null, null),
-                new ElevenLabsClient.VoiceDto("v3", "Domi", "premade", null, null)));
+        when(client.voices("secret-key"))
+                .thenReturn(List.of(
+                        new ElevenLabsClient.VoiceDto("v1", "Rachel", "premade", null, null),
+                        new ElevenLabsClient.VoiceDto("v2", "Adam", "premade", null, null),
+                        new ElevenLabsClient.VoiceDto("v3", "Domi", "premade", null, null)));
         Agent agent = new Agent();
         agent.setId(UUID.fromString("00000000-0000-0000-0000-000000000042"));
 
@@ -123,9 +148,10 @@ class VoiceServiceTest {
     @DisplayName("two different agents can land on different voices from the same list")
     void differentAgentsCanGetDifferentVoices() {
         when(credentials.resolve(ORG.toString(), "elevenlabs")).thenReturn(Optional.of("secret-key"));
-        when(client.voices("secret-key")).thenReturn(List.of(
-                new ElevenLabsClient.VoiceDto("v1", "Rachel", "premade", null, null),
-                new ElevenLabsClient.VoiceDto("v2", "Adam", "premade", null, null)));
+        when(client.voices("secret-key"))
+                .thenReturn(List.of(
+                        new ElevenLabsClient.VoiceDto("v1", "Rachel", "premade", null, null),
+                        new ElevenLabsClient.VoiceDto("v2", "Adam", "premade", null, null)));
         Agent hr = new Agent();
         hr.setId(UUID.fromString("00000000-0000-0000-0000-000000000001"));
         Agent support = new Agent();

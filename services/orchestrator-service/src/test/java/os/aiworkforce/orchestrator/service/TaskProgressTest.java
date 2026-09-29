@@ -1,10 +1,15 @@
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static os.aiworkforce.orchestrator.service.WorkFixture.attempt;
 import static os.aiworkforce.orchestrator.service.WorkFixture.runFor;
 
@@ -15,6 +20,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
@@ -232,6 +242,30 @@ class TaskProgressTest {
         }
 
         @Test
+        @DisplayName("a run parked for an answer puts its task in waiting for input")
+        void parkedForInputSetsTaskWaitingInput() {
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "running");
+
+            progress.onRunParked(runFor(task, "waiting_input"));
+
+            assertThat(task.getStatus()).isEqualTo("waiting_input");
+            assertThat(goal.getStatus()).isEqualTo("running");
+        }
+
+        @Test
+        @DisplayName("a run that ends while its task waits for an answer still settles the task")
+        void runFinishingWhileWaitingInputSettlesTask() {
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "waiting_input");
+
+            progress.onRunFinished(runFor(task, "cancelled"), "cancelled", null, "A person stopped this run.");
+
+            assertThat(task.getStatus()).isEqualTo("cancelled");
+            assertThat(goal.getStatus()).isEqualTo("cancelled");
+        }
+
+        @Test
         @DisplayName("a resumed run puts its task back to running")
         void resumed() {
             Goal goal = work.goal("running");
@@ -316,7 +350,8 @@ class TaskProgressTest {
     class Listeners {
 
         @Test
-        @DisplayName("a listener hears a task finish and the goal close, and a failing listener does not stop the other")
+        @DisplayName(
+                "a listener hears a task finish and the goal close, and a failing listener does not stop the other")
         void listenersNotified() {
             List<String> taskCalls = new java.util.ArrayList<>();
             List<UUID> goalCalls = new java.util.ArrayList<>();
@@ -350,6 +385,88 @@ class TaskProgressTest {
 
             assertThat(taskCalls).containsExactly("completed");
             assertThat(goalCalls).containsExactly(goal.getId());
+        }
+
+        @Test
+        @DisplayName("inside a transaction, listeners hear nothing until it commits")
+        void listenersRunAfterCommitWhenSynchronisationIsActive() {
+            List<String> heard = new java.util.ArrayList<>();
+            GoalLifecycleListener recording = new GoalLifecycleListener() {
+                @Override
+                public void onTaskFinished(Goal goal, Task task, String status) {
+                    heard.add("task:" + status);
+                }
+
+                @Override
+                public void onGoalFinished(Goal goal) {
+                    heard.add("goal:" + goal.getStatus());
+                }
+            };
+            TaskProgress withListeners = new TaskProgress(work.tasks, work.goals, List.of(recording));
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "running");
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                withListeners.onRunFinished(runFor(task, "completed"), "completed", "Done.", null);
+                assertThat(heard).isEmpty();
+
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(TransactionSynchronization::afterCommit);
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+
+            assertThat(heard).containsExactly("task:completed", "goal:completed");
+        }
+
+        @Test
+        @DisplayName("a listener that throws does so in its own transaction, and never reaches the finish")
+        void aThrowingListenerDoesNotMarkTheFinishRollbackOnly() {
+            List<String> heard = new java.util.ArrayList<>();
+            GoalLifecycleListener broken = new GoalLifecycleListener() {
+                @Override
+                public void onTaskFinished(Goal goal, Task task, String status) {
+                    throw new IllegalStateException("lock timeout on the conversation");
+                }
+            };
+            GoalLifecycleListener recording = new GoalLifecycleListener() {
+                @Override
+                public void onTaskFinished(Goal goal, Task task, String status) {
+                    heard.add(status);
+                }
+            };
+            PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+            SimpleTransactionStatus listenerStatus = new SimpleTransactionStatus();
+            when(transactions.getTransaction(any())).thenReturn(listenerStatus);
+            TaskProgress withListeners = new TaskProgress(work.tasks, work.goals, List.of(broken, recording));
+            withListeners.setTransactionManager(transactions);
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "running");
+            // A later step keeps the goal open, so only the task's own notification is sent.
+            work.task(goal, 1, "pending");
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                assertThatCode(() -> withListeners.onRunFinished(runFor(task, "completed"), "completed", "Done.", null))
+                        .doesNotThrowAnyException();
+                // Nothing a listener does happens inside the finish itself, so nothing a listener
+                // does can mark it rollback-only.
+                verify(transactions, never()).getTransaction(any());
+
+                assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                                .forEach(TransactionSynchronization::afterCommit))
+                        .doesNotThrowAnyException();
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+
+            assertThat(task.getStatus()).isEqualTo("completed");
+            assertThat(heard).containsExactly("completed");
+            verify(transactions, times(2))
+                    .getTransaction(argThat(definition ->
+                            definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW));
+            verify(transactions).rollback(listenerStatus);
         }
     }
 

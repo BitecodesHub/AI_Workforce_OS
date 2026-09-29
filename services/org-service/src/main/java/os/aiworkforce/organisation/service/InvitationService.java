@@ -48,7 +48,9 @@ public class InvitationService {
     private final InternalTokenProvider tokens;
 
     public InvitationService(
-            Invitations invitations, WebClient.Builder builder, PlatformProperties properties,
+            Invitations invitations,
+            WebClient.Builder builder,
+            PlatformProperties properties,
             InternalTokenProvider tokens) {
         this.invitations = invitations;
         this.identityClient = builder.baseUrl(properties.services().identity()).build();
@@ -85,7 +87,8 @@ public class InvitationService {
         // Re-inviting the same address replaces the still-open invitation rather than piling up
         // a second one nobody can tell apart from the first - the same open-invitation-per-
         // address rule the unique index in the database already enforces.
-        invitations.findByOrgIdAndEmailIgnoreCaseAndStatus(orgId, normalisedEmail, "pending")
+        invitations
+                .findByOrgIdAndEmailIgnoreCaseAndStatus(orgId, normalisedEmail, "pending")
                 .ifPresent(existing -> {
                     existing.setStatus("revoked");
                     invitations.save(existing);
@@ -132,7 +135,8 @@ public class InvitationService {
         if (rawToken == null || rawToken.isBlank()) {
             throw ApiException.validation("token", "must not be empty");
         }
-        Invitation invitation = invitations.findByTokenHash(hashToken(rawToken))
+        Invitation invitation = invitations
+                .findByTokenHash(hashToken(rawToken))
                 .orElseThrow(() -> ApiException.notFound("invitation", "token"));
 
         if (!invitation.isPending()) {
@@ -157,7 +161,8 @@ public class InvitationService {
 
     private UUID registerAccount(String email, String displayName, String password) {
         try {
-            var response = identityClient.post()
+            var response = identityClient
+                    .post()
                     .uri("/api/auth/register")
                     .bodyValue(Map.of("email", email, "displayName", displayName, "password", password))
                     .retrieve()
@@ -182,7 +187,8 @@ public class InvitationService {
 
     private void grantMembership(UUID orgId, UUID userId, String roleName) {
         try {
-            identityClient.post()
+            identityClient
+                    .post()
                     .uri("/internal/memberships/bootstrap-member")
                     .header("Authorization", "Bearer " + tokens.forService("identity"))
                     .bodyValue(Map.of("orgId", orgId, "userId", userId, "roleName", roleName))

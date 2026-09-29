@@ -18,10 +18,8 @@ import os.aiworkforce.platform.web.PlatformWeb;
  * its own migration history, and it never reaches into another service's tables: everything it
  * needs from a sibling arrives over that sibling's published API or over an event.
  */
-@SpringBootApplication(
-        scanBasePackageClasses = {KnowledgeApplication.class, PlatformCore.class, PlatformWeb.class})
-@ConfigurationPropertiesScan(
-        basePackageClasses = {KnowledgeApplication.class, PlatformCore.class, PlatformWeb.class})
+@SpringBootApplication(scanBasePackageClasses = {KnowledgeApplication.class, PlatformCore.class, PlatformWeb.class})
+@ConfigurationPropertiesScan(basePackageClasses = {KnowledgeApplication.class, PlatformCore.class, PlatformWeb.class})
 public class KnowledgeApplication {
 
     public static void main(String[] args) {

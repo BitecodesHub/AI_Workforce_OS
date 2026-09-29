@@ -79,8 +79,7 @@ public class IngestionService {
      * @param detail the reason, when there is one worth showing
      * @param searchable whether it can be found right now, which vectors being down can change
      */
-    public record IngestResult(
-            UUID documentId, String status, int chunkCount, String detail, boolean searchable) {}
+    public record IngestResult(UUID documentId, String status, int chunkCount, String detail, boolean searchable) {}
 
     /** Creates a source to upload into, so a workspace has somewhere to put its first file. */
     @Transactional
@@ -107,25 +106,31 @@ public class IngestionService {
     /** Ingests one uploaded file. */
     @Transactional
     public IngestResult ingest(UUID orgId, UUID sourceId, String filename, byte[] content) {
-        Source source = sources.findByIdAndOrgId(sourceId, orgId)
-                .orElseThrow(() -> ApiException.notFound("source", sourceId));
+        Source source =
+                sources.findByIdAndOrgId(sourceId, orgId).orElseThrow(() -> ApiException.notFound("source", sourceId));
 
         TextExtractor.Extraction extraction = extractor.extract(content, filename);
         String externalId = filename;
 
-        Document document = documents.findBySourceIdAndExternalId(sourceId, externalId).orElseGet(() -> {
-            Document fresh = new Document();
-            fresh.setId(UuidV7.generate());
-            fresh.setOrgId(orgId);
-            fresh.setSourceId(sourceId);
-            fresh.setExternalId(externalId);
-            return fresh;
-        });
+        Document document = documents
+                .findBySourceIdAndExternalId(sourceId, externalId)
+                .orElseGet(() -> {
+                    Document fresh = new Document();
+                    fresh.setId(UuidV7.generate());
+                    fresh.setOrgId(orgId);
+                    fresh.setSourceId(sourceId);
+                    fresh.setExternalId(externalId);
+                    return fresh;
+                });
 
         // Unchanged bytes mean unchanged text: nothing to re-chunk and nothing to re-embed.
         if (extraction.contentHash().equals(document.getContentHash()) && document.isIndexed()) {
-            return new IngestResult(document.getId(), "unchanged", document.getChunkCount(),
-                    "The file has not changed since it was last indexed.", true);
+            return new IngestResult(
+                    document.getId(),
+                    "unchanged",
+                    document.getChunkCount(),
+                    "The file has not changed since it was last indexed.",
+                    true);
         }
 
         document.setTitle(filename);
@@ -153,8 +158,7 @@ public class IngestionService {
         // document they came from changes.
         chunks.deleteByDocumentId(document.getId());
 
-        List<Chunker.Chunk> pieces =
-                chunker.chunk(extraction.text(), source.getChunkSize(), source.getChunkOverlap());
+        List<Chunker.Chunk> pieces = chunker.chunk(extraction.text(), source.getChunkSize(), source.getChunkOverlap());
         if (pieces.isEmpty()) {
             document.setStatus("skipped");
             document.setSkipReason("The document produced no passages long enough to index.");
@@ -250,7 +254,9 @@ public class IngestionService {
      * "about page 4" and is occasionally one out is far more useful than one with no page at all.
      */
     private static Integer estimatePage(Chunker.Chunk piece, TextExtractor.Extraction extraction) {
-        if (extraction.pageCount() == null || extraction.pageCount() < 1 || extraction.text().isEmpty()) {
+        if (extraction.pageCount() == null
+                || extraction.pageCount() < 1
+                || extraction.text().isEmpty()) {
             return null;
         }
         double position = (double) piece.charStart() / extraction.text().length();
@@ -270,8 +276,8 @@ public class IngestionService {
      */
     @Transactional
     public ReindexResult reindex(UUID orgId, UUID sourceId) {
-        Source source = sources.findByIdAndOrgId(sourceId, orgId)
-                .orElseThrow(() -> ApiException.notFound("source", sourceId));
+        Source source =
+                sources.findByIdAndOrgId(sourceId, orgId).orElseThrow(() -> ApiException.notFound("source", sourceId));
 
         List<Document> indexed = documents.findBySourceIdOrderByTitle(sourceId).stream()
                 .filter(Document::isIndexed)

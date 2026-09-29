@@ -16,8 +16,7 @@ import java.util.Base64;
  * @param ciphertext the encrypted payload, including the authentication tag
  * @param version format version, so the layout can change without ambiguity
  */
-public record EncryptedValue(
-        String keyId, byte[] wrappedDataKey, byte[] iv, byte[] ciphertext, int version) {
+public record EncryptedValue(String keyId, byte[] wrappedDataKey, byte[] iv, byte[] ciphertext, int version) {
 
     private static final int CURRENT_VERSION = 1;
     private static final String SEPARATOR = ":";

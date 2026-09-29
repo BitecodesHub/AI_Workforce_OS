@@ -18,7 +18,6 @@ import os.aiworkforce.orchestrator.domain.LlmModelEntity;
 import os.aiworkforce.orchestrator.domain.LlmProviderEntity;
 import os.aiworkforce.orchestrator.repository.Models;
 import os.aiworkforce.orchestrator.repository.Providers;
-import os.aiworkforce.orchestrator.repository.Runs;
 
 /**
  * Serves the router its providers and models from the database.
@@ -35,8 +34,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
     private final Providers providers;
     private final Models models;
 
-    public JpaProviderRegistry(
-            Providers providers, Models models) {
+    public JpaProviderRegistry(Providers providers, Models models) {
         this.providers = providers;
         this.models = models;
     }
@@ -44,13 +42,16 @@ public class JpaProviderRegistry implements ProviderRegistry {
     @Override
     @Transactional(readOnly = true)
     public List<ProviderDescriptor> providers(String orgId) {
-        return providers.findVisibleTo(parse(orgId)).stream().map(this::toDescriptor).toList();
+        return providers.findVisibleTo(parse(orgId)).stream()
+                .map(this::toDescriptor)
+                .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<ProviderDescriptor> provider(String orgId, String providerId) {
-        return providers.findById(providerId)
+        return providers
+                .findById(providerId)
                 // A provider scoped to another workspace must be invisible, not merely unusable.
                 .filter(entity -> entity.getOrgId() == null || entity.getOrgId().equals(parse(orgId)))
                 .map(this::toDescriptor);
@@ -82,9 +83,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
         models.findById(new LlmModelEntity.Key(providerId, modelId)).ifPresent(model -> {
             model.markUnavailable(duration, reason);
             models.save(model);
-            log.warn(
-                    "Model {}/{} marked unavailable for {}: {}",
-                    providerId, modelId, duration, reason);
+            log.warn("Model {}/{} marked unavailable for {}: {}", providerId, modelId, duration, reason);
         });
     }
 
@@ -128,7 +127,9 @@ public class JpaProviderRegistry implements ProviderRegistry {
                 entity.getCachedCostPerMillion(),
                 entity.getOutputCostPerMillion(),
                 entity.isEnabled(),
-                entity.getUnavailableUntil() == null ? null : entity.getUnavailableUntil().toEpochMilli());
+                entity.getUnavailableUntil() == null
+                        ? null
+                        : entity.getUnavailableUntil().toEpochMilli());
     }
 
     private static UUID parse(String orgId) {

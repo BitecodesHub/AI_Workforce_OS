@@ -102,7 +102,10 @@ public class ScheduleService {
         schedule.setAgentId(agent.getId());
         schedule.setInstruction(instruction);
         applyParsed(schedule, parsed, zone, now);
-        schedule.setRequestedBy(RequestContext.actor().map(Actor::id).map(ScheduleService::parseUuidOrNull).orElse(null));
+        schedule.setRequestedBy(RequestContext.actor()
+                .map(Actor::id)
+                .map(ScheduleService::parseUuidOrNull)
+                .orElse(null));
         schedules.save(schedule);
         log.info("Schedule {} ({}) created for agent {}", schedule.getId(), parsed.kind(), agent.getId());
         return schedule;
@@ -142,12 +145,14 @@ public class ScheduleService {
         if ("once".equals(parsed.kind())) {
             return parsed.runAt();
         }
-        return ScheduleParser.nextRuns(parsed, zone, now, 1).stream().findFirst().orElse(null);
+        return ScheduleParser.nextRuns(parsed, zone, now, 1).stream()
+                .findFirst()
+                .orElse(null);
     }
 
     private Agent requireActiveAgent(UUID orgId, UUID agentId) {
-        Agent agent = agents.findByIdAndOrgId(agentId, orgId)
-                .orElseThrow(() -> ApiException.notFound("agent", agentId));
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId).orElseThrow(() -> ApiException.notFound("agent", agentId));
         if (!agent.isActive()) {
             throw ApiException.validation("agentId", "The agent must be active to schedule work for it.");
         }
@@ -223,8 +228,8 @@ public class ScheduleService {
     private void processDue(Schedule schedule, Instant now) {
         boolean skipThisOccurrence = "skip".equals(schedule.getOverlapPolicy()) && lastGoalStillActive(schedule);
         if (skipThisOccurrence) {
-            log.info("Schedule {} is due but its last goal is still active; skipping this occurrence",
-                    schedule.getId());
+            log.info(
+                    "Schedule {} is due but its last goal is still active; skipping this occurrence", schedule.getId());
         } else {
             fire(schedule);
         }
@@ -232,7 +237,8 @@ public class ScheduleService {
     }
 
     private boolean lastGoalStillActive(Schedule schedule) {
-        return scheduleGoals.findFirstByScheduleIdOrderByCreatedAtDesc(schedule.getId())
+        return scheduleGoals
+                .findFirstByScheduleIdOrderByCreatedAtDesc(schedule.getId())
                 .map(goal -> !goal.isFinished())
                 .orElse(false);
     }
@@ -248,7 +254,8 @@ public class ScheduleService {
     }
 
     private static ParsedSchedule asParsed(Schedule schedule) {
-        return new ParsedSchedule(schedule.getKind(), schedule.getCron(), schedule.getRunAt(), schedule.getDescription());
+        return new ParsedSchedule(
+                schedule.getKind(), schedule.getCron(), schedule.getRunAt(), schedule.getDescription());
     }
 
     private static ZoneId zoneOf(Schedule schedule) {
@@ -268,18 +275,23 @@ public class ScheduleService {
         Actor actor = requestedBy == null
                 ? Actor.SYSTEM
                 : Actor.user(requestedBy.toString(), schedule.getOrgId().toString(), null, Set.of(), 0L);
-        Goal goal = RequestContext.as(actor, () -> goalService.createGoal(
-                schedule.getOrgId(),
-                new GoalService.NewGoal(
-                        schedule.getName(),
-                        schedule.getInstruction(),
-                        requestedBy,
-                        "schedule",
-                        null,
-                        schedule.getId(),
-                        List.of(new GoalService.NewTask(
-                                schedule.getAgentId(), schedule.getName(), schedule.getInstruction(), List.of()))),
-                true));
+        Goal goal = RequestContext.as(
+                actor,
+                () -> goalService.createGoal(
+                        schedule.getOrgId(),
+                        new GoalService.NewGoal(
+                                schedule.getName(),
+                                schedule.getInstruction(),
+                                requestedBy,
+                                "schedule",
+                                null,
+                                schedule.getId(),
+                                List.of(new GoalService.NewTask(
+                                        schedule.getAgentId(),
+                                        schedule.getName(),
+                                        schedule.getInstruction(),
+                                        List.of()))),
+                        true));
         schedule.setLastGoalId(goal.getId());
         schedule.setLastRunAt(Instant.now());
         // The goal it started is under way; the listener overwrites this with how it finished.

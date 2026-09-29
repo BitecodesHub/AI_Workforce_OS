@@ -1,8 +1,5 @@
 package os.aiworkforce.platform.observability;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -11,6 +8,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 
 import os.aiworkforce.platform.config.PlatformProperties;
@@ -40,20 +40,19 @@ public class Redactor {
      */
     private static final List<Pattern> VALUE_PATTERNS = List.of(
             Pattern.compile("(?i)\\bbearer\\s+[A-Za-z0-9._~+/=-]{16,}"),
-            Pattern.compile("\\bsk-[A-Za-z0-9_-]{16,}"),                    // OpenAI style
-            Pattern.compile("\\bsk-or-v1-[A-Za-z0-9]{16,}"),                // OpenRouter
-            Pattern.compile("\\bgsk_[A-Za-z0-9]{16,}"),                     // Groq
-            Pattern.compile("\\bnvapi-[A-Za-z0-9_-]{16,}"),                 // NVIDIA
-            Pattern.compile("\\bAIza[A-Za-z0-9_-]{30,}"),                   // Google
-            Pattern.compile("\\bsk-ant-[A-Za-z0-9_-]{16,}"),                // Anthropic
-            Pattern.compile("\\b(AKIA|ASIA)[A-Z0-9]{16}\\b"),               // AWS access key id
-            Pattern.compile("\\bxox[baprs]-[A-Za-z0-9-]{10,}"),             // Slack
-            Pattern.compile("\\bgh[pousr]_[A-Za-z0-9]{20,}"),               // GitHub
+            Pattern.compile("\\bsk-[A-Za-z0-9_-]{16,}"), // OpenAI style
+            Pattern.compile("\\bsk-or-v1-[A-Za-z0-9]{16,}"), // OpenRouter
+            Pattern.compile("\\bgsk_[A-Za-z0-9]{16,}"), // Groq
+            Pattern.compile("\\bnvapi-[A-Za-z0-9_-]{16,}"), // NVIDIA
+            Pattern.compile("\\bAIza[A-Za-z0-9_-]{30,}"), // Google
+            Pattern.compile("\\bsk-ant-[A-Za-z0-9_-]{16,}"), // Anthropic
+            Pattern.compile("\\b(AKIA|ASIA)[A-Z0-9]{16}\\b"), // AWS access key id
+            Pattern.compile("\\bxox[baprs]-[A-Za-z0-9-]{10,}"), // Slack
+            Pattern.compile("\\bgh[pousr]_[A-Za-z0-9]{20,}"), // GitHub
             Pattern.compile("\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"), // JWT
             Pattern.compile("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----"));
 
-    private static final Pattern EMAIL =
-            Pattern.compile("\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b");
+    private static final Pattern EMAIL = Pattern.compile("\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b");
 
     private final Set<String> sensitiveKeys;
     private final boolean redactEmails;
@@ -135,8 +134,7 @@ public class Redactor {
         }
         return values.entrySet().stream()
                 .collect(Collectors.toUnmodifiableMap(
-                        Map.Entry::getKey,
-                        entry -> isSensitiveKey(entry.getKey()) ? MASK : text(entry.getValue())));
+                        Map.Entry::getKey, entry -> isSensitiveKey(entry.getKey()) ? MASK : text(entry.getValue())));
     }
 
     /**

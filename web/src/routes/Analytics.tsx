@@ -130,7 +130,7 @@ export function Analytics() {
   const analyticsQuery = useAnalytics()
 
   return (
-    <div className="page">
+    <div className="page admin-analytics">
       <PageHeader
         eyebrow="How the workforce is doing"
         title="Analytics"

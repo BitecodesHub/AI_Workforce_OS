@@ -87,7 +87,9 @@ public class ApiException extends RuntimeException {
     }
 
     public static ApiException validation(String field, String problem) {
-        return new ApiException(ErrorCode.VALIDATION_FAILED).with("field", field).with("problem", problem);
+        return new ApiException(ErrorCode.VALIDATION_FAILED)
+                .with("field", field)
+                .with("problem", problem);
     }
 
     public static ApiException permissionDenied(String permission) {

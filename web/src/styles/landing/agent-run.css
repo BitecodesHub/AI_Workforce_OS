@@ -187,7 +187,7 @@
   flex: 1 1 auto;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-medium);
   line-height: 1.4;
   color: var(--ink);
@@ -364,6 +364,46 @@
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--ink);
+}
+
+/* ---- The email, in the plain voice ------------------------------------------------------
+ * What the approval would release, set out the way an email reads: who, what about, and the
+ * message, rather than as the data the platform logs.
+ */
+
+.lp-email {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  overflow: hidden;
+}
+
+.lp-email > div {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.lp-email > div:first-child {
+  border-top-color: transparent;
+}
+
+.lp-email dt {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.lp-email dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 /* ---- Tile widths -------------------------------------------------------------------------- */

@@ -1,86 +1,249 @@
 package os.aiworkforce.orchestrator.chat;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import os.aiworkforce.orchestrator.domain.Agent;
 import os.aiworkforce.orchestrator.domain.Conversation;
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
+import os.aiworkforce.orchestrator.domain.RunQuestion;
 import os.aiworkforce.orchestrator.domain.Task;
+import os.aiworkforce.orchestrator.repository.Agents;
 import os.aiworkforce.orchestrator.repository.ChatMessages;
-import os.aiworkforce.orchestrator.repository.Conversations;
+import os.aiworkforce.orchestrator.repository.RunSteps;
 import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.service.GoalLifecycleListener;
 
 /**
- * Turns a task's outcome into a reply in the conversation that asked for it.
+ * Turns a task's outcome, a goal being stopped or retried, and a run asking a question into a
+ * message in the conversation that started the work.
  *
- * <p>{@link os.aiworkforce.orchestrator.service.TaskProgress} calls every listener the moment a
- * task finishes, from inside the same write - this is what lets a person watching a conversation
- * see an agent's answer land the instant its task completes, without anything in the engine
- * package knowing that chat exists.
+ * <p>Every callback here is called by {@link os.aiworkforce.orchestrator.service.LifecycleAnnouncer}
+ * or {@link os.aiworkforce.orchestrator.service.TaskProgress} only after the write it reports on
+ * has committed, and each in a transaction of its own - this is what lets a person watching a
+ * conversation see an agent's answer land the instant its task completes, and what keeps a failure
+ * appending one of these messages from ever rolling back the run, the stop or the retry it is
+ * reporting on.
  */
 @Component
 public class ChatGoalListener implements GoalLifecycleListener {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatGoalListener.class);
+
     private static final String DEFAULT_FAILURE_REASON = "The agent did not complete this task.";
+    /** A question is never posted twice: this many of the newest messages are checked for its id first. */
+    private static final int DUPLICATE_CHECK_WINDOW = 50;
 
+    private final ChatAppender appender;
     private final ChatMessages messages;
-    private final Conversations conversations;
     private final Runs runs;
+    private final RunSteps steps;
+    private final Agents agents;
+    private final ObjectMapper json;
 
-    public ChatGoalListener(ChatMessages messages, Conversations conversations, Runs runs) {
+    public ChatGoalListener(
+            ChatAppender appender, ChatMessages messages, Runs runs, RunSteps steps, Agents agents, ObjectMapper json) {
+        this.appender = appender;
         this.messages = messages;
-        this.conversations = conversations;
         this.runs = runs;
+        this.steps = steps;
+        this.agents = agents;
+        this.json = json;
     }
 
     @Override
     @Transactional
     public void onTaskFinished(Goal goal, Task task, String status) {
+        if (goal == null) {
+            return;
+        }
         UUID conversationId = goal.getConversationId();
         if (conversationId == null) {
             return;
         }
+        UUID runId = runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId())
+                .map(Run::getId)
+                .orElse(null);
+
         if ("completed".equals(status)) {
-            append(goal, conversationId, task, "answer",
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("taskId", task.getId().toString());
+            detail.put("runId", runId == null ? "" : runId.toString());
+            detail.put(
+                    "agentId",
+                    task.getAgentId() == null ? "" : task.getAgentId().toString());
+            // The web stops fetching a run's steps for an answer once it already knows the answer
+            // came from the offline sandbox rather than a real model.
+            detail.put("sandbox", runId != null && steps.existsByRunIdAndProviderId(runId, "sandbox"));
+            appendAs(
+                    "agent",
+                    goal,
+                    conversationId,
+                    task.getAgentId(),
+                    "answer",
                     task.getResult() == null ? "" : task.getResult(),
-                    Map.of(
-                            "taskId", task.getId().toString(),
-                            "runId", runIdOf(task),
-                            "agentId", task.getAgentId() == null ? "" : task.getAgentId().toString()));
+                    detail);
         } else if ("failed".equals(status)) {
             String reason = task.getFailureReason() == null ? DEFAULT_FAILURE_REASON : task.getFailureReason();
-            append(goal, conversationId, task, "error", reason, Map.of("reason", reason));
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("reason", reason);
+            detail.put("taskId", task.getId().toString());
+            detail.put("runId", runId == null ? "" : runId.toString());
+            String code = errorCodeFor(runId);
+            if (code != null) {
+                detail.put("code", code);
+            }
+            appendAs("agent", goal, conversationId, task.getAgentId(), "error", reason, detail);
         } else if ("cancelled".equals(status)) {
             // A rejected approval or a stopped run ends the work; without a line in the thread the
             // conversation would still read as though the agent were working on it.
-            String reason = task.getFailureReason() == null || task.getFailureReason().isBlank()
-                    ? "This work was stopped before it finished."
-                    : "Stopped: " + task.getFailureReason();
-            append(goal, conversationId, task, "error", reason, Map.of("reason", reason));
+            String reason =
+                    task.getFailureReason() == null || task.getFailureReason().isBlank()
+                            ? "This work was stopped before it finished."
+                            : "Stopped: " + task.getFailureReason();
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("goalId", goal.getId().toString());
+            detail.put("taskId", task.getId().toString());
+            detail.put("event", "cancelled");
+            appendAs("system", goal, conversationId, task.getAgentId(), "notice", reason, detail);
         }
         // Skipped tasks are ordinary chain outcomes with nothing new to tell a person that the
         // progress card, driven off the goal itself, does not already show.
     }
 
-    private String runIdOf(Task task) {
-        return runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId()).map(Run::getId).map(UUID::toString).orElse("");
+    @Override
+    @Transactional
+    public void onGoalCancelled(Goal goal, String reason) {
+        if (goal == null || goal.getConversationId() == null) {
+            return;
+        }
+        if (ConversationAdmin.DELETED_REASON.equals(reason)) {
+            // The conversation is about to go with it; narrating a cancel nobody will ever read
+            // would only be noise, and appending to a row mid-delete risks the two racing.
+            return;
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("goalId", goal.getId().toString());
+        detail.put("event", "cancelled");
+        detail.put("reason", reason);
+        appendAs("system", goal, goal.getConversationId(), null, "notice", "Stopped. " + reason, detail);
     }
 
-    private void append(Goal goal, UUID conversationId, Task task, String kind, String content, Map<String, Object> detail) {
-        Conversation conversation = conversations.findById(conversationId).orElse(null);
+    @Override
+    @Transactional
+    public void onGoalRetried(Goal goal, Task fromTask) {
+        if (goal == null || goal.getConversationId() == null || fromTask == null) {
+            return;
+        }
+        String agentName = agentNameFor(fromTask.getAgentId());
+        String content = "Trying again from step " + (fromTask.getPosition() + 1) + ": " + agentName + ".";
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("goalId", goal.getId().toString());
+        detail.put("event", "retried");
+        detail.put("fromTaskId", fromTask.getId().toString());
+        appendAs("system", goal, goal.getConversationId(), null, "notice", content, detail);
+    }
+
+    @Override
+    @Transactional
+    public void onQuestionAsked(Goal goal, Task task, RunQuestion question) {
+        if (question == null || question.getConversationId() == null) {
+            return;
+        }
+        Conversation conversation =
+                appender.lock(question.getOrgId(), question.getConversationId()).orElse(null);
         if (conversation == null) {
             return;
         }
-        int position = conversation.nextPosition();
-        conversation.recordMessage(content);
-        conversations.save(conversation);
-        messages.save(os.aiworkforce.orchestrator.domain.ChatMessage.of(
-                goal.getOrgId(), conversationId, position, "agent", null, task.getAgentId(),
-                kind, content, detail, goal.getId()));
+        if (alreadyPosted(question.getConversationId(), question.getId())) {
+            return;
+        }
+        List<Map<String, Object>> parsed = readQuestions(question);
+        String content =
+                parsed.isEmpty() ? "" : String.valueOf(parsed.getFirst().get("question"));
+        List<String> headers =
+                parsed.stream().map(q -> String.valueOf(q.get("header"))).toList();
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("questionId", question.getId().toString());
+        detail.put("runId", question.getRunId().toString());
+        detail.put(
+                "taskId",
+                question.getTaskId() == null ? null : question.getTaskId().toString());
+        detail.put(
+                "agentId",
+                question.getAgentId() == null ? null : question.getAgentId().toString());
+        detail.put("count", parsed.size());
+        detail.put("headers", headers);
+        detail.put(
+                "expiresAt",
+                question.getExpiresAt() == null ? null : question.getExpiresAt().toString());
+        appender.append(
+                conversation, "agent", null, question.getAgentId(), "question", content, detail, question.getGoalId());
+    }
+
+    /** Read from the conversation's own last messages, because a question message never carries a version to race on. */
+    private boolean alreadyPosted(UUID conversationId, UUID questionId) {
+        return messages
+                .findByConversationIdOrderByPositionDesc(conversationId, PageRequest.of(0, DUPLICATE_CHECK_WINDOW))
+                .stream()
+                .anyMatch(m -> "question".equals(m.getKind())
+                        && questionId
+                                .toString()
+                                .equals(String.valueOf(m.getDetail().get("questionId"))));
+    }
+
+    private List<Map<String, Object>> readQuestions(RunQuestion question) {
+        try {
+            return json.readValue(question.getQuestionsJson(), new TypeReference<List<Map<String, Object>>>() {});
+        } catch (JsonProcessingException | RuntimeException malformed) {
+            log.warn("Could not read the questions stored on {}", question.getId(), malformed);
+            return List.of();
+        }
+    }
+
+    private String errorCodeFor(UUID runId) {
+        if (runId == null) {
+            return null;
+        }
+        return steps.findFirstByRunIdAndKindOrderByPositionDesc(runId, "error")
+                .map(step -> step.getDetail() == null ? null : step.getDetail().get("code"))
+                .map(String::valueOf)
+                .orElse(null);
+    }
+
+    private String agentNameFor(UUID agentId) {
+        if (agentId == null) {
+            return "the agent";
+        }
+        return agents.findById(agentId).map(Agent::getName).orElse("the agent");
+    }
+
+    private void appendAs(
+            String authorKind,
+            Goal goal,
+            UUID conversationId,
+            UUID agentId,
+            String kind,
+            String content,
+            Map<String, Object> detail) {
+        Conversation conversation =
+                appender.lock(goal.getOrgId(), conversationId).orElse(null);
+        if (conversation == null) {
+            return;
+        }
+        appender.append(conversation, authorKind, null, agentId, kind, content, detail, goal.getId());
     }
 }

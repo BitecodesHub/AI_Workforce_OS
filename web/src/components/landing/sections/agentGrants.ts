@@ -1,7 +1,7 @@
 import type { AgentId, ToolServer } from '../shared/landingFacts'
 
 /*
- * What each demo agent may do with each tool server, in one sentence per grant.
+ * What each demo agent may do with each tool server, in one plain sentence per grant.
  *
  * Checked against two sources, which must stay in step with this file:
  *   - orchestrator-service DemoAgentSeeder.java, which gives each agent its servers, its allowed
@@ -17,28 +17,28 @@ export type AgentGrant = { server: ToolServer; sentence: string; gated: boolean 
 
 export const AGENT_GRANTS: Record<AgentId, ReadonlyArray<AgentGrant>> = {
   hr: [
-    { server: 'gmail', sentence: 'Reads and drafts freely. gmail.send_message waits for a person.', gated: true },
+    { server: 'gmail', sentence: 'Reads and drafts emails on its own. Sending one waits for approval.', gated: true },
     {
       server: 'calendar',
-      sentence: 'Works in the calendar. Deleting an event, calendar.delete_event, waits for a person.',
+      sentence: 'Adds events to the calendar on its own. Deleting one waits for approval.',
       gated: true,
     },
   ],
   eng: [
     // The grant covers the whole github server with repo:write, and create_issue and update_issue
     // are WRITE tools, so issues change without approval. Saying only "reads" would understate it.
-    { server: 'github', sentence: 'Reads pull requests to summarise them. Opens and updates issues directly.', gated: false },
-    { server: 'jira', sentence: 'Updates tickets directly.', gated: false },
-    { server: 'slack', sentence: 'Reads channels. slack.post_message waits for a person.', gated: true },
+    { server: 'github', sentence: 'Reads pull requests to sum them up, and opens or updates issues on its own.', gated: false },
+    { server: 'jira', sentence: 'Updates tickets on its own.', gated: false },
+    { server: 'slack', sentence: 'Reads channels on its own. Posting a message waits for approval.', gated: true },
   ],
   research: [
     // The drive server offers list_files, get_file and create_file only. There is no sharing
     // tool, so nothing on this server is gated and no sharing step exists to wait on.
-    { server: 'drive', sentence: 'Reads files and creates new documents. The drive server has no sharing tool.', gated: false },
+    { server: 'drive', sentence: 'Reads files and creates new documents. It has no way to share them.', gated: false },
   ],
   support: [
-    { server: 'gmail', sentence: 'Drafts every reply from your handbook. Each send waits for a person.', gated: true },
-    { server: 'slack', sentence: 'slack.post_message waits for a person.', gated: true },
+    { server: 'gmail', sentence: 'Drafts every reply from your handbook. Each one waits for approval before it is sent.', gated: true },
+    { server: 'slack', sentence: 'Posting a message waits for approval.', gated: true },
   ],
 }
 

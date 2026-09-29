@@ -25,6 +25,8 @@ export function RunStats({ run, steps, now }: { run: Run; steps: RunStep[] | und
     duration = { value: formatElapsed(run.startedAt, null, now), note: 'So far; the run is still going' }
   } else if (run.status === 'waiting_approval') {
     duration = { value: 'Paused', note: `Waiting for an approval. Started ${formatRelative(run.startedAt, now)}.` }
+  } else if (run.status === 'waiting_input') {
+    duration = { value: 'Paused', note: `Waiting for an answer. Started ${formatRelative(run.startedAt, now)}.` }
   } else if (run.completedAt) {
     duration = { value: formatElapsed(run.startedAt, run.completedAt), note: 'From start to finish' }
   } else {

@@ -1,15 +1,16 @@
 package os.aiworkforce.organisation.web;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -62,16 +63,16 @@ public class WorkspaceController {
     private final InternalTokenProvider tokens;
 
     public WorkspaceController(
-            Organisations organisations, WebClient.Builder builder, PlatformProperties properties,
+            Organisations organisations,
+            WebClient.Builder builder,
+            PlatformProperties properties,
             InternalTokenProvider tokens) {
         this.organisations = organisations;
         this.identityClient = builder.baseUrl(properties.services().identity()).build();
         this.tokens = tokens;
     }
 
-    public record CreateWorkspaceRequest(
-            @NotBlank @Size(max = 120) String name,
-            @Size(max = 60) String timezone) {}
+    public record CreateWorkspaceRequest(@NotBlank @Size(max = 120) String name, @Size(max = 60) String timezone) {}
 
     public record WorkspaceView(UUID id, String name, String slug, String timezone, String status) {}
 
@@ -87,13 +88,16 @@ public class WorkspaceController {
         org.setId(UuidV7.generate());
         org.setName(request.name().strip());
         org.setSlug(slug);
-        org.setTimezone(request.timezone() == null || request.timezone().isBlank()
-                ? "Australia/Melbourne" : request.timezone());
+        org.setTimezone(
+                request.timezone() == null || request.timezone().isBlank()
+                        ? "Australia/Melbourne"
+                        : request.timezone());
         org.setOwnerId(UUID.fromString(actor.id()));
         organisations.save(org);
 
         try {
-            identityClient.post()
+            identityClient
+                    .post()
                     .uri("/internal/memberships/bootstrap-owner")
                     .header("Authorization", "Bearer " + tokens.forService("identity"))
                     .bodyValue(new BootstrapRequest(org.getId(), UUID.fromString(actor.id())))
@@ -122,8 +126,8 @@ public class WorkspaceController {
     public WorkspaceView get(@PathVariable UUID workspaceId) {
         // Read without a permission check beyond authentication: the workspace picker on sign-in
         // needs a name to show before the caller's token carries any workspace-scoped permission.
-        return toView(organisations.findById(workspaceId)
-                .orElseThrow(() -> ApiException.notFound("workspace", workspaceId)));
+        return toView(
+                organisations.findById(workspaceId).orElseThrow(() -> ApiException.notFound("workspace", workspaceId)));
     }
 
     private String uniqueSlug(String name) {

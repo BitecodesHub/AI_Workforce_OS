@@ -1,15 +1,16 @@
 package os.aiworkforce.orchestrator.domain;
 
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.util.Objects;
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
-import java.io.Serializable;
-import java.math.BigDecimal;
-import java.util.Objects;
-import java.util.UUID;
 
 /** One model in a routing chain, at a fixed position. */
 @Entity

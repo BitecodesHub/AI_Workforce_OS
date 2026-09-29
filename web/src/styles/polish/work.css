@@ -1,0 +1,14 @@
+/* UI/UX polish: work screens. Loaded after components.css, so rules here refine it. */
+
+/* ---- Approvals: payload readability ----------------------------------------------------------
+ * A tool call's payload can run to many lines of JSON. Left unbounded, a long one pushes the
+ * Approve/Reject buttons far down the card, past what a reviewer sees without scrolling the whole
+ * page first. Capping its own height keeps the decision within reach while the full payload stays
+ * one small scroll away; the region carries its own accessible name and is keyboard-focusable, so
+ * arrow keys scroll it once it is focused, the same pattern the shared data table already uses for
+ * its own horizontal scroll.
+ */
+.approval-payload {
+  max-height: 280px;
+  overflow: auto;
+}

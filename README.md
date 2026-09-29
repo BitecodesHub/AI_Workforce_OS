@@ -111,12 +111,14 @@ merely compiled in isolation.
 | Knowledge: chunking, embeddings, Qdrant, hybrid retrieval with citations | Built and live-verified, including the dense half |
 | Integrations: connections, scopes, tool invocation records | Built and verified |
 | Analytics: audit hash chain, live-emitted events, dashboards | Built and verified |
-| Web client: 22 screens, design system, design-system tests, a usability pass for first-time evaluators | Built and tested |
-| Workforce Chat: one conversation with every agent; @mention, model-planned or keyword routing, each reply saying who took the work and why; multi-agent chains with handoffs; inline approvals; document questions answered from Knowledge | Built and live-verified against OpenRouter |
-| Orchestrator: live flow map of the coordinator and agents, per-agent swimlanes, a board of queued, working, waiting and finished work with who asked for it, pause per agent, stop everything | Built and live-verified |
+| Web client: 22 screens, design system, design-system tests, a usability pass for first-time evaluators, a UI/UX polish pass against the UI UX Pro Max guidelines, an axe-core WCAG 2.2 AA audit of every page at laptop and mobile widths | Built, tested, and checked live at 375px, 1366px and 1440px |
+| Workforce Chat: one conversation with every agent; @mention, model-planned or keyword routing, each reply saying who took the work and why; multi-agent chains with handoffs; inline approvals; document questions answered from Knowledge; a General Employee fallback so no request ever dead-ends; agents can ask a clarifying question mid-run, answerable as a question card, by typing in the composer, or from the Orchestrator; a collapsible sidebar, grouped conversations and a Work panel on wide screens | Built and live-verified against OpenRouter and the sandbox provider |
+| Orchestrator: live flow map of the coordinator and agents, per-agent swimlanes, a board of queued, working, waiting and finished work with who asked for it, a "Needs you" inbox of open questions and approvals ordered by urgency, pause per agent, stop everything | Built and live-verified |
 | Schedules: plain-English timetables ("every weekday at 9am", "tomorrow at 3pm") echoed back with the next five runs in the workspace timezone; pause, resume, run now; auto-pause after three failures | Built and live-verified |
 | Voice (ElevenLabs): speak to Chat and hear replies, a voice per agent, and a voice-note tool for agents; the browser's own speech is used until a key is stored | Built; verified live with the browser fallback, ElevenLabs path unit-tested against a mocked API (no key available) |
-| Public home page: interactive console, approval-gate, provider-failover, audit-chain and cited-answer demos, role explorer | Built, tested, and adversarially reviewed |
+| Public home page (`/home`), written for business buyers: plain-language offer, how it works in three steps, the AI team, two demos (approval, cited answers) behind tabs, safety promises with a who-can-do-what table, questions and answers | Built, tested, axe-clean at 375px and 1366px |
+| Page for IT and security teams (`/trust`): all four technical demos (approval gate, provider failover, audit chain, cited retrieval), the full permission explorer, what runs, and the limits | Built, tested, axe-clean at 375px and 1366px |
+| Sign in, create a workspace, accept an invitation: one shared layout, a one-row demo-role picker, show-password control, a stepper for sign-up | Built, tested, live-verified |
 | Gateway: routing, JWT verification, Redis-backed rate limiting | Built and live-verified |
 | Containers, compose stack, Kubernetes manifests, CI | Built |
 
@@ -166,14 +168,30 @@ handed over, and work started from Chat or a schedule runs in the background. Ve
 against OpenRouter also found that tool names with a dot were rejected by some models, and that
 an out-of-credit reply (HTTP 402) was misfiled as an unknown error; both are fixed.
 
+On 29 September 2026, Chat and the Orchestrator were extended again: a run can now pause
+(`waiting_input`) when an agent asks a clarifying question through an internal tool, and resumes
+exactly once with the person's answer, never past a newer open question or approval. A new
+General Employee fallback agent, found by a flag rather than by name, takes any request no
+specialist matches, so chat never dead-ends. Both pages were rebuilt for space and interaction —
+a collapsible sidebar and grouped conversation list in Chat, a "Needs you" inbox and a goal sheet
+in the Orchestrator. See [`docs/2026-09-25_Test-and-Fix-Plan_v1.md`](docs/2026-09-25_Test-and-Fix-Plan_v1.md)'s
+"Clarifying questions, General Employee and the Chat/Orchestrator redesign" section for full detail
+and live-verification notes.
+
 See [`docs/2026-09-25_Test-and-Fix-Plan_v1.md`](docs/2026-09-25_Test-and-Fix-Plan_v1.md) for the
-full defect register (84 entries, all fixed) and the journeys walked to close it, including a
+full defect register (86 entries, all fixed) and the journeys walked to close it, including a
 full role-by-role walkthrough (owner, admin, manager, employee, viewer, each signed in for real)
 that found and fixed six more defects: two permission-gate bugs that hid data a role legitimately
 had access to, one backend endpoint gated too strictly for a page every role should be able to
 open, and a systemic pattern of mutating buttons rendered with no permission check at all -
 including an Approve/Reject pair that used a mutation function's truthiness (always true) as its
 permission check.
+
+A final production sweep (28 September 2026) closed the register: speech without a stored
+ElevenLabs key now correctly returns 409 rather than 422; a chat reply's screen-reader
+announcement no longer freezes on the generic "an agent" wording when the agent-name lookup is
+still loading; the console and public pages are code-split by route, cutting the main JS bundle
+from 657 kB to 459 kB; and a sweep for secrets, debug statements and TODOs came back clean.
 
 ## Retrieval, and why the query is written the way it is
 
@@ -199,6 +217,21 @@ Tokens are signed ES256, not EdDSA as first built. Nimbus documents
 cannot be turned into a verifier by the standard JWT processor — it fails with "no matching
 key(s) found", which points at the key set rather than at the algorithm. ES256 is supported
 natively by the JDK, needs no third-party crypto library, and is equally sound.
+
+## Font
+
+The whole web client uses one typeface, **Aperçu** (Colophon Foundry). It is a commercial font,
+so it is not loaded from a font CDN and its files are not in this repository. Put the licensed web
+files in `web/public/fonts/` under exactly these names:
+
+```
+web/public/fonts/apercu-regular.woff2
+web/public/fonts/apercu-medium.woff2
+web/public/fonts/apercu-bold.woff2
+```
+
+`web/src/styles/fonts.css` declares them, and a machine with Aperçu installed uses its own copy
+first. Until the files are added, text falls back to the system sans-serif.
 
 ## Tests
 

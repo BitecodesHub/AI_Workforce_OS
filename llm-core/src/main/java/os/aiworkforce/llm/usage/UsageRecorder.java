@@ -14,12 +14,7 @@ import os.aiworkforce.llm.model.AttemptRecord;
  */
 public interface UsageRecorder {
 
-    void record(
-            String orgId,
-            String agentId,
-            String runId,
-            AttemptRecord attempt,
-            BigDecimal cost);
+    void record(String orgId, String agentId, String runId, AttemptRecord attempt, BigDecimal cost);
 
     /** Used in tests and where accounting is not wanted. */
     UsageRecorder NONE = (orgId, agentId, runId, attempt, cost) -> {

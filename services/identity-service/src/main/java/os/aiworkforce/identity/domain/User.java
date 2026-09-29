@@ -1,10 +1,11 @@
 package os.aiworkforce.identity.domain;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import java.time.Duration;
-import java.time.Instant;
 
 import os.aiworkforce.platform.web.persistence.BaseEntity;
 

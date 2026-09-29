@@ -2,9 +2,11 @@ package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,6 +28,7 @@ import os.aiworkforce.orchestrator.domain.AgentToolGrant;
 import os.aiworkforce.orchestrator.domain.AgentVersion;
 import os.aiworkforce.orchestrator.repository.AgentVersions;
 import os.aiworkforce.orchestrator.repository.ToolGrants;
+import os.aiworkforce.orchestrator.service.GeneralEmployee;
 import os.aiworkforce.orchestrator.service.RoutingPolicyResolver;
 import os.aiworkforce.platform.error.ApiException;
 
@@ -33,10 +36,11 @@ import os.aiworkforce.platform.error.ApiException;
  * Asks a live model to plan a short chain of agents for a piece of work, when the workspace has
  * one configured.
  *
- * <p>One call, asking for strict JSON against a fixed schema. The result is trusted only when it
- * came from an actual provider - never the offline sandbox, which cannot really read the request -
- * and only when it names agents that exist and are active. Anything else and this returns empty,
- * which tells the coordinator to fall back to {@link RuleRouter}.
+ * <p>One call, asking for strict JSON against a schema built for this workspace's active agents.
+ * The result is trusted only when it came from an actual provider - never the offline sandbox,
+ * which cannot really read the request - and only when it names agents that exist and are active.
+ * Anything else and this returns empty, which tells the coordinator to fall back to
+ * {@link RuleRouter}.
  */
 @Service
 public class ModelRouterPlanner {
@@ -45,11 +49,8 @@ public class ModelRouterPlanner {
     private static final int MAX_STEPS = 3;
     private static final Pattern FIRST_SENTENCE = Pattern.compile("^(.+?[.!?])(?=\\s|$)");
 
-    private static final String JSON_SCHEMA = """
-            {"type":"object","properties":{"plan":{"type":"array","minItems":1,"maxItems":3,\
-            "items":{"type":"object","properties":{"agentKey":{"type":"string"},\
-            "instruction":{"type":"string"}},"required":["agentKey","instruction"]}},\
-            "reason":{"type":"string"}},"required":["plan","reason"]}""";
+    /** A reply that arrived fenced in a markdown code block, with an optional "json" tag. */
+    private static final Pattern CODE_FENCE = Pattern.compile("^```(?:json)?\\s*(.*?)\\s*```$", Pattern.DOTALL);
 
     private final ModelRouter router;
     private final RoutingPolicyResolver policies;
@@ -58,8 +59,11 @@ public class ModelRouterPlanner {
     private final ObjectMapper objectMapper;
 
     public ModelRouterPlanner(
-            ModelRouter router, RoutingPolicyResolver policies, AgentVersions versions,
-            ToolGrants grants, ObjectMapper objectMapper) {
+            ModelRouter router,
+            RoutingPolicyResolver policies,
+            AgentVersions versions,
+            ToolGrants grants,
+            ObjectMapper objectMapper) {
         this.router = router;
         this.policies = policies;
         this.versions = versions;
@@ -71,32 +75,74 @@ public class ModelRouterPlanner {
 
     public record Plan(List<PlannedStep> steps, String reason) {}
 
+    /**
+     * A steer for the prompt beyond the agent catalog itself.
+     *
+     * @param lastAnswerAgent the agent whose reply was last in this conversation, so a short
+     *     follow-up ("shorter", "now send it") can be kept with the agent it refers to; null when
+     *     there is no such reply, or this is the first message
+     */
+    public record PlanHints(Agent lastAnswerAgent) {
+        public static final PlanHints NONE = new PlanHints(null);
+    }
+
     /** Empty when no live provider answered with a plan this coordinator can act on. */
     public Optional<Plan> plan(UUID orgId, String text, List<Agent> agents) {
-        List<Agent> active = agents.stream().filter(agent -> "active".equals(agent.getStatus())).toList();
+        return plan(orgId, text, agents, PlanHints.NONE);
+    }
+
+    /** Empty when no live provider answered with a plan this coordinator can act on. */
+    public Optional<Plan> plan(UUID orgId, String text, List<Agent> agents, PlanHints hints) {
+        List<Agent> active = agents.stream()
+                .filter(agent -> "active".equals(agent.getStatus()))
+                .toList();
         if (active.isEmpty()) {
             return Optional.empty();
         }
 
-        Map<String, Agent> byKey = new java.util.LinkedHashMap<>();
+        Map<String, Agent> byKey = new LinkedHashMap<>();
         for (Agent agent : active) {
             if (agent.getKey() != null) {
                 byKey.putIfAbsent(agent.getKey(), agent);
             }
         }
 
+        Agent fallback =
+                active.stream().filter(GeneralEmployee::isFallback).findFirst().orElse(null);
+        String fallbackLine = fallback == null
+                ? "- Choose the agent whose work the request is."
+                : "- Choose the agent whose work the request is. When no specialist clearly fits, choose \"%s\"."
+                        .formatted(fallback.getKey());
+        PlanHints effectiveHints = hints == null ? PlanHints.NONE : hints;
+        String hintLine = effectiveHints.lastAnswerAgent() == null
+                ? ""
+                : ("The last reply in this conversation came from %s (key %s). A short follow-up that refers to "
+                                + "that reply, such as \"shorter\", \"now send it\" or \"add a table\", belongs to the same agent.")
+                        .formatted(
+                                effectiveHints.lastAnswerAgent().getName(),
+                                effectiveHints.lastAnswerAgent().getKey());
+
         String catalog = active.stream().map(this::describe).collect(Collectors.joining("\n"));
-        String system = """
-                You route one request from a person to between one and three of the agents below, \
-                in the order they should work. Reply with only the JSON shape you were given. \
-                Use only the agent keys listed; never invent one.
+        String system =
+                """
+                You route one request from a person to between one and three of the agents below, in the order they should work.
+                Rules:
+                %s
+                - Never leave a request unrouted. For a vague request, route it to the agent that would do the work; that agent can ask the person a question.
+                - Use each agent at most once. Use more than one agent only when the request asks for work done in sequence.
+                - Write each instruction as a complete request that agent can act on alone.
+                - Use only the agent keys listed; never invent one.
+                %s
+                Reply with only a JSON object of this shape, and nothing else:
+                {"plan":[{"agentKey":"<key>","instruction":"<text>"}],"reason":"<one sentence>"}
 
                 Agents:
-                %s""".formatted(catalog);
+                %s"""
+                        .formatted(fallbackLine, hintLine, catalog);
 
         ChatRequest request = ChatRequest.builder()
                 .messages(List.of(ChatMessage.system(system), ChatMessage.user(text)))
-                .jsonSchema(JSON_SCHEMA)
+                .jsonSchema(schemaFor(byKey.keySet()))
                 .maxOutputTokens(800)
                 .timeout(Duration.ofSeconds(20))
                 .build();
@@ -121,12 +167,26 @@ public class ModelRouterPlanner {
         return parse(response.content(), byKey);
     }
 
+    /** The plan schema, built per call so the model can only name a key that actually exists. */
+    private static String schemaFor(Set<String> activeKeys) {
+        String enumJson = activeKeys.stream()
+                .map(key -> "\"" + key.replace("\"", "\\\"") + "\"")
+                .collect(Collectors.joining(","));
+        return """
+                {"type":"object","additionalProperties":false,"required":["plan","reason"],"properties":{
+                "plan":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"object","additionalProperties":false,
+                "required":["agentKey","instruction"],"properties":{"agentKey":{"type":"string","enum":[%s]},
+                "instruction":{"type":"string"}}}},
+                "reason":{"type":"string"}}}"""
+                .formatted(enumJson);
+    }
+
     private Optional<Plan> parse(String content, Map<String, Agent> byKey) {
         if (content == null || content.isBlank()) {
             return Optional.empty();
         }
         try {
-            JsonNode root = objectMapper.readTree(content);
+            JsonNode root = objectMapper.readTree(cleanJson(content));
             JsonNode planNode = root.get("plan");
             if (planNode == null || !planNode.isArray() || planNode.isEmpty() || planNode.size() > MAX_STEPS) {
                 return Optional.empty();
@@ -152,10 +212,28 @@ public class ModelRouterPlanner {
         }
     }
 
+    /**
+     * Strips a reply down to the JSON object it should contain: leading and trailing whitespace,
+     * then a surrounding markdown code fence when present, then everything outside the outermost
+     * braces. A model that decorates its answer with prose or formatting still parses.
+     */
+    private static String cleanJson(String content) {
+        String stripped = content.strip();
+        Matcher fence = CODE_FENCE.matcher(stripped);
+        String unfenced = fence.matches() ? fence.group(1) : stripped;
+        int start = unfenced.indexOf('{');
+        int end = unfenced.lastIndexOf('}');
+        if (start < 0 || end < start) {
+            return unfenced;
+        }
+        return unfenced.substring(start, end + 1);
+    }
+
     private String describe(Agent agent) {
         String does = "";
         if (agent.getCurrentVersionId() != null) {
-            AgentVersion version = versions.findById(agent.getCurrentVersionId()).orElse(null);
+            AgentVersion version =
+                    versions.findById(agent.getCurrentVersionId()).orElse(null);
             if (version != null) {
                 does = firstSentence(version.getSystemPrompt());
             }
@@ -165,8 +243,10 @@ public class ModelRouterPlanner {
                 .distinct()
                 .sorted()
                 .collect(Collectors.joining(", "));
-        return "- key: %s, name: %s, category: %s, does: %s, tools: %s".formatted(
-                agent.getKey(), agent.getName(), agent.getCategory(), does, tools);
+        String fallbackNote =
+                GeneralEmployee.isFallback(agent) ? " (default: choose when no other agent clearly fits)" : "";
+        return "- key: %s, name: %s, category: %s, does: %s, tools: %s%s"
+                .formatted(agent.getKey(), agent.getName(), agent.getCategory(), does, tools, fallbackNote);
     }
 
     private static String firstSentence(String prompt) {

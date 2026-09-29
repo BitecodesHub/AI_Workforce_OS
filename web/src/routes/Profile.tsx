@@ -93,9 +93,7 @@ export function Profile() {
               {initials(me?.displayName)}
             </span>
             <div>
-              <p className="section-heading" style={{ fontSize: '15px' }}>
-                {me?.displayName}
-              </p>
+              <p className="section-heading">{me?.displayName}</p>
               <p className="muted">{me?.email}</p>
             </div>
           </div>

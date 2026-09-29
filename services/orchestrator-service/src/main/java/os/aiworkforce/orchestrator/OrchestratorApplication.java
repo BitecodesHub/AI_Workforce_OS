@@ -17,9 +17,21 @@ import os.aiworkforce.platform.web.PlatformWeb;
  * needs from a sibling arrives over that sibling's published API or over an event.
  */
 @SpringBootApplication(
-        scanBasePackageClasses = {OrchestratorApplication.class, PlatformCore.class, PlatformWeb.class, LlmCore.class, McpCore.class})
+        scanBasePackageClasses = {
+            OrchestratorApplication.class,
+            PlatformCore.class,
+            PlatformWeb.class,
+            LlmCore.class,
+            McpCore.class
+        })
 @ConfigurationPropertiesScan(
-        basePackageClasses = {OrchestratorApplication.class, PlatformCore.class, PlatformWeb.class, LlmCore.class, McpCore.class})
+        basePackageClasses = {
+            OrchestratorApplication.class,
+            PlatformCore.class,
+            PlatformWeb.class,
+            LlmCore.class,
+            McpCore.class
+        })
 public class OrchestratorApplication {
 
     public static void main(String[] args) {

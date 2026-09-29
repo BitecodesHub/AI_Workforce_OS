@@ -57,9 +57,8 @@ public class PermissionSeeder {
     }
 
     private void seedPermissions() {
-        Map<String, PermissionRecord> existing =
-                permissions.findAll().stream().collect(java.util.stream.Collectors.toMap(
-                        PermissionRecord::getCode, record -> record));
+        Map<String, PermissionRecord> existing = permissions.findAll().stream()
+                .collect(java.util.stream.Collectors.toMap(PermissionRecord::getCode, record -> record));
 
         int inserted = 0;
         int updated = 0;
@@ -67,8 +66,11 @@ public class PermissionSeeder {
             PermissionRecord record = existing.get(permission.code());
             if (record == null) {
                 permissions.save(new PermissionRecord(
-                        permission.code(), permission.resource(), permission.action(),
-                        permission.description(), permission.administrative()));
+                        permission.code(),
+                        permission.resource(),
+                        permission.action(),
+                        permission.description(),
+                        permission.administrative()));
                 inserted++;
             } else if (!record.getDescription().equals(permission.description())
                     || record.isAdministrative() != permission.administrative()) {
@@ -105,54 +107,117 @@ public class PermissionSeeder {
      * the workforce; only an administrator can change who is allowed to.
      */
     private void seedSystemRoles() {
-        ensureRole("owner", "Full control of the workspace, including billing and closure.",
-                Permission.ALL.stream().map(Permission::code).collect(
-                        java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
+        ensureRole(
+                "owner",
+                "Full control of the workspace, including billing and closure.",
+                Permission.ALL.stream()
+                        .map(Permission::code)
+                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
 
-        ensureRole("admin", "Manages people, agents, integrations and settings.", codes(
-                Permission.WORKSPACE_READ, Permission.WORKSPACE_UPDATE,
-                Permission.MEMBER_READ, Permission.MEMBER_INVITE, Permission.MEMBER_UPDATE,
-                Permission.MEMBER_REMOVE, Permission.ROLE_READ, Permission.ROLE_CREATE,
-                Permission.ROLE_UPDATE, Permission.ROLE_DELETE,
-                Permission.API_KEY_READ, Permission.API_KEY_MANAGE,
-                Permission.AGENT_READ, Permission.AGENT_CREATE, Permission.AGENT_UPDATE,
-                Permission.AGENT_DELETE, Permission.AGENT_RUN, Permission.AGENT_GRANT_TOOLS,
-                Permission.AGENT_SET_MODEL_POLICY, Permission.AGENT_SET_APPROVAL_POLICY,
-                Permission.TASK_READ, Permission.TASK_CREATE, Permission.TASK_CANCEL,
-                Permission.RUN_READ, Permission.RUN_CANCEL, Permission.RUN_REPLAY, Permission.CHAT_USE,
-                Permission.APPROVAL_READ, Permission.APPROVAL_DECIDE,
-                Permission.KNOWLEDGE_READ, Permission.KNOWLEDGE_QUERY, Permission.KNOWLEDGE_SOURCE_MANAGE,
-                Permission.INTEGRATION_READ, Permission.INTEGRATION_CONNECT, Permission.INTEGRATION_DISCONNECT,
-                Permission.PROVIDER_READ, Permission.PROVIDER_MANAGE,
-                Permission.BUDGET_READ, Permission.BUDGET_MANAGE,
-                Permission.AUDIT_READ, Permission.ANALYTICS_READ,
-                Permission.SETTINGS_READ, Permission.SETTINGS_UPDATE,
-                Permission.MEMORY_READ, Permission.MEMORY_PURGE));
+        ensureRole(
+                "admin",
+                "Manages people, agents, integrations and settings.",
+                codes(
+                        Permission.WORKSPACE_READ,
+                        Permission.WORKSPACE_UPDATE,
+                        Permission.MEMBER_READ,
+                        Permission.MEMBER_INVITE,
+                        Permission.MEMBER_UPDATE,
+                        Permission.MEMBER_REMOVE,
+                        Permission.ROLE_READ,
+                        Permission.ROLE_CREATE,
+                        Permission.ROLE_UPDATE,
+                        Permission.ROLE_DELETE,
+                        Permission.API_KEY_READ,
+                        Permission.API_KEY_MANAGE,
+                        Permission.AGENT_READ,
+                        Permission.AGENT_CREATE,
+                        Permission.AGENT_UPDATE,
+                        Permission.AGENT_DELETE,
+                        Permission.AGENT_RUN,
+                        Permission.AGENT_GRANT_TOOLS,
+                        Permission.AGENT_SET_MODEL_POLICY,
+                        Permission.AGENT_SET_APPROVAL_POLICY,
+                        Permission.TASK_READ,
+                        Permission.TASK_CREATE,
+                        Permission.TASK_CANCEL,
+                        Permission.RUN_READ,
+                        Permission.RUN_CANCEL,
+                        Permission.RUN_REPLAY,
+                        Permission.CHAT_USE,
+                        Permission.APPROVAL_READ,
+                        Permission.APPROVAL_DECIDE,
+                        Permission.KNOWLEDGE_READ,
+                        Permission.KNOWLEDGE_QUERY,
+                        Permission.KNOWLEDGE_SOURCE_MANAGE,
+                        Permission.INTEGRATION_READ,
+                        Permission.INTEGRATION_CONNECT,
+                        Permission.INTEGRATION_DISCONNECT,
+                        Permission.PROVIDER_READ,
+                        Permission.PROVIDER_MANAGE,
+                        Permission.BUDGET_READ,
+                        Permission.BUDGET_MANAGE,
+                        Permission.AUDIT_READ,
+                        Permission.ANALYTICS_READ,
+                        Permission.SETTINGS_READ,
+                        Permission.SETTINGS_UPDATE,
+                        Permission.MEMORY_READ,
+                        Permission.MEMORY_PURGE));
 
         // A manager runs the workforce and approves its actions, but cannot change who else may.
-        ensureRole("manager", "Runs agents, assigns work and approves actions.", codes(
-                Permission.WORKSPACE_READ, Permission.MEMBER_READ, Permission.ROLE_READ,
-                Permission.AGENT_READ, Permission.AGENT_CREATE, Permission.AGENT_UPDATE,
-                Permission.AGENT_RUN, Permission.AGENT_SET_MODEL_POLICY,
-                Permission.TASK_READ, Permission.TASK_CREATE, Permission.TASK_CANCEL,
-                Permission.RUN_READ, Permission.RUN_CANCEL, Permission.CHAT_USE,
-                Permission.APPROVAL_READ, Permission.APPROVAL_DECIDE,
-                Permission.KNOWLEDGE_READ, Permission.KNOWLEDGE_QUERY, Permission.KNOWLEDGE_SOURCE_MANAGE,
-                Permission.INTEGRATION_READ, Permission.PROVIDER_READ, Permission.BUDGET_READ,
-                Permission.ANALYTICS_READ, Permission.SETTINGS_READ, Permission.MEMORY_READ));
+        ensureRole(
+                "manager",
+                "Runs agents, assigns work and approves actions.",
+                codes(
+                        Permission.WORKSPACE_READ,
+                        Permission.MEMBER_READ,
+                        Permission.ROLE_READ,
+                        Permission.AGENT_READ,
+                        Permission.AGENT_CREATE,
+                        Permission.AGENT_UPDATE,
+                        Permission.AGENT_RUN,
+                        Permission.AGENT_SET_MODEL_POLICY,
+                        Permission.TASK_READ,
+                        Permission.TASK_CREATE,
+                        Permission.TASK_CANCEL,
+                        Permission.RUN_READ,
+                        Permission.RUN_CANCEL,
+                        Permission.CHAT_USE,
+                        Permission.APPROVAL_READ,
+                        Permission.APPROVAL_DECIDE,
+                        Permission.KNOWLEDGE_READ,
+                        Permission.KNOWLEDGE_QUERY,
+                        Permission.KNOWLEDGE_SOURCE_MANAGE,
+                        Permission.INTEGRATION_READ,
+                        Permission.PROVIDER_READ,
+                        Permission.BUDGET_READ,
+                        Permission.ANALYTICS_READ,
+                        Permission.SETTINGS_READ,
+                        Permission.MEMORY_READ));
 
-        ensureRole("employee", "Asks questions and hands routine work to agents.", codes(
-                Permission.WORKSPACE_READ, Permission.MEMBER_READ,
-                Permission.AGENT_READ, Permission.AGENT_RUN,
-                Permission.TASK_READ, Permission.TASK_CREATE,
-                Permission.RUN_READ, Permission.CHAT_USE,
-                Permission.KNOWLEDGE_READ, Permission.KNOWLEDGE_QUERY,
-                Permission.INTEGRATION_READ, Permission.APPROVAL_READ));
+        ensureRole(
+                "employee",
+                "Asks questions and hands routine work to agents.",
+                codes(
+                        Permission.WORKSPACE_READ, Permission.MEMBER_READ,
+                        Permission.AGENT_READ, Permission.AGENT_RUN,
+                        Permission.TASK_READ, Permission.TASK_CREATE,
+                        Permission.RUN_READ, Permission.CHAT_USE,
+                        Permission.KNOWLEDGE_READ, Permission.KNOWLEDGE_QUERY,
+                        Permission.INTEGRATION_READ, Permission.APPROVAL_READ));
 
-        ensureRole("viewer", "Reads dashboards and traces without changing anything.", codes(
-                Permission.WORKSPACE_READ, Permission.MEMBER_READ, Permission.AGENT_READ,
-                Permission.TASK_READ, Permission.RUN_READ, Permission.KNOWLEDGE_READ,
-                Permission.INTEGRATION_READ, Permission.ANALYTICS_READ));
+        ensureRole(
+                "viewer",
+                "Reads dashboards and traces without changing anything.",
+                codes(
+                        Permission.WORKSPACE_READ,
+                        Permission.MEMBER_READ,
+                        Permission.AGENT_READ,
+                        Permission.TASK_READ,
+                        Permission.RUN_READ,
+                        Permission.KNOWLEDGE_READ,
+                        Permission.INTEGRATION_READ,
+                        Permission.ANALYTICS_READ));
     }
 
     private static Set<String> codes(Permission... permissions) {

@@ -14,6 +14,8 @@ import static os.aiworkforce.orchestrator.service.WorkFixture.ORG;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -29,6 +31,8 @@ import os.aiworkforce.orchestrator.repository.Runs;
 import os.aiworkforce.orchestrator.repository.Tasks;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
+import os.aiworkforce.platform.error.ApiException;
+import os.aiworkforce.platform.error.ErrorCode;
 
 /**
  * Submissions run on a thread of their own, so every assertion here waits for that thread rather
@@ -169,5 +173,61 @@ class RunExecutorTest {
         executor.submitResume(ORG, runId);
 
         verify(runner, timeout(2_000).times(1)).resume(ORG, runId);
+    }
+
+    @Test
+    @DisplayName("a second resume of a run already being resumed here is ignored until the first ends")
+    void submitResumeIgnoresDuplicateWhileInFlight() throws Exception {
+        UUID runId = UUID.randomUUID();
+        when(runs.findByIdAndOrgId(runId, ORG)).thenReturn(Optional.empty());
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(runner.resume(ORG, runId)).thenAnswer(call -> {
+            started.countDown();
+            release.await(2, TimeUnit.SECONDS);
+            return null;
+        });
+
+        executor.submitResume(ORG, runId);
+        assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+        executor.submitResume(ORG, runId);
+        release.countDown();
+
+        verify(runner, after(300).times(1)).resume(ORG, runId);
+
+        // Once the first has finished, the run can be resumed again.
+        executor.submitResume(ORG, runId);
+        verify(runner, timeout(2_000).times(2)).resume(ORG, runId);
+    }
+
+    @Test
+    @DisplayName("a submission that fails before it starts releases the run, so the next one still resumes it")
+    void submitResumeFailureDoesNotLeakInFlightId() {
+        UUID runId = UUID.randomUUID();
+        when(runs.findByIdAndOrgId(runId, ORG))
+                .thenThrow(new IllegalStateException("database unavailable"))
+                .thenReturn(Optional.empty());
+
+        assertThatCode(() -> executor.submitResume(ORG, runId)).doesNotThrowAnyException();
+        executor.submitResume(ORG, runId);
+
+        verify(runner, timeout(2_000).times(1)).resume(ORG, runId);
+    }
+
+    @Test
+    @DisplayName("a resume that finds the run no longer waiting is an ordinary outcome, and releases the run")
+    void conflictFromResumeIsNotAnError() {
+        UUID runId = UUID.randomUUID();
+        when(runs.findByIdAndOrgId(runId, ORG)).thenReturn(Optional.empty());
+        when(runner.resume(ORG, runId))
+                .thenThrow(new ApiException(ErrorCode.CONFLICT, "That run is not waiting for a person."))
+                .thenReturn(null);
+
+        assertThatCode(() -> executor.submitResume(ORG, runId)).doesNotThrowAnyException();
+        verify(runner, timeout(2_000).times(1)).resume(ORG, runId);
+        verify(runner, after(200).times(1)).resume(ORG, runId);
+
+        executor.submitResume(ORG, runId);
+        verify(runner, timeout(2_000).times(2)).resume(ORG, runId);
     }
 }

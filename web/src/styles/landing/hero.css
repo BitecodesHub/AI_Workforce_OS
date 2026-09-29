@@ -1,7 +1,7 @@
 /*
  * Public home page: the landing bar, the hero and its simulated console.
  *
- * Owner: hero. Classes use .lp-bar-*, .lp-hero-*, .lp-facts / .lp-fact* and .lp-console-*;
+ * Owner: hero. Classes use .lp-bar-*, .lp-hero-*, .lp-benefit* and .lp-console-*;
  * keyframes use lp-hero-*. Everything is built on base.css and never redefines it.
  *
  * Depth without shadows. The console is three glass layers. Each floats over a soft pool of blue
@@ -131,19 +131,23 @@
   --lp-hero-soft-ink: color-mix(in srgb, var(--muted) 62%, var(--ink));
 }
 
+/* One centred axis: the offer on top, the console beneath it at the full width of the page. */
 .lp-hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  align-items: center;
-  gap: 32px;
-  padding-top: 32px;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: 48px;
+  padding-top: 64px;
 }
 
 .lp-hero-copy {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  width: 100%;
+  max-width: 820px;
   min-width: 0;
+  text-align: center;
 }
 
 .lp-hero-copy > * {
@@ -152,20 +156,22 @@
 }
 
 .lp-hero-copy > .eyebrow {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .lp-hero-title {
-  max-width: 15ch;
+  max-width: 24ch;
   font-size: var(--lp-text-display);
   font-weight: var(--weight-strong);
-  line-height: 1.06;
-  letter-spacing: -0.022em;
+  line-height: 1.05;
+  letter-spacing: -0.028em;
   color: var(--ink);
   text-wrap: balance;
 }
 
+/* The promise takes its own line under the offer. */
 .lp-hero-accent {
+  display: block;
   background: linear-gradient(100deg, var(--blue), var(--blue-dark));
   -webkit-background-clip: text;
   background-clip: text;
@@ -182,18 +188,19 @@
 }
 
 .lp-hero-lead {
-  max-width: 46ch;
-  margin-top: 16px;
-  font-size: var(--lp-text-lead);
-  line-height: 1.55;
+  max-width: 58ch;
+  margin-top: 20px;
+  font-size: 17px;
+  line-height: 1.6;
   color: var(--lp-hero-soft-ink);
 }
 
 .lp-hero-ctas {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 24px;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 28px;
 }
 
 .lp-hero-ctas > .button {
@@ -203,9 +210,10 @@
 .lp-hero-caption {
   display: flex;
   align-items: flex-start;
+  justify-content: center;
   gap: 8px;
-  margin-top: 14px;
-  font-size: 12px;
+  margin-top: 16px;
+  font-size: var(--text-caption);
   line-height: 1.45;
   color: var(--lp-hero-soft-ink);
 }
@@ -214,87 +222,66 @@
   margin-top: 5px;
 }
 
-/* ---- Fact strip ------------------------------------------------------------------------- */
-
-/*
- * Columns size to their content, so each label stays on one line wherever it fits and the strip
- * keeps its 64px height; where a column is too narrow its label wraps and the strip grows rather
- * than letting text spill over the edge.
+/* ---- Benefits --------------------------------------------------------------------------
+ * Four plain promises under the offer, on the centre line. Each is a link to the part of the
+ * page that shows it; the row wraps into two by two on a narrow screen.
  */
-.lp-facts {
-  display: grid;
-  grid-template-columns: repeat(4, auto);
-  align-self: stretch;
-  min-height: 64px;
-  margin: 24px 0 0;
+.lp-benefits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 100%;
+  /* A sibling of the copy in the hero grid, so the four fit on one line; pulled up to sit 32px
+     under the caption rather than the grid's full gap. */
+  margin: -16px 0 0;
   padding: 0;
   list-style: none;
-  /* Overrides the glass card radius: the strip belongs to the tile family. */
-  border-radius: var(--radius-tile);
 }
 
-.lp-facts > li {
-  display: flex;
-  min-width: 0;
-}
-
-.lp-facts > li + li {
-  border-left: 1px solid var(--line);
-}
-
-/* Top-aligned, so every value shares one baseline even when a label wraps to two lines. */
-.lp-fact {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 4px;
-  min-width: 0;
-  padding: 11px 14px 10px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.lp-fact:focus-visible {
-  outline-offset: -2px;
-}
-
-.lp-fact-value {
-  font-size: 20px;
+.lp-benefit {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 16px 8px 8px;
+  font-size: 14px;
   font-weight: var(--weight-emphasis);
-  line-height: 1.1;
-  letter-spacing: -0.01em;
   color: var(--ink);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transition: color var(--lp-quick) ease;
+  text-decoration: none;
+  background: var(--lp-glass-strong);
+  border: 1px solid rgba(210, 221, 238, 0.9);
+  border-radius: var(--radius-pill);
+  transition:
+    border-color var(--lp-quick) ease,
+    background-color var(--lp-quick) ease;
 }
 
-/* break-word, not anywhere: it leaves each column's minimum width at its longest word. */
-.lp-fact-label {
-  overflow-wrap: break-word;
-  transition: color var(--lp-quick) ease;
+.lp-benefit:hover {
+  border-color: var(--border-hover);
+  background: var(--surface);
 }
 
-.lp-fact:focus-visible .lp-fact-value {
+.lp-benefit-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
   color: var(--blue);
-}
-
-@media (hover: hover) {
-  .lp-fact:hover .lp-fact-value {
-    color: var(--blue);
-  }
-
-  .lp-fact:hover .lp-fact-label {
-    color: var(--ink);
-  }
+  background: var(--blue-light);
 }
 
 /* ---- Console: figure and stage ---------------------------------------------------------- */
 
+/*
+ * The Command Map across the top, and under it a matched pair: the approval it is waiting on and
+ * the routing trace. The pair overlaps only the map's reserved bottom margin (--lp-console-lift),
+ * so depth reads without covering a word of the table.
+ */
 .lp-console {
-  --lp-console-h: 540px;
-  --lp-console-back-h: 400px;
+  --lp-console-lift: 48px;
   container: lp-console / inline-size;
   position: relative;
   display: grid;
@@ -303,7 +290,9 @@
     'stage stage'
     'caption pause';
   align-items: center;
-  gap: 14px 12px;
+  gap: 16px 12px;
+  width: 100%;
+  max-width: 1080px;
   min-width: 0;
   padding: 18px;
 }
@@ -311,40 +300,52 @@
 .lp-console-stage {
   grid-area: stage;
   position: relative;
-  height: var(--lp-console-h);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    'back back'
+    'approval trace';
+  column-gap: 20px;
   min-width: 0;
   perspective: none;
 }
 
 /* Each wrapper carries only the parallax translate; the layer inside carries the glass. */
 .lp-console-depth {
-  position: absolute;
+  position: relative;
   min-width: 0;
   transform: translate3d(calc(var(--px, 0) * 4px), calc(var(--py, 0) * 4px), 0);
 }
 
 .lp-console-depth[data-depth='back'] {
-  top: 0;
-  left: 0;
-  right: 0;
+  grid-area: back;
   z-index: 1;
-  height: var(--lp-console-back-h);
 }
 
+.lp-console-depth[data-depth='approval'],
 .lp-console-depth[data-depth='trace'] {
-  right: -12px;
-  bottom: 40px;
-  z-index: 2;
-  width: 292px;
-  transform: translate3d(calc(var(--px, 0) * 10px), calc(var(--py, 0) * 8px), 0);
+  display: flex;
+  flex-direction: column;
+  margin-top: calc(-1 * var(--lp-console-lift));
+}
+
+.lp-console-depth[data-depth='approval'] > .lp-console-layer,
+.lp-console-depth[data-depth='trace'] > .lp-console-layer {
+  flex: 1 1 auto;
 }
 
 .lp-console-depth[data-depth='approval'] {
-  left: -12px;
-  bottom: 0;
+  grid-area: approval;
   z-index: 3;
-  width: 300px;
-  transform: translate3d(calc(var(--px, 0) * 16px), calc(var(--py, 0) * 12px), 0);
+  margin-left: 6%;
+  transform: translate3d(calc(var(--px, 0) * 12px), calc(var(--py, 0) * 10px), 0);
+}
+
+.lp-console-depth[data-depth='trace'] {
+  grid-area: trace;
+  z-index: 2;
+  margin-right: 6%;
+  transform: translate3d(calc(var(--px, 0) * 12px), calc(var(--py, 0) * 10px), 0);
 }
 
 /* When the pointer parallax switches off, the layers ease back to rest instead of jumping. */
@@ -387,12 +388,12 @@
 
 /* ---- Console: back layer, the Command Map ----------------------------------------------- */
 
+/* Sized by its content, with the pair's overlap reserved as empty space along the bottom. */
 .lp-console-back {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 100%;
-  padding: 14px 18px 16px;
+  padding: 14px 18px calc(var(--lp-console-lift) + 14px);
   overflow: hidden;
 }
 
@@ -562,6 +563,11 @@
   font-size: 11px;
 }
 
+.lp-console-tick .tag .lp-dot {
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
 .lp-console-unit {
   margin-left: 3px;
   color: var(--muted);
@@ -576,7 +582,10 @@
 /* ---- Console: trace layer --------------------------------------------------------------- */
 
 .lp-console-trace {
-  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
   border-radius: var(--radius-glass-tile);
 }
 
@@ -584,9 +593,12 @@
   margin-bottom: 8px;
 }
 
+/* The three attempts share the card's height, one ruled row each, so the trace fills its half
+   of the pair evenly beside the taller approval. */
 .lp-console-lines {
+  flex: 1 1 auto;
   display: grid;
-  gap: 6px;
+  grid-auto-rows: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -594,12 +606,18 @@
 
 .lp-console-line {
   display: grid;
-  grid-template-columns: 5ch 10ch minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: 8px;
+  grid-template-columns: 9ch minmax(0, 1fr);
+  grid-template-areas:
+    'verb provider'
+    '. detail';
+  align-content: center;
+  column-gap: 10px;
+  row-gap: 2px;
   min-width: 0;
+  padding: 8px 0;
+  border-top: 1px solid rgba(210, 221, 238, 0.7);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: var(--weight-regular);
   line-height: 1.45;
   color: var(--ink);
@@ -613,7 +631,21 @@
   opacity: 0.32;
 }
 
+.lp-console-line:first-child {
+  border-top-color: transparent;
+}
+
+.lp-console-provider {
+  grid-area: provider;
+  font-weight: var(--weight-medium);
+}
+
+.lp-console-detail {
+  grid-area: detail;
+}
+
 .lp-console-verb {
+  grid-area: verb;
   font-weight: var(--weight-medium);
 }
 
@@ -728,7 +760,7 @@
   grid-area: caption;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-regular);
   line-height: 1.45;
   color: var(--muted);
@@ -747,7 +779,7 @@
   border-radius: var(--radius-pill);
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-micro);
   font-weight: var(--weight-regular);
   line-height: 1.3;
   white-space: nowrap;
@@ -772,20 +804,28 @@
 
 /* ---- Console: narrow containers --------------------------------------------------------- */
 
-@container lp-console (max-width: 520px) {
+@container lp-console (max-width: 700px) {
+  .lp-console-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'back'
+      'approval';
+  }
+
   .lp-console-depth[data-depth='trace'] {
     display: none;
   }
 
   .lp-console-depth[data-depth='approval'] {
-    left: 4%;
-    right: 4%;
-    width: auto;
+    margin-inline: 6%;
   }
+}
+
+@container lp-console (max-width: 520px) {
 
   .lp-console-back {
     gap: 10px;
-    padding: 12px 14px;
+    padding: 12px 14px calc(var(--lp-console-lift) + 12px);
   }
 
   .lp-console-model {
@@ -851,25 +891,10 @@
 
 /* ---- Breakpoints ------------------------------------------------------------------------ */
 
-@media (min-width: 1180px) {
-  /* Beside the copy, the approval overhangs into the grid gap. */
-  .lp-console-depth[data-depth='approval'] {
-    left: -32px;
-  }
-}
-
 @media (max-width: 1179px) {
   .lp-hero-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .lp-hero-copy {
-    max-width: 640px;
-  }
-
-  .lp-console {
-    --lp-console-h: 480px;
-    max-width: 720px;
+    gap: 40px;
+    padding-top: 48px;
   }
 }
 
@@ -890,28 +915,20 @@
     min-height: 44px;
   }
 
-  .lp-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-top: 20px;
+  .lp-benefits {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    margin-top: 24px;
   }
 
-  .lp-facts > li:nth-child(n + 3) {
-    border-top: 1px solid var(--line);
-  }
-
-  .lp-facts > li:nth-child(3) {
-    border-left: 0;
-  }
-
-  .lp-fact {
-    min-height: 56px;
-    padding: 10px 14px;
+  .lp-benefit {
+    width: 100%;
   }
 
   .lp-console {
-    --lp-console-h: 380px;
-    --lp-console-back-h: 340px;
-    padding: 14px;
+    --lp-console-lift: 40px;
+    padding: 12px;
   }
 
   .lp-hero-pause {
@@ -931,6 +948,11 @@
 
   /* The copy rises in on load, one child after another. */
   .lp[data-motion='on'] .lp-hero-copy > * {
+    animation: lp-hero-enter var(--lp-hero) var(--lp-ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+
+  .lp[data-motion='on'] .lp-benefits {
     animation: lp-hero-enter var(--lp-hero) var(--lp-ease-out) backwards;
     animation-delay: calc(var(--i, 0) * 60ms);
   }

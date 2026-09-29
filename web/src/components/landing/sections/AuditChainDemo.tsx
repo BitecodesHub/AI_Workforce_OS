@@ -104,6 +104,11 @@ export function AuditChainDemo(): ReactElement {
       lead="Every approval decision and how a run finished is recorded against the person accountable. Each entry carries the previous entry hash, so an altered entry is detectable."
       status={status}
       footnote="Illustrative short hashes computed in your browser, to show how chaining exposes an edit."
+      steps={[
+        'Read how each entry carries the hash of the one before it.',
+        'Press Alter entry 2.',
+        'Watch the chain break at the entry that changed.',
+      ]}
     >
       <ol className="lp-audit-list">
         {recorded.map((stored, index) => {

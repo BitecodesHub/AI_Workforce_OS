@@ -76,10 +76,17 @@ class PermissionTest {
         // These are the codes that let a holder change who can do what. Miss one and a role that
         // looks safe can quietly promote itself, which is the failure mode worth a test of its own.
         List<String> mustBeAdministrative = List.of(
-                "role:create", "role:update", "role:delete",
-                "member:update", "member:remove", "member:invite",
-                "agent:grant_tools", "agent:set_approval_policy",
-                "integration:connect", "provider:manage", "settings:update");
+                "role:create",
+                "role:update",
+                "role:delete",
+                "member:update",
+                "member:remove",
+                "member:invite",
+                "agent:grant_tools",
+                "agent:set_approval_policy",
+                "integration:connect",
+                "provider:manage",
+                "settings:update");
 
         for (String code : mustBeAdministrative) {
             assertThat(Permission.byCode(code).administrative())

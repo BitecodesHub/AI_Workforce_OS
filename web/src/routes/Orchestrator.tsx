@@ -1,186 +1,385 @@
-import { useState } from 'react'
-import { Button, Card, ConfirmDialog, EmptyState, PageHeader, StatRow, StatTile, Time } from '../components/ui'
-import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+import { useMemo, useRef, useState } from 'react'
+import { Button, IconButton, PageHeader, Select } from '../components/ui'
+import { Collapsible, useCollapsed } from '../components/ui/Collapsible'
+import { QueryState } from '../components/ui/QueryState'
+import { ShortcutsDialog } from '../components/ui/ShortcutsDialog'
+import { TaskDialog } from '../components/ui/TaskDialog'
 import { AgentsStrip } from '../components/orchestrator/AgentsStrip'
 import { OrchestratorBoard } from '../components/orchestrator/Board'
+import { diffCards, countChanged } from '../components/orchestrator/boardChanges'
 import { FlowMap } from '../components/orchestrator/FlowMap'
+import { Freshness } from '../components/orchestrator/Freshness'
+import { GoalSheet } from '../components/orchestrator/GoalSheet'
+import { buildBoardCards, columnTitle } from '../components/orchestrator/layout'
+import type { BoardColumn, CardStatusKey } from '../components/orchestrator/layout'
+import { buildNeedsYou } from '../components/orchestrator/needsYou'
+import { NeedsYouInbox } from '../components/orchestrator/NeedsYouInbox'
+import { RunSheet } from '../components/orchestrator/RunSheet'
+import { StopEverythingDialog } from '../components/orchestrator/StopEverythingDialog'
+import { SummaryStrip } from '../components/orchestrator/SummaryStrip'
 import { Swimlanes } from '../components/orchestrator/Swimlanes'
-import { describeApiError } from '../lib/api'
-import { formatCount, formatMoney } from '../lib/format'
-import { useBoard, useStopAll } from '../lib/queries'
-import type { Board } from '../lib/queries'
-import { can } from '../lib/session'
-import { useToast } from '../lib/toast'
+import { formatHotkey, useHotkeys } from '../lib/hotkeys'
+import { readStored, writeStored } from '../lib/persist'
+import { useBoard } from '../lib/queries'
+import type { Board, BoardWindow } from '../lib/queries'
+import { useDocumentTitle, useRouter } from '../lib/router'
+import { can, profile } from '../lib/session'
 import { useNow } from '../lib/useNow'
 
 /*
- * Live coordination: which agents are running, for whom, and in what order.
- *
- * A flow map for the system view, a per-agent timeline for the last couple of hours, and a board
- * of every goal in flight or just finished, all reading from one poll so nothing on the page ever
+ * Live coordination (B2): which agents are running, for whom, and what needs a person right now.
+ * A summary row of filters, an inbox of what is waiting on somebody, a board of every goal, the
+ * workforce as a system, and its timeline, all reading from one poll so nothing on the page ever
  * disagrees with anything else on it.
  */
 
-export function Orchestrator() {
-  const boardQuery = useBoard()
-  const canStopAll = can('run:cancel')
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [stopError, setStopError] = useState<string | null>(null)
-  const stopAll = useStopAll()
-  const toast = useToast()
+const WINDOW_TO_API: Record<string, BoardWindow> = { '1h': 'PT1H', '2h': 'PT2H', '6h': 'PT6H', '24h': 'PT24H', today: 'TODAY' }
 
-  const confirmStopAll = async () => {
-    setStopError(null)
-    try {
-      const result = await stopAll.mutateAsync()
-      setConfirmOpen(false)
-      toast.info(
-        `Cancelled ${formatCount(result.runsCancelled)} runs and ${formatCount(result.tasksCancelled)} tasks, and withdrew ${formatCount(result.approvalsWithdrawn)} approvals.`,
-      )
-    } catch (thrown) {
-      setStopError(describeApiError(thrown))
-    }
+const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
+
+function readParam(search: URLSearchParams, key: string): string | null {
+  return search.get(key)
+}
+
+/** Rewrites the current URL's query string, keeping every other parameter as it is. */
+function withParams(base: URLSearchParams, changes: Record<string, string | null>): string {
+  const next = new URLSearchParams(base)
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === null) next.delete(key)
+    else next.set(key, value)
+  }
+  const qs = next.toString()
+  return `${window.location.pathname}${qs ? `?${qs}` : ''}`
+}
+
+export function Orchestrator() {
+  const { search } = useRouter()
+  const windowToken = readParam(search, 'window') ?? '2h'
+  const apiWindow = WINDOW_TO_API[windowToken] ?? 'PT2H'
+
+  const [live, setLiveState] = useState<boolean>(() => readStored('orc.live', true, isBoolean))
+  const [frozen, setFrozen] = useState<Board | null>(null)
+  const boardQuery = useBoard({ window: apiWindow, paused: !live })
+  const latest = boardQuery.data
+  const board = frozen ?? latest
+
+  const setLive = (next: boolean) => {
+    setLiveState(next)
+    writeStored('orc.live', next)
+    if (!next) setFrozen(latest ?? null)
+    else setFrozen(null)
   }
 
   return (
-    <div className="page">
-      <PageHeader
-        eyebrow="Live coordination"
-        title="Orchestrator"
-        description="Every agent at work right now, who asked for it, and what happens next."
-        action={
-          <>
-            <a className="button button-outline" href="/schedules">
-              Schedules
-            </a>
-            {canStopAll && (
-              <Button variant="danger" onClick={() => setConfirmOpen(true)} disabled={!boardQuery.data}>
-                Stop everything
-              </Button>
-            )}
-          </>
+    <div className="page orc-page" data-sheet-open={search.get('goal') || search.get('run') ? true : undefined}>
+      <QueryState query={boardQuery} permission="run:read" what="the orchestrator board" keepData rows={6}>
+        {() =>
+          board ? (
+            <OrchestratorBody
+              board={board}
+              live={live}
+              onSetLive={setLive}
+              latest={latest}
+              frozen={frozen}
+              onShowLatest={() => setFrozen(latest ?? null)}
+              apiWindowToken={windowToken}
+            />
+          ) : null
         }
-        meta={
-          boardQuery.data && (
-            <span className="orc-live">
-              <span className="orc-live-dot" aria-hidden="true" />
-              Updated <Time iso={boardQuery.data.generatedAt} />
-            </span>
-          )
-        }
-      />
-
-      {canStopAll && (
-        <ConfirmDialog
-          open={confirmOpen}
-          onClose={() => setConfirmOpen(false)}
-          onConfirm={confirmStopAll}
-          eyebrow="Stop everything"
-          title="Stop all agent work?"
-          description="Every running and queued task in this workspace is cancelled, and any approval still waiting on a decision is withdrawn. This cannot be undone."
-          confirmLabel="Stop everything"
-          tone="danger"
-          loading={stopAll.isPending}
-          error={stopError}
-        />
-      )}
-
-      <QueryState
-        query={boardQuery}
-        permission="run:read"
-        what="the orchestrator board"
-        isEmpty={isBoardEmpty}
-        empty={<OrchestratorEmpty />}
-        rows={6}
-      >
-        {(board) => <OrchestratorBody board={board} />}
       </QueryState>
     </div>
   )
 }
 
-function isBoardEmpty(board: Board): boolean {
-  return board.goals.length === 0 && board.queue.length === 0 && board.timeline.length === 0
-}
-
-function OrchestratorEmpty() {
-  return (
-    <div style={{ marginTop: 'var(--space-6)' }}>
-      <Card>
-        <EmptyState
-          icon={<EmptyIcon kind="task" />}
-          title="Nothing is moving right now"
-          body="No agent is working, nothing is waiting for a decision, and nothing finished in the last two hours. Start a conversation or set up a schedule to see the workforce in motion here."
-          action={
-            <div className="row" style={{ gap: 'var(--space-3)' }}>
-              {can('chat:use') && (
-                <a className="button button-primary" href="/chat">
-                  Open Chat
-                </a>
-              )}
-              <a className="button button-outline" href="/schedules">
-                Set up a schedule
-              </a>
-            </div>
-          }
-        />
-      </Card>
-    </div>
-  )
-}
-
-function OrchestratorBody({ board }: { board: Board }) {
+function OrchestratorBody({
+  board,
+  live,
+  onSetLive,
+  latest,
+  frozen,
+  onShowLatest,
+  apiWindowToken,
+}: {
+  board: Board
+  live: boolean
+  onSetLive: (next: boolean) => void
+  latest: Board | undefined
+  frozen: Board | null
+  onShowLatest: () => void
+  apiWindowToken: string
+}) {
+  const { search, navigate } = useRouter()
   const now = useNow(1_000)
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const me = profile()?.userId ?? null
+  const canStopAll = can('run:cancel')
+  const canCreate = can('task:create')
+
+  const goalsSectionRef = useRef<HTMLDivElement>(null)
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false)
+  const [stopOpen, setStopOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [liveMessage, setLiveMessage] = useState('')
+  const [preTodayWindow, setPreTodayWindow] = useState('2h')
+
+  const goalId = search.get('goal')
+  const runId = !goalId ? search.get('run') : null
+  const focusParam = search.get('focus')
+  const focus: 'question' | 'approval' | null = focusParam === 'question' || focusParam === 'approval' ? focusParam : null
+
+  const view: 'board' | 'list' = (() => {
+    const explicit = search.get('view')
+    if (explicit === 'board' || explicit === 'list') return explicit
+    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'list' : 'board'
+  })()
+  const group = (search.get('group') as 'none' | 'agent' | 'requester' | null) ?? 'none'
+  const selectedAgentId = search.get('agent')
+
+  const statusParam = search.get('status')
+  const status = useMemo<ReadonlySet<CardStatusKey>>(
+    () => new Set((statusParam ? statusParam.split(',') : []) as CardStatusKey[]),
+    [statusParam],
+  )
+
+  const cards = useMemo(() => buildBoardCards(board), [board])
+
+  // "Previous value during render" (0.2): the highlight set is recomputed only when a fresh live
+  // board arrives, never from an effect. There is no highlight at all while updates are paused.
+  const [lastLiveBoard, setLastLiveBoard] = useState<Board | null>(null)
+  const [liveChangedIds, setLiveChangedIds] = useState<ReadonlySet<string>>(new Set())
+  if (live && latest && latest !== lastLiveBoard) {
+    setLiveChangedIds(lastLiveBoard ? diffCards(lastLiveBoard, latest) : new Set())
+    setLastLiveBoard(latest)
+  }
+  const changedIds = live ? liveChangedIds : new Set<string>()
+
+  // New "Needs you" items get announced once each, by id, the same way a card's column change
+  // does - compared against the previous live board rather than tracked with an effect.
+  const [lastNeedsIds, setLastNeedsIds] = useState<ReadonlySet<string>>(new Set())
+  if (latest && latest !== lastLiveBoard) {
+    const everyone = buildNeedsYou(latest, { me, scope: 'everyone' })
+    const ids = new Set(everyone.map((item) => `${item.kind}-${item.id}`))
+    if (lastNeedsIds.size > 0) {
+      const fresh = everyone.find(
+        (item): item is Extract<typeof item, { kind: 'question' | 'approval' }> =>
+          (item.kind === 'question' || item.kind === 'approval') && !lastNeedsIds.has(`${item.kind}-${item.id}`),
+      )
+      if (fresh) {
+        setLiveMessage(fresh.kind === 'question' ? `New question from ${fresh.title}.` : `New approval waiting: ${fresh.summary}.`)
+      }
+    }
+    setLastNeedsIds(ids)
+  }
+
+  const pendingChanges = frozen && latest ? countChanged(frozen, latest) : 0
+
+  const questionCount = board.questions.filter((question) => question.status === 'pending').length
+  const approvalCount = board.approvals.length
+  const forMeCount =
+    board.questions.filter((question) => question.status === 'pending' && me != null && question.requestedBy === me).length +
+    board.approvals.filter((approval) => approval.canDecide).length
+  useDocumentTitle(forMeCount > 0 ? `(${forMeCount}) Orchestrator` : 'Orchestrator')
+
+  const setWindowToken = (token: string) => navigate(withParams(search, { window: token === '2h' ? null : token }), { replace: true, scroll: false })
+  const setSelectedAgentId = (agentId: string | null) => navigate(withParams(search, { agent: agentId }), { replace: true, scroll: false })
+  const toggleStatus = (value: CardStatusKey) => {
+    const next = new Set(status)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    navigate(withParams(search, { status: next.size > 0 ? [...next].join(',') : null }), { replace: true, scroll: false })
+  }
+  const isToday = apiWindowToken === 'today'
+  const toggleTodayTile = (key: CardStatusKey) => {
+    if (isToday && status.has(key)) {
+      navigate(withParams(search, { window: preTodayWindow === '2h' ? null : preTodayWindow, status: null }), { replace: true, scroll: false })
+    } else {
+      if (!isToday) setPreTodayWindow(apiWindowToken)
+      navigate(withParams(search, { window: 'today', status: key }), { replace: true, scroll: false })
+    }
+  }
+
+  const openGoal = (id: string, focusNext?: 'question' | 'approval') =>
+    navigate(withParams(search, { goal: id, run: null, focus: focusNext ?? null }), { scroll: false })
+  const openRun = (id: string, focusNext?: 'question' | 'approval') =>
+    navigate(withParams(search, { run: id, goal: null, focus: focusNext ?? null }), { scroll: false })
+  const closeSheet = () => navigate(withParams(search, { goal: null, run: null, focus: null }), { replace: true, scroll: false })
+
+  const onCardMoved = (_cardId: string, column: string) => {
+    setLiveMessage(`Moved to ${columnTitle(column as BoardColumn, board.window, board.windowMinutes)}.`)
+  }
+
+  const focusSearch = () => {
+    goalsSectionRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
+  }
+
+  useHotkeys(
+    [
+      { key: 'k', mod: true, allowInInput: true, handler: focusSearch },
+      { key: '/', mod: true, allowInInput: true, handler: () => setShortcutsOpen(true) },
+      {
+        key: 'Escape',
+        allowInInput: true,
+        handler: () => {
+          if (!goalId && !runId && selectedAgentId) setSelectedAgentId(null)
+        },
+      },
+    ],
+    true,
+  )
+
+  const [mapOpen, setMapOpen] = useCollapsed('orc.sections.map', true)
+  const [timelineOpen, setTimelineOpen] = useCollapsed('orc.sections.timeline', true)
+  const [agentsOpen, setAgentsOpen] = useCollapsed('orc.sections.agents', true)
+
+  const nothingActive = board.stats.running + board.stats.queued + board.stats.waitingApproval + board.stats.waitingInput === 0
 
   return (
-    <div className="stack" style={{ gap: 'var(--space-7)' }}>
-      <StatRow>
-        <StatTile label="Working now" value={formatCount(board.stats.running)} />
-        <StatTile
-          label="Waiting for approval"
-          value={formatCount(board.stats.waitingApproval)}
-          href="/approvals"
+    <>
+      <PageHeader
+        eyebrow="Live coordination"
+        title="Orchestrator"
+        description="Every agent at work right now, who asked for it, and what needs you."
+        action={
+          <>
+            <Button variant="outline" aria-pressed={live} onClick={() => onSetLive(!live)}>
+              {live && <span className="orc-live-dot" aria-hidden="true" />}
+              Live updates
+            </Button>
+            {canCreate && (
+              <Button
+                onClick={() => setTaskDialogOpen(true)}
+              >
+                New goal
+              </Button>
+            )}
+            <a className="button button-outline" href="/schedules">
+              Schedules
+            </a>
+            {canStopAll && (
+              <Button variant="danger" onClick={() => setStopOpen(true)} disabled={nothingActive}>
+                Stop everything
+              </Button>
+            )}
+            <IconButton label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="1.5" y="4" width="13" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M4.5 9.5h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            </IconButton>
+          </>
+        }
+        meta={<Freshness live={live} generatedAt={board.generatedAt} pendingChanges={pendingChanges} onShowLatest={onShowLatest} />}
+      />
+
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {liveMessage}
+      </p>
+
+      <div className="stack" style={{ gap: 'var(--space-7)' }}>
+        <SummaryStrip
+          cards={cards}
+          stats={board.stats}
+          questionCount={questionCount}
+          approvalCount={approvalCount}
+          status={status}
+          onToggleStatus={toggleStatus}
+          isToday={isToday}
+          onToggleDoneToday={() => toggleTodayTile('finished')}
+          onToggleFailedToday={() => toggleTodayTile('failed')}
         />
-        <StatTile label="Queued" value={formatCount(board.stats.queued)} />
-        <StatTile label="Held" value={formatCount(board.stats.held)} note="Agent paused" />
-        <StatTile label="Done today" value={formatCount(board.stats.completedToday)} />
-        {/* A fraction of a cent reads as a broken figure at tile size, so it is summarised and
-            the exact amount given underneath. */}
-        {board.stats.spendToday > 0 && board.stats.spendToday < 0.01 ? (
-          <StatTile label="Spend today" value="Under US$0.01" note={`Exactly ${formatMoney(board.stats.spendToday)}`} />
-        ) : (
-          <StatTile label="Spend today" value={formatMoney(board.stats.spendToday)} />
-        )}
-      </StatRow>
 
-      <Card as="section">
-        <h2 className="section-heading" style={{ marginBottom: 'var(--space-3)' }}>
-          The workforce right now
-        </h2>
-        <FlowMap board={board} selectedAgentId={selectedAgentId} onSelectAgent={setSelectedAgentId} />
-      </Card>
+        <NeedsYouInbox board={latest ?? board} onOpenGoal={openGoal} onOpenRun={openRun} />
 
-      <Card as="section">
-        <h2 className="section-heading" style={{ marginBottom: 'var(--space-3)' }}>
-          Last two hours
-        </h2>
-        <Swimlanes board={board} now={now} />
-      </Card>
+        <section aria-labelledby="orc-goals-heading" ref={goalsSectionRef}>
+          <h2 id="orc-goals-heading" className="section-heading" style={{ marginBottom: 'var(--space-3)' }}>
+            Goals
+          </h2>
+          <OrchestratorBoard
+            board={board}
+            cards={cards}
+            view={view}
+            group={group}
+            selectedAgentId={selectedAgentId}
+            onSelectAgent={setSelectedAgentId}
+            onOpenGoal={openGoal}
+            changedIds={changedIds}
+            onCardMoved={onCardMoved}
+          />
+        </section>
 
-      <section>
-        <h2 className="section-heading" style={{ marginBottom: 'var(--space-3)' }}>
-          Goals in flight
-        </h2>
-        <OrchestratorBoard board={board} selectedAgentId={selectedAgentId} onSelectAgent={setSelectedAgentId} />
-      </section>
+        <Collapsible title="The workforce right now" open={mapOpen} onToggle={setMapOpen}>
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            <FlowMap board={board} selectedAgentId={selectedAgentId} onSelectAgent={setSelectedAgentId} onOpenGoal={openGoal} />
+          </div>
+        </Collapsible>
 
-      <Card as="section">
-        <h2 className="section-heading" style={{ marginBottom: 'var(--space-3)' }}>
-          Agents
-        </h2>
-        <AgentsStrip agents={board.agents} />
-      </Card>
-    </div>
+        <Collapsible
+          title="Timeline"
+          open={timelineOpen}
+          onToggle={setTimelineOpen}
+          actions={
+            <Select label="Range" value={apiWindowToken} onChange={(event) => setWindowToken(event.target.value)}>
+              <option value="1h">Last hour</option>
+              <option value="2h">Last 2 hours</option>
+              <option value="6h">Last 6 hours</option>
+              <option value="24h">Last 24 hours</option>
+              <option value="today">Today</option>
+            </Select>
+          }
+        >
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            <Swimlanes board={board} now={now} windowMinutes={board.windowMinutes} timezone={board.timezone} onOpenGoal={openGoal} />
+          </div>
+        </Collapsible>
+
+        <Collapsible title="Agents" open={agentsOpen} onToggle={setAgentsOpen}>
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            <AgentsStrip board={board} onOpenGoal={openGoal} />
+          </div>
+        </Collapsible>
+      </div>
+
+      {goalId && (
+        <GoalSheet
+          goalId={goalId}
+          board={latest ?? board}
+          orderedGoalIds={cards.map((card) => card.id)}
+          onClose={closeSheet}
+          onNavigate={(id) => navigate(withParams(search, { goal: id, focus: null }), { replace: true, scroll: false })}
+          focus={focus}
+        />
+      )}
+      {runId && <RunSheet runId={runId} board={latest ?? board} onClose={closeSheet} />}
+
+      {canStopAll && <StopEverythingDialog open={stopOpen} onClose={() => setStopOpen(false)} board={board} />}
+      {canCreate && (
+        <TaskDialog
+          open={taskDialogOpen}
+          onClose={() => setTaskDialogOpen(false)}
+          onSuccess={(_runId, started) => {
+            setTaskDialogOpen(false)
+            if (started.goalId) openGoal(started.goalId)
+            else navigate(started.href)
+          }}
+        />
+      )}
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} groups={shortcutGroups()} />
+    </>
   )
+}
+
+function shortcutGroups() {
+  return [
+    {
+      title: 'Orchestrator',
+      items: [
+        { keys: formatHotkey({ key: 'k', mod: true, handler: () => {} }), description: 'Focus the board search' },
+        { keys: formatHotkey({ key: '/', mod: true, handler: () => {} }), description: 'Keyboard shortcuts' },
+        { keys: ['Esc'], description: 'Close the sheet, otherwise clear the agent selection' },
+        { keys: ['j', 'k', '↑', '↓'], description: 'Move between cards, while focus is in the board' },
+        { keys: ['Home', 'End'], description: 'Jump to the first or last card' },
+        { keys: ['↑', '↓', 'j', 'k'], description: 'Previous or next goal, while the sheet is open' },
+        { keys: ['Enter', 'Space'], description: 'Open the focused card' },
+      ],
+    },
+  ]
 }
