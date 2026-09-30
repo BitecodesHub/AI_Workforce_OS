@@ -831,9 +831,12 @@ class CoordinatorServiceTest {
     @Test
     @DisplayName("requests that ask to be told something search the documents; plain tasks do not")
     void informationalRequestsAreRecognised() {
-        assertThat(CoordinatorService.looksInformational("Tell me about our SIH project")).isTrue();
-        assertThat(CoordinatorService.looksInformational("It is there in the knowledge base")).isTrue();
-        assertThat(CoordinatorService.looksInformational("Draft a welcome email for a new starter")).isFalse();
+        assertThat(CoordinatorService.looksInformational("Tell me about our SIH project"))
+                .isTrue();
+        assertThat(CoordinatorService.looksInformational("It is there in the knowledge base"))
+                .isTrue();
+        assertThat(CoordinatorService.looksInformational("Draft a welcome email for a new starter"))
+                .isFalse();
     }
 
     @Test

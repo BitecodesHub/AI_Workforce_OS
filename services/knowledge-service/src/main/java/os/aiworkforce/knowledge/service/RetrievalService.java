@@ -3,9 +3,9 @@ package os.aiworkforce.knowledge.service;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.regex.Pattern;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +59,9 @@ public class RetrievalService {
      * response, and the one that stops an agent inventing one - becomes impossible to reach.
      */
     private static final double MIN_LEXICAL_RANK = 0.03;
+
+    /** The floor a long query's relevance bar may ease to, never lower (see Chunks.searchLexical). */
+    private static final double LOWEST_LEXICAL_RANK = 0.016;
 
     private final QdrantClient vectors;
     private final EmbeddingService embeddings;
@@ -142,6 +145,7 @@ public class RetrievalService {
                 orgId,
                 withoutConversationalWords(query),
                 MIN_LEXICAL_RANK,
+                LOWEST_LEXICAL_RANK,
                 org.springframework.data.domain.PageRequest.of(0, limit));
     }
 
@@ -162,7 +166,11 @@ public class RetrievalService {
         if (query == null) {
             return "";
         }
-        String stripped = CONVERSATIONAL.matcher(query).replaceAll(" ").replaceAll("\\s+", " ").strip();
+        String stripped = CONVERSATIONAL
+                .matcher(query)
+                .replaceAll(" ")
+                .replaceAll("\\s+", " ")
+                .strip();
         // A query made only of such words would search for nothing; keep it as it was then.
         return stripped.isEmpty() ? query : stripped;
     }

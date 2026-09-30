@@ -46,6 +46,12 @@ public interface Chunks extends JpaRepository<Chunk, UUID> {
      * sits between them. It is a parameter rather than a literal because the right value depends
      * on the corpus, and a number nobody can change is a number nobody can correct.
      *
+     * <p>The floor eases as the query grows. Each OR term a passage lacks lowers its rank, so a fixed
+     * floor turned away the right passage for a longer question: "SIH project tech stack use"
+     * ranked the matching slide 0.027 against 0.03. Up to two terms the floor is {@code minimumRank};
+     * beyond that it falls in proportion, but never below {@code lowestRank}, which still sits above
+     * the 0.015 of an incidental one-term match.
+     *
      * <p>Tombstoned documents are excluded here, which is what makes a deletion take effect
      * immediately rather than when the vector purge catches up.
      */
@@ -53,7 +59,7 @@ public interface Chunks extends JpaRepository<Chunk, UUID> {
             value =
                     """
             with terms as (
-                select string_agg(quote_literal(lexeme), ' | ') as query
+                select string_agg(quote_literal(lexeme), ' | ') as query, count(*) as n
                 from unnest(to_tsvector('english', :query))
             )
             select c.id from chunks c
@@ -64,7 +70,7 @@ public interface Chunks extends JpaRepository<Chunk, UUID> {
               and terms.query is not null
               and to_tsvector('english', c.content) @@ to_tsquery('english', terms.query)
               and ts_rank(to_tsvector('english', c.content), to_tsquery('english', terms.query))
-                  >= :minimumRank
+                  >= greatest(:minimumRank * least(1.0, 2.0 / terms.n), :lowestRank)
             order by ts_rank(to_tsvector('english', c.content), to_tsquery('english', terms.query)) desc
             """,
             nativeQuery = true)
@@ -72,6 +78,7 @@ public interface Chunks extends JpaRepository<Chunk, UUID> {
             @Param("orgId") UUID orgId,
             @Param("query") String query,
             @Param("minimumRank") double minimumRank,
+            @Param("lowestRank") double lowestRank,
             Pageable pageable);
 
     @Query(

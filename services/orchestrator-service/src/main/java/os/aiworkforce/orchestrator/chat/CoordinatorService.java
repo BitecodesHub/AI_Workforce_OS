@@ -1017,8 +1017,8 @@ public class CoordinatorService {
         return text;
     }
 
-    private static final Pattern DOCUMENTS_WORDS = Pattern.compile(
-            "\\b(knowledge base|documents?|docs|uploaded|on file)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DOCUMENTS_WORDS =
+            Pattern.compile("\\b(knowledge base|documents?|docs|uploaded|on file)\\b", Pattern.CASE_INSENSITIVE);
 
     private static boolean mentionsDocuments(String text) {
         return DOCUMENTS_WORDS.matcher(text).find();
