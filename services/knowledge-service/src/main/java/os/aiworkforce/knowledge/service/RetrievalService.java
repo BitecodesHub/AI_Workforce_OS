@@ -3,6 +3,7 @@ package os.aiworkforce.knowledge.service;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.Map;
 import java.util.UUID;
 
@@ -138,7 +139,32 @@ public class RetrievalService {
 
     private List<UUID> lexicalSearch(UUID orgId, String query, int limit) {
         return chunks.searchLexical(
-                orgId, query, MIN_LEXICAL_RANK, org.springframework.data.domain.PageRequest.of(0, limit));
+                orgId,
+                withoutConversationalWords(query),
+                MIN_LEXICAL_RANK,
+                org.springframework.data.domain.PageRequest.of(0, limit));
+    }
+
+    /**
+     * Words a person uses to ask, not to say what they want found. Postgres's English stop list
+     * already drops "me", "about" and "our", but not "tell", "explain" or "please", and each such
+     * word joins the OR query as one more term the passage lacks, which lowers its rank. "Tell me
+     * about our SIH project" ranked 0.025 against the 0.03 floor, while "SIH project" ranked
+     * 0.038, so the same document went unfound only because of how the question was phrased.
+     */
+    private static final Pattern CONVERSATIONAL = Pattern.compile(
+            "\\b(tell|explain|describe|summari[sz]e|summary|show|give|find|know|knows|please|want|need|"
+                    + "information|info|details|anything|something|everything|can|could|would|help|"
+                    + "question|knowledge|base|document|documents|docs|file|files|there|its)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    static String withoutConversationalWords(String query) {
+        if (query == null) {
+            return "";
+        }
+        String stripped = CONVERSATIONAL.matcher(query).replaceAll(" ").replaceAll("\\s+", " ").strip();
+        // A query made only of such words would search for nothing; keep it as it was then.
+        return stripped.isEmpty() ? query : stripped;
     }
 
     /**

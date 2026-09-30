@@ -827,4 +827,31 @@ class CoordinatorServiceTest {
         assertThat(CoordinatorService.looksLikeFollowUp("What is java?")).isFalse();
         assertThat(CoordinatorService.looksLikeFollowUp("")).isFalse();
     }
+
+    @Test
+    @DisplayName("requests that ask to be told something search the documents; plain tasks do not")
+    void informationalRequestsAreRecognised() {
+        assertThat(CoordinatorService.looksInformational("Tell me about our SIH project")).isTrue();
+        assertThat(CoordinatorService.looksInformational("It is there in the knowledge base")).isTrue();
+        assertThat(CoordinatorService.looksInformational("Draft a welcome email for a new starter")).isFalse();
+    }
+
+    @Test
+    @DisplayName("a follow-up that names no subject is searched together with the earlier request")
+    void followUpSearchUsesTheEarlierRequest() {
+        ChatMessage earlier = ChatMessage.of(
+                ORG, conversation.getId(), 0, "user", null, null, "text", "Tell me about our SIH project", null, null);
+        assertThat(CoordinatorService.searchQueryFor("It is there in the knowledge base", List.of(earlier)))
+                .isEqualTo("Tell me about our SIH project It is there in the knowledge base");
+        assertThat(CoordinatorService.searchQueryFor("What is our leave policy?", List.of(earlier)))
+                .isEqualTo("What is our leave policy?");
+    }
+
+    @Test
+    @DisplayName("passages go ahead of the request, numbered, and end with the request marker")
+    void knowledgeBlockShape() {
+        String block = CoordinatorService.withKnowledge(
+                "", List.of(Map.of("documentTitle", "SIH deck", "content", "Quantified cyber risk.")));
+        assertThat(block).contains("[1] SIH deck\nQuantified cyber risk.").endsWith("Request:\n");
+    }
 }

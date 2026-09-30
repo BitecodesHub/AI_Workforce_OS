@@ -284,8 +284,27 @@ public class CoordinatorService {
                         chronological,
                         preamble);
             case WORK ->
-                decideWork(
-                        orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
+                looksInformational(text)
+                        ? decideDocuments(
+                                orgId,
+                                conversationId,
+                                workspaceAgents,
+                                fallback,
+                                requesterId,
+                                actor,
+                                text,
+                                authorizationHeader,
+                                chronological,
+                                preamble)
+                        : decideWork(
+                                orgId,
+                                workspaceAgents,
+                                fallback,
+                                requesterId,
+                                conversationId,
+                                text,
+                                chronological,
+                                preamble);
         };
     }
 
@@ -447,7 +466,8 @@ public class CoordinatorService {
             List<ChatMessage> chronological,
             String preamble) {
         boolean canFallback = fallback != null && actor != null && actor.hasPermission(Permission.Codes.TASK_CREATE);
-        Optional<KnowledgeClient.SearchResult> result = knowledge.search(orgId, text, authorizationHeader);
+        Optional<KnowledgeClient.SearchResult> result =
+                knowledge.search(orgId, searchQueryFor(text, chronological), authorizationHeader);
         if (result.isEmpty()) {
             // Search is down: treat the question as ordinary work, so the best agent answers it.
             if (canFallback) {
@@ -465,6 +485,37 @@ public class CoordinatorService {
             // always landing on General Employee.
             return decideWork(
                     orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
+        }
+        if (search.grounded() && canFallback) {
+            // The documents answer it: hand the passages to whoever takes the request, so the person
+            // gets an answer that cites them rather than a list of passages to ask about again.
+            Decision routed = decideWork(
+                    orgId,
+                    workspaceAgents,
+                    fallback,
+                    requesterId,
+                    conversationId,
+                    text,
+                    chronological,
+                    withKnowledge(preamble, passages));
+            if (routed instanceof WorkDecision work) {
+                String titles = passages.stream()
+                        .map(passage -> String.valueOf(passage.get("documentTitle")))
+                        .distinct()
+                        .limit(3)
+                        .collect(Collectors.joining(", "));
+                int used = Math.min(passages.size(), MAX_KNOWLEDGE_PASSAGES);
+                String found = "Found " + used + (used == 1 ? " passage" : " passages") + " in " + titles + ". ";
+                return new WorkDecision(
+                        work.spec(),
+                        work.steps(),
+                        work.mode(),
+                        work.matched(),
+                        found + work.reason(),
+                        work.alternatives(),
+                        work.requestText());
+            }
+            return routed;
         }
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("query", text);
@@ -934,6 +985,76 @@ public class CoordinatorService {
         }
         return null;
     }
+
+    /** Requests that ask to be told something, which the workspace's documents may answer. */
+    private static final Pattern INFORMATIONAL = Pattern.compile(
+            "^\\s*(tell|explain|describe|summari[sz]e|give me|show me|walk me through|remind me|what|who|where|"
+                    + "when|why|how|which|do we|does|is|are|can you tell)\\b"
+                    + "|\\b(knowledge base|our documents|the documents|the docs|uploaded|on file)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    static boolean looksInformational(String text) {
+        return text != null && INFORMATIONAL.matcher(text).find();
+    }
+
+    /**
+     * What to search the documents for. A follow-up such as "it is in the knowledge base" names no
+     * subject of its own, so the person's previous request is searched with it.
+     */
+    static String searchQueryFor(String text, List<ChatMessage> chronological) {
+        if (text == null || chronological == null || !(looksLikeFollowUp(text) || mentionsDocuments(text))) {
+            return text;
+        }
+        for (int i = chronological.size() - 1; i >= 0; i--) {
+            ChatMessage message = chronological.get(i);
+            if ("user".equals(message.getAuthorKind())
+                    && "text".equals(message.getKind())
+                    && message.getContent() != null
+                    && !message.getContent().equals(text)) {
+                return message.getContent() + " " + text;
+            }
+        }
+        return text;
+    }
+
+    private static final Pattern DOCUMENTS_WORDS = Pattern.compile(
+            "\\b(knowledge base|documents?|docs|uploaded|on file)\\b", Pattern.CASE_INSENSITIVE);
+
+    private static boolean mentionsDocuments(String text) {
+        return DOCUMENTS_WORDS.matcher(text).find();
+    }
+
+    /**
+     * Puts the passages that answer a request ahead of it, in the same shape as the thread
+     * preamble: context first, and a closing "Request:" line before the request itself.
+     */
+    static String withKnowledge(String preamble, List<Map<String, Object>> passages) {
+        StringBuilder block = new StringBuilder(
+                "Passages from the workspace's documents that bear on this request. Base your answer on "
+                        + "them, cite each point with its number and document title, for example [2] Leave "
+                        + "policy, and say plainly what they do not cover:\n");
+        int index = 1;
+        for (Map<String, Object> passage : passages) {
+            if (index > MAX_KNOWLEDGE_PASSAGES) {
+                break;
+            }
+            block.append('[').append(index).append("] ").append(passage.get("documentTitle"));
+            Object page = passage.get("pageNumber");
+            if (page != null) {
+                block.append(", page ").append(page);
+            }
+            String content = String.valueOf(passage.getOrDefault("content", ""));
+            block.append('\n')
+                    .append(truncateAtWord(content, MAX_KNOWLEDGE_PASSAGE_CHARS))
+                    .append("\n\n");
+            index++;
+        }
+        String existing = preamble == null ? "" : preamble;
+        return existing.isEmpty() ? block.append("Request:\n").toString() : block + existing;
+    }
+
+    private static final int MAX_KNOWLEDGE_PASSAGES = 6;
+    private static final int MAX_KNOWLEDGE_PASSAGE_CHARS = 900;
 
     /** Words that point back at earlier work rather than naming new work. */
     private static final Pattern FOLLOW_UP = Pattern.compile(

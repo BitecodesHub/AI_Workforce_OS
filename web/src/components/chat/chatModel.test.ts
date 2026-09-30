@@ -328,6 +328,19 @@ describe('routingSummary', () => {
     expect(routingSummary(m, names)).toBe('Sent to @Research, as you asked')
   })
 
+  it('names the documents an answer draws on', () => {
+    const m = message({
+      id: 'a',
+      kind: 'routing',
+      detail: {
+        mode: 'model',
+        agents: [{ id: 'general', name: 'General Employee', instruction: '' }],
+        reason: 'Found 5 passages in SIH deck.pptx. It is a general question.',
+      },
+    })
+    expect(routingSummary(m, names)).toBe('Sent to General Employee, using 5 passages from SIH deck.pptx')
+  })
+
   it('names a manual choice', () => {
     const m = message({ id: 'a', kind: 'routing', detail: { mode: 'manual', agents: [{ id: 'research', name: 'Research', instruction: '' }] } })
     expect(routingSummary(m, names)).toBe('You chose Research')

@@ -175,6 +175,15 @@ export function routingModeLabel(mode: ChatMessageDetail['mode']): string {
 
 /** The collapsed routing card's one line, naming who is on it and how they were chosen. */
 export function routingSummary(message: ChatMessage, agentNames: Record<string, { name: string }>): string {
+  const base = routingLine(message, agentNames)
+  // When the answer draws on the workspace's documents, say which, on the line itself.
+  const sources = /^Found (\d+) passages? in (.+?)\. /.exec(message.detail.reason ?? '')
+  if (!sources) return base
+  const count = Number(sources[1])
+  return `${base}, using ${count} ${count === 1 ? 'passage' : 'passages'} from ${sources[2]}`
+}
+
+function routingLine(message: ChatMessage, agentNames: Record<string, { name: string }>): string {
   const detail = message.detail
   const names = (detail.agents ?? []).map((agent) => agentNames[agent.id]?.name ?? agent.name)
   switch (detail.mode) {
