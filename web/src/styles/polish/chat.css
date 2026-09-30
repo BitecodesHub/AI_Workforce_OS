@@ -601,3 +601,127 @@
     transition: none;
   }
 }
+
+/* ---- Thread readability pass ----------------------------------------------------------------------
+ * The thread read as a stack of equal-weight cards: a routing card, a progress card and then the
+ * answer, each with its own time stamp, so one short question filled the screen. The receipt and a
+ * finished single-agent step now read as quiet one-line notes, the answer carries the weight, and
+ * avatars sit beside the name they belong to.
+ */
+.chat-thread-header {
+  padding-block: var(--space-2);
+}
+
+.chat-thread-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.chat-thread-title-row .chat-thread-agents {
+  flex: none;
+}
+
+/* An answer's avatar belongs beside the agent's name, not beside the last line of the answer. */
+.chat-bubble-row-agent {
+  align-items: flex-start;
+}
+
+.chat-bubble-row-agent .chat-answer {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-answer-head {
+  min-height: 32px;
+}
+
+/* A person's own message keeps its actions out of sight until they are wanted. */
+.chat-bubble-row-user .chat-actions {
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.chat-bubble-row-user:hover .chat-actions,
+.chat-bubble-row-user:focus-within .chat-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .chat-bubble-row-user .chat-actions {
+    opacity: 1;
+  }
+}
+
+/* System receipts carry no time of their own: the message they belong to already has one. */
+.chat-item[data-kind='routing'] .chat-item-time,
+.chat-item[data-kind='progress'] .chat-item-time,
+.chat-item[data-kind='notice'] .chat-item-time {
+  display: none;
+}
+
+/* The receipt and the progress note hug the request they follow. */
+.chat-item[data-kind='routing'],
+.chat-item[data-kind='progress'] {
+  margin-top: calc(var(--space-3) * -1);
+}
+
+.chat-receipt {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+.chat-receipt .collapsible-toggle {
+  width: auto;
+  padding: var(--space-1) 0;
+  font-weight: var(--weight-regular);
+  color: var(--muted);
+}
+
+.chat-receipt .collapsible-toggle:hover {
+  color: var(--ink);
+}
+
+.chat-receipt-body {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-body);
+}
+
+.chat-receipt-body > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-progress-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.chat-progress-line-icon {
+  flex: none;
+  color: var(--green);
+}
+
+.chat-progress-line-name {
+  color: var(--ink);
+  font-weight: var(--weight-emphasis);
+}
+
+.chat-progress-line .link {
+  margin-left: auto;
+}
+
+.chat-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}

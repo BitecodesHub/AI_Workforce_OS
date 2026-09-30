@@ -276,7 +276,7 @@ public class SandboxProvider implements ChatProvider {
     private String sampleProse(String question, Random random) {
         String subject = question == null || question.isBlank()
                 ? "the request"
-                : question.strip().lines().findFirst().orElse("the request");
+                : requestPart(question).strip().lines().findFirst().orElse("the request");
         if (subject.length() > 120) {
             subject = subject.substring(0, 117) + "…";
         }
@@ -427,6 +427,22 @@ public class SandboxProvider implements ChatProvider {
             return material.hashCode();
         }
     }
+
+    /**
+     * The request itself, without any earlier-turns preamble a caller placed before it. Chat
+     * prefixes follow-ups with a block ending in a "Request:" line; quoting that block's heading
+     * back would name the context, not what was asked.
+     */
+    static String requestPart(String message) {
+        int marker = message.lastIndexOf(REQUEST_MARKER);
+        if (marker < 0) {
+            return message;
+        }
+        String rest = message.substring(marker + REQUEST_MARKER.length());
+        return rest.isBlank() ? message : rest;
+    }
+
+    private static final String REQUEST_MARKER = "\nRequest:\n";
 
     private static String lastUserMessage(ChatRequest request) {
         return request.messages().reversed().stream()

@@ -4,7 +4,7 @@ import { describeApiError } from '../../lib/api'
 import { canRetryGoal } from '../../lib/goals'
 import { formatAgo, truncateWords } from '../../lib/format'
 import type { Board } from '../../lib/queries'
-import { useMemberNames, useRetryGoal, useSetAgentStatus } from '../../lib/queries'
+import { useRetryGoal, useSetAgentStatus } from '../../lib/queries'
 import { closesIn } from '../../lib/questions'
 import { readStored, writeStored } from '../../lib/persist'
 import { can, profile } from '../../lib/session'
@@ -12,6 +12,8 @@ import { useToast } from '../../lib/toast'
 import { useNow } from '../../lib/useNow'
 import { buildNeedsYou } from './needsYou'
 import type { NeedsYouItem } from './needsYou'
+import { UNKNOWN_REQUESTER } from './shared'
+import { useMemberDirectory } from './useMemberDirectory'
 
 const SCOPE_KEY = 'orc.needs.scope'
 const VISIBLE_ROWS = 5
@@ -210,8 +212,8 @@ export function NeedsYouInbox({
   onOpenRun: (runId: string, focus?: 'question' | 'approval') => void
 }) {
   const me = profile()?.userId ?? null
-  const members = useMemberNames()
-  const nameOf = (id: string) => members[id]?.displayName ?? id.slice(0, 8)
+  const directory = useMemberDirectory()
+  const nameOf = (id: string) => directory.members[id]?.displayName ?? (directory.loaded ? 'Former member' : UNKNOWN_REQUESTER)
   const now = useNow(60_000)
 
   const [scope, setScopeState] = useState<Scope>(() => readStored(SCOPE_KEY, 'forMe', isScope))

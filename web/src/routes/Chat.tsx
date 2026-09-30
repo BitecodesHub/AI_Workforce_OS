@@ -27,6 +27,7 @@ import { ShortcutsDialog } from '../components/ui/ShortcutsDialog'
 import { ApiError, api, describeApiError } from '../lib/api'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import {
+  isGoalActive,
   useAgentNames,
   useAgents,
   useAnswerFromDocuments,
@@ -92,7 +93,7 @@ export function Chat() {
   const isWide = useMediaQuery('(min-width: 1440px)')
 
   const [sidebarMode, setSidebarMode] = usePersistentState<'open' | 'rail'>('chat.sidebar', 'open', isSidebarMode)
-  const [panelMode, setPanelMode] = usePersistentState<'open' | 'closed'>('chat.panel', 'open', isPanelMode)
+  const [panelMode, setPanelMode] = usePersistentState<'open' | 'closed'>('chat.panel.v2', 'closed', isPanelMode)
   const [detailsMode, setDetailsMode] = usePersistentState<DetailsMode>('chat.details', 'auto', isDetailsMode)
   const [detailsVersion, setDetailsVersion] = useState(0)
   const [overlayOpen, setOverlayOpen] = useState(false)
@@ -140,6 +141,17 @@ export function Chat() {
   const conversation = detail?.conversation ?? null
   const messages = useMemo(() => detail?.messages ?? [], [detail])
   const goals = useMemo(() => detail?.goals ?? [], [detail])
+
+  // The sidebar polls slowly (15 s). When work in the open conversation settles, refresh it at
+  // once, so its row does not keep saying "Working" after the answer has already arrived.
+  const activeGoalCount = goals.filter(isGoalActive).length
+  const previousActiveCount = useRef(activeGoalCount)
+  useEffect(() => {
+    if (activeGoalCount < previousActiveCount.current) {
+      void client.invalidateQueries({ queryKey: ['conversations', 'list'] })
+    }
+    previousActiveCount.current = activeGoalCount
+  }, [activeGoalCount, client])
   const questions = useMemo(() => detail?.questions ?? [], [detail])
 
   const nameOf = (agentId: string | null | undefined) => (agentId && agentNames[agentId]?.name) || 'The agent'
@@ -318,7 +330,13 @@ export function Chat() {
 
   function handleEditAndResend(text: string) {
     setPrefill({ token: Date.now(), text })
-    inputRef.current?.focus()
+    // After the prefill renders, so the caret lands in the filled box.
+    window.setTimeout(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.selectionStart = el.selectionEnd = el.value.length
+    }, 0)
   }
 
   function handleReplyInOwnWords(questionId: string) {
@@ -570,13 +588,13 @@ export function Chat() {
               {!selectedId && pending ? (
                 <PendingMessage text={pending.text} mentioned={pending.mentioned} />
               ) : !selectedId ? (
-                <WelcomeScreen agents={agentsQuery.data} can={can} onPick={(text) => void handleSend(text, [])} />
+                <WelcomeScreen agents={agentsQuery.data} can={can} onPick={handleEditAndResend} />
               ) : conversationQuery.isLoading ? (
                 <p className="caption muted" role="status" aria-busy="true">
                   Loading this conversation…
                 </p>
               ) : messages.length === 0 && !pending ? (
-                <WelcomeScreen agents={agentsQuery.data} can={can} onPick={(text) => void handleSend(text, [])} />
+                <WelcomeScreen agents={agentsQuery.data} can={can} onPick={handleEditAndResend} />
               ) : (
                 <>
                   <MessageList

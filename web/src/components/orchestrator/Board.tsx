@@ -1,14 +1,15 @@
 import { useMemo, useRef, useState } from 'react'
-import { Select, StatusTag, Tag } from '../ui'
-import type { FilterSelect } from '../ui'
+import { Button, EmptyState, StatusTag } from '../ui'
 // Imported from its own module, not the ../ui barrel: this is used from Orchestrator, a
 // lazy-loaded route, and the barrel is also part of the main bundle, so going through it created
 // a circular chunk dependency (Rollup warned of a "broken execution order").
-import { FilterBar, FilterEmpty } from '../ui/FilterBar'
+import { FilterEmpty } from '../ui/FilterBar'
+import { EmptyIcon } from '../ui/QueryState'
 import { BoardList } from './BoardList'
+import { BoardToolbar } from './BoardToolbar'
+import type { ListGroup } from './BoardToolbar'
 import { formatCount, formatElapsed, formatMoney, formatRunElapsed, truncateWords } from '../../lib/format'
 import { goalSourceLabel } from '../../lib/labels'
-import { useMemberNames } from '../../lib/queries'
 import type { Board as BoardData } from '../../lib/queries'
 import { useRouter } from '../../lib/router'
 import { profile } from '../../lib/session'
@@ -16,7 +17,8 @@ import { useListFilter } from '../../lib/useListFilter'
 import { useNow } from '../../lib/useNow'
 import { useBoardKeyboard } from './useBoardKeyboard'
 import { useKeepCardFocus } from './useKeepCardFocus'
-import { columnTitle, queueReasonText, stepLabel } from './layout'
+import { useMemberDirectory } from './useMemberDirectory'
+import { cardMetaParts, columnTitle, queueReasonText, showsStepProgress, stepLabel } from './layout'
 import type { BoardCard, BoardColumn, CardStatusKey } from './layout'
 import { requesterLabel } from './shared'
 
@@ -48,20 +50,23 @@ export function OrchestratorBoard({
   onOpenGoal,
   changedIds,
   onCardMoved,
+  onNewGoal,
 }: {
   board: BoardData
   cards: BoardCard[]
   view: 'board' | 'list'
-  group: 'none' | 'agent' | 'requester'
+  group: ListGroup
   selectedAgentId: string | null
   onSelectAgent: (agentId: string | null) => void
   onOpenGoal: (goalId: string) => void
   changedIds: ReadonlySet<string>
   onCardMoved?: (cardId: string, column: string) => void
+  /** Offered from the empty board, when the viewer may start a goal. */
+  onNewGoal?: (() => void) | undefined
 }) {
   const { search, navigate } = useRouter()
   const now = useNow(1_000)
-  const members = useMemberNames()
+  const directory = useMemberDirectory()
   const currentUserId = profile()?.userId ?? null
   const openGoalId = search.get('goal')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -73,9 +78,9 @@ export function OrchestratorBoard({
       cards.map((card) => ({
         card,
         agentName: card.task?.agentId ? (agentNames[card.task.agentId] ?? '') : '',
-        requester: requesterLabel(card.goal, members, currentUserId),
+        requester: requesterLabel(card.goal, directory, currentUserId),
       })),
-    [cards, agentNames, members, currentUserId],
+    [cards, agentNames, directory, currentUserId],
   )
 
   const filter = useListFilter({
@@ -116,150 +121,117 @@ export function OrchestratorBoard({
   useBoardKeyboard(containerRef)
   useKeepCardFocus({ containerRef, columnOf, version: cards, ...(onCardMoved ? { onMoved: onCardMoved } : {}) })
 
-  const requesterSelect: FilterSelect = {
-    label: 'Requester',
-    value: filter.selected.requester?.[0] ?? '',
-    options: [{ value: '', label: 'Everyone' }, ...requesterOptions.map(([value, label]) => ({ value, label }))],
-    onChange: (value) => filter.setOnly('requester', value || null),
-  }
-
   const setView = (next: 'board' | 'list') => navigate(withParam('view', next === 'board' ? null : next), { replace: true, scroll: false })
-  const setGroup = (next: 'none' | 'agent' | 'requester') => navigate(withParam('group', next === 'none' ? null : next), { replace: true, scroll: false })
+  const setGroup = (next: ListGroup) => navigate(withParam('group', next === 'none' ? null : next), { replace: true, scroll: false })
 
   function withParam(param: string, value: string | null): string {
+    return withParams({ [param]: value })
+  }
+
+  /** Reads the live URL, not the rendered one, so a change made earlier in the same event lands. */
+  function withParams(changes: Record<string, string | null>): string {
     const next = new URLSearchParams(window.location.search)
-    if (value) next.set(param, value)
-    else next.delete(param)
-    const qs = next.toString()
+    for (const [param, value] of Object.entries(changes)) {
+      if (value) next.set(param, value)
+      else next.delete(param)
+    }
+    const qs = next.toString().replace(/%2C/gi, ',')
     return `${window.location.pathname}${qs ? `?${qs}` : ''}`
   }
 
-  const selectedAgentName = selectedAgentId ? (agentNames[selectedAgentId] ?? 'this agent') : null
-  const nothingAtAll = cards.length === 0
+  // One navigation for the search, every facet and the agent together: clearing them one at a
+  // time let the agent's own update, built from the rendered URL, put the facets straight back.
+  const clearAll = () =>
+    navigate(withParams({ q: null, source: null, status: null, requester: null, agent: null }), { replace: true, scroll: false })
 
-  if (nothingAtAll) {
-    const windowNote = board.window === 'TODAY' ? 'No goals today yet.' : `No goals in the last ${Math.max(1, Math.round(board.windowMinutes / 60))} hours. Start one from Chat, or with New goal.`
-    return <p className="caption muted">{windowNote}</p>
+  if (cards.length === 0) {
+    const hours = Math.max(1, Math.round(board.windowMinutes / 60))
+    const when = board.window === 'TODAY' ? 'today' : hours === 1 ? 'in the last hour' : `in the last ${hours} hours`
+    return (
+      <EmptyState
+        icon={<EmptyIcon kind="task" />}
+        title={`No goals ${when}`}
+        body="A goal is a piece of work you hand to the workforce. Start one here, or ask for it in Chat, and it appears on this board as it moves along."
+        titleAs="h3"
+        action={onNewGoal ? <Button onClick={onNewGoal}>New goal</Button> : undefined}
+      />
+    )
   }
 
   return (
-    <div ref={containerRef}>
-      <FilterBar
-        searchLabel="Search goals"
+    <div className="orc-goals">
+      <BoardToolbar
         query={filter.query}
         onQueryChange={filter.setQuery}
-        placeholder="Goal, agent or requester"
-        facets={[
-          {
-            param: 'source',
-            label: 'Source',
-            options: (['manual', 'chat', 'schedule'] as const).map((value) => ({
-              value,
-              label: goalSourceLabel(value).label,
-              count: filter.counts.source?.[value] ?? 0,
-            })),
-            selected: filter.selected.source ?? [],
-            onToggle: (value) => filter.toggle('source', value),
-          },
-          {
-            param: 'status',
-            label: 'Status',
-            options: STATUS_OPTIONS.map((value) => ({
-              value,
-              label: STATUS_LABEL[value],
-              count: filter.counts.status?.[value] ?? 0,
-            })),
-            selected: filter.selected.status ?? [],
-            onToggle: (value) => filter.toggle('status', value),
-          },
-        ]}
-        selects={[
-          {
-            label: 'Agent',
-            value: selectedAgentId ?? '',
-            options: [{ value: '', label: 'Every agent' }, ...board.agents.map((agent) => ({ value: agent.id, label: agent.name }))],
-            onChange: (value) => onSelectAgent(value || null),
-          },
-          requesterSelect,
-        ]}
+        statusOptions={STATUS_OPTIONS.map((value) => ({ value, label: STATUS_LABEL[value], count: filter.counts.status?.[value] ?? 0 }))}
+        statusSelected={filter.selected.status ?? []}
+        onToggleStatus={(value) => filter.toggle('status', value)}
+        sourceOptions={(['manual', 'chat', 'schedule'] as const).map((value) => ({ value, label: goalSourceLabel(value).label }))}
+        sourceSelected={filter.selected.source ?? []}
+        onToggleSource={(value) => filter.toggle('source', value)}
+        agentOptions={board.agents.map((agent) => ({ value: agent.id, label: agent.name }))}
+        agentSelected={selectedAgentId}
+        onSelectAgent={onSelectAgent}
+        requesterOptions={requesterOptions.map(([value, label]) => ({ value, label }))}
+        requesterSelected={filter.selected.requester?.[0] ?? null}
+        onSelectRequester={(value) => filter.setOnly('requester', value)}
         shown={visible.length}
         total={cards.length}
-        scopeNote={selectedAgentId ? `Filtered to ${selectedAgentName}.` : undefined}
         active={filter.active || Boolean(selectedAgentId)}
-        onClear={() => {
-          filter.clear()
-          onSelectAgent(null)
-        }}
+        onClear={clearAll}
+        view={view}
+        onSetView={setView}
+        group={group}
+        onSetGroup={setGroup}
       />
 
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)', margin: 'var(--space-4) 0' }}>
-        <div className="orc-segmented" role="group" aria-label="Board or list view">
-          <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>
-            Board
-          </button>
-          <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>
-            List
-          </button>
-        </div>
-        {view === 'list' && (
-          <Select label="Group by" value={group} onChange={(event) => setGroup(event.target.value as 'none' | 'agent' | 'requester')}>
-            <option value="none">None</option>
-            <option value="agent">Agent</option>
-            <option value="requester">Requester</option>
-          </Select>
+      <div ref={containerRef}>
+        {visible.length === 0 ? (
+          <FilterEmpty onClear={clearAll} what="goals" />
+        ) : view === 'list' ? (
+          <BoardList cards={visible} board={board} group={group} onOpenGoal={onOpenGoal} />
+        ) : (
+          <div className="orc-columns">
+            {COLUMNS.map((column) => {
+              const columnCards = visible.filter((card) => card.column === column)
+              const isExpanded = expanded[column] ?? false
+              const shown = isExpanded ? columnCards : columnCards.slice(0, CARDS_PER_COLUMN)
+              const title = columnTitle(column, board.window, board.windowMinutes)
+              return (
+                <section key={column} className="orc-column" aria-label={title} data-empty={columnCards.length === 0 || undefined}>
+                  <div className="orc-column-head">
+                    <h3 className="orc-column-title">{title}</h3>
+                    <span className="orc-column-count tabular">{formatCount(columnCards.length)}</span>
+                  </div>
+                  {columnCards.length === 0 ? (
+                    <p className="orc-column-empty">No goals</p>
+                  ) : (
+                    <div className="orc-column-cards">
+                      {shown.map((card) => (
+                        <BoardGoalCard
+                          key={card.id}
+                          card={card}
+                          now={now}
+                          agentName={card.task?.agentId ? (agentNames[card.task.agentId] ?? 'Unknown agent') : null}
+                          requester={requesterLabel(card.goal, directory, currentUserId)}
+                          current={openGoalId === card.id}
+                          changed={changedIds.has(card.id)}
+                          onOpen={() => onOpenGoal(card.id)}
+                        />
+                      ))}
+                      {!isExpanded && columnCards.length > CARDS_PER_COLUMN && (
+                        <button type="button" className="link orc-column-more" onClick={() => setExpanded((current) => ({ ...current, [column]: true }))}>
+                          Show all {columnCards.length}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )
+            })}
+          </div>
         )}
       </div>
-
-      {visible.length === 0 ? (
-        <FilterEmpty
-          onClear={() => {
-            filter.clear()
-            onSelectAgent(null)
-          }}
-          what="goals"
-        />
-      ) : view === 'list' ? (
-        <BoardList cards={visible} board={board} group={group} onOpenGoal={onOpenGoal} />
-      ) : (
-        <div className="orc-columns">
-          {COLUMNS.map((column) => {
-            const columnCards = visible.filter((card) => card.column === column)
-            const isExpanded = expanded[column] ?? false
-            const shown = isExpanded ? columnCards : columnCards.slice(0, CARDS_PER_COLUMN)
-            return (
-              <div key={column} className="orc-column">
-                <div className="orc-column-head">
-                  <h3 className="section-heading">{columnTitle(column, board.window, board.windowMinutes)}</h3>
-                  <span className="caption tabular">{formatCount(columnCards.length)}</span>
-                </div>
-                {columnCards.length === 0 ? (
-                  <p className="caption muted">Nothing here.</p>
-                ) : (
-                  <div className="stack" style={{ gap: 'var(--space-3)' }}>
-                    {shown.map((card) => (
-                      <BoardGoalCard
-                        key={card.id}
-                        card={card}
-                        now={now}
-                        agentName={card.task?.agentId ? (agentNames[card.task.agentId] ?? null) : null}
-                        requester={requesterLabel(card.goal, members, currentUserId)}
-                        current={openGoalId === card.id}
-                        changed={changedIds.has(card.id)}
-                        onOpen={() => onOpenGoal(card.id)}
-                      />
-                    ))}
-                    {!isExpanded && columnCards.length > CARDS_PER_COLUMN && (
-                      <button type="button" className="link" onClick={() => setExpanded((current) => ({ ...current, [column]: true }))}>
-                        Show all {columnCards.length}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
@@ -282,10 +254,15 @@ function BoardGoalCard({
   onOpen: () => void
 }) {
   const { goal, task } = card
-  const sourceEntry = goalSourceLabel(goal.source)
-  const step = stepLabel(goal, task)
-  const timing = timingFor(card, now)
   const failure = failureCaption(card)
+  const meta = cardMetaParts({
+    agent: agentName,
+    source: goalSourceLabel(goal.source).label,
+    requester,
+    timing: timingFor(card, now),
+    cost: task?.cost != null && task.cost > 0 ? formatMoney(task.cost) : null,
+  })
+  const metaLine = meta.join(' · ')
 
   return (
     <button
@@ -296,45 +273,34 @@ function BoardGoalCard({
       aria-current={current || undefined}
       onClick={onOpen}
     >
-      <div className="row" style={{ justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-        <span className="caption" style={{ fontWeight: 'var(--weight-strong)' }} title={goal.title}>
-          {truncateWords(goal.title, 60)}
+      <span className="orc-card-head">
+        <span className="orc-card-title" title={goal.title}>
+          {goal.title}
         </span>
-        {task ? <StatusTag kind="task" status={task.status} /> : <StatusTag kind="goal" status={goal.status} />}
-      </div>
+        <span className="orc-card-status">
+          {task ? <StatusTag kind="task" status={task.status} /> : <StatusTag kind="goal" status={goal.status} />}
+        </span>
+      </span>
 
-      <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap', margin: 'var(--space-2) 0' }}>
-        <Tag tone={sourceEntry.tone}>{sourceEntry.label}</Tag>
-        {agentName && <Tag title={agentName}>{agentName}</Tag>}
-        {!agentName && task?.agentId && <Tag title="Unknown agent">Unknown agent</Tag>}
-      </div>
+      <span className="orc-card-meta" title={metaLine}>
+        {metaLine}
+      </span>
 
-      <p className="caption muted">{requester}</p>
-
-      {step && (
-        <div className="row" style={{ gap: 'var(--space-2)', alignItems: 'center', marginTop: 'var(--space-2)' }}>
-          <span className="caption">{step}</span>
+      {showsStepProgress(goal) && (
+        <span className="orc-card-steps">
+          <span>{stepLabel(goal, task)}</span>
           <ChainDots goal={goal} />
-        </div>
+        </span>
       )}
 
       {card.column === 'queued' && card.reason && (
-        <p className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+        <span className="orc-card-note">
           {queueReasonText(card.reason)}
           {card.queuePosition != null && ` · #${card.queuePosition + 1} in the queue`}
-        </p>
+        </span>
       )}
 
-      {failure && (
-        <p className="caption" style={{ color: 'var(--danger)', marginTop: 'var(--space-2)' }}>
-          {failure}
-        </p>
-      )}
-
-      <div className="row" style={{ justifyContent: 'space-between', marginTop: 'var(--space-3)' }}>
-        <span className="caption tabular">{timing}</span>
-        {task?.cost != null && task.cost > 0 && <span className="caption tabular">{formatMoney(task.cost)}</span>}
-      </div>
+      {failure && <span className="orc-card-note orc-card-failure">{failure}</span>}
     </button>
   )
 }
@@ -355,7 +321,7 @@ function timingFor(card: BoardCard, now: number): string {
   }
   if (task.startedAt && task.completedAt) return formatElapsed(task.startedAt, task.completedAt, now)
   if (task.startedAt) return formatRunElapsed({ status: task.status, startedAt: task.startedAt, completedAt: task.completedAt }, now)
-  return 'Not started'
+  return ''
 }
 
 function ChainDots({ goal }: { goal: BoardCard['goal'] }) {

@@ -158,7 +158,8 @@
 
 @media (max-width: 860px) {
   .orc-flowmap-canvas {
-    min-width: 720px;
+    /* Matches the 640px cap below, so the SVG never letterboxes inside a wider canvas. */
+    min-width: 640px;
   }
 
   /* The desktop min-height fights a canvas now fixed to its own aspect ratio, adding empty
@@ -176,19 +177,6 @@
 
 .orc-hub-label {
   font-size: 8.5px;
-}
-
-/* ---- Board columns: the gap between the two breakpoints components.css already sets ------------
- * `.orc-columns` is 4 fixed-minimum columns above 720px and 1 column at or below it, with nothing
- * in between. A tablet in that gap (a 768px or 900px-wide window, page padding included) is asked
- * to fit four 220px-minimum columns into less width than that needs, and the row overflows the
- * page rather than wrapping. Two columns fits every width from just above the mobile breakpoint
- * up to where the full four already fit on their own.
- */
-@media (min-width: 721px) and (max-width: 1024px) {
-  .orc-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* ---- Swimlanes: overlapping bars ----------------------------------------------------------------
@@ -309,22 +297,6 @@
   }
 }
 
-/* ---- Agents list (B2.9): a row per agent, replacing the earlier chip grid ----------------------- */
-
-.orc-agents-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.orc-agent-row {
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.orc-agent-row:last-child {
-  border-bottom: none;
-}
-
 /* ---- Swimlanes: waiting for an answer, and a bar's own tooltip (B2.8) --------------------------- */
 
 .orc-bar-asking {
@@ -360,6 +332,553 @@
   width: 14px;
   height: 10px;
   border-radius: var(--radius-control);
+}
+
+/* ---- Page rhythm (B2.13) -------------------------------------------------------------------------
+ * One column, read top to bottom: summary, what needs a person, the goals, then the workforce and
+ * its timeline folded behind their own headings. One gap between every section, so nothing floats.
+ */
+.orc-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.orc-section-title {
+  margin: 0 0 var(--space-4);
+}
+
+.orc-collapsible .collapsible-header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-2);
+}
+
+/* A white panel on the paper background: the map, the agents list and the timeline each sit in
+   one, so a section reads as one object rather than loose parts. */
+.orc-panel {
+  min-width: 0;
+  margin-top: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+}
+
+.orc-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.orc-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+}
+
+.orc-panel-count,
+.orc-column-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-strong);
+}
+
+/* ---- Goals toolbar (B2.5): one row of controls above the board ----------------------------------
+ * Search, then the status chips, then the Filters menu and whatever it is set to, with the count
+ * and the view choice pushed to the trailing edge. It wraps as whole groups on a narrower screen:
+ * the view cluster drops below the filters rather than every control shrinking at once.
+ */
+.orc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+.orc-toolbar-filters {
+  display: flex;
+  flex: 1 1 520px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.orc-toolbar-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.orc-toolbar-count {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.orc-search {
+  position: relative;
+  display: block;
+  flex: 0 1 240px;
+  min-width: 180px;
+}
+
+.orc-search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-4);
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.orc-search-input {
+  height: 36px;
+  padding-left: calc(var(--space-4) + 20px);
+  font-size: var(--text-caption);
+}
+
+.orc-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.orc-chip {
+  min-height: 30px;
+}
+
+.orc-filters-menu .button {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-caption);
+  min-height: 32px;
+}
+
+/* A long agent list scrolls inside the menu instead of running past the bottom of the screen. */
+.orc-filters-menu .menu-panel {
+  min-width: 240px;
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.orc-filters-menu .menu-item {
+  width: 100%;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orc-filters-menu .menu-item-label {
+  font-size: var(--text-caption);
+}
+
+.orc-filters-menu .menu-heading {
+  margin: var(--space-3) var(--space-4) var(--space-2);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-strong);
+  color: var(--muted);
+}
+
+.orc-filters-menu .menu-group + .menu-group,
+.orc-filters-menu .menu-group {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.orc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 220px;
+  min-height: 28px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--blue-light);
+  color: var(--blue);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.orc-pill:hover {
+  border-color: var(--border-hover);
+}
+
+.orc-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orc-clear {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+
+/* On a phone the row folds into three: search beside the Filters button, then the status chips as
+   one line that scrolls sideways on its own, then the count and the view choice. */
+@media (max-width: 640px) {
+  .orc-toolbar-filters {
+    flex-basis: 100%;
+  }
+
+  .orc-search {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .orc-filters-menu {
+    order: 1;
+  }
+
+  .orc-status-chips {
+    order: 2;
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--space-1));
+    padding: 0 var(--space-1) var(--space-1);
+    scrollbar-width: none;
+  }
+
+  .orc-status-chips .orc-chip {
+    flex-shrink: 0;
+  }
+
+  .orc-pill,
+  .orc-clear {
+    order: 3;
+  }
+
+  .orc-toolbar-view {
+    flex: 1 1 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+}
+
+/* ---- Board columns (B2.5) -----------------------------------------------------------------------
+ * Sized from the goals section's own width, not the window's, so the board also reflows while a
+ * sheet takes the trailing 536px at 1280px and up: four columns when there is room, two, then one.
+ * Columns align to the top and never stretch; an empty one is a short dashed placeholder.
+ */
+.orc-goals {
+  container-type: inline-size;
+}
+
+.orc-columns {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+
+@container (max-width: 880px) {
+  .orc-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 520px) {
+  .orc-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  /* Stacked in one column, an empty column is only its heading and its 0: three dashed boxes in a
+     row would push the goals that do exist a screen further down. */
+  .orc-column[data-empty] .orc-column-empty {
+    display: none;
+  }
+
+  .orc-column[data-empty] .orc-column-head {
+    margin-bottom: 0;
+  }
+}
+
+.orc-column {
+  min-width: 0;
+}
+
+.orc-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.orc-column-title {
+  margin: 0;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+}
+
+.orc-column-empty {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-tile);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  text-align: center;
+}
+
+.orc-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.orc-column-more {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+
+/* ---- Goal card: title and status on one row, then a single meta line ------------------------- */
+
+.orc-card.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-tile);
+}
+
+.orc-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.orc-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.orc-card-status {
+  flex-shrink: 0;
+}
+
+.orc-card-meta {
+  overflow: hidden;
+  font-size: var(--text-caption);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.orc-card-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--ink);
+}
+
+.orc-card-note {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.orc-card-failure {
+  color: var(--danger);
+}
+
+/* ---- Workforce (B2.7, B2.9): the map and the agents side by side on a wide screen ------------- */
+
+.orc-workforce {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 var(--space-5);
+}
+
+@media (min-width: 1100px) {
+  .orc-workforce {
+    grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+    align-items: start;
+  }
+}
+
+/* The ring keeps its own aspect ratio and stops growing at 640 by 360: past that it only filled a
+   wide screen with empty canvas and oversized nodes. */
+.orc-flowmap-canvas {
+  max-width: 640px;
+  margin-inline: auto;
+}
+
+.orc-flowmap-svg {
+  min-height: 0;
+  max-height: 360px;
+}
+
+.orc-legend-compact {
+  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.orc-legend-asking circle {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+
+.orc-range-select {
+  width: auto;
+  height: 32px;
+  padding-right: var(--space-7);
+  font-size: var(--text-caption);
+}
+
+.orc-legend-compact .tag {
+  font-weight: var(--weight-medium);
+}
+
+.orc-agents-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.orc-agents-bulk {
+  display: inline-flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.orc-agents-bulk .link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+
+.orc-agents-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.orc-agent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.orc-agent-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.orc-agent-main {
+  min-width: 0;
+}
+
+.orc-agent-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+}
+
+.orc-agent-link {
+  overflow: hidden;
+  color: var(--ink);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orc-agent-link:hover {
+  color: var(--blue);
+}
+
+.orc-agent-work {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  min-width: 0;
+  margin: 2px 0 0;
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.orc-agent-work .link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orc-agent-error {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-caption);
+  color: var(--danger);
+}
+
+.orc-agent-toggle {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-caption);
 }
 
 @media (prefers-reduced-motion: reduce) {

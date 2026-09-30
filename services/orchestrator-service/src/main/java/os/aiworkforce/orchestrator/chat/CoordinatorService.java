@@ -328,6 +328,26 @@ public class CoordinatorService {
                 .map(r -> new Step(r.agent(), r.instruction(), r.fallback()))
                 .toList();
         if (result.allFallback()) {
+            // Without a model to read the thread, a short follow-up such as "make it shorter" matches
+            // nobody's keywords. It belongs to whoever gave the last answer, not to General Employee.
+            Agent previous = lastAnswerAgent(chronological, workspaceAgents);
+            if (previous != null
+                    && !previous.isFallback()
+                    && "active".equals(previous.getStatus())
+                    && looksLikeFollowUp(text)) {
+                return buildWorkDecision(
+                        workspaceAgents,
+                        requesterId,
+                        conversationId,
+                        List.of(new Step(previous, text, false)),
+                        "rules",
+                        List.of(),
+                        "This follows on from " + previous.getName() + "'s last answer, so " + previous.getName()
+                                + " is taking it.",
+                        scoredList(result.alternatives()),
+                        text,
+                        preamble);
+            }
             return buildWorkDecision(
                     workspaceAgents,
                     requesterId,
@@ -924,6 +944,22 @@ public class CoordinatorService {
             }
         }
         return null;
+    }
+
+    /** Words that point back at earlier work rather than naming new work. */
+    private static final Pattern FOLLOW_UP = Pattern.compile(
+            "\\b(it|that|this|these|those|them|again|instead|also|shorter|longer|simpler|more|less|"
+                    + "rewrite|reword|rephrase|redo|change|edit|fix|update|expand|shorten|translate|same|"
+                    + "tweak|revise|polish|improve|add|remove|now|then|another|version)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    /** A short message that refers back to earlier work, such as "make it shorter" or "now for managers". */
+    static boolean looksLikeFollowUp(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String trimmed = text.strip();
+        return trimmed.split("\\s+").length <= 12 && FOLLOW_UP.matcher(trimmed).find();
     }
 
     /** Prepends the earlier-turns preamble to an instruction, trimming the preamble first if the combined text is too long. */

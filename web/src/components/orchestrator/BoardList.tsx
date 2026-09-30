@@ -2,13 +2,14 @@ import { useMemo } from 'react'
 import { DataTable, StatusTag, Time } from '../ui'
 import type { Column } from '../ui'
 import { formatElapsed, formatMoney, formatRunElapsed } from '../../lib/format'
-import type { Board, Member } from '../../lib/queries'
+import type { Board } from '../../lib/queries'
 import { profile } from '../../lib/session'
-import { useMemberNames } from '../../lib/queries'
 import { useNow } from '../../lib/useNow'
 import { stepLabel } from './layout'
 import type { BoardCard } from './layout'
 import { requesterLabel } from './shared'
+import type { MemberDirectory } from './shared'
+import { useMemberDirectory } from './useMemberDirectory'
 
 /*
  * The board as a sortable table (B2.5), for a person who wants to scan every goal at once, or
@@ -30,7 +31,7 @@ function timingLabel(card: BoardCard, now: number): string {
   return formatRunElapsed({ status: task.status, startedAt: task.startedAt, completedAt: task.completedAt }, now)
 }
 
-function groupKeyFor(card: BoardCard, group: 'agent' | 'requester', agentNames: Record<string, string>, members: Record<string, Member>, me: string | null): string {
+function groupKeyFor(card: BoardCard, group: 'agent' | 'requester', agentNames: Record<string, string>, members: MemberDirectory, me: string | null): string {
   if (group === 'agent') return (card.task?.agentId && agentNames[card.task.agentId]) || 'No agent'
   return requesterLabel(card.goal, members, me)
 }
@@ -46,7 +47,7 @@ export function BoardList({
   group: 'none' | 'agent' | 'requester'
   onOpenGoal: (goalId: string) => void
 }) {
-  const members = useMemberNames()
+  const members = useMemberDirectory()
   const me = profile()?.userId ?? null
   const agentNames = useMemo(() => Object.fromEntries(board.agents.map((agent) => [agent.id, agent.name])), [board.agents])
   const now = useNow(10_000)

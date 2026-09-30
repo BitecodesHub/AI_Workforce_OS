@@ -144,22 +144,23 @@ export function ThreadHeader({
             onBlur={(event) => void commitRename(event.currentTarget.value)}
           />
         ) : (
-          <h1 id="chat-thread-title" className="chat-thread-title" tabIndex={-1}>
-            {title}
-          </h1>
+          <div className="chat-thread-title-row">
+            <h1 id="chat-thread-title" className="chat-thread-title" tabIndex={-1}>
+              {title}
+            </h1>
+            {shown.length > 0 && (
+              <ul className="chat-thread-agents" aria-label="Agents in this conversation">
+                {shown.map((agent) => (
+                  <li key={agent.id} title={agent.name}>
+                    <AgentAvatar name={agent.name} category={agent.category} fallback={agent.fallback ?? false} size="sm" />
+                  </li>
+                ))}
+                {extra > 0 && <li className="caption muted">+{extra}</li>}
+              </ul>
+            )}
+          </div>
         )}
       </div>
-
-      {shown.length > 0 && (
-        <ul className="chat-thread-agents" aria-label="Agents in this conversation">
-          {shown.map((agent) => (
-            <li key={agent.id} title={agent.name}>
-              <AgentAvatar name={agent.name} category={agent.category} fallback={agent.fallback ?? false} size="sm" />
-            </li>
-          ))}
-          {extra > 0 && <li className="caption muted">+{extra}</li>}
-        </ul>
-      )}
 
       {readOnly && (
         <>

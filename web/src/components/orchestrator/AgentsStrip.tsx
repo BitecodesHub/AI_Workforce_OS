@@ -16,6 +16,8 @@ import { currentTaskFor } from './shared'
  * carry on - plus the pair of "everyone at once" actions above the list.
  */
 
+const BUSY = new Set(['running', 'asking', 'waiting'])
+
 export function AgentsStrip({ board, onOpenGoal }: { board: Board; onOpenGoal: (goalId: string) => void }) {
   const toast = useToast()
   const setStatus = useSetAgentStatus()
@@ -37,20 +39,28 @@ export function AgentsStrip({ board, onOpenGoal }: { board: Board; onOpenGoal: (
     toast.info(failed > 0 ? `${verb} ${formatCount(succeeded)} agents. ${formatCount(failed)} could not be ${action === 'pause' ? 'paused' : 'resumed'}.` : `${verb} ${formatCount(succeeded)} agents.`)
   }
 
-  return (
-    <div className="stack" style={{ gap: 'var(--space-4)' }}>
-      {canUpdate && (
-        <div className="row" style={{ gap: 'var(--space-3)' }}>
-          <Button variant="outline" onClick={() => setBulkOpen('pause')}>
-            Pause all
-          </Button>
-          <Button variant="outline" onClick={() => setBulkOpen('resume')}>
-            Resume all
-          </Button>
-        </div>
-      )}
+  const busy = sorted.filter((agent) => BUSY.has(nodeStatus(agent))).length
 
-      <ul className="orc-agents-list" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+  return (
+    <div className="orc-agents">
+      <div className="orc-agents-head">
+        <h3 className="orc-panel-title">
+          Agents <span className="orc-panel-count tabular">{formatCount(sorted.length)}</span>
+        </h3>
+        <span className="caption muted">{busy > 0 ? `${formatCount(busy)} busy` : 'All idle'}</span>
+        {canUpdate && (
+          <span className="orc-agents-bulk">
+            <button type="button" className="link" onClick={() => setBulkOpen('pause')}>
+              Pause all
+            </button>
+            <button type="button" className="link" onClick={() => setBulkOpen('resume')}>
+              Resume all
+            </button>
+          </span>
+        )}
+      </div>
+
+      <ul className="orc-agents-list">
         {sorted.map((agent) => (
           <AgentRow key={agent.id} agent={agent} board={board} canUpdate={canUpdate} onOpenGoal={onOpenGoal} />
         ))}
@@ -121,43 +131,32 @@ function AgentRow({
   }
 
   return (
-    <li className="orc-agent-row">
-      <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center' }}>
-        <AgentAvatar name={agent.name} category={agent.category} fallback={agent.fallback} size="sm" />
-        <span style={{ fontWeight: 'var(--weight-strong)' }} title={agent.name}>
-          {agent.name}
-        </span>
-        {agent.fallback && <Tag>Default</Tag>}
-        <StatusTag kind="agent" status={agent.status} />
-        <span className="caption muted">{nodeStatusLabel(status)}</span>
-      </div>
-
-      <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap', marginTop: 'var(--space-2)' }}>
-        {work ? (
-          <button type="button" className="link" onClick={() => onOpenGoal(work.goal.id)}>
-            {truncateWords(work.task.title, 60)}
-          </button>
-        ) : (
-          <span className="caption muted">Nothing running</span>
-        )}
-        <span className="caption muted">{formatCount(agent.queued)} queued</span>
-      </div>
-
-      <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center', marginTop: 'var(--space-2)' }}>
-        {canUpdate && agent.status !== 'retired' && (
-          <Button variant="outline" loading={setStatus.isPending} onClick={() => void toggle()}>
-            {paused ? 'Resume' : 'Pause'}
-          </Button>
-        )}
-        <a className="link" href={`/agents/${agent.id}`}>
-          Open agent
-        </a>
-      </div>
-
-      {error && (
-        <p className="caption" style={{ color: 'var(--danger)', marginTop: 'var(--space-1)' }}>
-          {error}
+    <li className="orc-agent-row" data-status={status}>
+      <AgentAvatar name={agent.name} category={agent.category} fallback={agent.fallback} size="sm" />
+      <div className="orc-agent-main">
+        <p className="orc-agent-name">
+          <a className="orc-agent-link" href={`/agents/${agent.id}`} title={`Open ${agent.name}`}>
+            {agent.name}
+          </a>
+          {agent.fallback && <Tag>Default</Tag>}
+          {(status === 'paused' || status === 'retired') && <StatusTag kind="agent" status={agent.status} />}
         </p>
+        <p className="orc-agent-work">
+          {work ? (
+            <button type="button" className="link" onClick={() => onOpenGoal(work.goal.id)} title={work.task.title}>
+              {truncateWords(work.task.title, 48)}
+            </button>
+          ) : (
+            <span>{status === 'paused' || status === 'retired' ? 'Nothing running' : nodeStatusLabel(status)}</span>
+          )}
+          {agent.queued > 0 && <span>{formatCount(agent.queued)} queued</span>}
+        </p>
+        {error && <p className="orc-agent-error">{error}</p>}
+      </div>
+      {canUpdate && agent.status !== 'retired' && (
+        <Button variant="quiet" className="orc-agent-toggle" loading={setStatus.isPending} onClick={() => void toggle()}>
+          {paused ? 'Resume' : 'Pause'}
+        </Button>
       )}
     </li>
   )

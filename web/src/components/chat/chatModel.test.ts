@@ -320,12 +320,12 @@ describe('routingSummary', () => {
 
   it('names a model choice', () => {
     const m = message({ id: 'a', kind: 'routing', detail: { mode: 'model', agents: [{ id: 'research', name: 'Research', instruction: '' }] } })
-    expect(routingSummary(m, names)).toBe('Routed to Research by the model')
+    expect(routingSummary(m, names)).toBe('Sent to Research')
   })
 
   it('names a mention', () => {
     const m = message({ id: 'a', kind: 'routing', detail: { mode: 'mention', agents: [{ id: 'research', name: 'Research', instruction: '' }] } })
-    expect(routingSummary(m, names)).toBe('You mentioned @Research')
+    expect(routingSummary(m, names)).toBe('Sent to @Research, as you asked')
   })
 
   it('names a manual choice', () => {
@@ -335,7 +335,7 @@ describe('routingSummary', () => {
 
   it('names keyword matches', () => {
     const m = message({ id: 'a', kind: 'routing', detail: { mode: 'rules', agents: [{ id: 'research', name: 'Research', instruction: '' }] } })
-    expect(routingSummary(m, names)).toBe('Matched by keywords: Research')
+    expect(routingSummary(m, names)).toBe('Sent to Research')
   })
 
   it('explains a fallback to General Employee', () => {
@@ -344,7 +344,7 @@ describe('routingSummary', () => {
       kind: 'routing',
       detail: { mode: 'fallback', agents: [{ id: 'general', name: 'General Employee', instruction: '' }] },
     })
-    expect(routingSummary(m, names)).toBe('No specialist matched this, so General Employee is taking it')
+    expect(routingSummary(m, names)).toBe('Sent to General Employee, as no specialist matched')
   })
 })
 

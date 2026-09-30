@@ -4,6 +4,7 @@ import { Card, Eyebrow, Tag } from '../ui'
 import { Collapsible, useCollapsed } from '../ui/Collapsible'
 import { categoryTone } from '../../lib/labels'
 import { canStopGoal } from '../../lib/goals'
+import { isGoalActive } from '../../lib/queries'
 import type { Agent, BoardGoal, ChatMessage } from '../../lib/queries'
 import { can, profile } from '../../lib/session'
 import { routingModeLabel, routingSummary } from './chatModel'
@@ -26,7 +27,6 @@ export function RoutingCard({
   message,
   agentNames,
   goal,
-  settled,
   chosenName,
   rerouting,
   onReroute,
@@ -34,7 +34,7 @@ export function RoutingCard({
   message: ChatMessage
   agentNames: Record<string, Agent>
   goal?: BoardGoal
-  /** Whether the goal already has an answer, or has finished (B1.5): the card starts collapsed. */
+  /** Whether the goal already has an answer, or has finished (B1.5). */
   settled: boolean
   chosenName: string | null
   rerouting: boolean
@@ -44,7 +44,9 @@ export function RoutingCard({
   const menuRef = useRef<HTMLDivElement | null>(null)
   const details = useContext(DetailsContext)
   const override = details.mode === 'auto' ? null : details.mode
-  const [open, setOpen] = useCollapsed(null, !settled, override, details.version)
+  // A receipt, not a headline: one line saying who took the work, with the why one click away.
+  // It starts folded whether or not the work has settled; the choice card below is the exception.
+  const [open, setOpen] = useCollapsed(null, false, override, details.version)
 
   const detail = message.detail
   const agents = detail.agents ?? []
@@ -58,7 +60,7 @@ export function RoutingCard({
 
   const me = profile()?.userId ?? null
   // D-17: reroute controls cancel active work, so they need the same authority as Stop.
-  const canSendElsewhere = !goal || settled || canStopGoal(goal, me, can)
+  const canSendElsewhere = !goal || !isGoalActive(goal) || canStopGoal(goal, me, can)
 
   const body = (
     <>
@@ -71,7 +73,9 @@ export function RoutingCard({
                 <Tag tone={categoryTone(known?.category)} withDot>
                   {routed.name}
                 </Tag>
-                {routed.instruction && <p className="caption muted chat-routing-instruction">{routed.instruction}</p>}
+                {agents.length > 1 && routed.instruction && (
+                  <p className="caption muted chat-routing-instruction">{routed.instruction}</p>
+                )}
               </li>
             )
           })}
@@ -152,10 +156,16 @@ export function RoutingCard({
   }
 
   return (
-    <Card as="article" className="chat-routing-card">
-      <Collapsible title={routingSummary(message, agentNames)} open={open} onToggle={setOpen} headingLevel="p">
-        {body}
+    <article className="chat-receipt">
+      <Collapsible
+        title={routingSummary(message, agentNames)}
+        open={open}
+        onToggle={setOpen}
+        headingLevel="p"
+        className="chat-receipt-collapsible"
+      >
+        <div className="chat-receipt-body">{body}</div>
       </Collapsible>
-    </Card>
+    </article>
   )
 }

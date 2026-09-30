@@ -160,4 +160,13 @@ class SandboxProviderTest {
         });
         assertThat(labels).doesNotHaveDuplicates();
     }
+
+    @Test
+    @DisplayName("quotes the request itself, not the earlier-turns preamble chat puts before it")
+    void quotesRequestAfterPreamble() {
+        String message = "Earlier in this conversation, for context (the request itself comes after this):\n"
+                + "Person: Draft a welcome email\nHR: Here is a draft.\n\nRequest:\nmake it shorter";
+        assertThat(SandboxProvider.requestPart(message)).isEqualTo("make it shorter");
+        assertThat(SandboxProvider.requestPart("What is java?")).isEqualTo("What is java?");
+    }
 }

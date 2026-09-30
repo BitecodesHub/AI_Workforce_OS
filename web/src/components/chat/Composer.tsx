@@ -77,7 +77,8 @@ export function Composer({
   const [popover, setPopover] = useState<Popover | null>(null)
   const [seenConversationId, setSeenConversationId] = useState(conversationId)
   const [seenPrefillToken, setSeenPrefillToken] = useState(prefill?.token ?? null)
-  const fieldId = useId()
+  // A fixed id: the page's "Skip to message box" link targets it, and there is one composer per page.
+  const fieldId = 'chat-composer-input'
   const listboxId = useId()
 
   // The draft restores when the conversation itself changes, adjusted during render (the

@@ -17,8 +17,9 @@ import { isGoalActive } from '../../lib/queries'
  * rule can be checked directly rather than by reading pixels off a rendered page.
  */
 
-export const FLOW_VIEWBOX = { width: 640, height: 340 } as const
-export const HUB = { x: 320, y: 176 } as const
+/* Tall enough that a node at the very bottom of the ring keeps its label inside the canvas. */
+export const FLOW_VIEWBOX = { width: 640, height: 360 } as const
+export const HUB = { x: 320, y: 172 } as const
 export const RING_RADIUS = 128
 
 export type NodePoint = { x: number; y: number }
@@ -300,6 +301,30 @@ export function countCards(cards: readonly BoardCard[], statusKey: CardStatusKey
   return cards.reduce((count, card) => count + (card.statusKey === statusKey ? 1 : 0), 0)
 }
 
+/* ---- Summary tile notes: a note only ever explains a figure above zero, so a "0" tile never
+   reads as if something were paused or waiting. ------------------------------------------------ */
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
+/** "2 questions · 1 approval" under Needs you, or null when neither is waiting. */
+export function waitingTileNote(questions: number, approvals: number): string | null {
+  const parts = [questions > 0 ? plural(questions, 'question') : null, approvals > 0 ? plural(approvals, 'approval') : null]
+  const note = parts.filter(Boolean).join(' · ')
+  return note || null
+}
+
+/** "Agent paused" under Held, only when something is actually held. */
+export function heldTileNote(held: number): string | null {
+  return held > 0 ? 'Agent paused' : null
+}
+
+/** "and 3 direct runs" under Working now, only when there are any. */
+export function directRunsTileNote(directRuns: number): string | null {
+  return directRuns > 0 ? `and ${plural(directRuns, 'direct run')}` : null
+}
+
 /** 'Step 2 of 3', from the task's place in the goal's own chain, not its raw stored position. */
 export function stepLabel(goal: Pick<BoardGoal, 'tasks'>, task: { id: string } | null): string {
   const total = goal.tasks.length
@@ -307,6 +332,32 @@ export function stepLabel(goal: Pick<BoardGoal, 'tasks'>, task: { id: string } |
   const ordered = [...goal.tasks].sort((a, b) => a.position - b.position)
   const index = ordered.findIndex((candidate) => candidate.id === task.id)
   return index < 0 ? '' : `Step ${index + 1} of ${total}`
+}
+
+/** Whether a card shows its step progress: only a goal of more than one step has any to show. */
+export function showsStepProgress(goal: Pick<BoardGoal, 'tasks'>): boolean {
+  return goal.tasks.length > 1
+}
+
+/**
+ * The single meta line under a card's title - "HR · From Chat · You · 172 ms" - with blank parts
+ * dropped, and a requester left out when it only repeats the source (a scheduled goal would
+ * otherwise read "Scheduled · Scheduled").
+ */
+export function cardMetaParts(parts: {
+  agent: string | null
+  source: string
+  requester: string
+  timing: string
+  cost?: string | null
+}): string[] {
+  const out: string[] = []
+  if (parts.agent) out.push(parts.agent)
+  if (parts.source) out.push(parts.source)
+  if (parts.requester && parts.requester !== parts.source) out.push(parts.requester)
+  if (parts.timing) out.push(parts.timing)
+  if (parts.cost) out.push(parts.cost)
+  return out
 }
 
 const QUEUE_REASON_TEXT: Record<QueueReason, string> = {

@@ -8,7 +8,8 @@ import { detailText, isInstruction } from '../run/traceModel'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { describeApiError } from '../../lib/api'
 import { shortId } from '../../lib/format'
-import { isRunActive, useCancelRun, useMemberNames, useRun, useRunSteps } from '../../lib/queries'
+import { isRunActive, useCancelRun, useRun, useRunSteps } from '../../lib/queries'
+import { useMemberDirectory } from './useMemberDirectory'
 import type { Board } from '../../lib/queries'
 import { can, profile } from '../../lib/session'
 import { useToast } from '../../lib/toast'
@@ -20,7 +21,7 @@ import { useToast } from '../../lib/toast'
  */
 export function RunSheet({ runId, board, onClose }: { runId: string; board: Board; onClose: () => void }) {
   const toast = useToast()
-  const members = useMemberNames()
+  const { members } = useMemberDirectory()
   const me = profile()?.userId ?? null
   const nameOf = (userId: string) => members[userId]?.displayName ?? shortId(userId)
 

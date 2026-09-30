@@ -1,15 +1,15 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Tag } from '../ui'
 import { truncateWords } from '../../lib/format'
 import { CATEGORY_LABEL, categoryTone } from '../../lib/labels'
-import { useMemberNames } from '../../lib/queries'
 import type { Board, BoardAgent } from '../../lib/queries'
 import { initials, profile } from '../../lib/session'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 import { FLOW_VIEWBOX, HUB, edgePath, flowEdges, flowLabelMax, ringLayout, stepLabel, tooltipPlacement } from './layout'
 import type { NodePoint } from './layout'
 import { currentTaskFor, requesterLabel } from './shared'
+import { useMemberDirectory } from './useMemberDirectory'
 
 /*
  * The coordinator at the centre, every agent on a ring around it, and a line for every goal
@@ -61,11 +61,21 @@ export function FlowMap({
   onOpenGoal: (goalId: string) => void
 }) {
   const reducedMotion = useReducedMotion()
-  const members = useMemberNames()
+  const members = useMemberDirectory()
   const currentUserId = profile()?.userId ?? null
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const nodeRefs = useRef(new Map<string, SVGGElement>())
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // On a phone the canvas is wider than the screen and scrolls sideways; it opens centred on the
+  // coordinator rather than on the empty left edge of the ring.
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (scroller && scroller.scrollWidth > scroller.clientWidth) {
+      scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2
+    }
+  }, [])
 
   const agents = useMemo(() => [...board.agents].sort((a, b) => a.name.localeCompare(b.name)), [board.agents])
   const points = useMemo(() => ringLayout(agents.length), [agents.length])
@@ -132,7 +142,7 @@ export function FlowMap({
           node scaled down to fit a phone's width falls under the 44px touch target a thumb needs,
           and its label becomes too small to read. Scrolling this canvas keeps every node a
           reliable size, the same trade-off the swimlanes below already make. */}
-      <div className="orc-flowmap-scroll">
+      <div className="orc-flowmap-scroll" ref={scrollRef}>
         <div className="orc-flowmap-canvas">
           <svg
             className="orc-flowmap-svg"
@@ -291,8 +301,10 @@ export function FlowMap({
         })}
       </ul>
 
-      <div className="orc-legend">
-        {(['operations', 'engineering', 'growth', 'support'] as const).map((category) => (
+      {/* One compact key, under the map: only the categories this workforce actually has, then the
+          rings a node can wear. */}
+      <div className="orc-legend orc-legend-compact" aria-label="Map key">
+        {(['operations', 'engineering', 'growth', 'support'] as const).filter((category) => agents.some((agent) => !agent.fallback && agent.category.toLowerCase() === category)).map((category) => (
           <span key={category} className="orc-legend-item">
             <Tag tone={categoryTone(category)} withDot>
               {CATEGORY_LABEL[category]}
@@ -303,7 +315,10 @@ export function FlowMap({
           <span className="orc-legend-ring orc-ring-running" aria-hidden="true" /> Running
         </span>
         <span className="orc-legend-item">
-          <span className="orc-legend-ring orc-ring-asking" aria-hidden="true" /> Waiting for an answer
+          <svg className="orc-legend-asking" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <circle cx="7" cy="7" r="6" />
+          </svg>
+          Waiting for an answer
         </span>
         <span className="orc-legend-item">
           <span className="orc-legend-ring orc-ring-waiting" aria-hidden="true" /> Waiting for approval

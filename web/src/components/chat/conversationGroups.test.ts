@@ -81,7 +81,7 @@ describe('conversationStatusText', () => {
     expect(conversationStatusText('needs_approval')).toBe('Needs your approval')
     expect(conversationStatusText('waiting_approval')).toBe('Waiting for approval')
     expect(conversationStatusText('working')).toBe('Working')
-    expect(conversationStatusText('idle')).toBe('Idle')
+    expect(conversationStatusText('idle')).toBe('')
   })
 })
 

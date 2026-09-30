@@ -95,6 +95,28 @@ export function ProgressCard({
   const stoppable = canStopGoal(goal, me, can)
   const retryable = canRetryGoal(goal, me, can)
 
+  // One agent that finished cleanly needs no chain drawn out: its answer sits just below. A single
+  // line keeps the receipt (who, how long, where to look) without a second card in the thread.
+  const soloDone = finished && goal.status === 'completed' && tasks.length === 1 && details.mode !== 'expanded'
+  if (soloDone) {
+    const solo = tasks[0]
+    const soloName = solo?.agentId ? (agentNames[solo.agentId]?.name ?? 'The agent') : 'The agent'
+    return (
+      <article className="chat-progress-line" aria-label={`Progress: ${soloName} finished`}>
+        <svg className="chat-progress-line-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M5 8.2l2 2 4-4.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span>
+          <strong className="chat-progress-line-name">{soloName}</strong> finished · {summary.replace(/^Done in /, '')}
+        </span>
+        <a className="link" href={`/orchestrator?goal=${goal.id}`}>
+          Open in Orchestrator
+        </a>
+      </article>
+    )
+  }
+
   return (
     <Card as="article" className="chat-progress-card">
       <Collapsible

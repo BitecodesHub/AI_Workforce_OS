@@ -10,12 +10,13 @@ import { describeApiError } from '../../lib/api'
 import { formatMoney, shortId } from '../../lib/format'
 import { canRetryGoal } from '../../lib/goals'
 import { goalSourceLabel } from '../../lib/labels'
-import { isGoalActive, useCancelGoal, useGoal, useMemberNames, useRetryGoal } from '../../lib/queries'
+import { isGoalActive, useCancelGoal, useGoal, useRetryGoal } from '../../lib/queries'
 import type { Board, BoardGoal, BoardTask, Goal } from '../../lib/queries'
 import { can, profile } from '../../lib/session'
 import { useToast } from '../../lib/toast'
 import { StepList } from './StepList'
 import { requesterLabel } from './shared'
+import { useMemberDirectory } from './useMemberDirectory'
 
 const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'k', 'j'])
 
@@ -80,9 +81,9 @@ export function GoalSheet({
   focus?: 'question' | 'approval' | null
 }) {
   const toast = useToast()
-  const members = useMemberNames()
+  const directory = useMemberDirectory()
   const me = profile()?.userId ?? null
-  const nameOf = (userId: string) => members[userId]?.displayName ?? shortId(userId)
+  const nameOf = (userId: string) => directory.members[userId]?.displayName ?? shortId(userId)
 
   const fromBoard = board.goals.find((candidate) => candidate.id === goalId)
   const fallbackQuery = useGoal(goalId, { enabled: !fromBoard })
@@ -143,7 +144,7 @@ export function GoalSheet({
 
   const sourceEntry = goalSourceLabel(goal.source)
   const totalCost = goal.tasks.reduce((sum, task) => sum + (task.cost ?? 0), 0)
-  const requester = requesterLabel(goal, members, me)
+  const requester = requesterLabel(goal, directory, me)
   const canCancel = can('task:cancel') && isGoalActive(goal)
   const canRetry = canRetryGoal(goal, me, can)
   const { step: retryStep, agentName: retryAgent } = retryStepInfo(goal, board)

@@ -104,7 +104,8 @@ export function conversationStatusText(activity: Conversation['activity']): stri
     case 'working':
       return 'Working'
     default:
-      return 'Idle'
+      // Nothing is happening: the time alone says enough, and "Idle" read like a fault.
+      return ''
   }
 }
 

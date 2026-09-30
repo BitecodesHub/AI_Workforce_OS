@@ -5,16 +5,34 @@ import type { BoardGoal, BoardTask, Member } from '../../lib/queries'
  * grouping live in layout.ts; these read the board's own data rather than measuring anything.
  */
 
-/** Who asked for a goal, in the words the board uses: 'Scheduled', 'You', a member's name, or not. */
+/**
+ * The workspace's members by user id, and whether that list actually loaded. A miss only means
+ * somebody has left once `loaded` is true: while the list is still loading, after it failed, or
+ * when the viewer may not read members at all, a miss says nothing about the person.
+ */
+export type MemberDirectory = {
+  members: Record<string, Member>
+  loaded: boolean
+}
+
+/** Shown when the board cannot say who asked, rather than guessing. */
+export const UNKNOWN_REQUESTER = 'Someone'
+
+/**
+ * Who asked for a goal, in the words the board uses: 'Scheduled', 'You', a member's name,
+ * 'Former member' only when the loaded member list genuinely lacks them, and otherwise 'Someone'.
+ */
 export function requesterLabel(
   goal: { source: string; requestedBy: string | null },
-  members: Record<string, Member>,
+  directory: MemberDirectory,
   currentUserId: string | null,
 ): string {
   if (goal.source === 'schedule') return 'Scheduled'
-  if (!goal.requestedBy) return 'Unknown'
+  if (!goal.requestedBy) return UNKNOWN_REQUESTER
   if (currentUserId && goal.requestedBy === currentUserId) return 'You'
-  return members[goal.requestedBy]?.displayName ?? 'Former member'
+  const member = directory.members[goal.requestedBy]
+  if (member) return member.displayName
+  return directory.loaded ? 'Former member' : UNKNOWN_REQUESTER
 }
 
 const CURRENT_TASK_STATUS = new Set(['running', 'waiting_approval', 'waiting_input'])

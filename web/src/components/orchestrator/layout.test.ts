@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FLOW_VIEWBOX,
   buildBoardCards,
+  cardMetaParts,
   columnTitle,
   countCards,
+  directRunsTileNote,
+  heldTileNote,
+  waitingTileNote,
   edgePath,
   flowEdges,
   flowLabelMax,
@@ -13,6 +18,7 @@ import {
   pctOf,
   queueReasonText,
   ringLayout,
+  showsStepProgress,
   stepLabel,
   tickStepFor,
   tooltipPlacement,
@@ -361,5 +367,63 @@ describe('columnTitle', () => {
     expect(columnTitle('needs_you', 'PT2H', 120)).toBe('Needs you')
     expect(columnTitle('queued', 'PT2H', 120)).toBe('Queued')
     expect(columnTitle('working', 'PT2H', 120)).toBe('Working')
+  })
+})
+
+describe('showsStepProgress', () => {
+  it('shows progress only for a goal of more than one step', () => {
+    expect(showsStepProgress(goal({ id: 'g1', tasks: [task({ id: 't1' })] }))).toBe(false)
+    expect(showsStepProgress(goal({ id: 'g1', tasks: [] }))).toBe(false)
+    expect(showsStepProgress(goal({ id: 'g1', tasks: [task({ id: 't1' }), task({ id: 't2', position: 1 })] }))).toBe(true)
+  })
+})
+
+describe('cardMetaParts', () => {
+  it('joins agent, source, requester and timing in that order', () => {
+    expect(cardMetaParts({ agent: 'HR', source: 'From Chat', requester: 'You', timing: '172 ms' })).toEqual([
+      'HR',
+      'From Chat',
+      'You',
+      '172 ms',
+    ])
+  })
+
+  it('drops blank parts and appends a cost when there is one', () => {
+    expect(cardMetaParts({ agent: null, source: 'Started by hand', requester: '', timing: '', cost: 'US$0.02' })).toEqual([
+      'Started by hand',
+      'US$0.02',
+    ])
+  })
+
+  it('never repeats a requester that only restates the source', () => {
+    expect(cardMetaParts({ agent: 'Ops', source: 'Scheduled', requester: 'Scheduled', timing: '2 s' })).toEqual(['Ops', 'Scheduled', '2 s'])
+  })
+})
+
+describe('ringLayout within the canvas', () => {
+  it('keeps every node and its label inside the viewBox, however many agents there are', () => {
+    for (const count of [1, 2, 3, 4, 5, 6, 7, 8, 12]) {
+      for (const point of ringLayout(count)) {
+        // 25 is the outer status ring; 38 is where the label's baseline sits below the node.
+        expect(point.y - 25).toBeGreaterThanOrEqual(0)
+        expect(point.y + 38 + 4).toBeLessThanOrEqual(FLOW_VIEWBOX.height)
+      }
+    }
+  })
+})
+
+describe('summary tile notes', () => {
+  it('shows no note for a zero figure', () => {
+    expect(heldTileNote(0)).toBeNull()
+    expect(waitingTileNote(0, 0)).toBeNull()
+    expect(directRunsTileNote(0)).toBeNull()
+  })
+
+  it('explains a figure above zero, in the singular or plural', () => {
+    expect(heldTileNote(2)).toBe('Agent paused')
+    expect(waitingTileNote(1, 0)).toBe('1 question')
+    expect(waitingTileNote(2, 1)).toBe('2 questions · 1 approval')
+    expect(waitingTileNote(0, 3)).toBe('3 approvals')
+    expect(directRunsTileNote(1)).toBe('and 1 direct run')
   })
 })

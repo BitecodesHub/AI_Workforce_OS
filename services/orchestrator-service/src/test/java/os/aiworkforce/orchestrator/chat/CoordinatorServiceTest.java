@@ -818,4 +818,14 @@ class CoordinatorServiceTest {
                         ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
+
+    @Test
+    @DisplayName("a short reply that points back at earlier work reads as a follow-up; a new question does not")
+    void followUpDetection() {
+        assertThat(CoordinatorService.looksLikeFollowUp("make it shorter")).isTrue();
+        assertThat(CoordinatorService.looksLikeFollowUp("now write another version for managers"))
+                .isTrue();
+        assertThat(CoordinatorService.looksLikeFollowUp("What is java?")).isFalse();
+        assertThat(CoordinatorService.looksLikeFollowUp("")).isFalse();
+    }
 }

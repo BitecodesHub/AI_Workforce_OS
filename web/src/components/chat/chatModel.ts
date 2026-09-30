@@ -179,17 +179,13 @@ export function routingSummary(message: ChatMessage, agentNames: Record<string, 
   const names = (detail.agents ?? []).map((agent) => agentNames[agent.id]?.name ?? agent.name)
   switch (detail.mode) {
     case 'mention':
-      return names.length > 0 ? `You mentioned ${names.map((name) => `@${name}`).join(' and ')}` : 'You mentioned an agent'
+      return names.length > 0 ? `Sent to ${names.map((name) => `@${name}`).join(' and ')}, as you asked` : 'Sent to the agent you mentioned'
     case 'manual':
       return names.length > 0 ? `You chose ${nameList(names)}` : 'You chose an agent'
-    case 'rules':
-      return names.length > 0 ? `Matched by keywords: ${nameList(names)}` : 'Matched by keywords'
     case 'fallback':
-      return `No specialist matched this, so ${names[0] ?? 'General Employee'} is taking it`
-    case 'model':
-      return names.length > 0 ? `Routed to ${nameList(names)} by the model` : 'Routed by the model'
+      return `Sent to ${names[0] ?? 'General Employee'}, as no specialist matched`
     default:
-      return names.length > 0 ? `Routed to ${nameList(names)}` : 'Routed'
+      return names.length > 0 ? `Sent to ${nameList(names)}` : 'Sent to the workforce'
   }
 }
 

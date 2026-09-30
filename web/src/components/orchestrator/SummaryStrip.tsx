@@ -1,7 +1,7 @@
 import { StatTile } from '../ui'
 import { formatCount, formatMoney } from '../../lib/format'
 import type { BoardStats } from '../../lib/queries'
-import { countCards } from './layout'
+import { countCards, directRunsTileNote, heldTileNote, waitingTileNote } from './layout'
 import type { BoardCard, CardStatusKey } from './layout'
 
 /*
@@ -33,6 +33,10 @@ export function SummaryStrip({
   onToggleFailedToday: () => void
 }) {
   const spend = stats.spendToday
+  const heldCount = countCards(cards, 'held')
+  const waitingNote = waitingTileNote(questionCount, approvalCount)
+  const heldNote = heldTileNote(heldCount)
+  const directNote = directRunsTileNote(stats.directRuns)
 
   return (
     <div className="orc-summary">
@@ -41,12 +45,12 @@ export function SummaryStrip({
         value={formatCount(countCards(cards, 'working'))}
         pressed={status.has('working')}
         onClick={() => onToggleStatus('working')}
-        {...(stats.directRuns > 0 ? { note: `and ${formatCount(stats.directRuns)} direct runs` } : {})}
+        {...(directNote ? { note: directNote } : {})}
       />
       <StatTile
         label="Needs you"
         value={formatCount(countCards(cards, 'needs_you'))}
-        note={`${formatCount(questionCount)} questions · ${formatCount(approvalCount)} approvals`}
+        {...(waitingNote ? { note: waitingNote } : {})}
         pressed={status.has('needs_you')}
         onClick={() => onToggleStatus('needs_you')}
       />
@@ -58,8 +62,8 @@ export function SummaryStrip({
       />
       <StatTile
         label="Held"
-        value={formatCount(countCards(cards, 'held'))}
-        note="Agent paused"
+        value={formatCount(heldCount)}
+        {...(heldNote ? { note: heldNote } : {})}
         pressed={status.has('held')}
         onClick={() => onToggleStatus('held')}
       />
@@ -83,3 +87,4 @@ export function SummaryStrip({
     </div>
   )
 }
+

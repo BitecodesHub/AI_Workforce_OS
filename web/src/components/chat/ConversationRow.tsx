@@ -74,6 +74,7 @@ export function ConversationRow({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const menuOpenRef = useRef<(() => void) | null>(null)
   const title = conversation.title || 'Untitled conversation'
+  const statusText = conversationStatusText(conversation.activity)
 
   useEffect(() => {
     if (editing) inputRef.current?.focus()
@@ -140,13 +141,16 @@ export function ConversationRow({
               {conversation.unread && <span className="visually-hidden">New reply</span>}
             </span>
             <span className="chat-row-meta caption muted">
-              <span className="chat-row-dot" data-activity={conversation.activity} aria-hidden="true" />
               {conversation.match ? (
                 <Highlighted text={conversation.match.snippet} query={highlight} className="chat-row-snippet" />
-              ) : (
-                <span>{conversationStatusText(conversation.activity)}</span>
-              )}
-              <span> · {formatRelativeTicked(conversation.updatedAt, now, 60_000)}</span>
+              ) : statusText ? (
+                <>
+                  <span className="chat-row-dot" data-activity={conversation.activity} aria-hidden="true" />
+                  <span className="chat-row-status">{statusText}</span>
+                  <span aria-hidden="true">·</span>
+                </>
+              ) : null}
+              <span className="chat-row-time">{formatRelativeTicked(conversation.updatedAt, now, 60_000)}</span>
             </span>
           </a>
         )}

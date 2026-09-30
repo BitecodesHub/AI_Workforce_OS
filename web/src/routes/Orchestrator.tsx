@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Button, IconButton, PageHeader, Select } from '../components/ui'
+import { Button, IconButton, PageHeader } from '../components/ui'
 import { Collapsible, useCollapsed } from '../components/ui/Collapsible'
 import { QueryState } from '../components/ui/QueryState'
 import { ShortcutsDialog } from '../components/ui/ShortcutsDialog'
@@ -7,7 +7,7 @@ import { TaskDialog } from '../components/ui/TaskDialog'
 import { AgentsStrip } from '../components/orchestrator/AgentsStrip'
 import { OrchestratorBoard } from '../components/orchestrator/Board'
 import { diffCards, countChanged } from '../components/orchestrator/boardChanges'
-import { FlowMap } from '../components/orchestrator/FlowMap'
+import { FlowMap, nodeStatus } from '../components/orchestrator/FlowMap'
 import { Freshness } from '../components/orchestrator/Freshness'
 import { GoalSheet } from '../components/orchestrator/GoalSheet'
 import { buildBoardCards, columnTitle } from '../components/orchestrator/layout'
@@ -18,6 +18,7 @@ import { RunSheet } from '../components/orchestrator/RunSheet'
 import { StopEverythingDialog } from '../components/orchestrator/StopEverythingDialog'
 import { SummaryStrip } from '../components/orchestrator/SummaryStrip'
 import { Swimlanes } from '../components/orchestrator/Swimlanes'
+import { formatCount } from '../lib/format'
 import { formatHotkey, useHotkeys } from '../lib/hotkeys'
 import { readStored, writeStored } from '../lib/persist'
 import { useBoard } from '../lib/queries'
@@ -36,6 +37,8 @@ import { useNow } from '../lib/useNow'
 const WINDOW_TO_API: Record<string, BoardWindow> = { '1h': 'PT1H', '2h': 'PT2H', '6h': 'PT6H', '24h': 'PT24H', today: 'TODAY' }
 
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
+
+const BUSY_NODE = new Set(['running', 'asking', 'waiting'])
 
 function readParam(search: URLSearchParams, key: string): string | null {
   return search.get(key)
@@ -218,7 +221,10 @@ function OrchestratorBody({
       {
         key: 'Escape',
         allowInInput: true,
-        handler: () => {
+        handler: (event) => {
+          // An Escape already handled by an open menu (it closes the menu) is not also a request
+          // to clear the agent filter that menu may have just set.
+          if (event.defaultPrevented) return
           if (!goalId && !runId && selectedAgentId) setSelectedAgentId(null)
         },
       },
@@ -226,9 +232,10 @@ function OrchestratorBody({
     true,
   )
 
-  const [mapOpen, setMapOpen] = useCollapsed('orc.sections.map', true)
+  const [workforceOpen, setWorkforceOpen] = useCollapsed('orc.sections.workforce', true)
   const [timelineOpen, setTimelineOpen] = useCollapsed('orc.sections.timeline', true)
-  const [agentsOpen, setAgentsOpen] = useCollapsed('orc.sections.agents', true)
+  const busyAgents = board.agents.filter((agent) => BUSY_NODE.has(nodeStatus(agent))).length
+  const workforceSummary = `${formatCount(board.agents.length)} agents · ${busyAgents > 0 ? `${formatCount(busyAgents)} busy` : 'all idle'}`
 
   const nothingActive = board.stats.running + board.stats.queued + board.stats.waitingApproval + board.stats.waitingInput === 0
 
@@ -274,7 +281,7 @@ function OrchestratorBody({
         {liveMessage}
       </p>
 
-      <div className="stack" style={{ gap: 'var(--space-7)' }}>
+      <div className="orc-sections">
         <SummaryStrip
           cards={cards}
           stats={board.stats}
@@ -289,8 +296,8 @@ function OrchestratorBody({
 
         <NeedsYouInbox board={latest ?? board} onOpenGoal={openGoal} onOpenRun={openRun} />
 
-        <section aria-labelledby="orc-goals-heading" ref={goalsSectionRef}>
-          <h2 id="orc-goals-heading" className="section-heading" style={{ marginBottom: 'var(--space-3)' }}>
+        <section aria-labelledby="orc-goals-heading" ref={goalsSectionRef} className="orc-section">
+          <h2 id="orc-goals-heading" className="section-heading orc-section-title">
             Goals
           </h2>
           <OrchestratorBoard
@@ -303,12 +310,22 @@ function OrchestratorBody({
             onOpenGoal={openGoal}
             changedIds={changedIds}
             onCardMoved={onCardMoved}
+            onNewGoal={canCreate ? () => setTaskDialogOpen(true) : undefined}
           />
         </section>
 
-        <Collapsible title="The workforce right now" open={mapOpen} onToggle={setMapOpen}>
-          <div style={{ marginTop: 'var(--space-4)' }}>
-            <FlowMap board={board} selectedAgentId={selectedAgentId} onSelectAgent={setSelectedAgentId} onOpenGoal={openGoal} />
+        <Collapsible title="Workforce" summary={workforceSummary} open={workforceOpen} onToggle={setWorkforceOpen} className="orc-collapsible">
+          <div className="orc-workforce">
+            <div className="orc-panel orc-panel-map">
+              <div className="orc-panel-head">
+                <h3 className="orc-panel-title">Live map</h3>
+                <span className="caption muted">Select an agent to show only its goals.</span>
+              </div>
+              <FlowMap board={board} selectedAgentId={selectedAgentId} onSelectAgent={setSelectedAgentId} onOpenGoal={openGoal} />
+            </div>
+            <div className="orc-panel orc-panel-agents">
+              <AgentsStrip board={board} onOpenGoal={openGoal} />
+            </div>
           </div>
         </Collapsible>
 
@@ -316,24 +333,22 @@ function OrchestratorBody({
           title="Timeline"
           open={timelineOpen}
           onToggle={setTimelineOpen}
+          className="orc-collapsible"
           actions={
-            <Select label="Range" value={apiWindowToken} onChange={(event) => setWindowToken(event.target.value)}>
-              <option value="1h">Last hour</option>
-              <option value="2h">Last 2 hours</option>
-              <option value="6h">Last 6 hours</option>
-              <option value="24h">Last 24 hours</option>
-              <option value="today">Today</option>
-            </Select>
+            <label className="orc-range">
+              <span className="visually-hidden">Timeline range</span>
+              <select className="select orc-range-select" value={apiWindowToken} onChange={(event) => setWindowToken(event.target.value)}>
+                <option value="1h">Last hour</option>
+                <option value="2h">Last 2 hours</option>
+                <option value="6h">Last 6 hours</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="today">Today</option>
+              </select>
+            </label>
           }
         >
-          <div style={{ marginTop: 'var(--space-4)' }}>
+          <div className="orc-panel orc-panel-timeline">
             <Swimlanes board={board} now={now} windowMinutes={board.windowMinutes} timezone={board.timezone} onOpenGoal={openGoal} />
-          </div>
-        </Collapsible>
-
-        <Collapsible title="Agents" open={agentsOpen} onToggle={setAgentsOpen}>
-          <div style={{ marginTop: 'var(--space-4)' }}>
-            <AgentsStrip board={board} onOpenGoal={openGoal} />
           </div>
         </Collapsible>
       </div>
