@@ -153,7 +153,7 @@ class ModelRouterPlannerTest {
         assertThat(plan).isPresent();
         assertThat(plan.get().steps().getFirst().agentId()).isEqualTo(general.getId());
         String prompt = captor.getValue().systemPrompt();
-        assertThat(prompt).contains("choose \"general-employee\"");
+        assertThat(prompt).contains("Choose \"general-employee\" only when the request lies outside every specialist");
         assertThat(captor.getValue().jsonSchema()).contains("\"general-employee\"");
     }
 

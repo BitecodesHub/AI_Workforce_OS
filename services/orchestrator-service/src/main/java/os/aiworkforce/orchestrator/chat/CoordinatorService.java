@@ -280,7 +280,9 @@ public class CoordinatorService {
                         requesterId,
                         actor,
                         text,
-                        authorizationHeader);
+                        authorizationHeader,
+                        chronological,
+                        preamble);
             case WORK ->
                 decideWork(
                         orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
@@ -441,23 +443,16 @@ public class CoordinatorService {
             UUID requesterId,
             Actor actor,
             String text,
-            String authorizationHeader) {
+            String authorizationHeader,
+            List<ChatMessage> chronological,
+            String preamble) {
         boolean canFallback = fallback != null && actor != null && actor.hasPermission(Permission.Codes.TASK_CREATE);
         Optional<KnowledgeClient.SearchResult> result = knowledge.search(orgId, text, authorizationHeader);
         if (result.isEmpty()) {
+            // Search is down: treat the question as ordinary work, so the best agent answers it.
             if (canFallback) {
-                return buildWorkDecision(
-                        workspaceAgents,
-                        requesterId,
-                        conversationId,
-                        List.of(new Step(fallback, text, true)),
-                        "fallback",
-                        List.of(),
-                        "Document search is unavailable right now, so General Employee is answering from "
-                                + "general knowledge.",
-                        List.of(),
-                        text,
-                        "");
+                return decideWork(
+                        orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
             }
             return new ErrorDecision(DOCUMENTS_UNAVAILABLE);
         }
@@ -465,17 +460,11 @@ public class CoordinatorService {
         List<Map<String, Object>> passages =
                 search.passages().stream().map(this::passageDetail).toList();
         if (!search.grounded() && canFallback) {
-            return buildWorkDecision(
-                    workspaceAgents,
-                    requesterId,
-                    conversationId,
-                    List.of(new Step(fallback, text, true)),
-                    "fallback",
-                    List.of(),
-                    "No document on file covered this, so General Employee is answering from general knowledge.",
-                    List.of(),
-                    text,
-                    "");
+            // No document answers it, so it is a question for the workforce: route it like any other
+            // request, so "how many customers do we have" can reach Customer Support rather than
+            // always landing on General Employee.
+            return decideWork(
+                    orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
         }
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("query", text);
@@ -503,7 +492,7 @@ public class CoordinatorService {
         for (int i = 0; i < steps.size(); i++) {
             Step step = steps.get(i);
             String instruction = i == 0 ? withPreamble(preamble, step.instruction()) : step.instruction();
-            if ("fallback".equals(mode) && step.fallback()) {
+            if (step.fallback() || step.agent().isFallback()) {
                 instruction = instruction + colleagueBlock(workspaceAgents, step.agent());
             }
             tasks.add(new GoalService.NewTask(
@@ -989,7 +978,9 @@ public class CoordinatorService {
         String list = specialists.stream()
                 .map(a -> a.getName() + " (" + truncateAtWord(summaryOf(a), MAX_COLLEAGUE_SUMMARY_CHARS) + ")")
                 .collect(Collectors.joining("; "));
-        return "\n\nColleagues you can point the person to: " + list + ".";
+        return "\n\nAbout this workspace: besides you, it has " + specialists.size() + " AI "
+                + (specialists.size() == 1 ? "colleague" : "colleagues") + ": " + list
+                + ". Point the person to the right one when a request is really theirs.";
     }
 
     private String summaryOf(Agent agent) {

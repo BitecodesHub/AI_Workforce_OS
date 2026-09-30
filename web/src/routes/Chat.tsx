@@ -218,13 +218,23 @@ export function Chat() {
     const shell = shellRef.current
     const vv = window.visualViewport
     if (!shell || !vv) return
-    const onResize = () => shell.style.setProperty('--chat-vvh', `${vv.height}px`)
+    // Only an on-screen keyboard should shrink the shell. Anywhere else the full window height
+    // (100dvh) is right, and a stored pixel height goes stale: a desktop window resize does not
+    // always fire the visual viewport's own resize, and pinch zoom shrinks it without any keyboard.
+    // So the property is set only while something covers part of the page, and removed otherwise.
+    const onResize = () => {
+      const covered = window.innerHeight - vv.height > 80 && Math.abs(vv.scale - 1) < 0.01
+      if (covered) shell.style.setProperty('--chat-vvh', `${vv.height}px`)
+      else shell.style.removeProperty('--chat-vvh')
+    }
     onResize()
     vv.addEventListener('resize', onResize)
     vv.addEventListener('scroll', onResize)
+    window.addEventListener('resize', onResize)
     return () => {
       vv.removeEventListener('resize', onResize)
       vv.removeEventListener('scroll', onResize)
+      window.removeEventListener('resize', onResize)
       shell.style.removeProperty('--chat-vvh')
     }
   }, [])

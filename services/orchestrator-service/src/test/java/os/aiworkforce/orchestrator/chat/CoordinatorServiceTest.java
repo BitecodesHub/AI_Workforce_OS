@@ -309,7 +309,7 @@ class CoordinatorServiceTest {
         ArgumentCaptor<GoalService.NewGoal> spec = ArgumentCaptor.forClass(GoalService.NewGoal.class);
         verify(goalService).createGoal(eq(ORG), spec.capture(), eq(true));
         String instruction = spec.getValue().tasks().getFirst().instruction();
-        assertThat(instruction).contains("Colleagues you can point the person to:");
+        assertThat(instruction).contains("About this workspace: besides you, it has");
         assertThat(instruction).contains("Research");
         assertThat(instruction).contains("Customer Support");
     }
@@ -368,8 +368,8 @@ class CoordinatorServiceTest {
     }
 
     @Test
-    @DisplayName("when nothing is grounded and General is active, the question goes to General instead")
-    void documentsNotGroundedGoesToGeneral() {
+    @DisplayName("when no document answers a question, it is routed like any request, not always to General")
+    void documentsNotGroundedIsRoutedLikeWork() {
         Agent general = fallbackAgent();
         when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, general));
         when(generalEmployee.activeIn(List.of(research, support, general))).thenReturn(Optional.of(general));
@@ -380,10 +380,9 @@ class CoordinatorServiceTest {
                 ORG, conversation.getId(), "What is our refund policy?", null, "Bearer token");
 
         ChatMessage routing = created.get(1);
-        assertThat(routing.getDetail()).containsEntry("mode", "fallback");
-        assertThat(routing.getDetail().get("reason"))
-                .isEqualTo(
-                        "No document on file covered this, so General Employee is answering from general knowledge.");
+        assertThat(routing.getKind()).isEqualTo("routing");
+        // "refund" is Customer Support's word, so the question reaches Support, not General.
+        assertThat(routing.getDetail()).containsEntry("mode", "rules");
         verify(goalService).createGoal(eq(ORG), any(), eq(true));
     }
 

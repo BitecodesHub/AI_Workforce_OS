@@ -111,7 +111,11 @@ public class ModelRouterPlanner {
                 active.stream().filter(GeneralEmployee::isFallback).findFirst().orElse(null);
         String fallbackLine = fallback == null
                 ? "- Choose the agent whose work the request is."
-                : "- Choose the agent whose work the request is. When no specialist clearly fits, choose \"%s\"."
+                : ("- Choose the specialist whose area the request touches, even when it is a question rather than a "
+                                + "task, or the specialist would first need to ask for details: a question about customers "
+                                + "belongs to the agent who works with customers, one about staff to the agent who works "
+                                + "with people. Choose \"%s\" only when the request lies outside every specialist's area, "
+                                + "such as general knowledge, small talk, or work none of them does.")
                         .formatted(fallback.getKey());
         PlanHints effectiveHints = hints == null ? PlanHints.NONE : hints;
         String hintLine = effectiveHints.lastAnswerAgent() == null
