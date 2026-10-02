@@ -240,3 +240,30 @@ make verify      # formatting, unit and slice tests
 make test-it     # integration tests, needs Docker
 make design-check
 ```
+
+# AI Workforce OS
+
+## Team & Module Ownership
+
+| Module | Owner | GitHub |
+|--------|-------|--------|
+| Platform Core, Contracts | aum2606 | @aum2606 |
+| Gateway, Auth, Organisations | Param2725 | @Param2725 |
+| AI Employee Agents & Runtime | PanthilShah | @PanthilShah |
+| Frontend / Web Client | tempyash007 | @tempyash007 |
+| Agent Orchestration & Memory | LoveShah21 | @LoveShah21 |
+| Knowledge Base & RAG Pipeline | fahim0-3 | @fahim0-3 |
+| DevOps, Testing, Documentation | Afif-Momin | @Afif-Momin |
+| MCP Core | BitecodesHub | @BitecodesHub |
+
+## Services
+
+- **gateway** - API gateway (port 8080)
+- **identity-service** - Authentication & authorization (port 8081)
+- **org-service** - Workspace & organisation management (port 8082)
+- **orchestrator-service** - Agent orchestration & chat (port 8083)
+- **memory-service** - Episodic & semantic memory (port 8084)
+- **knowledge-service** - Document ingestion & retrieval (port 8085)
+- **integrations-service** - External tool integrations (port 8086)
+- **analytics-service** - Audit logs & analytics (port 8087)
+

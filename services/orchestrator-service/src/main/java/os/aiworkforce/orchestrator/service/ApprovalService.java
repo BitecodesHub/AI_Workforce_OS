@@ -89,6 +89,26 @@ public class ApprovalService {
         return approval;
     }
 
+    /** Records an approval with the real action class and method for audit trail. */
+    @Transactional
+    public Approval recordApproval(UUID orgId, UUID runId, UUID taskId, String actionClass, 
+                                    String actionMethod, Map<String, Object> payload, 
+                                    UUID requestedBy, String reason) {
+        Approval approval = new Approval();
+        approval.setId(UuidV7.generate());
+        approval.setOrgId(orgId);
+        approval.setRunId(runId);
+        approval.setTaskId(taskId);
+        approval.setActionClass(actionClass);  // Record the REAL action class
+        approval.setActionMethod(actionMethod);
+        approval.setPayload(toJsonPayload(payload));
+        approval.setRequestedBy(requestedBy);
+        approval.setReason(reason);
+        approval.setStatus("pending");
+        approval.setCreatedAt(Instant.now());
+        return approvals.save(approval);
+    }
+
     @Transactional(readOnly = true)
     public List<Approval> pending(UUID orgId) {
         return approvals.findPending(orgId);
@@ -240,6 +260,17 @@ public class ApprovalService {
         }
     }
 
+    private String toJsonPayload(Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty()) {
+            return "{}";
+        }
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
     /** What the approver sees: enough to judge the action without leaving the queue. */
     public Map<String, Object> describe(Approval approval) {
         return Map.of(
@@ -247,7 +278,10 @@ public class ApprovalService {
                 "tool", approval.getTool() == null ? "" : approval.getTool(),
                 "summary", approval.getSummary(),
                 "actionClass", approval.getActionClass(),
+                "actionMethod", approval.getActionMethod(),
                 "requestedAt", approval.getRequestedAt(),
                 "expiresAt", approval.getExpiresAt());
     }
+
 }
+

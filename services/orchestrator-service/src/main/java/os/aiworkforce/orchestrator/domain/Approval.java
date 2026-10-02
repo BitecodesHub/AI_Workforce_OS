@@ -35,6 +35,9 @@ public class Approval extends OrgScopedEntity {
     @Column(name = "action_class", nullable = false)
     private String actionClass;
 
+    @Column(name = "action_method")
+    private String actionMethod;
+
     @Column(name = "tool")
     private String tool;
 
@@ -78,6 +81,16 @@ public class Approval extends OrgScopedEntity {
     @Column(name = "escalated_to")
     private UUID escalatedTo;
 
+    // Additional fields for recordApproval API
+    @Column(name = "requested_by")
+    private UUID requestedBy;
+
+    @Column(name = "reason", columnDefinition = "text")
+    private String reason;
+
+    @Column(name = "created_at")
+    private Instant createdAt;
+
     public UUID getRunId() {
         return runId;
     }
@@ -108,6 +121,14 @@ public class Approval extends OrgScopedEntity {
 
     public void setActionClass(String actionClass) {
         this.actionClass = actionClass;
+    }
+
+    public String getActionMethod() {
+        return actionMethod;
+    }
+
+    public void setActionMethod(String actionMethod) {
+        this.actionMethod = actionMethod;
     }
 
     public String getTool() {
@@ -212,6 +233,30 @@ public class Approval extends OrgScopedEntity {
 
     public void setEscalatedTo(UUID escalatedTo) {
         this.escalatedTo = escalatedTo;
+    }
+
+    public UUID getRequestedBy() {
+        return requestedBy;
+    }
+
+    public void setRequestedBy(UUID requestedBy) {
+        this.requestedBy = requestedBy;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 
     public boolean isPending() {

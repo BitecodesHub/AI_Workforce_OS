@@ -142,6 +142,7 @@
   overflow-y: auto;
   min-height: 0;
   flex: 1;
+  position: relative; /* contains hidden labels, as .chat-scroll does */
 }
 
 .chat-sidebar-empty {
@@ -379,6 +380,11 @@
   overflow-y: auto;
   min-height: 0;
   scroll-padding-bottom: 24px;
+  /* A positioned scroller contains its absolutely positioned descendants (the visually hidden
+     screen-reader labels). Without it they were laid out against the page instead, so a long
+     thread stretched the document past the window: the page itself scrolled, the navbar slid
+     away and blank space appeared under the chat. */
+  position: relative;
 }
 
 .chat-scroll[data-jump-visible] {
@@ -523,6 +529,7 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+  position: relative; /* contains hidden labels, as .chat-scroll does */
   background: var(--paper);
   border-left: 1px solid var(--line);
   padding: var(--space-4);

@@ -92,18 +92,20 @@ public class EmbeddingService {
         return all;
     }
 
+    /** Embeds one query using the workspace's configured embedding provider (stub for future). */
+    public float[] embedQuery(UUID orgId, String text) {
+        // TODO: Fetch workspace's configured embedding provider from config service
+        return embedOne(orgId, text);
+    }
+
+    /** Embeds a list of passages using the workspace's configured embedding provider (stub for future). */
+    public List<float[]> embedPassages(UUID orgId, List<String> texts) {
+        // TODO: Fetch workspace's configured embedding provider from config service
+        return embed(orgId, "sandbox", "sandbox-embed-1", texts);
+    }
+
     /** Diagnostic detail for the ingestion screen when embedding is unavailable. */
     public Map<String, String> describeFailure(Throwable error) {
         return Map.of("reason", error.getClass().getSimpleName(), "service", "orchestrator");
     }
 }
-
-// Week 1 update by fahim0-3
-
-// Week 2 update by fahim0-3
-
-// Week 3 update by fahim0-3
-
-// Week 4 update by fahim0-3
-
-// Week 5 update by fahim0-3

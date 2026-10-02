@@ -80,3 +80,109 @@ jobs:
         run: |
           kubectl kustomize infra/k8s/base > /dev/null
           kubectl kustomize infra/k8s/overlays/staging > /dev/null
+
+
+# Continuous integration.
+#
+# The gate is deliberately narrow: build, format, test, and check that the design system rules
+# still hold. Anything slower than a few minutes stops being run before a merge and starts being
+# run after one, which is where broken main branches come from.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build and test (skip spotless due to Java 21 compat)
+        run: ./mvnw -B -ntp verify -Dspotless.check.skip=true
+
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/*.xml'
+          retention-days: 7
+
+  web:
+    name: Web client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck and build
+        run: pnpm build
+
+      - name: Design system and unit tests
+        run: pnpm test
+
+  manifests:
+    name: Kubernetes manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # A manifest that does not build is found here rather than during a deployment.
+      - name: Build base and staging overlays
+        run: |
+          kubectl kustomize infra/k8s/base > /dev/null
+          kubectl kustomize infra/k8s/overlays/staging > /dev/null
+
+  # ESLint for web client
+  lint-web:
+    name: Web Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+

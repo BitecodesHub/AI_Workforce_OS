@@ -8,6 +8,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query'
 import { api } from './api'
+import type { AuditOutcome } from './labels'
 
 /*
  * Every piece of platform data the interface reads, typed to match what the services return.
@@ -1958,3 +1959,23 @@ export function useAuditPages() {
     select: uniqueAuditEvents,
   })
 }
+
+
+export function useAuditPagesServer(filter: {
+  search?: string;
+  outcome?: AuditOutcome[];
+  page: number;
+  pageSize: number;
+}) {
+  const params = new URLSearchParams();
+  if (filter.search) params.set('search', filter.search);
+  if (filter.outcome?.length) params.set('outcome', filter.outcome.join(','));
+  params.set('page', String(filter.page));
+  params.set('pageSize', String(filter.pageSize));
+  return useQuery({
+    queryKey: ['audit', 'server', filter],
+    queryFn: () => api<AuditEvent[]>(`/api/audit?${params.toString()}`),
+    staleTime: 30_000,
+  });
+}
+

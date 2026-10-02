@@ -70,6 +70,8 @@ spring:
               uri: ${AIWOS_URL_ORGANISATION:http://localhost:8082}
               predicates:
                 - Path=/api/workspaces/**,/api/members/**,/api/invitations/**,/api/settings/**,/api/credentials/**,/api/orgs/**
+              filters:
+                - StripPrefix=1
 
             - id: orchestrator
               uri: ${AIWOS_URL_ORCHESTRATOR:http://localhost:8083}

@@ -321,13 +321,3 @@ export function AuditLog() {
     </div>
   )
 }
-
-// Week 1 update by tempyash007
-
-// Week 2 update by tempyash007
-
-// Week 3 update by tempyash007
-
-// Week 4 update by tempyash007
-
-// Week 5 update by tempyash007
