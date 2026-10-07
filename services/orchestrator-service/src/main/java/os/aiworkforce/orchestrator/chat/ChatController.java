@@ -1,5 +1,6 @@
 package os.aiworkforce.orchestrator.chat;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -69,13 +70,30 @@ public class ChatController {
 
     public record CreateConversationRequest(@Size(max = 200) String title) {}
 
-    public record SendMessageRequest(@NotBlank @Size(max = 10_000) String text, List<UUID> agentIds) {}
+    /**
+     * @param text what the person wrote; may be empty when files are attached
+     * @param attachmentIds files uploaded for this message (see {@link AttachmentController}), at most 10
+     */
+    public record SendMessageRequest(
+            @Size(max = 10_000) String text, List<UUID> agentIds, @Size(max = 10) List<UUID> attachmentIds) {
+
+        /** The shape before files could be attached. */
+        public SendMessageRequest(String text, List<UUID> agentIds) {
+            this(text, agentIds, null);
+        }
+    }
 
     public record RerouteRequest(@NotNull UUID agentId) {}
 
     public record RenameRequest(@NotBlank @Size(max = 200) String title) {}
 
     public record ReadRequest(@Min(0) int position) {}
+
+    public record VisibilityRequest(@NotBlank String visibility) {}
+
+    public record ParticipantsRequest(@NotNull @Size(min = 1, max = 50) List<String> userIds) {}
+
+    public record ParticipantsResult(List<String> userIds) {}
 
     public record AnswerFromDocumentsRequest(UUID agentId) {}
 
@@ -102,16 +120,37 @@ public class ChatController {
         conversation.setId(UuidV7.generate());
         conversation.setOrgId(orgId());
         conversation.setTitle(request.title() == null ? "" : request.title().strip());
+        conversation.setVisibility(admin.defaultVisibility(orgId()));
         conversations.save(conversation);
         return queries.view(orgId(), RequestContext.requireActor(), conversation);
     }
 
+    /**
+     * A conversation, or only what changed in it. Without {@code after} and {@code since} this is
+     * the recent window; with both it is the messages after that position and the goals, tasks and
+     * questions changed since that moment, which is what an open thread polls for instead of
+     * reading the whole window again (see {@link ConversationQueries#detail}).
+     *
+     * @param after the position of the newest message the reader already holds
+     * @param since the {@code generatedAt} of the response the reader last merged
+     */
     @GetMapping("/{id}")
     @RequiresPermission(Permission.Codes.CHAT_USE)
-    @Operation(summary = "A conversation, its recent messages, the goals it started, and its open questions")
+    @Operation(
+            summary =
+                    "A conversation, its recent messages, the goals it started, and its open questions; or, with after and since, only what changed")
     public ConversationQueries.ConversationDetail get(
-            @PathVariable UUID id, @RequestParam(defaultValue = "" + DEFAULT_DETAIL_LIMIT) int limit) {
-        return queries.detail(orgId(), RequestContext.requireActor(), id, limit);
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "" + DEFAULT_DETAIL_LIMIT) int limit,
+            @RequestParam(required = false) Integer after,
+            @RequestParam(required = false) Instant since) {
+        return queries.detail(
+                orgId(), RequestContext.requireActor(), id, limit, after == null ? null : Math.max(after, -1), since);
+    }
+
+    /** The whole recent window of a conversation, for callers inside the package. */
+    ConversationQueries.ConversationDetail get(UUID id, int limit) {
+        return get(id, limit, null, null);
     }
 
     @GetMapping("/{id}/messages")
@@ -121,7 +160,7 @@ public class ChatController {
             @PathVariable UUID id,
             @RequestParam int before,
             @RequestParam(defaultValue = "" + DEFAULT_MESSAGES_LIMIT) int limit) {
-        return queries.messagesPage(orgId(), id, before, limit);
+        return queries.messagesPage(orgId(), RequestContext.requireActor(), id, before, limit);
     }
 
     @PatchMapping("/{id}")
@@ -130,6 +169,38 @@ public class ChatController {
     public ConversationQueries.ConversationView rename(
             @PathVariable UUID id, @Valid @RequestBody RenameRequest request) {
         return admin.rename(orgId(), RequestContext.requireActor(), id, request.title());
+    }
+
+    @PutMapping("/{id}/visibility")
+    @RequiresPermission(Permission.Codes.CHAT_USE)
+    @Operation(summary = "Share a conversation with the whole workspace, or make it private again")
+    public ConversationQueries.ConversationView setVisibility(
+            @PathVariable UUID id, @Valid @RequestBody VisibilityRequest request) {
+        return admin.setVisibility(orgId(), RequestContext.requireActor(), id, request.visibility());
+    }
+
+    @GetMapping("/{id}/participants")
+    @RequiresPermission(Permission.Codes.CHAT_USE)
+    @Operation(summary = "The people added to a conversation, besides the person who started it")
+    public ParticipantsResult participants(@PathVariable UUID id) {
+        return new ParticipantsResult(admin.participantIds(orgId(), RequestContext.requireActor(), id));
+    }
+
+    @PostMapping("/{id}/participants")
+    @RequiresPermission(Permission.Codes.CHAT_USE)
+    @Operation(summary = "Add people to a conversation so they can read it")
+    public ParticipantsResult addParticipants(
+            @PathVariable UUID id, @Valid @RequestBody ParticipantsRequest request) {
+        return new ParticipantsResult(
+                admin.addParticipants(orgId(), RequestContext.requireActor(), id, request.userIds()));
+    }
+
+    @DeleteMapping("/{id}/participants/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequiresPermission(Permission.Codes.CHAT_USE)
+    @Operation(summary = "Take a person off a conversation")
+    public void removeParticipant(@PathVariable UUID id, @PathVariable String userId) {
+        admin.removeParticipant(orgId(), RequestContext.requireActor(), id, userId);
     }
 
     @PutMapping("/{id}/pin")
@@ -186,8 +257,12 @@ public class ChatController {
     @Operation(summary = "Send a message; the coordinator's reply is created before this returns")
     public MessagesResult send(
             @PathVariable UUID id, @Valid @RequestBody SendMessageRequest request, HttpServletRequest httpRequest) {
+        List<UUID> attachmentIds = request.attachmentIds() == null ? List.of() : request.attachmentIds();
+        if ((request.text() == null || request.text().isBlank()) && attachmentIds.isEmpty()) {
+            throw os.aiworkforce.platform.error.ApiException.validation("text", "must not be blank");
+        }
         List<ChatMessage> created = coordinator.handleMessage(
-                orgId(), id, request.text(), request.agentIds(), httpRequest.getHeader("Authorization"));
+                orgId(), id, request.text(), request.agentIds(), attachmentIds, httpRequest.getHeader("Authorization"));
         return toResult(created);
     }
 

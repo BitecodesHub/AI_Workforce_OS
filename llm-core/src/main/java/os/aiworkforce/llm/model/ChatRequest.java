@@ -70,6 +70,24 @@ public record ChatRequest(
                 .toList();
     }
 
+    /** Whether any turn carries a picture, so a candidate must be able to look at it or be told it cannot. */
+    public boolean hasImages() {
+        return messages.stream().anyMatch(ChatMessage::hasImages);
+    }
+
+    /**
+     * The same request with every picture replaced by a note saying it could not be shown, for a
+     * candidate that cannot read images.
+     *
+     * @param model the model answering, as it is named to people
+     */
+    public ChatRequest withImagesAsNotes(String model) {
+        if (!hasImages()) {
+            return this;
+        }
+        return withMessages(messages.stream().map(m -> m.withImagesAsNotes(model)).toList());
+    }
+
     public boolean usesTools() {
         return !tools.isEmpty();
     }

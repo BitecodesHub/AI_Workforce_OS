@@ -179,4 +179,44 @@ class ModelRouterPlannerTest {
 
         assertThat(plan).isEmpty();
     }
+
+    @Test
+    void thePromptSaysEachAgentGetsTheRequestVerbatimSoAStepIsOnlyAShortLabel() {
+        ArgumentCaptor<ChatRequest> captor = captureRequest();
+
+        planner.plan(ORG, "a customer wrote in", List.of(support, hr));
+
+        String prompt = captor.getValue().systemPrompt();
+        assertThat(prompt).contains("word for word");
+        assertThat(prompt).contains("one short sentence of at most 25 words");
+        assertThat(prompt).contains("Never copy names, figures, pasted text or any other content");
+        assertThat(prompt).doesNotContain("complete request that agent can act on alone");
+    }
+
+    @Test
+    void thePersonsTextReachesThePlannerExactlyAsWritten() {
+        ArgumentCaptor<ChatRequest> captor = captureRequest();
+        String text = "  Summarise the risks for the board.\n\n    Clause 4.2: termination on 30 days' notice.\n";
+
+        planner.plan(ORG, text, List.of(support, hr));
+
+        assertThat(captor.getValue().conversation().getLast().content()).isEqualTo(text);
+    }
+
+    @Test
+    void aStepSentenceThatRunsOnIsCutToALabel() {
+        String runOn = "Summarise the risks in the contract for the board ".repeat(20);
+        when(router.route(any(), any(), any()))
+                .thenReturn(response(
+                        "openrouter",
+                        "{\"plan\":[{\"agentKey\":\"support\",\"instruction\":\"" + runOn + "\"}],\"reason\":\"ok\"}"));
+
+        Optional<ModelRouterPlanner.Plan> plan = planner.plan(ORG, "a customer wrote in", List.of(support, hr));
+
+        assertThat(plan).isPresent();
+        String label = plan.get().steps().getFirst().instruction();
+        assertThat(label).hasSizeLessThanOrEqualTo(300);
+        assertThat(label).startsWith("Summarise the risks in the contract for the board");
+        assertThat(label).doesNotEndWith(" ");
+    }
 }

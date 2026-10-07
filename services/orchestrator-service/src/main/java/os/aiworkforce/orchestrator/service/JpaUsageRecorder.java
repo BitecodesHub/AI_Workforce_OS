@@ -13,8 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import os.aiworkforce.llm.model.AttemptRecord;
 import os.aiworkforce.llm.usage.UsageRecorder;
 import os.aiworkforce.orchestrator.domain.LlmUsageRecord;
-import os.aiworkforce.orchestrator.repository.Providers;
 import os.aiworkforce.orchestrator.repository.Usage;
+import os.aiworkforce.orchestrator.repository.WorkspaceProviderSettings;
 
 /**
  * Writes down every attempt the router made.
@@ -29,7 +29,9 @@ import os.aiworkforce.orchestrator.repository.Usage;
  * <p>A successful attempt also clears a rejection recorded against that provider's key. The
  * router writes a rejection back the moment a provider refuses a key, and this is the one place
  * that sees every answer, so it is where "the key works again" is written back too. Without it a
- * key replaced after a rejection read as refused on the Model Routing page for good.
+ * key replaced after a rejection read as refused on the Model Routing page for good. Both are
+ * written for the workspace that made the call only: each workspace stores its own key, so one
+ * workspace's success must never clear another's genuine rejection.
  */
 @Service
 public class JpaUsageRecorder implements UsageRecorder {
@@ -37,18 +39,19 @@ public class JpaUsageRecorder implements UsageRecorder {
     private static final Logger log = LoggerFactory.getLogger(JpaUsageRecorder.class);
 
     private final Usage usage;
-    private final Providers providers;
+    private final WorkspaceProviderSettings settings;
 
-    public JpaUsageRecorder(Usage usage, Providers providers) {
+    public JpaUsageRecorder(Usage usage, WorkspaceProviderSettings settings) {
         this.usage = usage;
-        this.providers = providers;
+        this.settings = settings;
     }
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String orgId, String agentId, String runId, AttemptRecord attempt, BigDecimal cost) {
+        UUID org = UUID.fromString(orgId);
         LlmUsageRecord record = new LlmUsageRecord();
-        record.setOrgId(UUID.fromString(orgId));
+        record.setOrgId(org);
         record.setAgentId(agentId == null ? null : UUID.fromString(agentId));
         record.setRunId(runId == null ? null : UUID.fromString(runId));
         record.setProviderId(attempt.provider());
@@ -65,10 +68,11 @@ public class JpaUsageRecorder implements UsageRecorder {
         usage.save(record);
 
         if (attempt.outcome() == AttemptRecord.Outcome.SUCCEEDED
-                && providers.clearRejectedCredential(attempt.provider(), Instant.now()) > 0) {
+                && settings.clearRejectedCredential(org, attempt.provider(), Instant.now()) > 0) {
             log.info(
-                    "Credential for provider {} was accepted again; its earlier rejection is cleared",
-                    attempt.provider());
+                    "Credential for provider {} was accepted again for workspace {}; its earlier rejection is cleared",
+                    attempt.provider(),
+                    orgId);
         }
     }
 }

@@ -49,6 +49,7 @@ import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
+import os.aiworkforce.platform.runtimeconfig.RuntimeConfigService;
 
 class GoalServiceTest {
 
@@ -63,6 +64,7 @@ class GoalServiceTest {
     private RunExecutor executor;
     private RunQuestions questionRows;
     private LifecycleAnnouncer announcer;
+    private AuditClient audit;
     private GoalService service;
 
     @BeforeEach
@@ -79,6 +81,10 @@ class GoalServiceTest {
         lenient().when(approvalRows.findByIdAndOrgId(any(), any())).thenAnswer(call -> allApprovals.stream()
                 .filter(approval -> approval.getId().equals(call.getArgument(0)))
                 .findFirst());
+        // A decision locks the row first; the in-memory rows answer the same either way.
+        lenient().when(approvalRows.lockByIdAndOrgId(any(), any())).thenAnswer(call -> allApprovals.stream()
+                .filter(approval -> approval.getId().equals(call.getArgument(0)))
+                .findFirst());
         // The bulk withdrawal, applied to the in-memory approvals the way the update would.
         lenient().when(approvalRows.withdrawPending(any(), any())).thenAnswer(call -> {
             List<Approval> pending = allApprovals.stream()
@@ -89,7 +95,8 @@ class GoalServiceTest {
         });
 
         TaskProgress progress = new TaskProgress(work.tasks, work.goals, List.of());
-        approvals = new ApprovalService(approvalRows, runs, new ObjectMapper(), mock(AuditClient.class), progress);
+        approvals =
+                new ApprovalService(approvalRows, runs, new ObjectMapper(), mock(AuditClient.class), progress, null);
         agents = mock(Agents.class);
         executor = mock(RunExecutor.class);
         questionRows = mock(RunQuestions.class);
@@ -102,6 +109,7 @@ class GoalServiceTest {
                 mock(AuditClient.class),
                 Duration.ofHours(24));
         announcer = mock(LifecycleAnnouncer.class);
+        audit = mock(AuditClient.class);
         service = new GoalService(
                 work.goals,
                 work.tasks,
@@ -114,7 +122,7 @@ class GoalServiceTest {
                 executor,
                 questions,
                 announcer,
-                mock(AuditClient.class));
+                audit);
     }
 
     @AfterEach
@@ -247,6 +255,30 @@ class GoalServiceTest {
         }
 
         @Test
+        @DisplayName("records goal.cancel in the audit log as the person who stopped it, once it commits")
+        @SuppressWarnings("unchecked")
+        void cancelIsAudited() {
+            Goal goal = work.goal("running");
+            work.task(goal, 0, "running");
+            Actor manager = Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of("task:cancel"), 0L);
+            RequestContext.setActor(manager);
+
+            service.cancel(ORG, goal.getId(), "Stopped from the chat.");
+
+            ArgumentCaptor<Map<String, Object>> detail = ArgumentCaptor.forClass(Map.class);
+            verify(audit)
+                    .record(
+                            eq(ORG),
+                            eq(manager),
+                            eq("goal.cancel"),
+                            eq("goal"),
+                            eq(goal.getId().toString()),
+                            eq("succeeded"),
+                            detail.capture());
+            assertThat(detail.getValue()).containsEntry("reason", "Stopped from the chat.").containsEntry("tasks", 1);
+        }
+
+        @Test
         @DisplayName("cancelIfActive does nothing for a goal that has already finished, or is missing")
         void cancelIfActiveSkipsFinishedGoal() {
             Goal goal = work.goal("completed");
@@ -283,6 +315,25 @@ class GoalServiceTest {
             assertThat(goal.getStatus()).isEqualTo("cancelled");
             assertThat(counts.tasks()).isEqualTo(1);
             assertThat(counts.runs()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("records run.stop in the audit log, as succeeded")
+        void stopRunIsAudited() {
+            Run run = runFor(null, "running");
+            when(runs.lockByIdAndOrgId(run.getId(), ORG)).thenReturn(Optional.of(run));
+
+            service.stopRun(ORG, run.getId(), "A person stopped this run.");
+
+            verify(audit)
+                    .record(
+                            eq(ORG),
+                            any(),
+                            eq("run.stop"),
+                            eq("run"),
+                            eq(run.getId().toString()),
+                            eq("succeeded"),
+                            any());
         }
 
         @Test
@@ -407,6 +458,61 @@ class GoalServiceTest {
         private Actor person(UUID id, String... permissions) {
             Set<String> held = permissions.length == 0 ? Set.of("task:create") : Set.of(permissions);
             return Actor.user(id.toString(), ORG.toString(), "role", held, 0L);
+        }
+    }
+
+    @Nested
+    @DisplayName("who may stop a goal")
+    class CanStop {
+
+        private final UUID requester = UUID.randomUUID();
+
+        @Test
+        @DisplayName("the person who asked for it may stop it, without task:cancel")
+        void requesterMayStop() {
+            Goal goal = work.goal("running");
+            goal.setRequestedBy(requester);
+
+            assertThatCode(() -> service.requireCanStop(goal, person(requester, "task:create")))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("another employee may not, and is told which permission it takes")
+        void anotherEmployeeIsRefused() {
+            Goal goal = work.goal("running");
+            goal.setRequestedBy(requester);
+
+            assertThatThrownBy(() -> service.requireCanStop(goal, person(UUID.randomUUID(), "task:create")))
+                    .isInstanceOfSatisfying(ApiException.class, e -> {
+                        assertThat(e.status()).isEqualTo(403);
+                        assertThat(e.details()).containsEntry("requiredPermission", "task:cancel");
+                    });
+        }
+
+        @Test
+        @DisplayName("a manager who can cancel work may stop anyone's goal")
+        void managerMayStop() {
+            Goal goal = work.goal("running");
+            goal.setRequestedBy(requester);
+
+            assertThatCode(() -> service.requireCanStop(goal, person(UUID.randomUUID(), "task:create", "task:cancel")))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a goal that has already finished is a conflict, even for its requester")
+        void finishedGoalIsAConflict() {
+            Goal goal = work.goal("completed");
+            goal.setRequestedBy(requester);
+
+            assertThatThrownBy(() -> service.requireCanStop(goal, person(requester, "task:create")))
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
+        }
+
+        private Actor person(UUID id, String... permissions) {
+            return Actor.user(id.toString(), ORG.toString(), "role", Set.of(permissions), 0L);
         }
     }
 
@@ -633,6 +739,122 @@ class GoalServiceTest {
             assertThat(service.runNextTask(ORG)).isTrue();
 
             verify(runner).start(eq(ORG), eq(next.getAgentId()), eq(next.getId()), anyString(), eq("task"), any());
+        }
+
+        @Test
+        @DisplayName("starts a claimed task as its own goal's requester, whoever's request claimed it")
+        void startsAsTheGoalsRequester() {
+            UUID requester = UUID.randomUUID();
+            Goal goal = work.goal("running");
+            goal.setRequestedBy(requester);
+            Task task = work.task(goal, 0, "pending");
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(task));
+            when(work.tasks.claim(task.getId())).thenReturn(Optional.of(task));
+            Actor someoneElse =
+                    Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of("task:create"), 0L);
+            RequestContext.setActor(someoneElse);
+            List<String> seen = new ArrayList<>();
+            when(runner.start(any(), any(), any(), any(), any())).thenAnswer(call -> {
+                seen.add(RequestContext.actor().map(Actor::id).orElse(null));
+                return null;
+            });
+
+            assertThat(service.runNextTask(ORG)).isTrue();
+
+            assertThat(seen).containsExactly(requester.toString());
+            // The caller's own identity is back once the start returns.
+            assertThat(RequestContext.actor()).contains(someoneElse);
+        }
+
+        @Test
+        @DisplayName("a task whose goal nobody is on record for starts as the platform")
+        void startsAsThePlatformWithoutARequester() {
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "pending");
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(task));
+            when(work.tasks.claim(task.getId())).thenReturn(Optional.of(task));
+            RequestContext.setActor(
+                    Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of("task:create"), 0L));
+            List<String> seen = new ArrayList<>();
+            when(runner.start(any(), any(), any(), any(), any())).thenAnswer(call -> {
+                seen.add(RequestContext.actor().map(Actor::id).orElse(null));
+                return null;
+            });
+
+            service.runNextTask(ORG);
+
+            assertThat(seen).containsExactly("system");
+        }
+
+        @Test
+        @DisplayName("a start the runner refuses is recorded as the goal's requester too")
+        void startFailureRecordedAsTheRequester() {
+            UUID requester = UUID.randomUUID();
+            Goal goal = work.goal("running");
+            goal.setRequestedBy(requester);
+            Task task = attempt(work.task(goal, 0, "pending"), 0, 2);
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(task));
+            when(work.tasks.claim(task.getId())).thenReturn(Optional.of(task));
+            when(runner.start(any(), any(), any(), any(), any()))
+                    .thenThrow(new ApiException(ErrorCode.POLICY_VIOLATION, "That agent is paused."));
+            List<String> seen = new ArrayList<>();
+            when(work.tasks.save(task)).thenAnswer(call -> {
+                seen.add(RequestContext.actor().map(Actor::id).orElse(null));
+                return task;
+            });
+
+            service.runNextTask(ORG);
+
+            assertThat(task.getFailureReason()).isEqualTo("That agent is paused.");
+            assertThat(seen).last().isEqualTo(requester.toString());
+        }
+
+        @Test
+        @DisplayName("holds every task back while the workspace has its cap of four running")
+        void capHoldsTasksBack() {
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "pending");
+            when(work.tasks.countByOrgIdAndStatus(ORG, "running")).thenReturn(4L);
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(task));
+            when(work.tasks.claim(task.getId())).thenReturn(Optional.of(task));
+
+            assertThat(service.claimNextTask(ORG)).isEmpty();
+            assertThat(service.runNextTask(ORG)).isFalse();
+
+            verify(work.tasks, never()).claim(any());
+            verify(runner, never()).start(any(), any(), any(), any(), any());
+            assertThat(task.getStatus()).isEqualTo("pending");
+        }
+
+        @Test
+        @DisplayName("starts the next task once fewer than the cap are running")
+        void capLetsTheNextOneThrough() {
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "pending");
+            when(work.tasks.countByOrgIdAndStatus(ORG, "running")).thenReturn(3L);
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(task));
+            when(work.tasks.claim(task.getId())).thenReturn(Optional.of(task));
+
+            assertThat(service.runNextTask(ORG)).isTrue();
+
+            assertThat(task.getStatus()).isEqualTo("running");
+        }
+
+        @Test
+        @DisplayName("the cap is the workspace's runtime setting when one is stored")
+        void capFollowsTheRuntimeSetting() {
+            RuntimeConfigService settings = mock(RuntimeConfigService.class);
+            when(settings.getInt(GoalService.MAX_CONCURRENT_RUNS, ORG.toString())).thenReturn(2);
+            service.setRuntimeConfig(settings);
+            Goal goal = work.goal("running");
+            Task task = work.task(goal, 0, "pending");
+            when(work.tasks.countByOrgIdAndStatus(ORG, "running")).thenReturn(2L);
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(task));
+
+            assertThat(service.claimNextTask(ORG)).isEmpty();
+
+            verify(settings).register(List.of(GoalService.MAX_CONCURRENT_RUNS));
+            verify(work.tasks, never()).claim(any());
         }
 
         @Test

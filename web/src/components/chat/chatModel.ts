@@ -8,6 +8,7 @@ import type {
   ChatMessageDetail,
   Goal,
   Member,
+  Passage,
   QuestionAnswerItem,
   RunQuestion,
   RunStep,
@@ -18,7 +19,7 @@ import type {
  * The pure rules behind the chat thread: which messages belong together, what a goal's chain of
  * tasks is doing, which agent replies are new since the last render, and (from the version 2
  * redesign) how the composer decides what it is answering, what a routing or progress card's
- * one-line summary says, and how the welcome screen's suggestions are built. Nothing here touches
+ * one-line summary says. Nothing here touches
  * the DOM or React state, so Chat.tsx and the cards in this folder can stay thin, and these rules
  * can be tested without a signed-in screen harness (see lib/voice.test.ts's own note on why the
  * project prefers that).
@@ -177,10 +178,68 @@ export function routingModeLabel(mode: ChatMessageDetail['mode']): string {
 export function routingSummary(message: ChatMessage, agentNames: Record<string, { name: string }>): string {
   const base = routingLine(message, agentNames)
   // When the answer draws on the workspace's documents, say which, on the line itself.
+  const passages = routingPassages(message)
+  if (passages.length > 0) {
+    const titles = [...new Set(passages.map((passage) => passage.documentTitle))].slice(0, 3).join(', ')
+    return `${base}, using ${passages.length} ${passages.length === 1 ? 'passage' : 'passages'} from ${titles}`
+  }
+  // A message from before the passages were recorded says so only in its reason sentence.
   const sources = /^Found (\d+) passages? in (.+?)\. /.exec(message.detail.reason ?? '')
   if (!sources) return base
   const count = Number(sources[1])
   return `${base}, using ${count} ${count === 1 ? 'passage' : 'passages'} from ${sources[2]}`
+}
+
+/* ---- Sources: the passages an agent was given ---------------------------------------------------- */
+
+/**
+ * A passage as a routing message records it. `sourceId` names the knowledge source holding its
+ * document, for a link to it; messages made before the knowledge service sent it do not have one.
+ */
+export type SourcePassage = Passage & { sourceId?: string | null }
+
+/** The passages a routing message says its agent was given, in the order it read them; none when it records none. */
+export function routingPassages(message: ChatMessage | undefined): SourcePassage[] {
+  const passages: SourcePassage[] | undefined = message?.detail.passages
+  return Array.isArray(passages) ? passages : []
+}
+
+/**
+ * The sources to show under an answer: the passages its goal's first step was given. A later step
+ * of a chain was handed the earlier work and the titles of those passages, not the passages, so
+ * its answer is not shown them as though it had read them. `goal` says which step an answer is
+ * when it is known; without it a routing message naming one agent means there is only one.
+ */
+export function sourcesForAnswer(
+  answer: ChatMessage,
+  messages: readonly ChatMessage[],
+  goal?: Pick<BoardGoal, 'tasks'>,
+): SourcePassage[] {
+  if (answer.kind !== 'answer' || !answer.goalId) return []
+  const routing = routingMessageForGoal(answer.goalId, messages)
+  const passages = routingPassages(routing)
+  if (passages.length === 0) return []
+  const taskId = answer.detail.taskId
+  if (goal && taskId) {
+    const first = [...goal.tasks].sort((a, b) => a.position - b.position)[0]
+    return first?.id === taskId ? passages : []
+  }
+  return (routing?.detail.agents?.length ?? 0) <= 1 ? passages : []
+}
+
+/**
+ * Where a passage's link goes: its source in Knowledge when the person may open Knowledge, else
+ * its own web address when it has one, else nowhere.
+ */
+export function passageLink(
+  passage: SourcePassage,
+  mayReadKnowledge: boolean,
+): { href: string; label: string; external: boolean } | null {
+  if (passage.sourceId && mayReadKnowledge) {
+    return { href: `/knowledge/${encodeURIComponent(passage.sourceId)}`, label: 'Open in Knowledge', external: false }
+  }
+  if (passage.uri && /^https?:\/\//i.test(passage.uri)) return { href: passage.uri, label: 'Open source', external: true }
+  return null
 }
 
 function routingLine(message: ChatMessage, agentNames: Record<string, { name: string }>): string {
@@ -200,13 +259,18 @@ function routingLine(message: ChatMessage, agentNames: Record<string, { name: st
 
 /* ---- Reading a goal's progress ------------------------------------------------------------------ */
 
-/** The progress card's collapsed summary, once a goal has left the running state. */
-export function progressSummary(goal: BoardGoal): string {
+/**
+ * The progress card's collapsed summary: how a finished goal ended, or, while it is still open,
+ * whether it is parked on a person (an approval or an answer) or simply running. Folding a card
+ * that is waiting on someone must not hide that it is.
+ */
+export function progressSummary(goal: BoardGoal, showCost = true): string {
   const steps = goal.tasks.length
   const cost = goal.tasks.reduce((total, task) => total + (task.cost ?? 0), 0)
   const stepWord = steps === 1 ? 'step' : 'steps'
   if (goal.status === 'completed') {
-    return `Done in ${formatElapsed(goal.createdAt, goal.completedAt)} · ${steps} ${stepWord} · ${formatMoney(cost)}`
+    const base = `Done in ${formatElapsed(goal.createdAt, goal.completedAt)} · ${steps} ${stepWord}`
+    return showCost ? `${base} · ${formatMoney(cost)}` : base
   }
   if (goal.status === 'failed') {
     const failedIndex = goal.tasks.findIndex((task) => task.status === 'failed')
@@ -216,6 +280,8 @@ export function progressSummary(goal: BoardGoal): string {
   if (goal.status === 'cancelled') {
     return `Stopped · ${formatElapsed(goal.createdAt, goal.completedAt)}`
   }
+  if (goal.tasks.some((task) => task.status === 'waiting_approval')) return 'Waiting for your approval'
+  if (goal.tasks.some((task) => task.status === 'waiting_input')) return 'Waiting for an answer'
   return `Running ${formatElapsed(goal.createdAt, null)}`
 }
 
@@ -226,9 +292,37 @@ export function choiceMadeFor(messageId: string, messages: readonly ChatMessage[
   return agent?.name ?? null
 }
 
+/** The reason a routing message gives, as the end of "because ...": lower-cased start, no final full stop. */
+export function becauseText(reason: string): string {
+  const clean = reason.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '')
+  if (clean.length > 1 && /[A-Z]/.test(clean[0]!) && !/[A-Z]/.test(clean[1]!)) return clean[0]!.toLowerCase() + clean.slice(1)
+  return clean
+}
+
 /** The routing message that started `goalId`, for "Ask again" and the Orchestrator's deep link. */
 export function routingMessageForGoal(goalId: string, messages: readonly ChatMessage[]): ChatMessage | undefined {
   return messages.find((message) => message.kind === 'routing' && message.goalId === goalId)
+}
+
+/** The progress message that tracks `goalId` in the thread, the anchor its "Review" link scrolls to. */
+export function progressMessageForGoal(goalId: string, messages: readonly ChatMessage[]): ChatMessage | undefined {
+  return messages.find((message) => message.kind === 'progress' && message.goalId === goalId)
+}
+
+/**
+ * Where a link to a goal should take the person: its progress card in the thread when that
+ * message is loaded (`elementId`, the message's own `m-` anchor), otherwise the screen that shows
+ * the same decision - the approvals queue for an approval, the Orchestrator for anything else -
+ * so the link never does nothing.
+ */
+export function goalTarget(
+  goalId: string,
+  messages: readonly ChatMessage[],
+  reason: 'approval' | 'progress',
+): { elementId: string } | { href: string } {
+  const progress = progressMessageForGoal(goalId, messages)
+  if (progress) return { elementId: `m-${progress.id}` }
+  return { href: reason === 'approval' ? '/approvals' : `/orchestrator?goal=${goalId}` }
 }
 
 /** Whether a goal already has an answer message in the thread. */
@@ -320,6 +414,21 @@ export function autoAnswerTarget(
   return null
 }
 
+/**
+ * Whether a message written while a question is targeted goes out as a new request instead of the
+ * answer. Only an automatic target gives way, and only to a mention of some other agent: "@Sales
+ * draft the Q3 quote" typed under Research's question is plainly meant for Sales. Mentioning the
+ * agent that asked still answers it, and so does anything sent after the person chose "Reply in
+ * own words" (`auto: false`).
+ */
+export function sendsAsNewRequest(
+  replyTo: { auto: boolean; agentId: string | null } | null,
+  agentIds: readonly string[],
+): boolean {
+  if (!replyTo?.auto) return false
+  return agentIds.some((id) => id !== replyTo.agentId)
+}
+
 /** Maps composer text to an answer, per D-14's rules for one question versus several. */
 export function composerAnswer(q: RunQuestion, text: string): { answers: QuestionAnswerItem[]; note?: string } {
   const trimmed = text.trim()
@@ -358,6 +467,89 @@ export function composerAnswer(q: RunQuestion, text: string): { answers: Questio
   return { answers: [{ questionId: item.id, selected: [], other: trimmed }] }
 }
 
+/* ---- The message being sent ---------------------------------------------------------------------- */
+
+/** The newest position in the thread, or -1 for an empty one: what a send waits to see exceeded. */
+export function newestPosition(messages: readonly ChatMessage[]): number {
+  return messages.reduce((highest, message) => Math.max(highest, message.position), -1)
+}
+
+/**
+ * Whether the server has already stored the message that is still being sent, so the thread
+ * shows it and the pending copy of the bubble would be a duplicate. The coordinator saves the
+ * person's message before it spends up to half a minute deciding who takes it, and any poll in
+ * that time brings the saved one back. Matched by author, by text and by a position after the
+ * newest one when the send started, never by clock time.
+ */
+export function pendingEchoed(
+  messages: readonly ChatMessage[],
+  pending: { text: string; afterPosition: number },
+  me: string | null,
+): boolean {
+  const text = pending.text.trim()
+  return messages.some(
+    (message) =>
+      message.kind === 'text' &&
+      message.authorKind === 'user' &&
+      message.authorId === me &&
+      message.position > pending.afterPosition &&
+      message.content.trim() === text,
+  )
+}
+
+/* ---- Trying a failed request again --------------------------------------------------------------- */
+
+/**
+ * The person's own request behind an error message, for "Try again" to put back in the box: the
+ * text the error itself recorded, else the request the goal's routing message recorded, else the
+ * nearest earlier message the person wrote. Never the error's own sentence, which would be sent
+ * to an agent as a new request; null when no request can be found, and the button is hidden.
+ */
+export function resendText(error: ChatMessage, messages: readonly ChatMessage[]): string | null {
+  let nearest: ChatMessage | undefined
+  for (const message of messages) {
+    if (message.position >= error.position) continue
+    if (message.kind !== 'text' || message.authorKind !== 'user' || !message.content.trim()) continue
+    if (!nearest || message.position > nearest.position) nearest = message
+  }
+  const candidates = [
+    error.detail.requestText,
+    error.goalId ? routingMessageForGoal(error.goalId, messages)?.detail.requestText : undefined,
+    nearest?.content,
+  ]
+  const errorSentence = error.content.trim()
+  for (const candidate of candidates) {
+    const text = candidate?.trim()
+    if (text && text !== errorSentence) return text
+  }
+  return null
+}
+
+/* ---- Drafts ------------------------------------------------------------------------------------ */
+
+/**
+ * Where the composer keeps an unsent draft: per person as well as per conversation, so somebody
+ * signing in after someone else on the same browser never sees that person's half-written text.
+ */
+export function draftKey(userId: string, conversationId: string | null): string {
+  return `chat.draft.${userId}.${conversationId ?? 'new'}`
+}
+
+/** The draft keys written before drafts were kept per person: `chat.draft.<conversation or new>`. */
+export function isLegacyDraftKey(key: string): boolean {
+  return key.startsWith('chat.draft.') && !key.slice('chat.draft.'.length).includes('.')
+}
+
+/** Removes every draft kept before drafts were per person, which anyone on the browser could see. */
+export function removeLegacyDrafts(storage: Pick<Storage, 'length' | 'key' | 'removeItem'>): void {
+  const stale: string[] = []
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index)
+    if (key && isLegacyDraftKey(key)) stale.push(key)
+  }
+  for (const key of stale) storage.removeItem(key)
+}
+
 /* ---- Goals -------------------------------------------------------------------------------------- */
 
 /** The goals whose chain can still change: planning, running or waiting. */
@@ -366,6 +558,32 @@ export function activeGoals(goals: readonly BoardGoal[]): BoardGoal[] {
 }
 
 export { canRetryGoal, canStopGoal }
+
+/* ---- The work strip ------------------------------------------------------------------------------- */
+
+/**
+ * The narrow work strip's one line: what waits on a person first, since that is what blocks the
+ * work, else how many pieces are running. `approvals` and `answers` count goals whose current task
+ * is parked that way.
+ */
+export function workStripSummary(goals: readonly BoardGoal[]): { text: string; approvals: number; answers: number } {
+  let approvals = 0
+  let answers = 0
+  for (const goal of goals) {
+    const index = currentTaskIndex(goal.tasks)
+    const status = index === -1 ? undefined : goal.tasks[index]!.status
+    if (status === 'waiting_approval') approvals += 1
+    else if (status === 'waiting_input') answers += 1
+  }
+  const need = (count: number) => (count === 1 ? 'needs' : 'need')
+  const text =
+    approvals > 0
+      ? `${approvals} ${need(approvals)} your approval`
+      : answers > 0
+        ? `${answers} ${need(answers)} your answer`
+        : `${goals.length} running`
+  return { text, approvals, answers }
+}
 
 /* ---- Live step text ------------------------------------------------------------------------------ */
 
@@ -403,12 +621,18 @@ export function errorHelp(code?: string | null): { text: string; href: string | 
     return { text: 'Check the model routing and provider credentials in Model routing.', href: '/routing' }
   }
   if (code === 'budget_exceeded') {
-    return { text: 'The workspace budget for model spend is used up. An administrator can raise it.', href: null }
+    return {
+      text: 'The workspace budget for model spend is used up. An administrator can raise it.',
+      href: '/analytics#budget',
+    }
+  }
+  if (code === 'dependency_unavailable') {
+    return { text: 'A platform service was briefly unreachable. Try again in a minute.', href: null }
   }
   return null
 }
 
-/* ---- Authorship and suggestions ------------------------------------------------------------------- */
+/* ---- Authorship --------------------------------------------------------------------------------- */
 
 /** Who a message reads as coming from: "You" for the viewer, else the member's own name. */
 export function messageAuthor(
@@ -420,56 +644,6 @@ export function messageAuthor(
   if (isMe) return { isMe: true, name: 'You' }
   const name = (message.authorId && memberNames[message.authorId]?.displayName) || 'Someone in the workspace'
   return { isMe: false, name }
-}
-
-type ChipAgent = { id: string; key: string; name: string; category: string; status: string; fallback?: boolean }
-
-const CHIP_BY_KEY: Record<string, string> = {
-  hr: 'Draft a welcome email for a new starter',
-  'engineering-manager': 'Summarise open pull requests for the standup note',
-  research: 'Compare our top three competitors in a one-page note',
-  support: 'Draft a reply to the newest support ticket',
-}
-
-const CHIP_BY_CATEGORY: Record<string, string> = {
-  operations: 'Plan next week’s team roster',
-  engineering: 'Summarise what changed in the code this week',
-  growth: 'Outline a short market update for the team',
-  support: 'Draft a holding reply to a customer',
-}
-
-const GENERAL_CHIP = 'Plan a 30-minute team meeting about next month’s rosters'
-const SCHEDULE_CHIP = 'Every weekday at 9am, summarise new support tickets'
-
-const DOCUMENT_ONLY_CHIPS: readonly string[] = [
-  'What does our leave policy say about carers’ leave?',
-  'Where is the checklist for a new starter’s first week?',
-  'Which documents cover incident reporting?',
-]
-
-/** The welcome screen's suggestions: built from the active agents and what the viewer may do (D-11). */
-export function suggestionChips(agents: readonly ChipAgent[], can: (code: string) => boolean): string[] {
-  if (!can('task:create')) return [...DOCUMENT_ONLY_CHIPS]
-
-  const active = agents.filter((agent) => agent.status === 'active')
-  const chips: string[] = []
-  const seen = new Set<string>()
-  const add = (chip: string | undefined) => {
-    if (chip && !seen.has(chip)) {
-      seen.add(chip)
-      chips.push(chip)
-    }
-  }
-
-  for (const agent of active) {
-    if (agent.fallback) continue
-    add(CHIP_BY_KEY[agent.key] ?? CHIP_BY_CATEGORY[agent.category])
-    if (chips.length >= 4) break
-  }
-  if (chips.length < 4 && active.some((agent) => agent.fallback)) add(GENERAL_CHIP)
-  if (chips.length < 4 && active.some((agent) => !agent.fallback && agent.category === 'support')) add(SCHEDULE_CHIP)
-
-  return chips.slice(0, 4)
 }
 
 /** "Copy conversation" as plain text: "You: …", each card reduced to one line. */
@@ -493,3 +667,63 @@ export function conversationText(messages: readonly ChatMessage[], agentNames: R
   return lines.join('\n\n')
 }
 
+
+/*
+ * What the welcome screen says an agent does. An agent's summary is often its own instructions,
+ * written to it in the second person ("You triage support tickets..."), which reads oddly to the
+ * person choosing it. A leading "You <verb>" becomes "<Verbs>"; "You are the X: you <verb>..."
+ * keeps the part after the colon the same way. Anything still addressed to "you", or empty, falls
+ * back to `fallback` (the agent's category).
+ */
+const IRREGULAR_VERBS: Record<string, string> = { have: 'has', do: 'does', go: 'goes', be: 'is' }
+
+function thirdPerson(verb: string): string {
+  const lower = verb.toLowerCase()
+  const irregular = IRREGULAR_VERBS[lower]
+  if (irregular) return irregular
+  if (/(s|x|z|ch|sh|o)$/.test(lower)) return `${lower}es`
+  if (/[^aeiou]y$/.test(lower)) return `${lower.slice(0, -1)}ies`
+  return `${lower}s`
+}
+
+/* Verbs an agent's instructions commonly list after the first ("You triage tickets and draft
+   replies"): one of these straight after "and" or a comma is conjugated too. */
+const LISTED_VERBS = new Set(
+  (
+    'analyse analyze answer build check collect compile create draft escalate explain find flag gather handle keep manage ' +
+    'monitor organise organize prepare propose reply research review route schedule send suggest summarise summarize take ' +
+    'track triage update write'
+  ).split(' '),
+)
+
+function conjugateListedVerbs(text: string): string {
+  return text.replace(/(,\s*(?:and\s+)?|\s+and\s+)([a-z]+)\b/g, (match, joiner: string, word: string) =>
+    LISTED_VERBS.has(word) ? `${joiner}${thirdPerson(word)}` : match,
+  )
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+export function describeAgent(summary: string | null | undefined, fallback: string): string {
+  const clean = (summary ?? '').replace(/\s+/g, ' ').trim()
+  if (!clean) return fallback
+  let rest = clean
+  if (/^you are\b/i.test(rest)) {
+    const after = /:\s*you\s+(.+)$/i.exec(rest)
+    if (!after) return fallback
+    rest = `you ${after[1]}`
+  }
+  const lead = /^you\s+([a-z]+)\b(.*)$/i.exec(rest)
+  if (lead) {
+    const verb = lead[1]!
+    if (/^(are|were|will|can|should|must|may|might|would|could)$/i.test(verb)) return fallback
+    rest = `${thirdPerson(verb)}${conjugateListedVerbs(lead[2] ?? '')}`
+  } else if (/^you\b/i.test(rest)) {
+    return fallback
+  }
+  // The first sentence is enough for a tooltip.
+  const sentence = /^(.+?[.!?])(\s|$)/.exec(rest)
+  return capitalise((sentence ? sentence[1]! : rest).trim())
+}

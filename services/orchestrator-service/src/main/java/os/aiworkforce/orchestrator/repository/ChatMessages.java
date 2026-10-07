@@ -32,6 +32,22 @@ public interface ChatMessages extends JpaRepository<ChatMessage, UUID> {
     List<ChatMessage> findByConversationIdAndPositionLessThanOrderByPositionDesc(
             UUID conversationId, int before, Pageable page);
 
+    /**
+     * The turns an agent can be given as context before a given position, newest first: what
+     * people wrote and what agents answered. Routing receipts, progress cards, notices and
+     * questions are left out in the query itself, so a window of a given size holds that many turns
+     * rather than whatever the coordinator happened to append between them.
+     */
+    @Query(
+            """
+            select m from ChatMessage m
+            where m.conversationId = :conversationId and m.position < :before
+              and ((m.kind = 'text' and m.authorKind = 'user') or m.kind = 'answer')
+            order by m.position desc
+            """)
+    List<ChatMessage> findEarlierTurns(
+            @Param("conversationId") UUID conversationId, @Param("before") int before, Pageable page);
+
     /** Messages appended after a given position, newest-goes-last - used to detect a race on a second click. */
     List<ChatMessage> findByConversationIdAndPositionGreaterThanOrderByPosition(UUID conversationId, int after);
 

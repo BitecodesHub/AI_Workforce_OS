@@ -994,10 +994,6 @@
   margin-top: 8px;
 }
 
-.lp-cta-hedge {
-  max-width: 56ch;
-}
-
 @media (max-width: 1023px) {
   .lp-limits-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));

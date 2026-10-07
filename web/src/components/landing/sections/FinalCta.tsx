@@ -2,11 +2,17 @@ import type { ReactElement } from 'react'
 import { Eyebrow } from '../../ui'
 import { Icon } from '../shared/Icon'
 import { LandingSection } from '../shared/LandingSection'
-import { CTA, DEMO_ACCOUNTS_HEDGE } from '../shared/landingFacts'
+import { CTA } from '../shared/landingFacts'
+import { useDemoCta } from '../shared/useDemoCta'
+import { useInPageLink } from '../shared/useInPageLink'
 
 /*
  * The closing call to action, centred: what trying it involves, and the two ways in. Shared by
  * the home page and the page for IT teams.
+ *
+ * The default copy says nothing about demo accounts, because a site may not offer them; the first
+ * button offers them only where it does, and otherwise returns to the demos on the page (see
+ * useDemoCta).
  */
 
 export type FinalCtaProps = {
@@ -18,8 +24,11 @@ export type FinalCtaProps = {
 export function FinalCta({
   eyebrow = 'See it for yourself',
   title = 'Watch your AI team at work',
-  body = 'Sign in with a demo account in one click, as a manager, an employee or a viewer, and see exactly what each one can do. It runs on sample data, so nothing real is sent.',
+  body = 'See how your AI team drafts the work, asks before anything is sent and shows where its answers come from. The demos run on sample data, so nothing real is sent.',
 }: FinalCtaProps): ReactElement {
+  const inPage = useInPageLink()
+  const demo = useDemoCta()
+
   return (
     <LandingSection id="start" labelledBy="cta-title">
       <div className="lp-cta-wrap">
@@ -31,15 +40,14 @@ export function FinalCta({
           </h2>
           <p className="lp-copy lp-cta-copy">{body}</p>
           <div className="lp-cta-actions">
-            <a className="button button-primary lp-button-lg lp-sheen" href={CTA.demo.href}>
-              {CTA.demo.label}
+            <a className="button button-primary lp-button-lg lp-sheen" href={demo.href} onClick={inPage}>
+              {demo.label}
               <Icon name="arrow-right" />
             </a>
             <a className="button button-outline lp-button-lg" href={CTA.create.href}>
               {CTA.create.label}
             </a>
           </div>
-          <p className="caption lp-cta-hedge">{DEMO_ACCOUNTS_HEDGE}</p>
         </div>
       </div>
     </LandingSection>

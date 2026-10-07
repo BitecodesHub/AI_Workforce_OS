@@ -13,6 +13,7 @@ metadata:
 data:
   AIWOS_ENVIRONMENT: production
   AIWOS_LOG_FORMAT: json
+  AIWOS_LOG_FORMAT_CONSOLE: ecs
   AIWOS_LOG_LEVEL: INFO
 
   DB_HOST: postgres.aiwos.svc.cluster.local
@@ -24,7 +25,7 @@ data:
   QDRANT_URL: http://qdrant.aiwos.svc.cluster.local:6333
 
   AIWOS_JWKS_URI: http://identity.aiwos.svc.cluster.local:8080/.well-known/jwks.json
-  AIWOS_OTLP_ENDPOINT: http://otel-collector.monitoring.svc.cluster.local:4318
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector.monitoring.svc.cluster.local:4318/v1/traces
   # Tracing every request is unaffordable at scale and is refused by the startup validator in
   # production, which is why this is not 1.0.
   AIWOS_TRACE_SAMPLE_RATIO: "0.1"
@@ -40,7 +41,9 @@ data:
 ---
 # Declares which secrets the platform needs. The values come from the cluster's secret store,
 # never from this file. The startup validator refuses to serve traffic in production if the
-# signing key or the encryption master key is missing, so a partial secret cannot ship quietly.
+# encryption master key, the internal service secret or the development secret is missing or
+# still a placeholder, or if a signing key is supplied that is not an EC P-256 key, so a partial
+# secret cannot ship quietly.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -52,9 +55,20 @@ type: Opaque
 stringData:
   DB_PASSWORD: ""
   REDIS_PASSWORD: ""
+  # The token signing key, an unencrypted PKCS#8 EC P-256 private key. Generate one with:
+  #   openssl ecparam -name prime256v1 -genkey | openssl pkcs8 -topk8 -nocrypt
+  # Optional: left empty, identity generates a key once and keeps it in its database, encrypted
+  # under AIWOS_ENCRYPTION_MASTER_KEY, and every replica signs with that one. Supplying a new key
+  # later retires the previous one with an overlap, so open sessions survive the change.
   AIWOS_SECURITY_SIGNING_PRIVATE_KEY_PEM: ""
+  # The name published for the key above. Not secret, but it rotates with the key. Left empty,
+  # the key's RFC 7638 thumbprint is used; give every new key a new name.
+  AIWOS_SECURITY_ACTIVE_KEY_ID: ""
   AIWOS_ENCRYPTION_MASTER_KEY: ""
   AIWOS_SECURITY_DEVELOPMENT_SECRET: ""
+  # Proves a caller is a platform service on the token-issuing endpoint. Required: the startup
+  # validator refuses the development placeholder outside local and test.
+  AIWOS_SECURITY_INTERNAL_SERVICE_SECRET: ""
 ---
 apiVersion: v1
 kind: ServiceAccount

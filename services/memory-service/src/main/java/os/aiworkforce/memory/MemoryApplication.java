@@ -3,6 +3,7 @@ package os.aiworkforce.memory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import os.aiworkforce.platform.PlatformCore;
 import os.aiworkforce.platform.web.PlatformWeb;
@@ -16,6 +17,7 @@ import os.aiworkforce.platform.web.PlatformWeb;
  */
 @SpringBootApplication(scanBasePackageClasses = {MemoryApplication.class, PlatformCore.class, PlatformWeb.class})
 @ConfigurationPropertiesScan(basePackageClasses = {MemoryApplication.class, PlatformCore.class, PlatformWeb.class})
+@EnableScheduling
 public class MemoryApplication {
 
     public static void main(String[] args) {

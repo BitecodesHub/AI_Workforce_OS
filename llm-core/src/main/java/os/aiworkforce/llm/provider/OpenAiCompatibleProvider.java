@@ -25,6 +25,7 @@ import os.aiworkforce.llm.model.ChatMessage;
 import os.aiworkforce.llm.model.ChatRequest;
 import os.aiworkforce.llm.model.ChatResponse;
 import os.aiworkforce.llm.model.FinishReason;
+import os.aiworkforce.llm.model.ImagePart;
 import os.aiworkforce.llm.model.ModelSpec;
 import os.aiworkforce.llm.model.ProviderDescriptor;
 import os.aiworkforce.llm.model.ProviderException;
@@ -71,6 +72,12 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
     @Override
     public ProviderDescriptor.Kind kind() {
         return ProviderDescriptor.Kind.OPENAI_COMPATIBLE;
+    }
+
+    /** OpenAI, OpenRouter and the rest of the family take inline images as {@code image_url} parts. */
+    @Override
+    public boolean sendsImages() {
+        return true;
     }
 
     @Override
@@ -168,7 +175,20 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                         case ASSISTANT -> "assistant";
                         case TOOL -> "tool";
                     });
-            if (message.content() != null) {
+            if (message.hasImages() && message.role() == ChatMessage.Role.USER) {
+                // The content-parts form: the text first, then each picture as a data URL.
+                ArrayNode parts = node.putArray("content");
+                if (message.content() != null && !message.content().isEmpty()) {
+                    ObjectNode text = parts.addObject();
+                    text.put("type", "text");
+                    text.put("text", message.content());
+                }
+                for (ImagePart image : message.images()) {
+                    ObjectNode part = parts.addObject();
+                    part.put("type", "image_url");
+                    part.putObject("image_url").put("url", image.dataUrl());
+                }
+            } else if (message.content() != null) {
                 node.put("content", message.content());
             } else if (!message.hasToolCalls()) {
                 // A null content field is rejected by several of these providers; an empty

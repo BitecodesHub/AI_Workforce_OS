@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Card, Eyebrow } from '../ui'
+import { ConnectModelDialog } from '../onboarding/ConnectModelDialog'
 import { TaskDialog } from '../ui/TaskDialog'
 import { formatCount } from '../../lib/format'
 import { roleLabel } from '../../lib/labels'
@@ -24,7 +25,8 @@ import { useToast } from '../../lib/toast'
  * task is marked by the task dialog only once the task has really started, and reading a trace by
  * the run page itself. Two steps describe the workspace rather than the person (documents in
  * Knowledge, a live model), so they state what is true now instead of carrying a tick of their
- * own.
+ * own. While no live model is connected, the live-model step opens the Connect your AI dialog in
+ * place instead of linking away.
  *
  * Progress lives in localStorage per user (lib/onboarding.ts). When storage is blocked every step
  * reads as not tried and the guide still works; hiding it then lasts until the page is left.
@@ -53,9 +55,10 @@ type Step = {
   body: ReactNode
   /**
    * link: opens a screen, and reads "Opened" once it has been. task: opens the task dialog, and
-   * reads "Done" once a task has started. state: says what the workspace has; no tick of its own.
+   * reads "Done" once a task has started. connect: opens the Connect your AI dialog, for as long
+   * as no live model is connected. state: says what the workspace has; no tick of its own.
    */
-  kind: 'link' | 'task' | 'state'
+  kind: 'link' | 'task' | 'connect' | 'state'
   href?: string
   satisfied: boolean
 }
@@ -69,6 +72,7 @@ export function GettingStarted() {
   const stored = useSyncExternalStore(onGuideChange, () => readGuide(userId), () => readGuide(userId))
   const [hiddenHere, setHiddenHere] = useState(false)
   const [taskOpen, setTaskOpen] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(false)
 
   const storedHidden = stored.startsWith('hidden:')
   const done = new Set(stored.slice(stored.indexOf(':') + 1).split(',').filter(Boolean))
@@ -177,7 +181,8 @@ export function GettingStarted() {
     const live = routing.live
     steps.push({
       id: 'connect-model',
-      kind: 'state',
+      // Not live yet: the title opens the dialog that does the whole job. Live: a statement.
+      kind: live ? 'state' : 'connect',
       href: '/routing',
       title: live ? `Runs try ${routing.first?.providerName ?? 'a live model'} first.` : 'Connect a live model',
       // The notice above the guide gives the full reason; this line only says what it means now.
@@ -289,7 +294,12 @@ export function GettingStarted() {
             <StepMarker satisfied={step.satisfied} number={index + 1} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p className="section-heading">
-                <StepAction step={step} onOpen={() => afterStep(step.id)} onGiveTask={() => setTaskOpen(true)} />
+                <StepAction
+                  step={step}
+                  onOpen={() => afterStep(step.id)}
+                  onGiveTask={() => setTaskOpen(true)}
+                  onConnect={() => setConnectOpen(true)}
+                />
               </p>
               <p className="caption" style={{ marginTop: 'var(--space-1)' }}>
                 {step.body}
@@ -303,6 +313,8 @@ export function GettingStarted() {
           </li>
         ))}
       </ol>
+
+      {canManageModels && <ConnectModelDialog open={connectOpen} onClose={() => setConnectOpen(false)} />}
 
       {canGiveTask && (
         <TaskDialog
@@ -319,10 +331,25 @@ export function GettingStarted() {
   )
 }
 
-function StepAction({ step, onOpen, onGiveTask }: { step: Step; onOpen: () => void; onGiveTask: () => void }) {
-  if (step.kind === 'task') {
+function StepAction({
+  step,
+  onOpen,
+  onGiveTask,
+  onConnect,
+}: {
+  step: Step
+  onOpen: () => void
+  onGiveTask: () => void
+  onConnect: () => void
+}) {
+  if (step.kind === 'task' || step.kind === 'connect') {
     return (
-      <button type="button" className="link" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={onGiveTask}>
+      <button
+        type="button"
+        className="link"
+        style={{ cursor: 'pointer', textAlign: 'left' }}
+        onClick={step.kind === 'task' ? onGiveTask : onConnect}
+      >
         {step.title}
       </button>
     )

@@ -1,13 +1,17 @@
 package os.aiworkforce.platform.web.filter;
 
 import java.io.IOException;
+import java.util.Optional;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -26,6 +30,11 @@ import os.aiworkforce.platform.context.RequestContext;
  * and a context left behind would attach one request's actor to the next request that lands on
  * the same thread.
  *
+ * <p>The trace id is read from the span Spring's server observation has already opened (it runs
+ * just ahead of this filter), so the {@code traceId} on an error body is the one the trace
+ * carries rather than always empty. When tracing is switched off there is no span and the field
+ * stays empty.
+ *
  * <p>Named for the actor rather than the request deliberately: Spring's own
  * {@code WebMvcAutoConfiguration} registers a bean called {@code requestContextFilter}, and a
  * class named to match it collides on bean name and stops the application starting.
@@ -39,6 +48,13 @@ public class ActorContextFilter extends OncePerRequestFilter {
 
     private static final int MAX_HEADER_LENGTH = 128;
 
+    /** Absent when tracing is switched off; the filter then simply has no trace id to record. */
+    private final ObjectProvider<Tracer> tracer;
+
+    public ActorContextFilter(ObjectProvider<Tracer> tracer) {
+        this.tracer = tracer;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
@@ -51,6 +67,8 @@ public class ActorContextFilter extends OncePerRequestFilter {
                 RequestContext.setIdempotencyKey(idempotencyKey);
             }
 
+            currentTraceId().ifPresent(RequestContext::setTraceId);
+
             MDC.put("requestId", RequestContext.requestId());
             MDC.put("method", request.getMethod());
             MDC.put("path", request.getRequestURI());
@@ -62,6 +80,18 @@ public class ActorContextFilter extends OncePerRequestFilter {
         } finally {
             MDC.clear();
             RequestContext.clear();
+        }
+    }
+
+    private Optional<String> currentTraceId() {
+        try {
+            Tracer active = tracer.getIfAvailable();
+            Span span = active == null ? null : active.currentSpan();
+            String id = span == null ? null : span.context().traceId();
+            return id == null || id.isBlank() ? Optional.empty() : Optional.of(id);
+        } catch (RuntimeException e) {
+            // A tracing fault must never fail the request it was meant to describe.
+            return Optional.empty();
         }
     }
 

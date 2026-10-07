@@ -1,9 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Button, Notice, Textarea } from '../ui'
+import { Button, Notice, Textarea, Time } from '../ui'
 import { Collapsible, useCollapsed } from '../ui/Collapsible'
-import { decisionError, formatPayload, readableSummary } from '../../lib/approvals'
-import { useApprovals, useDecideApproval } from '../../lib/queries'
+import { PayloadPreview } from '../approvals/PayloadPreview'
+import {
+  contextLine,
+  decisionError,
+  previewOpensByDefault,
+  previewToggleLabel,
+  readableSummary,
+  runOutcome,
+} from '../../lib/approvals'
+import { useMemberNamer, useRunApproval } from '../../lib/approvalQueries'
+import type { ApprovalItem } from '../../lib/approvalQueries'
+import { useDecideApproval } from '../../lib/queries'
 import { can } from '../../lib/session'
+import { useToast } from '../../lib/toast'
 
 const REASON_MAX = 1_000
 
@@ -14,6 +25,10 @@ const REASON_MAX = 1_000
  * step list can show the same decision inline too, by run id rather than by a chat task. A
  * viewer who cannot decide sees the request read-only, and someone who can add "Reject with a
  * reason" without leaving to the Approvals queue for it.
+ *
+ * The request is shown as the email or message it is, open from the start when it leaves the
+ * workspace or removes something: an approver should not have to find the details to see what
+ * they are agreeing to.
  */
 export function InlineApproval({
   runId,
@@ -28,21 +43,13 @@ export function InlineApproval({
   canDecide?: boolean
 }) {
   const canRead = can('approval:read')
-  const decideAllowed = canDecide ?? can('approval:decide')
-  const approvalsQuery = useApprovals({ enabled: canRead })
-  const decide = useDecideApproval()
-  const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [rejecting, setRejecting] = useState(false)
-  const [reason, setReason] = useState('')
-  const [payloadOpen, setPayloadOpen] = useCollapsed(null, false)
+  const approvalQuery = useRunApproval(runId, { enabled: canRead })
+  const approval = approvalQuery.data ?? undefined
 
-  const approval = approvalsQuery.data?.find((candidate) => candidate.runId === runId && candidate.status === 'pending')
-
-  // The approvals list is cached and refreshed every half minute, so a request raised moments ago
-  // is usually not in it yet. Ask again as soon as this card appears, and once more while it is
-  // still missing, rather than telling a person who can decide that someone else must.
-  const { refetch } = approvalsQuery
+  // A request raised moments ago may not be there yet. Ask again as soon as this card appears,
+  // and every few seconds while it is still missing, rather than telling a person who can decide
+  // that someone else must.
+  const { refetch } = approvalQuery
   const missing = canRead && !approval
   useEffect(() => {
     if (!missing) return
@@ -54,19 +61,59 @@ export function InlineApproval({
   const generic = <Notice tone="warning">Waiting for someone who can approve actions.</Notice>
   if (!canRead) return generic
   if (!approval) {
-    return approvalsQuery.isFetching || approvalsQuery.isLoading ? (
+    return approvalQuery.isFetching || approvalQuery.isLoading ? (
       <p className="caption muted">Loading the request waiting for a decision…</p>
     ) : (
       generic
     )
   }
 
-  async function decideIt(approved: boolean, note?: string) {
-    setBusy(approved ? 'approve' : 'reject')
+  return <InlineDecision approval={approval} agentName={agentName} compact={compact} canDecide={canDecide} />
+}
+
+function InlineDecision({
+  approval,
+  agentName,
+  compact,
+  canDecide,
+}: {
+  approval: ApprovalItem
+  agentName: string
+  compact: boolean
+  canDecide: boolean | undefined
+}) {
+  // The caller's own say (the board's, which counts the permission) and the server's (which also
+  // counts the workspace's four-eyes rule): both must agree.
+  const decideAllowed = (canDecide ?? can('approval:decide')) && approval.canDecide
+  const decide = useDecideApproval()
+  const toast = useToast()
+  const { me, nameOf } = useMemberNamer()
+  const [busy, setBusy] = useState<'approve' | 'reject' | 'request_changes' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [rejecting, setRejecting] = useState(false)
+  const [sendingBack, setSendingBack] = useState(false)
+  const [reason, setReason] = useState('')
+  const [payloadOpen, setPayloadOpen] = useCollapsed(null, previewOpensByDefault(approval.actionClass))
+  const needsSomeoneElse = !approval.canDecide && can('approval:decide') && me != null && approval.requestedBy === me
+
+  async function decideIt(mode: 'approve' | 'reject' | 'request_changes', note?: string) {
+    setBusy(mode)
     setError(null)
     try {
-      await decide.mutateAsync({ id: approval!.id, approved, ...(note ? { note } : {}) })
+      const result = await decide.mutateAsync({
+        id: approval.id,
+        approved: mode === 'approve',
+        mode,
+        ...(note ? { note } : {}),
+      })
+      if (mode === 'approve') {
+        const outcome = runOutcome(result.runStatus)
+        toast.success(outcome.startsWith('Approved.') ? outcome : `Approved. ${outcome}`)
+      } else if (mode === 'request_changes') {
+        toast.success('Sent back. The agent will revise it and ask again.')
+      }
       setRejecting(false)
+      setSendingBack(false)
       setReason('')
     } catch (err) {
       setError(decisionError(err))
@@ -79,9 +126,17 @@ export function InlineApproval({
     <div className={`inline-approval${compact ? ' inline-approval-compact' : ''}`}>
       <p className="caption muted">{agentName} is waiting for a decision</p>
       <p>{readableSummary(approval)}</p>
+      <p className="caption muted">
+        {contextLine(approval, me, nameOf)} · Expires <Time iso={approval.expiresAt} />
+      </p>
 
-      <Collapsible title="Show what will be sent" open={payloadOpen} onToggle={setPayloadOpen} headingLevel="p">
-        <pre className="inline-approval-payload">{formatPayload(approval.payload)}</pre>
+      <Collapsible
+        title={previewToggleLabel(approval.actionClass)}
+        open={payloadOpen}
+        onToggle={setPayloadOpen}
+        headingLevel="p"
+      >
+        <PayloadPreview payload={approval.payload} actionClass={approval.actionClass} />
       </Collapsible>
 
       {error && (
@@ -91,7 +146,41 @@ export function InlineApproval({
       )}
 
       {!decideAllowed ? (
-        <Notice tone="info">Waiting for someone who can approve this.</Notice>
+        <Notice tone="info">
+          {needsSomeoneElse
+            ? 'You asked for this work, so someone else needs to decide it.'
+            : 'Waiting for someone who can approve this.'}
+        </Notice>
+      ) : sendingBack ? (
+        <div className="stack" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+          <Textarea
+            label="What should change"
+            value={reason}
+            onChange={(event) => setReason(event.target.value.slice(0, REASON_MAX))}
+            maxLength={REASON_MAX}
+            rows={3}
+            hint="The agent does not take this action as written. It reads this, revises it and asks again."
+          />
+          <div className="row" style={{ gap: 'var(--space-3)' }}>
+            <Button
+              onClick={() => void decideIt('request_changes', reason.trim())}
+              loading={busy === 'request_changes'}
+              disabled={reason.trim() === ''}
+            >
+              Send back
+            </Button>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setSendingBack(false)
+                setReason('')
+              }}
+              disabled={busy !== null}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
       ) : rejecting ? (
         <div className="stack" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
           <Textarea
@@ -101,11 +190,11 @@ export function InlineApproval({
             onChange={(event) => setReason(event.target.value.slice(0, REASON_MAX))}
             maxLength={REASON_MAX}
             rows={3}
-            hint="Kept on record with the decision. Up to 1,000 characters."
+            hint="Ends the run. Shown to the person who asked and recorded in the audit log. Up to 1,000 characters."
           />
           <div className="row" style={{ gap: 'var(--space-3)' }}>
-            <Button variant="outline" onClick={() => void decideIt(false, reason.trim() || undefined)} loading={busy === 'reject'}>
-              Reject
+            <Button variant="outline" onClick={() => void decideIt('reject', reason.trim() || undefined)} loading={busy === 'reject'}>
+              Reject and stop
             </Button>
             <Button
               variant="quiet"
@@ -121,11 +210,15 @@ export function InlineApproval({
         </div>
       ) : (
         <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-          <Button onClick={() => void decideIt(true)} loading={busy === 'approve'} disabled={busy === 'reject'}>
+          {/* data-approve-button: the chat's "Review" link focuses this button (chat/ProgressCard.tsx). */}
+          <Button data-approve-button onClick={() => void decideIt('approve')} loading={busy === 'approve'} disabled={busy === 'reject'}>
             Approve
           </Button>
+          <Button variant="outline" onClick={() => setSendingBack(true)} disabled={busy !== null}>
+            Send back with feedback
+          </Button>
           <Button variant="outline" onClick={() => setRejecting(true)} disabled={busy !== null}>
-            Reject with a reason
+            Reject and stop
           </Button>
         </div>
       )}

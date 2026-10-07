@@ -184,7 +184,7 @@
 .lp-h2 {
   font-size: var(--lp-text-h2);
   font-weight: var(--weight-strong);
-  letter-spacing: -0.015em;
+  letter-spacing: var(--tracking-heading);
   line-height: 1.15;
   color: var(--ink);
   text-wrap: balance;

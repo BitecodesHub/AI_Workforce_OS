@@ -199,12 +199,24 @@ public final class ScheduleParser {
         throw invalid();
     }
 
-    /** The next {@code count} times a parsed schedule fires, in the given zone. */
+    /**
+     * The next {@code count} times a parsed schedule fires, in the given zone.
+     *
+     * @throws ApiException a validation failure ({@code field} {@code "text"}) when the cron cannot
+     *     be read - a stored row from before a parser rule tightened, say - rather than the cron
+     *     library's own {@link IllegalArgumentException}, which every caller would answer with a 500
+     */
     public static List<Instant> nextRuns(ParsedSchedule schedule, ZoneId zone, Instant from, int count) {
         if ("once".equals(schedule.kind())) {
             return schedule.runAt() != null && schedule.runAt().isAfter(from) ? List.of(schedule.runAt()) : List.of();
         }
-        CronExpression cron = CronExpression.parse(schedule.cron());
+        CronExpression cron;
+        try {
+            cron = CronExpression.parse(schedule.cron());
+        } catch (IllegalArgumentException | NullPointerException unreadable) {
+            throw ApiException.validation("text", "That timetable could not be read. Describe it again in plain words.")
+                    .with("examples", EXAMPLES);
+        }
         List<Instant> runs = new ArrayList<>();
         ZonedDateTime cursor = ZonedDateTime.ofInstant(from, zone);
         for (int i = 0; i < count; i++) {
@@ -266,8 +278,19 @@ public final class ScheduleParser {
 
     // ---- Recurring phrases ------------------------------------------------------------------
 
-    private static final Pattern EVERY_N_MINUTES = Pattern.compile("^every\\s+(\\d+)\\s+minutes?$");
-    private static final Pattern EVERY_N_HOURS = Pattern.compile("^every\\s+(\\d+)\\s+hours?$");
+    // At most four digits: a longer number is not a cadence anyone means, and Integer.parseInt on
+    // one would throw outside the validation path (a 500 rather than a readable refusal).
+    private static final Pattern EVERY_N_MINUTES = Pattern.compile("^every\\s+(\\d{1,4})\\s+minutes?$");
+    private static final Pattern EVERY_N_HOURS = Pattern.compile("^every\\s+(\\d{1,4})\\s+hours?$");
+
+    /*
+     * A cron step restarts at the top of every hour (minutes) or every day (hours): "*\/45" fires at
+     * :00 and :45, a 45 then a 15 minute gap, and "*\/7" hours leaves a 3 hour gap at midnight. Only
+     * a step that divides its period evenly keeps the rhythm its own description promises, so those
+     * are the only ones accepted.
+     */
+    private static final List<Integer> EVEN_MINUTES = List.of(5, 6, 10, 12, 15, 20, 30);
+    private static final List<Integer> EVEN_HOURS = List.of(1, 2, 3, 4, 6, 8, 12);
     private static final Pattern HOURLY = Pattern.compile("^(?:every\\s+hour|hourly)$");
     private static final Pattern DAILY = Pattern.compile("^(?:every\\s+day|daily)(?:\\s+at\\s+(.+))?$");
     private static final Pattern WEEKDAYS = Pattern.compile("^(?:every\\s+weekday|weekdays)(?:\\s+at\\s+(.+))?$");
@@ -287,15 +310,21 @@ public final class ScheduleParser {
 
         if ((m = EVERY_N_MINUTES.matcher(lower)).matches()) {
             int n = Integer.parseInt(m.group(1));
+            if (n > 0 && n % 60 == 0) {
+                // "every 120 minutes" is "every 2 hours", and is held to the hours rule.
+                return Optional.of(everyNHours(n / 60));
+            }
             if (n < 5) {
                 throw ApiException.validation("text", "A schedule cannot repeat more often than every 5 minutes.")
                         .with("examples", EXAMPLES);
             }
+            if (!EVEN_MINUTES.contains(n)) {
+                throw uneven("Every " + n + " minutes", n);
+            }
             return Optional.of(recurring("0 */" + n + " * * * *", "Every " + n + " minutes"));
         }
         if ((m = EVERY_N_HOURS.matcher(lower)).matches()) {
-            int n = Integer.parseInt(m.group(1));
-            return Optional.of(recurring("0 0 */" + n + " * * *", "Every " + n + " hours"));
+            return Optional.of(everyNHours(Integer.parseInt(m.group(1))));
         }
         if (HOURLY.matcher(lower).matches()) {
             return Optional.of(recurring("0 0 * * * *", "Every hour"));
@@ -358,6 +387,66 @@ public final class ScheduleParser {
 
     private static ParsedSchedule recurring(String cron, String description) {
         return new ParsedSchedule("recurring", cron, null, description);
+    }
+
+    /** "Every N hours", for an N that divides the day: 1 is hourly, 24 is the daily default. */
+    private static ParsedSchedule everyNHours(int n) {
+        if (n < 1) {
+            throw ApiException.validation("text", "A schedule that repeats by the hour needs at least 1 hour.")
+                    .with("examples", EXAMPLES);
+        }
+        if (n == 1) {
+            return recurring("0 0 * * * *", "Every hour");
+        }
+        if (n == 24) {
+            LocalTime time = timeOrDefault(null);
+            return recurring(
+                    "0 " + time.getMinute() + " " + time.getHour() + " * * *", "Every day at " + describeTime(time));
+        }
+        if (!EVEN_HOURS.contains(n)) {
+            throw uneven("Every " + n + " hours", n * 60);
+        }
+        return recurring("0 0 */" + n + " * * *", "Every " + n + " hours");
+    }
+
+    /** Refuses an interval that does not divide its hour or day, naming the nearest ones that do. */
+    private static ApiException uneven(String asked, int minutes) {
+        List<Integer> even = new ArrayList<>(EVEN_MINUTES);
+        EVEN_HOURS.forEach(hours -> even.add(hours * 60));
+        even.add(24 * 60);
+        Integer below = null;
+        Integer above = null;
+        for (int candidate : even) {
+            if (candidate < minutes) {
+                below = candidate;
+            } else if (candidate > minutes && above == null) {
+                above = candidate;
+            }
+        }
+        List<String> nearest = new ArrayList<>();
+        if (below != null) {
+            nearest.add(describeInterval(below));
+        }
+        if (above != null) {
+            nearest.add(describeInterval(above));
+        }
+        String problem = minutes > 24 * 60
+                ? asked + " is longer than a day, which a schedule cannot repeat on yet. Try every day instead."
+                : asked + " would leave uneven gaps through the " + (minutes < 60 ? "hour" : "day") + ". Try "
+                        + String.join(" or ", nearest) + " instead.";
+        return ApiException.validation("text", problem)
+                .with("suggestions", nearest)
+                .with("examples", EXAMPLES);
+    }
+
+    private static String describeInterval(int minutes) {
+        if (minutes == 24 * 60) {
+            return "every day";
+        }
+        if (minutes == 60) {
+            return "every hour";
+        }
+        return minutes % 60 == 0 ? "every " + minutes / 60 + " hours" : "every " + minutes + " minutes";
     }
 
     private static int requireDayOfMonth(int day) {
@@ -425,8 +514,9 @@ public final class ScheduleParser {
 
     // ---- One-off phrases --------------------------------------------------------------------
 
+    // Bounded for the same reason as the recurring counts: an unbounded number overflows the parse.
     private static final Pattern IN_DURATION =
-            Pattern.compile("^in\\s+(\\d+)\\s+(minute|minutes|hour|hours|day|days)$");
+            Pattern.compile("^in\\s+(\\d{1,4})\\s+(minute|minutes|hour|hours|day|days)$");
     private static final Pattern TOMORROW = Pattern.compile("^tomorrow(?:\\s+at\\s+(.+))?$");
     private static final Pattern TODAY = Pattern.compile("^today\\s+at\\s+(.+)$");
     private static final Pattern ON_ISO_DATE =

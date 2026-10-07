@@ -1,12 +1,15 @@
+import { scheduleStateLabel } from '../../lib/labels'
 import type { TagTone } from '../../lib/labels'
+import { isScheduleDone } from '../../lib/schedules'
+import type { ScheduleLike } from '../../lib/schedules'
 
 /*
  * Pure rules for the Schedules screen: no React, no network, so they can be tested directly.
  *
  * A schedule carries no status column of its own (see lib/labels.ts's scheduleStateLabel) - only
- * `enabled` and, when the platform paused it after repeated failures, `pausedReason`. The table's
- * Status column needs one more state than that label gives it ("Paused after failures", with the
- * reason on hand for a title), so it lives here instead of duplicating scheduleStateLabel.
+ * `enabled`, the derived done state of a one-off that already ran, and, when something other than
+ * a person paused it, `pausedReason`. The table's Status column says why it stopped, with the
+ * reason on hand for a title, so it lives here on top of scheduleStateLabel.
  */
 
 export type ScheduleStatus = {
@@ -16,12 +19,37 @@ export type ScheduleStatus = {
   note?: string
 }
 
-/** A schedule's status for the table and the dialog: Active, Paused, or Paused after failures. */
-export function scheduleStatus(schedule: { enabled: boolean; pausedReason?: string | null }): ScheduleStatus {
-  if (schedule.enabled) return { tone: 'success', label: 'Active' }
+/** Set by the platform when the person a schedule runs as leaves the workspace (ScheduleService). */
+export const OWNER_LEFT_REASON = 'Owner is no longer a member'
+
+/** Set by the platform when Stop everything paused the schedule (ScheduleService). */
+export const STOPPED_EVERYTHING_REASON = 'Paused when all agent work was stopped.'
+
+type StatusInput = Partial<Pick<ScheduleLike, 'kind' | 'nextRunAt' | 'completed' | 'state'>> & {
+  enabled: boolean
+  pausedReason?: string | null
+}
+
+/**
+ * A schedule's status for the table and the dialog: Active, Done (a one-off that already ran),
+ * Paused, Paused, owner left, or Paused after failures.
+ */
+export function scheduleStatus(schedule: StatusInput): ScheduleStatus {
+  const done = isScheduleDone({
+    kind: schedule.kind ?? 'recurring',
+    enabled: schedule.enabled,
+    nextRunAt: schedule.nextRunAt ?? null,
+    createdBy: null,
+    completed: schedule.completed ?? null,
+    state: schedule.state ?? null,
+  })
+  if (done) return { ...scheduleStateLabel(false, true), note: 'This one-off has already run.' }
+  if (schedule.enabled) return scheduleStateLabel(true)
   const reason = schedule.pausedReason?.trim()
+  if (reason === OWNER_LEFT_REASON) return { tone: 'warning', label: 'Paused, owner left', note: reason }
+  if (reason === STOPPED_EVERYTHING_REASON) return { ...scheduleStateLabel(false), note: reason }
   if (reason) return { tone: 'warning', label: 'Paused after failures', note: reason }
-  return { tone: 'neutral', label: 'Paused' }
+  return scheduleStateLabel(false)
 }
 
 /**

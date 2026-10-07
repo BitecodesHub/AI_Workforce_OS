@@ -1,7 +1,17 @@
 package os.aiworkforce.gateway.security;
 
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.List;
 
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKMatcher;
+import com.nimbusds.jose.jwk.JWKSelector;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.SignedJWT;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -19,6 +29,9 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import os.aiworkforce.platform.config.PlatformProperties;
 
@@ -49,12 +62,16 @@ public class GatewaySecurityConfig {
         "/swagger-ui/**",
         "/api/*/v3/api-docs",
         // Authentication itself cannot require a token: a person who cannot sign in has none to
-        // present. The identity service enforces its own rate limit on these underneath.
+        // present. The identity service enforces its own rate limit on these underneath. This
+        // covers /api/auth/password-reset too, where the reset link's own token is the credential.
         "/api/auth/**",
         "/.well-known/**",
         // Same reasoning as /api/auth/**: accepting an invitation is how a brand-new person gets
         // their first token. The endpoint checks the invitation's own hashed token itself.
         "/api/invitations/accept",
+        // A provider's redirect after the consent screen carries no bearer token. The integrations
+        // service honours it only with its own signed, single-use state and a browser cookie.
+        "/api/oauth/callback",
     };
 
     @Bean
@@ -74,17 +91,20 @@ public class GatewaySecurityConfig {
     /**
      * Verifies tokens against the identity service's published keys.
      *
-     * <p>Built with an explicit JWS algorithm rather than the plain {@code withJwkSetUri(uri)}
-     * builder, which defaults to RS256 and rejects an ES256 token with "no matching key(s)
-     * found" - a message that sends somebody looking for a missing key when the algorithm is the
-     * actual problem. Same key, same algorithm, same issuer/audience check as {@code
-     * platform-web}'s servlet decoder, so a token good enough for a business service is good
-     * enough for the edge.
+     * <p>Built with an explicit JWS algorithm, because the plain {@code withJwkSetUri(uri)} builder
+     * defaults to RS256 and rejects an ES256 token with "no matching key(s) found" - a message
+     * that sends somebody looking for a missing key when the algorithm is the actual problem.
+     * Same key, same algorithm, same issuer/audience check as {@code platform-web}'s servlet
+     * decoder, so a token good enough for a business service is good enough for the edge.
      */
     @Bean
     public ReactiveJwtDecoder jwtDecoder(PlatformProperties properties) {
-        PlatformProperties.Security security = properties.security();
-        NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder.withJwkSetUri(security.jwksUri())
+        return decoder(properties.security());
+    }
+
+    static NimbusReactiveJwtDecoder decoder(PlatformProperties.Security security) {
+        JWKSource<SecurityContext> keys = publishedKeys(security);
+        NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder.withJwkSource(jwt -> keysFor(keys, jwt))
                 .jwsAlgorithm(SignatureAlgorithm.ES256)
                 .build();
         decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(new OAuth2TokenValidator<Jwt>() {
@@ -101,6 +121,39 @@ public class GatewaySecurityConfig {
             }
         }));
         return decoder;
+    }
+
+    /**
+     * The identity service's key set, cached exactly as {@code platform-web} caches it.
+     *
+     * <p>The reactive {@code withJwkSetUri} source this replaces cached the set with no expiry,
+     * and refetched only when a token named a key it did not hold. After identity restarted with
+     * a new key under the old name, the edge rejected every token until the gateway itself was
+     * restarted. This source expires after {@code jwks-cache-ttl}, and still refetches at once -
+     * rate-limited - when a token names an unknown key, which every new key now does, because
+     * identity names each key by its own thumbprint.
+     */
+    static JWKSource<SecurityContext> publishedKeys(PlatformProperties.Security security) {
+        try {
+            return JWKSourceBuilder.create(new URI(security.jwksUri()).toURL())
+                    .cache(security.jwksCacheTtl().toMillis(), security.jwksRefreshCooldown().toMillis())
+                    .build();
+        } catch (URISyntaxException | MalformedURLException | IllegalArgumentException e) {
+            throw new IllegalStateException("aiwos.security.jwks-uri is not a valid URL: " + security.jwksUri(), e);
+        }
+    }
+
+    /**
+     * The published keys that could have signed {@code jwt}.
+     *
+     * <p>The Nimbus source blocks while it fetches, so it runs on the bounded elastic scheduler
+     * rather than on an event-loop thread. A cache hit returns at once.
+     */
+    private static Flux<JWK> keysFor(JWKSource<SecurityContext> keys, SignedJWT jwt) {
+        JWKSelector selector = new JWKSelector(JWKMatcher.forJWSHeader(jwt.getHeader()));
+        return Mono.fromCallable(() -> keys.get(selector, null))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(Flux::fromIterable);
     }
 
     private CorsConfigurationSource corsSource(PlatformProperties properties) {

@@ -12,7 +12,7 @@ SERVICES := gateway identity-service org-service orchestrator-service memory-ser
 
 .DEFAULT_GOAL := help
 .PHONY: help build test test-it lint format up down logs ps restart clean dev-backend dev-status \
-        deps web-install web-dev web-build web-test design-check verify
+        dev-stop deps web-install web-dev web-build web-test design-check verify
 
 help: ## Show the available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -20,6 +20,9 @@ help: ## Show the available targets
 
 # ---- Backend ---------------------------------------------------------------------------------
 
+# The format check is not part of build: it is `make lint`, and CI should run it as -Pformat-check.
+# That keeps `make build` working on a JDK newer than the 21 in .java-version, where the
+# formatter itself cannot run.
 build: ## Compile and package every module
 	$(MVN) -B -ntp install -DskipTests
 
@@ -29,13 +32,13 @@ test: ## Run unit and slice tests
 test-it: ## Run integration tests (needs Docker for Testcontainers)
 	$(MVN) -B -ntp verify -Pit
 
-lint: ## Check formatting and static analysis
+lint: ## Check formatting (needs JDK 21, see .java-version)
 	$(MVN) -B -ntp spotless:check
 
 format: ## Apply the code format
 	$(MVN) -B -ntp spotless:apply
 
-verify: lint test ## What CI runs on every pull request
+verify: lint test ## Check formatting, then run unit and slice tests
 
 # ---- Stack -----------------------------------------------------------------------------------
 
@@ -66,11 +69,14 @@ restart: ## Rebuild and restart one service, for example: make restart SERVICE=i
 	@test -n "$(SERVICE)" || (echo "Set SERVICE, for example: make restart SERVICE=identity" && exit 1)
 	$(COMPOSE) up -d --build $(SERVICE)
 
-dev-backend: ## Run the seven services locally without Docker (needs PostgreSQL on 55432)
-	scripts/dev-backend.sh
+dev-backend: ## Run the seven services locally without Docker (needs PostgreSQL on 55432; ARGS=--with-gateway adds the gateway)
+	scripts/dev-backend.sh $(ARGS)
 
-dev-status: ## Show which local services are running
+dev-status: ## Show which local services are ready
 	scripts/dev-backend.sh status
+
+dev-stop: ## Stop the local services started by dev-backend
+	scripts/dev-backend.sh stop
 
 # ---- Web client ------------------------------------------------------------------------------
 

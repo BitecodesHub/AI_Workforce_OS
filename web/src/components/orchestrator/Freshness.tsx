@@ -23,15 +23,17 @@ export function Freshness({
   if (!live) {
     return (
       <span className="orc-live">
-        Updates paused
+        <span className="orc-status-pill" data-state="paused">
+          <span className="orc-status-pill-dot" aria-hidden="true" />
+          Updates paused
+        </span>
         {pendingChanges > 0 && (
-          <>
-            {' · '}
+          <span className="orc-live-pending">
             {plural(pendingChanges, 'change', 'changes')} since{' · '}
             <button type="button" className="link" onClick={onShowLatest}>
               Show latest
             </button>
-          </>
+          </span>
         )}
       </span>
     )
@@ -39,8 +41,11 @@ export function Freshness({
 
   return (
     <span className="orc-live">
-      <span className="orc-live-dot" aria-hidden="true" />
-      Updated {formatAgo(now - Date.parse(generatedAt))}
+      <span className="orc-status-pill" data-state="live">
+        <span className="orc-live-dot" aria-hidden="true" />
+        Live
+      </span>
+      <span className="orc-live-pending">Updated {formatAgo(now - Date.parse(generatedAt))}</span>
     </span>
   )
 }

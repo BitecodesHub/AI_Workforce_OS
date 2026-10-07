@@ -42,9 +42,11 @@ public class Role extends BaseEntity {
     /**
      * Incremented whenever the permission set changes.
      *
-     * <p>Access tokens carry the version they were minted under. A token holding an older version
-     * is refused, so narrowing a role takes effect immediately rather than after every existing
-     * token has expired - which is the difference between revoking access and scheduling it.
+     * <p>Access tokens carry the version they were minted under, as the {@code pv} claim. Nothing
+     * rejects a token whose version is behind yet, so narrowing a role takes effect at each
+     * holder's next refresh, within the access-token lifetime: a refresh always reads the role's
+     * permissions afresh. The version is kept so that a check can be added without a schema
+     * change.
      */
     @Column(name = "permission_version", nullable = false)
     private long permissionVersion = 1;
@@ -59,6 +61,11 @@ public class Role extends BaseEntity {
             permissions = new LinkedHashSet<>(codes);
             permissionVersion++;
         }
+    }
+
+    /** Whether every permission this role carries is in {@code held}: granting it widens nobody. */
+    public boolean isWithin(Set<String> held) {
+        return held.containsAll(permissions);
     }
 
     public boolean isPlatformWide() {

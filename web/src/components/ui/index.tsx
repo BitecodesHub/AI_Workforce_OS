@@ -87,7 +87,7 @@ export function PageHeader({
 
 export function SectionHeading({ children, note }: { children: ReactNode; note?: string }) {
   return (
-    <div className="row" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+    <div className="section-heading-row">
       <h2 className="section-heading">{children}</h2>
       {note && <span className="section-note">{note}</span>}
     </div>

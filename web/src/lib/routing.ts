@@ -11,6 +11,11 @@
  * decided per run. Copy built on them says "the workspace routing policy" and never promises that
  * a run will succeed.
  *
+ * Every fact here is this workspace's own. The provider list is a catalogue shared by every
+ * workspace, but whether a provider is on, and what its key last did, are kept per workspace: a
+ * provider turned off here is still on elsewhere, and another workspace's refused key never shows
+ * here.
+ *
  * Pure, and typed structurally so they accept the query types without importing them.
  */
 
@@ -20,10 +25,14 @@ export type RoutingProvider = {
   id: string
   displayName: string
   kind: string
+  /** On for this workspace: the platform offers it and this workspace has not turned it off. */
   enabled: boolean
+  /** False when this installation does not offer the provider at all, so it cannot be turned on here. */
+  platformEnabled?: boolean | null
   credentialRef?: string | null
+  /** What this workspace's own key last did: 'unknown', 'valid' or 'rejected'. */
   credentialStatus?: string | null
-  /** When the service last marked the credential rejected (or valid). */
+  /** When the service last marked this workspace's credential rejected (or valid). */
   credentialCheckedAt?: string | null
   circuitState?: string | null
 }
@@ -44,7 +53,11 @@ export type RoutingPolicy = {
 
 export type CredentialState = 'not_needed' | 'stored' | 'expired' | 'rejected' | 'not_stored'
 
-export type ReadinessReason = 'ready' | 'disabled' | 'no_key' | 'rejected' | 'expired' | 'paused'
+/**
+ * 'disabled' is off in this workspace, which an owner or admin can change here; 'platform_off' is
+ * not offered on this installation at all, which nobody in the workspace can change.
+ */
+export type ReadinessReason = 'ready' | 'disabled' | 'platform_off' | 'no_key' | 'rejected' | 'expired' | 'paused'
 
 export type ProviderReadiness = { ready: boolean; reason: ReadinessReason }
 
@@ -91,11 +104,12 @@ function usedSinceRejection(provider: RoutingProvider, stored: RoutingCredential
 }
 
 /**
- * The state of a provider's key. `creds` is the loaded credentials list (GET /api/credentials);
- * call this only once it has loaded, because an unloaded list would read as "not stored".
+ * The state of this workspace's key for a provider. `creds` is the loaded credentials list (GET
+ * /api/credentials); call this only once it has loaded, because an unloaded list would read as
+ * "not stored".
  *
- * The provider's own credentialStatus cannot say a key is present (it is seeded 'missing' and
- * only ever set to 'rejected'), so presence comes from the credentials list.
+ * The provider's credentialStatus is this workspace's own ('unknown' until a call has used the
+ * key), and it cannot say a key is present, so presence comes from the credentials list.
  */
 export function credentialState(
   provider: RoutingProvider,
@@ -123,7 +137,7 @@ export function providerReadiness(
   creds: readonly RoutingCredential[],
   now: number = Date.now(),
 ): ProviderReadiness {
-  if (!provider.enabled) return { ready: false, reason: 'disabled' }
+  if (!provider.enabled) return { ready: false, reason: offForPlatform(provider) ? 'platform_off' : 'disabled' }
   if (!isSandbox(provider)) {
     const state = credentialState(provider, creds, now)
     if (state === 'not_stored') return { ready: false, reason: 'no_key' }
@@ -199,6 +213,7 @@ export function liveRouting(
 
 const BLOCKED_PHRASE: Record<string, string> = {
   disabled: 'turned off',
+  platform_off: 'not offered on this installation',
   no_key: 'missing a key',
   rejected: 'refusing its key',
   expired: 'holding an expired key',
@@ -255,5 +270,244 @@ export function routingSummary(result: LiveRouting, options: { canManage: boolea
         linkToRouting,
       }
     }
+  }
+}
+
+/* ---- Turning a provider on or off for this workspace ----------------------------------------- */
+
+/**
+ * True when this installation does not offer the provider at all; nobody in the workspace can
+ * turn it on. Every provider is offered on a standard installation, so this is rare.
+ */
+export function offForPlatform(provider: RoutingProvider): boolean {
+  return provider.platformEnabled === false
+}
+
+/** The on/off button: a short label, and a full one that says the change stays in this workspace. */
+export function toggleCopy(provider: RoutingProvider): { label: string; ariaLabel: string } {
+  const label = provider.enabled ? 'Turn off' : 'Turn on'
+  return { label, ariaLabel: `${label} ${provider.displayName} for this workspace` }
+}
+
+/** The confirmation after a provider was turned on or off here. */
+export function toggledMessage(
+  provider: RoutingProvider,
+  enabled: boolean,
+  context: { keyMissing?: boolean; inPolicy?: boolean } = {},
+): string {
+  const name = provider.displayName
+  if (!enabled) return `${name} is off for this workspace. Runs here no longer try it. Other workspaces are not affected.`
+  if (context.keyMissing) return `${name} is on for this workspace. Runs skip it until a usable key is stored.`
+  if (context.inPolicy === false) return `${name} is on for this workspace. Add it to the routing policy to use it.`
+  return `${name} is on for this workspace.`
+}
+
+export type ToggleRefusal = {
+  /** The service's own sentence, which names the provider (and the agent, if any) and what to do instead. */
+  text: string
+  /**
+   * Where the fix is made: the workspace routing policy, when turning off would leave it with
+   * nothing. Null when the sentence itself is the guidance, as for an agent's own routing.
+   */
+  fixIn: 'routing-policy' | null
+}
+
+/**
+ * A 409 from turning a provider on or off is a refusal to act on, not a failure to report: off
+ * would leave the routing policy (the workspace's, or an agent's own) with nothing to use, or on
+ * is not possible because this installation does not offer the provider. Anything else returns
+ * null, for the usual error handling.
+ */
+export function toggleRefusal(error: unknown, enabling: boolean): ToggleRefusal | null {
+  if (typeof error !== 'object' || error === null) return null
+  const { status, message, fields } = error as { status?: unknown; message?: unknown; fields?: unknown }
+  if (status !== 409 || typeof message !== 'string' || !message.trim()) return null
+  // The service says whose routing would be stranded; only the workspace's is fixed on this page.
+  const routing = typeof fields === 'object' && fields !== null ? (fields as { routing?: unknown }).routing : undefined
+  return { text: message, fixIn: enabling || routing === 'agent' ? null : 'routing-policy' }
+}
+
+/* ---- Connecting a live model in one go ----------------------------------------------------------- */
+
+/*
+ * The "Connect your AI" dialog does what three controls on Model routing used to: store the key,
+ * turn the provider on for this workspace, and put one of its models in the routing policy. These
+ * are the decisions inside that, kept pure so they can be tested without a dialog: which providers
+ * the simple dialog offers, which model to recommend, what to do to the policy, and the one
+ * sentence that says how it ended.
+ */
+
+/** The most candidates a policy may hold (ModelPolicyController.MAX_CANDIDATES). */
+export const MAX_POLICY_CANDIDATES = 10
+
+/**
+ * The providers the dialog offers. The offline sandbox needs no key. Bedrock signs in with AWS
+ * credentials and regions rather than one pasted key, so it stays on the full Model routing page.
+ * One this installation does not offer cannot be turned on, so there is no point connecting it.
+ */
+export function connectableProviders<T extends RoutingProvider>(providers: readonly T[]): T[] {
+  return providers.filter(
+    (provider) =>
+      !isSandbox(provider) &&
+      provider.kind.toUpperCase() !== 'BEDROCK' &&
+      Boolean(provider.credentialRef) &&
+      !offForPlatform(provider),
+  )
+}
+
+export type ConnectModel = RoutingModel & {
+  providerId: string
+  modelId: string
+  displayName?: string
+  supportsTools: boolean
+  enabled: boolean
+  inputCostPerMillion?: number
+  outputCostPerMillion?: number
+  unavailableUntil?: string | null
+}
+
+/**
+ * The model to put in the policy for a provider: one that can use tools (agents cannot work
+ * without them), is not an embedding model, is on, and is not set aside right now. Of those the
+ * cheapest to run, because a workspace connecting its first key is more likely to be spending its
+ * own money than choosing for quality; the person can change it on Model routing. Undefined when
+ * the provider has no such model.
+ */
+export function recommendModel<T extends ConnectModel>(
+  providerId: string,
+  models: readonly T[],
+  now: number = Date.now(),
+): T | undefined {
+  const price = (model: T) => (model.inputCostPerMillion ?? 0) + (model.outputCostPerMillion ?? 0)
+  const eligible = models.filter((model) => {
+    if (model.providerId !== providerId || !model.enabled || !model.supportsTools || isEmbeddingModel(model)) return false
+    const until = time(model.unavailableUntil)
+    return Number.isNaN(until) || until <= now
+  })
+  return [...eligible].sort((a, b) => price(a) - price(b) || a.modelId.localeCompare(b.modelId))[0]
+}
+
+export type PolicyCandidateInput = {
+  providerId: string
+  modelId: string
+  temperature?: number | null
+  maxOutputTokens?: number | null
+}
+
+export type PolicyInput = {
+  candidates: PolicyCandidateInput[]
+  exhaustedBehaviour?: 'FAIL_CLOSED' | 'DEGRADE_TO_SANDBOX'
+}
+
+export type ConnectPolicy = {
+  configured: boolean
+  exhaustedBehaviour?: string | null
+  candidates: ReadonlyArray<{
+    providerId: string
+    modelId: string
+    position?: number
+    temperature?: number | null
+    maxOutputTokens?: number | null
+  }>
+}
+
+/**
+ * What to do to the routing policy for the provider just connected.
+ *
+ * - create: the workspace has no policy, so one is written with this model alone. It stops when
+ *   the model cannot answer rather than falling back to the offline sandbox, so a later outage is
+ *   an error somebody sees, not placeholder text that looks like an answer.
+ * - ask: a policy exists, so the person decides. The model goes in ahead of any sandbox candidate
+ *   (and after the live models already listed), and the policy's own exhausted behaviour is kept.
+ * - already: the provider is in the policy; nothing to add.
+ * - full: the policy is at its limit and cannot take another candidate.
+ */
+export type ConnectPlan =
+  | { kind: 'create'; input: PolicyInput; fallsBackToSandbox: false }
+  | { kind: 'ask'; input: PolicyInput; position: number; fallsBackToSandbox: boolean }
+  | { kind: 'already'; fallsBackToSandbox: boolean }
+  | { kind: 'full'; fallsBackToSandbox: boolean }
+
+const behaviourOf = (value?: string | null): PolicyInput['exhaustedBehaviour'] => {
+  const upper = (value ?? '').toUpperCase()
+  return upper === 'FAIL_CLOSED' || upper === 'DEGRADE_TO_SANDBOX' ? upper : undefined
+}
+
+export function planConnect(args: {
+  policy: ConnectPolicy | undefined
+  providers: readonly RoutingProvider[]
+  providerId: string
+  modelId: string
+}): ConnectPlan {
+  const { policy, providers, providerId, modelId } = args
+  if (!policy || !policy.configured || policy.candidates.length === 0) {
+    return {
+      kind: 'create',
+      input: { candidates: [{ providerId, modelId }], exhaustedBehaviour: 'FAIL_CLOSED' },
+      fallsBackToSandbox: false,
+    }
+  }
+
+  const sandboxIds = new Set(providers.filter(isSandbox).map((provider) => provider.id))
+  const existing = [...policy.candidates]
+    .map((candidate, index) => ({ candidate, order: candidate.position ?? index }))
+    .sort((a, b) => a.order - b.order)
+    .map(({ candidate }) => candidate)
+  const degrades = (policy.exhaustedBehaviour ?? '').toUpperCase() === 'DEGRADE_TO_SANDBOX'
+  const fallsBack = (candidates: ReadonlyArray<{ providerId: string }>) =>
+    degrades || candidates.some((candidate) => sandboxIds.has(candidate.providerId))
+
+  if (existing.some((candidate) => candidate.providerId === providerId)) {
+    return { kind: 'already', fallsBackToSandbox: fallsBack(existing) }
+  }
+  if (existing.length >= MAX_POLICY_CANDIDATES) return { kind: 'full', fallsBackToSandbox: fallsBack(existing) }
+
+  const firstSandbox = existing.findIndex((candidate) => sandboxIds.has(candidate.providerId))
+  const position = firstSandbox === -1 ? existing.length : firstSandbox
+  const candidates: PolicyCandidateInput[] = existing.map((candidate) => ({
+    providerId: candidate.providerId,
+    modelId: candidate.modelId,
+    ...(candidate.temperature != null ? { temperature: candidate.temperature } : {}),
+    ...(candidate.maxOutputTokens != null ? { maxOutputTokens: candidate.maxOutputTokens } : {}),
+  }))
+  candidates.splice(position, 0, { providerId, modelId })
+  const exhaustedBehaviour = behaviourOf(policy.exhaustedBehaviour)
+  return {
+    kind: 'ask',
+    position,
+    input: { candidates, ...(exhaustedBehaviour ? { exhaustedBehaviour } : {}) },
+    fallsBackToSandbox: fallsBack(candidates),
+  }
+}
+
+/** How connecting ended, for the sentence the dialog shows. */
+export type ConnectOutcome = 'created' | 'added' | 'already' | 'unchanged' | 'no_model'
+
+/**
+ * The one sentence after a provider is connected. It always says whether the offline sandbox model
+ * remains a fallback, because that decides whether a later failure shows an error or placeholder
+ * text, and that is the thing a person connecting a key is trying to get away from.
+ */
+export function connectedSentence(args: {
+  providerName: string
+  modelName?: string
+  outcome: ConnectOutcome
+  fallsBackToSandbox: boolean
+}): string {
+  const { providerName, modelName, outcome, fallsBackToSandbox } = args
+  const fallback = fallsBackToSandbox
+    ? 'The offline sandbox model remains a fallback, so a run can still end on placeholder text if no live model answers.'
+    : 'The offline sandbox model is not a fallback, so if no live model answers, runs stop with an error.'
+  switch (outcome) {
+    case 'created':
+      return `${providerName} is connected. Runs now use ${modelName ?? 'its model'}. ${fallback}`
+    case 'added':
+      return `${providerName} is connected and ${modelName ?? 'its model'} is in the routing policy. ${fallback}`
+    case 'already':
+      return `${providerName} is connected, and it was already in the routing policy. ${fallback}`
+    case 'unchanged':
+      return `${providerName} is connected, but the routing policy is unchanged, so runs will not use it until you add it in Model routing.`
+    case 'no_model':
+      return `${providerName} is connected, but none of its models can be added to the routing policy yet. Choose one in Model routing.`
   }
 }

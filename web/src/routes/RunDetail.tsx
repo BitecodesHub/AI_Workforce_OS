@@ -1,20 +1,33 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Button, Card, ConfirmDialog, EmptyState, Eyebrow, Notice, PageHeader, StatusTag, Time } from '../components/ui'
+import { Markdown } from '../components/ui/Markdown'
 import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
+import { RunRatings } from '../components/analytics/RunRatings'
 import { AnswerCard } from '../components/run/AnswerCard'
 import { RunStats } from '../components/run/RunStats'
 import { TraceStep } from '../components/run/TraceStep'
 import { WaitingForAnswer } from '../components/run/WaitingForAnswer'
 import { WaitingForApproval } from '../components/run/WaitingForApproval'
-import { answerStep, isInstruction, CANCELLED_BY, detailText } from '../components/run/traceModel'
+import { completedAnswer, incompleteAnswerText, isInstruction, CANCELLED_BY, detailText } from '../components/run/traceModel'
 import { describeApiError } from '../lib/api'
 import { truncateWords } from '../lib/format'
-import { startedByLabel } from '../lib/labels'
+import { startedByLabel, toolLabel } from '../lib/labels'
 import { isStepDone, markStepDone } from '../lib/onboarding'
-import { isRunActive, useAgentNames, useAgents, useCancelRun, useMemberNames, useRun, useRunSteps, useTaskIndex } from '../lib/queries'
-import type { Goal, Run } from '../lib/queries'
-import { useDocumentTitle } from '../lib/router'
+import {
+  isRunActive,
+  useAgentNames,
+  useAgents,
+  useCancelRun,
+  useMemberNames,
+  useRetryGoal,
+  useRetryRun,
+  useRun,
+  useRunSteps,
+  useTaskIndex,
+} from '../lib/queries'
+import type { Goal, Run, Task } from '../lib/queries'
+import { useDocumentTitle, useRouter } from '../lib/router'
 import { can, profile } from '../lib/session'
 import { useToast } from '../lib/toast'
 import { useNow } from '../lib/useNow'
@@ -29,6 +42,9 @@ import { useNow } from '../lib/useNow'
  * The step-reading rules and the pieces below (AnswerCard, RunStats, TraceStep,
  * WaitingForApproval) live in components/run/, shared with RunTraceCompact wherever a run's
  * progress needs to show more briefly than this full page.
+ *
+ * A run that stopped at its step limit or its output limit still wrote something. It is shown
+ * as an incomplete answer, apart from the answer a finished run gives, so nobody takes it for one.
  */
 
 export function RunDetail({ id }: { id: string }) {
@@ -38,6 +54,7 @@ export function RunDetail({ id }: { id: string }) {
   const agentName = run ? agents[run.agentId]?.name : undefined
   const taskIndex = useTaskIndex({ enabled: can('task:read') && Boolean(run?.taskId) })
   const goal = run?.taskId ? taskIndex[run.taskId]?.goal : undefined
+  const task = run?.taskId ? taskIndex[run.taskId]?.task : undefined
 
   useDocumentTitle(agentName ? `${agentName} run` : null)
 
@@ -65,18 +82,33 @@ export function RunDetail({ id }: { id: string }) {
           </a>
         }
       >
-        {(loaded) => <RunTrace run={loaded} agentName={agentName} goal={goal} />}
+        {(loaded) => <RunTrace run={loaded} agentName={agentName} goal={goal} task={task} />}
       </QueryState>
     </div>
   )
 }
 
-function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | undefined; goal: Goal | undefined }) {
+function RunTrace({
+  run,
+  agentName,
+  goal,
+  task,
+}: {
+  run: Run
+  agentName: string | undefined
+  goal: Goal | undefined
+  task: Task | undefined
+}) {
   const toast = useToast()
   const active = isRunActive(run)
   const stepsQuery = useRunSteps(run.id, { active })
   const steps = stepsQuery.data
   const cancelRun = useCancelRun()
+  const retryRun = useRetryRun()
+  const retryGoal = useRetryGoal()
+  const { navigate } = useRouter()
+  const [retryOpen, setRetryOpen] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
   // A running clock ticks each second; otherwise the minute is enough for "started 5 minutes ago".
@@ -90,6 +122,31 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
 
   const canCancel = can('run:cancel') && active
 
+  // Try again: a goal's run goes back through its goal, which starts from the step that did not
+  // finish; a run given straight to an agent starts afresh with the same instruction.
+  const retryable = run.status === 'failed' || run.status === 'abandoned' || run.status === 'cancelled'
+  const canRetry = retryable && (goal ? can('task:create') : can('agent:run'))
+  const alreadyDone = completedActions(steps)
+
+  const confirmRetry = async () => {
+    setRetryError(null)
+    try {
+      if (goal) {
+        await retryGoal.mutateAsync(goal.id)
+        toast.success('Trying again.')
+        setRetryOpen(false)
+        navigate(`/tasks?goal=${goal.id}`)
+      } else {
+        const started = await retryRun.mutateAsync(run.id)
+        toast.success('Trying again.')
+        setRetryOpen(false)
+        navigate(`/runs/${started.runId}`)
+      }
+    } catch (error) {
+      setRetryError(describeApiError(error))
+    }
+  }
+
   const confirmCancel = async () => {
     setCancelError(null)
     try {
@@ -101,7 +158,10 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
     }
   }
 
-  const answer = run.status === 'completed' && steps ? answerStep(steps) : undefined
+  // The task keeps the whole of what a run wrote, but only for the attempt it last made.
+  const savedResult = task && task.runId === run.id ? task.result : null
+  const answer = run.status === 'completed' && steps ? completedAnswer(steps, savedResult) : undefined
+  const incomplete = run.status === 'failed' ? incompleteAnswerText(steps, savedResult) : null
   const instruction = steps?.find(isInstruction)
   const instructionText = instruction ? detailText(instruction.detail, 'content') : null
 
@@ -124,6 +184,16 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
                 }}
               >
                 Stop run
+              </Button>
+            )}
+            {canRetry && (
+              <Button
+                onClick={() => {
+                  setRetryError(null)
+                  setRetryOpen(true)
+                }}
+              >
+                Try again
               </Button>
             )}
           </>
@@ -152,13 +222,52 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
         error={cancelError}
       />
 
-      <div className="stack" style={{ gap: 'var(--space-6)' }}>
+      <ConfirmDialog
+        open={retryOpen}
+        onClose={() => setRetryOpen(false)}
+        onConfirm={confirmRetry}
+        eyebrow="Try again"
+        title="Try this again?"
+        description={
+          goal
+            ? 'The task starts again from the step that did not finish.'
+            : 'A new run starts with the same instruction. This run stays as it is.'
+        }
+        confirmLabel="Try again"
+        cancelLabel="Not now"
+        tone="primary"
+        loading={retryRun.isPending || retryGoal.isPending}
+        error={retryError}
+      >
+        {alreadyDone.length > 0 ? (
+          <>
+            <p style={{ marginBottom: 'var(--space-2)' }}>
+              The last attempt already did this, and trying again will not undo it:
+            </p>
+            <ul className="stack" style={{ gap: 'var(--space-1)', margin: 0, paddingLeft: 'var(--space-5)' }}>
+              {alreadyDone.map((line, index) => (
+                <li key={index} className="caption" style={{ overflowWrap: 'anywhere' }}>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="muted">The last attempt changed nothing outside the platform.</p>
+        )}
+      </ConfirmDialog>
+
+      <div className="page-sections">
         {failureText && <Notice tone={run.status === 'cancelled' ? 'info' : 'warning'}>{failureText}</Notice>}
 
         {run.status === 'waiting_approval' && <WaitingForApproval run={run} steps={steps} />}
         {run.status === 'waiting_input' && <WaitingForAnswer run={run} />}
 
         {answer && <AnswerCard step={answer} instruction={instructionText} />}
+        {incomplete && <IncompleteAnswer text={incomplete} instruction={instructionText} />}
+
+        {/* What people said of the answer, with the reasons; absent when nobody has rated it. */}
+        <RunRatings runId={run.id} />
 
         <div>
           <RunStats run={run} steps={steps} now={now} />
@@ -177,7 +286,7 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
             loaded.length > 0 ? (
               <Card as="section">
                 <Eyebrow as="h2">What happened</Eyebrow>
-                <ol className="stack" style={{ gap: 'var(--space-5)', listStyle: 'none', margin: 0, padding: 0 }}>
+                <ol className="trace-steps">
                   {/* What the agent was asked comes first, whatever position it was stored at. */}
                   {[...loaded.filter(isInstruction), ...loaded.filter((step) => !isInstruction(step))].map((step) => (
                     <TraceStep key={step.id} step={step} />
@@ -197,6 +306,47 @@ function RunTrace({ run, agentName, goal }: { run: Run; agentName: string | unde
         </QueryState>
       </div>
     </>
+  )
+}
+
+/**
+ * What a run already did that a second attempt will not take back: each tool call that succeeded
+ * and changed something (anything but a read), as a line of words.
+ */
+export function completedActions(steps: ReadonlyArray<{ kind: string; detail: Record<string, unknown> }> | undefined): string[] {
+  if (!steps) return []
+  const lines: string[] = []
+  for (const step of steps) {
+    if (step.kind !== 'tool_call') continue
+    const status = detailText(step.detail, 'status')
+    const effect = detailText(step.detail, 'sideEffect')
+    if (status !== 'SUCCEEDED' || !effect || effect === 'READ') continue
+    const tool = toolLabel(detailText(step.detail, 'tool') ?? '')
+    const summary = detailText(step.detail, 'summary')
+    lines.push(summary ? `${tool}: ${summary}` : tool)
+  }
+  return lines
+}
+
+/**
+ * What a run wrote before it stopped at a limit. Set apart from an answer, with its own heading
+ * and a sentence saying it is unfinished, because a half-written report read as a whole one is
+ * worse than none.
+ */
+export function IncompleteAnswer({ text, instruction }: { text: string; instruction?: string | null }) {
+  return (
+    <Card as="section">
+      <Eyebrow as="h2">Incomplete answer</Eyebrow>
+      {instruction && (
+        <p className="caption" style={{ marginBottom: 'var(--space-3)', overflowWrap: 'anywhere' }}>
+          Asked: {truncateWords(instruction, 200)}
+        </p>
+      )}
+      <p className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+        The agent stopped before it finished, so this may be missing parts. Check it before you rely on it.
+      </p>
+      <Markdown text={text} />
+    </Card>
   )
 }
 

@@ -20,5 +20,14 @@ public sealed interface ApprovalDecision {
     /** @param reason why it will not be permitted, whoever asks */
     record Refuse(String reason) implements ApprovalDecision {}
 
+    /**
+     * The arguments do not fit the tool, so there is nothing yet for a person to approve. Not a
+     * refusal: the model is told what is wrong and can correct it, and the call never reaches the
+     * provider or the approval queue.
+     *
+     * @param problem what is wrong with the arguments, naming the field
+     */
+    record Invalid(String problem) implements ApprovalDecision {}
+
     ApprovalDecision PROCEED = new Proceed();
 }

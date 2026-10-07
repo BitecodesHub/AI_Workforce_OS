@@ -49,6 +49,9 @@ export function useHotkeys(bindings: Hotkey[], enabled = true): void {
       for (const hotkey of bindings) {
         if (!matches(hotkey, e)) continue
         if (isTypingTarget(e.target) && !hotkey.allowInInput) continue
+        // Esc inside an open dialog belongs to the dialog: preventing its default here would stop
+        // the browser from closing a modal <dialog> (the delete confirmation, say).
+        if (e.key === 'Escape' && e.target instanceof Element && e.target.closest('dialog[open]')) return
         e.preventDefault()
         hotkey.handler(e)
         return

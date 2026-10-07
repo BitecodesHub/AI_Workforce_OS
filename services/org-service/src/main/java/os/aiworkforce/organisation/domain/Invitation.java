@@ -47,6 +47,20 @@ public class Invitation extends OrgScopedEntity {
         return "pending".equals(status);
     }
 
+    /** Withdrawn by an administrator, or replaced by a newer invitation to the same address. */
+    public boolean isRevoked() {
+        return "revoked".equals(status);
+    }
+
+    public boolean isAccepted() {
+        return "accepted".equals(status);
+    }
+
+    /** Stops the link working. The row is kept, so the list still shows it was sent and withdrawn. */
+    public void revoke() {
+        this.status = "revoked";
+    }
+
     public boolean hasExpired() {
         return expiresAt != null && expiresAt.isBefore(Instant.now());
     }

@@ -106,6 +106,17 @@ public class LlmModelEntity {
     @Column(name = "unavailable_reason")
     private String unavailableReason;
 
+    /** {@code seed} for a row the migrations wrote, {@code discovered} for one a provider's model list wrote. */
+    @Column(nullable = false)
+    private String source = "seed";
+
+    /** The provider charges nothing for this model. */
+    @Column(nullable = false)
+    private boolean free;
+
+    @Column(name = "discovered_at")
+    private Instant discoveredAt;
+
     public void markUnavailable(Duration duration, String reason) {
         this.unavailableUntil = Instant.now().plus(duration);
         this.unavailableReason = reason;
@@ -173,5 +184,21 @@ public class LlmModelEntity {
 
     public String getUnavailableReason() {
         return unavailableReason;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public boolean isDiscovered() {
+        return "discovered".equals(source);
+    }
+
+    public boolean isFree() {
+        return free;
+    }
+
+    public Instant getDiscoveredAt() {
+        return discoveredAt;
     }
 }

@@ -1,0 +1,35 @@
+{
+ "id": "WP23",
+ "title": "Human-in-the-loop follow-through: request changes, retry from a run, decisions on the trace, one vocabulary",
+ "priority": 10,
+ "wave": 4,
+ "effort": "L",
+ "findings": [
+  "Rejecting an action discards the whole run, the approver's note never reaches the agent, and an action cannot be edited before approval",
+  "A failed run's trace offers no next step: no retry, and skipped schedule occurrences leave no trace",
+  "Approval decisions are write-only: who approved and why is never shown in the trace, the API or the audit detail",
+  "One request is described with three nouns (task, goal, run) across four overlapping 'what is happening' screens",
+  "Overlapping work screens and three names for one action make the product harder to learn than it needs to be"
+ ],
+ "ownedFiles": [
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/service/AgentRunner.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/service/ApprovalService.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/ApprovalController.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/RunRetryController.java (new)",
+  "services/orchestrator-service/src/test/java/os/aiworkforce/orchestrator/service/AgentRunnerTest.java",
+  "web/src/routes/Approvals.tsx",
+  "web/src/components/run/InlineApproval.tsx",
+  "web/src/routes/RunDetail.tsx",
+  "web/src/components/run/traceModel.ts",
+  "web/src/components/run/TraceStep.tsx",
+  "web/src/routes/Orchestrator.tsx",
+  "web/src/components/orchestrator/Board.tsx",
+  "web/src/components/orchestrator/GoalSheet.tsx",
+  "web/src/routes/Tasks.tsx",
+  "web/src/components/ui/TaskDialog.tsx",
+  "web/src/lib/labels.ts",
+  "web/src/lib/approvals.ts",
+  "web/src/lib/approvalQueries.ts"
+ ],
+ "spec": "Rules: the standard rules apply. 'Edit and approve' is out of scope: it needs mcp-core schema and policy re-evaluation, and that area is excluded. No migration is needed.\n\n1) Request changes (send back with feedback)\n- DecisionRequest gains mode: approve, reject or request_changes. When mode is missing, derive it from `approved`.\n- request_changes requires a note. In one transaction:\n  - set the approval status to 'rejected', with detail sentBack=true;\n  - claim the run from waiting_approval (claimParked);\n  - write a tool_call step for that toolCallId with status REJECTED and modelContent {status: 'rejected', note, instruction: 'Do not repeat this action unchanged. Revise it using the feedback, or explain why you cannot.'};\n  - then submitResume.\n- rebuildConversation uses the REJECTED step as the tool result. latestApprovalReadyToExecute and answeredAfter accept it.\n- After a request-changes in a run, every OUTBOUND or DESTRUCTIVE call in that run requires approval, whatever the grant says.\n- Limits: when the same tool is sent back a second time in one run, end the run with 'Stopped after two rounds of requested changes.' Allow at most 2 rounds per run.\n- Reject still stops the run. Expiry still cancels it.\n- UI (Approvals.tsx and InlineApproval): three actions, each with copy that states its consequence:\n  - Approve;\n  - 'Send back with feedback' (note required);\n  - 'Reject and stop'.\n\n2) Retry from a run\nRunDetail shows 'Try again' for failed, abandoned or cancelled runs.\n- Goal-backed run: call the goal retry. The confirmation lists the previous attempt's completed actions from the WP11 step metadata.\n- Direct run: call the new POST /api/runs/{id}/retry. Allowed for the requester, or holders of the permission used to start runs plus run:cancel. It creates a new direct run with the original instruction through AgentRunner.prepare and drive, and then navigates to the new run.\n\n3) Decisions on the trace\n- TraceStep approval steps fetch WP14's GET /api/approvals/{id} using the approvalId in the step detail.\n- Show one of: 'Approved by <name> at 10:42', 'Sent back by <name>: <note>', 'Rejected by <name>: <note>', or 'Expired without a decision'.\n- Resolve names through the member directory.\n\n4) One vocabulary\n- Rename the 'New goal' buttons in Orchestrator.tsx and Board.tsx to 'Give an agent a task'.\n- TaskDialog copy talks about the task.\n- labels.ts: change 'Goal task:' to 'Task:'.\n- GoalSheet and Tasks show the goal layer only for goals with more than one task.\n- On the agent page, TaskDialog creates a one-task goal (useCreateGoal with agentId), so the work appears on the board and can be retried and stopped. The direct-run API remains for integrations.\n\nTests\n- Request changes resumes the run with the note in the tool result.\n- The two-round cap ends the run.\n- A forced approval follows feedback.\n- Direct-run retry creates a new run.\n- Trace decision rendering.\n\nAcceptance (live)\n- On a sandbox email approval, 'Send back with feedback: use a softer tone' produces a new approval with a revised body.\n- 'Try again' on a failed run starts a new attempt."
+}

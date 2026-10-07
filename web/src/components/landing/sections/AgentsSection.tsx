@@ -10,8 +10,10 @@ import type { AgentFact, ToolServer } from '../shared/landingFacts'
 import { AGENT_GRANTS, defaultGrant } from './agentGrants'
 
 /*
- * The AI team: the four ready-made assistants, each with the tools it works in and what it may do
- * in each without a person.
+ * The AI team: the four example assistants the demo workspace comes with, each with the tools it
+ * works in and what it may do in each without a person. They are examples, not something every
+ * new workspace receives, and in the demo their tools work with practice data, so the copy says
+ * both.
  *
  * The chips are toggle buttons in a roving group: one tab stop per tile, Left and Right (and Home
  * and End) move between servers and select as they go. The sentence below them is a polite live
@@ -23,9 +25,9 @@ export function AgentsSection(): ReactElement {
     <LandingSection id="team" labelledBy="team-title">
       <SectionHead
         eyebrow="Your AI team"
-        title="Ready-made assistants for the work your team repeats"
+        title="Example assistants for the work your team repeats"
         titleId="team-title"
-        lead="Each one has a job, the tools it needs and a clear line it will not cross without asking. Pick a tool to see what it may do there."
+        lead="Four examples from the demo workspace, each with a job, the tools it needs and a clear line it will not cross without asking. In the demo their tools work with practice data. Pick a tool to see what it may do there."
       />
       <div className="lp-agents-grid">
         {AGENTS.map((agent, index) => (

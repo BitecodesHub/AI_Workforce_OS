@@ -1,0 +1,37 @@
+{
+ "id": "WP24",
+ "title": "Operations: structured logging, tracing, run context, metrics, data retention and capacity",
+ "priority": 11,
+ "wave": 4,
+ "effort": "L",
+ "findings": [
+  "Logging, tracing and metrics settings are dead configuration: logs are plain text, the reference shown to users is never logged, spans go nowhere, and there are no metrics",
+  "Hot orchestrator queries lack indexes, the resume sweep rescans every approval ever approved each minute, and no history is ever purged",
+  "No way to delete uploaded documents or agent memory, retention jobs never run, and the secret redactor is dead code",
+  "Connection pools and run concurrency are unbounded relative to the database: HPA scale-out can need 750 connections against a 200-300 limit, with no per-workspace run cap",
+  "Every restart, rolling deploy or HPA scale-down kills in-flight runs; nothing drains them and the code's 'resume after restart' promise is false"
+ ],
+ "ownedFiles": [
+  "platform-core/src/main/resources/platform-defaults.yml",
+  "platform-core/src/main/java/os/aiworkforce/platform/config/PlatformProperties.java",
+  "platform-core/pom.xml",
+  "platform-web/src/main/java/os/aiworkforce/platform/web/filter/ActorContextFilter.java",
+  "platform-web/src/main/java/os/aiworkforce/platform/web/error/GlobalExceptionHandler.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/service/RunExecutor.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/service/GoalService.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/service/MaintenanceScheduler.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/service/TaskProgress.java",
+  "llm-core/src/main/java/os/aiworkforce/llm/router/ModelRouter.java",
+  "services/gateway/src/main/java/os/aiworkforce/gateway/GatewayApplication.java",
+  "services/identity-service/src/main/java/os/aiworkforce/identity/IdentityApplication.java",
+  "services/identity-service/src/main/java/os/aiworkforce/identity/service/SessionSweep.java (new)",
+  "services/memory-service/src/main/java/os/aiworkforce/memory/MemoryApplication.java",
+  "infra/grafana/",
+  "infra/prometheus/ (new if absent)",
+  "infra/compose/docker-compose.yml",
+  "infra/k8s/base/",
+  "web/src/routes/Trust.tsx",
+  "web/src/routes/Settings.tsx"
+ ],
+ "spec": "Standard rules apply. There is no migration. Do not edit AgentRunner, which WP23 owns this wave. Set MDC around the AgentRunner calls instead.\n\n1) Logging\n- In platform-defaults.yml, set logging.structured.format.console to ${AIWOS_LOG_FORMAT_CONSOLE:}. Use the value ecs in k8s and compose; leave it empty locally, which keeps plain text.\n- Set logging.pattern.correlation to show requestId, runId and orgId in text mode.\n- In PlatformProperties, delete the dead Observability fields: logFormat, tracingEnabled, otlpEndpoint, metricsEnabled and logLevel.\n- Bind traceSampleRatio to management.tracing.sampling.probability. Fix the validator so a production ratio of 0.1 starts, and add a test for it.\n- Remove the unused logstash-logback-encoder dependency.\n- In GlobalExceptionHandler, add requestId to the 5xx log line.\n\n2) Tracing\n- Set management.tracing.enabled to ${AIWOS_TRACING_ENABLED:true}.\n- Set MANAGEMENT_OTLP_TRACING_ENDPOINT only in k8s and compose. Either add an otel-collector service to infra/compose or remove the env line there.\n- ActorContextFilter sets RequestContext.traceId from the current span.\n- The gateway calls Hooks.enableAutomaticContextPropagation().\n\n3) Run context\n- RunExecutor wraps its executor with ContextExecutorService (io.micrometer.context) so that MDC and trace context propagate.\n- Put runId, goalId, orgId and agentId into MDC around runner calls in RunExecutor, GoalService.runNextTask and the MaintenanceScheduler sweeps. Clear them in finally.\n\n4) Metrics (low-cardinality tags only)\n- aiwos.runs.finished: counter with tag status, in TaskProgress.\n- aiwos.run.duration: timer.\n- aiwos.runs.abandoned: counter.\n- aiwos.approvals.pending: gauge, refreshed every 60 s.\n- aiwos.llm.call: latency and cost, tagged by provider and outcome, in ModelRouter.\n- aiwos.sweep.duration: timer.\n\n5) Dashboards and alerts\n- Add a Grafana dashboard JSON and a dashboard provider under infra/grafana/provisioning.\n- Add Prometheus rule_files with three alerts:\n  - abandoned runs above 0 in 15 minutes;\n  - provider failure rate above 20%;\n  - a readiness probe down.\n\n6) Per-provider concurrency\n- In ModelRouter, add a Resilience4j Bulkhead sized from ProviderDescriptor.maxConcurrentRequests and a requestsPerMinute limiter, built with ResiliencePresets.\n\n7) Retention\n- Add a runtime setting retention.runDetailDays per workspace, default 180.\n- Add a nightly MaintenanceScheduler job guarded by pg_try_advisory_lock. In batches of 1,000, for runs that finished before the cutoff, null the heavy run_steps.detail fields (modelContent and arguments). Keep the step rows, summaries and cost.\n- Keep llm_usage for 400 days.\n- Purge chat messages that belong to deleted conversations.\n- In identity, add a SessionSweep (@EnableScheduling) that calls Sessions.deleteExpiredBefore.\n- In memory-service, schedule EpisodicMemory.purgeExpired.\n- Add a retention field to Settings.tsx.\n- Add a statement to Trust.tsx: 'Agent traces are kept for 180 days by default; administrators can change this.'\n\n8) Capacity documentation\n- Set DB_POOL_SIZE per Deployment in the infra/k8s base so that the sum of maxReplicas times pool size, plus a reserve, stays at or below max_connections.\n- Document this rule in comments next to the values.\n\nTests\n- Validator with ratio 0.1.\n- MDC is present in run log lines (test appender).\n- The retention job clears only old detail fields.\n- The meters are registered.\n\nAcceptance\n- With AIWOS_LOG_FORMAT_CONSOLE=ecs, the logs are JSON and include requestId.\n- The request id shown on a 5xx error can be found in the logs.\n- The Grafana dashboard loads under compose."
+}

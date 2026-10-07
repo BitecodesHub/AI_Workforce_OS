@@ -1,54 +1,31 @@
 /*
- * The one typeface: Aperçu, by Colophon Foundry.
+ * The one typeface: Inter, by Rasmus Andersson (SIL Open Font License 1.1).
  *
- * Aperçu is a commercial font, so it is not fetched from a font CDN. The licensed web files are
- * served by this app from web/public/fonts/, under exactly these names:
+ * It replaced Aperçu on 3 October 2026. Aperçu's licensed web files were never added, so the
+ * site had been drawing a heavy system fallback; the brief asked for something modern and less
+ * thick. Inter is drawn for screens, stays crisp at 12 to 14px, and its variable weight axis means
+ * body copy at 400, labels at 500 and headings at 600 are each rendered exactly rather than
+ * rounded to the nearest of three cuts.
  *
- *   apercu-regular.woff2   apercu-medium.woff2   apercu-bold.woff2
+ * It is self-hosted from the @fontsource-variable/inter package, imported once in main.tsx, so
+ * there is no font CDN and nothing is fetched from a third party. The "opsz" build is used: it
+ * carries Inter's optical-size axis as well as weight, so a 36px page title draws with the tighter
+ * Display letterforms and 12.5px captions with the open Text ones, automatically.
  *
- * A machine that has Aperçu installed uses its own copy first (the local() names), which is also
- * how it can be previewed before the web files are added.
- *
- * The design system's weights map onto the three cuts through the weight ranges below: body text
- * (400) is Regular; labels, emphasis and headings (500 to 600) are Medium; the wordmark (650) is
- * Bold. Nothing is synthesised: a weight with no cut of its own takes the nearest real one.
+ * The weights the product uses live in tokens.css (--weight-*), and the stylistic sets switched on
+ * for every element live there too (--font-features).
  */
 
+/*
+ * The fallback while Inter loads: the system's Arial, scaled and with its vertical metrics
+ * overridden to match Inter's, so text keeps its place when the real face swaps in rather than
+ * reflowing every line on the page.
+ */
 @font-face {
-  font-family: 'Aperçu';
-  src:
-    local('Aperçu Regular'),
-    local('Aperçu Pro Regular'),
-    local('Apercu-Regular'),
-    local('ApercuPro-Regular'),
-    url('/fonts/apercu-regular.woff2') format('woff2');
-  font-weight: 100 449;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Aperçu';
-  src:
-    local('Aperçu Medium'),
-    local('Aperçu Pro Medium'),
-    local('Apercu-Medium'),
-    local('ApercuPro-Medium'),
-    url('/fonts/apercu-medium.woff2') format('woff2');
-  font-weight: 450 649;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Aperçu';
-  src:
-    local('Aperçu Bold'),
-    local('Aperçu Pro Bold'),
-    local('Apercu-Bold'),
-    local('ApercuPro-Bold'),
-    url('/fonts/apercu-bold.woff2') format('woff2');
-  font-weight: 650 1000;
-  font-style: normal;
-  font-display: swap;
+  font-family: 'Inter Fallback';
+  src: local('Arial'), local('Helvetica Neue'), local('Helvetica');
+  size-adjust: 107.1%;
+  ascent-override: 90.4%;
+  descent-override: 22.5%;
+  line-gap-override: 0%;
 }

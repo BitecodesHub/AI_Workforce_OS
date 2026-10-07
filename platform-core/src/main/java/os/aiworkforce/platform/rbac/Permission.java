@@ -25,13 +25,21 @@ import java.util.stream.Stream;
  * <p>Each entry also declares whether it is <em>administrative</em> - meaning it can change who
  * can do what - so the console can group them and warn before granting them.
  *
+ * <p>An entry can also be <em>planned</em>: a code reserved for a feature no endpoint checks yet.
+ * A planned code stays known, so a stored role that already carries it is still valid and the
+ * seeder still writes it, but it is left out of everything that offers or describes permissions
+ * to a person. A checkbox that grants nothing would otherwise read as a capability the product
+ * does not have.
+ *
  * @param code the wire form, {@code resource:action}
  * @param resource the thing being acted on
  * @param action the verb
  * @param description one sentence shown beside the checkbox in the console
  * @param administrative whether holding this permission lets an account widen its own authority
+ * @param planned whether no endpoint checks this code yet, so the console should not offer it
  */
-public record Permission(String code, String resource, String action, String description, boolean administrative) {
+public record Permission(
+        String code, String resource, String action, String description, boolean administrative, boolean planned) {
 
     public Permission {
         Objects.requireNonNull(code, "code");
@@ -41,18 +49,35 @@ public record Permission(String code, String resource, String action, String des
     }
 
     private static Permission of(String resource, String action, String description) {
-        return new Permission(resource + ":" + action, resource, action, description, false);
+        return new Permission(resource + ":" + action, resource, action, description, false, false);
     }
 
     private static Permission admin(String resource, String action, String description) {
-        return new Permission(resource + ":" + action, resource, action, description, true);
+        return new Permission(resource + ":" + action, resource, action, description, true, false);
+    }
+
+    /**
+     * Marks a code as reserved for a feature that does not exist yet.
+     *
+     * <p>Only after a search of every service finds no check for it. Flipping it back is the one
+     * line change that goes with the endpoint that starts enforcing it.
+     */
+    private static Permission asPlanned(Permission permission) {
+        return new Permission(
+                permission.code(),
+                permission.resource(),
+                permission.action(),
+                permission.description(),
+                permission.administrative(),
+                true);
     }
 
     // ---- Workspace -----------------------------------------------------------------------
     public static final Permission WORKSPACE_READ = of("workspace", "read", "View workspace details and settings.");
     public static final Permission WORKSPACE_UPDATE =
             admin("workspace", "update", "Change workspace name, working hours and general settings.");
-    public static final Permission WORKSPACE_DELETE = admin("workspace", "delete", "Permanently close the workspace.");
+    public static final Permission WORKSPACE_DELETE =
+            asPlanned(admin("workspace", "delete", "Permanently close the workspace."));
 
     // ---- Members and roles ---------------------------------------------------------------
     public static final Permission MEMBER_READ = of("member", "read", "See who belongs to the workspace.");
@@ -64,8 +89,10 @@ public record Permission(String code, String resource, String action, String des
     public static final Permission ROLE_CREATE = admin("role", "create", "Create a new role.");
     public static final Permission ROLE_UPDATE = admin("role", "update", "Change the permissions a role carries.");
     public static final Permission ROLE_DELETE = admin("role", "delete", "Delete a role that nobody holds.");
-    public static final Permission API_KEY_READ = of("api_key", "read", "List machine keys and their scopes.");
-    public static final Permission API_KEY_MANAGE = admin("api_key", "manage", "Create and revoke machine keys.");
+    public static final Permission API_KEY_READ =
+            asPlanned(of("api_key", "read", "List machine keys and their scopes."));
+    public static final Permission API_KEY_MANAGE =
+            asPlanned(admin("api_key", "manage", "Create and revoke machine keys."));
 
     // ---- Agents --------------------------------------------------------------------------
     public static final Permission AGENT_READ = of("agent", "read", "View agents and how they are configured.");
@@ -87,8 +114,11 @@ public record Permission(String code, String resource, String action, String des
     public static final Permission TASK_CANCEL = of("task", "cancel", "Cancel a task that is running or queued.");
     public static final Permission RUN_READ = of("run", "read", "View run traces, tool calls and evidence.");
     public static final Permission RUN_CANCEL = of("run", "cancel", "Stop a run in progress.");
-    public static final Permission RUN_REPLAY = admin("run", "replay", "Replay a failed run or a dead-lettered event.");
+    public static final Permission RUN_REPLAY =
+            asPlanned(admin("run", "replay", "Replay a failed run or a dead-lettered event."));
     public static final Permission CHAT_USE = of("chat", "use", "Ask questions in the chat workspace.");
+    public static final Permission CHAT_READ_ALL =
+            admin("chat", "read_all", "Read private conversations that belong to other people. Every such read is logged.");
 
     // ---- Approvals -----------------------------------------------------------------------
     public static final Permission APPROVAL_READ = of("approval", "read", "See the approvals queue.");
@@ -120,11 +150,11 @@ public record Permission(String code, String resource, String action, String des
     // ---- Governance ----------------------------------------------------------------------
     public static final Permission AUDIT_READ = of("audit", "read", "Read the audit log.");
     public static final Permission ANALYTICS_READ = of("analytics", "read", "View dashboards and reports.");
-    public static final Permission SETTINGS_READ = of("settings", "read", "View runtime settings.");
+    public static final Permission SETTINGS_READ = asPlanned(of("settings", "read", "View runtime settings."));
     public static final Permission SETTINGS_UPDATE =
-            admin("settings", "update", "Change runtime settings for the workspace.");
+            asPlanned(admin("settings", "update", "Change runtime settings for the workspace."));
     public static final Permission MEMORY_READ = of("memory", "read", "Inspect what agents have remembered.");
-    public static final Permission MEMORY_PURGE = admin("memory", "purge", "Erase stored agent memory.");
+    public static final Permission MEMORY_PURGE = asPlanned(admin("memory", "purge", "Erase stored agent memory."));
 
     /** Every permission the build understands, in console display order. */
     public static final List<Permission> ALL = List.of(
@@ -156,6 +186,7 @@ public record Permission(String code, String resource, String action, String des
             RUN_CANCEL,
             RUN_REPLAY,
             CHAT_USE,
+            CHAT_READ_ALL,
             APPROVAL_READ,
             APPROVAL_DECIDE,
             KNOWLEDGE_READ,
@@ -218,6 +249,7 @@ public record Permission(String code, String resource, String action, String des
         public static final String RUN_CANCEL = "run:cancel";
         public static final String RUN_REPLAY = "run:replay";
         public static final String CHAT_USE = "chat:use";
+        public static final String CHAT_READ_ALL = "chat:read_all";
         public static final String APPROVAL_READ = "approval:read";
         public static final String APPROVAL_DECIDE = "approval:decide";
         public static final String KNOWLEDGE_READ = "knowledge:read";
@@ -239,7 +271,28 @@ public record Permission(String code, String resource, String action, String des
     }
 
     /**
-     * Whether a code is one this build implements.
+     * Every permission a person can be offered, in console display order: {@link #ALL} without the
+     * planned codes. This is the catalogue the role builder and the profile page show.
+     */
+    public static List<Permission> available() {
+        return ALL.stream().filter(permission -> !permission.planned()).toList();
+    }
+
+    /**
+     * Whether a code is reserved for a feature no endpoint checks yet.
+     *
+     * <p>False for an unknown code: the question only has an answer for a code the build knows.
+     */
+    public static boolean isPlanned(String code) {
+        Permission permission = code == null ? null : BY_CODE.get(code);
+        return permission != null && permission.planned();
+    }
+
+    /**
+     * Whether a code is one this build knows, planned codes included.
+     *
+     * <p>Planned codes are accepted on purpose: seeded and custom roles already store them, and
+     * refusing them here would make those roles impossible to save again.
      *
      * <p>Null-safe by design: the argument arrives from a request body and from annotation
      * metadata, and an immutable map throws on a null key. A permission check that crashes is a

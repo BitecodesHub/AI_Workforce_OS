@@ -18,7 +18,9 @@ export function JumpToLatest({
     newestIsQuestion && agentName
       ? `New question from ${agentName}`
       : newCount > 0
-        ? `${newCount} new ${newCount === 1 ? 'reply' : 'replies'}`
+        ? newCount === 1
+          ? 'New messages'
+          : `New messages (${newCount})`
         : 'Jump to latest'
   return (
     <button type="button" className="chat-jump" onClick={onJump}>

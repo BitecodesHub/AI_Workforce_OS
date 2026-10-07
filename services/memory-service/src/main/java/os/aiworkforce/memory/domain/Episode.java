@@ -3,6 +3,7 @@ package os.aiworkforce.memory.domain;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -29,6 +30,15 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 @Entity
 @Table(name = "episodes")
 public class Episode {
+
+    /**
+     * The kinds the {@code episodes_kind_valid} constraint accepts.
+     *
+     * <p>Checked before saving so an unknown kind is reported to the caller as a bad value rather
+     * than reaching the database and coming back as a server fault.
+     */
+    public static final Set<String> KINDS =
+            Set.of("observation", "decision", "handoff", "outcome", "preference", "summary");
 
     @Id
     @Column(nullable = false, updatable = false)

@@ -11,19 +11,21 @@ import { QuestionMessage } from './QuestionMessage'
 import { RoutingCard } from './RoutingCard'
 import { ScheduleCard } from './ScheduleCard'
 import { UserBubble } from './UserBubble'
-import { choiceMadeFor, goalHasAnswer, messageAuthor, routingMessageForGoal } from './chatModel'
+import { choiceMadeFor, goalHasAnswer, messageAuthor, resendText, routingMessageForGoal } from './chatModel'
 
 /*
  * One thread item, dispatched by kind (B1.2, moved out of Chat.tsx). Wrapped in React.memo: a
  * conversation with a long history re-renders every item on each poll otherwise, for messages
- * whose own props never changed.
+ * whose own props never changed. It is handed its own goal rather than every goal in the thread,
+ * so a goal's step count moving redraws that goal's cards and not the whole conversation.
  */
 
 export type MessageItemProps = {
   message: ChatMessage
   grouped: boolean
   latest: boolean
-  goals: BoardGoal[]
+  /** The goal this message belongs to, when the thread knows it. */
+  goal?: BoardGoal | undefined
   questions: RunQuestion[]
   messages: ChatMessage[]
   agentNames: Record<string, Agent>
@@ -49,7 +51,7 @@ function MessageItemInner({
   message,
   grouped,
   latest,
-  goals,
+  goal,
   questions,
   messages,
   agentNames,
@@ -70,8 +72,6 @@ function MessageItemInner({
   onRetry,
   onAnswerFromDocuments,
 }: MessageItemProps) {
-  const goal = message.goalId ? goals.find((candidate) => candidate.id === message.goalId) : undefined
-
   switch (message.kind) {
     case 'text': {
       const author = messageAuthor(message, me, memberNames)
@@ -114,6 +114,7 @@ function MessageItemInner({
       return (
         <AnswerBubble
           message={message}
+          messages={messages}
           agent={message.agentId ? agentNames[message.agentId] : undefined}
           speaker={speaker}
           grouped={grouped}
@@ -137,6 +138,7 @@ function MessageItemInner({
           live={freshIds.has(message.id)}
           {...(goal ? { goal } : {})}
           {...(routingMessageId ? { routingMessageId } : {})}
+          requestText={resendText(message, messages)}
           agentsForReroute={agentsForReroute}
           onRetry={onRetry}
           onResend={onEditAndResend}

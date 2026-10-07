@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { Button, Card, Eyebrow } from '../ui'
-import type { ChatMessage } from '../../lib/queries'
+import type { ChatMessage, ChatMessageDetail } from '../../lib/queries'
 import { can } from '../../lib/session'
+import { PassageList } from './PassageList'
 
 /** A document question's answer: the passages that matched it, quoted, each with its source. */
 export function DocumentsCard({
@@ -18,9 +18,9 @@ export function DocumentsCard({
 }) {
   const passages = message.detail.passages ?? []
   const grounded = message.detail.grounded === true
-  const [showAll, setShowAll] = useState(false)
-  const shown = showAll ? passages : passages.slice(0, 2)
-  const rest = passages.length - shown.length
+  // Set by the coordinator when only the keyword half of the search could run.
+  const detail: ChatMessageDetail & { degraded?: boolean } = message.detail
+  const degraded = detail.degraded === true
 
   return (
     <Card as="article" className="chat-documents-card">
@@ -37,31 +37,11 @@ export function DocumentsCard({
         </>
       ) : (
         <>
-          <ol className="chat-passages">
-            {shown.map((passage, index) => (
-              <li key={passage.chunkId} className="chat-passage">
-                <div className="row" style={{ gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-                  <span className="section-heading" style={{ fontSize: 'var(--text-caption)' }}>
-                    [{index + 1}] {passage.documentTitle}
-                  </span>
-                  {passage.pageNumber != null && <span className="caption">About page {passage.pageNumber}</span>}
-                  {passage.heading && <span className="caption">{passage.heading}</span>}
-                  {passage.uri?.startsWith('http') && (
-                    <a className="link caption" href={passage.uri} target="_blank" rel="noopener noreferrer">
-                      Open source
-                    </a>
-                  )}
-                </div>
-                <blockquote style={{ margin: 0 }}>
-                  <p>{passage.content}</p>
-                </blockquote>
-              </li>
-            ))}
-          </ol>
-          {rest > 0 && (
-            <button type="button" className="link" onClick={() => setShowAll(true)}>
-              Show {rest} more
-            </button>
+          <PassageList passages={passages} idPrefix={`documents-${message.id}`} limit={2} />
+          {degraded && (
+            <p className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+              Keyword search only right now, so some passages may be missing.
+            </p>
           )}
           <div className="row" style={{ marginTop: 'var(--space-4)' }}>
             {answerStartedMessageId ? (

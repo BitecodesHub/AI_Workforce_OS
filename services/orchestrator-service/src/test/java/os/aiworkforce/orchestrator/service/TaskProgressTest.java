@@ -14,6 +14,7 @@ import static os.aiworkforce.orchestrator.service.WorkFixture.attempt;
 import static os.aiworkforce.orchestrator.service.WorkFixture.runFor;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -26,9 +27,13 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import os.aiworkforce.orchestrator.domain.Approval;
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.Run;
+import os.aiworkforce.orchestrator.domain.RunStep;
 import os.aiworkforce.orchestrator.domain.Task;
+import os.aiworkforce.orchestrator.repository.Approvals;
+import os.aiworkforce.orchestrator.repository.RunSteps;
 
 /**
  * What a run's outcome means for its task and goal.
@@ -467,6 +472,351 @@ class TaskProgressTest {
                     .getTransaction(argThat(definition ->
                             definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW));
             verify(transactions).rollback(listenerStatus);
+        }
+    }
+
+    @Nested
+    @DisplayName("announcing a settled task")
+    class Settled {
+
+        private final List<Object> published = new java.util.ArrayList<>();
+
+        @BeforeEach
+        void listen() {
+            progress.setEventPublisher(published::add);
+        }
+
+        @Test
+        @DisplayName("a completed task announces its workspace once the change commits, and not before")
+        void completedAnnouncesAfterCommit() {
+            Task task = work.task(work.goal("running"), 0, "running");
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                progress.onRunFinished(runFor(task, "completed"), "completed", "Done.", null);
+                assertThat(published).isEmpty();
+
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(TransactionSynchronization::afterCommit);
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+
+            assertThat(published).containsExactly(new TaskSettledEvent(WorkFixture.ORG));
+        }
+
+        @Test
+        @DisplayName("a task put back for another attempt is announced, so the retry starts at once")
+        void retryIsAnnounced() {
+            Task task = attempt(work.task(work.goal("running"), 0, "running"), 1, 2);
+
+            progress.onRunFinished(runFor(task, "failed"), "failed", null, "The provider timed out.");
+
+            assertThat(task.getStatus()).isEqualTo("pending");
+            assertThat(published).containsExactly(new TaskSettledEvent(WorkFixture.ORG));
+        }
+
+        @Test
+        @DisplayName("a task whose run could not start is announced too")
+        void startFailureIsAnnounced() {
+            Task task = attempt(work.task(work.goal("running"), 0, "running"), 1, 2);
+
+            progress.onStartFailed(task, "That agent is paused.");
+
+            assertThat(published).containsExactly(new TaskSettledEvent(WorkFixture.ORG));
+        }
+
+        @Test
+        @DisplayName("a parked run, or a late report about a task that already moved on, announces nothing")
+        void nothingSettledNothingAnnounced() {
+            Task waiting = work.task(work.goal("running"), 0, "running");
+            Run parked = runFor(waiting, "waiting_approval");
+            progress.onRunParked(parked);
+
+            Task done = work.task(work.goal("running"), 0, "completed");
+            progress.onRunFinished(runFor(done, "failed"), "failed", null, "Too late.");
+
+            assertThat(published).isEmpty();
+        }
+    }
+
+    /**
+     * A retry starts the instruction again with an empty trace, so it would send again whatever the
+     * failed run had already sent. The retry rule reads the run's own trace to see.
+     */
+    @Nested
+    @DisplayName("when a failed run is a candidate for another attempt")
+    class SafeToRepeat {
+
+        private RunSteps steps;
+        private Approvals approvals;
+        private Goal goal;
+        private Task task;
+        private Run run;
+
+        @BeforeEach
+        void arrange() {
+            steps = mock(RunSteps.class);
+            approvals = mock(Approvals.class);
+            progress = new TaskProgress(work.tasks, work.goals, List.of(), steps, approvals);
+            goal = work.goal("running");
+            task = attempt(work.task(goal, 0, "running"), 1, 2);
+            run = runFor(task, "failed");
+        }
+
+        private RunStep toolCall(String tool, String sideEffect, String status) {
+            return RunStep.of(
+                    WorkFixture.ORG,
+                    run.getId(),
+                    1,
+                    "tool_call",
+                    Map.of("toolCallId", "c1", "tool", tool, "status", status, "sideEffect", sideEffect));
+        }
+
+        private RunStep error(String code) {
+            return RunStep.of(WorkFixture.ORG, run.getId(), 9, "error", Map.of("code", code, "detail", "Stopped."));
+        }
+
+        private void trace(RunStep... recorded) {
+            when(steps.findByRunIdOrderByPosition(run.getId())).thenReturn(List.of(recorded));
+        }
+
+        private void fail(String reason, String answer) {
+            progress.onRunFinished(run, "failed", answer, reason);
+        }
+
+        @Test
+        @DisplayName("a run that made a successful write fails its task without a retry, and says which tools")
+        void successfulWriteIsNotRetried() {
+            trace(toolCall("github.create_issue", "WRITE", "SUCCEEDED"));
+
+            fail("The model returned no answer.", null);
+
+            assertThat(task.getStatus()).isEqualTo("failed");
+            assertThat(task.getCompletedAt()).isNotNull();
+            assertThat(task.getFailureReason())
+                    .isEqualTo("This step had already made changes (github.create_issue) before it stopped, so it was"
+                            + " not retried automatically. Check the trace, then use Try again if it should continue.");
+            assertThat(goal.getStatus()).isEqualTo("failed");
+        }
+
+        @Test
+        @DisplayName("a run whose only calls were reads, or that made none, is put back to wait")
+        void readsAndNoStepsAreRetried() {
+            trace(toolCall("crm.find_contact", "READ", "SUCCEEDED"));
+            fail("The model returned no answer.", null);
+            assertThat(task.getStatus()).isEqualTo("pending");
+            assertThat(task.getFailureReason()).isEqualTo("The model returned no answer.");
+            assertThat(task.getCompletedAt()).isNull();
+
+            task.setStatus("running");
+            trace();
+            fail("The model returned no answer.", null);
+            assertThat(task.getStatus()).isEqualTo("pending");
+        }
+
+        @Test
+        @DisplayName("a call whose outcome is unknown counts as a change, because it may have gone out")
+        void indeterminateOutboundIsNotRetried() {
+            trace(toolCall("gmail.send_message", "OUTBOUND", "INDETERMINATE"));
+
+            fail(
+                    "The approved action may or may not have been carried out; check gmail.send_message before"
+                            + " retrying.",
+                    null);
+
+            assertThat(task.getStatus()).isEqualTo("failed");
+            assertThat(task.getFailureReason()).contains("(gmail.send_message)");
+        }
+
+        @Test
+        @DisplayName("a write that failed, or was blocked, changed nothing and does not stop a retry")
+        void failedAndBlockedWritesAreRetried() {
+            trace(
+                    toolCall("github.create_issue", "WRITE", "FAILED"),
+                    toolCall("gmail.send_message", "OUTBOUND", "BLOCKED"));
+
+            fail("The model returned no answer.", null);
+
+            assertThat(task.getStatus()).isEqualTo("pending");
+        }
+
+        @Test
+        @DisplayName("a run with an approval granted is not retried, even when no call was recorded after it")
+        void approvedApprovalIsNotRetried() {
+            trace();
+            Approval approved = new Approval();
+            approved.setTool("slack.post_message");
+            approved.setStatus("approved");
+            when(approvals.findByRunIdAndStatus(run.getId(), "approved")).thenReturn(List.of(approved));
+
+            fail("The platform failed.", null);
+
+            assertThat(task.getStatus()).isEqualTo("failed");
+            assertThat(task.getFailureReason()).contains("(slack.post_message)");
+        }
+
+        @Test
+        @DisplayName("an approved action whose call was answered as failed never went out and does not stop a retry")
+        void approvedActionThatNeverWentOutIsRetried() {
+            RunStep answered = toolCall("gmail.send_message", "OUTBOUND", "FAILED");
+            trace(answered);
+            Approval approved = new Approval();
+            approved.setTool("gmail.send_message");
+            approved.setToolCallId("c1");
+            approved.setStatus("approved");
+            when(approvals.findByRunIdAndStatus(run.getId(), "approved")).thenReturn(List.of(approved));
+
+            fail("The platform failed.", null);
+
+            assertThat(task.getStatus()).isEqualTo("pending");
+            assertThat(task.getFailureReason()).isEqualTo("The platform failed.");
+        }
+
+        @Test
+        @DisplayName("an approved action answered as succeeded, or not answered at all, still counts as a change")
+        void approvedActionThatMayHaveGoneOutStillCounts() {
+            trace(toolCall("gmail.send_message", "OUTBOUND", "SUCCEEDED"));
+            Approval sent = new Approval();
+            sent.setTool("gmail.send_message");
+            sent.setToolCallId("c1");
+            sent.setStatus("approved");
+            Approval unanswered = new Approval();
+            unanswered.setTool("slack.post_message");
+            unanswered.setToolCallId("c2");
+            unanswered.setStatus("approved");
+            when(approvals.findByRunIdAndStatus(run.getId(), "approved")).thenReturn(List.of(sent, unanswered));
+
+            fail("The platform failed.", null);
+
+            assertThat(task.getStatus()).isEqualTo("failed");
+            assertThat(task.getFailureReason()).contains("(gmail.send_message, slack.post_message)");
+        }
+
+        @Test
+        @DisplayName("each tool is named once, and a long list is shortened")
+        void toolsAreListedOnceAndShortened() {
+            trace(
+                    toolCall("a.one", "WRITE", "SUCCEEDED"),
+                    toolCall("a.one", "WRITE", "SUCCEEDED"),
+                    toolCall("a.two", "WRITE", "SUCCEEDED"),
+                    toolCall("a.three", "WRITE", "SUCCEEDED"),
+                    toolCall("a.four", "WRITE", "SUCCEEDED"),
+                    toolCall("a.five", "WRITE", "SUCCEEDED"),
+                    toolCall("a.six", "DESTRUCTIVE", "SUCCEEDED"),
+                    toolCall("a.seven", "OUTBOUND", "SUCCEEDED"));
+
+            fail("Stopped.", null);
+
+            assertThat(task.getFailureReason())
+                    .contains("(a.one, a.two, a.three, a.four, a.five and 2 more)")
+                    .doesNotContain("a.six");
+        }
+
+        @Test
+        @DisplayName("a step recorded before the side effect was kept says nothing either way")
+        void stepWithoutSideEffectIsNotCounted() {
+            trace(RunStep.of(
+                    WorkFixture.ORG,
+                    run.getId(),
+                    1,
+                    "tool_call",
+                    Map.of("toolCallId", "c1", "tool", "gmail.send_message", "status", "SUCCEEDED")));
+
+            fail("The model returned no answer.", null);
+
+            assertThat(task.getStatus()).isEqualTo("pending");
+        }
+
+        @Test
+        @DisplayName("the step limit, the output limit, a loop, the budget and a policy refusal are never retried")
+        void limitsAreNeverRetried() {
+            for (String code :
+                    List.of("step_limit", "output_limit", "loop_detected", "budget_exceeded", "policy_violation")) {
+                Task fresh = attempt(work.task(goal, 1, "running"), 1, 3);
+                Run failed = runFor(fresh, "failed");
+                when(steps.findByRunIdOrderByPosition(failed.getId()))
+                        .thenReturn(List.of(RunStep.of(
+                                WorkFixture.ORG,
+                                failed.getId(),
+                                3,
+                                "error",
+                                Map.of("code", code, "detail", "Stopped."))));
+
+                progress.onRunFinished(failed, "failed", null, "Stopped for " + code + ".");
+
+                assertThat(fresh.getStatus()).as(code).isEqualTo("failed");
+                assertThat(fresh.getFailureReason()).as(code).isEqualTo("Stopped for " + code + ".");
+            }
+        }
+
+        @Test
+        @DisplayName("a failure a retry can fix, like no model being reachable, is still retried")
+        void transientFailuresAreRetried() {
+            trace(error("no_model_available"));
+
+            fail("No language model in the routing policy is available.", null);
+
+            assertThat(task.getStatus()).isEqualTo("pending");
+        }
+
+        @Test
+        @DisplayName("the answer a failed run had written is kept on a task that will not be retried")
+        void incompleteAnswerIsKeptOnTheTask() {
+            trace(error("step_limit"));
+
+            fail("The agent reached its step limit of 2 without finishing.", "Two of the three suppliers are checked.");
+
+            assertThat(task.getStatus()).isEqualTo("failed");
+            assertThat(task.getResult()).isEqualTo("Two of the three suppliers are checked.");
+            assertThat(task.getFailureReason()).isEqualTo("The agent reached its step limit of 2 without finishing.");
+        }
+
+        @Test
+        @DisplayName("an answer is not kept on a task that is about to run again, so the next attempt starts clean")
+        void answerIsNotKeptOnARetriedTask() {
+            trace();
+
+            fail("The model returned no answer.", "Some text.");
+
+            assertThat(task.getStatus()).isEqualTo("pending");
+            assertThat(task.getResult()).isNull();
+        }
+
+        @Test
+        @DisplayName("a task with no attempts left fails with the run's own reason, and keeps any answer")
+        void lastAttemptKeepsItsOwnReason() {
+            task.setAttempt(2);
+            trace(toolCall("github.create_issue", "WRITE", "SUCCEEDED"));
+
+            fail("The agent reached its step limit of 2 without finishing.", "Half of it.");
+
+            assertThat(task.getStatus()).isEqualTo("failed");
+            assertThat(task.getFailureReason()).isEqualTo("The agent reached its step limit of 2 without finishing.");
+            assertThat(task.getResult()).isEqualTo("Half of it.");
+        }
+
+        @Test
+        @DisplayName("an abandoned run is still never retried, and a completed one is unaffected by its trace")
+        void otherOutcomesAreUnchanged() {
+            trace(toolCall("github.create_issue", "WRITE", "SUCCEEDED"));
+
+            progress.onRunFinished(runFor(task, "abandoned"), "abandoned", null, "The worker stopped.");
+            assertThat(task.getStatus()).isEqualTo("failed");
+            assertThat(task.getFailureReason()).isEqualTo("The worker stopped.");
+
+            Task other = attempt(work.task(goal, 1, "running"), 1, 2);
+            progress.onRunFinished(runFor(other, "completed"), "completed", "Done.", null);
+            assertThat(other.getStatus()).isEqualTo("completed");
+        }
+
+        @Test
+        @DisplayName("a run that could not start has no trace to read and follows the ordinary retry rule")
+        void startFailureHasNoTrace() {
+            progress.onStartFailed(task, "That agent is paused.");
+
+            assertThat(task.getStatus()).isEqualTo("pending");
+            verifyNoInteractions(steps, approvals);
         }
     }
 

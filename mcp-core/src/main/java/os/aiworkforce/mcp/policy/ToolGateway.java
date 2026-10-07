@@ -64,6 +64,11 @@ public class ToolGateway {
             if (ToolNames.PERSON_SERVER.equals(adapter.server())) {
                 throw new IllegalStateException("The server name 'person' is reserved for questions to a person.");
             }
+            // memory.* is the agent's own notes, kept by the memory service and used inside the
+            // orchestrator. An adapter under that name would make a connected server look like it.
+            if (ToolNames.MEMORY_SERVER.equals(adapter.server())) {
+                throw new IllegalStateException("The server name 'memory' is reserved for an agent's own memory.");
+            }
             adapters.put(adapter.server(), adapter);
         });
         this.validator = validator;
@@ -119,6 +124,13 @@ public class ToolGateway {
                     "The integration is missing the scope(s) " + String.join(", ", missing) + ".");
         }
 
+        // Checked before the gate, so a person is never asked to approve a call that would only
+        // fail afterwards for a missing or mistyped field.
+        String problem = validator.validate(tool, validator.normalise(tool, invocation.argumentsJson()));
+        if (problem != null) {
+            return new ApprovalDecision.Invalid(problem);
+        }
+
         if (exceedsRunLimit(invocation, grant)) {
             return new ApprovalDecision.Refuse("This agent has already used " + tool.qualifiedName()
                     + " the maximum number of times in this run.");
@@ -147,6 +159,9 @@ public class ToolGateway {
         if (decision instanceof ApprovalDecision.AwaitApproval await) {
             return Mono.just(ToolResult.blocked("Waiting for approval: " + await.reason()));
         }
+        if (decision instanceof ApprovalDecision.Invalid invalid) {
+            return Mono.just(ToolResult.failed(invalid.problem()));
+        }
 
         McpServerAdapter adapter = adapters.get(invocation.server());
         if (adapter == null) {
@@ -157,7 +172,9 @@ public class ToolGateway {
             return Mono.just(ToolResult.blocked("That tool is no longer offered."));
         }
 
-        String problem = validator.validate(tool, invocation.argumentsJson());
+        // The adapter receives the arguments as the schema describes them, near misses put right.
+        ToolInvocation normalised = invocation.withArguments(validator.normalise(tool, invocation.argumentsJson()));
+        String problem = validator.validate(tool, normalised.argumentsJson());
         if (problem != null) {
             // Reported back to the model rather than thrown: a model that produced bad arguments
             // can usually correct them if it is told what was wrong.
@@ -167,7 +184,7 @@ public class ToolGateway {
         countCall(invocation);
         Instant startedAt = Instant.now();
 
-        return adapter.invoke(invocation, credential)
+        return adapter.invoke(normalised, credential)
                 .timeout(tool.defaultTimeout())
                 .onErrorResume(error -> Mono.just(classify(tool, error, startedAt)))
                 .doOnNext(result -> log.info(
@@ -204,10 +221,16 @@ public class ToolGateway {
                     took,
                     Map.of("retryable", "true"));
         }
+        // The exception's own name and text are for the log, not for the model or the person reading
+        // the trace: "WebClientRequestException" tells neither of them anything they can act on.
+        log.warn("{} failed unexpectedly: {}", tool.qualifiedName(), error.toString());
         return new ToolResult(
                 ToolResult.Status.FAILED,
                 "{}",
-                "The tool could not be run: " + error.getClass().getSimpleName(),
+                tool.server() + " did not answer as expected. "
+                        + (tool.idempotent()
+                                ? "Try again shortly."
+                                : "Check " + tool.server() + " before trying again, in case it went through."),
                 took,
                 Map.of());
     }

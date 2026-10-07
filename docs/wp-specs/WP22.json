@@ -1,0 +1,37 @@
+{
+ "id": "WP22",
+ "title": "Private conversations",
+ "priority": 10,
+ "wave": 4,
+ "effort": "L",
+ "findings": [
+  "Every conversation is readable, searchable and writable by every employee, with no private chats",
+  "Every member can read every colleague's conversation with agents; there are no private threads",
+  "Chat has no way to attach a file to a request"
+ ],
+ "ownedFiles": [
+  "services/orchestrator-service/src/main/resources/db/migration/V13__conversation_visibility.sql",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/domain/Conversation.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/domain/ConversationParticipant.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/repository/ConversationParticipants.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/repository/Conversations.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/chat/ConversationAccess.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/chat/ConversationQueries.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/chat/ChatController.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/chat/CoordinatorService.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/chat/ConversationAdmin.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/chat/FeedbackController.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/GoalController.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/RunController.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/QuestionController.java",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/board/BoardService.java",
+  "platform-core/src/main/java/os/aiworkforce/platform/rbac/Permission.java",
+  "services/identity-service/src/main/java/os/aiworkforce/identity/service/PermissionSeeder.java",
+  "web/src/routes/Chat.tsx",
+  "web/src/components/chat/ThreadHeader.tsx",
+  "web/src/components/chat/ChatSidebar.tsx",
+  "web/src/components/chat/ConversationRow.tsx",
+  "web/src/lib/chatQueries.ts"
+ ],
+ "spec": "Rules: standard rules apply. This package owns orchestrator migration V13. Ask the user to confirm the default visibility before you start (see the executive summary questions). Until then, implement the recommended defaults.\n\n1) Migration V13\n- Add conversations.visibility TEXT NOT NULL DEFAULT 'workspace' CHECK (visibility IN ('private', 'workspace')). Existing rows stay 'workspace'.\n- Create conversation_participants(conversation_id, user_id, added_by, added_at, PRIMARY KEY(conversation_id, user_id)).\n- New conversations take their visibility from the runtime setting chat.defaultVisibility (default 'private').\n\n2) Permission\n- Add chat:read_all to Permission.java and seed it for owner only.\n- Every chat:read_all read of a private conversation writes the audit event chat.read_private.\n\n3) Access checks\nAdd ConversationAccess.require(orgId, actor, id). It allows the creator, a participant, visibility 'workspace', or chat:read_all. Otherwise it throws 404, never 403. Apply it to:\n- list: searchExcluding and searchAmong, including the needs-you and archived paths, and the snippets from matchesFor;\n- detail, and messagesPage (which must take the actor);\n- send, reroute and answer-from-documents;\n- stopGoal and retryGoal;\n- rename, pin, archive, read and delete;\n- the WP19 feedback endpoint.\n\n4) Work started from a private thread\n- Goals, runs and questions that come from a private conversation are hidden from non-participants without chat:read_all in:\n  - GoalController list and get;\n  - RunController list, steps and questions;\n  - QuestionController;\n  - BoardService cards.\n- Holders of approval:decide still see the approval card, which carries context from WP14, but not the thread.\n- tasks.conversationsWaitingForApproval returns only threads the viewer can read.\n\n5) Web\n- Show a visibility badge in ThreadHeader ('Only you and people you add' or 'Everyone in this workspace') and in the sidebar rows.\n- Add thread menu items: 'Share with workspace', 'Make private' and 'Add people'. Add people uses a member picker.\n- Remove the interim notice from WP08.\n- Put the hooks in chatQueries.ts.\n\nTests\n- Employee B gets 404 when listing, searching, reading or sending to A's private thread, and the search snippets do not leak.\n- A participant can do all of these.\n- Workspace threads behave as before.\n- Goals and runs from the private thread are hidden from B.\n- A chat:read_all read is audited.\n- An approver still sees the approval card.\n\nAcceptance (live)\n- Use two demo employees. A private thread from one is invisible in the other's sidebar, search, Tasks and Runs.\n- After 'Share with workspace', it appears for the other employee."
+}

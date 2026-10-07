@@ -46,6 +46,13 @@ public class LlmProviderEntity {
     @Column(nullable = false)
     private boolean enabled;
 
+    /**
+     * Whether a workspace that has made no choice of its own has this provider on. Only means
+     * something on a platform-wide row; see V10 for how it and {@link #enabled} divide the work.
+     */
+    @Column(name = "workspace_default_enabled", nullable = false)
+    private boolean workspaceDefaultEnabled;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "default_headers", nullable = false)
     private Map<String, String> defaultHeaders = Map.of();
@@ -64,17 +71,11 @@ public class LlmProviderEntity {
     @Column(nullable = false)
     private int priority;
 
-    /**
-     * What the last call learned about the credential.
-     *
-     * <p>Written back by the router when a provider rejects a key, so the console can say "the
-     * key was refused" rather than leaving an operator to infer it from latency.
+    /*
+     * The table still carries credential_status and credential_checked_at, but they are not mapped.
+     * Keys are stored per workspace, so whether one works is a fact about one workspace: it lives in
+     * WorkspaceProviderSetting. Written here, one workspace's refused key read as refused for all.
      */
-    @Column(name = "credential_status", nullable = false)
-    private String credentialStatus = "unknown";
-
-    @Column(name = "credential_checked_at")
-    private Instant credentialCheckedAt;
 
     /** Null for a platform-wide provider that every workspace inherits. */
     @Column(name = "org_id")
@@ -129,12 +130,27 @@ public class LlmProviderEntity {
         this.credentialRef = credentialRef;
     }
 
+    /**
+     * On a platform-wide row, whether the provider is offered to workspaces at all: when it is
+     * not, no workspace can have it on. On a workspace's own row, whether that workspace has it
+     * on. Either way a workspace's effective state is worked out in {@code JpaProviderRegistry}.
+     */
     public boolean isEnabled() {
         return enabled;
     }
 
+    /** Only for a row the calling workspace owns; a platform-wide row is never written by a workspace. */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    /** On a platform-wide row: on for a workspace that has not turned it on or off itself. */
+    public boolean isWorkspaceDefaultEnabled() {
+        return workspaceDefaultEnabled;
+    }
+
+    public void setWorkspaceDefaultEnabled(boolean workspaceDefaultEnabled) {
+        this.workspaceDefaultEnabled = workspaceDefaultEnabled;
     }
 
     public Map<String, String> getDefaultHeaders() {
@@ -165,26 +181,22 @@ public class LlmProviderEntity {
         return priority;
     }
 
-    public String getCredentialStatus() {
-        return credentialStatus;
-    }
-
-    public void markCredentialRejected() {
-        this.credentialStatus = "rejected";
-        this.credentialCheckedAt = Instant.now();
-    }
-
-    public void markCredentialValid() {
-        this.credentialStatus = "valid";
-        this.credentialCheckedAt = Instant.now();
-    }
-
-    public Instant getCredentialCheckedAt() {
-        return credentialCheckedAt;
-    }
-
     public UUID getOrgId() {
         return orgId;
+    }
+
+    /**
+     * Whether a workspace may see this provider at all: a platform-wide row, or one the workspace
+     * added for itself. A provider scoped to another workspace must be invisible, not merely
+     * unusable, so every lookup by id goes through this.
+     */
+    public boolean isVisibleTo(UUID callerOrgId) {
+        return orgId == null || orgId.equals(callerOrgId);
+    }
+
+    /** True for a platform-wide row, which no workspace action may change. */
+    public boolean isPlatformWide() {
+        return orgId == null;
     }
 
     public long getVersion() {

@@ -68,12 +68,20 @@ public enum ErrorCode {
     UPSTREAM_ERROR(502, true, "A required service returned an unexpected response."),
     CIRCUIT_OPEN(503, true, "A required service is failing and calls are paused."),
     DEPENDENCY_DEGRADED(503, true, "The platform is running with reduced capability."),
+    DEPENDENCY_UNAVAILABLE(503, true, "A platform service was briefly unreachable. Try again in a minute."),
 
     // ---- Language models -----------------------------------------------------------------
     NO_MODEL_AVAILABLE(503, true, "No language model in the routing policy is available."),
     MODEL_NOT_FOUND(404, false, "The selected model is not available from that provider."),
     PROVIDER_NOT_CONFIGURED(409, false, "That provider has not been configured for this workspace."),
     PROVIDER_CREDENTIAL_INVALID(502, false, "The provider rejected the stored credential."),
+    /*
+     * The provider's own account is empty or has hit a cap set at the provider. Distinct from
+     * BUDGET_EXCEEDED, which is this workspace's cap in this platform: the remedies differ (top up
+     * the vendor account, or raise the cap here), so the codes must too.
+     */
+    PROVIDER_QUOTA_EXHAUSTED(
+            502, false, "The model provider account has used up its quota or reached its spending limit."),
     CONTEXT_LENGTH_EXCEEDED(422, false, "The conversation is too long for the selected model."),
     CONTENT_FILTERED(422, false, "The model declined to answer this request."),
     OUTPUT_TRUNCATED(200, false, "The answer was cut short by the output limit."),
@@ -90,6 +98,8 @@ public enum ErrorCode {
     TOOL_OUTCOME_INDETERMINATE(
             502, false, "The tool did not confirm the result, so the action was not repeated automatically."),
     VOICE_NOT_CONFIGURED(409, false, "No ElevenLabs key is stored for this workspace."),
+    CONNECTOR_NOT_LIVE(422, false, "This connector works with practice data only and cannot be connected yet."),
+    CONNECTOR_CHECK_FAILED(422, false, "The connector did not accept that token."),
 
     // ---- Knowledge base ------------------------------------------------------------------
     DOCUMENT_NOT_INDEXABLE(422, false, "That document holds no text that can be indexed."),

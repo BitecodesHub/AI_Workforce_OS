@@ -1,18 +1,23 @@
 package os.aiworkforce.analytics.domain;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
+import org.springframework.data.domain.Persistable;
 
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
@@ -27,10 +32,16 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  * which a plain {@code @Version}-carrying {@code BaseEntity} row is not set up to do for a second,
  * database-owned identifier. The row's own {@code id} stays application-assigned, as everywhere
  * else on this platform, so a caller can still hold a stable reference to it before it is saved.
+ *
+ * <p>Implements {@link Persistable} so Spring Data inserts it with {@code persist} rather than
+ * {@code merge}. An entity with an assigned identifier and no version looks "not new" to Spring
+ * Data, so {@code save} merged it and handed back a different, managed copy: the sequence the
+ * database assigned was set on the copy and never on the object the caller held, which is why
+ * every response reported sequence 0.
  */
 @Entity
 @Table(name = "audit_events")
-public class AuditEvent {
+public class AuditEvent implements Persistable<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -80,7 +91,7 @@ public class AuditEvent {
     private String requestId;
 
     @Column(name = "occurred_at", nullable = false)
-    private Instant occurredAt = Instant.now();
+    private Instant occurredAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
     @Column(name = "previous_hash")
     private String previousHash;
@@ -88,8 +99,35 @@ public class AuditEvent {
     @Column(name = "entry_hash", nullable = false)
     private String entryHash;
 
+    /** Which formula {@link #entryHash} was computed with: 1 for the original, 2 since this chain. */
+    @Column(name = "hash_version", nullable = false)
+    private short hashVersion = 2;
+
+    /** The workspace id, or {@code platform}: the chain this entry belongs to. */
+    @Column(name = "chain_key")
+    private String chainKey;
+
+    /** Set by the sender before its first attempt, so a retried delivery is recognised. */
+    @Column(name = "event_uuid")
+    private UUID eventUuid;
+
+    @Transient
+    private boolean fresh = true;
+
+    @Override
     public UUID getId() {
         return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return fresh;
+    }
+
+    @PostPersist
+    @PostLoad
+    void markStored() {
+        fresh = false;
     }
 
     public UUID getOrgId() {
@@ -180,8 +218,9 @@ public class AuditEvent {
         return occurredAt;
     }
 
+    /** Kept to the microsecond the column holds, so what was hashed is what is stored. */
     public void setOccurredAt(Instant occurredAt) {
-        this.occurredAt = occurredAt;
+        this.occurredAt = occurredAt.truncatedTo(ChronoUnit.MICROS);
     }
 
     public String getPreviousHash() {
@@ -198,5 +237,29 @@ public class AuditEvent {
 
     public void setEntryHash(String entryHash) {
         this.entryHash = entryHash;
+    }
+
+    public short getHashVersion() {
+        return hashVersion;
+    }
+
+    public void setHashVersion(short hashVersion) {
+        this.hashVersion = hashVersion;
+    }
+
+    public String getChainKey() {
+        return chainKey;
+    }
+
+    public void setChainKey(String chainKey) {
+        this.chainKey = chainKey;
+    }
+
+    public UUID getEventUuid() {
+        return eventUuid;
+    }
+
+    public void setEventUuid(UUID eventUuid) {
+        this.eventUuid = eventUuid;
     }
 }

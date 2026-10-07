@@ -45,27 +45,15 @@ describe('groupConversations', () => {
     expect(groups.find((g) => g.key === 'yesterday')?.conversations.map((c) => c.id)).toEqual(['yesterday'])
   })
 
-  it('groups a row from 8 days ago under previous 30 days, not previous 7', () => {
-    const rows = [conversation({ id: 'r1', updatedAt: '2026-09-20T12:00:00Z' })]
-    const groups = groupConversations([], [], rows, now)
-    expect(groups.find((g) => g.key === 'month')?.conversations.map((c) => c.id)).toEqual(['r1'])
-    expect(groups.find((g) => g.key === 'week')).toBeUndefined()
-  })
-
-  it('groups older rows by month, newest month first, crossing a month end', () => {
+  it('groups a row from 8 days ago under Older, not previous 7 days', () => {
     const rows = [
-      conversation({ id: 'aug', updatedAt: '2026-08-05T12:00:00Z' }),
-      conversation({ id: 'jul', updatedAt: '2026-07-05T12:00:00Z' }),
+      conversation({ id: 'week', updatedAt: '2026-09-22T12:00:00Z' }),
+      conversation({ id: 'r1', updatedAt: '2026-09-20T12:00:00Z' }),
+      conversation({ id: 'old', updatedAt: '2025-08-05T12:00:00Z' }),
     ]
     const groups = groupConversations([], [], rows, now)
-    const monthGroups = groups.filter((g) => g.key.startsWith('month:'))
-    expect(monthGroups.map((g) => g.label)).toEqual(['August', 'July'])
-  })
-
-  it('names a month from another year with the year', () => {
-    const rows = [conversation({ id: 'old', updatedAt: '2025-08-05T12:00:00Z' })]
-    const groups = groupConversations([], [], rows, now)
-    expect(groups.find((g) => g.key.startsWith('month:'))?.label).toBe('August 2025')
+    expect(groups.map((g) => g.label)).toEqual(['Previous 7 days', 'Older'])
+    expect(groups.find((g) => g.key === 'older')?.conversations.map((c) => c.id)).toEqual(['r1', 'old'])
   })
 
   it('hides empty groups entirely', () => {

@@ -3,8 +3,12 @@ import {
   credentialState,
   isEmbeddingModel,
   liveRouting,
+  offForPlatform,
   providerReadiness,
   routingSummary,
+  toggleCopy,
+  toggledMessage,
+  toggleRefusal,
 } from './routing'
 import type { RoutingCredential, RoutingPolicy, RoutingProvider } from './routing'
 
@@ -70,6 +74,13 @@ describe('credentialState', () => {
     expect(credentialState(openrouter, [openrouterKey], NOW)).toBe('stored')
   })
 
+  it("reads this workspace's own status, which starts as unknown rather than missing", () => {
+    expect(credentialState({ ...openrouter, credentialStatus: 'unknown' }, [openrouterKey], NOW)).toBe('stored')
+    expect(credentialState({ ...openrouter, credentialStatus: 'unknown' }, [], NOW)).toBe('not_stored')
+    expect(credentialState({ ...openrouter, credentialStatus: 'valid' }, [openrouterKey], NOW)).toBe('stored')
+    expect(credentialState({ ...sandbox, credentialStatus: 'unknown' }, [], NOW)).toBe('not_needed')
+  })
+
   it('reports a rejected key and an expired one', () => {
     expect(credentialState({ ...openrouter, credentialStatus: 'rejected' }, [openrouterKey], NOW)).toBe('rejected')
     expect(
@@ -112,6 +123,20 @@ describe('providerReadiness', () => {
 
   it('needs no key for the sandbox', () => {
     expect(providerReadiness(sandbox, [], NOW)).toEqual({ ready: true, reason: 'ready' })
+  })
+
+  it('tells a provider this installation does not offer apart from one this workspace turned off', () => {
+    expect(providerReadiness({ ...openrouter, enabled: false, platformEnabled: false }, [openrouterKey], NOW)).toEqual({
+      ready: false,
+      reason: 'platform_off',
+    })
+    expect(providerReadiness({ ...openrouter, enabled: false, platformEnabled: true }, [openrouterKey], NOW).reason).toBe(
+      'disabled',
+    )
+    // An older service that does not send the field reads as turned off here.
+    expect(providerReadiness({ ...openrouter, enabled: false, platformEnabled: null }, [openrouterKey], NOW).reason).toBe(
+      'disabled',
+    )
   })
 })
 
@@ -199,6 +224,19 @@ describe('liveRouting and routingSummary', () => {
     )
   })
 
+  it('says a provider this installation does not offer is not offered, rather than turned off', () => {
+    const result = liveRouting(
+      policy([['openrouter', 'google/gemini-2.5-flash']]),
+      [sandbox, { ...openrouter, enabled: false, platformEnabled: false }],
+      [openrouterKey],
+      NOW,
+    )
+    expect(result.blocked).toEqual([{ providerName: 'OpenRouter', reason: 'platform_off' }])
+    expect(routingSummary(result, { canManage: true }).text).toBe(
+      'OpenRouter is not offered on this installation, so runs fail until a provider is ready.',
+    )
+  })
+
   it('names a rejected key and treats a sandbox later in the chain as a fallback', () => {
     const result = liveRouting(
       policy([
@@ -237,5 +275,69 @@ describe('liveRouting and routingSummary', () => {
     expect(routingSummary(result, { canManage: true }).text).toBe(
       'Bedrock is not available in this workspace, so runs fail until a provider is ready.',
     )
+  })
+})
+
+describe('turning a provider on or off for this workspace', () => {
+  it('says the change applies to this workspace', () => {
+    expect(toggleCopy(openrouter)).toEqual({ label: 'Turn off', ariaLabel: 'Turn off OpenRouter for this workspace' })
+    expect(toggleCopy({ ...groq, enabled: false })).toEqual({
+      label: 'Turn on',
+      ariaLabel: 'Turn on Groq for this workspace',
+    })
+  })
+
+  it('confirms each outcome without claiming to reach other workspaces', () => {
+    expect(toggledMessage(openrouter, false)).toBe(
+      'OpenRouter is off for this workspace. Runs here no longer try it. Other workspaces are not affected.',
+    )
+    expect(toggledMessage(openrouter, true, { keyMissing: true, inPolicy: true })).toBe(
+      'OpenRouter is on for this workspace. Runs skip it until a usable key is stored.',
+    )
+    expect(toggledMessage(openrouter, true, { inPolicy: false })).toBe(
+      'OpenRouter is on for this workspace. Add it to the routing policy to use it.',
+    )
+    expect(toggledMessage(openrouter, true, { inPolicy: true })).toBe('OpenRouter is on for this workspace.')
+  })
+
+  it('tells a provider the installation does not offer apart from one this workspace turned off', () => {
+    expect(offForPlatform({ ...groq, enabled: false, platformEnabled: false })).toBe(true)
+    expect(offForPlatform({ ...groq, enabled: false, platformEnabled: true })).toBe(false)
+    // An older service that does not send the field never hides the toggle.
+    expect(offForPlatform({ ...groq, enabled: false })).toBe(false)
+    expect(offForPlatform({ ...groq, enabled: false, platformEnabled: null })).toBe(false)
+  })
+
+  it('turns a 409 into the service sentence, pointing a refused turn-off at the routing policy', () => {
+    const conflict = {
+      status: 409,
+      message: "Turning off OpenRouter would leave this workspace's routing policy with no provider that is on.",
+    }
+    expect(toggleRefusal(conflict, false)).toEqual({ text: conflict.message, fixIn: 'routing-policy' })
+    expect(toggleRefusal({ ...conflict, fields: { routing: 'workspace' } }, false)).toEqual({
+      text: conflict.message,
+      fixIn: 'routing-policy',
+    })
+    expect(
+      toggleRefusal({ status: 409, message: 'AWS Bedrock is not available yet. Contact support to have it offered.' }, true),
+    ).toEqual({ text: 'AWS Bedrock is not available yet. Contact support to have it offered.', fixIn: null })
+  })
+
+  it('names no link for an agent whose own routing would be stranded, since the fix is not on this page', () => {
+    const agentConflict = {
+      status: 409,
+      message: "Turning off OpenRouter would leave Ava's own routing with no provider that is on, so its runs would stop.",
+      fields: { routing: 'agent' },
+    }
+    expect(toggleRefusal(agentConflict, false)).toEqual({ text: agentConflict.message, fixIn: null })
+  })
+
+  it('leaves every other failure to the usual error handling', () => {
+    expect(toggleRefusal({ status: 404, message: 'Not found.' }, false)).toBeNull()
+    expect(toggleRefusal({ status: 500, message: 'Something broke.' }, false)).toBeNull()
+    expect(toggleRefusal({ status: 409, message: '   ' }, false)).toBeNull()
+    expect(toggleRefusal(new Error('network'), false)).toBeNull()
+    expect(toggleRefusal(null, false)).toBeNull()
+    expect(toggleRefusal('409', false)).toBeNull()
   })
 })

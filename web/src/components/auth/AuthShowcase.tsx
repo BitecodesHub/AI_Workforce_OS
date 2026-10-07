@@ -10,9 +10,17 @@ import type { IconName } from '../landing/shared/Icon'
  * agent's outbound action parked until a person decides - drawn from tokens, and hidden from
  * assistive technology because the heading and points beside it already say it in words.
  *
- * Each point is one the evaluator can check after signing in. Agents do not read the knowledge
- * base (only Chat searches it), and the bundled tool servers run against a sandbox, so neither is
- * promised here.
+ * Each point is one the evaluator can check after signing in. Two things an evaluator might
+ * over-read are not promised here. One is that agents know the company without being told: agents
+ * and Chat search the documents a workspace has uploaded, as the person they work for, and say so
+ * when none covers a request, but they know nothing that was not uploaded. The other is that
+ * connectors reach real accounts: most of them, email and calendar among them, work with practice
+ * data only - the few that can reach a real account (mcp-core's ConnectorCatalog lists them) do so
+ * only after an administrator adds a token. The seven providers are the adapters in llm-core:
+ * OpenRouter, Groq, NVIDIA NIM and OpenAI through the OpenAI-compatible one, plus Anthropic, Google
+ * Gemini and AWS Bedrock.
+ *
+ * The glimpse's tool name is illustrative: in the demo workspace, that send runs on practice data.
  */
 
 const POINTS: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [

@@ -8,13 +8,18 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -36,6 +41,8 @@ import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
 import os.aiworkforce.platform.rbac.Permission;
+import os.aiworkforce.platform.runtimeconfig.ConfigKey;
+import os.aiworkforce.platform.runtimeconfig.RuntimeConfigService;
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
 /**
@@ -66,8 +73,43 @@ public class GoalService {
     private static final int MAX_AGENT_REPEATS = 2;
     /** More predecessors than this would make the prepended instruction unreadable. */
     private static final int MAX_HANDOFFS = 3;
+    /** The most of one predecessor's result a later step is given. */
+    private static final int MAX_HANDOFF_RESULT_CHARS = 5_000;
+    /** What every predecessor's result together may take, shared out when there are several. */
+    private static final int HANDOFF_BUDGET_CHARS = 10_000;
+
+    /**
+     * How a step of a chain carries the person's own words: their request whole, then the part of
+     * it this step does. The coordinator writes it; {@link #withHandoffPreamble} reads it back, so a
+     * later step's hand-off sits between the two rather than repeating either.
+     */
+    public static final String REQUEST_HEADING = "The person's request (verbatim):\n";
+
+    public static final String PART_HEADING = "Your part: ";
+
+    /**
+     * The first sentence of the block of document passages the coordinator puts at the very start of
+     * a first step's instruction, which is how a later step learns which passages that was.
+     */
+    public static final String PASSAGES_HEADING = "Passages from the workspace's documents that bear on this request.";
+
+    private static final String PART_SEPARATOR = "\n\n" + PART_HEADING;
+    private static final Pattern PASSAGE_TITLE = Pattern.compile("^\\[(\\d+)] (.+)$");
     /** How far the claim window reaches past tasks whose agent is paused, so they cannot starve it. */
     private static final int CLAIM_WINDOW = 100;
+
+    /**
+     * How many goal tasks one workspace may have running at once. More wait as pending and start
+     * as soon as one settles: every run calls a model provider, and a burst of them - a morning's
+     * schedules firing together - is how a workspace meets the provider's rate limit.
+     */
+    static final ConfigKey MAX_CONCURRENT_RUNS = ConfigKey.integer(
+            "runs.maxConcurrentPerWorkspace",
+            ConfigKey.Scope.WORKSPACE,
+            4,
+            1,
+            50,
+            "How many tasks one workspace may have running at the same time. Others wait their turn.");
 
     static final String GOAL_CANCELLED = "The goal this run belonged to was cancelled.";
     static final String PERSON_CANCELLED = "A person cancelled this goal.";
@@ -87,6 +129,8 @@ public class GoalService {
     private final QuestionService questions;
     private final LifecycleAnnouncer announcer;
     private final AuditClient audit;
+    /** Where the per-workspace cap is read. Null in unit tests, which use the default. */
+    private RuntimeConfigService runtimeConfig;
 
     public GoalService(
             Goals goals,
@@ -113,6 +157,14 @@ public class GoalService {
         this.questions = questions;
         this.announcer = announcer;
         this.audit = audit;
+    }
+
+    @Autowired(required = false)
+    void setRuntimeConfig(RuntimeConfigService runtimeConfig) {
+        this.runtimeConfig = runtimeConfig;
+        if (runtimeConfig != null) {
+            runtimeConfig.register(List.of(MAX_CONCURRENT_RUNS));
+        }
     }
 
     /** How much a stop withdrew, for a caller that reports it. */
@@ -154,7 +206,10 @@ public class GoalService {
             UUID scheduleId,
             List<NewTask> tasks) {}
 
-    /** The old, single-caller shape, kept so existing callers are unaffected. */
+    /**
+     * The old shape, kept for callers that only record a goal: it is not dispatched here, so its
+     * first task starts on the goal sweep's next tick. Use {@link #createGoal} to start it at once.
+     */
     @Transactional
     public Goal create(UUID orgId, String title, String description, List<TaskRequest> taskRequests) {
         List<NewTask> newTasks = taskRequests == null
@@ -197,11 +252,10 @@ public class GoalService {
     /**
      * Turns a request into a goal and its tasks, and optionally starts it without waiting.
      *
-     * <p>{@code runAsync} exists because the callers need different things from the same method:
-     * the goal endpoint runs a few tasks synchronously itself, so its own request is the answer a
-     * person is waiting on, while chat and schedules must answer before any of the work is done.
-     * When {@code runAsync} is true this goal's next tasks are handed to {@link RunExecutor}
-     * before this method returns, rather than left for the next sweep to notice.
+     * <p>Every caller that starts work - the goal endpoint, chat, schedules - passes {@code
+     * runAsync} true and answers before any of the work is done; the person follows the goal or its
+     * run, which update as the agent works. When it is true the workspace's next tasks are handed
+     * to {@link RunExecutor} once this commits, rather than left for the next sweep to notice.
      */
     @Transactional
     public Goal createGoal(UUID orgId, NewGoal spec, boolean runAsync) {
@@ -354,50 +408,107 @@ public class GoalService {
     }
 
     /**
-     * Runs the next task that is ready, if there is one.
+     * Runs the next task that is ready, if there is one, on the calling thread.
      *
-     * <p>One task per call rather than a loop, so a caller - the scheduler, a test, a manual
-     * nudge - decides the pace. Draining the whole graph inside one transaction would hold a
-     * database connection for the length of every model call in it.
+     * <p>One task per call rather than a loop, so a caller - a test, a manual nudge - decides the
+     * pace. Draining the whole graph inside one transaction would hold a database connection for
+     * the length of every model call in it. {@link RunExecutor} uses the two halves, {@link
+     * #claimNextTask} and {@link #startClaimed}, so that each claimed task runs on its own thread.
      *
      * <p>What the run's outcome means for the task and its goal is decided by {@link TaskProgress},
      * which the runner reports to as the run finishes or parks.
+     *
+     * @return whether a task was claimed
      */
     public boolean runNextTask(UUID orgId) {
-        // The claim is a short transaction of its own; the run happens after it commits. Holding
-        // one transaction across the whole agent run would keep a pooled connection and the
-        // task's row lock for minutes, and several chat messages or schedules firing together
-        // would exhaust the pool.
-        Optional<TaskStart> start =
-                claimTransaction == null ? claimNext(orgId) : claimTransaction.execute(status -> claimNext(orgId));
-        if (start == null || start.isEmpty()) {
+        Optional<TaskStart> start = claimNextTask(orgId);
+        if (start.isEmpty()) {
             return false;
         }
-        TaskStart claimed = start.get();
-        Task task = claimed.task();
-        try {
-            if (claimed.predecessors().isEmpty()) {
-                runner.start(orgId, task.getAgentId(), task.getId(), task.getInstruction(), "task");
-            } else {
-                runner.start(
-                        orgId,
-                        task.getAgentId(),
-                        task.getId(),
-                        withHandoffPreamble(task.getInstruction(), claimed.predecessors()),
-                        "task",
-                        handoffDetails(task, claimed.predecessors()));
-            }
-        } catch (ApiException e) {
-            if (claimTransaction == null) {
-                progress.onStartFailed(task, e.getMessage());
-            } else {
-                claimTransaction.executeWithoutResult(status -> progress.onStartFailed(task, e.getMessage()));
-            }
-        }
+        startClaimed(orgId, start.get());
         return true;
     }
 
-    private record TaskStart(Task task, List<Task> predecessors) {}
+    /**
+     * A task that has been claimed and marked running, with the completed predecessors it hands
+     * off from.
+     */
+    public record TaskStart(Task task, List<Task> predecessors) {}
+
+    /**
+     * Claims the workspace's next ready task and marks it running, or finds none - nothing ready,
+     * or the workspace already at its cap of running tasks.
+     *
+     * <p>The claim is a short transaction of its own; the run happens after it commits. Holding
+     * one transaction across the whole agent run would keep a pooled connection and the task's
+     * row lock for minutes, and several chat messages or schedules firing together would exhaust
+     * the pool.
+     */
+    public Optional<TaskStart> claimNextTask(UUID orgId) {
+        Optional<TaskStart> start =
+                claimTransaction == null ? claimNext(orgId) : claimTransaction.execute(status -> claimNext(orgId));
+        return start == null ? Optional.empty() : start;
+    }
+
+    /**
+     * Starts the run for a claimed task, as the person who asked for its goal.
+     *
+     * <p>Whoever claimed it - the executor after a goal was created or a task settled, a test, a
+     * sweep - the run is attributed to the goal's own requester: its audit entries name them, and
+     * the tokens it fetches carry their identity. A goal nobody is on record for runs as the
+     * platform. A start refused before anything was written counts as a failed attempt.
+     */
+    public void startClaimed(UUID orgId, TaskStart claimed) {
+        Task task = claimed.task();
+        Goal goal = goals.findById(task.getGoalId()).orElse(null);
+        Actor actor = goal == null ? Actor.SYSTEM : requesterActor(goal);
+        // The run does not exist yet, so its id cannot be here; the task, goal, agent and workspace
+        // are, and they tie every line the run writes - the runner's, the router's, a tool's - to
+        // this task until it parks or ends.
+        try (RunLogContext ignored = RunLogContext.run(orgId, task.getGoalId(), null, task.getAgentId())
+                .with(RunLogContext.TASK_ID, task.getId())) {
+            RequestContext.as(actor, () -> {
+                try {
+                    if (claimed.predecessors().isEmpty()) {
+                        runner.start(orgId, task.getAgentId(), task.getId(), task.getInstruction(), "task");
+                    } else {
+                        runner.start(
+                                orgId,
+                                task.getAgentId(),
+                                task.getId(),
+                                withHandoffPreamble(
+                                        task.getInstruction(),
+                                        goal == null ? null : goal.getDescription(),
+                                        claimed.predecessors(),
+                                        passageTitles(firstStepInstruction(task, claimed.predecessors())),
+                                        this::agentNameOf),
+                                "task",
+                                handoffDetails(task, claimed.predecessors()));
+                    }
+                } catch (ApiException e) {
+                    if (claimTransaction == null) {
+                        progress.onStartFailed(task, e.getMessage());
+                    } else {
+                        claimTransaction.executeWithoutResult(status -> progress.onStartFailed(task, e.getMessage()));
+                    }
+                }
+                return null;
+            });
+        }
+    }
+
+    /**
+     * The person a goal's work runs as: its requester, or the platform when nobody is on record.
+     * The one rule for every path that runs or resumes a goal's task, so they cannot disagree.
+     */
+    public static Actor requesterActor(Goal goal) {
+        UUID requestedBy = goal.getRequestedBy();
+        if (requestedBy == null) {
+            return Actor.SYSTEM;
+        }
+        String orgId = goal.getOrgId() == null ? null : goal.getOrgId().toString();
+        return Actor.user(requestedBy.toString(), orgId, null, Set.of(), 0L);
+    }
 
     private org.springframework.transaction.support.TransactionTemplate claimTransaction;
 
@@ -408,6 +519,14 @@ public class GoalService {
 
     /** Claims the next ready task and marks it running, skipping blocked ones on the way. */
     private Optional<TaskStart> claimNext(UUID orgId) {
+        int cap = maxConcurrentRuns(orgId);
+        long running = tasks.countByOrgIdAndStatus(orgId, "running");
+        if (running >= cap) {
+            // Left pending, not refused: the next task to settle in this workspace frees a place
+            // and dispatches again, and the goal sweep checks every few seconds besides.
+            log.debug("Workspace {} has {} task(s) running, its limit of {}; the rest wait", orgId, running, cap);
+            return Optional.empty();
+        }
         List<Task> candidates = tasks.findClaimable(orgId, PageRequest.of(0, CLAIM_WINDOW));
 
         // One query for every candidate's siblings, keyed by goal, rather than one query per
@@ -468,6 +587,20 @@ public class GoalService {
         return Optional.empty();
     }
 
+    /** The workspace's cap on running tasks; the default when the setting cannot be read. */
+    private int maxConcurrentRuns(UUID orgId) {
+        int fallback = (Integer) MAX_CONCURRENT_RUNS.defaultValue();
+        if (runtimeConfig == null) {
+            return fallback;
+        }
+        try {
+            return Math.max(1, runtimeConfig.getInt(MAX_CONCURRENT_RUNS, orgId.toString()));
+        } catch (RuntimeException unreadable) {
+            log.warn("Could not read {}; using {}: {}", MAX_CONCURRENT_RUNS.name(), fallback, unreadable.getMessage());
+            return fallback;
+        }
+    }
+
     private enum Readiness {
         READY,
         WAITING,
@@ -522,24 +655,185 @@ public class GoalService {
         return completed.subList(completed.size() - MAX_HANDOFFS, completed.size());
     }
 
-    /** Prepends what earlier agents already produced, so this one builds on it rather than repeating it. */
-    private String withHandoffPreamble(String instruction, List<Task> predecessors) {
-        StringBuilder preamble = new StringBuilder("Work already done for this request:\n");
-        for (Task predecessor : predecessors) {
+    /**
+     * The instruction for a step that follows others: the person's request, what the earlier agents
+     * already produced, which document passages the first step was given, and then this step's own
+     * part - so it builds on that work rather than repeating it, and still knows what was asked.
+     *
+     * <p>A step the coordinator wrote as {@link #REQUEST_HEADING} and {@link #PART_HEADING} keeps
+     * those two halves, with the hand-off placed between them, so neither heading appears twice. Any
+     * other step is given the goal's own description as the original request, unless that is
+     * exactly its instruction already.
+     *
+     * @param goalDescription what the person asked for the goal as a whole; may be null
+     * @param passageTitles the numbered passage titles the first step was given, if any
+     * @param agentName an agent's display name by id, for naming who did each piece of work
+     */
+    static String withHandoffPreamble(
+            String instruction,
+            String goalDescription,
+            List<Task> predecessors,
+            List<String> passageTitles,
+            Function<UUID, String> agentName) {
+        String body = instruction == null ? "" : instruction;
+        String request = null;
+        String part = body;
+        boolean ownPart = false;
+        int split = body.lastIndexOf(PART_SEPARATOR);
+        if (body.startsWith(REQUEST_HEADING) && split >= REQUEST_HEADING.length()) {
+            request = body.substring(0, split);
+            part = body.substring(split + PART_SEPARATOR.length());
+            ownPart = true;
+        } else if (goalDescription != null
+                && !goalDescription.isBlank()
+                && !goalDescription.strip().equals(body.strip())) {
+            request = "Original request: " + goalDescription;
+        }
+
+        StringBuilder preamble = new StringBuilder();
+        if (request != null) {
+            preamble.append(request).append("\n\n");
+        }
+        preamble.append("Work already done for this request:\n");
+        List<String> results = handoffResults(predecessors);
+        for (int index = 0; index < predecessors.size(); index++) {
             preamble.append("- ")
-                    .append(agentNameOf(predecessor.getAgentId()))
+                    .append(agentName.apply(predecessors.get(index).getAgentId()))
                     .append(": ")
-                    .append(truncateResult(predecessor.getResult()))
+                    .append(results.get(index))
                     .append("\n");
         }
-        preamble.append("\nYour part:\n").append(instruction);
+        if (passageTitles != null && !passageTitles.isEmpty()) {
+            preamble.append("\nThe first step was given these passages from the workspace's documents, and a "
+                            + "number such as [1] in the work above refers to them: ")
+                    .append(String.join("; ", passageTitles))
+                    .append(".\n");
+        }
+        // One "Your part:" heading: on the same line as a part the coordinator wrote, or above an
+        // instruction that is the whole of what this step was asked.
+        preamble.append('\n').append(ownPart ? PART_HEADING : PART_HEADING.strip() + "\n").append(part);
         return preamble.toString();
+    }
+
+    /**
+     * Each predecessor's result as a later step is given it: up to {@value #MAX_HANDOFF_RESULT_CHARS}
+     * characters each, within {@value #HANDOFF_BUDGET_CHARS} for all of them together. A short
+     * result leaves its unused share to the others, and a result that is cut says so.
+     */
+    static List<String> handoffResults(List<Task> predecessors) {
+        int count = predecessors.size();
+        List<Integer> order = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            order.add(index);
+        }
+        order.sort(Comparator.comparingInt(index -> lengthOf(predecessors.get(index).getResult())));
+        int[] allowance = new int[count];
+        int remaining = HANDOFF_BUDGET_CHARS;
+        for (int rank = 0; rank < count; rank++) {
+            int index = order.get(rank);
+            int share = Math.min(MAX_HANDOFF_RESULT_CHARS, remaining / (count - rank));
+            allowance[index] = Math.min(lengthOf(predecessors.get(index).getResult()), share);
+            remaining -= allowance[index];
+        }
+        List<String> results = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String result = predecessors.get(index).getResult();
+            results.add(result == null ? "" : cutWithMarker(result, Math.max(allowance[index], 1)));
+        }
+        return results;
+    }
+
+    private static int lengthOf(String text) {
+        return text == null ? 0 : text.length();
+    }
+
+    /**
+     * The start of a text, kept exactly as written - line breaks, lists and tables included - and
+     * cut, when it is longer than {@code max} characters, at the last line break or space in the
+     * final stretch, with a line saying how much was left out. Never cut silently: an agent given a
+     * fragment presented as the whole would act on it as if it were complete.
+     */
+    public static String cutWithMarker(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        if (text.length() <= max) {
+            return text;
+        }
+        int floor = Math.max(1, max - Math.min(200, max / 5));
+        int cut = max;
+        for (int index = max; index >= floor; index--) {
+            if (Character.isWhitespace(text.charAt(index))) {
+                cut = index;
+                break;
+            }
+        }
+        if (cut > 0 && Character.isHighSurrogate(text.charAt(cut - 1))) {
+            cut--; // never leave half of a character at the end of what the agent reads
+        }
+        String head = text.substring(0, cut).stripTrailing();
+        int omitted = text.length() - head.length();
+        return head + "\n" + omittedMarker(omitted);
+    }
+
+    /** The line that stands in for text left out, naming how much. */
+    public static String omittedMarker(int omittedCharacters) {
+        return String.format(Locale.ROOT, "[... %d more characters not shown]", omittedCharacters);
+    }
+
+    /** How a chain step's instruction reads: the person's whole request, then this step's part of it. */
+    public static String chainStepInstruction(String request, String part) {
+        return REQUEST_HEADING + (request == null ? "" : request) + PART_SEPARATOR + (part == null ? "" : part);
+    }
+
+    /** The instruction of the goal's first step, from the predecessors when it is among them. */
+    private String firstStepInstruction(Task task, List<Task> predecessors) {
+        for (Task predecessor : predecessors) {
+            if (predecessor.getPosition() == 0) {
+                return predecessor.getInstruction();
+            }
+        }
+        return tasks.findByGoalIdOrderByPosition(task.getGoalId()).stream()
+                .filter(sibling -> sibling.getPosition() == 0)
+                .map(Task::getInstruction)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * The numbered passage titles at the start of an instruction, as the coordinator writes them
+     * after {@link #PASSAGES_HEADING}: one {@code [n] Title, page p} line per passage, then that
+     * passage's text on one line. Empty when the instruction does not start with passages.
+     */
+    public static List<String> passageTitles(String instruction) {
+        if (instruction == null || !instruction.startsWith(PASSAGES_HEADING)) {
+            return List.of();
+        }
+        String[] lines = instruction.split("\n", -1);
+        List<String> titles = new ArrayList<>();
+        int expected = 1;
+        for (int index = 1; index < lines.length; index++) {
+            String line = lines[index];
+            if (line.isEmpty()) {
+                continue;
+            }
+            Matcher title = PASSAGE_TITLE.matcher(line);
+            if (!title.matches() || Integer.parseInt(title.group(1)) != expected) {
+                break;
+            }
+            titles.add(line);
+            expected++;
+            index++; // the passage's own text, always on the one line after its title
+        }
+        return titles;
     }
 
     /** One {@code handoff} step's detail per predecessor, in the shape the run trace records. */
     private List<Map<String, Object>> handoffDetails(Task task, List<Task> predecessors) {
         List<Map<String, Object>> handoffs = new ArrayList<>();
-        for (Task predecessor : predecessors) {
+        List<String> results = handoffResults(predecessors);
+        for (int index = 0; index < predecessors.size(); index++) {
+            Task predecessor = predecessors.get(index);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("fromTaskId", predecessor.getId().toString());
             detail.put(
@@ -550,7 +844,7 @@ public class GoalService {
             detail.put("fromAgentName", agentNameOf(predecessor.getAgentId()));
             detail.put("toAgentId", task.getAgentId().toString());
             detail.put("toAgentName", agentNameOf(task.getAgentId()));
-            detail.put("summary", truncateResult(predecessor.getResult()));
+            detail.put("summary", results.get(index));
             handoffs.add(detail);
         }
         return handoffs;
@@ -561,14 +855,6 @@ public class GoalService {
             return "";
         }
         return agents.findById(agentId).map(Agent::getName).orElse("");
-    }
-
-    /** Kept short enough that a chain of hand-offs does not itself become the run's whole budget. */
-    private static String truncateResult(String result) {
-        if (result == null) {
-            return "";
-        }
-        return result.length() <= 1_500 ? result : result.substring(0, 1_500) + "…";
     }
 
     /** Workspaces with at least one task waiting to start, for the goal sweep. */
@@ -605,8 +891,7 @@ public class GoalService {
                 continue;
             }
             String was = task.getStatus();
-            String answer = "completed".equals(run.getStatus()) ? finalAnswer(run) : null;
-            progress.onRunFinished(run, run.getStatus(), answer, run.getFailureReason());
+            progress.onRunFinished(run, run.getStatus(), answerOf(run), run.getFailureReason());
             log.info(
                     "Task {} was {} although its run {} had ended as {}; now {}",
                     task.getId(),
@@ -619,9 +904,37 @@ public class GoalService {
         return repaired;
     }
 
+    /**
+     * What a run that ended on its own leaves on its task: its answer when it completed, and, when
+     * it failed at its step or output limit, whatever it had written by then - which the task
+     * shows as an incomplete answer, exactly as it would had the runner reported the failure
+     * itself. Any other failure leaves no text.
+     */
+    private String answerOf(Run run) {
+        if ("completed".equals(run.getStatus())) {
+            return lastReply(steps.findByRunIdOrderByPosition(run.getId()));
+        }
+        if ("failed".equals(run.getStatus())) {
+            List<RunStep> trace = steps.findByRunIdOrderByPosition(run.getId());
+            return endedAtALimit(trace) ? lastReply(trace) : null;
+        }
+        return null;
+    }
+
+    /** Whether the trace's last error is the run reaching its step limit or being cut off by its output limit. */
+    private static boolean endedAtALimit(List<RunStep> trace) {
+        for (int index = trace.size() - 1; index >= 0; index--) {
+            RunStep step = trace.get(index);
+            if ("error".equals(step.getKind())) {
+                Object code = step.getDetail() == null ? null : step.getDetail().get("code");
+                return TaskProgress.STEP_LIMIT.equals(code) || TaskProgress.OUTPUT_LIMIT.equals(code);
+            }
+        }
+        return false;
+    }
+
     /** The last thing the model said, which is the answer a completed run finished with. */
-    private String finalAnswer(Run run) {
-        List<RunStep> trace = steps.findByRunIdOrderByPosition(run.getId());
+    private static String lastReply(List<RunStep> trace) {
         for (int index = trace.size() - 1; index >= 0; index--) {
             RunStep step = trace.get(index);
             if ("model_call".equals(step.getKind())
@@ -697,8 +1010,27 @@ public class GoalService {
         goals.save(goal);
         log.info("Goal {} cancelled: {} task(s), {} run(s)", goalId, tasksCancelled, active.size());
 
+        CancelCounts counts =
+                new CancelCounts(tasksCancelled, active.size(), approvalsWithdrawn, questionsWithdrawn);
+        Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
+        Map<String, Object> detail = stopDetail(reason, counts);
         LifecycleAnnouncer.afterCommit(() -> announcer.goalCancelled(goalId, reason));
-        return new CancelCounts(tasksCancelled, active.size(), approvalsWithdrawn, questionsWithdrawn);
+        LifecycleAnnouncer.afterCommit(
+                () -> audit.record(orgId, actor, "goal.cancel", "goal", goalId.toString(), "succeeded", detail));
+        return counts;
+    }
+
+    /** What a stop's audit entry carries: why, and how much it withdrew. */
+    private static Map<String, Object> stopDetail(String reason, CancelCounts counts) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        if (reason != null) {
+            detail.put("reason", reason);
+        }
+        detail.put("tasks", counts.tasks());
+        detail.put("runs", counts.runs());
+        detail.put("approvals", counts.approvals());
+        detail.put("questions", counts.questions());
+        return detail;
     }
 
     /**
@@ -738,7 +1070,12 @@ public class GoalService {
             tasksCancelled = 1;
         }
         log.info("Run {} stopped: {}", runId, reason);
-        return new CancelCounts(tasksCancelled, 1, approvalsWithdrawn, questionsWithdrawn);
+        CancelCounts counts = new CancelCounts(tasksCancelled, 1, approvalsWithdrawn, questionsWithdrawn);
+        Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
+        Map<String, Object> detail = stopDetail(reason, counts);
+        LifecycleAnnouncer.afterCommit(
+                () -> audit.record(orgId, actor, "run.stop", "run", runId.toString(), "succeeded", detail));
+        return counts;
     }
 
     /** Stops a run when it is still active, in a transaction of its own; nothing when it is not. */
@@ -750,6 +1087,34 @@ public class GoalService {
         }
         // Re-reads the row this transaction already holds locked, so there is no second wait.
         return Optional.of(stopRun(orgId, runId, reason));
+    }
+
+    /**
+     * Refuses a stop the actor may not make, and a stop of a goal that has already finished.
+     *
+     * <p>Stopping is open to the person who asked for the work - who can always change their mind
+     * about it - and to anyone who can cancel work in general. It is the same rule retrying
+     * follows, held in one place so the goal endpoint, chat and the board cannot drift apart.
+     *
+     * @throws ApiException {@code PERMISSION_DENIED} naming {@code task:cancel} when the actor is
+     *     neither; {@code CONFLICT} when the goal has already finished
+     */
+    public void requireCanStop(Goal goal, Actor actor) {
+        requireRequesterOrCanceller(
+                goal, actor, "Only the person who asked for this work, or someone who can cancel work, can stop it.");
+        if (goal.isFinished()) {
+            throw new ApiException(ErrorCode.CONFLICT, "That goal has already finished.");
+        }
+    }
+
+    private static void requireRequesterOrCanceller(Goal goal, Actor actor, String refusal) {
+        boolean requester = actor != null
+                && goal.getRequestedBy() != null
+                && goal.getRequestedBy().toString().equals(actor.humanId());
+        if (!requester && (actor == null || !actor.hasPermission(Permission.Codes.TASK_CANCEL))) {
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, refusal)
+                    .with("requiredPermission", Permission.Codes.TASK_CANCEL);
+        }
     }
 
     /**
@@ -766,15 +1131,10 @@ public class GoalService {
     @Transactional
     public RetryResult retry(UUID orgId, UUID goalId, Actor actor) {
         Goal goal = goals.lockByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId));
-        boolean requester = actor != null
-                && goal.getRequestedBy() != null
-                && goal.getRequestedBy().toString().equals(actor.humanId());
-        if (!requester && (actor == null || !actor.hasPermission(Permission.Codes.TASK_CANCEL))) {
-            throw new ApiException(
-                            ErrorCode.PERMISSION_DENIED,
-                            "Only the person who asked for this work, or someone who can cancel work, can try it again.")
-                    .with("requiredPermission", Permission.Codes.TASK_CANCEL);
-        }
+        requireRequesterOrCanceller(
+                goal,
+                actor,
+                "Only the person who asked for this work, or someone who can cancel work, can try it again.");
         if (!"failed".equals(goal.getStatus()) && !"cancelled".equals(goal.getStatus())) {
             throw new ApiException(ErrorCode.CONFLICT, "Only a goal that failed or was stopped can be tried again.");
         }

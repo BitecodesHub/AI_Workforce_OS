@@ -30,6 +30,13 @@ public class PasswordService {
     private final Argon2PasswordEncoder encoder;
     private final int minimumLength;
 
+    /*
+     * A real hash made with the configured parameters, for wasteTime to verify against. A fixed
+     * literal carries its own parameters, so whenever the configuration differed from them a
+     * missing or locked account took measurably more or less time than a wrong password.
+     */
+    private final String timingHash;
+
     public PasswordService(PlatformProperties properties) {
         PlatformProperties.Argon2 argon2 = properties.security().argon2();
         this.encoder = new Argon2PasswordEncoder(
@@ -39,6 +46,7 @@ public class PasswordService {
                 argon2.memoryKib(),
                 argon2.iterations());
         this.minimumLength = properties.security().passwordMinLength();
+        this.timingHash = encoder.encode(java.util.UUID.randomUUID().toString());
     }
 
     public String hash(String rawPassword) {
@@ -79,12 +87,15 @@ public class PasswordService {
         }
     }
 
-    /** Spends comparable time when no account exists, so timing does not reveal which emails do. */
+    /**
+     * Spends the time one password check takes, without checking anything.
+     *
+     * <p>Called wherever a sign-in is refused before the password is compared - no such account,
+     * or one that is locked or disabled - so the response takes as long as a wrong password and
+     * timing does not reveal which addresses exist or which accounts are locked.
+     */
     public void wasteTime() {
-        encoder.matches(
-                "not-a-real-password",
-                "$argon2id$v=19$m=65536,t=3,p=4$"
-                        + "c29tZXNhbHR2YWx1ZQ$UqE5Y3JhY2tpbmdpc3Nsb3d3aXRoYXJnb24yaWQxMjM0NTY");
+        encoder.matches("not-a-real-password", timingHash);
     }
 
     static ApiException invalidCredentials() {

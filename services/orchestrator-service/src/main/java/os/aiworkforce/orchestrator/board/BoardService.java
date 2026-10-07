@@ -21,6 +21,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import os.aiworkforce.orchestrator.board.GoalViews.TaskRuns;
 import os.aiworkforce.orchestrator.chat.WorkspaceZoneLookup;
 import os.aiworkforce.orchestrator.domain.Agent;
 import os.aiworkforce.orchestrator.domain.Approval;
@@ -47,10 +48,11 @@ import os.aiworkforce.platform.rbac.Permission;
  * for, and what it has cost - and stops everything, when a person asks for that.
  *
  * <p>Nothing here writes new state except {@link #stopAll}. The board reads goals within the
- * requested window (active ones stay visible whatever their age) and derives every other figure -
- * the per-agent counts, the queue and its reasons, the timeline, the questions and approvals a
- * person can act on - from the tasks, runs, questions and approvals already under them, so a
- * refresh costs a small, bounded number of queries rather than one per row shown.
+ * requested window, and every active goal besides, however old it is, and derives every other
+ * figure - the per-agent counts, the queue and its reasons, the timeline, the questions and
+ * approvals a person can act on - from the tasks, runs, questions and approvals already under
+ * them, so a refresh costs a small, bounded number of queries rather than one per row shown. The
+ * goal and run reads return lists, not pages, so none of them adds a {@code count(*)}.
  */
 @Service
 public class BoardService {
@@ -87,6 +89,10 @@ public class BoardService {
     private final QuestionService questions;
     private final ScheduleService schedules;
     private final WorkspaceZoneLookup zones;
+
+    /** Who may read which conversation; absent only where a test builds this by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.chat.ConversationAccess access;
 
     public BoardService(
             Goals goals,
@@ -147,6 +153,11 @@ public class BoardService {
         }
     }
 
+    /**
+     * @param runId the task's latest run, and {@code runStatus} and {@code stepCount} are that run's
+     * @param cost what every run of the task cost, not only the latest
+     * @param attempts how many runs the task has had
+     */
     public record TaskView(
             UUID id,
             UUID agentId,
@@ -163,7 +174,8 @@ public class BoardService {
             Instant startedAt,
             Instant completedAt,
             int stepCount,
-            BigDecimal cost) {}
+            BigDecimal cost,
+            int attempts) {}
 
     public record GoalView(
             UUID id,
@@ -281,11 +293,19 @@ public class BoardService {
             since = now.minus(Duration.ofMinutes(windowMinutes));
         }
 
-        List<Goal> recentGoals = goals.findByOrgIdOrderByCreatedAtDesc(orgId, PageRequest.of(0, goalFetchLimit(window)))
-                .getContent();
+        List<Goal> recentGoals = goals.findRecent(orgId, PageRequest.of(0, goalFetchLimit(window)));
         Map<UUID, Goal> goalById = new LinkedHashMap<>();
         for (Goal goal : recentGoals) {
             goalById.put(goal.getId(), goal);
+        }
+
+        // Every active goal joins the fetch, however old it is: a goal still waiting on a person
+        // after hundreds of newer ones finished must still be drawn, counted and listed under its
+        // agent, or the approvals inbox would show something no card or tile accounts for (D-20).
+        for (Goal goal : goals.findAllById(goals.activeIds(orgId))) {
+            if (orgId.equals(goal.getOrgId())) {
+                goalById.putIfAbsent(goal.getId(), goal);
+            }
         }
 
         // Failed-today goals join the fetch before tasks and runs are read, so a goal that failed
@@ -293,15 +313,20 @@ public class BoardService {
         // cards exactly (D-20) - without a second round trip per goal.
         List<Goal> failedToday =
                 goals.findFinishedSince(orgId, "failed", midnight, PageRequest.of(0, FAILED_TODAY_LIMIT));
-        Set<UUID> goalIdsForTasks = new LinkedHashSet<>(goalById.keySet());
         for (Goal goal : failedToday) {
-            goalIdsForTasks.add(goal.getId());
             goalById.putIfAbsent(goal.getId(), goal);
         }
+        // Work a private conversation started is shown only to the people in that conversation.
+        Set<UUID> hiddenTasks = Set.of();
+        if (access != null) {
+            goalById.keySet().removeAll(access.hiddenGoalIds(orgId, actor));
+            hiddenTasks = access.hiddenTaskIds(orgId, actor);
+        }
+        Set<UUID> goalIdsForTasks = new LinkedHashSet<>(goalById.keySet());
 
-        // One query for every goal's tasks, and one for every task's latest run, instead of a
-        // pair of queries per goal: a board with hundreds of goals and their tasks would otherwise
-        // cost hundreds of round trips on an endpoint a client polls every few seconds.
+        // One query for every goal's tasks, and one for every task's runs, instead of a pair of
+        // queries per goal: a board with hundreds of goals and their tasks would otherwise cost
+        // hundreds of round trips on an endpoint a client polls every few seconds.
         List<Task> allTasks = tasks.findByGoalIdInOrderByPositionAsc(goalIdsForTasks);
         Map<UUID, List<Task>> tasksByGoal = allTasks.stream()
                 .collect(Collectors.groupingBy(Task::getGoalId, LinkedHashMap::new, Collectors.toList()));
@@ -310,7 +335,8 @@ public class BoardService {
             goalIdByTaskId.put(task.getId(), task.getGoalId());
         }
         List<UUID> taskIds = allTasks.stream().map(Task::getId).toList();
-        Map<UUID, Run> latestRunByTask = GoalViews.latestRunByTask(runs, taskIds);
+        Map<UUID, TaskRuns> runsByTask = GoalViews.runsByTask(runs, taskIds);
+        Map<UUID, Run> latestRunByTask = GoalViews.latestRuns(runsByTask);
 
         Map<UUID, Agent> agentById = new LinkedHashMap<>();
         for (Agent agent : agents.findByOrgIdOrderByName(orgId)) {
@@ -323,19 +349,18 @@ public class BoardService {
             directRunById.put(run.getId(), run);
         }
 
-        List<Goal> displayGoals = recentGoals.stream()
+        List<Goal> displayGoals = goalById.values().stream()
                 .filter(goal -> !goal.isFinished()
                         || (goal.getCompletedAt() != null
                                 && !goal.getCompletedAt().isBefore(since)))
                 .sorted(Comparator.comparing(Goal::getCreatedAt).reversed())
                 .toList();
         List<GoalView> goalViews = displayGoals.stream()
-                .map(goal ->
-                        GoalViews.goalView(goal, tasksByGoal.getOrDefault(goal.getId(), List.of()), latestRunByTask))
+                .map(goal -> GoalViews.goalView(goal, tasksByGoal.getOrDefault(goal.getId(), List.of()), runsByTask))
                 .toList();
         List<GoalView> failedTodayViews = failedToday.stream()
-                .map(goal ->
-                        GoalViews.goalView(goal, tasksByGoal.getOrDefault(goal.getId(), List.of()), latestRunByTask))
+                .filter(goal -> goalById.containsKey(goal.getId()))
+                .map(goal -> GoalViews.goalView(goal, tasksByGoal.getOrDefault(goal.getId(), List.of()), runsByTask))
                 .toList();
 
         int goalsCompletedToday =
@@ -348,7 +373,7 @@ public class BoardService {
         List<AgentSummary> agentSummaries =
                 computeAgentSummaries(agentById.values(), tasksByGoal, latestRunByTask, directRuns);
         List<QueueEntry> queue = computeQueue(orgId, goalById, tasksByGoal, agentById);
-        List<TimelineEntry> timeline = computeTimeline(orgId, since, runFetchLimit(window), goalIdByTaskId);
+        List<TimelineEntry> timeline = computeTimeline(orgId, since, runFetchLimit(window), goalIdByTaskId, hiddenTasks);
         List<QuestionService.QuestionView> questionViews =
                 questions.views(questions.pending(orgId, QUESTION_FETCH_LIMIT), actor);
         List<ApprovalSummary> approvalSummaries =
@@ -537,26 +562,44 @@ public class BoardService {
                 .toList();
     }
 
+    /**
+     * The tasks waiting to start, each with why. Almost every goal they belong to was already read
+     * for the rest of the board; the few that were not are fetched with one batched goal lookup and
+     * one batched task lookup, never a pair of queries per queued task.
+     */
     private List<QueueEntry> computeQueue(
             UUID orgId, Map<UUID, Goal> goalById, Map<UUID, List<Task>> tasksByGoal, Map<UUID, Agent> agentById) {
-        List<QueueEntry> entries = new ArrayList<>();
-        for (Task task : tasks.findQueued(orgId, PageRequest.of(0, QUEUE_FETCH_LIMIT))) {
-            Goal goal = goalById.get(task.getGoalId());
-            if (goal == null) {
-                goal = goals.findById(task.getGoalId())
-                        .filter(candidate -> orgId.equals(candidate.getOrgId()))
-                        .orElse(null);
+        List<Task> queued = tasks.findQueued(orgId, PageRequest.of(0, QUEUE_FETCH_LIMIT));
+        Set<UUID> missingGoalIds = new LinkedHashSet<>();
+        for (Task task : queued) {
+            if (!goalById.containsKey(task.getGoalId())) {
+                missingGoalIds.add(task.getGoalId());
             }
+        }
+        Map<UUID, Goal> extraGoalById = new LinkedHashMap<>();
+        Map<UUID, List<Task>> extraTasksByGoal = new LinkedHashMap<>();
+        if (!missingGoalIds.isEmpty()) {
+            for (Goal goal : goals.findAllById(missingGoalIds)) {
+                if (orgId.equals(goal.getOrgId())) {
+                    extraGoalById.put(goal.getId(), goal);
+                }
+            }
+            if (!extraGoalById.isEmpty()) {
+                tasks.findByGoalIdInOrderByPositionAsc(extraGoalById.keySet())
+                        .forEach(task -> extraTasksByGoal
+                                .computeIfAbsent(task.getGoalId(), key -> new ArrayList<>())
+                                .add(task));
+            }
+        }
+
+        List<QueueEntry> entries = new ArrayList<>();
+        for (Task task : queued) {
+            Goal goal = goalById.getOrDefault(task.getGoalId(), extraGoalById.get(task.getGoalId()));
             if (goal == null) {
                 continue;
             }
-            // The fallback query runs only when this goal's tasks were not already fetched with
-            // the rest of the board - most of the time they were, and siblings is never null then.
-            List<Task> siblings = tasksByGoal.get(goal.getId());
-            if (siblings == null) {
-                siblings = tasks.findByGoalIdOrderByPosition(goal.getId());
-            }
-            String reason = reasonFor(task, siblings, agentById);
+            List<Task> siblings = tasksByGoal.getOrDefault(goal.getId(), extraTasksByGoal.get(goal.getId()));
+            String reason = reasonFor(task, siblings == null ? List.of(task) : siblings, agentById);
             entries.add(new QueueEntry(
                     goal.getId(),
                     goal.getTitle(),
@@ -572,8 +615,9 @@ public class BoardService {
     }
 
     private List<TimelineEntry> computeTimeline(
-            UUID orgId, Instant since, int runFetchLimit, Map<UUID, UUID> goalIdByTaskId) {
-        return runs.findByOrgIdOrderByStartedAtDesc(orgId, PageRequest.of(0, runFetchLimit)).getContent().stream()
+            UUID orgId, Instant since, int runFetchLimit, Map<UUID, UUID> goalIdByTaskId, Set<UUID> hiddenTasks) {
+        return runs.findRecent(orgId, PageRequest.of(0, runFetchLimit)).stream()
+                .filter(run -> run.getTaskId() == null || !hiddenTasks.contains(run.getTaskId()))
                 .filter(run -> run.getStartedAt() != null && !run.getStartedAt().isBefore(since))
                 .map(run -> new TimelineEntry(
                         run.getId(),
@@ -721,6 +765,10 @@ public class BoardService {
      * transaction (through {@link GoalService#cancelIfActive} and {@link
      * GoalService#stopRunIfActive}), so a goal that finishes on its own in the middle of this call,
      * or a lock this call must wait behind, can never turn the rest of the sweep into a rollback.
+     *
+     * <p>Schedules are paused through {@link ScheduleService#pauseInternal}, not the per-owner
+     * pause, so a caller with {@code run:cancel} reaches every schedule whoever owns it. The whole
+     * call is recorded once in the audit trail, as {@code orchestrator.stop_all} with its counts.
      */
     public StopAllResult stopAll(UUID orgId, boolean pauseSchedules, Actor actor) {
         int schedulesPaused = 0;
@@ -735,7 +783,9 @@ public class BoardService {
                     continue;
                 }
                 try {
-                    schedules.pause(orgId, schedule.getId());
+                    // The internal pause, not the per-owner one: Stop everything has to reach every
+                    // schedule, whoever owns it, and its caller was already checked above.
+                    schedules.pauseInternal(orgId, schedule.getId(), ScheduleService.STOPPED_EVERYTHING_REASON);
                     schedulesPaused++;
                 } catch (RuntimeException e) {
                     log.warn("Could not pause schedule {}: {}", schedule.getId(), e.getMessage());
@@ -787,7 +837,7 @@ public class BoardService {
             }
         }
 
-        return new StopAllResult(
+        StopAllResult result = new StopAllResult(
                 runsCancelled,
                 tasksCancelled,
                 approvalsWithdrawn,
@@ -795,5 +845,16 @@ public class BoardService {
                 schedulesPaused,
                 goalsSkipped,
                 runsSkipped);
+        Map<String, Object> counts = new LinkedHashMap<>();
+        counts.put("pauseSchedules", pauseSchedules);
+        counts.put("runsCancelled", runsCancelled);
+        counts.put("tasksCancelled", tasksCancelled);
+        counts.put("approvalsWithdrawn", approvalsWithdrawn);
+        counts.put("questionsWithdrawn", questionsWithdrawn);
+        counts.put("schedulesPaused", schedulesPaused);
+        counts.put("goalsSkipped", goalsSkipped);
+        counts.put("runsSkipped", runsSkipped);
+        schedules.recordStopAll(orgId, actor, counts);
+        return result;
     }
 }

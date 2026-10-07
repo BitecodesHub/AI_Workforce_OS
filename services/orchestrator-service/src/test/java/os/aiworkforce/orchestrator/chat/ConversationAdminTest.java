@@ -253,6 +253,6 @@ class ConversationAdminTest {
 
     private static ConversationQueries.ConversationView dummyView() {
         return new ConversationQueries.ConversationView(
-                UUID.randomUUID(), "t", null, null, null, "", 0, false, false, "idle", true, false, null);
+                UUID.randomUUID(), "t", null, null, null, "", 0, false, false, "idle", true, false, null, "workspace", true);
     }
 }

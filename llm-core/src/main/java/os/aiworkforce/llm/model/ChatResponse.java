@@ -22,6 +22,10 @@ import java.util.Objects;
  * @param latency wall-clock time for the successful attempt
  * @param attempts every attempt made, including the failures before this one
  * @param providerMetadata raw provider fields kept for the trace
+ * @param compactedConversation when the router had to shorten the conversation to get this
+ *     answer, the shortened messages it actually sent, system turns included; null when it sent
+ *     the conversation as given. A caller that keeps a conversation across turns adopts it, or
+ *     every later turn overflows and is compacted again from scratch.
  */
 public record ChatResponse(
         String content,
@@ -32,7 +36,8 @@ public record ChatResponse(
         String model,
         Duration latency,
         List<AttemptRecord> attempts,
-        Map<String, String> providerMetadata) {
+        Map<String, String> providerMetadata,
+        List<ChatMessage> compactedConversation) {
 
     public ChatResponse {
         Objects.requireNonNull(finishReason, "finishReason");
@@ -40,6 +45,21 @@ public record ChatResponse(
         usage = usage == null ? TokenUsage.NONE : usage;
         attempts = attempts == null ? List.of() : List.copyOf(attempts);
         providerMetadata = providerMetadata == null ? Map.of() : Map.copyOf(providerMetadata);
+        compactedConversation = compactedConversation == null ? null : List.copyOf(compactedConversation);
+    }
+
+    /** A response as a provider builds it: nothing has been compacted at that level. */
+    public ChatResponse(
+            String content,
+            List<ToolCall> toolCalls,
+            FinishReason finishReason,
+            TokenUsage usage,
+            String provider,
+            String model,
+            Duration latency,
+            List<AttemptRecord> attempts,
+            Map<String, String> providerMetadata) {
+        this(content, toolCalls, finishReason, usage, provider, model, latency, attempts, providerMetadata, null);
     }
 
     public boolean hasToolCalls() {
@@ -58,7 +78,27 @@ public record ChatResponse(
     /** The response with the full attempt history attached, added by the router. */
     public ChatResponse withAttempts(List<AttemptRecord> history) {
         return new ChatResponse(
-                content, toolCalls, finishReason, usage, provider, model, latency, history, providerMetadata);
+                content,
+                toolCalls,
+                finishReason,
+                usage,
+                provider,
+                model,
+                latency,
+                history,
+                providerMetadata,
+                compactedConversation);
+    }
+
+    /** The response carrying the shortened conversation the router sent, added by the router. */
+    public ChatResponse withCompactedConversation(List<ChatMessage> messages) {
+        return new ChatResponse(
+                content, toolCalls, finishReason, usage, provider, model, latency, attempts, providerMetadata, messages);
+    }
+
+    /** True when the router shortened the conversation to get this answer. */
+    public boolean wasCompacted() {
+        return compactedConversation != null;
     }
 
     /** The answer as one message, ready to append to the conversation. */

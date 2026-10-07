@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Button, EmptyState, StatusTag } from '../ui'
 // Imported from its own module, not the ../ui barrel: this is used from Orchestrator, a
 // lazy-loaded route, and the barrel is also part of the main bundle, so going through it created
@@ -12,6 +13,7 @@ import { formatCount, formatElapsed, formatMoney, formatRunElapsed, truncateWord
 import { goalSourceLabel } from '../../lib/labels'
 import type { Board as BoardData } from '../../lib/queries'
 import { useRouter } from '../../lib/router'
+import { usePersistentState } from '../../lib/persist'
 import { profile } from '../../lib/session'
 import { useListFilter } from '../../lib/useListFilter'
 import { useNow } from '../../lib/useNow'
@@ -28,7 +30,9 @@ import { requesterLabel } from './shared'
  * column move, because `card.id` is the goal's own id, never the task's.
  */
 
-const COLUMNS: BoardColumn[] = ['queued', 'working', 'needs_you', 'finished']
+/** The columns still in flight. Finished sits below them, folded away until asked for. */
+const ACTIVE_COLUMNS: BoardColumn[] = ['queued', 'working', 'needs_you']
+const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 const STATUS_OPTIONS: CardStatusKey[] = ['queued', 'held', 'working', 'needs_you', 'finished', 'failed']
 const STATUS_LABEL: Record<CardStatusKey, string> = {
   queued: 'Queued',
@@ -51,6 +55,7 @@ export function OrchestratorBoard({
   changedIds,
   onCardMoved,
   onNewGoal,
+  doneToday,
 }: {
   board: BoardData
   cards: BoardCard[]
@@ -63,6 +68,8 @@ export function OrchestratorBoard({
   onCardMoved?: (cardId: string, column: string) => void
   /** Offered from the empty board, when the viewer may start a goal. */
   onNewGoal?: (() => void) | undefined
+  /** "Done today", counted from local midnight: pressing it widens the window to today. */
+  doneToday?: { count: number; pressed: boolean; onToggle: () => void }
 }) {
   const { search, navigate } = useRouter()
   const now = useNow(1_000)
@@ -116,6 +123,12 @@ export function OrchestratorBoard({
     setFollowedFilterKey(filterKey)
     setExpanded({})
   }
+
+  const [showEmpty, setShowEmpty] = usePersistentState('orc.board.showEmpty', false, isBoolean)
+  const [finishedOpenStored, setFinishedOpen] = usePersistentState('orc.board.finishedOpen', false, isBoolean)
+  // A search or filter shows every goal it matched, the finished ones included, without a click.
+  const filtering = filter.active || Boolean(selectedAgentId)
+  const finishedOpen = finishedOpenStored || filtering
 
   const columnOf = (cardId: string): string | undefined => cards.find((card) => card.id === cardId)?.column
   useBoardKeyboard(containerRef)
@@ -183,56 +196,190 @@ export function OrchestratorBoard({
         onSetView={setView}
         group={group}
         onSetGroup={setGroup}
+        {...(doneToday
+          ? { extraStatus: { label: 'Done today', count: doneToday.count, pressed: doneToday.pressed, onToggle: doneToday.onToggle } }
+          : {})}
+        {...(view === 'board' ? { showEmpty: { value: showEmpty, onChange: setShowEmpty } } : {})}
       />
 
       <div ref={containerRef}>
         {visible.length === 0 ? (
           <FilterEmpty onClear={clearAll} what="goals" />
         ) : view === 'list' ? (
-          <BoardList cards={visible} board={board} group={group} onOpenGoal={onOpenGoal} />
+          <ListWithFinished
+            visible={visible}
+            finishedOpen={finishedOpen}
+            onToggleFinished={filtering ? undefined : () => setFinishedOpen(!finishedOpenStored)}
+            title={columnTitle('finished', board.window, board.windowMinutes)}
+            renderList={(listCards) => <BoardList cards={listCards} board={board} group={group} onOpenGoal={onOpenGoal} />}
+          />
         ) : (
-          <div className="orc-columns">
-            {COLUMNS.map((column) => {
-              const columnCards = visible.filter((card) => card.column === column)
+          <BoardColumns
+            visible={visible}
+            showEmpty={showEmpty}
+            finishedOpen={finishedOpen}
+            onToggleFinished={filtering ? undefined : () => setFinishedOpen(!finishedOpenStored)}
+            renderColumn={(column, columnCards) => {
               const isExpanded = expanded[column] ?? false
               const shown = isExpanded ? columnCards : columnCards.slice(0, CARDS_PER_COLUMN)
-              const title = columnTitle(column, board.window, board.windowMinutes)
               return (
-                <section key={column} className="orc-column" aria-label={title} data-empty={columnCards.length === 0 || undefined}>
-                  <div className="orc-column-head">
-                    <h3 className="orc-column-title">{title}</h3>
-                    <span className="orc-column-count tabular">{formatCount(columnCards.length)}</span>
-                  </div>
-                  {columnCards.length === 0 ? (
-                    <p className="orc-column-empty">No goals</p>
-                  ) : (
-                    <div className="orc-column-cards">
-                      {shown.map((card) => (
-                        <BoardGoalCard
-                          key={card.id}
-                          card={card}
-                          now={now}
-                          agentName={card.task?.agentId ? (agentNames[card.task.agentId] ?? 'Unknown agent') : null}
-                          requester={requesterLabel(card.goal, directory, currentUserId)}
-                          current={openGoalId === card.id}
-                          changed={changedIds.has(card.id)}
-                          onOpen={() => onOpenGoal(card.id)}
-                        />
-                      ))}
-                      {!isExpanded && columnCards.length > CARDS_PER_COLUMN && (
-                        <button type="button" className="link orc-column-more" onClick={() => setExpanded((current) => ({ ...current, [column]: true }))}>
-                          Show all {columnCards.length}
-                        </button>
-                      )}
-                    </div>
+                <>
+                  {shown.map((card) => (
+                    <BoardGoalCard
+                      key={card.id}
+                      card={card}
+                      now={now}
+                      agentName={card.task?.agentId ? (agentNames[card.task.agentId] ?? 'Unknown agent') : null}
+                      requester={requesterLabel(card.goal, directory, currentUserId)}
+                      current={openGoalId === card.id}
+                      changed={changedIds.has(card.id)}
+                      onOpen={() => onOpenGoal(card.id)}
+                    />
+                  ))}
+                  {!isExpanded && columnCards.length > CARDS_PER_COLUMN && (
+                    <button type="button" className="link orc-column-more" onClick={() => setExpanded((current) => ({ ...current, [column]: true }))}>
+                      Show all {columnCards.length}
+                    </button>
                   )}
-                </section>
+                </>
               )
-            })}
-          </div>
+            }}
+            titleOf={(column) => columnTitle(column, board.window, board.windowMinutes)}
+          />
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The board view: the columns still in flight side by side (an empty one hidden unless "Show
+ * empty" is on), then Finished as one folded row beneath them, closed by default so the goals that
+ * still need something stay above the fold.
+ */
+function BoardColumns({
+  visible,
+  showEmpty,
+  finishedOpen,
+  onToggleFinished,
+  renderColumn,
+  titleOf,
+}: {
+  visible: BoardCard[]
+  showEmpty: boolean
+  finishedOpen: boolean
+  /** Absent while a filter holds Finished open. */
+  onToggleFinished: (() => void) | undefined
+  renderColumn: (column: BoardColumn, cards: BoardCard[]) => ReactNode
+  titleOf: (column: BoardColumn) => string
+}) {
+  const active = ACTIVE_COLUMNS.map((column) => ({ column, cards: visible.filter((card) => card.column === column) }))
+  const shownColumns = active.filter((entry) => showEmpty || entry.cards.length > 0)
+  const finished = visible.filter((card) => card.column === 'finished')
+
+  return (
+    <div className="orc-board">
+      {shownColumns.length === 0 ? (
+        <p className="orc-board-idle caption muted">Nothing queued, working or waiting on anyone right now.</p>
+      ) : (
+        <div className="orc-columns" data-cols={shownColumns.length}>
+          {shownColumns.map(({ column, cards: columnCards }) => {
+            const title = titleOf(column)
+            return (
+              <section key={column} className="orc-column" aria-label={title} data-empty={columnCards.length === 0 || undefined}>
+                <div className="orc-column-head">
+                  <h3 className="orc-column-title">{title}</h3>
+                  <span className="orc-column-count tabular">{formatCount(columnCards.length)}</span>
+                </div>
+                {columnCards.length === 0 ? (
+                  <p className="orc-column-empty">No goals</p>
+                ) : (
+                  <div className="orc-column-cards">{renderColumn(column, columnCards)}</div>
+                )}
+              </section>
+            )
+          })}
+        </div>
+      )}
+
+      {(finished.length > 0 || showEmpty) && (
+        <FinishedDisclosure title={titleOf('finished')} count={finished.length} open={finishedOpen} onToggle={onToggleFinished}>
+          {finished.length === 0 ? <p className="orc-column-empty">No goals</p> : <div className="orc-finished-cards">{renderColumn('finished', finished)}</div>}
+        </FinishedDisclosure>
+      )}
+    </div>
+  )
+}
+
+/** The list view, with the finished goals folded under their own heading the same way. */
+function ListWithFinished({
+  visible,
+  finishedOpen,
+  onToggleFinished,
+  title,
+  renderList,
+}: {
+  visible: BoardCard[]
+  finishedOpen: boolean
+  onToggleFinished: (() => void) | undefined
+  title: string
+  renderList: (cards: BoardCard[]) => ReactNode
+}) {
+  // While a filter holds Finished open, the list stays one list, sorted and grouped as a whole.
+  if (!onToggleFinished) return <>{renderList(visible)}</>
+  const active = visible.filter((card) => card.column !== 'finished')
+  const finished = visible.filter((card) => card.column === 'finished')
+  return (
+    <div className="orc-board">
+      {active.length > 0 ? renderList(active) : <p className="orc-board-idle caption muted">Nothing queued, working or waiting on anyone right now.</p>}
+      {finished.length > 0 && (
+        <FinishedDisclosure title={title} count={finished.length} open={finishedOpen} onToggle={onToggleFinished}>
+          {renderList(finished)}
+        </FinishedDisclosure>
+      )}
+    </div>
+  )
+}
+
+/** Finished goals, folded to one heading row by default; a filter holds it open without a toggle. */
+function FinishedDisclosure({
+  title,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string
+  count: number
+  open: boolean
+  onToggle: (() => void) | undefined
+  children: ReactNode
+}) {
+  const bodyId = useId()
+  return (
+    <section className="orc-finished" aria-label={title} data-open={open || undefined}>
+      <h3 className="orc-finished-heading">
+        {onToggle ? (
+          <button type="button" className="orc-finished-toggle" aria-expanded={open} aria-controls={open ? bodyId : undefined} onClick={onToggle}>
+            <svg className="collapsible-chevron" data-open={open} width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="orc-column-title">{title}</span>
+            <span className="orc-column-count tabular">{formatCount(count)}</span>
+          </button>
+        ) : (
+          <span className="orc-finished-static">
+            <span className="orc-column-title">{title}</span>
+            <span className="orc-column-count tabular">{formatCount(count)}</span>
+          </span>
+        )}
+      </h3>
+      {open && (
+        <div id={bodyId} className="orc-finished-body">
+          {children}
+        </div>
+      )}
+    </section>
   )
 }
 

@@ -105,6 +105,11 @@ public class ChatGoalListener implements GoalLifecycleListener {
             if (code != null) {
                 detail.put("code", code);
             }
+            // A run that stopped at its step or output limit still wrote what it had. The card
+            // offers it as an incomplete answer: worth reading, not to be mistaken for a finished one.
+            if (task.getResult() != null && !task.getResult().isBlank()) {
+                detail.put("incompleteAnswer", task.getResult());
+            }
             appendAs("agent", goal, conversationId, task.getAgentId(), "error", reason, detail);
         } else if ("cancelled".equals(status)) {
             // A rejected approval or a stopped run ends the work; without a line in the thread the

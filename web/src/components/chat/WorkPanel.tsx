@@ -27,6 +27,7 @@ export function WorkPanel({
   me,
   onStop,
   onGoTo,
+  onReview,
   onClose,
 }: {
   goals: BoardGoal[]
@@ -36,6 +37,7 @@ export function WorkPanel({
   me: string | null
   onStop: (goalId: string) => void
   onGoTo: (elementId: string) => void
+  onReview: (goalId: string) => void
   onClose: () => void
 }) {
   const [workingOpen, setWorkingOpen] = useCollapsed('chat.panel.working', true)
@@ -58,7 +60,16 @@ export function WorkPanel({
         {working.length === 0 ? (
           <p className="caption muted">Nothing is running right now.</p>
         ) : (
-          <WorkStrip goals={working} questions={questions} agentNames={agentNames} me={me} compact={false} onStop={onStop} onGoTo={onGoTo} />
+          <WorkStrip
+            goals={working}
+            questions={questions}
+            agentNames={agentNames}
+            me={me}
+            compact={false}
+            onStop={onStop}
+            onGoTo={onGoTo}
+            onReview={onReview}
+          />
         )}
       </Collapsible>
 

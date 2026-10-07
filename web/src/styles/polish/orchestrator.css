@@ -16,80 +16,273 @@
   }
 }
 
-/* ---- Summary strip (B2.3) -------------------------------------------------------------------------
- * Reuses .stat-tile and .stat-tile-button (WP3, components.css) inside its own grid rather than
- * .stat-row's single-row column-flow, since it needs to wrap to a second row on a narrower screen
- * without every tile shrinking to fit. The hairlines .stat-tile already draws only look right in a
- * single row, so each row's own first tile has its left border reset here, and every tile after the
- * first row gains a top border instead.
+/* ---- Header: title, New goal and one overflow menu, with the live state as a pill ------------ */
+
+.orc-page .page-header {
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+.orc-page .page-header-meta {
+  margin-top: var(--space-2);
+}
+
+.orc-live {
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.orc-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 22px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+}
+
+.orc-status-pill[data-state='paused'] {
+  background: var(--warning-bg);
+  color: var(--warning-ink);
+}
+
+.orc-status-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.orc-header-menu .menu-panel {
+  min-width: 220px;
+}
+
+/* On a phone the one-line description gives way to the figures and the inbox. */
+@media (max-width: 640px) {
+  .orc-page .page-description {
+    display: none;
+  }
+}
+
+/* ---- Summary strip (B2.3): five figures on one line, each a filter ----------------------------
+ * A single bordered bar with hairline dividers, a label above each figure. It wraps to two rows on
+ * a phone instead of scrolling, so the page never scrolls sideways.
  */
 .orc-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-tile);
   overflow: hidden;
 }
 
-@media (min-width: 768px) {
-  .orc-summary {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .orc-summary .stat-tile:nth-child(4n + 1) {
-    border-left: none;
-  }
-
-  .orc-summary .stat-tile:nth-child(n + 5) {
-    border-top: 1px solid var(--line);
-  }
+.orc-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
 }
 
-@media (min-width: 1280px) {
-  .orc-summary {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-  }
-
-  .orc-summary .stat-tile:nth-child(4n + 1) {
-    border-left: 1px solid var(--line);
-  }
-
-  .orc-summary .stat-tile:nth-child(7n + 1) {
-    border-left: none;
-  }
-
-  .orc-summary .stat-tile:nth-child(n + 5) {
-    border-top: none;
-  }
-
-  .orc-summary .stat-tile:nth-child(n + 8) {
-    border-top: 1px solid var(--line);
-  }
-}
-
-.orc-summary .stat-tile:nth-child(2n + 1) {
+.orc-figure:first-child {
   border-left: none;
 }
 
-/* ---- Needs you inbox (B2.4) ------------------------------------------------------------------- */
+.orc-figure:hover {
+  background: var(--surface-hover);
+}
+
+.orc-figure:focus-visible {
+  outline-offset: -2px;
+}
+
+.orc-figure[aria-pressed='true'] {
+  background: var(--blue-light);
+}
+
+.orc-figure-static {
+  cursor: default;
+}
+
+.orc-figure-static:hover {
+  background: transparent;
+}
+
+.orc-figure-label {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+}
+
+.orc-figure-value {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-strong);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.orc-figure-note {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: var(--text-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.orc-figure[data-tone='attention'] .orc-figure-value {
+  color: var(--blue);
+}
+
+.orc-figure[data-tone='danger'] .orc-figure-value {
+  color: var(--danger);
+}
+
+.orc-figure[aria-pressed='true'] .orc-figure-label {
+  color: var(--blue);
+}
+
+@media (max-width: 640px) {
+  .orc-summary {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  /* Three on the first row, two on the second, every cell 44px or taller. */
+  .orc-figure {
+    grid-column: span 2;
+    min-height: 52px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .orc-figure:nth-child(n + 4) {
+    grid-column: span 3;
+    border-top: 1px solid var(--line);
+  }
+
+  .orc-figure:nth-child(4) {
+    border-left: none;
+  }
+}
+
+/* ---- Needs you inbox (B2.4): a card while something waits, one thin line once nothing does ---- */
+
+.orc-section-heading {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+}
+
+.orc-needs-clear {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  color: var(--green);
+}
+
+.orc-needs-clear-text {
+  margin: 0;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+}
+
+.orc-needs-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.orc-needs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.orc-needs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.orc-needs-none {
+  margin: 0;
+}
 
 .orc-needs {
-  border-top: 1px solid var(--line);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .orc-needs-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-4);
-  min-height: 56px;
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--line);
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+.orc-needs-body {
+  min-width: 0;
+}
+
+.orc-needs-body .caption {
+  margin: 0;
 }
 
 .orc-needs-text {
   display: block;
+  overflow-wrap: anywhere;
+}
+
+.orc-needs-more {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+
+/* On a phone the action drops under the text instead of squeezing it to a sliver. */
+@media (max-width: 560px) {
+  .orc-needs-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .orc-needs-row > :last-child {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 /* ---- A segmented control: two or three mutually exclusive choices, such as For me / Everyone
@@ -103,7 +296,8 @@
 }
 
 .orc-segmented button {
-  padding: var(--space-2) var(--space-4);
+  min-height: 30px;
+  padding: var(--space-1) var(--space-4);
   border: none;
   border-left: 1px solid var(--line);
   background: var(--surface);
@@ -207,6 +401,8 @@
 
   .orc-segmented button,
   .orc-needs-row button,
+  .orc-agents-bulk .link,
+  .orc-finished-toggle,
   .filter-chip {
     min-height: 44px;
   }
@@ -341,24 +537,66 @@
 .orc-sections {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-4);
 }
 
 .orc-section-title {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-2);
+}
+
+/* The Workforce disclosure: one bordered card whose header stays on screen while it is folded,
+   carrying the agent count and the Pause all and Resume all actions. */
+.orc-workforce-section {
+  padding: var(--space-1) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
 }
 
 .orc-collapsible .collapsible-header {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: var(--space-2);
+  gap: var(--space-2) var(--space-3);
+}
+
+.orc-collapsible .collapsible-heading {
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+}
+
+.orc-workforce-section > .collapsible-header .collapsible-toggle {
+  min-height: 40px;
+}
+
+/* A nested disclosure (the timeline inside Workforce) reads as a sub-heading, not a second card. */
+.orc-collapsible-nested {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+/* Opening a disclosure eases its body in rather than snapping it open. */
+.orc-collapsible > .collapsible-header + div:not([hidden]),
+.orc-finished-body {
+  animation: orc-reveal var(--duration-base) var(--ease-standard);
+}
+
+@keyframes orc-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* A white panel on the paper background: the map, the agents list and the timeline each sit in
    one, so a section reads as one object rather than loose parts. */
 .orc-panel {
   min-width: 0;
-  margin-top: var(--space-4);
-  padding: var(--space-5);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-tile);
@@ -408,8 +646,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3) var(--space-5);
-  margin-bottom: var(--space-5);
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .orc-toolbar-filters {
@@ -417,7 +655,7 @@
   flex: 1 1 520px;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -425,7 +663,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin-left: auto;
 }
 
@@ -451,19 +689,43 @@
 }
 
 .orc-search-input {
-  height: 36px;
+  height: 32px;
   padding-left: calc(var(--space-4) + 20px);
   font-size: var(--text-caption);
 }
 
+/* The statuses as one segmented bar: each segment still toggles on its own, so two can be on. */
 .orc-status-chips {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  max-width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.orc-status-chips .orc-chip {
+  min-height: 30px;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.orc-status-chips .orc-chip:first-child {
+  border-left: none;
+}
+
+.orc-status-chips .orc-chip:active {
+  transform: none;
 }
 
 .orc-chip {
   min-height: 30px;
+}
+
+.orc-show-empty {
+  padding: var(--space-1) var(--space-3);
 }
 
 .orc-filters-menu .button {
@@ -563,11 +825,9 @@
 
   .orc-status-chips {
     order: 2;
-    flex: 1 1 100%;
+    flex: 0 1 auto;
     flex-wrap: nowrap;
     overflow-x: auto;
-    margin: 0 calc(-1 * var(--space-1));
-    padding: 0 var(--space-1) var(--space-1);
     scrollbar-width: none;
   }
 
@@ -597,19 +857,30 @@
 }
 
 .orc-columns {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-@container (max-width: 880px) {
-  .orc-columns {
+/* Only the columns that hold goals are drawn (unless Show empty is on); they share the width. */
+.orc-columns[data-cols='1'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.orc-columns[data-cols='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (max-width: 760px) {
+  .orc-columns[data-cols='3'] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @container (max-width: 520px) {
-  .orc-columns {
+  .orc-columns,
+  .orc-columns[data-cols] {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
   }
@@ -634,7 +905,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 
 .orc-column-title {
@@ -646,7 +917,7 @@
 
 .orc-column-empty {
   margin: 0;
-  padding: var(--space-4);
+  padding: var(--space-3);
   border: 1px dashed var(--line);
   border-radius: var(--radius-tile);
   color: var(--muted);
@@ -657,7 +928,58 @@
 .orc-column-cards {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
+}
+
+.orc-board-idle {
+  margin: 0;
+  padding: var(--space-3) 0;
+}
+
+/* Finished: one folded row under the columns, its cards in a grid of their own once opened. */
+.orc-finished {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.orc-finished-heading {
+  margin: 0;
+}
+
+.orc-finished-toggle,
+.orc-finished-static {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.orc-finished-static {
+  cursor: default;
+}
+
+.orc-finished-body {
+  margin-top: var(--space-2);
+}
+
+.orc-finished-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  align-items: start;
+  gap: var(--space-2);
+}
+
+@container (max-width: 520px) {
+  .orc-finished-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .orc-column-more {
@@ -675,8 +997,8 @@
 .orc-card.card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
+  gap: var(--space-1);
+  padding: var(--space-3);
   border-radius: var(--radius-tile);
 }
 
@@ -729,19 +1051,26 @@
   color: var(--danger);
 }
 
-/* ---- Workforce (B2.7, B2.9): the map and the agents side by side on a wide screen ------------- */
+/* ---- Workforce (B2.7, B2.9): the agents as chips, then the map, then the timeline ------------ */
 
-.orc-workforce {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0 var(--space-5);
+/* Inside the Workforce card the map and the timeline need no second border of their own. */
+.orc-workforce .orc-panel {
+  margin-top: var(--space-3);
+  padding: var(--space-3) 0 0;
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
 }
 
-@media (min-width: 1100px) {
-  .orc-workforce {
-    grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
-    align-items: start;
-  }
+.orc-workforce .orc-collapsible-nested .orc-panel {
+  padding-top: var(--space-2);
+  border-top: none;
+}
+
+.orc-workforce {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--space-3);
 }
 
 /* The ring keeps its own aspect ratio and stops growing at 640 by 360: past that it only filled a
@@ -804,9 +1133,10 @@
 }
 
 .orc-agents-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -815,14 +1145,48 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--line);
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  transition: border-color var(--transition-fast);
 }
 
-.orc-agent-row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+.orc-agent-row:hover,
+.orc-agent-row:focus-within {
+  border-color: var(--border-hover);
+}
+
+.orc-agent-avatar {
+  position: relative;
+  display: inline-flex;
+}
+
+/* A status dot on the avatar: green running, blue waiting on a person, muted idle or paused. */
+.orc-agent-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.orc-agent-dot[data-status='running'] {
+  background: var(--green);
+}
+
+.orc-agent-dot[data-status='asking'],
+.orc-agent-dot[data-status='waiting'] {
+  background: var(--blue);
+}
+
+.orc-agent-dot[data-status='paused'] {
+  background: var(--muted);
 }
 
 .orc-agent-main {
@@ -835,7 +1199,7 @@
   gap: var(--space-2);
   min-width: 0;
   margin: 0;
-  font-size: var(--text-body);
+  font-size: var(--text-caption);
   font-weight: var(--weight-strong);
 }
 
@@ -853,12 +1217,18 @@
 
 .orc-agent-work {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-3);
+  gap: 0 var(--space-2);
   min-width: 0;
-  margin: 2px 0 0;
-  font-size: var(--text-caption);
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--text-micro);
   color: var(--muted);
+  white-space: nowrap;
+}
+
+.orc-agent-work > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .orc-agent-work .link {
@@ -867,6 +1237,7 @@
   background: none;
   font: inherit;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -877,13 +1248,59 @@
 }
 
 .orc-agent-toggle {
-  padding: var(--space-2) var(--space-3);
+  min-height: 28px;
+  padding: var(--space-1) var(--space-3);
   font-size: var(--text-caption);
 }
 
+/* With a mouse, a chip's Pause shows on hover or focus, so a wall of chips is not a wall of
+   buttons. It stays in the tab order (opacity, not display), shows whenever it is focused or busy,
+   and always shows for a paused agent and on a touch screen. */
+@media (hover: hover) and (pointer: fine) {
+  .orc-agent-row:where(:not([data-status='paused'])) .orc-agent-toggle:where(:not([aria-busy='true'])) {
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+
+  .orc-agent-row:hover .orc-agent-toggle,
+  .orc-agent-row:focus-within .orc-agent-toggle,
+  .orc-agent-toggle:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .orc-agent-toggle {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 640px) {
+  .orc-workforce-section {
+    padding-inline: var(--space-3);
+  }
+
+  .orc-agents-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .orc-collapsible .collapsible-summary {
+    flex-basis: 100%;
+    order: 3;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .orc-card[data-changed] {
+  .orc-card[data-changed],
+  .orc-collapsible > .collapsible-header + div:not([hidden]),
+  .orc-finished-body {
     animation: none;
+  }
+
+  .orc-agent-toggle,
+  .orc-figure,
+  .orc-agent-row {
+    transition: none;
   }
 
   .orc-bar-asking {

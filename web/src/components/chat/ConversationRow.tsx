@@ -1,15 +1,22 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { formatRelativeTicked } from '../../lib/format'
+import { formatDateTime, formatShortTime } from '../../lib/format'
 import type { Conversation } from '../../lib/queries'
+import type { MenuEntry } from '../ui/Menu'
 import { MenuButton } from '../ui/Menu'
-import { conversationStatusText, highlightParts } from './conversationGroups'
+import { highlightParts } from './conversationGroups'
 
 /*
- * One row of the conversation sidebar (B1.3): the title (renamable inline), an unread dot, a
- * status caption, and a row menu. The row is a real `<a>` so it can be opened in a new tab; a plain
- * click is intercepted and handled by `onSelect`, and Shift+F10 or the ContextMenu key opens the
- * row's own actions menu without leaving the keyboard.
+ * One row of the conversation sidebar (B1.3), kept to two things: the title (renamable inline),
+ * single-line, with a compact time on the right ('26m', 'Yesterday', '3 Oct'). A conversation
+ * waiting on the viewer adds one small accent dot before the title, labelled for screen readers;
+ * nothing else - no preview, no status line, no lock. The row menu (a floating, portalled panel)
+ * shows on hover, focus or for the open row, and is always reachable by keyboard: Tab from the
+ * row, or Shift+F10 / the ContextMenu key on it.
+ *
+ * The row is a real `<a>` so it can be opened in a new tab; a plain click is intercepted and
+ * handled by `onSelect`. A search hit links to the matching message itself (`#m-<id>`), and hands
+ * that message's id to `onSelect` so the thread can scroll to it.
  */
 
 function DotsIcon() {
@@ -42,6 +49,7 @@ function Highlighted({ text, query, className }: { text: string; query: string; 
 export function ConversationRow({
   conversation,
   current,
+  needsYou = false,
   tabbable,
   now,
   highlight,
@@ -56,10 +64,13 @@ export function ConversationRow({
 }: {
   conversation: Conversation
   current: boolean
+  /** Shown under "Needs you": the row gets the accent dot even if its own activity has moved on. */
+  needsYou?: boolean
   tabbable: boolean
   now: number
   highlight: string
-  onSelect: () => void
+  /** Called with the matching message's id when the row is a search hit. */
+  onSelect: (messageId?: string) => void
   onRename: (title: string) => Promise<boolean>
   onTogglePin: () => void
   onToggleArchive: () => void
@@ -74,7 +85,11 @@ export function ConversationRow({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const menuOpenRef = useRef<(() => void) | null>(null)
   const title = conversation.title || 'Untitled conversation'
-  const statusText = conversationStatusText(conversation.activity)
+  const waitingOnViewer =
+    needsYou || conversation.activity === 'needs_answer' || conversation.activity === 'needs_approval'
+  const waitingLabel = conversation.activity === 'needs_approval' ? 'Needs your approval' : 'Needs your answer'
+  const matchedMessageId = conversation.match?.messageId
+  const href = `/chat?c=${conversation.id}${matchedMessageId ? `#m-${matchedMessageId}` : ''}`
 
   useEffect(() => {
     if (editing) inputRef.current?.focus()
@@ -92,9 +107,22 @@ export function ConversationRow({
     setEditing(false)
   }
 
+  const menuItems: MenuEntry[] = [
+    ...(conversation.canManage ? [{ id: 'rename', label: 'Rename', onSelect: () => setEditing(true) }] : []),
+    { id: 'pin', label: conversation.pinned ? 'Unpin' : 'Pin', onSelect: onTogglePin },
+    { id: 'archive', label: conversation.archived ? 'Unarchive' : 'Archive', onSelect: onToggleArchive },
+    { id: 'copy', label: 'Copy link', onSelect: onCopyLink },
+    ...(conversation.canManage
+      ? [
+          { id: 'delete-separator', separator: true as const },
+          { id: 'delete', label: 'Delete', danger: true, onSelect: onDelete },
+        ]
+      : []),
+  ]
+
   return (
     <li className="chat-row-item">
-      <div className="chat-row" data-current={current || undefined}>
+      <div className="chat-row" data-current={current || undefined} data-editing={editing || undefined}>
         {editing ? (
           <input
             ref={inputRef}
@@ -116,8 +144,11 @@ export function ConversationRow({
         ) : (
           <a
             ref={rowRef}
-            href={`/chat?c=${conversation.id}`}
+            href={href}
             className="chat-row-link"
+            data-unread={conversation.unread || undefined}
+            title={conversation.match ? conversation.match.snippet : undefined}
+            aria-keyshortcuts="Shift+F10"
             aria-current={current ? 'page' : undefined}
             tabIndex={tabbable ? 0 : -1}
             onKeyDown={(event) => {
@@ -132,26 +163,17 @@ export function ConversationRow({
               if (event.defaultPrevented || event.button !== 0) return
               if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
               event.preventDefault()
-              onSelect()
+              onSelect(matchedMessageId)
             }}
           >
-            <span className="chat-row-main">
-              {conversation.unread && <span className="chat-row-unread" aria-hidden="true" />}
-              <Highlighted text={title} query={highlight} className="chat-row-title" />
-              {conversation.unread && <span className="visually-hidden">New reply</span>}
-            </span>
-            <span className="chat-row-meta caption muted">
-              {conversation.match ? (
-                <Highlighted text={conversation.match.snippet} query={highlight} className="chat-row-snippet" />
-              ) : statusText ? (
-                <>
-                  <span className="chat-row-dot" data-activity={conversation.activity} aria-hidden="true" />
-                  <span className="chat-row-status">{statusText}</span>
-                  <span aria-hidden="true">·</span>
-                </>
-              ) : null}
-              <span className="chat-row-time">{formatRelativeTicked(conversation.updatedAt, now, 60_000)}</span>
-            </span>
+            {waitingOnViewer && (
+              <span className="chat-row-needs" role="img" aria-label={waitingLabel} title={waitingLabel} />
+            )}
+            <Highlighted text={title} query={highlight} className="chat-row-title" />
+            {conversation.unread && <span className="visually-hidden">, new reply</span>}
+            <time className="chat-row-time" dateTime={conversation.updatedAt} title={formatDateTime(conversation.updatedAt)}>
+              {formatShortTime(conversation.updatedAt, now)}
+            </time>
           </a>
         )}
         {!editing && (
@@ -160,20 +182,11 @@ export function ConversationRow({
             trigger="icon"
             icon={<DotsIcon />}
             label={`Actions for ${title}`}
-            triggerTabIndex={-1}
+            triggerTabIndex={tabbable ? 0 : -1}
             openRef={menuOpenRef}
             align="end"
-            items={[
-              ...(conversation.canManage
-                ? [{ id: 'rename', label: 'Rename', onSelect: () => setEditing(true) }]
-                : []),
-              { id: 'pin', label: conversation.pinned ? 'Unpin' : 'Pin', onSelect: onTogglePin },
-              { id: 'archive', label: conversation.archived ? 'Unarchive' : 'Archive', onSelect: onToggleArchive },
-              { id: 'copy', label: 'Copy link', onSelect: onCopyLink },
-              ...(conversation.canManage
-                ? [{ id: 'delete', label: 'Delete', danger: true, onSelect: onDelete }]
-                : []),
-            ]}
+            portal
+            items={menuItems}
           />
         )}
       </div>

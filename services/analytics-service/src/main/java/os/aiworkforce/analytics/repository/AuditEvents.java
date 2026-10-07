@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -21,18 +20,30 @@ import os.aiworkforce.analytics.domain.AuditEvent;
 public interface AuditEvents extends JpaRepository<AuditEvent, UUID> {
 
     /**
-     * The most recently written entry, chain-wide.
+     * The most recently written entry of one chain: the row whose hash the next entry of that chain
+     * must build on.
      *
-     * <p>The chain is one sequence for the whole platform, not one per organisation: {@code
-     * sequence} is a single {@code BIGSERIAL} and {@code audit_sequence_unique} enforces it is
-     * unique across every organisation, which only makes sense if one chain covers all of them.
-     * A per-organisation chain would need its own sequence column per organisation; this schema
-     * has one sequence, so this is the row whose hash the next entry must build on.
+     * <p>There is one chain per workspace, and one named {@code platform} for events that belong to
+     * none, so this is read for a single chain and never across them. Rows written before chains
+     * were split carry their workspace's key too, so a workspace's first newer entry links to its
+     * last older one.
      */
-    Optional<AuditEvent> findFirstByOrderBySequenceDesc();
+    Optional<AuditEvent> findFirstByChainKeyOrderBySequenceDesc(String chainKey);
 
-    /** A page of this organisation's entries, newest first. */
-    Page<AuditEvent> findByOrgIdOrderBySequenceDesc(UUID orgId, Pageable pageable);
+    /** The entry a sender's event id already produced, so a retried delivery is not appended twice. */
+    Optional<AuditEvent> findByEventUuid(UUID eventUuid);
+
+    /** The next run of one chain after a sequence, oldest first, for walking it. */
+    List<AuditEvent> findByChainKeyAndSequenceGreaterThanOrderBySequenceAsc(
+            String chainKey, long afterSequence, Pageable page);
+
+    /** The next run of entries in the original platform-wide chain, oldest first. */
+    List<AuditEvent> findByHashVersionAndSequenceGreaterThanOrderBySequenceAsc(
+            short hashVersion, long afterSequence, Pageable page);
+
+    /** Every chain that has an entry, for the nightly check. */
+    @Query("select distinct e.chainKey from AuditEvent e where e.chainKey is not null order by e.chainKey")
+    List<String> findChainKeys();
 
     long countByOrgIdAndOccurredAtAfter(UUID orgId, Instant since);
 

@@ -61,6 +61,11 @@ spec:
           env:
             - name: SERVICE_NAME
               value: integrations
+            - name: DB_POOL_SIZE
+              # Connection budget: the sum over services of maxReplicas x pool size, plus a reserve of
+              # about 50 for migrations and operators, must stay at or below Postgres max_connections
+              # (500): orchestrator 15x8, identity/knowledge/analytics 10x6, the rest 10x4 = 420 + 50.
+              value: "4"
             - name: JAVA_TOOL_OPTIONS
               # The heap is a percentage of the container limit, so changing the limit below
               # resizes the heap with it. A fixed -Xmx drifts from the limit and gets the pod

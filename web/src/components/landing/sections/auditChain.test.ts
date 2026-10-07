@@ -1,8 +1,8 @@
 import { createElement } from 'react'
 import type { ComponentType } from 'react'
 import axe from 'axe-core'
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ENTRIES, GENESIS, fnv1a32, record, tamper, verify } from './auditChain'
 import { AuditChainDemo } from './AuditChainDemo'
 import { AGENT_GRANTS, defaultGrant } from './agentGrants'
@@ -15,6 +15,8 @@ import { HowItWorks } from './HowItWorks'
 import { SafetySection } from './SafetySection'
 import { Faq } from './Faq'
 import { ROLE_ORDER, holdsAll } from '../roles/roleData'
+import { CONNECTOR_NOTICE } from '../shared/landingFacts'
+import { resetDemoAccountsForTests } from '../../../lib/demo'
 
 /*
  * The audit chain model, the demo built on it, and render checks for the other sections this
@@ -23,6 +25,37 @@ import { ROLE_ORDER, holdsAll } from '../roles/roleData'
  */
 
 const HASH = /^[0-9a-f]{8}$/
+
+/**
+ * Answers the demo-accounts question the way a site with, or without, demo accounts does, or
+ * leaves it unanswered, which renders the same as none and is what most checks here need.
+ */
+function demoAccounts(answer: 'pending' | 'none' | 'offered') {
+  const body = { accounts: [{ email: 'manager@demo.aiworkforce.os', displayName: 'Maya Manager', role: 'manager', describes: '' }] }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() =>
+      answer === 'pending'
+        ? new Promise<Response>(() => {})
+        : Promise.resolve(answer === 'offered' ? new Response(JSON.stringify(body)) : new Response(null, { status: 404 })),
+    ),
+  )
+}
+
+/** Lets the demo-accounts answer arrive inside act, as the page would after its first paint. */
+async function settleDemoLookup() {
+  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+}
+
+beforeEach(() => {
+  resetDemoAccountsForTests()
+  demoAccounts('pending')
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('auditChain', () => {
   it('computes FNV-1a deterministically as 8 lowercase hex characters', () => {
@@ -133,19 +166,42 @@ describe('sections', () => {
   it('renders the platform counts with their final values for assistive technology', () => {
     const { container } = render(createElement(PlatformBand))
     const hidden = [...container.querySelectorAll('.lp-platform-stats .visually-hidden')].map((node) => node.textContent)
-    expect(hidden).toEqual(['8', '7', '6', '46', '5'])
+    expect(hidden).toEqual(['8', '7', '19', '46', '5'])
     expect(screen.getByText('Sandbox')).toBeInTheDocument()
+    // The connectors in two groups, as mcp-core's catalogue splits them.
+    const live = screen.getByRole('list', { name: 'Connect live' })
+    expect(within(live).getAllByRole('listitem')).toHaveLength(19)
+    expect(within(live).getByText('HubSpot')).toBeInTheDocument()
+    expect(within(live).getByText('Gmail')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Practice data only' })).not.toBeInTheDocument()
     expect(container.querySelectorAll('.lp-platform [tabindex], .lp-platform a, .lp-platform button')).toHaveLength(0)
   })
 
-  it('states the four limits', () => {
+  it('states the four limits, naming which connectors are live and which practice only', () => {
     render(createElement(LimitsSection))
     expect(screen.getByRole('heading', { level: 2, name: /Stated plainly/ })).toBeInTheDocument()
     expect(screen.getAllByRole('listitem')).toHaveLength(4)
+    expect(
+      screen.getByText(/^Each connector reaches a real account only once an administrator adds its access token/),
+    ).toHaveTextContent(/Until then agents work with practice data and nothing is sent\.$/)
   })
 
-  it('closes with real call-to-action links', () => {
+  it('closes with the demos on the page where the site has no demo accounts, and says nothing of them', async () => {
+    demoAccounts('none')
+    const { container } = render(createElement(FinalCta))
+    // Before the answer arrives the safe variant shows, and it stays once the answer is "none".
+    expect(screen.getByRole('link', { name: 'See it work' })).toHaveAttribute('href', '#demos')
+    await settleDemoLookup()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('link', { name: 'See it work' })).toHaveAttribute('href', '#demos')
+    expect(screen.getByRole('link', { name: 'Create your workspace' })).toHaveAttribute('href', '/create-workspace')
+    expect(container.textContent).not.toMatch(/demo account/i)
+  })
+
+  it('closes with the demo accounts where the site offers them', async () => {
+    demoAccounts('offered')
     render(createElement(FinalCta))
+    await settleDemoLookup()
     expect(screen.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/sign-in')
     expect(screen.getByRole('link', { name: 'Create your workspace' })).toHaveAttribute('href', '/create-workspace')
   })
@@ -167,7 +223,9 @@ describe('sections', () => {
     render(createElement(SafetySection))
     const table = screen.getByRole('table')
     const rows = within(table).getAllByRole('row').slice(1)
-    expect(rows).toHaveLength(6)
+    // Only what a person can do in the console today: no workspace can be closed, so no row says so.
+    expect(rows).toHaveLength(5)
+    expect(table.textContent).not.toMatch(/close the workspace/i)
     // Row "Approve what gets sent" (approval:decide): owner, admin and manager only.
     const approve = rows.find((row) => within(row).queryByRole('rowheader', { name: 'Approve what gets sent' }))
     expect(approve).toBeDefined()
@@ -183,8 +241,14 @@ describe('sections', () => {
     const { container } = render(createElement(Faq))
     const items = container.querySelectorAll('details')
     expect(items.length).toBeGreaterThanOrEqual(6)
-    expect(screen.getByText(/Today they run in a sandbox, so nothing real is sent/)).toBeInTheDocument()
+    const email = screen.getByText(/not connected to real mailboxes or calendars/)
+    expect(email).toHaveTextContent(CONNECTOR_NOTICE)
+    // Says "not yet" once, and does not hint that some tools already connect for real.
+    expect(email.textContent?.match(/\byet\b/g)).toHaveLength(1)
+    expect(email).not.toHaveTextContent(/connect today|connect for real|\blive\b/i)
     expect(container.textContent).not.toMatch(/permission code|approval:decide|MCP|Spring Boot/)
+    // No connector is named as working, and no demo account is promised.
+    expect(container.textContent).not.toMatch(/connectors for|demo account|Slack|GitHub/i)
   })
 
   it('has no axe violations in any section', async () => {

@@ -106,6 +106,10 @@ server:
 
 aiwos:
   service-name: orchestrator
+  runs:
+    # How long a run stays claimed by the instance driving it without a renewal. A heartbeat
+    # renews it every quarter of this; once it lapses, the reaper marks the run abandoned.
+    lease: PT2M
   questions:
     # How long a question a run asks stays open before the run finishes with what it has. A
     # person can extend it by this much at a time, up to seven days from when it was asked.

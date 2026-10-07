@@ -239,23 +239,28 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
 
 export type SpeakerProvider = 'elevenlabs' | 'browser' | 'none'
 
-const MUTE_KEY = 'aiwos.voice.muted'
+/*
+ * Replies are silent by default: sound only plays after the person turns it on, and that choice
+ * survives a reload. (The old 'aiwos.voice.muted' key made sound opt-out, so it is ignored.) The
+ * per-message listen button still plays on request.
+ */
+const SOUND_ON_KEY = 'aiwos.voice.autoSpeak'
 const MAX_SPEECH_CHARACTERS = 2500
 
 function readMuted(): boolean {
   try {
-    return localStorage.getItem(MUTE_KEY) === '1'
+    return localStorage.getItem(SOUND_ON_KEY) !== '1'
   } catch {
-    return false
+    return true
   }
 }
 
 function writeMuted(muted: boolean) {
   try {
-    if (muted) localStorage.setItem(MUTE_KEY, '1')
-    else localStorage.removeItem(MUTE_KEY)
+    if (muted) localStorage.removeItem(SOUND_ON_KEY)
+    else localStorage.setItem(SOUND_ON_KEY, '1')
   } catch {
-    // Private browsing and blocked site data both throw here; the mute choice just does not
+    // Private browsing and blocked site data both throw here; the choice just does not
     // survive a reload, which is no worse than not persisting it at all.
   }
 }

@@ -64,19 +64,17 @@ spring:
             - id: identity
               uri: ${AIWOS_URL_IDENTITY:http://localhost:8081}
               predicates:
-                - Path=/api/users/**,/api/roles/**,/api/permissions/**,/api/api-keys/**,/api/sessions/**
+                - Path=/api/users/**,/api/roles/**
 
             - id: organisation
               uri: ${AIWOS_URL_ORGANISATION:http://localhost:8082}
               predicates:
-                - Path=/api/workspaces/**,/api/members/**,/api/invitations/**,/api/settings/**,/api/credentials/**,/api/orgs/**
-              filters:
-                - StripPrefix=1
+                - Path=/api/workspaces/**,/api/invitations/**,/api/credentials/**,/api/orgs/**
 
             - id: orchestrator
               uri: ${AIWOS_URL_ORCHESTRATOR:http://localhost:8083}
               predicates:
-                - Path=/api/agents/**,/api/goals/**,/api/tasks/**,/api/runs/**,/api/approvals/**,/api/providers/**,/api/chat/**,/api/model-policy,/api/model-policy/**,/api/conversations,/api/conversations/**,/api/orchestrator/**,/api/schedules,/api/schedules/**,/api/voice/**
+                - Path=/api/agents/**,/api/agent-templates,/api/agent-templates/**,/api/goals/**,/api/tasks/**,/api/runs/**,/api/approvals/**,/api/providers/**,/api/chat/**,/api/model-policy,/api/model-policy/**,/api/conversations,/api/conversations/**,/api/orchestrator/**,/api/schedules,/api/schedules/**,/api/voice/**
 
             - id: memory
               uri: ${AIWOS_URL_MEMORY:http://localhost:8084}
@@ -141,6 +139,23 @@ springdoc:
 management:
   endpoint:
     health:
+      # platform-defaults.yml (imported, so it wins over this file) puts the 'db' contributor in
+      # the readiness group, and the gateway has no database. Without this the gateway refuses to
+      # start ("Included health contributor 'db' in group 'readiness' does not exist").
+      validate-group-membership: false
       group:
+        # Readiness is the gateway's own state only. Redis backs nothing but the rate limiter,
+        # which lets requests through when Redis is down, so a Redis outage must not take the
+        # platform's only entry point out of rotation. Because the imported defaults' 'include'
+        # wins over this file's, the 'exclude' is what holds the group to readinessState
+        # whatever the defaults list.
         readiness:
-          include: readinessState,redis
+          include: readinessState
+          exclude: db,redis
+        # Redis is still reported, for dashboards and alerts rather than for routing traffic. The
+        # imported platform-defaults sets this group's include to db,redis and wins over this one;
+        # that is harmless here because validate-group-membership is false, so the missing db
+        # contributor is simply skipped.
+        dependencies:
+          include: redis
+          show-details: when-authorized

@@ -70,6 +70,9 @@ public interface Tasks extends JpaRepository<Task, UUID> {
     @Query("select t from Task t where t.id = :id and t.status in ('pending', 'ready')")
     Optional<Task> claim(@Param("id") UUID id);
 
+    /** How many of a workspace's tasks are in one status, for the per-workspace cap on running work. */
+    long countByOrgIdAndStatus(UUID orgId, String status);
+
     /** Workspaces with a task waiting to start, for the goal sweep. */
     @Query("select distinct t.orgId from Task t where t.status in ('pending', 'ready')")
     List<UUID> findOrgIdsWithClaimableTasks();

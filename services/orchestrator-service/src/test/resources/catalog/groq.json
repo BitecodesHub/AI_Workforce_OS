@@ -1,0 +1,9 @@
+{"object":"list","data":[
+ {"id":"llama-3.3-70b-versatile","object":"model","owned_by":"Meta","active":true,"context_window":131072,"max_completion_tokens":32768},
+ {"id":"openai/gpt-oss-120b","object":"model","owned_by":"OpenAI","active":true,"context_window":131072,"max_completion_tokens":65536},
+ {"id":"meta-llama/llama-4-scout-17b-16e-instruct","object":"model","owned_by":"Meta","active":true,"context_window":131072},
+ {"id":"whisper-large-v3","object":"model","owned_by":"OpenAI","active":true,"context_window":448},
+ {"id":"playai-tts","object":"model","owned_by":"PlayAI","active":true,"context_window":8192},
+ {"id":"groq/compound","object":"model","owned_by":"Groq","active":true,"context_window":131072},
+ {"id":"llama-3.1-8b-instant","object":"model","owned_by":"Meta","active":false,"context_window":131072}
+]}

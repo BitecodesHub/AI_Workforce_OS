@@ -175,6 +175,11 @@ public class Task extends OrgScopedEntity {
         this.completedAt = completedAt;
     }
 
+    /**
+     * Whether the attempt budget allows another automatic attempt. Only the budget: whether a
+     * retry is safe - the failed run had already sent or changed something - is decided by
+     * {@code TaskProgress}, which reads the run's trace.
+     */
     public boolean canRetry() {
         return attempt < maxAttempts;
     }

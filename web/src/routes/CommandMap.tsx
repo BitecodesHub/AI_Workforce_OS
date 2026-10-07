@@ -17,10 +17,12 @@ import type { Column } from '../components/ui'
 import { QueryState, EmptyIcon } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
 import { GettingStarted } from '../components/command-map/GettingStarted'
-import { formatCount, formatRelative, formatRunElapsed, truncateWords } from '../lib/format'
+import { ConnectModelDialog } from '../components/onboarding/ConnectModelDialog'
+import { describeChange } from '../components/analytics/figures'
+import { formatCount, formatMoney, formatRelative, formatRunElapsed, truncateWords } from '../lib/format'
+import { useAgentInsights, useInsights } from '../lib/insightsQueries'
 import { categoryTone, startedByLabel } from '../lib/labels'
 import {
-  RUN_PAGE_SIZE,
   useAgentNames,
   useAgents,
   useApprovals,
@@ -39,15 +41,19 @@ import { useNow } from '../lib/useNow'
  * The first screen after signing in.
  *
  * It answers three questions in order: is anything waiting on me, which model are the agents
- * really answering on, and what have they been doing. Every figure says what it covers (the most
- * recent runs, not all of them) and opens the list behind it.
+ * really answering on, and what have they been doing. The figures cover the last seven days and
+ * say how they moved against the seven before; the live activity under them is the latest few
+ * runs, with a link to all of them.
  */
+
+/** Runs shown under the figures. The Runs page has the rest, filterable and sortable. */
+const LIVE_ACTIVITY_ROWS = 8
 
 export function CommandMap() {
   const runsQuery = useRuns()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const canCreate = can('task:create')
-  const canReadIntegrations = can('integration:read')
+  const canReadConnectors = can('integration:read')
   const canChat = can('chat:use')
   const canOrchestrate = can('run:read')
   const giveTask = canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>Give an agent a task</Button> : undefined
@@ -61,18 +67,18 @@ export function CommandMap() {
         action={
           <>
             {canChat && (
-              <a className="button button-outline" href="/chat">
+              <a className="button button-quiet" href="/chat">
                 Chat
               </a>
             )}
             {canOrchestrate && (
-              <a className="button button-outline" href="/orchestrator">
+              <a className="button button-quiet" href="/orchestrator">
                 Orchestrator
               </a>
             )}
-            {canReadIntegrations && (
-              <a className="button button-outline" href="/integrations">
-                Integrations
+            {canReadConnectors && (
+              <a className="button button-quiet" href="/connectors">
+                Connectors
               </a>
             )}
             {giveTask}
@@ -83,7 +89,7 @@ export function CommandMap() {
       {/* No onSuccess: once the task starts, the dialog opens its run, or its goal if no run started. */}
       {canCreate && <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} />}
 
-      <div className="stack" style={{ gap: 'var(--space-6)' }}>
+      <div className="page-sections">
         <ApprovalsWaiting />
         <RoutingStatus />
         <GettingStarted />
@@ -146,6 +152,7 @@ function RoutingStatus() {
   const policy = useModelPolicy({ enabled: canRead })
   const providers = useProviders({ enabled: canRead })
   const credentials = useCredentials({ enabled: canRead })
+  const [connectOpen, setConnectOpen] = useState(false)
 
   if (!canRead || policy.error || providers.error || credentials.error) return null
   if (!policy.data || !providers.data || !credentials.data) return null
@@ -165,13 +172,106 @@ function RoutingStatus() {
       </p>
     )
   }
+  // While runs are not reaching a live model, somebody who can manage providers is offered the
+  // whole job in one step, rather than only a link to the page about circuit breakers and costs.
   return (
-    <Notice tone={summary.tone}>
-      <span>
-        {summary.text} {link}
-      </span>
-    </Notice>
+    <>
+      <Notice tone={summary.tone}>
+        <span>
+          {summary.text} {link}
+          {canManage && (
+            <>
+              {' '}
+              <Button variant="outline" className="button-sm" onClick={() => setConnectOpen(true)}>
+                Connect your AI
+              </Button>
+            </>
+          )}
+        </span>
+      </Notice>
+      {canManage && <ConnectModelDialog open={connectOpen} onClose={() => setConnectOpen(false)} />}
+    </>
   )
+}
+
+/**
+ * The week's figures with how they moved against the week before, from the same insights the
+ * Analytics page reads. Somebody who can open Analytics gets goals, spend and the change in each;
+ * somebody who can only read runs gets what the agents' own rows add up to, without the comparison
+ * or the money. A failed or unreadable answer shows nothing rather than a row of zeros.
+ */
+function WeekFigures() {
+  const canAnalytics = can('analytics:read')
+  const canRuns = can('run:read')
+  const insights = useInsights('7d', { enabled: canAnalytics })
+  const agents = useAgentInsights('7d', { enabled: canRuns && !canAnalytics })
+  const approvals = useApprovals({ enabled: can('approval:read') })
+  const waiting = approvals.data?.length ?? null
+
+  const caption = (
+    <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
+      The last 7 days{canAnalytics ? ', compared with the 7 days before' : ''}. Select a figure to see more.
+    </p>
+  )
+
+  const waitingTile =
+    waiting === null ? null : (
+      <StatTile
+        label="Approvals waiting"
+        value={formatCount(waiting)}
+        unit="right now"
+        href={can('approval:read') ? '/approvals' : undefined}
+      />
+    )
+
+  if (canAnalytics && insights.data) {
+    const { goals, spend, deltas } = insights.data
+    const note = (text: string) => (text ? { note: text } : {})
+    return (
+      <div>
+        <StatRow>
+          <StatTile
+            label="Goals completed"
+            value={formatCount(goals.completed)}
+            href="/analytics?window=7d"
+            {...note(describeChange(deltas.goalsCompleted, 'count', '7d'))}
+          />
+          <StatTile
+            label="Goals failed"
+            value={formatCount(goals.failed)}
+            href="/analytics?window=7d"
+            {...note(describeChange(deltas.goalsFailed, 'count', '7d'))}
+          />
+          <StatTile
+            label="Spend"
+            value={formatMoney(spend.total)}
+            href="/analytics?window=7d#budget"
+            {...note(describeChange(deltas.spend, 'money', '7d'))}
+          />
+          {waitingTile}
+        </StatRow>
+        {caption}
+      </div>
+    )
+  }
+
+  if (!canAnalytics && agents.data) {
+    const rows = agents.data.agents
+    const sum = (pick: (row: (typeof rows)[number]) => number) => rows.reduce((total, row) => total + pick(row), 0)
+    return (
+      <div>
+        <StatRow>
+          <StatTile label="Runs finished" value={formatCount(sum((row) => row.finishedRuns))} href="/runs" />
+          <StatTile label="Completed" value={formatCount(sum((row) => row.completed))} href="/runs?status=completed" />
+          <StatTile label="Failed" value={formatCount(sum((row) => row.failed))} href="/runs?status=failed" />
+          {waitingTile}
+        </StatRow>
+        {caption}
+      </div>
+    )
+  }
+
+  return null
 }
 
 function RecentRuns({ runs }: { runs: Run[] }) {
@@ -184,8 +284,7 @@ function RecentRuns({ runs }: { runs: Run[] }) {
 
   const agentName = (run: Run) =>
     agents[run.agentId]?.name ?? (agentsQuery.isLoading ? 'Loading…' : 'Unknown agent')
-  const count = (status: string) => runs.filter((run) => run.status === status).length
-  const allLoaded = runs.length < RUN_PAGE_SIZE
+  const shown = runs.slice(0, LIVE_ACTIVITY_ROWS)
 
   const columns: Column<Run>[] = [
     {
@@ -223,28 +322,13 @@ function RecentRuns({ runs }: { runs: Run[] }) {
 
   return (
     <>
-      <div>
-        <StatRow>
-          <StatTile label="Recent runs" value={formatCount(runs.length)} href="/runs" />
-          <StatTile label="Completed" value={formatCount(count('completed'))} href="/runs?status=completed" />
-          <StatTile
-            label="Waiting for a person"
-            value={formatCount(count('waiting_approval') + count('waiting_input'))}
-            href="/approvals"
-          />
-          <StatTile label="Failed" value={formatCount(count('failed'))} href="/runs?status=failed" />
-        </StatRow>
-        <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
-          {allLoaded ? 'Across every run so far.' : `Across the ${RUN_PAGE_SIZE} most recent runs.`} Select a figure
-          to see those runs.
-        </p>
-      </div>
+      <WeekFigures />
 
       <Card as="section">
         <Eyebrow as="h2">Live activity</Eyebrow>
         <DataTable
           columns={columns}
-          rows={runs}
+          rows={shown}
           getKey={(run) => run.id}
           getRowHref={(run) => `/runs/${run.id}`}
           getRowLabel={(run) => {
@@ -252,13 +336,11 @@ function RecentRuns({ runs }: { runs: Run[] }) {
             const started = formatRelative(run.startedAt, now)
             return name ? `Open the ${name} run started ${started}` : `Open the run started ${started}`
           }}
-          caption={
-            allLoaded ? 'Every agent run so far, newest first.' : `The ${RUN_PAGE_SIZE} most recent agent runs, newest first.`
-          }
+          caption={`The ${shown.length === 1 ? 'latest agent run' : `${shown.length} latest agent runs`}, newest first.`}
         />
         <p style={{ marginTop: 'var(--space-4)' }}>
           <a className="link" href="/runs">
-            See every run
+            See all runs
           </a>
         </p>
       </Card>

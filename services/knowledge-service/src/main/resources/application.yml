@@ -98,6 +98,13 @@ server:
 aiwos:
   service-name: knowledge
 
+knowledge:
+  extraction:
+    # The most text kept from one file, in characters: about 1,700 printed pages. A document cut
+    # here is still indexed, and says how much of it was. The cap exists because a 25 MB
+    # spreadsheet can expand to tens of millions of characters, every one chunked and embedded.
+    max-chars: ${KNOWLEDGE_EXTRACTION_MAX_CHARS:5000000}
+
 springdoc:
   api-docs:
     path: /v3/api-docs

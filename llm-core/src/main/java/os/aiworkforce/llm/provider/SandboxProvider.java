@@ -133,6 +133,8 @@ public class SandboxProvider implements ChatProvider {
         // asked at all.
         List<ToolSpec> pickable = request.tools().stream()
                 .filter(tool -> !ToolNames.isPersonTool(tool.name()))
+                // Practice runs do not write notes into an agent's real memory.
+                .filter(tool -> !ToolNames.isMemoryTool(tool.name()))
                 .toList();
         ToolSpec askSpec = request.tools().stream()
                 .filter(tool -> ToolNames.isPersonTool(tool.name()))

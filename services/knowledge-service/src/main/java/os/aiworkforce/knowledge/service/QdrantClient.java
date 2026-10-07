@@ -2,6 +2,7 @@ package os.aiworkforce.knowledge.service;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,7 +36,20 @@ import os.aiworkforce.platform.error.ErrorCode;
 public class QdrantClient {
 
     private static final Logger log = LoggerFactory.getLogger(QdrantClient.class);
+    /** For writes and collection setup, which legitimately take a while on a large document. */
     private static final Duration TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * For a search, which is on a person's request path. Covers connecting too, so a store that
+     * accepts nothing at all is given up on as quickly as one that answers slowly.
+     */
+    static final Duration SEARCH_TIMEOUT = Duration.ofMillis(2_500);
+
+    /** Points per upsert request, comfortably inside the store's request size limit. */
+    static final int UPSERT_BATCH = 256;
+
+    /** Ids per delete request. An id is a few dozen bytes, so this is about bounding the body. */
+    static final int DELETE_BATCH = 1_000;
 
     private final WebClient client;
     private final ObjectMapper json;
@@ -145,10 +159,22 @@ public class QdrantClient {
         }
     }
 
+    /**
+     * Writes points in batches of {@value #UPSERT_BATCH}.
+     *
+     * <p>One request per document worked until a large one: at about 18 KB a point for a
+     * 1536-wide vector, a document of 1,700 or more passages went over the store's 32 MB request
+     * limit or its timeout, and was reported as "vector store unavailable" when the store was fine.
+     * A failed batch fails the call; the batches before it stay written, and they belong to
+     * passages that exist, so they are correct rather than orphaned.
+     */
     public void upsert(String collection, List<Point> points) {
-        if (points.isEmpty()) {
-            return;
+        for (int start = 0; start < points.size(); start += UPSERT_BATCH) {
+            upsertBatch(collection, points.subList(start, Math.min(points.size(), start + UPSERT_BATCH)));
         }
+    }
+
+    private void upsertBatch(String collection, List<Point> points) {
         ObjectNode body = json.createObjectNode();
         ArrayNode array = body.putArray("points");
         for (Point point : points) {
@@ -179,13 +205,30 @@ public class QdrantClient {
     }
 
     /**
-     * Searches within one workspace.
+     * Searches within one workspace, and within the sources the caller may read.
      *
-     * <p>The workspace filter is applied by the store, not by filtering results afterwards.
-     * Post-filtering would mean asking for ten results, discarding the eight belonging to other
-     * workspaces, and returning two - and would briefly hold another tenant's text in memory.
+     * <p>Both filters are applied by the store, not by filtering results afterwards. Post-filtering
+     * would mean asking for ten results, discarding the eight belonging to other workspaces or to
+     * sources the caller may not see, and returning two - and would briefly hold text the caller may
+     * not read in memory. Both conditions sit under {@code must}: a {@code should} clause would make
+     * the tenant filter one option among two, so a source match alone could cross workspaces.
+     *
+     * <p>Bounded by {@link #SEARCH_TIMEOUT}, far shorter than the writes allow. A search is on a
+     * person's request path, and a store that hangs must cost the meaning-based half of the answer,
+     * not the whole answer.
+     *
+     * @param sourceIds the sources to search; none means nothing to search, and nothing is sent
      */
-    public List<Hit> search(String collection, UUID orgId, float[] queryVector, int limit, Double minScore) {
+    public List<Hit> search(
+            String collection,
+            UUID orgId,
+            Collection<UUID> sourceIds,
+            float[] queryVector,
+            int limit,
+            Double minScore) {
+        if (sourceIds.isEmpty()) {
+            return List.of();
+        }
         ObjectNode body = json.createObjectNode();
         ArrayNode vector = body.putArray("vector");
         for (float value : queryVector) {
@@ -197,10 +240,14 @@ public class QdrantClient {
             body.put("score_threshold", minScore);
         }
 
-        ObjectNode filter = body.putObject("filter");
-        ObjectNode must = filter.putArray("must").addObject();
-        must.put("key", "orgId");
-        must.putObject("match").put("value", orgId.toString());
+        ArrayNode must = body.putObject("filter").putArray("must");
+        ObjectNode tenant = must.addObject();
+        tenant.put("key", "orgId");
+        tenant.putObject("match").put("value", orgId.toString());
+        ObjectNode sources = must.addObject();
+        sources.put("key", "sourceId");
+        ArrayNode any = sources.putObject("match").putArray("any");
+        sourceIds.forEach(id -> any.add(id.toString()));
 
         try {
             JsonNode response = client.post()
@@ -208,7 +255,7 @@ public class QdrantClient {
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(JsonNode.class)
-                    .timeout(TIMEOUT)
+                    .timeout(SEARCH_TIMEOUT)
                     .block();
 
             List<Hit> hits = new ArrayList<>();
@@ -226,27 +273,69 @@ public class QdrantClient {
         }
     }
 
-    /** Removes every vector for a document, used when a source document is deleted. */
+    /** Removes every vector for a document, used when a document is deleted. */
     public void deleteByDocument(String collection, UUID documentId) {
+        deleteMatching(collection, "documentId", documentId, "document");
+    }
+
+    /**
+     * Removes every vector for a source, used when a whole source is deleted.
+     *
+     * <p>By filter, never by dropping the collection: one collection holds every source of a
+     * workspace that shares an embedding width, so dropping it would erase the other sources too.
+     */
+    public void deleteBySource(String collection, UUID sourceId) {
+        deleteMatching(collection, "sourceId", sourceId, "source");
+    }
+
+    /**
+     * Removes specific points, used to retire the passages a re-indexed document replaced, or the
+     * ones just written for a document whose indexing then failed.
+     *
+     * <p>A failure is logged rather than thrown. Retrieval resolves every hit against Postgres and
+     * drops ids with no passage behind them, so a point left here costs a search slot until the
+     * next clean-up, never a citation of text that is gone.
+     */
+    public void deletePoints(String collection, List<UUID> ids) {
+        for (int start = 0; start < ids.size(); start += DELETE_BATCH) {
+            List<UUID> batch = ids.subList(start, Math.min(ids.size(), start + DELETE_BATCH));
+            ObjectNode body = json.createObjectNode();
+            ArrayNode points = body.putArray("points");
+            batch.forEach(id -> points.add(id.toString()));
+            try {
+                postDelete(collection, body);
+            } catch (RuntimeException e) {
+                log.warn("{} vector(s) could not be deleted from {}: {}", batch.size(), collection, e.getMessage());
+            }
+        }
+    }
+
+    private void deleteMatching(String collection, String key, UUID value, String what) {
         ObjectNode body = json.createObjectNode();
         ObjectNode filter = body.putObject("filter");
         ObjectNode must = filter.putArray("must").addObject();
-        must.put("key", "documentId");
-        must.putObject("match").put("value", documentId.toString());
+        must.put("key", key);
+        must.putObject("match").put("value", value.toString());
 
         try {
-            client.post()
-                    .uri("/collections/{collection}/points/delete", collection)
-                    .bodyValue(body)
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .timeout(TIMEOUT)
-                    .block();
+            postDelete(collection, body);
         } catch (RuntimeException e) {
-            // The document is tombstoned in Postgres regardless, so retrieval already excludes
-            // it. This failure delays reclaiming space rather than exposing deleted content.
-            log.warn("Vectors for document {} could not be deleted: {}", documentId, e.getMessage());
+            // The rows are gone from Postgres regardless, and retrieval resolves every hit there, so
+            // this failure delays reclaiming space rather than exposing deleted content.
+            log.warn("Vectors for {} {} could not be deleted: {}", what, value, e.getMessage());
         }
+    }
+
+    private void postDelete(String collection, ObjectNode body) {
+        client.post()
+                .uri(builder -> builder.path("/collections/{collection}/points/delete")
+                        .queryParam("wait", "true")
+                        .build(collection))
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(TIMEOUT)
+                .block();
     }
 
     public boolean isReachable() {

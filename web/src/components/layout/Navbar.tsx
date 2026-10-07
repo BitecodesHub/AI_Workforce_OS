@@ -19,6 +19,10 @@ import { useRouter } from '../../lib/router'
  * behind the gear, grouped by what a person is trying to do, and the bell goes straight to the
  * approvals queue because an unread approval is the one thing somebody must not have to hunt for.
  *
+ * Connectors took a place in the capsule on 3 October 2026, beside Agents, because what an agent
+ * can reach is the first question about it. Runs moved behind the gear to keep the cap: the
+ * Orchestrator already shows the work in progress, and each agent's page lists its own runs.
+ *
  * The gear and account panels are disclosures, not application menus: they hold ordinary links
  * reached with Tab, so they do not announce arrow-key navigation they do not have.
  */
@@ -31,7 +35,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Chat', href: '/chat', needs: ['chat:use'] },
   { label: 'Orchestrator', href: '/orchestrator', needs: ['run:read'] },
   { label: 'Agents', href: '/agents', needs: ['agent:read'] },
-  { label: 'Runs', href: '/runs', needs: ['run:read'] },
+  { label: 'Connectors', href: '/connectors', needs: ['integration:read'] },
   { label: 'Knowledge', href: '/knowledge', needs: ['knowledge:read'] },
 ] as const
 
@@ -45,6 +49,7 @@ const MENU_GROUPS = [
   {
     heading: 'Work',
     items: [
+      { label: 'Runs', href: '/runs', note: 'Every run, with its step-by-step trace', needs: 'run:read' },
       { label: 'Tasks', href: '/tasks', note: 'Goals and the tasks they break into', needs: 'task:read' },
       { label: 'Schedules', href: '/schedules', note: 'Work that runs on its own timetable', needs: 'task:read' },
       { label: 'Approvals', href: '/approvals', note: 'Actions waiting on a decision', needs: 'approval:read' },
@@ -61,7 +66,6 @@ const MENU_GROUPS = [
     heading: 'Configuration',
     items: [
       { label: 'Model routing', href: '/routing', note: 'Providers, models and the routing chain', needs: 'provider:read' },
-      { label: 'Integrations', href: '/integrations', note: 'Tool servers agents act through', needs: 'integration:read' },
       { label: 'Members and roles', href: '/members', note: 'Who can do what', needs: 'member:read' },
     ],
   },

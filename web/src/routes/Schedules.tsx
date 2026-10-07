@@ -1,14 +1,43 @@
 import { useState } from 'react'
-import { Button, Card, ConfirmDialog, DataTable, EmptyState, PageHeader, StatusTag, Tag, Time } from '../components/ui'
+import type { FormEvent } from 'react'
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  DataTable,
+  Dialog,
+  EmptyState,
+  PageHeader,
+  Select,
+  StatusTag,
+  Tag,
+  Time,
+} from '../components/ui'
 import type { Column } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+import { useMemberDirectory } from '../components/orchestrator/useMemberDirectory'
 import { ScheduleDialog } from '../components/schedules/ScheduleDialog'
 import { ScheduleHistoryDialog } from '../components/schedules/ScheduleHistoryDialog'
-import { SCHEDULE_EXAMPLES, scheduleStatus } from '../components/schedules/scheduleModel'
+import { OWNER_LEFT_REASON, SCHEDULE_EXAMPLES, scheduleStatus } from '../components/schedules/scheduleModel'
 import { describeApiError } from '../lib/api'
-import { useDeleteSchedule, usePauseSchedule, useResumeSchedule, useRunScheduleNow, useSchedules } from '../lib/queries'
+import {
+  useDeleteSchedule,
+  useMembers,
+  usePauseSchedule,
+  useResumeSchedule,
+  useRunScheduleNow,
+  useSchedules,
+} from '../lib/queries'
 import type { Schedule } from '../lib/queries'
-import { can } from '../lib/session'
+import { useTransferScheduleOwner } from '../lib/scheduleQueries'
+import {
+  canManageSchedule,
+  canTransferSchedule,
+  isScheduleDone,
+  scheduleOwnerLabel,
+  transferCandidates,
+} from '../lib/schedules'
+import { can, profile } from '../lib/session'
 import { useToast } from '../lib/toast'
 
 /*
@@ -18,20 +47,36 @@ import { useToast } from '../lib/toast'
  */
 
 /** One row's actions, kept in its own component so each schedule's pause/resume/run-now mutations
- * are hooks of a stable, single row rather than hooks called a variable number of times in a loop. */
+ * are hooks of a stable, single row rather than hooks called a variable number of times in a loop.
+ *
+ * What is offered follows who may do it: the schedule's owner, or someone who can cancel work,
+ * may run, pause, edit and delete it; only someone who can cancel work may hand it to somebody
+ * else. A one-off that has already run offers no Pause or Resume - resuming it would only fire it
+ * again at once - but can still be run now or given a new time. */
 function ScheduleRowActions({
   schedule,
+  canManage,
+  canTransfer,
   onEdit,
+  onTransfer,
   onDeleteRequest,
 }: {
   schedule: Schedule
+  canManage: boolean
+  canTransfer: boolean
   onEdit: () => void
+  onTransfer: () => void
   onDeleteRequest: () => void
 }) {
   const toast = useToast()
   const pause = usePauseSchedule(schedule.id)
   const resume = useResumeSchedule(schedule.id)
   const runNow = useRunScheduleNow(schedule.id)
+
+  const done = isScheduleDone(schedule)
+  // A schedule whose owner left can only be resumed once someone has taken it on.
+  const ownerLeft = !schedule.enabled && schedule.pausedReason === OWNER_LEFT_REASON
+  const showToggle = canManage && !done && !ownerLeft
 
   const handlePauseToggle = async () => {
     try {
@@ -58,35 +103,176 @@ function ScheduleRowActions({
 
   const busy = pause.isPending || resume.isPending || runNow.isPending
 
+  if (!canManage && !canTransfer) {
+    return (
+      <span className="caption muted">
+        {schedule.createdBy ? 'Only its owner can change it' : 'No owner on record, so only a manager can change it'}
+      </span>
+    )
+  }
+
   return (
     <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-      <Button
-        variant="outline"
-        className="button-sm"
-        aria-label={`Run ${schedule.name} now`}
-        onClick={() => void handleRunNow()}
-        loading={runNow.isPending}
-        disabled={busy && !runNow.isPending}
-      >
-        Run now
-      </Button>
-      <Button
-        variant="outline"
-        className="button-sm"
-        aria-label={`${schedule.enabled ? 'Pause' : 'Resume'} ${schedule.name}`}
-        onClick={() => void handlePauseToggle()}
-        loading={pause.isPending || resume.isPending}
-        disabled={busy && !(pause.isPending || resume.isPending)}
-      >
-        {schedule.enabled ? 'Pause' : 'Resume'}
-      </Button>
-      <Button variant="outline" className="button-sm" aria-label={`Edit ${schedule.name}`} onClick={onEdit} disabled={busy}>
-        Edit
-      </Button>
-      <Button variant="danger" className="button-sm" aria-label={`Delete ${schedule.name}`} onClick={onDeleteRequest} disabled={busy}>
-        Delete
-      </Button>
+      {canManage && (
+        <Button
+          variant="outline"
+          className="button-sm"
+          aria-label={`Run ${schedule.name} now`}
+          onClick={() => void handleRunNow()}
+          loading={runNow.isPending}
+          disabled={busy && !runNow.isPending}
+        >
+          Run now
+        </Button>
+      )}
+      {showToggle && (
+        <Button
+          variant="outline"
+          className="button-sm"
+          aria-label={`${schedule.enabled ? 'Pause' : 'Resume'} ${schedule.name}`}
+          onClick={() => void handlePauseToggle()}
+          loading={pause.isPending || resume.isPending}
+          disabled={busy && !(pause.isPending || resume.isPending)}
+        >
+          {schedule.enabled ? 'Pause' : 'Resume'}
+        </Button>
+      )}
+      {canManage && (
+        <Button variant="outline" className="button-sm" aria-label={`Edit ${schedule.name}`} onClick={onEdit} disabled={busy}>
+          Edit
+        </Button>
+      )}
+      {canTransfer && (
+        <Button
+          variant="outline"
+          className="button-sm"
+          aria-label={`Transfer ${schedule.name} to another owner`}
+          onClick={onTransfer}
+          disabled={busy}
+        >
+          Transfer owner
+        </Button>
+      )}
+      {canManage && (
+        <Button variant="danger" className="button-sm" aria-label={`Delete ${schedule.name}`} onClick={onDeleteRequest} disabled={busy}>
+          Delete
+        </Button>
+      )}
     </div>
+  )
+}
+
+/**
+ * Hands a schedule to another member. Later runs start in their name, so the choice is spelled
+ * out before it is saved; a schedule paused because its owner left stays paused until resumed.
+ */
+/** Who a schedule runs as today, in a sentence: the owner label reads 'You' or 'Not recorded'. */
+function currentOwnerSentence(ownerName: string): string {
+  switch (ownerName) {
+    case 'You':
+      return 'It runs as you now.'
+    case 'Not recorded':
+      return 'Nobody is on record as its owner.'
+    case 'Former member':
+      return 'It runs as a former member now.'
+    case 'Someone':
+      return 'It runs as another member now.'
+    default:
+      return `It runs as ${ownerName} now.`
+  }
+}
+
+function TransferOwnerDialog({
+  schedule,
+  ownerName,
+  onClose,
+}: {
+  schedule: Schedule | null
+  ownerName: string
+  onClose: () => void
+}) {
+  const toast = useToast()
+  const members = useMembers({ enabled: schedule !== null && can('member:read') })
+  const transfer = useTransferScheduleOwner(schedule?.id ?? 'unselected')
+  const [userId, setUserId] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  // Each opening starts blank, so a cancelled choice never carries over to the next schedule.
+  const [openedFor, setOpenedFor] = useState<string | null>(null)
+  if ((schedule?.id ?? null) !== openedFor) {
+    setOpenedFor(schedule?.id ?? null)
+    setUserId('')
+    setError(null)
+  }
+
+  const candidates = transferCandidates(members.data ?? [], schedule?.createdBy ?? null)
+  const chosen = candidates.find((member) => member.userId === userId)
+
+  const close = () => {
+    if (!transfer.isPending) onClose()
+  }
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!schedule || !chosen) return
+    setError(null)
+    try {
+      await transfer.mutateAsync({ userId: chosen.userId })
+      toast.success(`${schedule.name} now runs as ${chosen.displayName}`)
+      onClose()
+    } catch (err) {
+      setError(describeApiError(err))
+    }
+  }
+
+  return (
+    <Dialog
+      open={schedule !== null}
+      onClose={close}
+      dismissible={!transfer.isPending}
+      error={error}
+      eyebrow="Transfer owner"
+      title={schedule ? `Who should “${schedule.name}” run as?` : 'Transfer owner'}
+      description={`${currentOwnerSentence(ownerName)} Every later run starts in the new owner’s name, and they can change or delete it.`}
+      footer={
+        <>
+          <Button variant="outline" type="button" onClick={close} disabled={transfer.isPending}>
+            Cancel
+          </Button>
+          <Button type="submit" form="schedule-owner-form" loading={transfer.isPending} disabled={!chosen}>
+            Transfer
+          </Button>
+        </>
+      }
+    >
+      <form id="schedule-owner-form" onSubmit={handleSubmit}>
+        <Select
+          label="New owner"
+          value={userId}
+          onChange={(event) => setUserId(event.target.value)}
+          required
+          disabled={members.isLoading}
+          data-autofocus
+          hint={
+            schedule && !schedule.enabled
+              ? 'It stays paused until someone resumes it.'
+              : 'Only current members of the workspace are listed.'
+          }
+        >
+          {members.isLoading && <option value="">Loading members…</option>}
+          {!members.isLoading && (
+            <option value="" disabled>
+              {candidates.length > 0 ? 'Choose a member' : 'No other members to choose from'}
+            </option>
+          )}
+          {candidates.map((member) => (
+            <option key={member.userId} value={member.userId}>
+              {member.displayName}
+            </option>
+          ))}
+        </Select>
+      </form>
+    </Dialog>
   )
 }
 
@@ -119,13 +305,21 @@ function EmptySchedules({ canCreate, onCreate }: { canCreate: boolean; onCreate:
 }
 
 export function Schedules() {
-  const canManage = can('task:create')
+  const canCreate = can('task:create')
+  const canTransfer = canTransferSchedule(can)
+  const me = profile()?.userId ?? null
+  const directory = useMemberDirectory()
   const [dialogTarget, setDialogTarget] = useState<'create' | Schedule | null>(null)
   const [historyFor, setHistoryFor] = useState<Schedule | null>(null)
+  const [transferring, setTransferring] = useState<Schedule | null>(null)
   const [deleting, setDeleting] = useState<Schedule | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const toast = useToast()
   const deleteSchedule = useDeleteSchedule()
+
+  const ownerOf = (schedule: Schedule) => scheduleOwnerLabel(schedule.createdBy, directory, me)
+  // Every change goes through task:create first; the owner rule then narrows which rows it covers.
+  const mayManage = (schedule: Schedule) => canCreate && canManageSchedule(schedule, me, can)
 
   const closeDelete = () => {
     setDeleting(null)
@@ -161,12 +355,16 @@ export function Schedules() {
       ),
     },
     { key: 'agent', header: 'Agent', sortValue: (row) => row.agentName, render: (row) => <Tag>{row.agentName}</Tag> },
+    { key: 'owner', header: 'Owner', sortValue: ownerOf, render: (row) => <span>{ownerOf(row)}</span> },
     { key: 'when', header: 'When', render: (row) => <span className="muted">{row.description}</span> },
     {
       key: 'nextRun',
       header: 'Next run',
       sortValue: (row) => (row.enabled ? row.nextRunAt : null),
-      render: (row) => (row.enabled ? <Time iso={row.nextRunAt} /> : <span className="muted">Paused</span>),
+      render: (row) => {
+        if (isScheduleDone(row)) return <span className="muted">Done</span>
+        return row.enabled ? <Time iso={row.nextRunAt} /> : <span className="muted">Paused</span>
+      },
     },
     {
       key: 'lastRun',
@@ -203,14 +401,17 @@ export function Schedules() {
     },
   ]
 
-  if (canManage) {
+  if (canCreate || canTransfer) {
     columns.push({
       key: 'actions',
       header: 'Actions',
       render: (row) => (
         <ScheduleRowActions
           schedule={row}
+          canManage={mayManage(row)}
+          canTransfer={canTransfer}
           onEdit={() => setDialogTarget(row)}
+          onTransfer={() => setTransferring(row)}
           onDeleteRequest={() => {
             setDeleting(row)
             setDeleteError(null)
@@ -225,11 +426,11 @@ export function Schedules() {
       <PageHeader
         eyebrow="Work on a timetable"
         title="Schedules"
-        description="Agents can start work on their own: every weekday at nine, once tomorrow afternoon, or every fifteen minutes. Times follow the workspace timezone."
-        action={canManage ? <Button onClick={() => setDialogTarget('create')}>New schedule</Button> : undefined}
+        description="Agents can start work on their own: every weekday at nine, once tomorrow afternoon, or every fifteen minutes. Times follow the workspace timezone. Each schedule runs as its owner."
+        action={canCreate ? <Button onClick={() => setDialogTarget('create')}>New schedule</Button> : undefined}
       />
 
-      <ScheduleListCard canManage={canManage} onCreate={() => setDialogTarget('create')} columns={columns} />
+      <ScheduleListCard canManage={canCreate} onCreate={() => setDialogTarget('create')} columns={columns} />
 
       <ScheduleDialog
         open={dialogTarget !== null}
@@ -238,6 +439,12 @@ export function Schedules() {
       />
 
       <ScheduleHistoryDialog schedule={historyFor} onClose={() => setHistoryFor(null)} />
+
+      <TransferOwnerDialog
+        schedule={transferring}
+        ownerName={transferring ? ownerOf(transferring) : ''}
+        onClose={() => setTransferring(null)}
+      />
 
       <ConfirmDialog
         open={deleting !== null}

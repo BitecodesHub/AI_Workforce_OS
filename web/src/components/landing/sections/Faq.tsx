@@ -1,23 +1,20 @@
 import type { ReactElement } from 'react'
 import { Icon } from '../shared/Icon'
 import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
-import { PROVIDERS, TOOL_LABEL, TOOL_SERVERS } from '../shared/landingFacts'
+import { CONNECTOR_NOTICE, PROVIDERS, listOf } from '../shared/landingFacts'
 
 /*
  * The questions a buyer asks, answered plainly.
  *
- * This is where the page's limits live now: the offline model, the sandboxed tools, what happens
- * without documents and who may approve. Each answer is true of the platform as it ships; none
- * promises a live connection to an outside account, because none is made today.
+ * This is where the page's limits live now: the offline model, the practice-mode connectors, what
+ * happens without documents and who may approve. Each answer is true of the platform as it ships.
+ * None promises a live connection to an outside account: email and calendar have none yet, and
+ * which other tools can connect for real is the technical page's to state, not this one's (see
+ * landingFacts). Nothing here mentions demo accounts either, since a site may not offer them.
  *
  * Native details elements, so each question opens with a click, Enter or Space, and a screen
  * reader announces it as expanded or collapsed without any script.
  */
-
-function listOf(items: readonly string[]): string {
-  if (items.length < 2) return items.join('')
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
-}
 
 const QUESTIONS: ReadonlyArray<{ q: string; a: string }> = [
   {
@@ -34,15 +31,15 @@ const QUESTIONS: ReadonlyArray<{ q: string; a: string }> = [
   },
   {
     q: 'Can we try it before connecting anything?',
-    a: 'Yes. Out of the box it runs on a built-in sandbox model that gives practice answers, clearly labelled as such, and every tool works in a sandbox, so nothing real is sent. The demo accounts let you sign in as a manager, an employee or a viewer and see the difference.',
+    a: 'Yes. Out of the box it runs on a built-in sandbox model that gives practice answers, clearly labelled as such, and every connector works with practice data, so nothing real is sent.',
   },
   {
     q: 'Which AI does it use?',
     a: `The one you choose: ${listOf([...PROVIDERS])}. You set the order, and if one is busy or unavailable it moves on to the next.`,
   },
   {
-    q: 'Does it work with our email, chat and calendar?',
-    a: `It comes with connectors for ${listOf(TOOL_SERVERS.map((server) => TOOL_LABEL[server]))}. Today they run in a sandbox, so nothing real is sent while you try it.`,
+    q: 'Does it work with our email and calendar?',
+    a: `Not yet. Email and calendar are not connected to real mailboxes or calendars; they work with practice data only. ${CONNECTOR_NOTICE} Your IT team will find the technical details on the page for IT teams.`,
   },
   {
     q: 'Who can see and approve things?',

@@ -1,0 +1,16 @@
+{"object":"list","data":[
+ {"id":"meta/llama-3.3-70b-instruct","object":"model","owned_by":"meta"},
+ {"id":"nvidia/llama-3.1-nemotron-70b-instruct","object":"model","owned_by":"nvidia"},
+ {"id":"qwen/qwen3-235b-a22b","object":"model","owned_by":"qwen"},
+ {"id":"deepseek-ai/deepseek-v4.1-flash","object":"model","owned_by":"deepseek-ai"},
+ {"id":"meta/llama-4-maverick-17b-128e-instruct","object":"model","owned_by":"meta"},
+ {"id":"mistralai/mistral-large-2-instruct","object":"model","owned_by":"mistralai"},
+ {"id":"nvidia/nv-embedqa-mistral-7b-v2","object":"model","owned_by":"nvidia"},
+ {"id":"nvidia/llama-3.2-nv-rerankqa-1b-v2","object":"model","owned_by":"nvidia"},
+ {"id":"nvidia/nemotron-4-340b-reward","object":"model","owned_by":"nvidia"},
+ {"id":"meta/llama-guard-4-12b","object":"model","owned_by":"meta"},
+ {"id":"nvidia/llama-3.1-nemotron-safety-guard-8b-v3","object":"model","owned_by":"nvidia"},
+ {"id":"microsoft/kosmos-2","object":"model","owned_by":"microsoft"},
+ {"id":"01-ai/yi-large","object":"model","owned_by":"01-ai"},
+ {"id":"mistralai/mixtral-8x22b-v0.1","object":"model","owned_by":"mistralai"}
+]}

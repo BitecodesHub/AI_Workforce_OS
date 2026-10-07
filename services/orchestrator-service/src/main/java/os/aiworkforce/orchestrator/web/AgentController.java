@@ -275,13 +275,32 @@ public class AgentController {
         return toView(agent, currentVersionOf(agent));
     }
 
+    /** Drives a started run in the background; set by Spring alongside the constructor's beans. */
+    private os.aiworkforce.orchestrator.service.RunExecutor runExecutor;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setRunExecutor(os.aiworkforce.orchestrator.service.RunExecutor runExecutor) {
+        this.runExecutor = runExecutor;
+    }
+
+    /**
+     * Starts a run and answers at once, with the run's id; the agent works in the background and
+     * the run's page shows each step as it happens.
+     *
+     * <p>The checks happen here, so a paused agent or one with no configuration is still refused
+     * with an error before anything is saved. Driving the run inside this request would hold the
+     * person for as long as the agent took, past the gateway's one-minute limit.
+     */
     @PostMapping("/{agentId}/runs")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @RequiresPermission(Permission.Codes.AGENT_RUN)
     @Operation(summary = "Give this agent something to do")
     public RunStarted run(@PathVariable UUID agentId, @Valid @RequestBody RunRequest request) {
-        AgentRunner.Outcome outcome = runner.start(orgId(), agentId, null, request.instruction(), "manual");
-        return new RunStarted(outcome.runId(), outcome.status(), outcome.answer());
+        UUID orgId = orgId();
+        UUID runId = runner.prepare(orgId, agentId, null, request.instruction(), "manual");
+        // As the person who started it, so its audit entries and tokens carry their identity.
+        runExecutor.submitDrive(orgId, runId, RequestContext.requireActor());
+        return new RunStarted(runId, "running", null);
     }
 
     private AgentVersion newVersion(

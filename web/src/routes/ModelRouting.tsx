@@ -9,13 +9,14 @@ import {
   Input,
   Notice,
   PageHeader,
-  Select,
   StatRow,
   StatTile,
   Tag,
   Time,
 } from '../components/ui'
-import type { Column, TagTone } from '../components/ui'
+import type { Column } from '../components/ui'
+import { ConnectModelDialog } from '../components/onboarding/ConnectModelDialog'
+import { PolicyEditor } from '../components/routing/PolicyEditor'
 import { QueryState } from '../components/ui/QueryState'
 import { describeApiError } from '../lib/api'
 import { formatCompactTokens, formatCount, formatMoney } from '../lib/format'
@@ -24,10 +25,15 @@ import {
   credentialState,
   isEmbeddingModel,
   liveRouting,
+  offForPlatform,
   providerReadiness,
   routingSummary,
-  type ReadinessReason,
+  toggleCopy,
+  toggledMessage,
+  toggleRefusal,
+  type ToggleRefusal,
 } from '../lib/routing'
+import { useRouter } from '../lib/router'
 import { useToast } from '../lib/toast'
 import { useNow } from '../lib/useNow'
 import { can } from '../lib/session'
@@ -49,47 +55,29 @@ import type { CredentialView, Model, ModelPolicy, Provider } from '../lib/querie
  * the Command Map's banner shares): the workspace routing policy, whether each provider is on,
  * whether it holds a usable key, and whether its circuit breaker has paused it. The page states
  * the outcome in one sentence at the top, then shows each of those facts where it can be changed.
+ *
+ * All of it is this workspace's own. Turning a provider on or off, a refused key and a paused
+ * provider stay in this workspace; the copy says so wherever a change is made.
+ *
+ * "Connect your AI" is the short way through for somebody who just wants a live model: it checks a
+ * key, stores it, turns the provider on and puts a model in the policy in one go. It opens from
+ * the header button and from /routing?connect=1, which the getting-started guide, the Command Map
+ * and the end of workspace setup link to. Everything it does can still be done piece by piece below.
  */
-
-const MAX_CANDIDATES = 10
 
 const isSandbox = (provider: Provider) => provider.kind.toUpperCase() === 'SANDBOX'
 
 const circuitOf = (provider: Provider) => (provider.circuitState ?? '').toUpperCase()
 
-/** Why the router would skip a candidate, as the tag beside it in the policy editor. */
-const READINESS_TAG: Record<ReadinessReason, { tone: TagTone; label: string }> = {
-  ready: { tone: 'success', label: 'Ready' },
-  disabled: { tone: 'neutral', label: 'Provider disabled, will be skipped' },
-  no_key: { tone: 'warning', label: 'No key stored, will be skipped' },
-  rejected: { tone: 'warning', label: 'Key refused, will be skipped' },
-  expired: { tone: 'warning', label: 'Key expired, will be skipped' },
-  paused: { tone: 'warning', label: 'Paused after failures' },
-}
-
-/** The same reasons, short, after a provider's name in a list of choices. */
-const READINESS_SUFFIX: Record<ReadinessReason, string> = {
-  ready: '',
-  disabled: ' (off)',
-  no_key: ' (no key)',
-  rejected: ' (key refused)',
-  expired: ' (key expired)',
-  paused: ' (paused)',
-}
-
 /** For the sentence naming live candidates the router passes over before the one it uses. */
 const SKIP_REASON: Record<string, string> = {
-  disabled: 'turned off',
+  disabled: 'turned off for this workspace',
+  platform_off: 'not offered on this installation',
   no_key: 'no key stored',
   rejected: 'the provider refused its key',
   expired: 'its key has expired',
   paused: 'paused after failures',
   unavailable: 'not available in this workspace',
-}
-
-const EXHAUSTED_COPY: Record<string, string> = {
-  FAIL_CLOSED: 'If every candidate fails, runs stop with an error.',
-  DEGRADE_TO_SANDBOX: 'If every candidate fails, runs fall back to the offline sandbox model.',
 }
 
 function storedCredential(provider: Provider, credentials: readonly CredentialView[]): CredentialView | undefined {
@@ -212,7 +200,7 @@ function KeyCell({
       )}
       {state === 'rejected' && (
         <p className="caption" style={{ color: 'var(--warning-ink)' }}>
-          Rejected by the provider <Time iso={provider.credentialCheckedAt} />
+          This workspace's key was refused by the provider <Time iso={provider.credentialCheckedAt} />
         </p>
       )}
     </div>
@@ -259,21 +247,9 @@ function RoutingBanner({
   )
 }
 
-type DraftCandidate = {
-  /** Stable across edits and moves, so a row keeps its fields (and focus) while the list changes. */
-  key: string
-  providerId: string
-  modelId: string
-  temperature: number | null
-  maxOutputTokens: number | null
-}
-
-type MoveFocus = { key: string; direction: 'up' | 'down' }
-
 /**
- * Enabling a provider and storing its key only makes it usable, not chosen - the router still
- * needs an ordered chain to try, or every run keeps resolving to the built-in sandbox default.
- * This edits the workspace-wide chain; an agent can still be given its own in Agent detail.
+ * The workspace-wide chain: what every agent without one of its own tries, in order. The editor is
+ * shared with an agent's own page (components/routing/PolicyEditor.tsx); this is where it is saved.
  */
 function RoutingPolicyCard({
   policy,
@@ -291,319 +267,18 @@ function RoutingPolicyCard({
   now: number
 }) {
   const setPolicy = useSetModelPolicy()
-  const toast = useToast()
-  const [draft, setDraft] = React.useState<DraftCandidate[] | null>(null)
-  const [confirmEmpty, setConfirmEmpty] = React.useState(false)
-  const [emptyError, setEmptyError] = React.useState<string | null>(null)
-  const newRowCount = React.useRef(0)
-  const pendingFocus = React.useRef<MoveFocus | null>(null)
-  const listRef = React.useRef<HTMLDivElement>(null)
-
-  const saved = React.useMemo<DraftCandidate[]>(
-    () =>
-      [...policy.candidates]
-        .sort((a, b) => a.position - b.position)
-        .map((candidate, index) => ({
-          key: `saved-${index}`,
-          providerId: candidate.providerId,
-          modelId: candidate.modelId,
-          temperature: candidate.temperature ?? null,
-          maxOutputTokens: candidate.maxOutputTokens ?? null,
-        })),
-    [policy.candidates],
-  )
-  const candidates = draft ?? saved
-  const dirty = draft !== null
-
-  const byId = React.useMemo(() => new Map(providers.map((provider) => [provider.id, provider])), [providers])
-  const chatModels = React.useMemo(() => models.filter((model) => !isEmbeddingModel(model)), [models])
-  // Only providers with a model that can answer a run are offered.
-  const choosable = React.useMemo(
-    () => providers.filter((provider) => chatModels.some((model) => model.providerId === provider.id)),
-    [providers, chatModels],
-  )
-
-  // After Up or Down, focus stays on the same button in the row that moved, or on its other
-  // button when the move has taken the row to the top or bottom.
-  React.useEffect(() => {
-    const focus = pendingFocus.current
-    pendingFocus.current = null
-    if (!focus || !listRef.current) return
-    const find = (direction: 'up' | 'down') =>
-      listRef.current?.querySelector<HTMLButtonElement>(`[data-candidate="${focus.key}"][data-move="${direction}"]`)
-    const same = find(focus.direction)
-    const target = same && !same.disabled ? same : find(focus.direction === 'up' ? 'down' : 'up')
-    target?.focus()
-  }, [draft])
-
-  const readinessOf = (providerId: string): ReadinessReason | 'unavailable' | null => {
-    const provider = byId.get(providerId)
-    if (!provider) return 'unavailable'
-    if (!credentials) return null
-    return providerReadiness(provider, credentials, now).reason
-  }
-
-  const addCandidate = () => {
-    const used = new Set(candidates.map((candidate) => `${candidate.providerId}/${candidate.modelId}`))
-    const fresh = chatModels.filter((model) => !used.has(`${model.providerId}/${model.modelId}`))
-    // A ready live model first, then any model not yet in the chain.
-    const pick =
-      fresh.find((model) => {
-        const provider = byId.get(model.providerId)
-        return provider !== undefined && !isSandbox(provider) && readinessOf(model.providerId) === 'ready'
-      }) ??
-      fresh[0] ??
-      chatModels[0]
-    if (!pick) return
-    newRowCount.current += 1
-    setDraft([
-      ...candidates,
-      { key: `new-${newRowCount.current}`, providerId: pick.providerId, modelId: pick.modelId, temperature: null, maxOutputTokens: null },
-    ])
-  }
-
-  const updateCandidate = (index: number, change: Partial<DraftCandidate>) =>
-    setDraft(candidates.map((candidate, i) => (i === index ? { ...candidate, ...change } : candidate)))
-
-  const removeCandidate = (index: number) => setDraft(candidates.filter((_, i) => i !== index))
-
-  const move = (index: number, direction: 'up' | 'down') => {
-    const target = direction === 'up' ? index - 1 : index + 1
-    if (target < 0 || target >= candidates.length) return
-    const copy = candidates.slice()
-    const [item] = copy.splice(index, 1)
-    if (!item) return
-    copy.splice(target, 0, item)
-    pendingFocus.current = { key: item.key, direction }
-    setDraft(copy)
-  }
-
-  const fieldLabels = Object.fromEntries(
-    candidates.flatMap((_, index) => [
-      [`candidates[${index}]`, `Candidate ${index + 1}`],
-      [`candidates[${index}].providerId`, `Candidate ${index + 1} provider`],
-      [`candidates[${index}].modelId`, `Candidate ${index + 1} model`],
-    ]),
-  )
-
-  /** Saves the chain; resolves to a sentence explaining the failure, or null. */
-  const save = async (): Promise<string | null> => {
-    try {
-      await setPolicy.mutateAsync({
-        candidates: candidates.map(({ providerId, modelId, temperature, maxOutputTokens }) => ({
-          providerId,
-          modelId,
-          temperature,
-          maxOutputTokens,
-        })),
-      })
-      toast.success('Routing policy saved.')
-      setDraft(null)
-      return null
-    } catch (err) {
-      return describeApiError(err, fieldLabels)
-    }
-  }
-
-  const handleSave = async () => {
-    if (candidates.length === 0) {
-      setEmptyError(null)
-      setConfirmEmpty(true)
-      return
-    }
-    const failure = await save()
-    if (failure) toast.error(failure)
-  }
-
-  const confirmEmptySave = async () => {
-    const failure = await save()
-    if (failure) setEmptyError(failure)
-    else setConfirmEmpty(false)
-  }
-
-  const providerName = (providerId: string) => byId.get(providerId)?.displayName ?? providerId
-  const modelName = (candidate: DraftCandidate) =>
-    models.find((model) => model.providerId === candidate.providerId && model.modelId === candidate.modelId)?.displayName ??
-    candidate.modelId
-
-  const readinessTag = (providerId: string) => {
-    const reason = readinessOf(providerId)
-    if (reason === null) return null
-    if (reason === 'unavailable') return <Tag tone="warning">Not available, will be skipped</Tag>
-    const tag = READINESS_TAG[reason]
-    return (
-      <Tag tone={tag.tone} withDot title={tag.label}>
-        {tag.label}
-      </Tag>
-    )
-  }
-
-  const exhausted = EXHAUSTED_COPY[(policy.exhaustedBehaviour ?? '').toUpperCase()] ?? EXHAUSTED_COPY.FAIL_CLOSED
-
   return (
-    <section id="routing-policy" style={{ scrollMarginTop: 'var(--space-7)' }}>
-      <Card as="section">
-        <Eyebrow as="h2">Routing policy</Eyebrow>
-        <p className="muted" style={{ marginBottom: 'var(--space-5)' }}>
-          The order every agent tries by default, unless it has a chain of its own. With nothing set
-          here, those agents answer on the offline sandbox model whatever is enabled above: a
-          deliberate default, so no workspace is billed before it chooses to be.
-        </p>
-
-        {candidates.length === 0 && (
-          <p className="muted" style={{ marginBottom: 'var(--space-4)' }}>
-            {dirty
-              ? 'No candidates. Saving this sends every run of an agent without its own routing to the offline sandbox model.'
-              : policy.configured
-                ? 'The saved policy has no candidates, so agents without routing of their own answer on the offline sandbox model.'
-                : 'Nothing configured. Agents without routing of their own answer on the offline sandbox model.'}
-          </p>
-        )}
-
-        {canManage ? (
-          <div ref={listRef} className="stack" style={{ gap: 'var(--space-4)', marginBottom: 'var(--space-5)' }}>
-            {candidates.map((candidate, index) => {
-              const number = index + 1
-              const providerModels = chatModels.filter((model) => model.providerId === candidate.providerId)
-              const knownProvider = choosable.some((provider) => provider.id === candidate.providerId)
-              const knownModel = providerModels.some((model) => model.modelId === candidate.modelId)
-              return (
-                <div key={candidate.key} className="row candidate-row">
-                  <span className="candidate-index mono muted" aria-hidden="true">
-                    {number}.
-                  </span>
-                  <div className="policy-field">
-                    <Select
-                      label={`Candidate ${number} provider`}
-                      value={candidate.providerId}
-                      onChange={(event) => {
-                        const providerId = event.target.value
-                        const first = chatModels.find((model) => model.providerId === providerId)
-                        updateCandidate(index, { providerId, modelId: first?.modelId ?? '', maxOutputTokens: null })
-                      }}
-                    >
-                      {!knownProvider && <option value={candidate.providerId}>{`${candidate.providerId} (not available)`}</option>}
-                      {choosable.map((provider) => {
-                        const reason = credentials ? providerReadiness(provider, credentials, now).reason : 'ready'
-                        return (
-                          <option key={provider.id} value={provider.id}>
-                            {`${provider.displayName}${READINESS_SUFFIX[reason]}`}
-                          </option>
-                        )
-                      })}
-                    </Select>
-                  </div>
-                  <div className="policy-field">
-                    <Select
-                      label={`Candidate ${number} model`}
-                      value={candidate.modelId}
-                      onChange={(event) => updateCandidate(index, { modelId: event.target.value, maxOutputTokens: null })}
-                    >
-                      {!knownModel && <option value={candidate.modelId}>{`${candidate.modelId || 'No model'} (not in the catalogue)`}</option>}
-                      {providerModels.map((model) => (
-                        <option key={model.modelId} value={model.modelId}>
-                          {model.displayName}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <div className="row action-group" style={{ flexWrap: 'wrap', paddingBottom: '4px' }}>
-                    {readinessTag(candidate.providerId)}
-                    <Button
-                      variant="outline"
-                      className="button-sm"
-                      aria-label={`Move candidate ${number} up`}
-                      data-candidate={candidate.key}
-                      data-move="up"
-                      onClick={() => move(index, 'up')}
-                      disabled={index === 0}
-                    >
-                      Up
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="button-sm"
-                      aria-label={`Move candidate ${number} down`}
-                      data-candidate={candidate.key}
-                      data-move="down"
-                      onClick={() => move(index, 'down')}
-                      disabled={index === candidates.length - 1}
-                    >
-                      Down
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="button-sm"
-                      aria-label={`Remove candidate ${number}`}
-                      onClick={() => removeCandidate(index)}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          candidates.length > 0 && (
-            <ol className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
-              {candidates.map((candidate, index) => (
-                <li key={candidate.key} className="row" style={{ gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                  <span className="mono muted" aria-hidden="true">
-                    {index + 1}.
-                  </span>
-                  <span>
-                    {providerName(candidate.providerId)} · {modelName(candidate)}
-                  </span>
-                  {readinessTag(candidate.providerId)}
-                </li>
-              ))}
-            </ol>
-          )
-        )}
-
-        {candidates.length > 0 && (
-          <p className="caption" style={{ marginBottom: 'var(--space-5)' }}>
-            {exhausted}
-          </p>
-        )}
-
-        {canManage && (
-          <div className="row" style={{ gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-            <Button
-              variant="outline"
-              onClick={addCandidate}
-              disabled={chatModels.length === 0 || candidates.length >= MAX_CANDIDATES}
-            >
-              Add a candidate
-            </Button>
-            <Button onClick={() => void handleSave()} loading={setPolicy.isPending && !confirmEmpty} disabled={!dirty}>
-              Save routing policy
-            </Button>
-            {dirty && (
-              <Button variant="quiet" onClick={() => setDraft(null)} disabled={setPolicy.isPending}>
-                Discard changes
-              </Button>
-            )}
-            {candidates.length >= MAX_CANDIDATES && <span className="caption">A policy holds at most 10 candidates.</span>}
-          </div>
-        )}
-      </Card>
-
-      <ConfirmDialog
-        open={confirmEmpty}
-        onClose={() => setConfirmEmpty(false)}
-        onConfirm={confirmEmptySave}
-        eyebrow="Routing policy"
-        title="Save an empty routing policy?"
-        description="Every run of an agent without routing of its own will answer on the offline sandbox model."
-        confirmLabel="Save empty policy"
-        cancelLabel="Keep editing"
-        tone="primary"
-        loading={setPolicy.isPending}
-        error={emptyError}
-      />
-    </section>
+    <PolicyEditor
+      scope="workspace"
+      policy={policy}
+      providers={providers}
+      models={models}
+      credentials={credentials}
+      canManage={canManage}
+      now={now}
+      onSave={(input) => setPolicy.mutateAsync(input)}
+      liveCatalogue
+    />
   )
 }
 
@@ -617,6 +292,26 @@ export function ModelRouting() {
   const toast = useToast()
   const now = useNow()
   const canManage = can('provider:manage')
+  const { search, navigate } = useRouter()
+
+  // /routing?connect=1 opens the Connect your AI dialog. The parameter is taken out of the
+  // address once acted on, so a reload or Back does not open it again. Anyone who cannot manage
+  // providers sees the page as it always was.
+  const wantsConnect = search.get('connect') === '1' && canManage
+  const [connectOpen, setConnectOpen] = React.useState(wantsConnect)
+  // Arriving at the same page again with ?connect=1 (a link inside the page) opens it again too.
+  const [couldConnect, setCouldConnect] = React.useState(wantsConnect)
+  if (wantsConnect !== couldConnect) {
+    setCouldConnect(wantsConnect)
+    if (wantsConnect) setConnectOpen(true)
+  }
+  React.useEffect(() => {
+    if (!wantsConnect) return
+    const rest = new URLSearchParams(search)
+    rest.delete('connect')
+    const query = rest.toString()
+    navigate(`/routing${query ? `?${query}` : ''}${window.location.hash}`, { replace: true })
+  }, [wantsConnect, search, navigate])
 
   const providers = providersQuery.data
   const models = modelsQuery.data
@@ -628,6 +323,19 @@ export function ModelRouting() {
   const [keyError, setKeyError] = React.useState<string | null>(null)
   const [enableTarget, setEnableTarget] = React.useState<Provider | null>(null)
   const [enableError, setEnableError] = React.useState<string | null>(null)
+  // A 409 from the toggle: the service explains why, and the page shows it beside the providers.
+  const [refusal, setRefusal] = React.useState<(ToggleRefusal & { providerId: string }) | null>(null)
+
+  /** Closes the refusal and returns focus to the button that raised it, rather than to the page. */
+  const dismissRefusal = () => {
+    const providerId = refusal?.providerId
+    setRefusal(null)
+    if (providerId) {
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLButtonElement>(`[data-provider-toggle="${CSS.escape(providerId)}"]`)?.focus(),
+      )
+    }
+  }
 
   const catalogue = providers && models ? { providers, models } : undefined
 
@@ -656,22 +364,24 @@ export function ModelRouting() {
     setEnableError(null)
   }
 
-  /** Turns a provider on or off; resolves to a sentence explaining the failure, or null. */
-  const toggle = async (provider: Provider, enable: boolean, keyMissing = false): Promise<string | null> => {
+  /**
+   * Turns a provider on or off for this workspace only; resolves to the error, or null. Other
+   * workspaces keep their own setting, so the confirmation says the change stays here.
+   */
+  const toggle = async (provider: Provider, enable: boolean, keyMissing = false): Promise<unknown> => {
     try {
       await toggleProvider.mutateAsync({ id: provider.id, enable })
-      if (!enable) toast.success(`${provider.displayName} disabled. The router no longer tries it.`)
-      else if (keyMissing) toast.success(`${provider.displayName} enabled. The router skips it until a usable key is stored.`)
-      else if (!inPolicy(provider)) toast.success(`${provider.displayName} enabled. Add it to the routing policy to use it.`)
-      else toast.success(`${provider.displayName} enabled.`)
+      setRefusal(null)
+      toast.success(toggledMessage(provider, enable, { keyMissing, inPolicy: inPolicy(provider) }))
       return null
     } catch (err) {
-      return describeApiError(err)
+      return err
     }
   }
 
   const handleToggle = async (provider: Provider) => {
-    if (!provider.enabled && credentials) {
+    const enabling = !provider.enabled
+    if (enabling && credentials) {
       const state = credentialState(provider, credentials, now)
       if (state === 'not_stored' || state === 'expired') {
         setEnableError(null)
@@ -679,14 +389,19 @@ export function ModelRouting() {
         return
       }
     }
-    const failure = await toggle(provider, !provider.enabled)
-    if (failure) toast.error(failure)
+    const failure = await toggle(provider, enabling)
+    if (!failure) return
+    // A refusal (409) says what to change first, so it stays on the page instead of a toast that
+    // disappears before it has been read.
+    const refused = toggleRefusal(failure, enabling)
+    if (refused) setRefusal({ ...refused, providerId: provider.id })
+    else toast.error(describeApiError(failure))
   }
 
   const confirmEnable = async () => {
     if (!enableTarget) return
     const failure = await toggle(enableTarget, true, true)
-    if (failure) setEnableError(failure)
+    if (failure) setEnableError(describeApiError(failure))
     else closeEnable()
   }
 
@@ -697,13 +412,15 @@ export function ModelRouting() {
     try {
       const stored = await storeCredential.mutateAsync({ ref: keyTarget.credentialRef, kind: 'api_key', value: keyValue })
       const listed = inPolicy(keyTarget)
-      const next = !keyTarget.enabled
-        ? listed
-          ? ' Enable it so runs can use it.'
-          : ' Enable it, then add it to the routing policy below.'
-        : listed
-          ? ''
-          : ' Add it to the routing policy below to use it.'
+      const next = offForPlatform(keyTarget)
+        ? ' It is not available yet, so runs cannot use it. Contact support to have it offered.'
+        : !keyTarget.enabled
+          ? listed
+            ? ' Turn it on for this workspace so runs can use it.'
+            : ' Turn it on for this workspace, then add it to the routing policy below.'
+          : listed
+            ? ''
+            : ' Add it to the routing policy below to use it.'
       const fingerprint = stored.fingerprint ? ` (fingerprint ${stored.fingerprint})` : ''
       toast.success(`Key stored for ${keyTarget.displayName}${fingerprint}.${next}`)
       closeStoreKey()
@@ -726,12 +443,17 @@ export function ModelRouting() {
     { key: 'kind', header: 'Kind', render: (row) => providerKindLabel(row.kind) },
     {
       key: 'enabled',
-      header: 'Status',
-      render: (row) => <Tag tone={row.enabled ? 'success' : 'neutral'}>{row.enabled ? 'On' : 'Off'}</Tag>,
+      header: 'In this workspace',
+      render: (row) => (
+        <div>
+          <Tag tone={row.enabled ? 'success' : 'neutral'}>{row.enabled ? 'On' : 'Off'}</Tag>
+          {offForPlatform(row) && <p className="caption">Not available yet</p>}
+        </div>
+      ),
     },
     {
       key: 'key',
-      header: 'Key',
+      header: "This workspace's key",
       render: (row) => <KeyCell provider={row} credentials={credentials} failed={Boolean(credentialsQuery.error)} now={now} />,
     },
     {
@@ -752,6 +474,7 @@ export function ModelRouting() {
       render: (row) => {
         const replacing = hasStoredKey(row)
         const toggling = toggleProvider.isPending && toggleProvider.variables?.id === row.id
+        const copy = toggleCopy(row)
         return (
           <div className="row action-group">
             {row.credentialRef && (
@@ -764,16 +487,22 @@ export function ModelRouting() {
                 {replacing ? 'Replace key' : 'Store key'}
               </Button>
             )}
-            <Button
-              variant="outline"
-              className="button-sm"
-              aria-label={`${row.enabled ? 'Disable' : 'Enable'} ${row.displayName}`}
-              loading={toggling}
-              disabled={toggleProvider.isPending && !toggling}
-              onClick={() => void handleToggle(row)}
-            >
-              {row.enabled ? 'Disable' : 'Enable'}
-            </Button>
+            {offForPlatform(row) ? (
+              <span className="caption">Contact support to have it offered</span>
+            ) : (
+              <Button
+                variant="outline"
+                className="button-sm"
+                aria-label={copy.ariaLabel}
+                title={copy.ariaLabel}
+                data-provider-toggle={row.id}
+                loading={toggling}
+                disabled={toggleProvider.isPending && !toggling}
+                onClick={() => void handleToggle(row)}
+              >
+                {copy.label}
+              </Button>
+            )}
           </div>
         )
       },
@@ -789,6 +518,7 @@ export function ModelRouting() {
         eyebrow="Where the thinking happens"
         title="Model routing"
         description="Agents ask for an answer and state what they need. This chain decides which model provides it, and what happens when one cannot."
+        action={canManage ? <Button onClick={() => setConnectOpen(true)}>Connect your AI</Button> : undefined}
       />
 
       {/* The one-sentence answer to "which model do runs use". It is left out until every fact it
@@ -855,9 +585,32 @@ export function ModelRouting() {
                 <Card as="section">
                   <Eyebrow as="h2">Providers</Eyebrow>
                   <p className="muted" style={{ marginBottom: 'var(--space-5)' }}>
+                    Turning a provider on or off, and the keys stored here, apply to this workspace only.
                     A provider is paused automatically after repeated failures and probed again once the
                     cool-down passes. One vendor being unwell never stops calls to the others.
                   </p>
+                  {refusal && (
+                    <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+                      <Notice tone="warning" live>
+                        <span>
+                          {refusal.text}
+                          {refusal.fixIn === 'routing-policy' && (
+                            <>
+                              {' '}
+                              <a className="link" href="#routing-policy">
+                                Go to the routing policy
+                              </a>
+                            </>
+                          )}
+                        </span>
+                      </Notice>
+                      <div>
+                        <Button variant="quiet" className="button-sm" onClick={dismissRefusal}>
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {credentialsQuery.error ? (
                     <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
                       <Notice tone="warning">
@@ -875,7 +628,7 @@ export function ModelRouting() {
                     columns={providerColumns}
                     rows={allProviders}
                     getKey={(row) => row.id}
-                    caption="Each provider: whether it is on, the state of its key and its circuit breaker."
+                    caption="Each provider: whether it is on in this workspace, the state of this workspace's key and its circuit breaker."
                   />
                   {!canManage && (
                     <p className="caption" style={{ marginTop: 'var(--space-4)' }}>
@@ -919,7 +672,7 @@ export function ModelRouting() {
                           {provider.displayName}{' '}
                           <span className="caption" style={{ fontWeight: 'var(--weight-regular)' }}>
                             {providerKindLabel(provider.kind)}
-                            {provider.enabled ? '' : ', turned off'}
+                            {provider.enabled ? '' : offForPlatform(provider) ? ', not available yet' : ', turned off for this workspace'}
                           </span>
                         </h3>
                         {chat.length > 0 && (
@@ -953,6 +706,8 @@ export function ModelRouting() {
         }}
       </QueryState>
 
+      {canManage && <ConnectModelDialog open={connectOpen} onClose={() => setConnectOpen(false)} />}
+
       {/* Before the key dialog, so that when "Store a key first" swaps one for the other, this one
           has closed before the key dialog opens and takes focus. */}
       <ConfirmDialog
@@ -960,13 +715,13 @@ export function ModelRouting() {
         onClose={closeEnable}
         onConfirm={confirmEnable}
         eyebrow="No usable key"
-        title={`Enable ${enableTarget?.displayName ?? 'this provider'} without a usable key?`}
+        title={`Turn on ${enableTarget?.displayName ?? 'this provider'} for this workspace without a usable key?`}
         description={
           enableState === 'expired'
             ? 'Its key has expired, so the router will skip it until the key is replaced.'
             : 'No key is stored for it, so the router will skip it until one is added.'
         }
-        confirmLabel="Enable anyway"
+        confirmLabel="Turn on anyway"
         cancelLabel="Cancel"
         tone="primary"
         loading={toggleProvider.isPending}

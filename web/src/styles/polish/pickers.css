@@ -1,0 +1,188 @@
+/* ---- Searchable model picker (routing policy) -------------------------------------------------
+ * The list is drawn in a portal on <body> (or inside the dialog that holds the field), fixed beside
+ * its field, so these rules cannot be scoped under a screen's root class. Everything is prefixed
+ * model-combobox- instead.
+ */
+
+.model-combobox-control {
+  position: relative;
+}
+
+.model-combobox-input {
+  padding-right: calc(var(--space-4) + 16px);
+  text-overflow: ellipsis;
+}
+
+.model-combobox-chevron {
+  position: absolute;
+  top: 0;
+  right: var(--space-3);
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.model-combobox-panel {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--transition-slow);
+}
+
+.model-combobox-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2);
+}
+
+.model-combobox-heading {
+  position: sticky;
+  top: calc(var(--space-2) * -1);
+  z-index: 1;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+}
+
+.model-combobox-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name name'
+    'id tags';
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  color: var(--ink);
+  /* Clear of the sticky group heading when the arrow keys scroll an option into view. */
+  scroll-margin-top: 36px;
+}
+
+.model-combobox-option[data-active] {
+  background: var(--surface-hover);
+}
+
+.model-combobox-option[aria-selected='true'] {
+  background: var(--blue-light);
+}
+
+.model-combobox-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+.model-combobox-id {
+  grid-area: id;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.model-combobox-tags {
+  grid-area: tags;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  max-width: 260px;
+}
+
+.model-combobox-tag {
+  padding: 1px var(--space-2);
+  font-size: var(--text-micro);
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tag);
+}
+
+.model-combobox-tag-chosen {
+  color: var(--blue);
+}
+
+.model-combobox-status {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+/* The line under a candidate's model field: where the list came from, and "Refresh list". It takes
+   a row of its own at the end of the candidate, so the fields and buttons above stay aligned. */
+.candidate-meta {
+  flex: 1 1 100%;
+  order: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin-top: calc(var(--space-2) * -1);
+  padding-left: var(--space-5);
+}
+
+.candidate-meta button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--blue);
+  cursor: pointer;
+}
+
+.candidate-meta button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+@media (pointer: coarse) {
+  .model-combobox-option {
+    min-height: 44px;
+  }
+
+  .candidate-meta button {
+    min-height: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .model-combobox-option {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'name'
+      'id'
+      'tags';
+  }
+
+  .model-combobox-tags {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .candidate-meta {
+    padding-left: 0;
+    margin-top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-combobox-panel {
+    animation: none;
+  }
+}

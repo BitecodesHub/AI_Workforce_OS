@@ -7,7 +7,8 @@ import path from 'node:path'
  * In development each API prefix goes straight to the service that owns it, mirroring the
  * gateway's own routing table. That lets the web client run against services started
  * individually - the common case on a machine without Docker - while production traffic still
- * goes through the gateway unchanged. Keep this table in step with the gateway's application.yml.
+ * goes through the gateway unchanged. Keep this table in step with the gateway's application.yml
+ * and infra/launcher/nginx.conf; the gateway's GatewayRoutesTest compares all three.
  */
 const IDENTITY = 'http://localhost:8081'
 const ORGANISATION = 'http://localhost:8082'
@@ -21,14 +22,13 @@ const routes: Record<string, string> = {
   '/api/auth': IDENTITY,
   '/api/users': IDENTITY,
   '/api/roles': IDENTITY,
-  '/api/permissions': IDENTITY,
   '/.well-known': IDENTITY,
   '/api/workspaces': ORGANISATION,
   '/api/credentials': ORGANISATION,
-  '/api/settings': ORGANISATION,
   '/api/orgs': ORGANISATION,
   '/api/invitations': ORGANISATION,
   '/api/agents': ORCHESTRATOR,
+  '/api/agent-templates': ORCHESTRATOR,
   '/api/goals': ORCHESTRATOR,
   '/api/runs': ORCHESTRATOR,
   '/api/approvals': ORCHESTRATOR,
@@ -42,6 +42,7 @@ const routes: Record<string, string> = {
   '/api/knowledge': KNOWLEDGE,
   '/api/sources': KNOWLEDGE,
   '/api/integrations': INTEGRATIONS,
+  '/api/oauth': INTEGRATIONS,
   '/api/analytics': ANALYTICS,
   '/api/audit': ANALYTICS,
 }

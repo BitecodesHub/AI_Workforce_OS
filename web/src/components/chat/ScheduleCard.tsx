@@ -1,10 +1,12 @@
 import { formatDateTimeIn } from '../../lib/format'
 import { useState } from 'react'
-import { Button, Card, Eyebrow, Notice } from '../ui'
+import { Button, Card, Eyebrow, Notice, Tag } from '../ui'
 import { describeApiError } from '../../lib/api'
+import { scheduleStateLabel } from '../../lib/labels'
 import { readStored, writeStored } from '../../lib/persist'
 import { useCreateSchedule, useSchedules } from '../../lib/queries'
 import type { ChatMessage } from '../../lib/queries'
+import { scheduleState } from '../../lib/schedules'
 import { can } from '../../lib/session'
 
 /** A schedule read back in plain words, with next runs and a one-click way to save it (D10). */
@@ -16,16 +18,21 @@ export function ScheduleCard({ message }: { message: ChatMessage }) {
   const [error, setError] = useState<string | null>(null)
   const canCreate = can('task:create')
 
+  const saved = (schedulesQuery.data ?? []).find(
+    (schedule) =>
+      schedule.agentId === detail.agentId &&
+      schedule.instruction === detail.instruction &&
+      schedule.cron === (detail.cron ?? null) &&
+      schedule.runAt === (detail.runAt ?? null),
+  )
   const alreadySaved =
     created ||
     readStored(`chat.schedule.${message.id}`, false, (v): v is boolean => typeof v === 'boolean') ||
-    (schedulesQuery.data ?? []).some(
-      (schedule) =>
-        schedule.agentId === detail.agentId &&
-        schedule.instruction === detail.instruction &&
-        schedule.cron === (detail.cron ?? null) &&
-        schedule.runAt === (detail.runAt ?? null),
-    )
+    saved !== undefined
+  // The saved schedule's state, read by the same rule as the Schedules screen: a one-off that has
+  // already run says Done rather than Paused.
+  const savedState = saved ? scheduleState(saved) : null
+  const savedLabel = savedState ? scheduleStateLabel(savedState === 'active', savedState === 'done') : null
 
   const nextRuns = detail.nextRuns ?? []
 
@@ -88,8 +95,9 @@ export function ScheduleCard({ message }: { message: ChatMessage }) {
 
       <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
         {alreadySaved ? (
-          <p className="caption">
-            Saved as a schedule.{' '}
+          <p className="caption row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            <span>Saved as a schedule.</span>
+            {savedLabel && <Tag tone={savedLabel.tone}>{savedLabel.label}</Tag>}
             <a className="link" href="/schedules">
               Open Schedules
             </a>

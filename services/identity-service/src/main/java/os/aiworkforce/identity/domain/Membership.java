@@ -39,6 +39,19 @@ public class Membership extends BaseEntity {
         return "active".equals(status);
     }
 
+    /**
+     * Brings a removed or suspended member back, at the role their new invitation names.
+     *
+     * <p>The row is reused rather than replaced: the unique index on user and workspace allows one
+     * row per person, and that row is also the record that they were a member before.
+     */
+    public void reactivate(UUID newRoleId, UUID inviter, Instant now) {
+        this.status = "active";
+        this.roleId = newRoleId;
+        this.invitedBy = inviter;
+        this.joinedAt = now;
+    }
+
     public UUID getUserId() {
         return userId;
     }

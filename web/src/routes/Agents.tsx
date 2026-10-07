@@ -7,6 +7,7 @@ import {
   EmptyState,
   Eyebrow,
   Input,
+  Notice,
   PageHeader,
   Select,
   StatusTag,
@@ -17,13 +18,18 @@ import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 // the barrel is also part of the main bundle, so going through it created a circular chunk
 // dependency (Rollup warned of a "broken execution order").
 import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
+import { AgentStatusButton } from '../components/agents/AgentStatusButton'
+import { costFigure, successRateFigure, useAgentOutcomes } from '../lib/agentQueries'
+import type { AgentOutcome } from '../lib/agentQueries'
 import { ApiError, describeApiError } from '../lib/api'
-import { sentenceCase } from '../lib/format'
+import { nameList, sentenceCase } from '../lib/format'
 import { serverLabel } from '../lib/labels'
 import { useAgents, useCreateAgent, type Agent } from '../lib/queries'
 import { useToast } from '../lib/toast'
 import { useRouter } from '../lib/router'
 import { can } from '../lib/session'
+import { useCreateFromTemplate, useAgentTemplates, type FromTemplate, type TemplateView } from '../lib/templateQueries'
+import { connectPrompts } from '../lib/templates'
 import { useListFilter } from '../lib/useListFilter'
 
 /** A search field is worth its space only once the grid no longer fits on a screen or two. */
@@ -69,61 +75,252 @@ function agentSearchText(agent: Agent): string {
   ].join(' ')
 }
 
-function AgentCard({ agent }: { agent: Agent }) {
-  const tools = agent.tools
+/** How the outcome figures stand: still loading, loaded, or not shown at all (no permission, or they failed). */
+type Outcomes = { state: 'loading' } | { state: 'ready'; byAgent: Record<string, AgentOutcome> } | null
+
+/**
+ * Two figures on every card, so a manager can compare agents without opening each one: how often
+ * its finished runs complete, and what the last 30 days cost. Below five finished runs the first
+ * says so instead of showing a percentage that means nothing.
+ */
+function OutcomeFigures({ agent, outcomes }: { agent: Agent; outcomes: Exclude<Outcomes, null> }) {
+  const outcome = outcomes.state === 'ready' ? outcomes.byAgent[agent.id] : undefined
+  const loading = outcomes.state === 'loading'
+  const success = loading ? null : successRateFigure(outcome)
+  const cost = loading ? null : costFigure(outcome)
+  const figure = { margin: 0, fontWeight: 'var(--weight-strong)' } as const
   return (
-    <Card href={`/agents/${agent.id}`}>
-      <Eyebrow>{categoryLabel(agent.category)}</Eyebrow>
-      <div
-        className="row"
-        style={{
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          flexWrap: 'wrap',
-          gap: 'var(--space-2) var(--space-3)',
-          marginBottom: 'var(--space-3)',
-        }}
-      >
-        <h2 className="section-heading" style={{ overflowWrap: 'anywhere' }}>
-          {agent.name}
-        </h2>
-        <StatusTag kind="agent" status={agent.status} />
+    <dl style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2) var(--space-6)', margin: 0 }}>
+      <div>
+        <dt className="caption">Success rate (30 days)</dt>
+        <dd className="tabular" style={figure} title={success?.note}>
+          {success?.value ?? '—'}
+        </dd>
       </div>
-      {/* The summary is the first sentence of the agent's own instructions, usually written to the
-          agent ("You handle..."), so it is labelled and quoted as an excerpt rather than passed off
-          as a description of the agent. */}
-      {agent.summary ? (
-        <div style={{ marginBottom: 'var(--space-4)' }}>
-          <p className="caption">From its instructions</p>
-          <p className="muted">“{agent.summary}”</p>
+      <div>
+        <dt className="caption">Cost (30 days)</dt>
+        <dd className="tabular" style={figure} title={cost?.note}>
+          {cost?.value ?? '—'}
+        </dd>
+      </div>
+    </dl>
+  )
+}
+
+function AgentCard({ agent, outcomes }: { agent: Agent; outcomes: Outcomes }) {
+  const tools = agent.tools
+  // Pause or Resume sits on the card's corner, beside the card rather than inside its link: a
+  // button inside a link is not valid, and pressing it must not open the agent.
+  const toggle = can('agent:update') && agent.status !== 'retired'
+  return (
+    <div style={{ position: 'relative', display: 'grid' }}>
+      <Card href={`/agents/${agent.id}`}>
+        <Eyebrow>{categoryLabel(agent.category)}</Eyebrow>
+        <div
+          className="row"
+          style={{
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+            gap: 'var(--space-2) var(--space-3)',
+            marginBottom: 'var(--space-3)',
+          }}
+        >
+          <h2 className="section-heading" style={{ overflowWrap: 'anywhere' }}>
+            {agent.name}
+          </h2>
+          <StatusTag kind="agent" status={agent.status} />
         </div>
-      ) : (
-        // Only an agent with no saved revision has no instructions. A missing summary on one that
-        // has a revision says nothing about its instructions, so nothing is claimed.
-        agent.revision == null && (
-          <p className="muted" style={{ marginBottom: 'var(--space-4)' }}>
-            No instructions have been saved yet.
+        {/* The summary is the first sentence of the agent's own instructions, usually written to the
+            agent ("You handle..."), so it is labelled and quoted as an excerpt rather than passed off
+            as a description of the agent. */}
+        {agent.summary ? (
+          <div style={{ marginBottom: 'var(--space-4)' }}>
+            <p className="caption">From its instructions</p>
+            <p className="muted">“{agent.summary}”</p>
+          </div>
+        ) : (
+          // Only an agent with no saved revision has no instructions. A missing summary on one that
+          // has a revision says nothing about its instructions, so nothing is claimed.
+          agent.revision == null && (
+            <p className="muted" style={{ marginBottom: 'var(--space-4)' }}>
+              No instructions have been saved yet.
+            </p>
+          )
+        )}
+        {/* Which connectors it can act in, by name, so the card answers "what can it reach" before
+            anybody opens it. */}
+        {tools != null && (
+          <p className="caption">
+            {tools.length > 0
+              ? `Connectors: ${tools.map((server) => serverLabel(server)).join(', ')}`
+              : 'No connectors yet'}
           </p>
-        )
+        )}
+        {(outcomes || toggle) && (
+          // Room for the button laid over this corner, so the figures never run under it.
+          <div
+            style={{
+              marginTop: 'var(--space-4)',
+              minHeight: toggle ? 'var(--space-7)' : undefined,
+              paddingRight: toggle ? 'calc(var(--space-8) * 2)' : undefined,
+            }}
+          >
+            {outcomes && <OutcomeFigures agent={agent} outcomes={outcomes} />}
+          </div>
+        )}
+      </Card>
+      {toggle && (
+        <div style={{ position: 'absolute', right: 'var(--space-6)', bottom: 'var(--space-6)' }}>
+          <AgentStatusButton agent={agent} className="button-sm" />
+        </div>
       )}
-      {tools != null && (
-        <p className="caption">
-          {tools.length > 0 ? `Uses ${tools.map((server) => serverLabel(server)).join(', ')}` : 'No tools granted'}
-        </p>
-      )}
+    </div>
+  )
+}
+
+/** The connectors a template works with, by name: "Gmail and Google Calendar". */
+function connectorsLine(template: TemplateView): string {
+  return nameList(template.suggestedConnectors.map((server) => serverLabel(server)), 6)
+}
+
+/**
+ * One ready-made assistant: what it does, what it works with, and a button to add it. The button
+ * names the assistant, so a list of four "Add" buttons is not four identical controls.
+ */
+function TemplateCard({
+  template,
+  pending,
+  disabled,
+  onAdd,
+}: {
+  template: TemplateView
+  pending: boolean
+  disabled: boolean
+  onAdd: () => void
+}) {
+  return (
+    <Card>
+      <Eyebrow>{categoryLabel(template.category)}</Eyebrow>
+      <h3 className="section-heading" style={{ marginBottom: 'var(--space-2)' }}>
+        {template.name}
+      </h3>
+      <p className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+        {template.description}
+      </p>
+      <p className="caption" style={{ marginBottom: 'var(--space-4)' }}>
+        Works with {connectorsLine(template)}
+      </p>
+      <Button
+        variant="outline"
+        className="button-sm"
+        aria-label={`Add the ${template.name} assistant`}
+        loading={pending}
+        disabled={disabled}
+        onClick={onAdd}
+      >
+        Add {template.name}
+      </Button>
     </Card>
   )
 }
 
-function CreateAgentDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+/**
+ * The same assistant as a compact row, for the dialog, where four cards one under another would
+ * push "Start from scratch" below the fold. The button names the assistant for the same reason.
+ */
+function TemplateRow({
+  template,
+  pending,
+  disabled,
+  onAdd,
+}: {
+  template: TemplateView
+  pending: boolean
+  disabled: boolean
+  onAdd: () => void
+}) {
+  return (
+    <div
+      className="row"
+      style={{
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 'var(--space-4)',
+        padding: 'var(--space-4)',
+        border: '1px solid var(--line)',
+        borderRadius: 'var(--radius-control-lg)',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <h4 className="section-heading">{template.name}</h4>
+        <p className="muted" style={{ margin: 'var(--space-1) 0' }}>
+          {template.description}
+        </p>
+        <p className="caption">Works with {connectorsLine(template)}</p>
+      </div>
+      <Button
+        variant="outline"
+        className="button-sm"
+        aria-label={`Add the ${template.name} assistant`}
+        loading={pending}
+        disabled={disabled}
+        onClick={onAdd}
+      >
+        Add
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * Adds a ready-made assistant and hands the result on, for the dialog and the suggestions strip
+ * alike. Says what went wrong in words when it cannot, and never leaves a button spinning.
+ */
+function useAddAssistant(onAdded: (result: FromTemplate) => void, onFailed: (message: string) => void) {
+  const create = useCreateFromTemplate()
+  return {
+    pendingKey: create.isPending ? create.variables : null,
+    busy: create.isPending,
+    add: async (template: TemplateView) => {
+      try {
+        onAdded(await create.mutateAsync(template.key))
+      } catch (error) {
+        onFailed(describeApiError(error))
+      }
+    },
+  }
+}
+
+function CreateAgentDialog({
+  open,
+  onClose,
+  onAdded,
+}: {
+  open: boolean
+  onClose: () => void
+  onAdded: (result: FromTemplate) => void
+}) {
   const createAgent = useCreateAgent()
+  const templates = useAgentTemplates({ enabled: open })
+  // First a choice between a ready-made assistant and a blank page; the blank page is the form.
+  const [view, setView] = useState<'choose' | 'scratch'>('choose')
   const [error, setError] = useState<string | null>(null)
 
   const close = () => {
     setError(null)
+    setView('choose')
     createAgent.reset()
     onClose()
   }
+
+  const adding = useAddAssistant(
+    (result) => {
+      onAdded(result)
+      close()
+    },
+    setError,
+  )
 
   return (
     <Dialog
@@ -131,12 +328,115 @@ function CreateAgentDialog({ open, onClose }: { open: boolean; onClose: () => vo
       onClose={close}
       eyebrow="New agent"
       title="Add an agent"
-      description="Name the agent, choose its category and write the instructions it works from."
-      dismissible={!createAgent.isPending}
+      description={
+        view === 'choose'
+          ? 'Start from a ready-made assistant, or write your own from scratch. You can change any assistant’s instructions afterwards.'
+          : 'Name the agent, choose its category and write the instructions it works from.'
+      }
+      dismissible={!createAgent.isPending && !adding.busy}
       error={error}
     >
       {/* Mounted only while open, so a cancelled draft does not come back the next time. */}
-      {open && <CreateAgentForm createAgent={createAgent} onError={setError} onDone={close} />}
+      {open && view === 'choose' && (
+        <div className="stack" style={{ gap: 'var(--space-4)' }}>
+          {/* Both ways in sit above the list, so neither is below the fold on a short screen. */}
+          <div
+            className="row"
+            style={{ justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}
+          >
+            <h3 className="section-heading">Start from a ready-made assistant</h3>
+            <Button variant="outline" className="button-sm" onClick={() => setView('scratch')} disabled={adding.busy}>
+              Start from scratch
+            </Button>
+          </div>
+          <ul
+            aria-label="Ready-made assistants"
+            style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 'var(--space-3)' }}
+          >
+            {templates.map((template) => (
+              <li key={template.key}>
+                <TemplateRow
+                  template={template}
+                  pending={adding.pendingKey === template.key}
+                  disabled={adding.busy}
+                  onAdd={() => {
+                    setError(null)
+                    void adding.add(template)
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+          <div className="dialog-footer">
+            <Button variant="outline" onClick={close} disabled={adding.busy}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+      {open && view === 'scratch' && (
+        <CreateAgentForm createAgent={createAgent} onError={setError} onDone={close} onBack={() => setView('choose')} />
+      )}
+    </Dialog>
+  )
+}
+
+/**
+ * After a ready-made assistant is added: what exists now, and what is still to do. The assistant
+ * starts with no connectors, so each one it works with is a prompt to connect, never a claim that
+ * it can already act there.
+ */
+function AddedAssistantDialog({ added, onClose }: { added: FromTemplate | null; onClose: () => void }) {
+  const { navigate } = useRouter()
+  const agent = added?.agent
+  const prompts = added ? connectPrompts(added.suggestedConnectors, (server) => serverLabel(server)) : []
+  const canOpenConnectors = can('integration:read')
+  return (
+    <Dialog
+      open={added !== null}
+      onClose={onClose}
+      eyebrow="New agent"
+      title={agent ? `${agent.name} is ready` : 'The assistant is ready'}
+      description="It starts from the ready-made instructions, which you can change on its page. It cannot act in any connector yet."
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Done
+          </Button>
+          {agent && (
+            <Button
+              onClick={() => {
+                onClose()
+                navigate(`/agents/${agent.id}`)
+              }}
+            >
+              Open {agent.name}
+            </Button>
+          )}
+        </>
+      }
+    >
+      {prompts.length > 0 && (
+        <div className="stack" style={{ gap: 'var(--space-3)' }}>
+          <h3 className="section-heading">To let it act</h3>
+          <ul className="stack" style={{ gap: 'var(--space-2)', margin: 0, paddingLeft: 'var(--space-5)' }}>
+            {prompts.map((prompt) => (
+              <li key={prompt}>
+                {canOpenConnectors ? (
+                  <a className="link" href="/connectors">
+                    {prompt}
+                  </a>
+                ) : (
+                  prompt
+                )}
+              </li>
+            ))}
+          </ul>
+          {!canOpenConnectors && (
+            <p className="caption">An owner or admin can connect these in Connectors.</p>
+          )}
+        </div>
+      )}
     </Dialog>
   )
 }
@@ -145,10 +445,12 @@ function CreateAgentForm({
   createAgent,
   onError,
   onDone,
+  onBack,
 }: {
   createAgent: ReturnType<typeof useCreateAgent>
   onError: (message: string | null) => void
   onDone: () => void
+  onBack: () => void
 }) {
   const { navigate } = useRouter()
   const toast = useToast()
@@ -158,6 +460,7 @@ function CreateAgentForm({
   const [category, setCategory] = useState('operations')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   /** A server's complaint about a field goes once the field is changed. */
   const clearError = (field: string) =>
@@ -169,10 +472,17 @@ function CreateAgentForm({
     })
 
   const key = typedKey ?? keyFromName(name)
-  const keyProblem =
-    key && !KEY_PATTERN.test(key) ? 'Use lowercase letters and numbers, with single hyphens between words.' : null
+  const keyProblem = key
+    ? KEY_PATTERN.test(key)
+      ? null
+      : 'Use lowercase letters and numbers, with single hyphens between words.'
+    : name.trim()
+      ? 'Use letters or numbers in the name, or write a key here.'
+      : null
   const saving = createAgent.isPending
   const complete = name.trim() !== '' && key !== '' && systemPrompt.trim() !== '' && !keyProblem
+  // The key is tucked away until it needs attention: a clash, or a name it cannot be made from.
+  const keyShown = advancedOpen || Boolean(fieldErrors.key ?? keyProblem)
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -218,21 +528,6 @@ function CreateAgentForm({
           error={fieldErrors.name}
           data-autofocus
         />
-        <Input
-          label="Key"
-          value={key}
-          onChange={(e) => {
-            setTypedKey(e.target.value)
-            clearError('key')
-          }}
-          placeholder="e.g. people-ops"
-          required
-          maxLength={KEY_MAX}
-          autoComplete="off"
-          spellCheck={false}
-          hint="Filled in from the name. Lowercase letters, numbers and hyphens. It cannot be changed later."
-          error={fieldErrors.key ?? keyProblem}
-        />
         <Select
           label="Category"
           value={category}
@@ -262,22 +557,110 @@ function CreateAgentForm({
           hint="Written to the agent. The first sentence appears on its card."
           error={fieldErrors.systemPrompt}
         />
+        {/* The key is made from the name and rarely needs a look, so it sits behind Advanced. */}
+        <details open={keyShown} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+          <summary className="section-heading" style={{ cursor: 'pointer' }}>
+            Advanced
+          </summary>
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            <Input
+              label="Key"
+              value={key}
+              onChange={(e) => {
+                setTypedKey(e.target.value)
+                clearError('key')
+              }}
+              placeholder="e.g. people-ops"
+              maxLength={KEY_MAX}
+              autoComplete="off"
+              spellCheck={false}
+              hint="Filled in from the name. Lowercase letters, numbers and hyphens. It cannot be changed later."
+              error={fieldErrors.key ?? keyProblem ?? undefined}
+            />
+          </div>
+        </details>
       </div>
-      <div className="dialog-footer" style={{ justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
-        <Button variant="outline" type="button" onClick={onDone} disabled={saving}>
-          Cancel
+      <div className="dialog-footer" style={{ justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+        <Button variant="quiet" type="button" onClick={onBack} disabled={saving}>
+          Back to ready-made assistants
         </Button>
-        <Button type="submit" loading={saving} disabled={!complete}>
-          Add agent
-        </Button>
+        <div className="row" style={{ gap: 'var(--space-3)' }}>
+          <Button variant="outline" type="button" onClick={onDone} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={saving} disabled={!complete}>
+            Add agent
+          </Button>
+        </div>
       </div>
     </form>
   )
 }
 
+/**
+ * Offered while the General Employee is the only agent, which is how every new workspace starts:
+ * the ready-made assistants are one click away instead of behind the Add dialog, because a blank
+ * instructions box is the slowest way to a first useful agent.
+ */
+function SuggestedAssistants({ onAdded }: { onAdded: (result: FromTemplate) => void }) {
+  const templates = useAgentTemplates()
+  const [error, setError] = useState<string | null>(null)
+  const adding = useAddAssistant(onAdded, setError)
+  return (
+    <Card as="section">
+      <Eyebrow as="h2">Suggested assistants</Eyebrow>
+      <p className="muted" style={{ maxWidth: '62ch', marginBottom: 'var(--space-5)' }}>
+        This workspace has only the General Employee so far. Add a ready-made assistant to give it a head start; each
+        one can be changed after it is added.
+      </p>
+      {error && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Notice tone="warning" live>
+            {error}
+          </Notice>
+        </div>
+      )}
+      <ul
+        aria-label="Ready-made assistants"
+        style={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
+          gap: 'var(--space-4)',
+        }}
+      >
+        {templates.map((template) => (
+          <li key={template.key} style={{ display: 'grid' }}>
+            <TemplateCard
+              template={template}
+              pending={adding.pendingKey === template.key}
+              disabled={adding.busy}
+              onAdd={() => {
+                setError(null)
+                void adding.add(template)
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )
+}
+
 export function Agents() {
   const query = useAgents()
+  // The figures need run:read. If they cannot be had the cards say nothing rather than guess.
+  const outcomeData = useAgentOutcomes({ enabled: can('run:read') })
+  const outcomes: Outcomes = !can('run:read') || outcomeData.isError
+    ? null
+    : outcomeData.data
+      ? { state: 'ready', byAgent: outcomeData.data }
+      : { state: 'loading' }
   const [createOpen, setCreateOpen] = useState(false)
+  // The assistant just added from a ready-made brief, until its "what is still to do" is closed.
+  const [added, setAdded] = useState<FromTemplate | null>(null)
   const canCreate = can('agent:create')
 
   const filter = useListFilter({ rows: query.data, text: agentSearchText })
@@ -290,11 +673,12 @@ export function Agents() {
       <PageHeader
         eyebrow="Who works here"
         title="Agents"
-        description="Each agent works from its own instructions and can use only the tools it has been granted."
+        description="Each agent works from its own instructions and can act only in the connectors it has been given."
         action={canCreate ? <Button onClick={() => setCreateOpen(true)}>Add an agent</Button> : undefined}
       />
 
-      {canCreate && <CreateAgentDialog open={createOpen} onClose={() => setCreateOpen(false)} />}
+      {canCreate && <CreateAgentDialog open={createOpen} onClose={() => setCreateOpen(false)} onAdded={setAdded} />}
+      {canCreate && <AddedAssistantDialog added={added} onClose={() => setAdded(null)} />}
 
       <QueryState
         query={query}
@@ -321,14 +705,21 @@ export function Agents() {
       >
         {(agents) => {
           const shown = searchable ? filter.filtered : agents
+          // Only the General Employee, which every workspace has from its first visit.
+          const onlyFallback = agents.length === 1 && agents[0]?.fallback === true
           return (
             <div style={{ marginTop: 'var(--space-6)' }}>
+              {canCreate && onlyFallback && (
+                <div style={{ marginBottom: 'var(--space-6)' }}>
+                  <SuggestedAssistants onAdded={setAdded} />
+                </div>
+              )}
               {searchable && (
                 <FilterBar
                   searchLabel="Search agents"
                   query={filter.query}
                   onQueryChange={filter.setQuery}
-                  placeholder="Name, instructions or tool"
+                  placeholder="Name, instructions or connector"
                   shown={shown.length}
                   total={agents.length}
                   active={filter.active}
@@ -350,7 +741,7 @@ export function Agents() {
                   }}
                 >
                   {shown.map((agent) => (
-                    <AgentCard key={agent.id} agent={agent} />
+                    <AgentCard key={agent.id} agent={agent} outcomes={outcomes} />
                   ))}
                 </div>
               )}

@@ -49,6 +49,9 @@ export function Trust(): ReactElement {
                 The detail behind the promises on the overview: the approval gate, provider failover, the tamper-evident
                 audit chain, cited retrieval, the permission model and what actually runs.
               </p>
+              <p className="lp-hero-lead">
+                Agent traces are kept for 180 days by default; administrators can change this.
+              </p>
               <a className="lp-link lp-trust-back" href="/home">
                 Back to the overview
               </a>

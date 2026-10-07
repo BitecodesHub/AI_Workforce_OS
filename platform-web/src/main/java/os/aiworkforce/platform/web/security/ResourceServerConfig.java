@@ -68,6 +68,12 @@ public class ResourceServerConfig {
         // /api/auth/register with the invite's token standing in for a password check.
         "/api/invitations/accept",
         /*
+         * A provider's redirect after the consent screen carries no bearer token. The endpoint
+         * honours it only with a state this service signed, single use and short lived, plus a
+         * cookie from the browser that started the sign-in; see OAuthController.
+         */
+        "/api/oauth/callback",
+        /*
          * The token-issuing endpoint is the one place that cannot require a token, because it is
          * where a service gets one. It is not unprotected: it checks a shared internal secret in
          * constant time, and the network policy restricts the port to pods inside the namespace.
@@ -118,6 +124,9 @@ public class ResourceServerConfig {
      * anything else with "no matching key(s) found" - a message that sends somebody looking for a
      * missing key when the algorithm is the actual problem.
      */
+    /** The shortest gap between two fetches of the identity service's published keys. */
+    static final long JWKS_MIN_FETCH_INTERVAL_MS = 5_000;
+
     @Bean
     public JwtDecoder jwtDecoder(PlatformProperties properties) {
         PlatformProperties.Security security = properties.security();
@@ -126,6 +135,12 @@ public class ResourceServerConfig {
                     .cache(
                             security.jwksCacheTtl().toMillis(),
                             security.jwksRefreshCooldown().toMillis())
+                    // Nimbus's default allows one fetch per 30 s. A service that starts before the
+                    // identity service is ready fails its first fetch and then refused every token
+                    // with 401 for that whole window, which stranded a chat send after a restart.
+                    // Five seconds still stops a stream of unknown-kid tokens from hammering identity.
+                    .rateLimited(JWKS_MIN_FETCH_INTERVAL_MS)
+                    .retrying(true)
                     .build();
 
             ConfigurableJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();

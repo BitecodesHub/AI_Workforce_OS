@@ -84,6 +84,11 @@ const NOT_SHOWN: Record<string, string> = {
   // Seeded 'missing' and only ever set to 'rejected', so it cannot say whether a key is stored.
   // Screens read credential presence from routing.ts credentialState instead.
   llm_credential_status_valid: 'replaced by credentialState in routing.ts',
+  // The per-workspace successor of llm_credential_status_valid (V10). Screens still read it
+  // through credentialState in routing.ts, never as a raw status.
+  workspace_credential_status_valid: 'read through credentialState in routing.ts',
+  // A chat attachment is either readable or shown with its own plain reason (AttachmentChips).
+  chat_attachments_status_valid: 'shown as the file chip itself, or the reason it could not be read',
 }
 
 describe('status labels cover the database', () => {
@@ -180,8 +185,8 @@ describe('statusLabel', () => {
   })
 
   it('keeps the audit outcome maps in step', () => {
-    expect(OUTCOME_LABEL).toEqual({ succeeded: 'Succeeded', failed: 'Failed', denied: 'Denied' })
-    expect(OUTCOME_TONE).toEqual({ succeeded: 'success', failed: 'danger', denied: 'warning' })
+    expect(OUTCOME_LABEL).toEqual({ succeeded: 'Succeeded', failed: 'Failed', denied: 'Denied', locked: 'Locked' })
+    expect(OUTCOME_TONE).toEqual({ succeeded: 'success', failed: 'danger', denied: 'warning', locked: 'warning' })
   })
 })
 
@@ -205,13 +210,13 @@ describe('other labels', () => {
     expect(auditActionLabel('approval.decide', { approved: true })).toBe('Approved an action')
     expect(auditActionLabel('approval.decide', { approved: false })).toBe('Rejected an action')
     expect(auditActionLabel('approval.decide')).toBe('Decided an approval')
-    expect(auditActionLabel('member.role_change')).toBe('Member role change')
+    expect(auditActionLabel('member.role_change')).toBe('Changed a member’s role')
   })
 
   it('says what started a run', () => {
     expect(startedByLabel({ trigger: 'manual', taskId: null })).toBe('Direct instruction')
-    expect(startedByLabel({ trigger: 'task', taskId: 't1' }, 'Draft the rota')).toBe('Goal task: Draft the rota')
-    expect(startedByLabel({ trigger: 'task', taskId: 't1' })).toBe('A goal task')
+    expect(startedByLabel({ trigger: 'task', taskId: 't1' }, 'Draft the rota')).toBe('Task: Draft the rota')
+    expect(startedByLabel({ trigger: 'task', taskId: 't1' })).toBe('A task')
   })
 
   it('names media types', () => {

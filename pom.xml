@@ -283,16 +283,16 @@
           </annotationProcessorPaths>
         </configuration>
       </plugin>
+      <!--
+        Declared without an execution, so `mvn spotless:check` and `spotless:apply` (make lint and
+        make format) resolve it, but no default build runs it. The palantir-java-format release
+        this plugin uses does not run on JDK 25, and binding the check to verify made a plain
+        `make build` fail on such a machine although the code compiles for release 21 there.
+        CI checks the format with -Pformat-check, on JDK 21.
+      -->
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>format-check</id>
-            <phase>verify</phase>
-            <goals><goal>check</goal></goals>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
         <groupId>org.jacoco</groupId>
@@ -313,6 +313,30 @@
   </build>
 
   <profiles>
+    <!--
+      The format gate, for CI and `make lint`: `mvn verify -Pformat-check` fails on any file that
+      `make format` would change. Kept out of the default build for the reason given at the
+      spotless plugin above.
+    -->
+    <profile>
+      <id>format-check</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.diffplug.spotless</groupId>
+            <artifactId>spotless-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>format-check</id>
+                <phase>verify</phase>
+                <goals><goal>check</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
     <!--
       Integration tests need Docker for Testcontainers. `mvn verify -Pit` runs them;
       the default build stays fast and hermetic.

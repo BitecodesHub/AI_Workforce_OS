@@ -141,6 +141,10 @@ public final class IntentDetector {
      * weekday at 9am summarise support tickets"} becomes {@code "summarise support tickets"}. The
      * whole text is returned, stripped, when no recognisable phrase is found: a schedule with an
      * instruction nobody can read is worse than one that repeats the timing back.
+     *
+     * <p>Only the seam where the phrase was is tidied. Everything else stays exactly as the person
+     * wrote it - line breaks, spacing and pasted text included - because this is the standing
+     * instruction every run of the schedule works from.
      */
     public static String withoutTimingPhrase(String text) {
         if (text == null) {
@@ -150,9 +154,29 @@ public final class IntentDetector {
         if (!marker.find()) {
             return text.strip();
         }
-        String remainder = text.substring(0, marker.start()) + " " + text.substring(marker.end());
-        remainder = remainder.replaceAll("^[\\s,;:]+", "").replaceAll("[\\s,;:]+$", "");
-        remainder = remainder.replaceAll("[ \\t]{2,}", " ").strip();
+        String before = SEAM_END.matcher(text.substring(0, marker.start())).replaceFirst("");
+        String after = SEAM_START.matcher(text.substring(marker.end())).replaceFirst("");
+        String remainder = before.isEmpty() || after.isEmpty() ? before + after : before + " " + after;
+        remainder = SEAM_START.matcher(remainder).replaceFirst("");
+        remainder = SEAM_END.matcher(remainder).replaceFirst("").strip();
         return remainder.isBlank() ? text.strip() : remainder;
+    }
+
+    private static final Pattern SEAM_START = Pattern.compile("^[\\s,;:]+");
+    private static final Pattern SEAM_END = Pattern.compile("[\\s,;:]+$");
+
+    /** Words that name the workspace's own documents, or the policies and handbooks they hold. */
+    private static final Pattern DOCUMENT_REFERENCE = Pattern.compile(
+            "\\b(knowledge base|documents?|docs|uploaded|on file|handbooks?|polic(y|ies)|procedures?|"
+                    + "guidelines?|playbooks?|manuals?|faqs?)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Whether a request leans on the workspace's own documents - "using our refund policy", "per
+     * the handbook" - so that, when no document turns out to cover it, the agent can be told to say
+     * so rather than state company facts it would otherwise have to invent.
+     */
+    public static boolean refersToDocuments(String text) {
+        return text != null && DOCUMENT_REFERENCE.matcher(text).find();
     }
 }

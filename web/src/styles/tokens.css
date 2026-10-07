@@ -53,23 +53,34 @@
   --skeleton-highlight: #f1f4f8; /* the lighter band that sweeps across a loading skeleton */
 
   /* ---- Type -------------------------------------------------------------------------------- */
-  /* One typeface for everything: Aperçu (see fonts.css). The mono token is kept as a name so
+  /* One typeface for everything: Inter (see fonts.css). The mono token is kept as a name so
      labels, code and hashes keep their own styling, but it draws the same family: there is no
-     second typeface in the product. The system stack is only a fallback while a cut loads. */
-  --font-body: 'Aperçu', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+     second typeface in the product. 'Inter Fallback' is metric-matched Arial, so nothing jumps
+     when Inter arrives; the system stack after it covers a machine without Arial. */
+  --font-body: 'Inter Variable', 'Inter', 'Inter Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: var(--font-body);
 
-  /* Fractional weights are deliberate: 550 carries emphasis without the heaviness of 600, and
-     700 never appears inside content. */
+  /* Inter's alternates, on everywhere: cv11 the single-storey a, ss01 open digits (a 6 and 9
+     that cannot be misread as 8 or 0 at caption size), ss03 rounded quotes and commas. */
+  --font-features: 'cv11', 'ss01', 'ss03';
+
+  /* Three weights and no heavier: 400 for reading, 500 for labels and emphasis, 600 for
+     headings. Inter's variable axis draws each one exactly. --weight-emphasis was 550 under the
+     previous typeface; it now matches medium so a label never reads as a heading, and 700 never
+     appears anywhere in the product. */
   --weight-regular: 400;
   --weight-medium: 500;
-  --weight-emphasis: 550;
+  --weight-emphasis: 500;
   --weight-strong: 600;
-  --weight-brand: 650;
+  --weight-brand: 600;
 
-  --text-h1: 36px;
+  /* Large headings tighten slightly; Inter's default spacing is drawn for text sizes. */
+  --tracking-heading: -0.02em;
+  --tracking-title: -0.01em;
+
+  --text-h1: 32px;
   --text-h1-compact: 28px;  /* page titles below 600px, so a title does not fill a phone screen */
-  --text-h2: 15px;
+  --text-h2: 16px;
   --text-lead: 15px;       /* an intro sentence under a title, one step up from body copy - not a heading */
   --text-body: 14px;       /* 12.5px read as fine print on a laptop; 14px is the readable floor for a dense console */
   --text-caption: 12.5px;   /* labels, captions and tags; 11px and below strained on laptop screens */
@@ -80,16 +91,24 @@
   --text-brand: 28px;
   --text-brand-compact: 22px; /* the wordmark below 480px, so the top bar fits a 375px screen */
 
-  /* ---- Radii: two families, never mixed on one element ------------------------------------- */
-  --radius-card: 18px;
-  --radius-tile: 15px;
-  --radius-dialog: 20px;
-  --radius-drawer: 22px;
-  --radius-glass-tile: 16px;
-  --radius-control: 11px;
-  --radius-control-lg: 12px;
+  /* ---- Radii: one scale ---------------------------------------------------------------------
+     Four steps and a pill, and nothing else. Every named radius below is an alias onto the
+     scale, so a control, a card and a dialog always relate the same way: the larger the
+     surface, the softer its corner. design-system.test.ts holds the scale to exactly these. */
+  --radius-sm: 6px;         /* tags, keys, skeleton bars, inline code */
+  --radius-md: 10px;        /* buttons, inputs, menu items, notices, toasts */
+  --radius-lg: 16px;        /* cards, tiles, menus, popovers */
+  --radius-xl: 20px;        /* dialogs, drawers, the floating bar */
   --radius-pill: 999px;
-  --radius-tag: 4px;
+
+  --radius-tag: var(--radius-sm);
+  --radius-control: var(--radius-md);
+  --radius-control-lg: var(--radius-md);
+  --radius-tile: var(--radius-lg);
+  --radius-card: var(--radius-lg);
+  --radius-glass-tile: var(--radius-lg);
+  --radius-dialog: var(--radius-xl);
+  --radius-drawer: var(--radius-xl);
 
   /* ---- Spacing scale ----------------------------------------------------------------------- */
   --space-1: 4px;
@@ -100,23 +119,50 @@
   --space-6: 22px;
   --space-7: 32px;
   --space-8: 44px;
+  --space-9: 64px;          /* between major page sections */
 
   /* ---- Structure --------------------------------------------------------------------------- */
   --navbar-height: 68px;
   --navbar-padding-x: 36px;
   --page-max-width: 1180px;
-  --page-padding-y: 32px;
+  --page-padding-y: 36px;
   --page-padding-x: 36px;
+  --card-padding: 24px;
+  --control-height: 40px;
+  --control-height-sm: 32px;
 
-  /* ---- Depth: at rest there is none ------------------------------------------------------- */
-  --shadow-hover: 0 6px 20px rgba(26, 42, 74, 0.12);
+  /* ---- Borders ------------------------------------------------------------------------------
+     --line draws every divider and every card edge. Form controls take --line-strong, one step
+     darker, so a field reads as something to type into rather than another box on the page. */
+  --line-strong: #d6dce5;
+  --border-hover: #c3cddb;
+
+  /* ---- Depth: at rest there is none --------------------------------------------------------
+     Only things that float above the page carry a shadow: a hovered card lifts a little, a menu
+     or toast floats, a dialog floats highest. Two layers each, a tight contact shadow and a soft
+     ambient one, which reads as light rather than as a grey smudge. */
+  --shadow-sm: 0 1px 2px rgba(26, 42, 74, 0.04), 0 4px 14px -4px rgba(26, 42, 74, 0.1);
+  --shadow-md: 0 2px 6px rgba(26, 42, 74, 0.05), 0 14px 36px -10px rgba(26, 42, 74, 0.2);
+  --shadow-lg: 0 4px 12px rgba(26, 42, 74, 0.06), 0 28px 72px -16px rgba(26, 42, 74, 0.3);
+  --shadow-hover: var(--shadow-md);
   --shadow-launcher: 0 10px 30px rgba(36, 88, 229, 0.28);
-  --border-hover: #a6bdea;
-  --focus-ring: #dce7ff;
+  --backdrop: rgba(23, 30, 44, 0.36);
 
-  /* ---- Motion: colour and border only. Nothing moves, nothing bounces. --------------------- */
-  --transition: 0.18s ease;
-  --transition-slow: 0.22s ease;
+  /* ---- Focus ------------------------------------------------------------------------------- */
+  --focus-ring: #dce7ff;                       /* the soft halo around a focused field */
+  --focus-outline: 2px solid var(--blue);      /* the keyboard ring on everything else */
+
+  /* ---- Motion -------------------------------------------------------------------------------
+     Colour, opacity and transform only, never layout. Three durations: fast for hover and
+     press, base for state changes, slow for things that enter the screen. One easing curve,
+     which starts briskly and settles, so nothing bounces. All of it is off under reduced motion. */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --transition-fast: var(--duration-fast) var(--ease-standard);
+  --transition: var(--duration-base) var(--ease-standard);
+  --transition-slow: var(--duration-slow) var(--ease-standard);
 }
 
 /* Tailwind v4 reads the same variables, so a utility class and a hand-written rule cannot
@@ -156,8 +202,25 @@ body {
   font-size: var(--text-body);
   font-weight: var(--weight-regular);
   line-height: 1.5;
+  font-feature-settings: var(--font-features);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+/*
+ * Browser defaults (and Tailwind's preflight, as "bolder") draw these at 700, heavier than anything
+ * the design system allows. Headings need no rule here: preflight already resets them to inherit,
+ * and every heading style sets its own weight from the tokens above. In the base layer, beside
+ * preflight, so a component's own rule still decides.
+ */
+@layer base {
+  strong,
+  b,
+  th {
+    font-weight: var(--weight-strong);
+  }
 }
 
 h1,
@@ -171,7 +234,9 @@ figure {
 /* Numbers in a column must line up, or a table of figures becomes unreadable. */
 .tabular {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum';
+  /* Restates the alternates: font-feature-settings replaces the inherited list rather than
+     adding to it, so 'tnum' alone would switch them off for every figure in a table. */
+  font-feature-settings: var(--font-features), 'tnum';
 }
 
 /*
@@ -180,9 +245,8 @@ figure {
  * :focus-visible means a mouse click does not leave a ring behind, so there is no reason to.
  */
 :focus-visible {
-  outline: 2px solid var(--blue);
+  outline: var(--focus-outline);
   outline-offset: 2px;
-  border-radius: 3px;
 }
 
 ::selection {
@@ -190,7 +254,8 @@ figure {
   color: var(--ink);
 }
 
-/* People who have asked their system for less motion get none. */
+/* People who have asked their system for less motion get none: no animation, no transition, and
+   no hover lift or press shrink left behind as an instant jump. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -198,5 +263,6 @@ figure {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

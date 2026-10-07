@@ -3,6 +3,8 @@ package os.aiworkforce.orchestrator.service;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -20,8 +22,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
 /**
- * The goal sweep: repair first, then at most one task per workspace, never stop early, never
- * overlap. The question sweeps: expire one at a time, resume what was decided, never throw.
+ * The goal sweep: repair first, then hand every workspace to the executor - never running an agent
+ * itself - never stop early, never overlap. The question sweeps: expire one at a time, resume what
+ * was decided, never throw.
  */
 class MaintenanceSchedulerTest {
 
@@ -40,7 +43,7 @@ class MaintenanceSchedulerTest {
         approvals = mock(ApprovalService.class);
         questions = mock(QuestionService.class);
         executor = mock(RunExecutor.class);
-        scheduler = new MaintenanceScheduler(mock(AgentRunner.class), approvals, goals, questions, executor);
+        scheduler = new MaintenanceScheduler(mock(AgentRunner.class), approvals, goals, questions, executor, null);
     }
 
     @Test
@@ -115,28 +118,41 @@ class MaintenanceSchedulerTest {
     }
 
     @Test
-    @DisplayName("repairs stranded tasks before starting any new work")
+    @DisplayName("repairs stranded tasks before dispatching any new work")
     void repairsBeforeAdvancing() {
         when(goals.workspacesWithWaitingTasks()).thenReturn(List.of(FIRST));
 
         scheduler.advanceGoals();
 
-        InOrder order = inOrder(goals);
+        InOrder order = inOrder(goals, executor);
         order.verify(goals).reconcileStrandedTasks(anyInt());
         order.verify(goals).workspacesWithWaitingTasks();
-        order.verify(goals).runNextTask(FIRST);
+        order.verify(executor).submitNextTasks(FIRST);
     }
 
     @Test
-    @DisplayName("starts one task in each workspace, and a failure in one does not stop the next")
-    void oneFailureDoesNotStopTheRest() {
+    @DisplayName("hands each workspace to the executor and never runs an agent on the sweep's own thread")
+    void dispatchesWithoutRunning() {
         when(goals.workspacesWithWaitingTasks()).thenReturn(List.of(FIRST, SECOND));
-        when(goals.runNextTask(FIRST)).thenThrow(new IllegalStateException("database unavailable"));
 
         scheduler.advanceGoals();
 
-        verify(goals).runNextTask(FIRST);
-        verify(goals).runNextTask(SECOND);
+        verify(executor).submitNextTasks(FIRST);
+        verify(executor).submitNextTasks(SECOND);
+        verify(goals, never()).runNextTask(any());
+        verify(goals, never()).claimNextTask(any());
+    }
+
+    @Test
+    @DisplayName("dispatches every workspace, and a failure in one does not stop the next")
+    void oneFailureDoesNotStopTheRest() {
+        when(goals.workspacesWithWaitingTasks()).thenReturn(List.of(FIRST, SECOND));
+        doThrow(new IllegalStateException("executor shut down")).when(executor).submitNextTasks(FIRST);
+
+        scheduler.advanceGoals();
+
+        verify(executor).submitNextTasks(FIRST);
+        verify(executor).submitNextTasks(SECOND);
     }
 
     @Test
@@ -147,23 +163,25 @@ class MaintenanceSchedulerTest {
 
         scheduler.advanceGoals();
 
-        verify(goals).runNextTask(FIRST);
+        verify(executor).submitNextTasks(FIRST);
     }
 
     @Test
-    @DisplayName("skips a tick that arrives while the previous sweep is still running an agent")
+    @DisplayName("skips a tick that arrives while the previous sweep is still listing and dispatching")
     void overlappingTickSkipped() {
         when(goals.workspacesWithWaitingTasks()).thenReturn(List.of(FIRST));
-        // The next tick fires while the first sweep is still inside an agent run.
-        when(goals.runNextTask(FIRST)).thenAnswer(call -> {
-            scheduler.advanceGoals();
-            return true;
-        });
+        // The next tick fires while the first sweep is still dispatching.
+        doAnswer(call -> {
+                    scheduler.advanceGoals();
+                    return null;
+                })
+                .when(executor)
+                .submitNextTasks(FIRST);
 
         scheduler.advanceGoals();
 
         verify(goals, times(1)).reconcileStrandedTasks(anyInt());
-        verify(goals, times(1)).runNextTask(FIRST);
+        verify(executor, times(1)).submitNextTasks(FIRST);
     }
 
     @Test
@@ -177,16 +195,16 @@ class MaintenanceSchedulerTest {
         scheduler.advanceGoals();
 
         verify(goals, times(2)).reconcileStrandedTasks(anyInt());
-        verify(goals).runNextTask(FIRST);
+        verify(executor).submitNextTasks(FIRST);
     }
 
     @Test
-    @DisplayName("starts nothing when no workspace has a task waiting")
+    @DisplayName("dispatches nothing when no workspace has a task waiting")
     void nothingWaiting() {
         when(goals.workspacesWithWaitingTasks()).thenReturn(List.of());
 
         scheduler.advanceGoals();
 
-        verify(goals, never()).runNextTask(org.mockito.ArgumentMatchers.any());
+        verify(executor, never()).submitNextTasks(any());
     }
 }

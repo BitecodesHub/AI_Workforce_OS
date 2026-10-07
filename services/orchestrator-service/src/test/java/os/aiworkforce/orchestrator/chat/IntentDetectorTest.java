@@ -106,4 +106,42 @@ class IntentDetectorTest {
         assertThat(IntentDetector.withoutTimingPhrase("  draft a welcome email  "))
                 .isEqualTo("draft a welcome email");
     }
+
+    @Test
+    @DisplayName("everything but the timing phrase stays exactly as written: line breaks, indents and lists")
+    void withoutTimingPhraseKeepsTheRestVerbatim() {
+        String text = "Every Monday at 8am summarise the weekly report:\n\n  1. revenue\n  2. churn\n";
+
+        assertThat(IntentDetector.withoutTimingPhrase(text))
+                .isEqualTo("summarise the weekly report:\n\n  1. revenue\n  2. churn");
+    }
+
+    @Test
+    @DisplayName("a phrase in the middle is lifted out without joining the two halves into one run-on")
+    void withoutTimingPhraseMidSentence() {
+        assertThat(IntentDetector.withoutTimingPhrase("Send the roster every Friday at 4pm to the team"))
+                .isEqualTo("Send the roster to the team");
+    }
+
+    @Test
+    @DisplayName("a message that is only a timing phrase is returned whole rather than as nothing")
+    void withoutTimingPhraseNeverReturnsNothing() {
+        assertThat(IntentDetector.withoutTimingPhrase("every weekday at 9am")).isEqualTo("every weekday at 9am");
+    }
+
+    @Test
+    @DisplayName("words that name the workspace's own documents are recognised, whatever else the request asks")
+    void refersToDocuments() {
+        assertThat(IntentDetector.refersToDocuments("Draft a reply using our refund policy"))
+                .isTrue();
+        assertThat(IntentDetector.refersToDocuments("Reply as the handbook says")).isTrue();
+        assertThat(IntentDetector.refersToDocuments("Write the summary from the uploaded docs"))
+                .isTrue();
+        assertThat(IntentDetector.refersToDocuments("check the Knowledge Base first")).isTrue();
+        assertThat(IntentDetector.refersToDocuments("Follow our escalation procedures")).isTrue();
+        assertThat(IntentDetector.refersToDocuments("Draft a welcome email for Priya"))
+                .isFalse();
+        assertThat(IntentDetector.refersToDocuments("")).isFalse();
+        assertThat(IntentDetector.refersToDocuments(null)).isFalse();
+    }
 }

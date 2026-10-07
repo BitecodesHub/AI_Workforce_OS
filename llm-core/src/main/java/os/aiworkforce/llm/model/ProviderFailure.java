@@ -40,8 +40,8 @@ public enum ProviderFailure {
      * The credential was rejected.
      *
      * <p>Never retried: a key that is wrong now will be wrong in a second. The credential is
-     * marked invalid, the breaker opens, and an operator is told - otherwise every request keeps
-     * paying the latency of a call that cannot succeed.
+     * marked invalid for that workspace and an operator is told; the breaker is not affected,
+     * because the key belongs to one workspace and the provider still works for the others.
      */
     AUTHENTICATION_FAILED(false, true, true),
 
@@ -135,6 +135,28 @@ public enum ProviderFailure {
         return this != CONTENT_FILTERED && this != INVALID_REQUEST && this != CONTEXT_LENGTH_EXCEEDED;
     }
 
+    /**
+     * What an HTTP 413 means, given the provider's body.
+     *
+     * <p>Usually that the prompt is too long for the window, which compaction can fix. But Groq
+     * also answers 413 when one request asks for more tokens than its per-minute allowance ("on
+     * tokens per minute (TPM)"), and that is a throttle: compacting does not help and the window
+     * is not the problem, while waiting and asking again, or asking another provider, does.
+     */
+    public static ProviderFailure forPayloadTooLarge(String body) {
+        return isTokensPerMinuteLimit(body) ? RATE_LIMITED : CONTEXT_LENGTH_EXCEEDED;
+    }
+
+    /** Whether a provider's body describes a tokens-per-minute throttle rather than an overflow. */
+    public static boolean isTokensPerMinuteLimit(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String lower = body.toLowerCase(java.util.Locale.ROOT);
+        // "TPM" is matched as written: lower-cased, three letters turn up inside ordinary words.
+        return lower.contains("tokens per minute") || body.contains("TPM") || lower.contains("rate_limit_exceeded");
+    }
+
     /** Maps to the platform's own error code when every candidate has been exhausted. */
     public os.aiworkforce.platform.error.ErrorCode toErrorCode() {
         return switch (this) {
@@ -145,7 +167,9 @@ public enum ProviderFailure {
             case CONTEXT_LENGTH_EXCEEDED -> os.aiworkforce.platform.error.ErrorCode.CONTEXT_LENGTH_EXCEEDED;
             case CONTENT_FILTERED -> os.aiworkforce.platform.error.ErrorCode.CONTENT_FILTERED;
             case MALFORMED_TOOL_CALL -> os.aiworkforce.platform.error.ErrorCode.TOOL_CALL_MALFORMED;
-            case QUOTA_EXHAUSTED -> os.aiworkforce.platform.error.ErrorCode.BUDGET_EXCEEDED;
+            // The vendor's account, not this workspace's cap: BUDGET_EXCEEDED would tell a person
+            // to raise a cap here when the remedy is topping up the account at the provider.
+            case QUOTA_EXHAUSTED -> os.aiworkforce.platform.error.ErrorCode.PROVIDER_QUOTA_EXHAUSTED;
             case TIMEOUT -> os.aiworkforce.platform.error.ErrorCode.UPSTREAM_TIMEOUT;
             case INVALID_REQUEST -> os.aiworkforce.platform.error.ErrorCode.VALIDATION_FAILED;
             default -> os.aiworkforce.platform.error.ErrorCode.UPSTREAM_ERROR;

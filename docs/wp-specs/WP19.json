@@ -1,0 +1,39 @@
+{
+ "id": "WP19",
+ "title": "Manager value, spend and ROI analytics, with answer ratings",
+ "priority": 8,
+ "wave": 3,
+ "effort": "L",
+ "findings": [
+  "Analytics shows audit-log entry counts, not business value; no work, success, cost or trend metrics exist anywhere",
+  "Spending caps are unusable: no API or UI, error text points to a Settings page that does not exist, and two of three caps are never enforced",
+  "Managers cannot compare agents or spot underperformers: agent cards and detail show configuration, not outcomes",
+  "No way to express human effort, so hours saved and net value can never be shown",
+  "Analytics counts are structurally wrong: 'Denied' can never be non-zero and stopped, abandoned or expired work is never counted",
+  "Invoice-grade usage data is collected but has no read path: no spend breakdown or export",
+  "'Spend today' tile leads to a page with no spend figures, and to an access-denied screen for Employees",
+  "Approval turnaround and expired work are invisible to managers",
+  "No way to rate an answer, so there is no quality signal for managers or agent tuning",
+  "Overlapping work screens and three names for one action make the product harder to learn than it needs to be"
+ ],
+ "ownedFiles": [
+  "services/orchestrator-service/src/main/resources/db/migration/V12__chat_message_feedback.sql",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/board/InsightsController.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/board/InsightsService.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/ValueSettingsController.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/chat/FeedbackController.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/domain/MessageFeedback.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/repository/MessageFeedbacks.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/service/JpaBudgetGuard.java",
+  "services/orchestrator-service/src/test/java/os/aiworkforce/orchestrator/board/InsightsServiceTest.java (new)",
+  "web/src/routes/Analytics.tsx",
+  "web/src/routes/CommandMap.tsx",
+  "web/src/components/orchestrator/SummaryStrip.tsx",
+  "web/src/routes/Runs.tsx",
+  "web/src/routes/RunDetail.tsx",
+  "web/src/components/chat/AnswerBubble.tsx",
+  "web/src/components/analytics/ (new)",
+  "web/src/lib/insightsQueries.ts (new)"
+ ],
+ "spec": "Rules: the standard rules apply. This package owns orchestrator migration V12. Do not edit repository interfaces. Run the insight queries through JdbcTemplate inside InsightsService. Draw charts as inline SVG that follows the design tokens; add no chart dependency.\n\n1) GET /api/orchestrator/insights?window=7d|30d|90d (analytics:read). It returns:\n- goals completed and failed, by day and by source;\n- task success rate, and the share 'completed without automatic retry' (exactly one run per task);\n- runs by terminal status;\n- spend by day from llm_usage;\n- cost per completed goal, and spend on failed or cancelled runs;\n- approvals raised, approved, rejected and expired, with median and p90 decision time;\n- questions per 100 runs, with median answer time;\n- the top 5 failure reasons;\n- deltas against the previous window.\nRules for the figures: rates count finished runs only. An agent with fewer than 5 finished runs shows 'Not enough runs yet'. Unpriced runs are labelled unpriced, never shown as $0.\n\n2) GET /api/orchestrator/insights/agents?window= (run:read). This is a contract for WP20. Each agent row has: runs, completed, failed, successRate, totalCost, avgCostPerCompleted, rejectedApprovals, lastActive, satisfactionRate and hoursReturned (null when there are no inputs).\n\n3) ROI inputs. Store them as runtime settings: value.hourlyRate per workspace, and value.minutesPerTask.<agentId>.\n- GET and PUT /api/orchestrator/value-settings. Editing requires budget:manage.\n- hours = completed tasks \u00d7 minutes / 60.\n- human-equivalent cost = hours \u00d7 rate.\n- net value = human cost \u2212 spend.\n- Exclude runs answered only by the sandbox provider.\n- Label every value 'Estimate from your inputs (current values)'. An agent with no input shows 'not estimated'.\n\n4) Answer ratings.\n- V12 creates chat_message_feedback(id, org_id, message_id, user_id, rating SMALLINT CHECK (rating IN (-1, 1)), reason TEXT up to 500 characters, created_at, updated_at, UNIQUE(org_id, message_id, user_id)).\n- FeedbackController provides POST and DELETE /api/conversations/{id}/messages/{messageId}/feedback (chat:use).\n  - Agent answer messages only.\n  - Same org and conversation checks as the other message endpoints.\n  - runId and agentId are resolved on the server from the message detail.\n  - POST is an upsert.\n  - After commit, record the audit event chat.answer.rated with outcome positive or negative.\n- AnswerBubble gets thumbs up and down, with an optional reason: wrong, incomplete, did not follow instructions, or free text.\n- RunDetail shows ratings and reasons.\n\n5) Analytics.tsx rebuild.\n- A window selector.\n- Value tiles: Work completed, Success rate, Spend, Cost per completed goal, Median approval wait, and Hours returned (as an estimate).\n- A daily trend chart.\n- A sortable per-agent table.\n- A Budget card with anchor #budget, using WP12's /api/orchestrator/budget. It shows a warning banner at 80% and an edit form for budget:manage.\n- A spend breakdown by model and by agent, with Download CSV (WP12 usage endpoints).\n- An ROI inputs form for admins.\n- A collapsed 'Activity log' section that keeps the audit action and outcome breakdown.\n- Rename the 'Denied' tile to 'Blocked or rejected'. Its unit text says it counts policy refusals and expired approvals.\n\n6) CommandMap.tsx: replace the 50-run tiles with 7-day figures and deltas. Trim Live activity to 8 rows and add a 'See all runs' link.\n\n7) SummaryStrip: the 'Spend today' tile links to /analytics#budget only when can('analytics:read'). Otherwise it is a plain figure.\n\n8) Runs.tsx: add a sortable Cost column with an unpriced label.\n\n9) JpaBudgetGuard: set the deny message to 'Ask an administrator to raise the cap in Analytics, Budget.'\n\nTests\n- Insight SQL against seeded data.\n- ROI is omitted when the inputs are missing.\n- Feedback upsert and uniqueness.\n- Permission checks.\n- Empty-state rendering.\n\nAcceptance (live)\n- /analytics shows value tiles for demo data.\n- The CSV downloads.\n- A cap edit persists.\n- A thumbs-down appears in the agent table."
+}

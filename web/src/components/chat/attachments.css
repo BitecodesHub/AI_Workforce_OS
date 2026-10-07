@@ -1,0 +1,318 @@
+/*
+ * Chat attachments: the chips above the composer's text box, the drop overlay, the cards on a sent
+ * message and the image lightbox. Held to the design-system rules: borders from --line, radii
+ * from the token scale, colours from tokens only, and no shadow on anything at rest.
+ */
+
+.chat-attach-chips,
+.chat-attach-cards {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chat-attach-cards {
+  margin: 0;
+}
+
+.chat-attach-cards[data-align='end'] {
+  justify-content: flex-end;
+}
+
+.chat-attach-chip,
+.chat-attach-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: min(260px, 100%);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--text-caption);
+  color: var(--ink);
+}
+
+.chat-attach-chip[data-status='error'] {
+  background: var(--warning-bg);
+}
+
+.chat-attach-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  padding: 0;
+}
+
+.chat-attach-card-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  width: 100%;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.chat-attach-card-main:hover {
+  background: var(--surface-hover);
+}
+
+.chat-attach-card-main:focus-visible,
+.chat-attach-remove:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.chat-attach-card > .chat-attach-error,
+.chat-attach-card > .chat-attach-save,
+.chat-attach-card > .chat-attach-saved {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.chat-attach-save {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.chat-attach-saved {
+  color: var(--green);
+}
+
+.chat-attach-chip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-attach-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+.chat-attach-meta {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-attach-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.chat-attach-notice {
+  margin: 0 0 var(--space-3);
+  color: var(--warning-ink);
+}
+
+.chat-attach-icon {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+.chat-attach-icon[data-kind='spreadsheet'] {
+  color: var(--green);
+}
+
+.chat-attach-icon[data-kind='pdf'],
+.chat-attach-icon[data-kind='presentation'] {
+  color: var(--danger);
+}
+
+.chat-attach-icon[data-kind='text'],
+.chat-attach-icon[data-kind='unknown'] {
+  background: var(--avatar-bg);
+  color: var(--avatar-ink);
+}
+
+.chat-attach-icon-label {
+  position: absolute;
+  bottom: 6px;
+  font-size: 7px;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.02em;
+}
+
+.chat-attach-thumb,
+.chat-attach-card-thumb {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--paper);
+}
+
+.chat-attach-card-thumb {
+  width: 56px;
+  height: 56px;
+}
+
+.chat-attach-card-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.chat-attach-progress {
+  display: block;
+  height: 3px;
+  margin-top: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.chat-attach-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  transform-origin: left center;
+  transition: transform var(--transition);
+}
+
+.chat-attach-remove {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--icon-ink);
+  cursor: pointer;
+}
+
+.chat-attach-remove:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.chat-attach-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: rgba(248, 250, 252, 0.86);
+  pointer-events: none;
+}
+
+.chat-attach-drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--blue-light);
+  color: var(--blue);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+}
+
+.chat-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--backdrop);
+}
+
+.chat-lightbox-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: min(1100px, 100%);
+  max-height: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.chat-lightbox-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.chat-lightbox-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+.chat-lightbox-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100dvh - 140px);
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  margin: 0 auto;
+}
+
+@media (max-width: 600px) {
+  .chat-attach-chip,
+  .chat-attach-card {
+    max-width: 100%;
+  }
+
+  .chat-lightbox {
+    padding: var(--space-3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-attach-progress-fill,
+  .chat-attach-card-main {
+    transition: none;
+  }
+}
+
+/* The element dropped files are caught on (the chat panel), so the overlay can cover it. */
+.chat-attach-dropzone {
+  position: relative;
+}

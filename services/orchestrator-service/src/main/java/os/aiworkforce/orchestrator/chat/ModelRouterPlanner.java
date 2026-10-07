@@ -36,6 +36,11 @@ import os.aiworkforce.platform.error.ApiException;
  * Asks a live model to plan a short chain of agents for a piece of work, when the workspace has
  * one configured.
  *
+ * <p>The planner only chooses agents and splits the work between them. Each agent is given the
+ * person's own words in full by the coordinator, so a planned step's instruction is a short label
+ * for that agent's part - never a paraphrase that would have to carry the request's content, and
+ * that a long paste would cut off mid-JSON.
+ *
  * <p>One call, asking for strict JSON against a schema built for this workspace's active agents.
  * The result is trusted only when it came from an actual provider - never the offline sandbox,
  * which cannot really read the request - and only when it names agents that exist and are active.
@@ -47,6 +52,11 @@ public class ModelRouterPlanner {
 
     private static final Logger log = LoggerFactory.getLogger(ModelRouterPlanner.class);
     private static final int MAX_STEPS = 3;
+    /**
+     * A step's sentence is only a label - the prompt asks for 25 words - so a model that writes
+     * more, or copies the request into it, is cut here rather than clutter a title and a card.
+     */
+    private static final int MAX_PART_CHARS = 300;
     private static final Pattern FIRST_SENTENCE = Pattern.compile("^(.+?[.!?])(?=\\s|$)");
 
     /** A reply that arrived fenced in a markdown code block, with an optional "json" tag. */
@@ -134,11 +144,11 @@ public class ModelRouterPlanner {
                 %s
                 - Never leave a request unrouted. For a vague request, route it to the agent that would do the work; that agent can ask the person a question.
                 - Use each agent at most once. Use more than one agent only when the request asks for work done in sequence.
-                - Write each instruction as a complete request that agent can act on alone.
+                - Each agent is given the person's whole request word for word, so "instruction" is only that agent's part of it: one short sentence of at most 25 words. Never copy names, figures, pasted text or any other content from the request into it.
                 - Use only the agent keys listed; never invent one.
                 %s
                 Reply with only a JSON object of this shape, and nothing else:
-                {"plan":[{"agentKey":"<key>","instruction":"<text>"}],"reason":"<one sentence>"}
+                {"plan":[{"agentKey":"<key>","instruction":"<this agent's part, one short sentence>"}],"reason":"<one sentence>"}
 
                 Agents:
                 %s"""
@@ -206,7 +216,8 @@ public class ModelRouterPlanner {
                 if (agent == null) {
                     return Optional.empty();
                 }
-                steps.add(new PlannedStep(agent.getId(), instruction.strip()));
+                String part = CoordinatorService.truncateAtWord(instruction, MAX_PART_CHARS);
+                steps.add(new PlannedStep(agent.getId(), part));
             }
             String reason = root.path("reason").asText("").strip();
             return Optional.of(new Plan(steps, reason.isBlank() ? "The model chose this routing." : reason));

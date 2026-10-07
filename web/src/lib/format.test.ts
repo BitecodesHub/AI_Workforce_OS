@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  formatShortTime,
   formatAgo,
   formatCompactTokens,
   formatCount,
@@ -293,5 +294,25 @@ describe('useNow', () => {
     })
     expect(result.current).toBe(NOW + 30_000)
     unmount()
+  })
+})
+
+describe('formatShortTime', () => {
+  const now = new Date(2026, 9, 6, 14, 0, 0).getTime()
+  const at = (...parts: [number, number, number, number, number]) => new Date(...parts).toISOString()
+
+  it('reads minutes, then hours for earlier today', () => {
+    expect(formatShortTime(at(2026, 9, 6, 13, 59), now)).toBe('1m')
+    expect(formatShortTime(at(2026, 9, 6, 13, 34), now)).toBe('26m')
+    expect(formatShortTime(at(2026, 9, 6, 12, 50), now)).toBe('1h')
+    expect(formatShortTime(new Date(now - 10_000).toISOString(), now)).toBe('Now')
+    expect(formatShortTime(new Date(now + 10_000).toISOString(), now)).toBe('Now')
+  })
+
+  it('reads Yesterday, then a short date', () => {
+    expect(formatShortTime(at(2026, 9, 5, 9, 0), now)).toBe('Yesterday')
+    expect(formatShortTime(at(2026, 9, 3, 9, 0), now)).toBe('3 Oct')
+    expect(formatShortTime(at(2025, 9, 3, 9, 0), now)).toBe('3 Oct 2025')
+    expect(formatShortTime(null, now)).toBe('—')
   })
 })

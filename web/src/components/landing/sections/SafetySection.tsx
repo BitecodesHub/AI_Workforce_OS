@@ -13,6 +13,7 @@ import type { RoleId } from '../roles/roleData'
  * tamper-evident record, answers that point to their source, provider fallback, and schedules.
  * Then who can do what, as a small table. Its ticks are computed from roleData.ts, the same
  * source the page for IT teams draws its permission map from, so the two can never disagree.
+ * Every row is something a person can actually do in the console today.
  */
 
 const PROMISES: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [
@@ -29,7 +30,7 @@ const PROMISES: ReadonlyArray<{ icon: IconName; title: string; body: string }> =
   {
     icon: 'link',
     title: 'A record you can trust',
-    body: 'Every decision and every finished job is written down against the person responsible, in a record that shows if anything was changed.',
+    body: 'Every approval decision and every finished job is written down against the person responsible, in a record built so that a changed entry can be detected.',
   },
   {
     icon: 'document',
@@ -55,7 +56,6 @@ const WHO_CAN: ReadonlyArray<{ label: string; codes: readonly string[] }> = [
   { label: 'Approve what gets sent', codes: ['approval:decide'] },
   { label: 'Change how the assistants work', codes: ['agent:update'] },
   { label: 'Invite people and set their roles', codes: ['member:invite', 'role:update'] },
-  { label: 'Close the workspace', codes: ['workspace:delete'] },
 ]
 
 function Mark({ held, role, label }: { held: boolean; role: RoleId; label: string }): ReactElement {

@@ -1,15 +1,24 @@
 package os.aiworkforce.platform.config;
 
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
+import java.security.interfaces.ECPrivateKey;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
+import com.nimbusds.jose.jwk.Curve;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
@@ -66,7 +75,7 @@ public record PlatformProperties(
             @DefaultValue("PT5M") Duration jwksRefreshCooldown,
             String activeKeyId,
             String signingPrivateKeyPem,
-            @DefaultValue("PT15M") Duration accessTokenTtl,
+            @DefaultValue("PT5M") Duration accessTokenTtl,
             @DefaultValue("P30D") Duration refreshTokenTtl,
             @DefaultValue("PT60S") Duration internalTokenTtl,
             @DefaultValue("PT30S") Duration clockSkewLeeway,
@@ -82,7 +91,48 @@ public record PlatformProperties(
             @DefaultValue("12") @Min(8) int passwordMinLength,
             @DefaultValue("8") @Positive int maxFailedLogins,
             @DefaultValue("PT15M") Duration lockoutDuration,
-            @DefaultValue("true") boolean requireEmailVerification) {}
+            @DefaultValue("true") boolean requireEmailVerification) {
+
+        private static final String PKCS8_HEADER = "-----BEGIN PRIVATE KEY-----";
+        private static final String PKCS8_FOOTER = "-----END PRIVATE KEY-----";
+
+        /**
+         * The configured signing key, decoded, or {@code null} when none is configured.
+         *
+         * <p>Decoded here rather than by identity alone so the startup validator can refuse a key
+         * that will not load before any service serves traffic. Only an unencrypted PKCS#8 P-256
+         * key is accepted, which is what {@code openssl ecparam -name prime256v1 -genkey | openssl
+         * pkcs8 -topk8 -nocrypt} prints. A secret store that flattens the PEM onto one line with
+         * literal {@code \n} sequences is read as if the line breaks were real.
+         *
+         * @throws IllegalStateException when a key is configured but is not that kind of key
+         */
+        public ECPrivateKey signingPrivateKey() {
+            if (signingPrivateKeyPem == null || signingPrivateKeyPem.isBlank()) {
+                return null;
+            }
+            String pem = signingPrivateKeyPem.replace("\\n", "\n").strip();
+            int start = pem.indexOf(PKCS8_HEADER);
+            int end = pem.indexOf(PKCS8_FOOTER);
+            if (start < 0 || end < start) {
+                throw new IllegalStateException("aiwos.security.signing-private-key-pem must be an unencrypted PKCS#8 key"
+                        + " (" + PKCS8_HEADER + "); convert one with: openssl pkcs8 -topk8 -nocrypt");
+            }
+            try {
+                String body = pem.substring(start + PKCS8_HEADER.length(), end).replaceAll("\\s", "");
+                PrivateKey key = KeyFactory.getInstance("EC")
+                        .generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(body)));
+                if (!(key instanceof ECPrivateKey ec) || Curve.forECParameterSpec(ec.getParams()) != Curve.P_256) {
+                    throw new IllegalStateException(
+                            "aiwos.security.signing-private-key-pem must be an EC key on the P-256 curve (prime256v1)");
+                }
+                return ec;
+            } catch (GeneralSecurityException | IllegalArgumentException e) {
+                throw new IllegalStateException(
+                        "aiwos.security.signing-private-key-pem could not be read as an EC P-256 private key", e);
+            }
+        }
+    }
 
     /** Password hashing cost. Raised as hardware improves; never lowered for an existing hash. */
     public record Argon2(
@@ -169,8 +219,24 @@ public record PlatformProperties(
             dependencies = dependencies == null ? Map.of() : Map.copyOf(dependencies);
         }
 
+        /**
+         * The override for one dependency. A model provider's breaker is kept per workspace and
+         * named {@code provider.<workspace>.<provider>}; an override is written once per provider,
+         * as {@code provider.<provider>}, so that name is tried when there is no exact match.
+         */
         public DependencyOverride forDependency(String name) {
-            return dependencies.getOrDefault(name, EMPTY_OVERRIDE);
+            DependencyOverride exact = dependencies.get(name);
+            if (exact != null) {
+                return exact;
+            }
+            if (name != null && name.startsWith("provider.")) {
+                String rest = name.substring("provider.".length());
+                int dot = rest.indexOf('.');
+                if (dot > 0) {
+                    return dependencies.getOrDefault("provider." + rest.substring(dot + 1), EMPTY_OVERRIDE);
+                }
+            }
+            return EMPTY_OVERRIDE;
         }
     }
 
@@ -186,13 +252,17 @@ public record PlatformProperties(
             Duration callTimeout,
             Integer bulkheadMaxConcurrentCalls) {}
 
+    /**
+     * What is kept out of logs and traces, and how much of the traffic is traced.
+     *
+     * <p>The log format, the tracing switch and the exporter's address are not here: Spring Boot
+     * reads {@code logging.structured.format.console}, {@code management.tracing.enabled} and
+     * {@code management.otlp.tracing.endpoint} itself, and a copy of each in this tree was read by
+     * nothing. {@code traceSampleRatio} is the exception, kept so the startup validator can check
+     * the value in force; it is bound to {@code management.tracing.sampling.probability}.
+     */
     public record Observability(
-            @DefaultValue("INFO") String logLevel,
-            @DefaultValue("json") String logFormat,
-            @DefaultValue("true") boolean tracingEnabled,
-            @DefaultValue("1.0") double traceSampleRatio,
-            @DefaultValue("http://localhost:4318") String otlpEndpoint,
-            @DefaultValue("true") boolean metricsEnabled,
+            @DefaultValue("1.0") @DecimalMin("0.0") @DecimalMax("1.0") double traceSampleRatio,
             /*
              * Keys whose values are removed from logs, traces, audit payloads and stored request
              * captures. Matching is on the key, case-insensitively, at any depth.
@@ -201,7 +271,8 @@ public record PlatformProperties(
                             + "access_token,client_secret,private_key,credential,cookie,"
                             + "set-cookie,x-api-key,ssn,card_number")
                     List<String> redactKeys,
-            @DefaultValue("true") boolean redactEmailAddresses) {}
+            @DefaultValue("true") boolean redactEmailAddresses) {
+    }
 
     /** How this process reaches, and caches, the settings an operator can change at runtime. */
     public record RuntimeConfig(
@@ -254,8 +325,21 @@ public record PlatformProperties(
             return List.of();
         }
         List<String> problems = new java.util.ArrayList<>();
-        if (isBlank(security.signingPrivateKeyPem()) && isBlank(security.activeKeyId())) {
-            problems.add("aiwos.security.signing-private-key-pem must be set outside local and test");
+        /*
+         * Either key source keeps every replica and every restart on one key: the PEM directly, or
+         * a key generated once and kept in the database, encrypted under the master key. A key id
+         * on its own is not a key, so it no longer satisfies this check.
+         */
+        if (isBlank(security.signingPrivateKeyPem()) && isBlank(security.encryption().masterKeyBase64())) {
+            problems.add("aiwos.security.signing-private-key-pem must be set outside local and test, or"
+                    + " aiwos.security.encryption.master-key-base64 so a generated key can be kept encrypted");
+        }
+        if (!isBlank(security.signingPrivateKeyPem())) {
+            try {
+                security.signingPrivateKey();
+            } catch (IllegalStateException e) {
+                problems.add(e.getMessage());
+            }
         }
         if (security.developmentSecret().startsWith("insecure-local-development-secret")) {
             problems.add("aiwos.security.development-secret still holds its development placeholder");
@@ -273,7 +357,8 @@ public record PlatformProperties(
             problems.add("aiwos.http.cors-allowed-origins must use https outside local and test");
         }
         if (observability.traceSampleRatio() >= 1.0 && environment == Environment.PRODUCTION) {
-            problems.add("aiwos.observability.trace-sample-ratio of 1.0 is unaffordable in production");
+            problems.add("management.tracing.sampling.probability (AIWOS_TRACE_SAMPLE_RATIO) of 1.0 is unaffordable in"
+                    + " production; set it below 1.0, for example 0.1");
         }
         return List.copyOf(problems);
     }

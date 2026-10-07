@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { useMemo } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { createContext, useContext, useMemo } from 'react'
 import type { MdAlign, MdBlock, MdInline, MdListItem } from '../../lib/markdown'
 import { parseMarkdown } from '../../lib/markdown'
 import { CopyButton } from './CopyButton'
@@ -10,7 +10,34 @@ import { CopyButton } from './CopyButton'
  * parseMarkdown already refuses an unsafe link scheme and never produces a node for raw HTML in
  * the source, so there is nothing here to sanitise: a hostile string comes in as a `text` node,
  * same as any other, and text nodes are never interpreted as markup.
+ *
+ * A citation such as [2] is a button only when the caller says what to do with one (`citations`);
+ * without that it is the text it was written as.
  */
+
+/** What a click on a citation does. Null where the text has no passages behind it to open. */
+const CitationContext = createContext<((index: number) => void) | null>(null)
+
+/** A button that looks like the link it stands in for, in the text's own size, never a grey box. */
+const CITATION_STYLE: CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  font: 'inherit',
+  color: 'var(--blue)',
+  fontWeight: 'var(--weight-medium)',
+  cursor: 'pointer',
+}
+
+function Citation({ index }: { index: number }) {
+  const open = useContext(CitationContext)
+  if (!open) return <>[{index}]</>
+  return (
+    <button type="button" className="md-citation" style={CITATION_STYLE} aria-label={`Open source ${index}`} onClick={() => open(index)}>
+      [{index}]
+    </button>
+  )
+}
 
 function alignStyle(align: MdAlign): { textAlign: 'left' | 'center' | 'right' } | undefined {
   return align ? { textAlign: align } : undefined
@@ -39,6 +66,8 @@ function renderInline(nodes: MdInline[]): ReactNode[] {
             {renderInline(node.children)}
           </a>
         )
+      case 'citation':
+        return <Citation key={index} index={node.index} />
       default:
         return null
     }
@@ -117,7 +146,8 @@ function Block({ block }: { block: MdBlock }) {
     }
     case 'list': {
       const items = <ListItems items={block.items} />
-      return block.ordered ? <ol>{items}</ol> : <ul>{items}</ul>
+      // A list that picks up at step 3 says so, rather than counting from 1 again.
+      return block.ordered ? <ol {...(block.start !== undefined ? { start: block.start } : {})}>{items}</ol> : <ul>{items}</ul>
     }
     case 'blockquote':
       return (
@@ -148,11 +178,23 @@ function Blocks({ blocks }: { blocks: MdBlock[] }) {
   )
 }
 
-export function Markdown({ text, className }: { text: string; className?: string }) {
-  const blocks = useMemo(() => parseMarkdown(text), [text])
+export function Markdown({
+  text,
+  className,
+  citations,
+}: {
+  text: string
+  className?: string
+  /** How many numbered passages the text may cite, and what opening one does. */
+  citations?: { count: number; onOpen: (index: number) => void } | undefined
+}) {
+  const count = citations?.count ?? 0
+  const blocks = useMemo(() => parseMarkdown(text, { citations: count }), [text, count])
   return (
-    <div className={`md ${className ?? ''}`.trim()}>
-      <Blocks blocks={blocks} />
-    </div>
+    <CitationContext.Provider value={count > 0 ? (citations?.onOpen ?? null) : null}>
+      <div className={`md ${className ?? ''}`.trim()}>
+        <Blocks blocks={blocks} />
+      </div>
+    </CitationContext.Provider>
   )
 }

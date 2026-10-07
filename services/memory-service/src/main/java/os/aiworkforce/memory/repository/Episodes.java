@@ -46,6 +46,10 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
      * <p>Terms are combined with OR for the same reason as knowledge retrieval: requiring every
      * word means a question phrased naturally recalls nothing, and an agent told nothing is
      * remembered will ask a colleague the same thing twice a week.
+     *
+     * <p>Scoped to one agent when {@code agentId} is given, like {@link #findRecent}; without that,
+     * a search for one agent returned every agent's memories in the workspace. The cast is needed
+     * because Postgres cannot infer the type of a null parameter in a native query.
      */
     @Query(
             value =
@@ -57,6 +61,7 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
             select e.* from episodes e
             cross join terms
             where e.org_id = :orgId
+              and (cast(:agentId as uuid) is null or e.agent_id = cast(:agentId as uuid))
               and e.compacted = false
               and terms.query is not null
               and to_tsvector('english', e.summary) @@ to_tsquery('english', terms.query)
@@ -64,7 +69,11 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
                      e.occurred_at desc
             """,
             nativeQuery = true)
-    List<Episode> search(@Param("orgId") UUID orgId, @Param("query") String query, Pageable pageable);
+    List<Episode> search(
+            @Param("orgId") UUID orgId,
+            @Param("agentId") UUID agentId,
+            @Param("query") String query,
+            Pageable pageable);
 
     @Query(
             """

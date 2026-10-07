@@ -29,6 +29,20 @@ public interface Roles extends JpaRepository<Role, UUID> {
     @Query("select r from Role r where r.orgId = :orgId and r.name = :name")
     Optional<Role> findByOrgAndName(@Param("orgId") UUID orgId, @Param("name") String name);
 
+    /**
+     * The role a workspace means by a name: its own role first, then the system role.
+     *
+     * <p>The same order everywhere a role is named rather than chosen by id - an invitation, a
+     * grant check - so a name cannot resolve to one role in one place and another elsewhere.
+     */
+    default Optional<Role> findAvailable(UUID orgId, String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        String stripped = name.strip();
+        return findByOrgAndName(orgId, stripped).or(() -> findSystemRole(stripped));
+    }
+
     @Query("select count(m) from Membership m where m.roleId = :roleId and m.status = 'active'")
     long countActiveHolders(@Param("roleId") UUID roleId);
 }

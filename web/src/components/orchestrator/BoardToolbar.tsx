@@ -3,7 +3,7 @@ import { MenuButton } from '../ui/Menu'
 import type { MenuEntry } from '../ui/Menu'
 
 /*
- * The one row of controls above the goals (B2.5): search on the left, the status chips beside it,
+ * The one row of controls above the goals (B2.5): search on the left, the status filter beside it,
  * every less-used filter (source, agent, requester) folded into a single Filters menu, and the
  * count and the Board or List choice on the right. It only draws the controls - every value lives
  * in the URL through useListFilter and the page's own `agent` parameter, exactly as before.
@@ -58,6 +58,8 @@ export function BoardToolbar({
   onSetView,
   group,
   onSetGroup,
+  extraStatus,
+  showEmpty,
 }: {
   query: string
   onQueryChange: (query: string) => void
@@ -81,6 +83,10 @@ export function BoardToolbar({
   onSetView: (view: 'board' | 'list') => void
   group: ListGroup
   onSetGroup: (group: ListGroup) => void
+  /** One more status beside the others that is not a card facet, such as "Done today". */
+  extraStatus?: { label: string; count: number; pressed: boolean; onToggle: () => void }
+  /** Board view only: whether columns with no goals are drawn. */
+  showEmpty?: { value: boolean; onChange: (value: boolean) => void }
 }) {
   const menuCount = sourceSelected.length + (agentSelected ? 1 : 0) + (requesterSelected ? 1 : 0)
 
@@ -181,6 +187,12 @@ export function BoardToolbar({
               {option.count !== undefined && <span className="filter-chip-count tabular">{formatCount(option.count)}</span>}
             </button>
           ))}
+          {extraStatus && (
+            <button type="button" className="filter-chip orc-chip" aria-pressed={extraStatus.pressed} onClick={extraStatus.onToggle}>
+              {extraStatus.label}
+              <span className="filter-chip-count tabular">{formatCount(extraStatus.count)}</span>
+            </button>
+          )}
         </div>
 
         <MenuButton
@@ -205,9 +217,20 @@ export function BoardToolbar({
       </div>
 
       <div className="orc-toolbar-view">
-        <p role="status" className="caption muted tabular orc-toolbar-count">
+        {/* Always announced; only drawn while something is narrowing the board. */}
+        <p role="status" className={`caption muted tabular orc-toolbar-count${active ? '' : ' visually-hidden'}`}>
           Showing {formatCount(shown)} of {formatCount(total)}
         </p>
+        {showEmpty && (
+          <button
+            type="button"
+            className="filter-chip orc-chip orc-show-empty"
+            aria-pressed={showEmpty.value}
+            onClick={() => showEmpty.onChange(!showEmpty.value)}
+          >
+            Show empty
+          </button>
+        )}
         {view === 'list' && (
           <MenuButton label="Group the list" text={`Group: ${GROUP_LABEL[group]}`} items={groupItems} align="end" className="orc-filters-menu" />
         )}

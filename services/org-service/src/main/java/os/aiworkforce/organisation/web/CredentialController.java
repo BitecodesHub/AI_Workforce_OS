@@ -44,6 +44,9 @@ public class CredentialController {
 
     private final CredentialService credentials;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.platform.web.audit.AuditClient audit;
+
     public CredentialController(CredentialService credentials) {
         this.credentials = credentials;
     }
@@ -65,7 +68,11 @@ public class CredentialController {
     @Operation(summary = "Store or replace a credential")
     public CredentialService.CredentialView store(
             @PathVariable String ref, @Valid @RequestBody StoreCredentialRequest request) {
-        return credentials.store(orgId(), ref, request.kind(), request.value(), request.expiresAt());
+        CredentialService.CredentialView stored =
+                credentials.store(orgId(), ref, request.kind(), request.value(), request.expiresAt());
+        // The reference and kind only: the value is never written anywhere but the vault.
+        record("credential.store", ref, java.util.Map.of("kind", String.valueOf(request.kind())));
+        return stored;
     }
 
     @DeleteMapping("/api/credentials/{ref}")
@@ -74,25 +81,50 @@ public class CredentialController {
     @Operation(summary = "Remove a credential")
     public void delete(@PathVariable String ref) {
         credentials.delete(orgId(), ref);
+        record("credential.delete", ref, java.util.Map.of());
+    }
+
+    private void record(String action, String ref, java.util.Map<String, Object> detail) {
+        if (audit != null) {
+            audit.record(action, "credential", ref, "succeeded", detail);
+        }
     }
 
     /**
      * The decrypted value, for a sibling service.
      *
-     * <p>Not exposed through the gateway and not reachable with a person's token. The caller must
-     * present a service token, which the resource-server configuration verifies, and must name
-     * the workspace explicitly - so a token for one service cannot be used to sweep every
-     * workspace's secrets.
+     * <p>Not exposed through the gateway and not reachable with a person's token or a machine
+     * key. The caller must present a service token, which the resource-server configuration
+     * verifies, and must name the workspace explicitly. The token must also have been minted for
+     * that same workspace: a header alone is only the caller's say-so, so without the binding one
+     * service token could be replayed with a different header to sweep every workspace's secrets.
      */
     @GetMapping("/internal/credentials/{ref}")
     @Operation(summary = "Internal: resolve a credential for a sibling service")
     public InternalCredential reveal(@PathVariable String ref, @RequestHeader("X-Workspace-Id") UUID workspaceId) {
         Actor actor = RequestContext.requireActor();
-        if (actor.kind() == Actor.Kind.USER) {
+        if (actor.kind() == Actor.Kind.USER || actor.kind() == Actor.Kind.API_KEY) {
             // A person's token must never reach this endpoint, whatever permissions it carries.
             throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
-        return new InternalCredential(credentials.reveal(workspaceId, ref).orElse(null));
+        if (actor.orgId() == null) {
+            throw new ApiException(ErrorCode.ORGANISATION_MISMATCH, "The service token names no workspace.");
+        }
+        if (!actor.orgId().equalsIgnoreCase(workspaceId.toString())) {
+            throw new ApiException(ErrorCode.ORGANISATION_MISMATCH);
+        }
+        InternalCredential revealed = new InternalCredential(credentials.reveal(workspaceId, ref).orElse(null));
+        if (audit != null) {
+            // Who asked (the calling service) and for whom it acted; never the value.
+            java.util.Map<String, Object> detail = new java.util.LinkedHashMap<>();
+            detail.put("service", actor.id());
+            if (actor.onBehalfOf() != null) {
+                detail.put("onBehalfOf", actor.onBehalfOf());
+            }
+            detail.put("found", revealed.value() != null);
+            audit.record(workspaceId, actor, "credential.reveal", "credential", ref, "succeeded", detail);
+        }
+        return revealed;
     }
 
     private static UUID orgId() {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button, ConfirmDialog, Tag } from '../ui'
 import { describeApiError } from '../../lib/api'
 import { canRetryGoal } from '../../lib/goals'
-import { formatAgo, truncateWords } from '../../lib/format'
+import { formatAgo, plural, truncateWords } from '../../lib/format'
 import type { Board } from '../../lib/queries'
 import { useRetryGoal, useSetAgentStatus } from '../../lib/queries'
 import { closesIn } from '../../lib/questions'
@@ -228,14 +228,28 @@ export function NeedsYouInbox({
   const items = scope === 'forMe' ? forMe : everyone
   const visible = showAll ? items : items.slice(0, VISIBLE_ROWS)
 
+  // Nothing waiting on anybody: one thin line rather than a whole card, so the goals move up.
+  if (everyone.length === 0) {
+    return (
+      <section aria-labelledby="orc-needs-heading" className="orc-needs-clear">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.5 8.5 6.5 11.5 12.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <h2 id="orc-needs-heading" className="orc-needs-clear-text">
+          Nothing needs you
+        </h2>
+      </section>
+    )
+  }
+
   return (
-    <section aria-labelledby="orc-needs-heading" className="stack" style={{ gap: 'var(--space-4)' }}>
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
-        <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center' }}>
-          <h2 id="orc-needs-heading" className="section-heading">
+    <section aria-labelledby="orc-needs-heading" className="orc-needs-card">
+      <div className="orc-needs-head">
+        <div className="orc-needs-title">
+          <h2 id="orc-needs-heading" className="orc-section-heading">
             Needs you
           </h2>
-          <Tag>{items.length}</Tag>
+          <span className="orc-panel-count tabular">{items.length}</span>
         </div>
         <div className="orc-segmented" role="group" aria-label="Whose items to show">
           <button type="button" aria-pressed={scope === 'forMe'} onClick={() => setScope('forMe')}>
@@ -248,28 +262,18 @@ export function NeedsYouInbox({
       </div>
 
       {items.length === 0 ? (
-        <p className="caption muted">
-          {scope === 'forMe' ? (
-            everyone.length > 0 ? (
-              <>
-                Nothing you asked for is waiting on you. {everyone.length} items from other people are.{' '}
-                <button type="button" className="link" onClick={() => setScope('everyone')}>
-                  Show everyone
-                </button>
-              </>
-            ) : (
-              'Nothing you asked for is waiting on you.'
-            )
-          ) : (
-            'Nothing needs anyone right now.'
-          )}
+        <p className="caption muted orc-needs-none">
+          Nothing you asked for is waiting on you. {plural(everyone.length, 'item', 'items')} from other people {everyone.length === 1 ? 'is' : 'are'}.{' '}
+          <button type="button" className="link" onClick={() => setScope('everyone')}>
+            Show everyone
+          </button>
         </p>
       ) : (
-        <ul className="orc-needs" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        <ul className="orc-needs">
           {visible.map((item) => (
             <li key={`${item.kind}-${item.id}`} className="orc-needs-row">
               {kindTag(item)}
-              <div>
+              <div className="orc-needs-body">
                 <RowText item={item} board={board} />
                 <RowCaption item={item} me={me} nameOf={nameOf} now={now} />
               </div>
@@ -280,9 +284,9 @@ export function NeedsYouInbox({
       )}
 
       {!showAll && items.length > VISIBLE_ROWS && (
-        <Button variant="quiet" onClick={() => setShowAll(true)}>
+        <button type="button" className="link orc-needs-more" onClick={() => setShowAll(true)}>
           Show all {items.length}
-        </Button>
+        </button>
       )}
     </section>
   )

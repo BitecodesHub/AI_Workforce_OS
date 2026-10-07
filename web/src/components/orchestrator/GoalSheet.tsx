@@ -8,9 +8,9 @@ import { QuestionCard } from '../run/QuestionCard'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { describeApiError } from '../../lib/api'
 import { formatMoney, shortId } from '../../lib/format'
-import { canRetryGoal } from '../../lib/goals'
+import { canRetryGoal, canStopGoal } from '../../lib/goals'
 import { goalSourceLabel } from '../../lib/labels'
-import { isGoalActive, useCancelGoal, useGoal, useRetryGoal } from '../../lib/queries'
+import { useCancelGoal, useGoal, useRetryGoal } from '../../lib/queries'
 import type { Board, BoardGoal, BoardTask, Goal } from '../../lib/queries'
 import { can, profile } from '../../lib/session'
 import { useToast } from '../../lib/toast'
@@ -145,15 +145,18 @@ export function GoalSheet({
   const sourceEntry = goalSourceLabel(goal.source)
   const totalCost = goal.tasks.reduce((sum, task) => sum + (task.cost ?? 0), 0)
   const requester = requesterLabel(goal, directory, me)
-  const canCancel = can('task:cancel') && isGoalActive(goal)
+  // The requester can stop their own goal, as they can retry it; anyone else needs task:cancel.
+  const canCancel = canStopGoal(goal, me, can)
   const canRetry = canRetryGoal(goal, me, can)
   const { step: retryStep, agentName: retryAgent } = retryStepInfo(goal, board)
+  // A goal with one task is just a task: the goal layer is only worth naming when there are several.
+  const several = goal.tasks.length > 1
 
   const confirmCancel = async () => {
     setCancelError(null)
     try {
       await cancelGoal.mutateAsync()
-      toast.success('Goal cancelled')
+      toast.success(several ? 'Goal cancelled' : 'Task cancelled')
       setCancelOpen(false)
     } catch (thrown) {
       setCancelError(describeApiError(thrown))
@@ -178,19 +181,19 @@ export function GoalSheet({
       side="right"
       modal={modal}
       width={width}
-      eyebrow="Goal"
+      eyebrow={several ? 'Goal' : 'Task'}
       title={goal.title}
       returnFocusTo={returnFocusTo}
       footer={
         <>
           {canCancel && (
             <Button variant="outline" onClick={() => setCancelOpen(true)}>
-              Cancel goal
+              {several ? 'Cancel goal' : 'Cancel task'}
             </Button>
           )}
           {canRetry && (
             <Button variant="outline" onClick={() => setRetryOpen(true)}>
-              Try again from step {retryStep}
+              {several ? `Try again from step ${retryStep}` : 'Try again'}
             </Button>
           )}
           {sourceLink(goal)}

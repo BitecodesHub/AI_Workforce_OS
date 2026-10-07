@@ -22,6 +22,9 @@ public interface Schedules extends JpaRepository<Schedule, UUID> {
 
     Optional<Schedule> findByIdAndOrgId(UUID id, UUID orgId);
 
+    /** Every schedule in a workspace that fires as this person, enabled or not. */
+    List<Schedule> findByOrgIdAndRequestedBy(UUID orgId, UUID requestedBy);
+
     /**
      * Every enabled, due schedule across every workspace, oldest-due first.
      *

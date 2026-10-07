@@ -1,3 +1,4 @@
+import { readableSummary } from '../../lib/approvals'
 import type { Board, BoardGoal, BoardTask } from '../../lib/queries'
 
 /*
@@ -126,7 +127,9 @@ export function buildNeedsYou(board: Board, opts: { me: string | null; scope: 'f
       runId: approval.runId,
       agentId: approval.agentId,
       title: titleFor(approval.goalId, board, 'Direct run'),
-      summary: approval.summary,
+      // In words, once, here: the inbox, the live announcement and anything else reading an item
+      // never shows a tool id such as gmail.send_message.
+      summary: readableSummary({ tool: approval.tool, summary: approval.summary }),
       requestedBy: approval.requestedBy,
       createdAt: approval.requestedAt,
       expiresAt: approval.expiresAt,

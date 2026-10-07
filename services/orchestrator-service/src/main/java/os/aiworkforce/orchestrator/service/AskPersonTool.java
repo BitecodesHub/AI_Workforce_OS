@@ -32,8 +32,11 @@ public class AskPersonTool {
     public static final String NAME = "person.ask_question";
 
     static final String DESCRIPTION = "Ask the person you are working for a question, and wait for their answer. "
-            + "Use it only when the work cannot be done well without information only they have, such as which of "
-            + "several things they mean, who it is for, or a date, budget or name that changes the result. Ask one "
+            + "Use it only when you truly cannot proceed with a reasonable default and the work cannot be done well "
+            + "without information only they have, such as which of several things they mean, who it is for, or a "
+            + "date, budget or name that changes the result. Never use it for a greeting, a thank-you or a request "
+            + "you can answer or do as written, and not on your first step when the request can be done as it stands: "
+            + "choose the default, do the work and name the assumption instead. Ask one "
             + "to four short questions together, usually one. Give each two to four concrete options, each with a "
             + "short label and a one-line description, and put the option you recommend first. Set multiSelect when "
             + "several options can apply together. Do not add an Other option; the person can always write their "

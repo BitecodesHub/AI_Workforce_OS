@@ -425,4 +425,59 @@ class OpenAiCompatibleProviderTest {
         }
         assertThatThrownBy(() -> ProviderFailure.valueOf("NOT_A_FAILURE")).isInstanceOf(IllegalArgumentException.class);
     }
+
+    // ---- Pictures ----------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("sends a user turn's pictures as image_url content parts after its text")
+    void sendsImagesAsContentParts() {
+        stub(
+                200,
+                """
+                {"id":"gen-img","choices":[{"message":{"role":"assistant","content":"A bar chart."},
+                "finish_reason":"stop"}],"usage":{"prompt_tokens":900,"completion_tokens":4}}
+                """);
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(
+                        ChatMessage.system("Be brief."),
+                        ChatMessage.userWithImages(
+                                "What does this chart show?",
+                                List.of(new os.aiworkforce.llm.model.ImagePart("chart.png", "image/png", "iVBORw0KGgo=")))))
+                .timeout(Duration.ofSeconds(5))
+                .build();
+
+        assertThat(provider.sendsImages()).isTrue();
+        complete(request);
+
+        server.verify(com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor(urlPathEqualTo("/chat/completions"))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath(
+                        "$.messages[1].content[0].type", com.github.tomakehurst.wiremock.client.WireMock.equalTo("text")))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath(
+                        "$.messages[1].content[0].text",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("What does this chart show?")))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath(
+                        "$.messages[1].content[1].type",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("image_url")))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath(
+                        "$.messages[1].content[1].image_url.url",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("data:image/png;base64,iVBORw0KGgo=")))
+                // The system turn keeps the plain string form.
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath(
+                        "$.messages[0].content", com.github.tomakehurst.wiremock.client.WireMock.equalTo("Be brief."))));
+    }
+
+    @Test
+    @DisplayName("a turn's pictures become a plain note for a model that cannot see them")
+    void imagesBecomeNotes() {
+        ChatMessage turn = ChatMessage.userWithImages(
+                "Read this.", List.of(new os.aiworkforce.llm.model.ImagePart("scan.png", "image/png", "AAAA")));
+        ChatMessage noted = turn.withImagesAsNotes("Llama 3.3 70B");
+
+        assertThat(noted.hasImages()).isFalse();
+        assertThat(noted.content())
+                .startsWith("Read this.")
+                .contains("\"scan.png\" could not be shown to you: Llama 3.3 70B cannot read images")
+                .contains("vision-capable model in Model routing");
+        assertThat(turn.approximateTokens()).isGreaterThan(noted.approximateTokens() - 200);
+    }
 }

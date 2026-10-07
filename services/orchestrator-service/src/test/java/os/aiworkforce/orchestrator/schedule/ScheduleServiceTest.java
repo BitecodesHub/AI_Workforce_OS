@@ -2,11 +2,13 @@ package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -14,7 +16,10 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -24,15 +29,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import os.aiworkforce.orchestrator.domain.Agent;
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.repository.Agents;
+import os.aiworkforce.orchestrator.service.AuditClient;
 import os.aiworkforce.orchestrator.service.GoalService;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
+import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
 class ScheduleServiceTest {
@@ -45,10 +54,24 @@ class ScheduleServiceTest {
     private Agents agents;
     private GoalService goalService;
     private ScheduleZoneLookup zones;
+    private AuditClient audit;
     private ScheduleService service;
 
     private UUID agentId;
     private Agent agent;
+
+    /** The person every schedule built by {@link #schedule} runs as, unless a test says otherwise. */
+    private final UUID ownerId = UUID.randomUUID();
+
+    private Actor owner;
+
+    /** A different person on the built-in employee role: may create work, may not cancel it. */
+    private Actor employee;
+
+    /** A different person on the manager role: may cancel anyone's work. */
+    private UUID managerId;
+
+    private Actor manager;
 
     @BeforeEach
     void setUp() {
@@ -57,7 +80,14 @@ class ScheduleServiceTest {
         agents = mock(Agents.class);
         goalService = mock(GoalService.class);
         zones = mock(ScheduleZoneLookup.class);
-        service = new ScheduleService(schedules, scheduleGoals, agents, goalService, zones);
+        audit = mock(AuditClient.class);
+        service = new ScheduleService(schedules, scheduleGoals, agents, goalService, zones, audit);
+
+        owner = person(ownerId, Permission.Codes.TASK_READ, Permission.Codes.TASK_CREATE);
+        employee = person(UUID.randomUUID(), Permission.Codes.TASK_READ, Permission.Codes.TASK_CREATE);
+        managerId = UUID.randomUUID();
+        manager = person(
+                managerId, Permission.Codes.TASK_READ, Permission.Codes.TASK_CREATE, Permission.Codes.TASK_CANCEL);
 
         lenient().when(zones.zoneFor(ORG)).thenReturn(ZONE);
         lenient().when(schedules.save(any())).thenAnswer(call -> call.getArgument(0));
@@ -76,6 +106,56 @@ class ScheduleServiceTest {
         RequestContext.clear();
     }
 
+    private static Actor person(UUID id, String... permissions) {
+        return Actor.user(id.toString(), ORG.toString(), "role", Set.of(permissions), 0L);
+    }
+
+    private void stored(Schedule schedule) {
+        lenient().when(schedules.findByIdAndOrgId(schedule.getId(), ORG)).thenReturn(Optional.of(schedule));
+    }
+
+    private Goal startedGoal() {
+        Goal goal = new Goal();
+        goal.setId(UUID.randomUUID());
+        goal.setStatus("planning");
+        return goal;
+    }
+
+    /** Every audit entry recorded so far, by action, with the actor and detail each carried. */
+    private record Entry(Actor actor, String action, String resourceType, String resourceId, Map<String, Object> detail) {}
+
+    @SuppressWarnings("unchecked")
+    private List<Entry> audited() {
+        return mockingDetails(audit).getInvocations().stream()
+                .filter(call -> call.getMethod().getName().equals("record"))
+                .map(call -> {
+                    Object[] args = call.getArguments();
+                    assertThat(args[0]).isEqualTo(ORG);
+                    assertThat(args[5]).isEqualTo("succeeded");
+                    return new Entry(
+                            (Actor) args[1],
+                            (String) args[2],
+                            (String) args[3],
+                            (String) args[4],
+                            (Map<String, Object>) args[6]);
+                })
+                .toList();
+    }
+
+    private Entry onlyEntry(String action) {
+        List<Entry> matching =
+                audited().stream().filter(entry -> entry.action().equals(action)).toList();
+        assertThat(matching).as("audit entries for " + action).hasSize(1);
+        return matching.get(0);
+    }
+
+    private static void assertDenied(Runnable call) {
+        ApiException denied = catchThrowableOfType(call::run, ApiException.class);
+        assertThat(denied).as("expected the change to be refused").isNotNull();
+        assertThat(denied.code()).isEqualTo(ErrorCode.PERMISSION_DENIED);
+        assertThat(denied.details()).containsEntry("requiredPermission", Permission.Codes.TASK_CANCEL);
+    }
+
     private Schedule schedule(String kind) {
         Schedule schedule = new Schedule();
         schedule.setId(UuidV7.generate());
@@ -88,6 +168,7 @@ class ScheduleServiceTest {
         schedule.setDescription("irrelevant for this test");
         schedule.setEnabled(true);
         schedule.setOverlapPolicy("skip");
+        schedule.setRequestedBy(ownerId);
         return schedule;
     }
 
@@ -161,9 +242,9 @@ class ScheduleServiceTest {
             Schedule existing = schedule("recurring");
             existing.setCron("0 0 9 * * *");
             existing.setNextRunAt(Instant.parse("2026-09-29T00:00:00Z"));
-            when(schedules.findByIdAndOrgId(existing.getId(), ORG)).thenReturn(Optional.of(existing));
+            stored(existing);
 
-            Schedule updated = service.update(ORG, existing.getId(), "New name", null, null, null);
+            Schedule updated = service.update(ORG, existing.getId(), "New name", null, null, null, owner);
 
             assertThat(updated.getName()).isEqualTo("New name");
             assertThat(updated.getCron()).isEqualTo("0 0 9 * * *");
@@ -175,9 +256,9 @@ class ScheduleServiceTest {
         void reparsesOnNewText() {
             Schedule existing = schedule("recurring");
             existing.setCron("0 0 9 * * *");
-            when(schedules.findByIdAndOrgId(existing.getId(), ORG)).thenReturn(Optional.of(existing));
+            stored(existing);
 
-            Schedule updated = service.update(ORG, existing.getId(), null, null, null, "every hour");
+            Schedule updated = service.update(ORG, existing.getId(), null, null, null, "every hour", owner);
 
             assertThat(updated.getCron()).isEqualTo("0 0 * * * *");
             assertThat(updated.getDescription()).isEqualTo("Every hour");
@@ -187,9 +268,191 @@ class ScheduleServiceTest {
         @DisplayName("not found raises a 404")
         void missingSchedule() {
             when(schedules.findByIdAndOrgId(any(), any())).thenReturn(Optional.empty());
-            assertThatThrownBy(() -> service.update(ORG, UUID.randomUUID(), "x", null, null, null))
+            assertThatThrownBy(() -> service.update(ORG, UUID.randomUUID(), "x", null, null, null, owner))
                     .isInstanceOfSatisfying(
                             ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("the audit entry names what changed, the previous agent and a fingerprint of the instruction")
+        void auditsChangedFields() {
+            Schedule existing = schedule("recurring");
+            existing.setCron("0 0 9 * * *");
+            stored(existing);
+            UUID previousAgent = existing.getAgentId();
+            Agent other = new Agent();
+            other.setId(UUID.randomUUID());
+            other.setOrgId(ORG);
+            other.setStatus("active");
+            when(agents.findByIdAndOrgId(other.getId(), ORG)).thenReturn(Optional.of(other));
+
+            service.update(ORG, existing.getId(), null, other.getId(), "Summarise the month", null, owner);
+
+            Entry entry = onlyEntry("schedule.update");
+            assertThat(entry.actor()).isEqualTo(owner);
+            assertThat(entry.resourceType()).isEqualTo("schedule");
+            assertThat(entry.resourceId()).isEqualTo(existing.getId().toString());
+            assertThat(entry.detail())
+                    .containsEntry("changed", List.of("agentId", "instruction"))
+                    .containsEntry("agentId", other.getId().toString())
+                    .containsEntry("previousAgentId", previousAgent.toString())
+                    .containsEntry("instructionSha256", ScheduleService.sha256("Summarise the month"))
+                    .containsEntry("previousInstructionSha256", ScheduleService.sha256("Summarise the week"));
+            // The owner edited their own schedule, so it still runs as them.
+            assertThat(existing.getRequestedBy()).isEqualTo(ownerId);
+            assertThat(audited()).noneMatch(e -> e.action().equals("schedule.owner_change"));
+        }
+
+        @Test
+        @DisplayName("an edit that changes nothing writes no audit entry")
+        void noChangeNoAudit() {
+            Schedule existing = schedule("recurring");
+            stored(existing);
+
+            service.update(ORG, existing.getId(), existing.getName(), null, existing.getInstruction(), null, owner);
+
+            assertThat(audited()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("who may change a schedule")
+    class WhoMayChange {
+
+        @Test
+        @DisplayName("an employee gets 403 pausing or deleting another person's schedule, and nothing changes")
+        void employeeCannotPauseOrDeleteAnothersSchedule() {
+            Schedule theirs = schedule("recurring");
+            theirs.setCron("0 0 9 * * *");
+            stored(theirs);
+
+            assertDenied(() -> service.pause(ORG, theirs.getId(), employee));
+            assertDenied(() -> service.delete(ORG, theirs.getId(), employee));
+
+            assertThat(theirs.isEnabled()).isTrue();
+            verify(schedules, never()).save(any());
+            verify(schedules, never()).delete(any());
+            assertThat(audited()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("an employee gets 403 editing, resuming or running another person's schedule")
+        void employeeCannotEditResumeOrRunAnothersSchedule() {
+            Schedule theirs = schedule("recurring");
+            theirs.setCron("0 0 9 * * *");
+            theirs.setEnabled(false);
+            stored(theirs);
+
+            assertDenied(() -> service.update(ORG, theirs.getId(), null, null, "Email everyone", null, employee));
+            assertDenied(() -> service.resume(ORG, theirs.getId(), employee));
+            assertDenied(() -> service.runNow(ORG, theirs.getId(), employee));
+
+            assertThat(theirs.getInstruction()).isEqualTo("Summarise the week");
+            assertThat(theirs.getRequestedBy()).isEqualTo(ownerId);
+            verify(goalService, never()).createGoal(any(), any(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("the owner can pause, resume, edit, run and delete their own schedule")
+        void ownerManagesOwnSchedule() {
+            Schedule mine = schedule("recurring");
+            mine.setCron("0 0 9 * * *");
+            stored(mine);
+            when(goalService.createGoal(eq(ORG), any(), eq(true))).thenReturn(startedGoal());
+
+            service.pause(ORG, mine.getId(), owner);
+            assertThat(mine.isEnabled()).isFalse();
+            service.resume(ORG, mine.getId(), owner);
+            assertThat(mine.isEnabled()).isTrue();
+            service.update(ORG, mine.getId(), null, null, "Summarise the fortnight", null, owner);
+            assertThat(mine.getInstruction()).isEqualTo("Summarise the fortnight");
+            service.runNow(ORG, mine.getId(), owner);
+            service.delete(ORG, mine.getId(), owner);
+
+            verify(schedules).delete(mine);
+            assertThat(mine.getRequestedBy()).isEqualTo(ownerId);
+        }
+
+        @Test
+        @DisplayName("a manager can manage anyone's schedule, and becomes its owner by editing the instruction")
+        void managerTakesOverByEditingInstruction() {
+            Schedule theirs = schedule("recurring");
+            theirs.setCron("0 0 9 * * *");
+            stored(theirs);
+
+            service.pause(ORG, theirs.getId(), manager);
+            service.resume(ORG, theirs.getId(), manager);
+            assertThat(theirs.getRequestedBy()).as("pausing and resuming keep the owner").isEqualTo(ownerId);
+
+            service.update(ORG, theirs.getId(), null, null, "Summarise the week for the board", null, manager);
+
+            assertThat(theirs.getRequestedBy()).isEqualTo(managerId);
+            Entry update = onlyEntry("schedule.update");
+            assertThat(update.detail())
+                    .containsEntry("previousOwner", ownerId.toString())
+                    .containsEntry("owner", managerId.toString());
+            Entry ownerChange = onlyEntry("schedule.owner_change");
+            assertThat(ownerChange.actor()).isEqualTo(manager);
+            assertThat(ownerChange.detail())
+                    .containsEntry("previousOwner", ownerId.toString())
+                    .containsEntry("owner", managerId.toString())
+                    .containsEntry("via", "edit");
+        }
+
+        @Test
+        @DisplayName("a manager renaming or re-timing someone's schedule leaves the owner as they were")
+        void managerRenameKeepsOwner() {
+            Schedule theirs = schedule("recurring");
+            theirs.setCron("0 0 9 * * *");
+            stored(theirs);
+
+            service.update(ORG, theirs.getId(), "Board digest", null, null, "every hour", manager);
+
+            assertThat(theirs.getRequestedBy()).isEqualTo(ownerId);
+            assertThat(audited()).noneMatch(e -> e.action().equals("schedule.owner_change"));
+        }
+
+        @Test
+        @DisplayName("a schedule with no owner on record needs task:cancel")
+        void legacyScheduleNeedsTaskCancel() {
+            Schedule legacy = schedule("recurring");
+            legacy.setCron("0 0 9 * * *");
+            legacy.setRequestedBy(null);
+            stored(legacy);
+
+            assertDenied(() -> service.pause(ORG, legacy.getId(), employee));
+            service.pause(ORG, legacy.getId(), manager);
+
+            assertThat(legacy.isEnabled()).isFalse();
+        }
+
+        @Test
+        @DisplayName("no actor at all is refused")
+        void noActorRefused() {
+            Schedule mine = schedule("recurring");
+            assertDenied(() -> service.requireCanManage(mine, null));
+        }
+
+        @Test
+        @DisplayName("handing a schedule to someone else needs task:cancel, and is audited as an owner change")
+        void changeOwner() {
+            Schedule theirs = schedule("recurring");
+            stored(theirs);
+            UUID newOwner = UUID.randomUUID();
+
+            ApiException denied = catchThrowableOfType(
+                    () -> service.changeOwner(ORG, theirs.getId(), newOwner, owner), ApiException.class);
+            assertThat(denied.code()).isEqualTo(ErrorCode.PERMISSION_DENIED);
+            assertThat(theirs.getRequestedBy()).isEqualTo(ownerId);
+
+            service.changeOwner(ORG, theirs.getId(), newOwner, manager);
+
+            assertThat(theirs.getRequestedBy()).isEqualTo(newOwner);
+            Entry entry = onlyEntry("schedule.owner_change");
+            assertThat(entry.detail())
+                    .containsEntry("previousOwner", ownerId.toString())
+                    .containsEntry("owner", newOwner.toString())
+                    .containsEntry("via", "transfer");
         }
     }
 
@@ -202,12 +465,25 @@ class ScheduleServiceTest {
         void pauseClearsReason() {
             Schedule existing = schedule("recurring");
             existing.setPausedReason("Paused after 3 failed runs in a row.");
-            when(schedules.findByIdAndOrgId(existing.getId(), ORG)).thenReturn(Optional.of(existing));
+            stored(existing);
 
-            Schedule paused = service.pause(ORG, existing.getId());
+            Schedule paused = service.pause(ORG, existing.getId(), owner);
 
             assertThat(paused.isEnabled()).isFalse();
             assertThat(paused.getPausedReason()).isNull();
+        }
+
+        @Test
+        @DisplayName("pause without an explicit actor uses the one in the request context")
+        void pauseReadsRequestContext() {
+            Schedule existing = schedule("recurring");
+            stored(existing);
+            RequestContext.setActor(employee);
+
+            assertDenied(() -> service.pause(ORG, existing.getId()));
+
+            RequestContext.setActor(owner);
+            assertThat(service.pause(ORG, existing.getId()).isEnabled()).isFalse();
         }
 
         @Test
@@ -218,14 +494,215 @@ class ScheduleServiceTest {
             existing.setEnabled(false);
             existing.setConsecutiveFailures(3);
             existing.setPausedReason("Paused after 3 failed runs in a row.");
-            when(schedules.findByIdAndOrgId(existing.getId(), ORG)).thenReturn(Optional.of(existing));
+            stored(existing);
 
-            Schedule resumed = service.resume(ORG, existing.getId());
+            Schedule resumed = service.resume(ORG, existing.getId(), owner);
 
             assertThat(resumed.isEnabled()).isTrue();
             assertThat(resumed.getConsecutiveFailures()).isZero();
             assertThat(resumed.getPausedReason()).isNull();
             assertThat(resumed.getNextRunAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("Stop everything's pause reaches a schedule whoever owns it, and says why")
+        void internalPauseIgnoresOwnership() {
+            Schedule theirs = schedule("recurring");
+            stored(theirs);
+            // The person pressing Stop everything holds run:cancel and task:create, not task:cancel.
+            RequestContext.setActor(employee);
+
+            service.pauseInternal(ORG, theirs.getId(), ScheduleService.STOPPED_EVERYTHING_REASON);
+
+            assertThat(theirs.isEnabled()).isFalse();
+            assertThat(theirs.getPausedReason()).isEqualTo(ScheduleService.STOPPED_EVERYTHING_REASON);
+            Entry entry = onlyEntry("schedule.pause");
+            assertThat(entry.actor()).isEqualTo(employee);
+            assertThat(entry.detail()).containsEntry("reason", ScheduleService.STOPPED_EVERYTHING_REASON);
+        }
+
+        @Test
+        @DisplayName("Stop everything itself is recorded once, with what it stopped")
+        void recordsStopAll() {
+            service.recordStopAll(ORG, manager, Map.of("schedulesPaused", 2, "runsCancelled", 1));
+
+            Entry entry = onlyEntry("orchestrator.stop_all");
+            assertThat(entry.actor()).isEqualTo(manager);
+            assertThat(entry.resourceType()).isEqualTo("workspace");
+            assertThat(entry.detail()).containsEntry("schedulesPaused", 2).containsEntry("runsCancelled", 1);
+        }
+    }
+
+    @Nested
+    @DisplayName("one-off schedules")
+    class OneOff {
+
+        private Schedule fired() {
+            Schedule done = schedule("once");
+            done.setRunAt(Instant.now().minus(1, ChronoUnit.HOURS));
+            done.setDescription("Once, an hour ago");
+            done.setEnabled(false);
+            done.setNextRunAt(null);
+            done.setLastRunAt(done.getRunAt());
+            stored(done);
+            return done;
+        }
+
+        @Test
+        @DisplayName("a one-off the sweep already fired reads as completed; a paused one does not")
+        void completedIsDerived() {
+            assertThat(ScheduleService.isCompleted(fired())).isTrue();
+
+            Schedule paused = schedule("once");
+            paused.setRunAt(Instant.now().plus(1, ChronoUnit.DAYS));
+            paused.setNextRunAt(paused.getRunAt());
+            paused.setEnabled(false);
+            assertThat(ScheduleService.isCompleted(paused)).isFalse();
+
+            Schedule recurring = schedule("recurring");
+            recurring.setEnabled(false);
+            assertThat(ScheduleService.isCompleted(recurring)).isFalse();
+        }
+
+        @Test
+        @DisplayName("resuming a one-off whose time has passed is a validation error, and fires nothing")
+        void resumingPastOneOffIsRefused() {
+            Schedule done = fired();
+
+            ApiException refused =
+                    catchThrowableOfType(() -> service.resume(ORG, done.getId(), owner), ApiException.class);
+
+            assertThat(refused.code()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+            assertThat(refused.details())
+                    .containsEntry("field", "when")
+                    .containsEntry("problem", "This one-off time has passed; edit it to pick a new time.");
+            assertThat(done.isEnabled()).isFalse();
+            assertThat(done.getNextRunAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("a one-off paused before it fired is refused too, once its time has gone by")
+        void resumingStalePausedOneOffIsRefused() {
+            Schedule stale = schedule("once");
+            stale.setRunAt(Instant.now().minus(5, ChronoUnit.MINUTES));
+            stale.setNextRunAt(stale.getRunAt());
+            stale.setEnabled(false);
+            stored(stale);
+
+            ApiException refused =
+                    catchThrowableOfType(() -> service.resume(ORG, stale.getId(), owner), ApiException.class);
+
+            assertThat(refused.code()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+            assertThat(stale.isEnabled()).isFalse();
+        }
+
+        @Test
+        @DisplayName("editing a done one-off to a time still ahead turns it back on")
+        void editingDoneOneOffToFutureEnablesIt() {
+            Schedule done = fired();
+            done.setPausedReason("Paused after 3 failed runs in a row.");
+
+            Schedule updated = service.update(ORG, done.getId(), null, null, null, "in 2 hours", owner);
+
+            assertThat(updated.getKind()).isEqualTo("once");
+            assertThat(updated.isEnabled()).isTrue();
+            assertThat(updated.getPausedReason()).isNull();
+            assertThat(updated.getNextRunAt()).isAfter(Instant.now());
+            assertThat(onlyEntry("schedule.update").detail()).containsEntry("reactivated", true);
+        }
+
+        @Test
+        @DisplayName("a schedule paused on purpose stays paused whatever is edited")
+        void editingDeliberatelyPausedScheduleKeepsItPaused() {
+            Schedule paused = schedule("once");
+            paused.setRunAt(Instant.now().plus(1, ChronoUnit.DAYS));
+            paused.setNextRunAt(paused.getRunAt());
+            paused.setEnabled(false);
+            stored(paused);
+
+            Schedule updated = service.update(ORG, paused.getId(), null, null, null, "in 2 hours", owner);
+
+            assertThat(updated.isEnabled()).isFalse();
+            assertThat(updated.getNextRunAt()).isAfter(Instant.now());
+        }
+    }
+
+    @Nested
+    @DisplayName("when an owner leaves the workspace")
+    class OwnerRemoved {
+
+        private final Actor identity = new Actor(
+                "identity",
+                Actor.Kind.SYSTEM,
+                ORG.toString(),
+                null,
+                Set.of(),
+                0L,
+                UUID.randomUUID().toString(),
+                null,
+                null,
+                Map.of());
+
+        @Test
+        @DisplayName("pauses every enabled schedule they own with a note, counts them, and audits each as the system")
+        void pausesTheirSchedules() {
+            Schedule active = schedule("recurring");
+            Schedule alreadyPaused = schedule("recurring");
+            alreadyPaused.setEnabled(false);
+            Schedule done = schedule("once");
+            done.setEnabled(false);
+            done.setNextRunAt(null);
+            when(schedules.findByOrgIdAndRequestedBy(ORG, ownerId))
+                    .thenReturn(List.of(active, alreadyPaused, done));
+
+            int paused = service.pauseForRemovedOwner(ORG, ownerId, identity);
+
+            assertThat(paused).isEqualTo(1);
+            assertThat(active.isEnabled()).isFalse();
+            assertThat(active.getPausedReason()).isEqualTo(ScheduleService.OWNER_REMOVED_REASON);
+            // Already paused: stays paused, and now says why a resume will need a new owner first.
+            assertThat(alreadyPaused.getPausedReason()).isEqualTo(ScheduleService.OWNER_REMOVED_REASON);
+            // A one-off that already ran will not fire again, so it is left as it was.
+            assertThat(done.getPausedReason()).isNull();
+            verify(schedules, never()).save(done);
+
+            Entry entry = onlyEntry("schedule.pause");
+            assertThat(entry.actor().kind()).isEqualTo(Actor.Kind.SYSTEM);
+            assertThat(entry.resourceId()).isEqualTo(active.getId().toString());
+            assertThat(entry.detail()).containsEntry("reason", ScheduleService.OWNER_REMOVED_REASON);
+        }
+
+        @Test
+        @DisplayName("only reads the departed person's schedules")
+        void readsOnlyThatPerson() {
+            when(schedules.findByOrgIdAndRequestedBy(ORG, ownerId)).thenReturn(List.of());
+
+            assertThat(service.pauseForRemovedOwner(ORG, ownerId, identity)).isZero();
+
+            verify(schedules).findByOrgIdAndRequestedBy(ORG, ownerId);
+            verify(schedules, never()).findByOrgIdOrderByNameAsc(any());
+            verify(schedules, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("somebody else cannot resume it in the former member's name until it is transferred")
+        void resumeNeedsTransferFirst() {
+            Schedule orphaned = schedule("recurring");
+            orphaned.setCron("0 0 9 * * *");
+            orphaned.setEnabled(false);
+            orphaned.setPausedReason(ScheduleService.OWNER_REMOVED_REASON);
+            stored(orphaned);
+
+            ApiException refused =
+                    catchThrowableOfType(() -> service.resume(ORG, orphaned.getId(), manager), ApiException.class);
+            assertThat(refused.code()).isEqualTo(ErrorCode.CONFLICT);
+            assertThat(orphaned.isEnabled()).isFalse();
+
+            service.changeOwner(ORG, orphaned.getId(), managerId, manager);
+            assertThat(orphaned.getPausedReason()).isNull();
+            service.resume(ORG, orphaned.getId(), manager);
+
+            assertThat(orphaned.isEnabled()).isTrue();
         }
     }
 
@@ -239,12 +716,11 @@ class ScheduleServiceTest {
             Schedule existing = schedule("recurring");
             existing.setEnabled(false);
             existing.setNextRunAt(Instant.parse("2026-10-05T00:00:00Z"));
-            when(schedules.findByIdAndOrgId(existing.getId(), ORG)).thenReturn(Optional.of(existing));
-            Goal goal = new Goal();
-            goal.setId(UUID.randomUUID());
+            stored(existing);
+            Goal goal = startedGoal();
             when(goalService.createGoal(eq(ORG), any(), eq(true))).thenReturn(goal);
 
-            Schedule result = service.runNow(ORG, existing.getId());
+            Schedule result = service.runNow(ORG, existing.getId(), owner);
 
             assertThat(result.getLastGoalId()).isEqualTo(goal.getId());
             assertThat(result.getLastRunAt()).isNotNull();
@@ -253,36 +729,107 @@ class ScheduleServiceTest {
         }
 
         @Test
-        @DisplayName("fires as the schedule's requester, or the platform when there is none")
-        void firesAsRequester() {
-            UUID requester = UUID.randomUUID();
-            Schedule withRequester = schedule("once");
-            withRequester.setRunAt(Instant.now().plusSeconds(60));
-            withRequester.setRequestedBy(requester);
-            when(schedules.findByIdAndOrgId(withRequester.getId(), ORG)).thenReturn(Optional.of(withRequester));
-
-            List<Actor> seen = new java.util.ArrayList<>();
+        @DisplayName("fires as the person who pressed it, not as the schedule's owner")
+        void firesAsCaller() {
+            Schedule theirs = schedule("recurring");
+            stored(theirs);
+            List<Actor> seen = new ArrayList<>();
+            List<UUID> requesters = new ArrayList<>();
             when(goalService.createGoal(any(), any(), anyBoolean())).thenAnswer(call -> {
                 seen.add(RequestContext.actor().orElse(null));
-                Goal goal = new Goal();
-                goal.setId(UUID.randomUUID());
-                return goal;
+                requesters.add(call.<GoalService.NewGoal>getArgument(1).requestedBy());
+                return startedGoal();
             });
 
-            service.runNow(ORG, withRequester.getId());
+            service.runNow(ORG, theirs.getId(), manager);
 
-            assertThat(seen).hasSize(1);
-            assertThat(seen.get(0).id()).isEqualTo(requester.toString());
-            assertThat(seen.get(0).kind()).isEqualTo(Actor.Kind.USER);
+            assertThat(seen).containsExactly(manager);
+            assertThat(requesters).containsExactly(managerId);
+            assertThat(theirs.getRequestedBy()).as("running it does not take it over").isEqualTo(ownerId);
+            Entry entry = onlyEntry("schedule.run_now");
+            assertThat(entry.actor()).isEqualTo(manager);
+            assertThat(entry.detail())
+                    .containsEntry("scheduleId", theirs.getId().toString())
+                    .containsEntry("triggeredBy", managerId.toString())
+                    .containsEntry("triggeredByKind", "USER")
+                    .containsEntry("owner", ownerId.toString())
+                    .containsKey("goalId");
+        }
+    }
 
-            Schedule noRequester = schedule("once");
-            noRequester.setRunAt(Instant.now().plusSeconds(60));
-            when(schedules.findByIdAndOrgId(noRequester.getId(), ORG)).thenReturn(Optional.of(noRequester));
+    @Nested
+    @DisplayName("the audit trail")
+    class AuditTrail {
 
-            service.runNow(ORG, noRequester.getId());
+        @Test
+        @DisplayName("every change writes an entry, as whoever made it, after it commits")
+        void everyChangeIsAudited() {
+            RequestContext.setActor(owner);
+            Schedule created = service.create(ORG, "Weekly digest", agentId, "Summarise the week", "daily at 9am");
+            stored(created);
+            when(goalService.createGoal(eq(ORG), any(), eq(true))).thenReturn(startedGoal());
 
-            assertThat(seen).hasSize(2);
-            assertThat(seen.get(1).isSystem()).isTrue();
+            service.update(ORG, created.getId(), "Weekly board digest", null, null, null, owner);
+            service.pause(ORG, created.getId(), owner);
+            service.resume(ORG, created.getId(), owner);
+            service.runNow(ORG, created.getId(), owner);
+            service.changeOwner(ORG, created.getId(), managerId, manager);
+            service.delete(ORG, created.getId(), manager);
+
+            assertThat(audited())
+                    .extracting(Entry::action)
+                    .containsExactly(
+                            "schedule.create",
+                            "schedule.update",
+                            "schedule.pause",
+                            "schedule.resume",
+                            "schedule.run_now",
+                            "schedule.owner_change",
+                            "schedule.delete");
+            assertThat(audited()).allSatisfy(entry -> {
+                assertThat(entry.resourceType()).isEqualTo("schedule");
+                assertThat(entry.resourceId()).isEqualTo(created.getId().toString());
+            });
+            Entry create = onlyEntry("schedule.create");
+            assertThat(create.actor()).isEqualTo(owner);
+            assertThat(create.detail())
+                    .containsEntry("agentId", agentId.toString())
+                    .containsEntry("instructionSha256", ScheduleService.sha256("Summarise the week"))
+                    .doesNotContainValue("Summarise the week");
+            assertThat(onlyEntry("schedule.delete").actor()).isEqualTo(manager);
+        }
+
+        @Test
+        @DisplayName("a refused change writes nothing")
+        void refusedChangeIsNotAudited() {
+            Schedule theirs = schedule("recurring");
+            stored(theirs);
+
+            assertDenied(() -> service.update(ORG, theirs.getId(), "Mine now", null, null, null, employee));
+
+            assertThat(audited()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("history")
+    class History {
+
+        @Test
+        @DisplayName("reads one page of a schedule's goals, after checking it is in this workspace")
+        void readsOnePage() {
+            Schedule existing = schedule("recurring");
+            stored(existing);
+            PageRequest page = PageRequest.of(1, 20);
+            when(scheduleGoals.findByOrgIdAndScheduleIdOrderByCreatedAtDesc(ORG, existing.getId(), page))
+                    .thenReturn(new PageImpl<>(List.of(startedGoal()), page, 21));
+
+            assertThat(service.runs(ORG, existing.getId(), page).getContent()).hasSize(1);
+
+            when(schedules.findByIdAndOrgId(any(), eq(ORG))).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.runs(ORG, UUID.randomUUID(), page))
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
         }
     }
 
@@ -308,6 +855,34 @@ class ScheduleServiceTest {
             // Advanced to the next real 9am occurrence from now, not left at the old due time.
             assertThat(due.getNextRunAt()).isAfter(Instant.now().minusSeconds(10));
             assertThat(due.isEnabled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("fires as the schedule's owner, or the platform when it has none")
+        void firesAsOwner() {
+            Schedule withOwner = schedule("recurring");
+            withOwner.setCron("0 0 9 * * *");
+            withOwner.setNextRunAt(Instant.parse("2026-09-29T00:00:00Z"));
+            Schedule legacy = schedule("recurring");
+            legacy.setCron("0 0 9 * * *");
+            legacy.setNextRunAt(Instant.parse("2026-09-29T00:00:00Z"));
+            legacy.setRequestedBy(null);
+            when(schedules.findDue(any(), any())).thenReturn(List.of(withOwner, legacy));
+            List<Actor> seen = new ArrayList<>();
+            List<UUID> requesters = new ArrayList<>();
+            when(goalService.createGoal(any(), any(), anyBoolean())).thenAnswer(call -> {
+                seen.add(RequestContext.actor().orElse(null));
+                requesters.add(call.<GoalService.NewGoal>getArgument(1).requestedBy());
+                return startedGoal();
+            });
+
+            service.sweepDue(50);
+
+            assertThat(seen).hasSize(2);
+            assertThat(seen.get(0).id()).isEqualTo(ownerId.toString());
+            assertThat(seen.get(0).kind()).isEqualTo(Actor.Kind.USER);
+            assertThat(seen.get(1).isSystem()).isTrue();
+            assertThat(requesters).containsExactly(ownerId, null);
         }
 
         @Test

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { CopyButton } from '../ui/CopyButton'
+import { sentAttachmentsOf } from '../../lib/attachments'
 import type { ChatMessage } from '../../lib/queries'
+import { AttachmentCards } from './AttachmentCards'
 
 const CLAMP_LINES = 12
 
@@ -17,6 +19,8 @@ export function UserBubble({
   onEditAndResend: (text: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const files = sentAttachmentsOf(message)
+  const hasText = message.content.trim().length > 0
   const lines = message.content.split('\n').length
   const clampable = lines > CLAMP_LINES
 
@@ -24,6 +28,8 @@ export function UserBubble({
     <div className="chat-bubble-row chat-bubble-row-user">
       <div className="stack" style={{ gap: 'var(--space-1)', alignItems: 'flex-end' }}>
         {!grouped && !author.isMe && <span className="caption chat-bubble-author">{author.name}</span>}
+        {files.length > 0 && <AttachmentCards attachments={files} align="end" />}
+        {hasText && (
         <div className={`chat-bubble chat-bubble-user${grouped ? ' chat-bubble-grouped' : ''}`}>
           <p
             style={{
@@ -48,9 +54,10 @@ export function UserBubble({
             </button>
           )}
         </div>
+        )}
         <div className="row chat-actions" style={{ gap: 'var(--space-3)' }}>
-          <CopyButton text={message.content} label="Copy" />
-          {author.isMe && (
+          {hasText && <CopyButton text={message.content} label="Copy" />}
+          {author.isMe && hasText && (
             <button type="button" className="link caption" onClick={() => onEditAndResend(message.content)}>
               Edit and send again
             </button>

@@ -1,10 +1,13 @@
-import { useMemo, useRef, useState } from 'react'
-import { Button, IconButton, PageHeader } from '../components/ui'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import type { ComponentProps } from 'react'
+import { Button, PageHeader } from '../components/ui'
 import { Collapsible, useCollapsed } from '../components/ui/Collapsible'
+import { MenuButton } from '../components/ui/Menu'
+import type { MenuEntry } from '../components/ui/Menu'
 import { QueryState } from '../components/ui/QueryState'
 import { ShortcutsDialog } from '../components/ui/ShortcutsDialog'
 import { TaskDialog } from '../components/ui/TaskDialog'
-import { AgentsStrip } from '../components/orchestrator/AgentsStrip'
+import { AgentsStrip, useAgentBulk } from '../components/orchestrator/AgentsStrip'
 import { OrchestratorBoard } from '../components/orchestrator/Board'
 import { diffCards, countChanged } from '../components/orchestrator/boardChanges'
 import { FlowMap, nodeStatus } from '../components/orchestrator/FlowMap'
@@ -15,6 +18,7 @@ import type { BoardColumn, CardStatusKey } from '../components/orchestrator/layo
 import { buildNeedsYou } from '../components/orchestrator/needsYou'
 import { NeedsYouInbox } from '../components/orchestrator/NeedsYouInbox'
 import { RunSheet } from '../components/orchestrator/RunSheet'
+import { withoutFinalStop } from '../components/run/traceModel'
 import { StopEverythingDialog } from '../components/orchestrator/StopEverythingDialog'
 import { SummaryStrip } from '../components/orchestrator/SummaryStrip'
 import { Swimlanes } from '../components/orchestrator/Swimlanes'
@@ -29,9 +33,10 @@ import { useNow } from '../lib/useNow'
 
 /*
  * Live coordination (B2): which agents are running, for whom, and what needs a person right now.
- * A summary row of filters, an inbox of what is waiting on somebody, a board of every goal, the
- * workforce as a system, and its timeline, all reading from one poll so nothing on the page ever
- * disagrees with anything else on it.
+ * The top of the page answers "what needs me and what is running": a one-line summary of filters
+ * and the inbox of what is waiting on somebody. Then the board of every goal, and the workforce
+ * (agents, map and timeline) folded behind one heading. Everything reads from one poll, so nothing
+ * on the page ever disagrees with anything else on it.
  */
 
 const WINDOW_TO_API: Record<string, BoardWindow> = { '1h': 'PT1H', '2h': 'PT2H', '6h': 'PT6H', '24h': 'PT24H', today: 'TODAY' }
@@ -64,6 +69,9 @@ export function Orchestrator() {
   const [frozen, setFrozen] = useState<Board | null>(null)
   const boardQuery = useBoard({ window: apiWindow, paused: !live })
   const latest = boardQuery.data
+  // Opened with Live updates saved as off: hold the first board that arrives, as switching it off
+  // during the visit would, rather than letting the polls (which carry on for Needs you) move it.
+  if (!live && frozen === null && latest) setFrozen(latest)
   const board = frozen ?? latest
 
   const setLive = (next: boolean) => {
@@ -112,7 +120,6 @@ function OrchestratorBody({
   apiWindowToken: string
 }) {
   const { search, navigate } = useRouter()
-  const now = useNow(1_000)
   const me = profile()?.userId ?? null
   const canStopAll = can('run:cancel')
   const canCreate = can('task:create')
@@ -156,9 +163,13 @@ function OrchestratorBody({
   const changedIds = live ? liveChangedIds : new Set<string>()
 
   // New "Needs you" items get announced once each, by id, the same way a card's column change
-  // does - compared against the previous live board rather than tracked with an effect.
+  // does - compared against the previous board rather than tracked with an effect. This keeps a
+  // watermark of its own: the live one stands still while updates are paused, so comparing with
+  // it would set state on every render, and React gives up with "Too many re-renders". The inbox
+  // reads the latest board even while the rest is paused, so its announcements carry on too.
+  const [lastNeedsBoard, setLastNeedsBoard] = useState<Board | null>(null)
   const [lastNeedsIds, setLastNeedsIds] = useState<ReadonlySet<string>>(new Set())
-  if (latest && latest !== lastLiveBoard) {
+  if (latest && latest !== lastNeedsBoard) {
     const everyone = buildNeedsYou(latest, { me, scope: 'everyone' })
     const ids = new Set(everyone.map((item) => `${item.kind}-${item.id}`))
     if (lastNeedsIds.size > 0) {
@@ -167,10 +178,15 @@ function OrchestratorBody({
           (item.kind === 'question' || item.kind === 'approval') && !lastNeedsIds.has(`${item.kind}-${item.id}`),
       )
       if (fresh) {
-        setLiveMessage(fresh.kind === 'question' ? `New question from ${fresh.title}.` : `New approval waiting: ${fresh.summary}.`)
+        // The summary is already in words (needsYou.ts); only its closing full stop is trimmed, so the
+        // announcement does not end in two.
+        setLiveMessage(
+          fresh.kind === 'question' ? `New question from ${fresh.title}.` : `New approval waiting: ${withoutFinalStop(fresh.summary)}.`,
+        )
       }
     }
     setLastNeedsIds(ids)
+    setLastNeedsBoard(latest)
   }
 
   const pendingChanges = frozen && latest ? countChanged(frozen, latest) : 0
@@ -183,7 +199,10 @@ function OrchestratorBody({
   useDocumentTitle(forMeCount > 0 ? `(${forMeCount}) Orchestrator` : 'Orchestrator')
 
   const setWindowToken = (token: string) => navigate(withParams(search, { window: token === '2h' ? null : token }), { replace: true, scroll: false })
-  const setSelectedAgentId = (agentId: string | null) => navigate(withParams(search, { agent: agentId }), { replace: true, scroll: false })
+  const setSelectedAgentId = useCallback(
+    (agentId: string | null) => navigate(withParams(search, { agent: agentId }), { replace: true, scroll: false }),
+    [navigate, search],
+  )
   const toggleStatus = (value: CardStatusKey) => {
     const next = new Set(status)
     if (next.has(value)) next.delete(value)
@@ -200,8 +219,11 @@ function OrchestratorBody({
     }
   }
 
-  const openGoal = (id: string, focusNext?: 'question' | 'approval') =>
-    navigate(withParams(search, { goal: id, run: null, focus: focusNext ?? null }), { scroll: false })
+  const openGoal = useCallback(
+    (id: string, focusNext?: 'question' | 'approval') =>
+      navigate(withParams(search, { goal: id, run: null, focus: focusNext ?? null }), { scroll: false }),
+    [navigate, search],
+  )
   const openRun = (id: string, focusNext?: 'question' | 'approval') =>
     navigate(withParams(search, { run: id, goal: null, focus: focusNext ?? null }), { scroll: false })
   const closeSheet = () => navigate(withParams(search, { goal: null, run: null, focus: null }), { replace: true, scroll: false })
@@ -232,46 +254,54 @@ function OrchestratorBody({
     true,
   )
 
-  const [workforceOpen, setWorkforceOpen] = useCollapsed('orc.sections.workforce', true)
-  const [timelineOpen, setTimelineOpen] = useCollapsed('orc.sections.timeline', true)
+  // Folded by default: the map and the timeline explain the workforce, they are not what needs a
+  // person. The choice is remembered, like the page's other folded sections.
+  const [workforceOpen, setWorkforceOpen] = useCollapsed('orc.sections.workforce', false)
+  const [timelineOpen, setTimelineOpen] = useCollapsed('orc.sections.timeline', false)
+  const agentBulk = useAgentBulk(board)
   const busyAgents = board.agents.filter((agent) => BUSY_NODE.has(nodeStatus(agent))).length
   const workforceSummary = `${formatCount(board.agents.length)} agents · ${busyAgents > 0 ? `${formatCount(busyAgents)} busy` : 'all idle'}`
 
   const nothingActive = board.stats.running + board.stats.queued + board.stats.waitingApproval + board.stats.waitingInput === 0
+
+  // Everything the header used to spell out as buttons, folded into one menu beside New goal.
+  // Stop everything stays reachable, last and in red, and still asks before it acts.
+  const headerMenu: MenuEntry[] = [
+    { id: 'live', label: 'Live updates', note: live ? 'On' : 'Paused', checked: live, onSelect: () => onSetLive(!live) },
+    { id: 'schedules', label: 'Schedules', onSelect: () => navigate('/schedules') },
+    { id: 'shortcuts', label: 'Keyboard shortcuts', onSelect: () => setShortcutsOpen(true) },
+    ...(canStopAll
+      ? ([
+          { id: 'sep', separator: true },
+          {
+            id: 'stop',
+            label: 'Stop everything',
+            ...(nothingActive ? { note: 'Nothing is running' } : {}),
+            danger: true,
+            disabled: nothingActive,
+            onSelect: () => setStopOpen(true),
+          },
+        ] satisfies MenuEntry[])
+      : []),
+  ]
+
+  // The map is the largest drawing on the page. Built once per board (and per selection), so a
+  // status message, an opened dialog or a filter elsewhere on the page does not redraw it.
+  const flowMap = useMemo(
+    () => <FlowMap board={board} selectedAgentId={selectedAgentId} onSelectAgent={setSelectedAgentId} onOpenGoal={openGoal} />,
+    [board, selectedAgentId, setSelectedAgentId, openGoal],
+  )
 
   return (
     <>
       <PageHeader
         eyebrow="Live coordination"
         title="Orchestrator"
-        description="Every agent at work right now, who asked for it, and what needs you."
+        description="Every agent at work right now, and what needs you."
         action={
           <>
-            <Button variant="outline" aria-pressed={live} onClick={() => onSetLive(!live)}>
-              {live && <span className="orc-live-dot" aria-hidden="true" />}
-              Live updates
-            </Button>
-            {canCreate && (
-              <Button
-                onClick={() => setTaskDialogOpen(true)}
-              >
-                New goal
-              </Button>
-            )}
-            <a className="button button-outline" href="/schedules">
-              Schedules
-            </a>
-            {canStopAll && (
-              <Button variant="danger" onClick={() => setStopOpen(true)} disabled={nothingActive}>
-                Stop everything
-              </Button>
-            )}
-            <IconButton label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <rect x="1.5" y="4" width="13" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M4.5 9.5h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-            </IconButton>
+            {canCreate && <Button onClick={() => setTaskDialogOpen(true)}>New goal</Button>}
+            <MenuButton label="More actions" trigger="icon" icon={<MoreIcon />} items={headerMenu} align="end" className="orc-header-menu" />
           </>
         }
         meta={<Freshness live={live} generatedAt={board.generatedAt} pendingChanges={pendingChanges} onShowLatest={onShowLatest} />}
@@ -290,14 +320,13 @@ function OrchestratorBody({
           status={status}
           onToggleStatus={toggleStatus}
           isToday={isToday}
-          onToggleDoneToday={() => toggleTodayTile('finished')}
           onToggleFailedToday={() => toggleTodayTile('failed')}
         />
 
         <NeedsYouInbox board={latest ?? board} onOpenGoal={openGoal} onOpenRun={openRun} />
 
         <section aria-labelledby="orc-goals-heading" ref={goalsSectionRef} className="orc-section">
-          <h2 id="orc-goals-heading" className="section-heading orc-section-title">
+          <h2 id="orc-goals-heading" className="orc-section-heading orc-section-title">
             Goals
           </h2>
           <OrchestratorBoard
@@ -311,44 +340,54 @@ function OrchestratorBody({
             changedIds={changedIds}
             onCardMoved={onCardMoved}
             onNewGoal={canCreate ? () => setTaskDialogOpen(true) : undefined}
+            doneToday={{
+              count: board.stats.goalsCompletedToday,
+              pressed: isToday && status.has('finished'),
+              onToggle: () => toggleTodayTile('finished'),
+            }}
           />
         </section>
 
-        <Collapsible title="Workforce" summary={workforceSummary} open={workforceOpen} onToggle={setWorkforceOpen} className="orc-collapsible">
+        <Collapsible
+          title="Workforce"
+          summary={workforceSummary}
+          open={workforceOpen}
+          onToggle={setWorkforceOpen}
+          className="orc-collapsible orc-workforce-section"
+          actions={agentBulk.actions}
+        >
           <div className="orc-workforce">
+            <AgentsStrip board={board} onOpenGoal={openGoal} bulk={agentBulk} />
             <div className="orc-panel orc-panel-map">
               <div className="orc-panel-head">
                 <h3 className="orc-panel-title">Live map</h3>
                 <span className="caption muted">Select an agent to show only its goals.</span>
               </div>
-              <FlowMap board={board} selectedAgentId={selectedAgentId} onSelectAgent={setSelectedAgentId} onOpenGoal={openGoal} />
+              {flowMap}
             </div>
-            <div className="orc-panel orc-panel-agents">
-              <AgentsStrip board={board} onOpenGoal={openGoal} />
-            </div>
-          </div>
-        </Collapsible>
-
-        <Collapsible
-          title="Timeline"
-          open={timelineOpen}
-          onToggle={setTimelineOpen}
-          className="orc-collapsible"
-          actions={
-            <label className="orc-range">
-              <span className="visually-hidden">Timeline range</span>
-              <select className="select orc-range-select" value={apiWindowToken} onChange={(event) => setWindowToken(event.target.value)}>
-                <option value="1h">Last hour</option>
-                <option value="2h">Last 2 hours</option>
-                <option value="6h">Last 6 hours</option>
-                <option value="24h">Last 24 hours</option>
-                <option value="today">Today</option>
-              </select>
-            </label>
-          }
-        >
-          <div className="orc-panel orc-panel-timeline">
-            <Swimlanes board={board} now={now} windowMinutes={board.windowMinutes} timezone={board.timezone} onOpenGoal={openGoal} />
+            <Collapsible
+              title="Timeline"
+              headingLevel="h3"
+              open={timelineOpen}
+              onToggle={setTimelineOpen}
+              className="orc-collapsible orc-collapsible-nested"
+              actions={
+                <label className="orc-range">
+                  <span className="visually-hidden">Timeline range</span>
+                  <select className="select orc-range-select" value={apiWindowToken} onChange={(event) => setWindowToken(event.target.value)}>
+                    <option value="1h">Last hour</option>
+                    <option value="2h">Last 2 hours</option>
+                    <option value="6h">Last 6 hours</option>
+                    <option value="24h">Last 24 hours</option>
+                    <option value="today">Today</option>
+                  </select>
+                </label>
+              }
+            >
+              <div className="orc-panel orc-panel-timeline">
+                <TimelineLanes board={board} windowMinutes={board.windowMinutes} timezone={board.timezone} onOpenGoal={openGoal} />
+              </div>
+            </Collapsible>
           </div>
         </Collapsible>
       </div>
@@ -377,8 +416,29 @@ function OrchestratorBody({
           }}
         />
       )}
+      {agentBulk.dialogs}
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} groups={shortcutGroups()} />
     </>
+  )
+}
+
+/**
+ * The timeline with the one-second clock it needs for the bars still running. The clock lives
+ * here rather than in the page, so each tick redraws only the lanes, not the board, the map and
+ * the inbox beside them.
+ */
+function TimelineLanes(props: Omit<ComponentProps<typeof Swimlanes>, 'now'>) {
+  const now = useNow(1_000)
+  return <Swimlanes {...props} now={now} />
+}
+
+function MoreIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
+    </svg>
   )
 }
 

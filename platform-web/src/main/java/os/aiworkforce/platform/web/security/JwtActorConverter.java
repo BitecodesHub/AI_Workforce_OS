@@ -22,10 +22,12 @@ import os.aiworkforce.platform.context.RequestContext;
  * Turns a verified token into the platform's {@link Actor} and publishes it to the request context.
  *
  * <p>The permission set travels inside the token, so a request costs no database round trip to
- * authorise. That trade has one consequence worth stating: a permission taken away is not felt
- * until the token expires. The {@code pv} claim closes that window - it carries the role's
- * permission version, and {@code PermissionVersionFilter} rejects a token whose version is behind
- * the role's current one, forcing a refresh.
+ * authorise. That trade has one consequence worth stating: a permission taken away, a role
+ * changed or a membership ended is not felt until the token is replaced. Nothing here checks a
+ * token against the role's current state - the {@code pv} claim carries the role's permission
+ * version, but no service compares it yet. The change takes effect at the next refresh, when
+ * identity reads the role and membership afresh, which is within the access-token lifetime
+ * ({@code aiwos.security.access-token-ttl}, five minutes).
  */
 @Component
 public class JwtActorConverter implements Converter<Jwt, AbstractAuthenticationToken> {

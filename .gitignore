@@ -22,6 +22,9 @@ test-results/
 .env
 .env.local
 .env.*.local
+# The one-click launcher's per-install secrets, and the temporary file it writes them through.
+infra/launcher/.env
+infra/launcher/.env.tmp
 *.pem
 *.p8
 !*.example

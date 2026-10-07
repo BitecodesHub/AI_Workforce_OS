@@ -60,6 +60,13 @@ import os.aiworkforce.platform.rbac.Permission;
  * agents can do it - and when nothing in the workspace fits, to the workspace's General Employee
  * rather than a dead end. A mention skips straight to routing, addressed to exactly the agents
  * named, unless one of them is paused, in which case nothing starts and a choice is offered instead.
+ *
+ * <p>Whoever takes a piece of work is given what the person wrote, as they wrote it: the planner
+ * and the rules only choose who works and name each part, and a chain's steps each get the whole
+ * request ahead of their own part. In front of it go the last answer in the conversation, in full,
+ * so that "now send it" has something to send, and the passages from the workspace's documents
+ * that bear on it - searched for every request that is work or names an agent, and recorded on the
+ * routing message so the answer can show them as its sources.
  */
 @Service
 public class CoordinatorService {
@@ -73,7 +80,23 @@ public class CoordinatorService {
     static final String NO_AGENTS_MESSAGE =
             "This workspace has no active agents. Add one in Agents, or resume General Employee.";
 
-    private static final int MAX_INSTRUCTION_CHARS = 10_000;
+    /**
+     * What a first step's instruction may come to once the person's request (up to 10,000
+     * characters, kept whole), their last answer (6,000), the document passages (about 6,000) and
+     * the older turns are all in it. Only the older turns give way to it.
+     */
+    static final int MAX_INSTRUCTION_CHARS = 25_000;
+    /** The most earlier turns fetched for a request; the thread keeps a handful of them. */
+    private static final int EARLIER_TURNS_WINDOW = 30;
+    /** What an agent is told when the request leans on documents and the search found none that cover it. */
+    public static final String NO_COVERAGE_NOTE =
+            "No workspace document covers this request; say so rather than stating company facts.";
+    /**
+     * What a documents message says about passages it does not show: the conversation is readable by
+     * the whole workspace, and a restricted source is not.
+     */
+    static final String RESTRICTED_NOTE =
+            " Some are in restricted documents, which only people who manage knowledge can read; search them in Knowledge.";
     private static final int MAX_COLLEAGUES = 6;
     private static final int MAX_COLLEAGUE_SUMMARY_CHARS = 120;
     private static final Pattern FIRST_SENTENCE = Pattern.compile("^(.+?[.!?])(?=\\s|$)");
@@ -92,6 +115,29 @@ public class CoordinatorService {
     private final GeneralEmployee generalEmployee;
     private final ChatAppender appender;
     private final TransactionTemplate tx;
+
+    /** Who may read which conversation; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ConversationAccess access;
+
+    /** Files attached to a message; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AttachmentService attachmentService;
+
+    /** The conversation, when the caller may read it; otherwise "not found", so a private thread is not confirmed. */
+    private Conversation visible(UUID orgId, UUID conversationId) {
+        Conversation conversation = conversations
+                .findByIdAndOrgId(conversationId, orgId)
+                .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
+        requireReadable(conversation);
+        return conversation;
+    }
+
+    private void requireReadable(Conversation conversation) {
+        if (access != null && !access.canRead(conversation, RequestContext.requireActor())) {
+            throw ApiException.notFound("conversation", conversation.getId());
+        }
+    }
 
     public CoordinatorService(
             Conversations conversations,
@@ -124,7 +170,40 @@ public class CoordinatorService {
         this.tx = new TransactionTemplate(transactionManager);
     }
 
-    private record Step(Agent agent, String instruction, boolean fallback) {}
+    /**
+     * One agent's share of a request. {@code part} is the coordinator's short label for it - the
+     * planner's sentence, a clause the rules matched, or the message itself - and names the task;
+     * what the agent reads is the person's own request, built in {@link #buildWorkDecision}.
+     */
+    private record Step(Agent agent, String part, boolean fallback) {}
+
+    /**
+     * What goes ahead of a request when an agent reads it: the conversation so far and the
+     * passages from the workspace's documents that bear on it.
+     *
+     * @param history the earlier turns of the conversation
+     * @param passages exactly the passages the agent is given - at most {@value #MAX_KNOWLEDGE_PASSAGES},
+     *     in the order it reads them, with the text it reads - and the ones shown as its sources
+     * @param uncovered whether the request leans on the workspace's documents and none covers it
+     */
+    record Background(ThreadContext.History history, List<Map<String, Object>> passages, boolean uncovered) {
+
+        static Background of(ThreadContext.History history) {
+            return new Background(history, List.of(), false);
+        }
+
+        Background withPassages(List<Map<String, Object>> used) {
+            return new Background(history, List.copyOf(used), false);
+        }
+
+        Background withoutCoverage() {
+            return new Background(history, List.of(), true);
+        }
+
+        boolean isEmpty() {
+            return history.isEmpty() && passages.isEmpty() && !uncovered;
+        }
+    }
 
     /** The goal id and the task a stop or retry from chat leaves it at. */
     public record GoalActionResult(UUID goalId, String status, UUID fromTaskId) {}
@@ -141,7 +220,8 @@ public class CoordinatorService {
             List<String> matched,
             String reason,
             List<Map<String, Object>> alternatives,
-            String requestText)
+            String requestText,
+            List<Map<String, Object>> passages)
             implements Decision {}
 
     private record ChoiceDecision(String reason, List<Map<String, Object>> alternatives, String requestText)
@@ -151,48 +231,109 @@ public class CoordinatorService {
 
     private record DocumentsDecision(String content, Map<String, Object> detail) implements Decision {}
 
-    private record ErrorDecision(String content) implements Decision {}
+    /**
+     * Something the coordinator could not do. {@code requestText} is what the person asked, kept on
+     * the error message so "Try again" can put the request back in the box rather than the error.
+     */
+    private record ErrorDecision(String content, String requestText) implements Decision {}
 
     // ---- Sending a message --------------------------------------------------------------------
 
     public List<ChatMessage> handleMessage(
             UUID orgId, UUID conversationId, String text, List<UUID> explicitAgentIds, String authorizationHeader) {
+        return handleMessage(orgId, conversationId, text, explicitAgentIds, List.of(), authorizationHeader);
+    }
+
+    /**
+     * As {@link #handleMessage(UUID, UUID, String, List, String)}, with files attached. The files are
+     * checked and tied to the message as it is written; the work it starts is routed knowing their
+     * names, and is given them (see {@link AttachmentPrompt}). A message with files is always work
+     * for an agent - never a schedule or a search of the workspace's documents - because the files
+     * are what it is about, and only an agent's run reads them.
+     */
+    public List<ChatMessage> handleMessage(
+            UUID orgId,
+            UUID conversationId,
+            String typed,
+            List<UUID> explicitAgentIds,
+            List<UUID> attachmentIds,
+            String authorizationHeader) {
         generalEmployee.ensure(orgId);
         UUID requesterId = requesterIdFromContext();
+        String written = typed == null ? "" : typed;
+        List<ChatAttachments.Row> files = new ArrayList<>();
 
         // Phase 1: record what the person said, so it is never lost to anything that follows.
         ChatMessage userMessage = inTransaction(() -> {
             Conversation c = appender.lock(orgId, conversationId)
                     .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
-            ChatMessage m = appender.append(c, "user", requesterId, null, "text", text, Map.of(), null);
+            requireReadable(c);
+            if (attachmentService != null && attachmentIds != null && !attachmentIds.isEmpty()) {
+                files.addAll(attachmentService.checkForSend(
+                        orgId, RequestContext.requireActor(), conversationId, attachmentIds));
+            }
+            if (written.isBlank() && files.isEmpty()) {
+                throw ApiException.validation("text", "Write a message or attach a file.");
+            }
+            Map<String, Object> detail = files.isEmpty()
+                    ? Map.of()
+                    : Map.of("attachments", AttachmentService.detailOf(files));
+            ChatMessage m = appender.append(c, "user", requesterId, null, "text", written, detail, null);
+            if (!files.isEmpty()) {
+                // Written now rather than at commit: the files are tied to the message by a key the
+                // database checks, so the message row must exist before the update that names it.
+                messages.flush();
+                attachmentService.bind(orgId, conversationId, m.getId(), files);
+            }
             if (c.getTitle().isBlank()) {
-                c.setTitle(truncateAtWord(text, 60));
+                c.setTitle(truncateAtWord(written.isBlank() ? files.getFirst().name() : written, 60));
             }
             return m;
         });
+        String text = AttachmentService.requestWithNames(written, files);
+        boolean withFiles = !files.isEmpty();
 
         // Phase 2: decide, with no transaction open - the planner can take up to 20 seconds and a
         // document search up to 10.
         Decision decision;
         try {
             decision = decide(
-                    orgId, conversationId, userMessage, text, explicitAgentIds, authorizationHeader, requesterId);
+                    orgId,
+                    conversationId,
+                    userMessage,
+                    text,
+                    explicitAgentIds,
+                    authorizationHeader,
+                    requesterId,
+                    withFiles);
         } catch (RuntimeException e) {
             log.warn("Could not decide what to do with a chat message in conversation {}", conversationId, e);
             decision = new ErrorDecision(
-                    "The coordinator could not decide who takes this. Try again, or mention an agent with @.");
+                    "The coordinator could not decide who takes this. Try again, or mention an agent with @.", text);
         }
 
         // Phase 3: act on the decision and record the replies.
         List<ChatMessage> created = new ArrayList<>(List.of(userMessage));
         Decision toApply = decision;
         try {
-            created.addAll(inTransaction(() -> apply(orgId, conversationId, toApply)));
+            created.addAll(inTransaction(() -> {
+                List<ChatMessage> replies = apply(orgId, conversationId, toApply);
+                if (withFiles) {
+                    // In the transaction that creates the goal: its first run starts only once this
+                    // commits, so it always finds its files.
+                    replies.stream()
+                            .map(ChatMessage::getGoalId)
+                            .filter(java.util.Objects::nonNull)
+                            .findFirst()
+                            .ifPresent(goalId -> attachmentService.linkGoal(orgId, userMessage.getId(), goalId));
+                }
+                return replies;
+            }));
         } catch (RuntimeException e) {
             log.error("Could not act on a chat message in conversation {}", conversationId, e);
             String problem = problemMessage(e);
-            created.addAll(
-                    inTransaction(() -> applySimple(orgId, conversationId, "error", problem, errorDetail(problem))));
+            created.addAll(inTransaction(
+                    () -> applySimple(orgId, conversationId, "error", problem, errorDetail(problem, text))));
         }
         return created;
     }
@@ -210,7 +351,8 @@ public class CoordinatorService {
             String text,
             List<UUID> explicitAgentIds,
             String authorizationHeader,
-            UUID requesterId) {
+            UUID requesterId,
+            boolean withFiles) {
         List<Agent> workspaceAgents = agents.findByOrgIdOrderByName(orgId);
         Agent fallback = generalEmployee.activeIn(workspaceAgents).orElse(null);
         Actor actor = RequestContext.actor().orElse(null);
@@ -228,7 +370,8 @@ public class CoordinatorService {
         }
 
         List<ChatMessage> chronological = earlierMessages(conversationId, userMessage);
-        String preamble = ThreadContext.preamble(chronological, nameMap(workspaceAgents));
+        Background background = Background.of(
+                ThreadContext.of(chronological, nameMap(workspaceAgents), Map.of(), requesterId));
 
         if (!chosen.isEmpty()) {
             Agent paused =
@@ -238,10 +381,10 @@ public class CoordinatorService {
                         + " is paused, so nothing was started. Resume it in Agents, or choose someone else.";
                 return new ChoiceDecision(reason, pausedMentionAlternatives(fallback, workspaceAgents), text);
             }
-            String instruction = mention.text().isBlank() ? text : mention.text();
-            List<Step> steps = chosen.stream()
-                    .map(agent -> new Step(agent, instruction, false))
-                    .toList();
+            // The label for each agent's task; what each reads is the message as it was written.
+            String part = mention.text().isBlank() ? text : mention.text();
+            List<Step> steps =
+                    chosen.stream().map(agent -> new Step(agent, part, false)).toList();
             return buildWorkDecision(
                     workspaceAgents,
                     requesterId,
@@ -252,7 +395,19 @@ public class CoordinatorService {
                     mentionReason(chosen),
                     List.of(),
                     text,
-                    preamble);
+                    withDocuments(background, orgId, part, chronological, authorizationHeader));
+        }
+
+        if (withFiles) {
+            return decideWork(
+                    orgId,
+                    workspaceAgents,
+                    fallback,
+                    requesterId,
+                    conversationId,
+                    text,
+                    chronological,
+                    withDocuments(background, orgId, text, chronological, authorizationHeader));
         }
 
         ZoneId zone = zones.zoneFor(orgId);
@@ -270,7 +425,8 @@ public class CoordinatorService {
                         zone,
                         now,
                         chronological,
-                        preamble);
+                        authorizationHeader,
+                        background);
             case DOCUMENTS ->
                 decideDocuments(
                         orgId,
@@ -282,7 +438,7 @@ public class CoordinatorService {
                         text,
                         authorizationHeader,
                         chronological,
-                        preamble);
+                        background);
             case WORK ->
                 looksInformational(text)
                         ? decideDocuments(
@@ -295,7 +451,7 @@ public class CoordinatorService {
                                 text,
                                 authorizationHeader,
                                 chronological,
-                                preamble)
+                                background)
                         : decideWork(
                                 orgId,
                                 workspaceAgents,
@@ -304,7 +460,7 @@ public class CoordinatorService {
                                 conversationId,
                                 text,
                                 chronological,
-                                preamble);
+                                withDocuments(background, orgId, text, chronological, authorizationHeader));
         };
     }
 
@@ -316,7 +472,7 @@ public class CoordinatorService {
             UUID conversationId,
             String text,
             List<ChatMessage> chronological,
-            String preamble) {
+            Background background) {
         ModelRouterPlanner.PlanHints hints =
                 new ModelRouterPlanner.PlanHints(lastAnswerAgent(chronological, workspaceAgents));
 
@@ -336,7 +492,7 @@ public class CoordinatorService {
                         modelPlan.get().reason(),
                         List.of(),
                         text,
-                        preamble);
+                        background);
             }
         }
 
@@ -367,7 +523,7 @@ public class CoordinatorService {
                                 + " is taking it.",
                         scoredList(result.alternatives()),
                         text,
-                        preamble);
+                        background);
             }
             return buildWorkDecision(
                     workspaceAgents,
@@ -379,7 +535,7 @@ public class CoordinatorService {
                     "No specialist matched this, so General Employee is taking it.",
                     scoredList(result.alternatives()),
                     text,
-                    preamble);
+                    background);
         }
         return buildWorkDecision(
                 workspaceAgents,
@@ -391,7 +547,7 @@ public class CoordinatorService {
                 ruleReason(result.steps()),
                 scoredList(result.alternatives()),
                 text,
-                preamble);
+                background);
     }
 
     private Decision decideSchedule(
@@ -404,21 +560,31 @@ public class CoordinatorService {
             ZoneId zone,
             Instant now,
             List<ChatMessage> chronological,
-            String preamble) {
+            String authorizationHeader,
+            Background background) {
         ParsedSchedule parsed = schedulePreviewer.tryParse(text, zone, now).orElse(null);
         if (parsed == null) {
             return decideWork(
-                    orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
+                    orgId,
+                    workspaceAgents,
+                    fallback,
+                    requesterId,
+                    conversationId,
+                    text,
+                    chronological,
+                    withDocuments(background, orgId, text, chronological, authorizationHeader));
         }
+        // What every run of the schedule is asked to do, exactly as the person wrote it apart from
+        // the timing phrase. Whatever the router writes below only names the schedule.
         String instruction = IntentDetector.withoutTimingPhrase(text);
 
         Agent agent;
-        String agentInstruction;
+        String label;
         Optional<ModelRouterPlanner.Plan> modelPlan = modelPlanner.plan(orgId, instruction, workspaceAgents);
         if (modelPlan.isPresent() && !modelPlan.get().steps().isEmpty()) {
             ModelRouterPlanner.PlannedStep first = modelPlan.get().steps().getFirst();
             agent = agentById(workspaceAgents, first.agentId());
-            agentInstruction = first.instruction();
+            label = first.instruction();
         } else {
             Map<UUID, List<String>> agentServers = toolServersByAgent(workspaceAgents);
             RuleRouter.Result result = RuleRouter.route(instruction, workspaceAgents, agentServers, fallback);
@@ -427,11 +593,18 @@ public class CoordinatorService {
             }
             RuleRouter.Routed first = result.steps().getFirst();
             agent = first.agent();
-            agentInstruction = first.instruction();
+            label = first.instruction();
         }
         if (agent == null) {
             return decideWork(
-                    orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
+                    orgId,
+                    workspaceAgents,
+                    fallback,
+                    requesterId,
+                    conversationId,
+                    text,
+                    chronological,
+                    withDocuments(background, orgId, text, chronological, authorizationHeader));
         }
 
         List<String> nextRuns = ScheduleParser.nextRuns(parsed, zone, now, 5).stream()
@@ -447,13 +620,18 @@ public class CoordinatorService {
         detail.put("nextRuns", nextRuns);
         detail.put("agentId", agent.getId().toString());
         detail.put("agentName", agent.getName());
-        detail.put("instruction", agentInstruction);
-        detail.put("name", truncateAtWord(agentInstruction, 60));
+        detail.put("instruction", instruction);
+        detail.put("name", truncateAtWord(label, 60));
 
         String content = "A schedule for " + agent.getName() + ": " + parsed.description();
         return new ScheduleDecision(content, detail);
     }
 
+    /**
+     * Answers a question about the workspace's documents: the passages that bear on it, quoted,
+     * when the person can only read; otherwise the request goes to whichever agent takes it, with
+     * those passages put in front of it, so the person gets an answer that cites them.
+     */
     private Decision decideDocuments(
             UUID orgId,
             UUID conversationId,
@@ -464,32 +642,29 @@ public class CoordinatorService {
             String text,
             String authorizationHeader,
             List<ChatMessage> chronological,
-            String preamble) {
+            Background background) {
         boolean canFallback = fallback != null && actor != null && actor.hasPermission(Permission.Codes.TASK_CREATE);
-        Optional<KnowledgeClient.SearchResult> result =
-                knowledge.search(orgId, searchQueryFor(text, chronological), authorizationHeader);
+        if (canFallback && PassageRelevance.isConversational(text)) {
+            return decideWork(
+                    orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, background);
+        }
+        String query = searchQueryFor(text, chronological);
+        Optional<KnowledgeClient.SearchResult> result = knowledge.search(orgId, query, authorizationHeader);
         if (result.isEmpty()) {
             // Search is down: treat the question as ordinary work, so the best agent answers it.
             if (canFallback) {
                 return decideWork(
-                        orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
+                        orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, background);
             }
-            return new ErrorDecision(DOCUMENTS_UNAVAILABLE);
+            return new ErrorDecision(DOCUMENTS_UNAVAILABLE, text);
         }
         KnowledgeClient.SearchResult search = result.get();
-        List<Map<String, Object>> passages =
-                search.passages().stream().map(this::passageDetail).toList();
-        if (!search.grounded() && canFallback) {
-            // No document answers it, so it is a question for the workforce: route it like any other
-            // request, so "how many customers do we have" can reach Customer Support rather than
-            // always landing on General Employee.
+        if (canFallback) {
+            // Either the documents answer it, and the passages go to whoever takes the request, or
+            // none does and it is a question for the workforce like any other - so "how many
+            // customers do we have" can reach Customer Support rather than always landing on General
+            // Employee.
             return decideWork(
-                    orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, preamble);
-        }
-        if (search.grounded() && canFallback) {
-            // The documents answer it: hand the passages to whoever takes the request, so the person
-            // gets an answer that cites them rather than a list of passages to ask about again.
-            Decision routed = decideWork(
                     orgId,
                     workspaceAgents,
                     fallback,
@@ -497,34 +672,76 @@ public class CoordinatorService {
                     conversationId,
                     text,
                     chronological,
-                    withKnowledge(preamble, passages));
-            if (routed instanceof WorkDecision work) {
-                String titles = passages.stream()
-                        .map(passage -> String.valueOf(passage.get("documentTitle")))
-                        .distinct()
-                        .limit(3)
-                        .collect(Collectors.joining(", "));
-                int used = Math.min(passages.size(), MAX_KNOWLEDGE_PASSAGES);
-                String found = "Found " + used + (used == 1 ? " passage" : " passages") + " in " + titles + ". ";
-                return new WorkDecision(
-                        work.spec(),
-                        work.steps(),
-                        work.mode(),
-                        work.matched(),
-                        found + work.reason(),
-                        work.alternatives(),
-                        work.requestText());
-            }
-            return routed;
+                    documentsBackground(background, text, query, search));
         }
+        // What is stored is read by everyone in the conversation, so a passage from a restricted
+        // source is counted here and never kept: its text and its title stay with the people who
+        // may search that source.
+        List<KnowledgeClient.Passage> relevant = PassageRelevance.relevant(query, search.passages());
+        List<Map<String, Object>> passages = relevant.stream()
+                .filter(passage -> !passage.restricted())
+                .map(passage -> passageDetail(passage, Integer.MAX_VALUE))
+                .toList();
+        int hidden = relevant.size() - passages.size();
+        boolean grounded = search.grounded() && !passages.isEmpty();
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("query", text);
-        detail.put("grounded", search.grounded());
+        detail.put("grounded", grounded);
         detail.put("passages", passages);
-        String content = search.grounded()
-                ? "Found " + passages.size() + " passage(s) that may help."
-                : "No document on file supports an answer to this.";
+        if (search.degraded()) {
+            detail.put("degraded", true);
+        }
+        String content;
+        if (grounded) {
+            content = "Found " + passages.size() + " passage(s) that may help." + (hidden > 0 ? RESTRICTED_NOTE : "");
+        } else if (search.grounded() && hidden > 0) {
+            content = "Found " + hidden + " passage(s) in restricted documents." + RESTRICTED_NOTE;
+        } else {
+            content = "No document on file supports an answer to this.";
+        }
         return new DocumentsDecision(content, detail);
+    }
+
+    /**
+     * The background with the workspace's documents searched for what bears on a piece of work, so
+     * that an agent given "Draft a reply using our refund policy" reads the policy rather than
+     * inventing one. A search that cannot run leaves the work to go ahead without passages.
+     */
+    private Background withDocuments(
+            Background background, UUID orgId, String text, List<ChatMessage> chronological, String authorization) {
+        if (PassageRelevance.isConversational(text)) {
+            // About the agent, a greeting or thanks: no document is what it asks for.
+            return background;
+        }
+        String query = searchQueryFor(text, chronological);
+        Optional<KnowledgeClient.SearchResult> result = knowledge.search(orgId, query, authorization);
+        return result.map(search -> documentsBackground(background, text, query, search))
+                .orElse(background);
+    }
+
+    /**
+     * What a search adds to the background: the passages when it was grounded, otherwise - when the
+     * request leans on documents - the note that none covers it, so the agent says so rather than
+     * stating company facts it would have to make up.
+     */
+    private static Background documentsBackground(
+            Background background, String text, String query, KnowledgeClient.SearchResult search) {
+        List<KnowledgeClient.Passage> relevant = search.grounded() ? PassageRelevance.relevant(query, search.passages()) : List.of();
+        if (!relevant.isEmpty()) {
+            return background.withPassages(usedPassages(relevant));
+        }
+        return IntentDetector.refersToDocuments(text) ? background.withoutCoverage() : background;
+    }
+
+    /**
+     * The passages an agent is given: the best few, with the text it reads. One list, shared with
+     * {@link #withKnowledge}, so what is recorded as its sources is what it was given.
+     */
+    private static List<Map<String, Object>> usedPassages(List<KnowledgeClient.Passage> found) {
+        return found.stream()
+                .limit(MAX_KNOWLEDGE_PASSAGES)
+                .map(passage -> passageDetail(passage, MAX_KNOWLEDGE_PASSAGE_CHARS))
+                .toList();
     }
 
     /** Builds and validates the goal a piece of routed work would become, without creating it yet. */
@@ -538,17 +755,21 @@ public class CoordinatorService {
             String reason,
             List<Map<String, Object>> alternatives,
             String requestText,
-            String preamble) {
+            Background background) {
+        // Every agent reads what the person wrote. The planner only chooses who does what, so its
+        // sentence is a label: for a chain it says which part of the request is this agent's.
+        boolean labelledParts = steps.size() > 1 && !"mention".equals(mode);
         List<GoalService.NewTask> tasks = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
             Step step = steps.get(i);
-            String instruction = i == 0 ? withPreamble(preamble, step.instruction()) : step.instruction();
+            String body = labelledParts ? GoalService.chainStepInstruction(requestText, step.part()) : requestText;
+            String instruction = i == 0 ? withPreamble(background, step.agent().getId(), body) : body;
             if (step.fallback() || step.agent().isFallback()) {
                 instruction = instruction + colleagueBlock(workspaceAgents, step.agent());
             }
             tasks.add(new GoalService.NewTask(
                     step.agent().getId(),
-                    truncateAtWord(step.instruction(), 60),
+                    truncateAtWord(step.part(), 60),
                     instruction,
                     i == 0 ? List.of() : List.of(i - 1)));
         }
@@ -557,9 +778,50 @@ public class CoordinatorService {
         try {
             goalService.validate(spec);
         } catch (ApiException refused) {
-            return new ErrorDecision(problemMessage(refused));
+            return new ErrorDecision(problemMessage(refused), requestText);
         }
-        return new WorkDecision(spec, steps, mode, matched, reason, alternatives, requestText);
+        return new WorkDecision(
+                spec,
+                steps,
+                mode,
+                matched,
+                foundSentence(background.passages()) + reason,
+                alternatives,
+                requestText,
+                background.passages());
+    }
+
+    /**
+     * "Found 2 passages in Handbook, Policy. " ahead of a routing reason, or nothing when no passage was used.
+     *
+     * <p>Read by the whole conversation, so a passage from a restricted source is counted but never
+     * named: "and 1 from restricted documents" says nothing about which.
+     */
+    private static String foundSentence(List<Map<String, Object>> passages) {
+        if (passages.isEmpty()) {
+            return "";
+        }
+        List<Map<String, Object>> open = openPassages(passages);
+        int hidden = passages.size() - open.size();
+        String elsewhere = hidden == 0 ? "" : hidden + " from restricted documents";
+        if (open.isEmpty()) {
+            return "Found " + hidden + (hidden == 1 ? " passage" : " passages") + " in restricted documents. ";
+        }
+        String titles = open.stream()
+                .map(passage -> String.valueOf(passage.get("documentTitle")))
+                .distinct()
+                .limit(3)
+                .collect(Collectors.joining(", "));
+        int used = open.size();
+        return "Found " + used + (used == 1 ? " passage" : " passages") + " in " + titles
+                + (elsewhere.isEmpty() ? "" : " and " + elsewhere) + ". ";
+    }
+
+    /** The passages everyone in the workspace may read: those not from a restricted source. */
+    static List<Map<String, Object>> openPassages(List<Map<String, Object>> passages) {
+        return passages.stream()
+                .filter(passage -> !Boolean.TRUE.equals(passage.get("restricted")))
+                .toList();
     }
 
     // ---- Acting on a decision ------------------------------------------------------------------
@@ -571,7 +833,8 @@ public class CoordinatorService {
             case ScheduleDecision s ->
                 applySimple(orgId, conversationId, "schedule_suggestion", s.content(), s.detail());
             case DocumentsDecision d -> applySimple(orgId, conversationId, "documents", d.content(), d.detail());
-            case ErrorDecision e -> applySimple(orgId, conversationId, "error", e.content(), errorDetail(e.content()));
+            case ErrorDecision e ->
+                applySimple(orgId, conversationId, "error", e.content(), errorDetail(e.content(), e.requestText()));
         };
     }
 
@@ -585,7 +848,7 @@ public class CoordinatorService {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", step.agent().getId().toString());
                     m.put("name", step.agent().getName());
-                    m.put("instruction", step.instruction());
+                    m.put("instruction", step.part());
                     return m;
                 })
                 .toList();
@@ -597,6 +860,7 @@ public class CoordinatorService {
         routingDetail.put("alternatives", decision.alternatives());
         routingDetail.put("needsChoice", false);
         routingDetail.put("requestText", decision.requestText());
+        putSources(routingDetail, decision.passages());
 
         List<ChatMessage> created = new ArrayList<>();
         created.add(appender.append(
@@ -636,22 +900,75 @@ public class CoordinatorService {
         return List.of(appender.append(c, "coordinator", null, null, kind, content, detail, null));
     }
 
-    private Map<String, Object> passageDetail(KnowledgeClient.Passage passage) {
+    /**
+     * One passage as a message carries it. {@code maxContentChars} is how much of its text: all of
+     * it for the card that lists what matched, and what the agent reads - cut at a word - for the
+     * sources shown under its answer, so the two can be compared line for line.
+     */
+    private static Map<String, Object> passageDetail(KnowledgeClient.Passage passage, int maxContentChars) {
         Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("chunkId", passage.chunkId().toString());
-        detail.put("documentId", passage.documentId().toString());
+        detail.put("chunkId", passage.chunkId() == null ? null : passage.chunkId().toString());
+        detail.put("documentId", passage.documentId() == null ? null : passage.documentId().toString());
+        detail.put("sourceId", passage.sourceId() == null ? null : passage.sourceId().toString());
         detail.put("documentTitle", passage.documentTitle());
         detail.put("uri", passage.uri());
         detail.put("pageNumber", passage.pageNumber());
         detail.put("heading", passage.heading());
-        detail.put("content", passage.content());
+        String content = passage.content() == null ? "" : passage.content();
+        boolean whole = maxContentChars == Integer.MAX_VALUE;
+        detail.put("content", whole ? content : truncateAtWord(content, maxContentChars));
         detail.put("score", passage.score());
+        if (passage.restricted()) {
+            // Marks it for whatever records the passage where others can read: the agent gets the
+            // text, the conversation gets only that it was used.
+            detail.put("restricted", true);
+        }
         return detail;
     }
 
-    private static Map<String, Object> errorDetail(String reason) {
+    /**
+     * Records the passages an agent was given on a routing message, so its answer can show them as
+     * its sources.
+     *
+     * <p>Only the open ones. A routing message is read by everyone in the conversation, and the
+     * agent has already had the restricted passages' text in its own instruction, which is as far
+     * as that text goes: nothing readable by people who cannot search the source is written here.
+     */
+    private static void putSources(Map<String, Object> routingDetail, List<Map<String, Object>> passages) {
+        List<Map<String, Object>> open = openPassages(passages);
+        if (open.isEmpty()) {
+            return;
+        }
+        routingDetail.put("grounded", true);
+        routingDetail.put("passages", open);
+    }
+
+    /** The passages a routing message recorded, as the maps they were stored as; none for a message with no sources. */
+    private static List<Map<String, Object>> passagesIn(Map<String, Object> detail) {
+        if (detail == null || !(detail.get("passages") instanceof List<?> stored)) {
+            return List.of();
+        }
+        List<Map<String, Object>> passages = new ArrayList<>();
+        for (Object item : stored) {
+            if (passages.size() >= MAX_KNOWLEDGE_PASSAGES) {
+                break;
+            }
+            if (item instanceof Map<?, ?> map) {
+                Map<String, Object> copy = new LinkedHashMap<>();
+                map.forEach((key, value) -> copy.put(String.valueOf(key), value));
+                passages.add(copy);
+            }
+        }
+        return passages;
+    }
+
+    /** An error message's detail: the reason, and the person's own request for "Try again" to restore. */
+    private static Map<String, Object> errorDetail(String reason, String requestText) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("reason", reason);
+        if (requestText != null && !requestText.isBlank()) {
+            detail.put("requestText", requestText);
+        }
         return detail;
     }
 
@@ -682,9 +999,7 @@ public class CoordinatorService {
      */
     @Transactional
     public List<ChatMessage> reroute(UUID orgId, UUID conversationId, UUID messageId, UUID chosenAgentId) {
-        conversations
-                .findByIdAndOrgId(conversationId, orgId)
-                .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
+        visible(orgId, conversationId);
         ChatMessage target = messages.findByIdAndConversationId(messageId, conversationId)
                 .orElseThrow(() -> ApiException.notFound("message", messageId));
         if (!"routing".equals(target.getKind())) {
@@ -727,9 +1042,17 @@ public class CoordinatorService {
                 : originalInstructionFor(conversationId, target);
 
         List<Agent> workspaceAgents = agents.findByOrgIdOrderByName(orgId);
-        List<ChatMessage> chronological = earlierMessages(conversationId, target);
-        String preamble = ThreadContext.preamble(chronological, nameMap(workspaceAgents));
-        String instruction = withPreamble(preamble, requestText);
+        // The request being sent again sits in the thread just above its routing message; it is
+        // given once below as the request, not a second time as an earlier turn.
+        List<ChatMessage> chronological = withoutRequest(earlierMessages(conversationId, target), requestText);
+        // The same background the first routing had: the thread so far, and the passages the agent
+        // that was first given this request was given, since the new one is answering the same thing.
+        List<Map<String, Object>> passages = passagesIn(target.getDetail());
+        Background background = new Background(
+                ThreadContext.of(chronological, nameMap(workspaceAgents), Map.of(), requesterIdFromContext()),
+                passages,
+                false);
+        String instruction = withPreamble(background, agent.getId(), requestText);
 
         GoalService.NewTask task =
                 new GoalService.NewTask(agent.getId(), truncateAtWord(requestText, 60), instruction, List.of());
@@ -743,6 +1066,10 @@ public class CoordinatorService {
                 List.of(task));
         goalService.validate(spec);
         Goal goal = goalService.createGoal(orgId, spec, true);
+        if (attachmentService != null) {
+            // The files the request was sent with go with it to the agent now taking it.
+            attachmentService.followReroute(orgId, conversationId, target.getGoalId(), target.getPosition(), goal.getId());
+        }
 
         Conversation c = appender.lock(orgId, conversationId)
                 .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
@@ -765,6 +1092,7 @@ public class CoordinatorService {
         routingDetail.put("needsChoice", false);
         routingDetail.put("rerouteOf", messageId.toString());
         routingDetail.put("requestText", requestText);
+        putSources(routingDetail, passages);
 
         List<ChatMessage> created = new ArrayList<>();
         created.add(appender.append(c, "coordinator", null, null, "routing", reason, routingDetail, goal.getId()));
@@ -819,32 +1147,18 @@ public class CoordinatorService {
 
     @Transactional
     public GoalActionResult stopGoal(UUID orgId, UUID conversationId, UUID goalId) {
-        conversations
-                .findByIdAndOrgId(conversationId, orgId)
-                .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
+        visible(orgId, conversationId);
         Goal goal = goalForConversation(orgId, conversationId, goalId);
-        Actor actor = RequestContext.requireActor();
-        boolean mine = goal.getRequestedBy() != null
-                && goal.getRequestedBy().toString().equals(actor.humanId());
-        if (!mine && !actor.hasPermission(Permission.Codes.TASK_CANCEL)) {
-            throw new ApiException(
-                            ErrorCode.PERMISSION_DENIED,
-                            "Only the person who asked for this work, or "
-                                    + "someone who can cancel work, can stop it.")
-                    .with("requiredPermission", Permission.Codes.TASK_CANCEL);
-        }
-        if (goal.isFinished()) {
-            throw new ApiException(ErrorCode.CONFLICT, "That work has already finished.");
-        }
+        // The same rule the goal endpoint and the board follow: the person who asked for the work
+        // or someone who can cancel work, and nothing that has already finished.
+        goalService.requireCanStop(goal, RequestContext.requireActor());
         goalService.cancel(orgId, goalId, "Stopped from the chat.");
         return new GoalActionResult(goalId, "cancelled", null);
     }
 
     @Transactional
     public GoalActionResult retryGoal(UUID orgId, UUID conversationId, UUID goalId) {
-        conversations
-                .findByIdAndOrgId(conversationId, orgId)
-                .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
+        visible(orgId, conversationId);
         goalForConversation(orgId, conversationId, goalId);
         Actor actor = RequestContext.requireActor();
         GoalService.RetryResult result = goalService.retry(orgId, goalId, actor);
@@ -866,9 +1180,7 @@ public class CoordinatorService {
     @Transactional
     public List<ChatMessage> answerFromDocuments(
             UUID orgId, UUID conversationId, UUID messageId, UUID explicitAgentId) {
-        conversations
-                .findByIdAndOrgId(conversationId, orgId)
-                .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
+        visible(orgId, conversationId);
         ChatMessage target = messages.findByIdAndConversationId(messageId, conversationId)
                 .orElseThrow(() -> ApiException.notFound("message", messageId));
         Object passagesRaw = target.getDetail().get("passages");
@@ -957,12 +1269,29 @@ public class CoordinatorService {
 
     // ---- Small helpers -------------------------------------------------------------------------
 
+    /** The turns - people's messages and agents' answers - before a message, oldest first. */
     private List<ChatMessage> earlierMessages(UUID conversationId, ChatMessage after) {
-        List<ChatMessage> newestFirst = messages.findByConversationIdAndPositionLessThanOrderByPositionDesc(
-                conversationId, after.getPosition(), PageRequest.of(0, 12));
+        List<ChatMessage> newestFirst = messages.findEarlierTurns(
+                conversationId, after.getPosition(), PageRequest.of(0, EARLIER_TURNS_WINDOW));
         List<ChatMessage> chronological = new ArrayList<>(newestFirst);
         Collections.reverse(chronological);
         return chronological;
+    }
+
+    /** The turns without the newest person's message that says exactly {@code request}, when there is one. */
+    private static List<ChatMessage> withoutRequest(List<ChatMessage> chronological, String request) {
+        List<ChatMessage> kept = new ArrayList<>(chronological);
+        for (int i = kept.size() - 1; i >= 0; i--) {
+            ChatMessage turn = kept.get(i);
+            if ("user".equals(turn.getAuthorKind())
+                    && "text".equals(turn.getKind())
+                    && turn.getContent() != null
+                    && turn.getContent().strip().equals(request.strip())) {
+                kept.remove(i);
+                break;
+            }
+        }
+        return kept;
     }
 
     private static Map<UUID, String> nameMap(List<Agent> workspaceAgents) {
@@ -1027,25 +1356,31 @@ public class CoordinatorService {
     /**
      * Puts the passages that answer a request ahead of it, in the same shape as the thread
      * preamble: context first, and a closing "Request:" line before the request itself.
+     *
+     * <p>The passages are the list stored as the answer's sources, so what the person is shown is
+     * what the agent read. Each is a numbered title line, then its text on one line, which is how a
+     * later step of a chain finds out which passages the first one was given.
      */
     static String withKnowledge(String preamble, List<Map<String, Object>> passages) {
-        StringBuilder block = new StringBuilder(
-                "Passages from the workspace's documents that bear on this request. Base your answer on "
-                        + "them, cite each point with its number and document title, for example [2] Leave "
-                        + "policy, and say plainly what they do not cover:\n");
+        StringBuilder block = new StringBuilder(GoalService.PASSAGES_HEADING + " " + DocumentsPrompt.UNTRUSTED_RULE
+                + " " + DocumentsPrompt.CITATION_RULE + "\n");
         int index = 1;
         for (Map<String, Object> passage : passages) {
             if (index > MAX_KNOWLEDGE_PASSAGES) {
                 break;
             }
-            block.append('[').append(index).append("] ").append(passage.get("documentTitle"));
+            String title = DocumentsPrompt.withoutLookAlikes(
+                    truncateAtWord(String.valueOf(passage.get("documentTitle")), 200));
+            block.append('[').append(index).append("] ").append(title);
             Object page = passage.get("pageNumber");
             if (page != null) {
                 block.append(", page ").append(page);
             }
             String content = String.valueOf(passage.getOrDefault("content", ""));
+            // The title line stays as it was - the goal's later steps read the passage titles from
+            // it - and the text, still on the one line after it, sits between the passage's tags.
             block.append('\n')
-                    .append(truncateAtWord(content, MAX_KNOWLEDGE_PASSAGE_CHARS))
+                    .append(DocumentsPrompt.wrap(index, title, truncateAtWord(content, MAX_KNOWLEDGE_PASSAGE_CHARS)))
                     .append("\n\n");
             index++;
         }
@@ -1053,8 +1388,8 @@ public class CoordinatorService {
         return existing.isEmpty() ? block.append("Request:\n").toString() : block + existing;
     }
 
-    private static final int MAX_KNOWLEDGE_PASSAGES = 6;
-    private static final int MAX_KNOWLEDGE_PASSAGE_CHARS = 900;
+    static final int MAX_KNOWLEDGE_PASSAGES = 6;
+    static final int MAX_KNOWLEDGE_PASSAGE_CHARS = 900;
 
     /** Words that point back at earlier work rather than naming new work. */
     private static final Pattern FOLLOW_UP = Pattern.compile(
@@ -1072,19 +1407,42 @@ public class CoordinatorService {
         return trimmed.split("\\s+").length <= 12 && FOLLOW_UP.matcher(trimmed).find();
     }
 
-    /** Prepends the earlier-turns preamble to an instruction, trimming the preamble first if the combined text is too long. */
-    private static String withPreamble(String preamble, String instruction) {
-        if (preamble == null || preamble.isEmpty()) {
-            return instruction;
+    /**
+     * Puts everything an agent needs to know ahead of a request: the passages that bear on it, then
+     * the conversation so far, then a closing "Request:" line. The request itself is never cut.
+     *
+     * <p>When the whole comes to more than {@value #MAX_INSTRUCTION_CHARS} characters it is the
+     * older turns that give way, oldest first. The header, the agent's last reply, the closing
+     * line and every passage stay whole: a reply that is cut short here would be "sent" or
+     * "shortened" as though it were all there was.
+     *
+     * @param agentId the agent that reads it, whose own last reply is "Your last reply"
+     */
+    static String withPreamble(Background background, UUID agentId, String instruction) {
+        String body = instruction == null ? "" : instruction;
+        if (background == null || background.isEmpty()) {
+            return body;
         }
-        String combined = preamble + instruction;
-        if (combined.length() <= MAX_INSTRUCTION_CHARS) {
-            return combined;
+        String front = "";
+        for (int dropped = 0; dropped <= background.history().droppable(); dropped++) {
+            front = front(background, agentId, dropped);
+            if (front.length() + body.length() <= MAX_INSTRUCTION_CHARS) {
+                break;
+            }
         }
-        int allowed = Math.max(0, MAX_INSTRUCTION_CHARS - instruction.length());
-        String trimmedPreamble =
-                preamble.length() <= allowed ? preamble : preamble.substring(preamble.length() - allowed);
-        return trimmedPreamble + instruction;
+        return front + body;
+    }
+
+    /** What goes ahead of the request, with the {@code dropped} oldest turns of the conversation left out. */
+    private static String front(Background background, UUID agentId, int dropped) {
+        String thread = background.history().render(agentId, dropped);
+        if (!background.passages().isEmpty()) {
+            return withKnowledge(thread, background.passages());
+        }
+        if (background.uncovered()) {
+            return NO_COVERAGE_NOTE + "\n\n" + (thread.isEmpty() ? "Request:\n" : thread);
+        }
+        return thread;
     }
 
     private String colleagueBlock(List<Agent> workspaceAgents, Agent fallbackAgent) {

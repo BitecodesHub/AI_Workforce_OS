@@ -97,6 +97,12 @@ server:
 
 aiwos:
   service-name: integrations
+  integrations:
+    oauth:
+      # The address people open the console at. Each provider's app is registered with
+      # <this>/api/oauth/callback as its redirect address, and the browser comes back to
+      # <this>/connectors after the consent screen.
+      public-base-url: ${AIWOS_PUBLIC_BASE_URL:http://localhost:5173}
 
 springdoc:
   api-docs:

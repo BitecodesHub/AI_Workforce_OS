@@ -29,6 +29,22 @@ public class Conversation extends OrgScopedEntity {
     @Column(name = "last_message_preview", nullable = false, columnDefinition = "text")
     private String lastMessagePreview = "";
 
+    /** {@code workspace}: everyone with Chat access reads it. {@code private}: its creator and the people added. */
+    @Column(nullable = false, columnDefinition = "text")
+    private String visibility = "workspace";
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = "private".equals(visibility) ? "private" : "workspace";
+    }
+
+    public boolean isPrivate() {
+        return "private".equals(visibility);
+    }
+
     public String getTitle() {
         return title;
     }

@@ -1,8 +1,12 @@
 package os.aiworkforce.identity.web;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
@@ -26,11 +30,13 @@ import org.springframework.web.bind.annotation.RestController;
 import os.aiworkforce.identity.domain.Role;
 import os.aiworkforce.identity.repository.Memberships;
 import os.aiworkforce.identity.repository.Roles;
+import os.aiworkforce.identity.service.GrantGuard;
 import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
 import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
+import os.aiworkforce.platform.web.audit.AuditClient;
 
 /**
  * Roles and the permissions they carry.
@@ -38,6 +44,14 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
  * <p>This is where the platform's claim that authorisation is data rather than code is made good.
  * A workspace can compose its own roles from the registered permission codes, and the change
  * takes effect on the next token - no deployment, no restart.
+ *
+ * <p>Composing a role is granting in advance, so it follows the same rule as granting one
+ * ({@link GrantGuard}): a role may only carry permissions its author holds. Otherwise anyone with
+ * role:create could build a role with everything in it and then hand it out.
+ *
+ * <p>Creating, changing and deleting a role are written to the audit log with the permissions
+ * involved - for a change, the permissions added and removed - because a role's contents decide what
+ * everyone who holds it can do.
  */
 @RestController
 @RequestMapping("/api/roles")
@@ -46,10 +60,14 @@ public class RoleController {
 
     private final Roles roles;
     private final Memberships memberships;
+    private final GrantGuard guard;
+    private final AuditClient audit;
 
-    public RoleController(Roles roles, Memberships memberships) {
+    public RoleController(Roles roles, Memberships memberships, GrantGuard guard, AuditClient audit) {
         this.roles = roles;
         this.memberships = memberships;
+        this.guard = guard;
+        this.audit = audit;
     }
 
     public record RoleView(
@@ -87,8 +105,10 @@ public class RoleController {
     @Operation(summary = "Every permission a role may be given")
     public List<PermissionView> permissions() {
         // Served from the build's registry rather than the table: these are the codes the running
-        // code actually checks, which is the only list that means anything.
-        return Permission.ALL.stream()
+        // code actually checks, which is the only list that means anything. Planned codes are
+        // left out for the same reason - nothing checks them yet, so a checkbox for one would
+        // grant nothing.
+        return Permission.available().stream()
                 .map(p -> new PermissionView(p.code(), p.resource(), p.action(), p.description(), p.administrative()))
                 .toList();
     }
@@ -101,6 +121,7 @@ public class RoleController {
     public RoleView create(@Valid @RequestBody SaveRoleRequest request) {
         UUID orgId = UUID.fromString(RequestContext.requireOrgId());
         validate(request.permissions());
+        guard.assertCanCompose(guard.caller(RequestContext.requireActor()), request.permissions());
 
         // Looked up as it will be stored, so " Manager" cannot slip past the check for "Manager".
         String name = request.name().strip();
@@ -116,7 +137,12 @@ public class RoleController {
                 request.description() == null ? "" : request.description().strip());
         role.setSystem(false);
         role.setPermissions(new LinkedHashSet<>(request.permissions()));
-        return toView(roles.save(role));
+        Role saved = roles.save(role);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("name", saved.getName());
+        detail.put("permissions", new ArrayList<>(new TreeSet<>(saved.getPermissions())));
+        audit.record("role.create", "role", saved.getId().toString(), "succeeded", detail);
+        return toView(saved);
     }
 
     @PutMapping("/{roleId}")
@@ -137,6 +163,7 @@ public class RoleController {
             throw new ApiException(ErrorCode.ORGANISATION_MISMATCH);
         }
         validate(request.permissions());
+        guardEdit(guard.caller(RequestContext.requireActor()), role, request.permissions());
 
         // Renaming onto a name another role already uses is refused the same way creating one
         // is, rather than left to the unique index to reject as a bare conflict.
@@ -149,13 +176,28 @@ public class RoleController {
             throw new ApiException(ErrorCode.ALREADY_EXISTS, "A role with that name already exists.");
         }
 
+        String previousName = role.getName();
+        Set<String> before = new TreeSet<>(role.getPermissions());
         role.setName(name);
         role.setDescription(
                 request.description() == null ? "" : request.description().strip());
-        // replacePermissions bumps the permission version, which invalidates every token already
-        // issued under this role. That is what makes narrowing a role take effect at once.
+        // replacePermissions bumps the permission version. Nothing rejects an older token on that
+        // version yet, so the change - narrowing included - reaches each holder at their next
+        // refresh, within the access-token lifetime, when the role's permissions are read afresh.
         role.replacePermissions(new LinkedHashSet<>(request.permissions()));
-        return toView(roles.save(role));
+        Role saved = roles.save(role);
+
+        Set<String> after = new TreeSet<>(saved.getPermissions());
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("name", saved.getName());
+        if (!previousName.equals(saved.getName())) {
+            detail.put("previousName", previousName);
+        }
+        detail.put("added", difference(after, before));
+        detail.put("removed", difference(before, after));
+        detail.put("holders", roles.countActiveHolders(saved.getId()));
+        audit.record("role.update", "role", saved.getId().toString(), "succeeded", detail);
+        return toView(saved);
     }
 
     @DeleteMapping("/{roleId}")
@@ -179,7 +221,45 @@ public class RoleController {
             // all, which reads as a platform fault rather than as an administrator's decision.
             throw new ApiException(ErrorCode.RESOURCE_IN_USE).with("holders", holders);
         }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("name", role.getName());
+        detail.put("permissions", new ArrayList<>(new TreeSet<>(role.getPermissions())));
         roles.delete(role);
+        audit.record("role.delete", "role", roleId.toString(), "succeeded", detail);
+    }
+
+    /** What is in {@code from} and not in {@code minus}, in order, as a list the audit log can store. */
+    private static List<String> difference(Set<String> from, Set<String> minus) {
+        List<String> only = new ArrayList<>();
+        for (String code : from) {
+            if (!minus.contains(code)) {
+                only.add(code);
+            }
+        }
+        return only;
+    }
+
+    /**
+     * Refuses an edit the caller is not entitled to make.
+     *
+     * <p>Three ways an edit could widen somebody's authority, each refused: a role that already
+     * carries permissions the caller lacks (narrowing it would still decide about authority they
+     * do not hold), a new set with permissions the caller lacks, and a role the caller holds
+     * themselves gaining anything at all.
+     */
+    private void guardEdit(GrantGuard.Grantor caller, Role role, Set<String> codes) {
+        if (!role.isWithin(caller.permissions())) {
+            throw new ApiException(
+                            ErrorCode.PERMISSION_DENIED,
+                            "This role includes permissions you do not have, so you cannot change it.")
+                    .with("reason", GrantGuard.EXCEEDS_GRANTOR);
+        }
+        if (role.getId().equals(caller.roleId()) && !role.getPermissions().containsAll(codes)) {
+            throw new ApiException(
+                            ErrorCode.PERMISSION_DENIED, "You cannot add permissions to a role you hold yourself.")
+                    .with("reason", GrantGuard.EXCEEDS_GRANTOR);
+        }
+        guard.assertCanCompose(caller, codes);
     }
 
     /**

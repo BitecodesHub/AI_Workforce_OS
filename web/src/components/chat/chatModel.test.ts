@@ -9,26 +9,40 @@ import {
   conversationText,
   currentTaskIndex,
   dayLabel,
+  describeAgent,
+  draftKey,
   errorHelp,
   goalChainActive,
   goalHasAnswer,
+  goalTarget,
   groupMessages,
   isGroupedWithPrevious,
+  isLegacyDraftKey,
   lastAnswer,
   liveStepText,
   messageAuthor,
+  newestPosition,
   newMessageIds,
   orphanQuestions,
+  passageLink,
+  pendingEchoed,
+  progressMessageForGoal,
   progressSummary,
   readyAnswers,
+  removeLegacyDrafts,
+  resendText,
   routingModeLabel,
   routingMessageForGoal,
+  routingPassages,
   routingSummary,
-  suggestionChips,
+  sendsAsNewRequest,
+  sourcesForAnswer,
   taskStepStatus,
   withDayDividers,
+  workStripSummary,
 } from './chatModel'
-import type { Agent, BoardGoal, BoardTask, ChatMessage, Member, RunQuestion, RunStep, Task } from '../../lib/queries'
+import type { SourcePassage } from './chatModel'
+import type { BoardGoal, BoardTask, ChatMessage, Member, RunQuestion, RunStep, Task } from '../../lib/queries'
 
 function message(overrides: Partial<ChatMessage> & Pick<ChatMessage, 'id'>): ChatMessage {
   return {
@@ -341,6 +355,45 @@ describe('routingSummary', () => {
     expect(routingSummary(m, names)).toBe('Sent to General Employee, using 5 passages from SIH deck.pptx')
   })
 
+  it('names the documents from the recorded passages, once each, rather than from the reason sentence', () => {
+    const m = message({
+      id: 'a',
+      kind: 'routing',
+      detail: {
+        mode: 'model',
+        agents: [{ id: 'general', name: 'General Employee', instruction: '' }],
+        // The sentence and the passages disagree on purpose: the structured field is what counts.
+        reason: 'Found 9 passages in Something else. The model chose it.',
+        passages: [
+          passage({ chunkId: 'c1', documentTitle: 'Refund policy' }),
+          passage({ chunkId: 'c2', documentTitle: 'Refund policy', pageNumber: 4 }),
+          passage({ chunkId: 'c3', documentTitle: 'Support handbook' }),
+        ],
+      },
+    })
+    expect(routingSummary(m, names)).toBe('Sent to General Employee, using 3 passages from Refund policy, Support handbook')
+  })
+
+  it('says "passage" for one, and names at most three documents', () => {
+    const one = message({
+      id: 'a',
+      kind: 'routing',
+      detail: { mode: 'model', agents: [{ id: 'research', name: 'Research', instruction: '' }], passages: [passage({ chunkId: 'c1' })] },
+    })
+    expect(routingSummary(one, names)).toBe('Sent to Research, using 1 passage from Refund policy')
+
+    const many = message({
+      id: 'b',
+      kind: 'routing',
+      detail: {
+        mode: 'model',
+        agents: [{ id: 'research', name: 'Research', instruction: '' }],
+        passages: ['A', 'B', 'C', 'D'].map((title, index) => passage({ chunkId: `c${index}`, documentTitle: title })),
+      },
+    })
+    expect(routingSummary(many, names)).toBe('Sent to Research, using 4 passages from A, B, C')
+  })
+
   it('names a manual choice', () => {
     const m = message({ id: 'a', kind: 'routing', detail: { mode: 'manual', agents: [{ id: 'research', name: 'Research', instruction: '' }] } })
     expect(routingSummary(m, names)).toBe('You chose Research')
@@ -423,6 +476,101 @@ describe('routingMessageForGoal and goalHasAnswer', () => {
     const messages = [message({ id: 'a', kind: 'answer', goalId: 'g1' })]
     expect(goalHasAnswer('g1', messages)).toBe(true)
     expect(goalHasAnswer('g2', messages)).toBe(false)
+  })
+})
+
+function passage(overrides: Partial<SourcePassage> = {}): SourcePassage {
+  return {
+    chunkId: 'chunk-1',
+    documentId: 'doc-1',
+    sourceId: 'source-1',
+    documentTitle: 'Refund policy',
+    uri: null,
+    pageNumber: null,
+    heading: null,
+    content: 'Refunds are issued within five business days.',
+    score: 0.9,
+    ...overrides,
+  }
+}
+
+describe('routingPassages', () => {
+  it('reads the passages a routing message recorded, and none from one that did not', () => {
+    const recorded = message({ id: 'r', kind: 'routing', detail: { passages: [passage()] } })
+    expect(routingPassages(recorded)).toHaveLength(1)
+    expect(routingPassages(message({ id: 'r', kind: 'routing' }))).toEqual([])
+    expect(routingPassages(undefined)).toEqual([])
+  })
+})
+
+describe('sourcesForAnswer', () => {
+  const passages = [passage({ chunkId: 'c1' }), passage({ chunkId: 'c2', documentTitle: 'Handbook' })]
+  const routing = (agents: number, extra: Partial<ChatMessage['detail']> = {}) =>
+    message({
+      id: 'routing',
+      kind: 'routing',
+      goalId: 'g1',
+      detail: {
+        agents: Array.from({ length: agents }, (_, index) => ({ id: `a${index}`, name: `Agent ${index}`, instruction: '' })),
+        passages,
+        grounded: true,
+        ...extra,
+      },
+    })
+  const answerFor = (taskId: string | undefined, goalId: string | null = 'g1') =>
+    message({ id: `answer-${taskId ?? 'none'}`, kind: 'answer', goalId, detail: taskId ? { taskId } : {} })
+  const chain = { tasks: [boardTask({ id: 't2', position: 1 }), boardTask({ id: 't1', position: 0 })] }
+
+  it('shows the passages under the answer of the goal\'s first step, in the order they were read', () => {
+    expect(sourcesForAnswer(answerFor('t1'), [routing(2)], chain).map((p) => p.chunkId)).toEqual(['c1', 'c2'])
+  })
+
+  it('shows them under no later step of a chain, which was given the earlier work and not the passages', () => {
+    expect(sourcesForAnswer(answerFor('t2'), [routing(2)], chain)).toEqual([])
+  })
+
+  it('without the goal, trusts a routing message that names one agent and not one that names several', () => {
+    expect(sourcesForAnswer(answerFor('t1'), [routing(1)])).toHaveLength(2)
+    expect(sourcesForAnswer(answerFor('t1'), [routing(2)])).toEqual([])
+    expect(sourcesForAnswer(answerFor(undefined), [routing(1)], chain)).toHaveLength(2)
+  })
+
+  it('shows nothing for work that was given no passages, an answer with no goal, or another goal', () => {
+    expect(sourcesForAnswer(answerFor('t1'), [routing(1, { passages: [] })], chain)).toEqual([])
+    expect(sourcesForAnswer(answerFor('t1', null), [routing(1)], chain)).toEqual([])
+    expect(sourcesForAnswer(answerFor('t1', 'g2'), [routing(1)], chain)).toEqual([])
+    expect(sourcesForAnswer(answerFor('t1'), [], chain)).toEqual([])
+  })
+
+  it('is only ever for an answer message', () => {
+    const text = message({ id: 'x', kind: 'text', goalId: 'g1', detail: { taskId: 't1' } })
+    expect(sourcesForAnswer(text, [routing(1)], chain)).toEqual([])
+  })
+})
+
+describe('passageLink', () => {
+  it('goes to the source in Knowledge when the person may read Knowledge', () => {
+    expect(passageLink(passage({ sourceId: 'abc', uri: 'https://example.org/policy' }), true)).toEqual({
+      href: '/knowledge/abc',
+      label: 'Open in Knowledge',
+      external: false,
+    })
+  })
+
+  it('falls back to the passage\'s own web address without that permission, or without a source', () => {
+    const link = { href: 'https://example.org/policy', label: 'Open source', external: true }
+    expect(passageLink(passage({ sourceId: 'abc', uri: 'https://example.org/policy' }), false)).toEqual(link)
+    expect(passageLink(passage({ sourceId: null, uri: 'https://example.org/policy' }), true)).toEqual(link)
+    // A passage recorded before the knowledge service sent a source has no such field at all.
+    const withoutSource = passage({ uri: 'http://example.org/policy' })
+    delete withoutSource.sourceId
+    expect(passageLink(withoutSource, true)).toEqual({ ...link, href: 'http://example.org/policy' })
+  })
+
+  it('has no link when the only address is not a web one, or there is none', () => {
+    expect(passageLink(passage({ sourceId: null, uri: 'file:///policy.pdf' }), true)).toBeNull()
+    expect(passageLink(passage({ sourceId: null, uri: 'javascript:alert(1)' }), true)).toBeNull()
+    expect(passageLink(passage({ sourceId: 'abc', uri: null }), false)).toBeNull()
   })
 })
 
@@ -599,51 +747,6 @@ describe('messageAuthor', () => {
   })
 })
 
-function agent(overrides: Partial<Agent> & Pick<Agent, 'id' | 'key'>): Agent {
-  return { name: 'Agent', category: 'operations', status: 'active', revision: 1, ...overrides }
-}
-
-describe('suggestionChips', () => {
-  it('offers only document questions without task:create', () => {
-    const chips = suggestionChips([agent({ id: 'a1', key: 'hr' })], () => false)
-    expect(chips).toEqual([
-      'What does our leave policy say about carers’ leave?',
-      'Where is the checklist for a new starter’s first week?',
-      'Which documents cover incident reporting?',
-    ])
-  })
-
-  it('never names a person', () => {
-    const chips = suggestionChips(
-      [agent({ id: 'a1', key: 'hr' }), agent({ id: 'a2', key: 'general', fallback: true })],
-      () => true,
-    )
-    for (const chip of chips) {
-      expect(chip).not.toMatch(/Priya/)
-    }
-  })
-
-  it('gives General a chip when it is active', () => {
-    const chips = suggestionChips([agent({ id: 'a1', key: 'general', fallback: true })], () => true)
-    expect(chips).toContain('Plan a 30-minute team meeting about next month’s rosters')
-  })
-
-  it('caps at four chips with no repeats', () => {
-    const chips = suggestionChips(
-      [
-        agent({ id: 'a1', key: 'hr' }),
-        agent({ id: 'a2', key: 'engineering-manager' }),
-        agent({ id: 'a3', key: 'research' }),
-        agent({ id: 'a4', key: 'support', category: 'support' }),
-        agent({ id: 'a5', key: 'general', fallback: true }),
-      ],
-      () => true,
-    )
-    expect(chips.length).toBeLessThanOrEqual(4)
-    expect(new Set(chips).size).toBe(chips.length)
-  })
-})
-
 describe('conversationText', () => {
   it('turns the thread into plain lines', () => {
     const messages = [
@@ -695,9 +798,16 @@ describe('errorHelp', () => {
     })
   })
 
-  it('explains a used-up budget with no link', () => {
+  it('explains a used-up budget and links to where it is raised', () => {
     expect(errorHelp('budget_exceeded')).toEqual({
       text: 'The workspace budget for model spend is used up. An administrator can raise it.',
+      href: '/analytics#budget',
+    })
+  })
+
+  it('says a platform service was briefly unreachable, with no link', () => {
+    expect(errorHelp('dependency_unavailable')).toEqual({
+      text: 'A platform service was briefly unreachable. Try again in a minute.',
       href: null,
     })
   })
@@ -713,5 +823,215 @@ describe('canStopGoal and canRetryGoal', () => {
     const g = goal({ id: 'g1', status: 'running', requestedBy: 'user-1' })
     expect(canStopGoal(g, 'user-1', () => false)).toBe(true)
     expect(canRetryGoal({ ...g, status: 'failed' }, 'user-1', () => true)).toBe(true)
+  })
+})
+
+describe('progressSummary while work is parked', () => {
+  it('says a folded card waits for an approval', () => {
+    const g = goal({ id: 'g1', tasks: [boardTask({ id: 't1', status: 'waiting_approval' })] })
+    expect(progressSummary(g)).toBe('Waiting for your approval')
+  })
+
+  it('says a folded card waits for an answer', () => {
+    const g = goal({ id: 'g1', tasks: [boardTask({ id: 't1', status: 'waiting_input' })] })
+    expect(progressSummary(g)).toBe('Waiting for an answer')
+  })
+
+  it('puts an approval first when one task waits on each', () => {
+    const g = goal({
+      id: 'g1',
+      tasks: [boardTask({ id: 't1', status: 'waiting_input' }), boardTask({ id: 't2', status: 'waiting_approval', position: 1 })],
+    })
+    expect(progressSummary(g)).toBe('Waiting for your approval')
+  })
+})
+
+describe('goalTarget', () => {
+  const thread = [
+    message({ id: 'm1', position: 0 }),
+    message({ id: 'm2', position: 1, kind: 'routing', goalId: 'g1', authorKind: 'coordinator' }),
+    message({ id: 'm3', position: 2, kind: 'progress', goalId: 'g1', authorKind: 'coordinator' }),
+  ]
+
+  it('finds the progress message that tracks a goal', () => {
+    expect(progressMessageForGoal('g1', thread)?.id).toBe('m3')
+    expect(progressMessageForGoal('g2', thread)).toBeUndefined()
+  })
+
+  it("points at the progress card's own message anchor when it is loaded", () => {
+    expect(goalTarget('g1', thread, 'approval')).toEqual({ elementId: 'm-m3' })
+  })
+
+  it('falls back to the approvals queue, or the goal in the Orchestrator, when it is not', () => {
+    expect(goalTarget('g2', thread, 'approval')).toEqual({ href: '/approvals' })
+    expect(goalTarget('g2', thread, 'progress')).toEqual({ href: '/orchestrator?goal=g2' })
+  })
+})
+
+describe('workStripSummary', () => {
+  const running = (id: string) => goal({ id, tasks: [boardTask({ id: `${id}-t`, status: 'running' })] })
+  const parked = (id: string, status: 'waiting_approval' | 'waiting_input') =>
+    goal({ id, tasks: [boardTask({ id: `${id}-t`, status })] })
+
+  it('counts running work when nothing waits on a person', () => {
+    expect(workStripSummary([running('g1')]).text).toBe('1 running')
+    expect(workStripSummary([running('g1'), running('g2')]).text).toBe('2 running')
+  })
+
+  it('leads with an approval, then an answer', () => {
+    expect(workStripSummary([running('g1'), parked('g2', 'waiting_approval')])).toEqual({
+      text: '1 needs your approval',
+      approvals: 1,
+      answers: 0,
+    })
+    expect(workStripSummary([running('g1'), parked('g2', 'waiting_input')]).text).toBe('1 needs your answer')
+    expect(workStripSummary([parked('g1', 'waiting_approval'), parked('g2', 'waiting_approval')]).text).toBe(
+      '2 need your approval',
+    )
+  })
+})
+
+describe('sendsAsNewRequest', () => {
+  const auto = { auto: true, agentId: 'agent-1' }
+  const explicit = { auto: false, agentId: 'agent-1' }
+
+  it('sends an automatic answer that mentions another agent as a new request', () => {
+    expect(sendsAsNewRequest(auto, ['agent-2'])).toBe(true)
+    expect(sendsAsNewRequest(auto, ['agent-1', 'agent-2'])).toBe(true)
+  })
+
+  it('still answers when only the asking agent is mentioned, or nobody is', () => {
+    expect(sendsAsNewRequest(auto, ['agent-1'])).toBe(false)
+    expect(sendsAsNewRequest(auto, [])).toBe(false)
+  })
+
+  it('always answers a reply the person chose, whoever it mentions', () => {
+    expect(sendsAsNewRequest(explicit, ['agent-2'])).toBe(false)
+  })
+
+  it('is never a redirect with no question targeted', () => {
+    expect(sendsAsNewRequest(null, ['agent-2'])).toBe(false)
+  })
+})
+
+describe('pendingEchoed', () => {
+  const pending = { text: '  Draft the Q3 quote ', afterPosition: 4 }
+
+  it('is true once the stored copy of the message arrives after the send started', () => {
+    const thread = [message({ id: 'm5', position: 5, content: 'Draft the Q3 quote', authorId: 'user-1' })]
+    expect(pendingEchoed(thread, pending, 'user-1')).toBe(true)
+  })
+
+  it('ignores the same words sent earlier, by someone else, or not as a text message', () => {
+    expect(pendingEchoed([message({ id: 'm3', position: 3, content: 'Draft the Q3 quote' })], pending, 'user-1')).toBe(false)
+    expect(
+      pendingEchoed([message({ id: 'm5', position: 5, content: 'Draft the Q3 quote', authorId: 'user-2' })], pending, 'user-1'),
+    ).toBe(false)
+    expect(
+      pendingEchoed(
+        [message({ id: 'm5', position: 5, content: 'Draft the Q3 quote', kind: 'routing', authorKind: 'coordinator' })],
+        pending,
+        'user-1',
+      ),
+    ).toBe(false)
+  })
+
+  it('treats an empty thread as starting before position 0', () => {
+    expect(newestPosition([])).toBe(-1)
+    expect(newestPosition([message({ id: 'a', position: 7 }), message({ id: 'b', position: 3 })])).toBe(7)
+    const first = message({ id: 'm0', position: 0, content: 'Hi', authorId: 'user-1' })
+    expect(pendingEchoed([first], { text: 'Hi', afterPosition: -1 }, 'user-1')).toBe(true)
+  })
+})
+
+describe('resendText', () => {
+  const ERROR = 'The coordinator could not decide who takes this. Try again, or mention an agent with @.'
+  const error = (overrides: Partial<ChatMessage> = {}) =>
+    message({ id: 'err', position: 5, kind: 'error', authorKind: 'coordinator', authorId: null, content: ERROR, ...overrides })
+
+  it("puts back the request the error recorded", () => {
+    expect(resendText(error({ detail: { reason: ERROR, requestText: 'Compare the three quotes' } }), [])).toBe(
+      'Compare the three quotes',
+    )
+  })
+
+  it("uses the goal's routing request for an agent's own failure", () => {
+    const routing = message({
+      id: 'r1',
+      position: 2,
+      kind: 'routing',
+      authorKind: 'coordinator',
+      goalId: 'g1',
+      detail: { requestText: 'Summarise the roster' },
+    })
+    expect(resendText(error({ goalId: 'g1', content: 'The agent stopped.' }), [routing])).toBe('Summarise the roster')
+  })
+
+  it('falls back to the nearest earlier message the person wrote', () => {
+    const thread = [
+      message({ id: 'u1', position: 1, content: 'First request' }),
+      message({ id: 'u2', position: 3, content: 'Second request' }),
+      message({ id: 'u3', position: 7, content: 'A later message' }),
+    ]
+    expect(resendText(error(), thread)).toBe('Second request')
+  })
+
+  it('never offers the error sentence itself, and offers nothing when no request is found', () => {
+    const thread = [message({ id: 'u1', position: 1, content: ERROR })]
+    expect(resendText(error({ detail: { requestText: ERROR } }), thread)).toBeNull()
+    expect(resendText(error(), [])).toBeNull()
+    for (const candidate of [error(), error({ detail: { requestText: '  ' } })]) {
+      expect(resendText(candidate, [error()])).not.toBe(ERROR)
+    }
+  })
+})
+
+describe('draftKey', () => {
+  it('keeps a draft per person and per conversation', () => {
+    expect(draftKey('user-1', 'c1')).toBe('chat.draft.user-1.c1')
+    expect(draftKey('user-1', null)).toBe('chat.draft.user-1.new')
+  })
+
+  it('recognises only the keys from before drafts were per person', () => {
+    expect(isLegacyDraftKey('chat.draft.new')).toBe(true)
+    expect(isLegacyDraftKey('chat.draft.c1')).toBe(true)
+    expect(isLegacyDraftKey(draftKey('user-1', 'c1'))).toBe(false)
+    expect(isLegacyDraftKey('chat.details')).toBe(false)
+  })
+
+  it('removes the old unscoped drafts and nothing else', () => {
+    const items = new Map([
+      ['chat.draft.new', '"Someone else typed this"'],
+      ['chat.draft.c1', '"And this"'],
+      ['chat.draft.user-1.c1', '"Mine"'],
+      ['chat.details', '"auto"'],
+    ])
+    removeLegacyDrafts({
+      get length() {
+        return items.size
+      },
+      key: (index) => [...items.keys()][index] ?? null,
+      removeItem: (key) => void items.delete(key),
+    })
+    expect([...items.keys()]).toEqual(['chat.draft.user-1.c1', 'chat.details'])
+  })
+})
+
+describe('describeAgent', () => {
+  it('turns second-person instructions into a third-person description', () => {
+    expect(describeAgent('You triage support tickets by urgency. Never promise refunds.', 'Support')).toBe('Triages support tickets by urgency.')
+    expect(describeAgent("You are the workspace's General Employee: you take any request no one else fits.", 'Operations')).toBe(
+      'Takes any request no one else fits.',
+    )
+    expect(describeAgent('You reply to customers', 'Support')).toBe('Replies to customers')
+    expect(describeAgent('You keep tickets current, summarise open pull requests, and write the note.', 'Engineering')).toBe(
+      'Keeps tickets current, summarises open pull requests, and writes the note.',
+    )
+  })
+
+  it('keeps a description already in the third person, and falls back when there is none to use', () => {
+    expect(describeAgent('Reconciles invoices against purchase orders.', 'Operations')).toBe('Reconciles invoices against purchase orders.')
+    expect(describeAgent('', 'Growth')).toBe('Growth')
+    expect(describeAgent('You are a helpful assistant.', 'Engineering')).toBe('Engineering')
   })
 })

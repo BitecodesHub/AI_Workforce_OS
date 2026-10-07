@@ -13,14 +13,23 @@ import {
   StatRow,
   StatTile,
   StatusTag,
+  Tag,
   Time,
 } from '../components/ui'
 import type { Column } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+import { KnowledgeSearch } from '../components/knowledge/KnowledgeSearch'
 import { ApiError, describeApiError } from '../lib/api'
 import { formatCount, nameList, truncateWords } from '../lib/format'
+import {
+  KEYWORD_SEARCH_NOTE,
+  isRestricted,
+  searchModeOf,
+  sourceAccessNotice,
+  useCreateKnowledgeSource,
+} from '../lib/knowledgeQueries'
 import { embeddingProviderLabel, sourceKindLabel } from '../lib/labels'
-import { useCreateSource, useSources } from '../lib/queries'
+import { useSources } from '../lib/queries'
 import type { Source } from '../lib/queries'
 import { useRouter } from '../lib/router'
 import { can } from '../lib/session'
@@ -58,11 +67,18 @@ function sourcesNote(sources: Source[]): string {
   return 'All ready'
 }
 
-/** The embedding model when every source uses the same one; sources can differ, and then it says so. */
+/**
+ * The embedding model when every source uses the same one; sources can differ, and then it says so.
+ * A source on the offline sandbox has no model that carries meaning, and the tile says that rather
+ * than naming a model and a size as though search by meaning were working.
+ */
 function embeddingTile(sources: Source[]): { value: string; note: string } {
   const [first] = sources
+  if (!first) return { value: 'Mixed', note: 'Differs by source' }
+  const modes = new Set(sources.map(searchModeOf))
+  if (modes.size === 1 && modes.has('keyword')) return { value: 'None', note: KEYWORD_SEARCH_NOTE }
   const models = new Set(sources.map((source) => source.embeddingModel))
-  if (!first || models.size !== 1) return { value: 'Mixed', note: 'Differs by source' }
+  if (models.size !== 1 || modes.has('keyword')) return { value: 'Mixed', note: 'Differs by source' }
   return {
     value: first.embeddingModel || 'Not configured',
     note: `${embeddingProviderLabel(first.embeddingProvider)}, ${formatCount(first.embeddingDimension)} dimensions`,
@@ -70,7 +86,22 @@ function embeddingTile(sources: Source[]): { value: string; note: string } {
 }
 
 const COLUMNS: Column<Source>[] = [
-  { key: 'name', header: 'Source', sortValue: (row) => row.name, render: (row) => row.name },
+  {
+    key: 'name',
+    header: 'Source',
+    sortValue: (row) => row.name,
+    render: (row) =>
+      isRestricted(row) ? (
+        <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          <span>{row.name}</span>
+          <Tag tone="warning" title={sourceAccessNotice(true)}>
+            Restricted
+          </Tag>
+        </div>
+      ) : (
+        row.name
+      ),
+  },
   { key: 'kind', header: 'Type', render: (row) => <span className="muted">{sourceKindLabel(row.kind)}</span> },
   {
     key: 'status',
@@ -112,20 +143,24 @@ const COLUMNS: Column<Source>[] = [
 export function Knowledge() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [name, setName] = useState('')
+  const [restricted, setRestricted] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
   const [dialogError, setDialogError] = useState<string | null>(null)
   const formId = useId()
   const { success } = useToast()
   const { navigate } = useRouter()
   const sourcesQuery = useSources()
-  const createSource = useCreateSource()
+  const createSource = useCreateKnowledgeSource()
   const canManage = can('knowledge:source_manage')
-  // Chat is where documents are searched: the screen needs chat:use and the search knowledge:query.
-  const canSearch = can('chat:use') && can('knowledge:query')
+  // Asking in Chat needs chat:use as well as knowledge:query. Trying a search here does not: it
+  // reads the documents directly, with no agent, so knowledge:query is all it takes.
+  const canQuery = can('knowledge:query')
+  const canAskInChat = can('chat:use') && canQuery
   const totalDocuments = sourcesQuery.data?.reduce((sum, source) => sum + source.documentCount, 0) ?? 0
 
   function openDialog() {
     setName('')
+    setRestricted(false)
     setNameError(null)
     setDialogError(null)
     createSource.reset()
@@ -146,10 +181,10 @@ export function Knowledge() {
     try {
       // Uploading is the only way documents reach a source in this version, so every new source
       // is an upload source. There is no connector to pick.
-      const created = await createSource.mutateAsync({ name: trimmed, kind: 'upload' })
+      const created = await createSource.mutateAsync({ name: trimmed, kind: 'upload', restricted })
       setDialogOpen(false)
       navigate(`/knowledge/${created.id}`)
-      success('Source created. Upload a document to make it searchable.')
+      success(`Source created. Upload a document to make it searchable. ${sourceAccessNotice(restricted)}.`)
     } catch (err) {
       // A duplicate name is about the field; anything else is about the request.
       if (err instanceof ApiError && err.status === 409) setNameError(err.message)
@@ -165,9 +200,9 @@ export function Knowledge() {
         description="Documents you upload here can be searched in Chat. Each result shows the passage it came from and the document it belongs to."
         action={
           <>
-            {canSearch && totalDocuments > 0 && (
+            {canAskInChat && totalDocuments > 0 && (
               <a className="button button-outline" href="/chat">
-                Search these documents
+                Ask in Chat
               </a>
             )}
             {canManage && <Button onClick={openDialog}>Add a source</Button>}
@@ -187,7 +222,7 @@ export function Knowledge() {
               title="No sources yet"
               body={
                 canManage
-                  ? 'A source is a folder of documents you upload. Add one, then upload documents to it so Chat can search them.'
+                  ? 'A source is a folder of documents you upload. Add one, then upload documents to it. Agents and Chat can search these documents.'
                   : 'Nobody has added documents yet. A manager or admin can add a source and upload documents to it.'
               }
               action={canManage && <Button onClick={openDialog}>Add a source</Button>}
@@ -238,6 +273,13 @@ export function Knowledge() {
                   />
                 </Card>
               </section>
+
+              {canQuery && totalDocuments > 0 && (
+                <KnowledgeSearch
+                  sources={sources}
+                  description="Search the documents directly to see what a question finds. This does not start an agent run."
+                />
+              )}
             </>
           )
         }}
@@ -248,7 +290,7 @@ export function Knowledge() {
         onClose={closeDialog}
         eyebrow="Knowledge"
         title="Add a source"
-        description="A source is a folder of documents you upload. Chat searches everything you add."
+        description="A source is a folder of documents you upload. Chat searches everything you add, unless you restrict it."
         dismissible={!createSource.isPending}
         error={dialogError}
         footer={
@@ -276,6 +318,11 @@ export function Knowledge() {
             error={nameError}
             data-autofocus
           />
+          <label className="question-option">
+            <input type="checkbox" checked={restricted} onChange={(event) => setRestricted(event.target.checked)} />
+            <span className="question-option-label">Only people who manage knowledge can search this source</span>
+          </label>
+          <Notice>{sourceAccessNotice(restricted)}</Notice>
         </form>
       </Dialog>
     </div>

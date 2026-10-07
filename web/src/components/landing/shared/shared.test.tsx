@@ -143,7 +143,7 @@ describe('DemoFrame', () => {
         area="audit"
         index="03"
         name="Audit chain"
-        title="It writes down everything"
+        title="It records decisions and outcomes"
         lead="Every decision is recorded."
         status=""
       >
@@ -156,7 +156,7 @@ describe('DemoFrame', () => {
     expect(status).toHaveAttribute('aria-atomic', 'true')
     expect(screen.getByText('Simulated')).toBeInTheDocument()
 
-    const tile = screen.getByRole('article', { name: 'It writes down everything' })
+    const tile = screen.getByRole('article', { name: 'It records decisions and outcomes' })
     expect(tile).toHaveAttribute('id', 'audit')
     expect(tile).toHaveAttribute('data-area', 'audit')
     // Without IntersectionObserver the reveal marks the tile as seen straight away.

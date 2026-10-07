@@ -1,0 +1,14 @@
+{"object":"list","data":[
+ {"id":"gpt-4.1","object":"model","owned_by":"system"},
+ {"id":"gpt-4o-mini","object":"model","owned_by":"system"},
+ {"id":"gpt-5","object":"model","owned_by":"system"},
+ {"id":"o4-mini","object":"model","owned_by":"system"},
+ {"id":"gpt-3.5-turbo","object":"model","owned_by":"openai"},
+ {"id":"gpt-3.5-turbo-instruct","object":"model","owned_by":"system"},
+ {"id":"text-embedding-3-small","object":"model","owned_by":"system"},
+ {"id":"gpt-4o-realtime-preview","object":"model","owned_by":"system"},
+ {"id":"gpt-4o-mini-search-preview","object":"model","owned_by":"system"},
+ {"id":"o3-pro","object":"model","owned_by":"system"},
+ {"id":"dall-e-3","object":"model","owned_by":"system"},
+ {"id":"ft:gpt-4o-mini:acme::abc123","object":"model","owned_by":"org-secret"}
+]}

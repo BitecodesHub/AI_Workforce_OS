@@ -14,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import os.aiworkforce.orchestrator.domain.Approval;
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.RunQuestion;
 import os.aiworkforce.orchestrator.domain.Task;
@@ -22,8 +23,9 @@ import os.aiworkforce.orchestrator.repository.RunQuestions;
 import os.aiworkforce.orchestrator.repository.Tasks;
 
 /**
- * Tells the {@link GoalLifecycleListener}s that a goal was stopped or retried, or that a run asked
- * its requester a question - always after the write that did it has committed.
+ * Tells the {@link GoalLifecycleListener}s that a goal was stopped or retried, that a run asked
+ * its requester a question or parked on an approval, that an approval expired, or that a schedule
+ * paused itself - always after the write that did it has committed.
  *
  * <p>After commit, because a listener reacts in its own tables (chat appends a message, under a
  * lock on the conversation) and anything that goes wrong there must not undo the stop, the retry
@@ -83,6 +85,49 @@ public class LifecycleAnnouncer {
                 ? null
                 : goals.findById(question.getGoalId()).orElse(null);
         dispatch(listener -> listener.onQuestionAsked(goal, task, question), "question " + questionId);
+    }
+
+    /**
+     * A run parked on {@code approval}. Listeners hear it with the approval's task and goal, or
+     * with both null for a run started directly on an agent.
+     */
+    public void approvalRaised(Approval approval) {
+        if (listeners.isEmpty() || approval == null) {
+            return;
+        }
+        Task task = taskOf(approval);
+        Goal goal = goalOf(task);
+        dispatch(listener -> listener.onApprovalRaised(goal, task, approval), "approval " + approval.getId() + " raised");
+    }
+
+    /** {@code approval} expired undecided, and its run was stopped. */
+    public void approvalExpired(Approval approval) {
+        if (listeners.isEmpty() || approval == null) {
+            return;
+        }
+        Task task = taskOf(approval);
+        Goal goal = goalOf(task);
+        dispatch(
+                listener -> listener.onApprovalExpired(goal, task, approval),
+                "approval " + approval.getId() + " expiring");
+    }
+
+    /** A schedule paused itself. */
+    public void schedulePaused(GoalLifecycleListener.SchedulePause pause) {
+        if (listeners.isEmpty() || pause == null) {
+            return;
+        }
+        dispatch(listener -> listener.onSchedulePaused(pause), "schedule " + pause.scheduleId() + " pausing");
+    }
+
+    private Task taskOf(Approval approval) {
+        return approval.getTaskId() == null ? null : tasks.findById(approval.getTaskId()).orElse(null);
+    }
+
+    private Goal goalOf(Task task) {
+        return task == null || task.getGoalId() == null
+                ? null
+                : goals.findById(task.getGoalId()).orElse(null);
     }
 
     /** A goal was cancelled, for {@code reason}. */

@@ -165,6 +165,27 @@ export function formatRelativeTicked(iso: string | null | undefined, now: number
 }
 
 /**
+ * The compact time a list row shows beside its title: 'Now' under a minute, then '26m', '3h' for
+ * earlier today, 'Yesterday', '3 Oct' this year and '3 Oct 2025' before it. A moment slightly ahead
+ * of `now` (clock drift) reads 'Now'. Pair it with the full time in a `title`.
+ */
+export function formatShortTime(iso: string | null | undefined, now: number): string {
+  const date = parse(iso)
+  if (!date) return EMPTY
+  const diff = Math.max(0, now - date.getTime())
+  const minutes = Math.floor(diff / (60 * SECOND))
+  if (minutes < 1) return 'Now'
+  if (minutes < 60) return `${minutes}m`
+  const today = new Date(now)
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  if (date.getTime() >= startOfToday) return `${Math.floor(minutes / 60)}h`
+  const startOfYesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).getTime()
+  if (date.getTime() >= startOfYesterday) return 'Yesterday'
+  const dayMonth = `${date.getDate()} ${MONTHS[date.getMonth()]}`
+  return date.getFullYear() === today.getFullYear() ? dayMonth : `${dayMonth} ${date.getFullYear()}`
+}
+
+/**
  * A short elapsed time, from milliseconds rather than an instant: 'just now' under two seconds,
  * then '4 s ago', '2 min ago', '3 h ago'. For a caption that already has the moment in hand (a
  * question's "Asked 2 min ago"), where formatRelative's own parsing would be redundant.

@@ -18,6 +18,7 @@ import { TaskDialog } from '../components/ui/TaskDialog'
 // the barrel is also part of the main bundle, so going through it created a circular chunk
 // dependency (Rollup warned of a "broken execution order").
 import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
+import { runCost } from '../components/analytics/figures'
 import { formatCount, formatDateTime, formatRunElapsed, truncateWords } from '../lib/format'
 import { categoryTone, startedByLabel, statusLabel } from '../lib/labels'
 import { isRunActive, useAgentNames, useRunList, useTaskIndex, type Run } from '../lib/queries'
@@ -219,6 +220,22 @@ export function Runs() {
       render: (run) => formatCount(run.stepCount),
       sortValue: (run) => run.stepCount,
     },
+    {
+      // Estimated at catalogue prices. A run that used a model and has no price is "Unpriced",
+      // never a zero, and sorts after every priced run whichever way the column is sorted.
+      key: 'cost',
+      header: 'Cost',
+      numeric: true,
+      render: (run) => {
+        const cost = runCost(run)
+        return (
+          <span style={ONE_LINE} title={cost.title}>
+            {cost.text}
+          </span>
+        )
+      },
+      sortValue: (run) => runCost(run).value,
+    },
   ]
 
   return (
@@ -309,7 +326,7 @@ export function Runs() {
                 getRowLabel={(run) =>
                   `Run by ${agentName(run) || 'an agent'}, ${statusLabel('run', run.status).label.toLowerCase()}, started ${formatDateTime(run.startedAt)}`
                 }
-                caption="Runs, newest first, from the orchestrator's run records."
+                caption="Runs, newest first, from the orchestrator's run records. Cost is estimated at catalogue prices; a run with no price on file reads Unpriced."
               />
             </Card>
           )

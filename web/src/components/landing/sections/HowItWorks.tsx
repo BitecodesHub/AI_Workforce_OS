@@ -8,7 +8,9 @@ import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
  *
  * Each step names something the product really does: ready-made assistants and new ones briefed
  * in plain words; Chat, typed or spoken, that routes work to the right assistant and hands it on;
- * and the approval every send, post and delete waits for.
+ * and the approval every send, post and delete waits for. The four ready-made assistants are in
+ * every workspace's catalogue (AgentTemplates.java, and lib/templates.ts for the signup step), so
+ * the first step may say so.
  */
 
 const STEPS: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [

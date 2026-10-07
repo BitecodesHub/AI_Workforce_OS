@@ -425,7 +425,7 @@ class ToolGatewayTest {
                         5));
     }
 
-    private static PlatformProperties properties() {
+    static PlatformProperties properties() {
         return new PlatformProperties(
                 PlatformProperties.Environment.TEST,
                 "test",
@@ -486,7 +486,7 @@ class ToolGatewayTest {
                         Duration.ofSeconds(60),
                         Map.of()),
                 new PlatformProperties.Observability(
-                        "INFO", "console", false, 1.0, "http://localhost", false, List.of("password"), false),
+                        1.0, List.of("password"), false),
                 new PlatformProperties.RuntimeConfig(false, Duration.ofSeconds(60), "channel", true),
                 new PlatformProperties.Services(
                         "http://localhost",

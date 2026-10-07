@@ -6,6 +6,8 @@ import { formatDateTimeIn, sentenceCase } from '../../lib/format'
 import { CATEGORY_LABEL } from '../../lib/labels'
 import { useAgents, useCreateSchedule, useSchedulePreview, useUpdateSchedule } from '../../lib/queries'
 import type { Schedule } from '../../lib/queries'
+import { editTakesOwnership, isScheduleDone } from '../../lib/schedules'
+import { profile } from '../../lib/session'
 import { useToast } from '../../lib/toast'
 import { SCHEDULE_EXAMPLES, scheduleDebounceKey } from './scheduleModel'
 
@@ -31,6 +33,10 @@ function agentOptionLabel(agent: { name: string; category: string; status: strin
  * Create or edit a schedule. `schedule` present means edit: its name, agent and instruction are
  * changed freely, but its timetable stays as it is unless a new "When" phrase is typed - editing a
  * schedule must not force a person to retype a timetable they are keeping.
+ *
+ * A schedule runs as its owner. Changing what somebody else's schedule does makes the editor its
+ * owner (the server decides; this only says so before saving), and a one-off that already ran
+ * comes back on when it is given a new time still ahead.
  */
 export function ScheduleDialog({ open, onClose, schedule }: { open: boolean; onClose: () => void; schedule?: Schedule | null }) {
   const editing = schedule ?? null
@@ -136,6 +142,14 @@ export function ScheduleDialog({ open, onClose, schedule }: { open: boolean; onC
   }
 
   const selectedAgent = agents.find((agent) => agent.id === agentId)
+  const editingDone = editing ? isScheduleDone(editing) : false
+  const takesOwnership = editing
+    ? editTakesOwnership(editing, profile()?.userId ?? null, {
+        agentId,
+        instruction,
+        reactivates: editingDone && whenTrimmed.length > 0 && previewValid,
+      })
+    : false
 
   return (
     <Dialog
@@ -216,9 +230,11 @@ export function ScheduleDialog({ open, onClose, schedule }: { open: boolean; onC
               placeholder="every weekday at 9am"
               maxLength={WHEN_MAX}
               hint={
-                editing && !whenTrimmed
-                  ? `Leave this blank to keep its current timetable: ${editing.description}`
-                  : 'Plain English. Times follow the workspace timezone.'
+                editingDone && !whenTrimmed
+                  ? 'This one-off has already run. Give it a new time to run it again.'
+                  : editing && !whenTrimmed
+                    ? `Leave this blank to keep its current timetable: ${editing.description}`
+                    : 'Plain English. Times follow the workspace timezone.'
               }
               error={previewProblem}
             />
@@ -246,6 +262,12 @@ export function ScheduleDialog({ open, onClose, schedule }: { open: boolean; onC
               </Notice>
             )}
           </div>
+
+          {takesOwnership && (
+            <Notice tone="info">
+              Changing what this schedule does makes you its owner. Every later run starts in your name.
+            </Notice>
+          )}
         </div>
       </form>
     </Dialog>

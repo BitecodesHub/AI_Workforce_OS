@@ -341,6 +341,119 @@ class ScheduleParserTest {
     }
 
     @Nested
+    @DisplayName("every N minutes or hours: only an even rhythm is accepted")
+    class Intervals {
+
+        private ApiException refusalOf(String phrase) {
+            try {
+                ScheduleParser.parse(phrase, ZONE, NOW);
+            } catch (ApiException refused) {
+                assertThat(refused.code()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+                assertThat(refused.details()).containsEntry("field", "text");
+                return refused;
+            }
+            throw new AssertionError("Expected '" + phrase + "' to be refused");
+        }
+
+        @SuppressWarnings("unchecked")
+        private List<String> suggestionsOf(ApiException refused) {
+            return (List<String>) refused.details().get("suggestions");
+        }
+
+        @Test
+        @DisplayName("every 45 minutes is refused, naming every 30 minutes and every hour")
+        void fortyFiveMinutes() {
+            ApiException refused = refusalOf("every 45 minutes");
+            assertThat(suggestionsOf(refused)).containsExactly("every 30 minutes", "every hour");
+            assertThat((String) refused.details().get("problem")).contains("every 30 minutes or every hour");
+        }
+
+        @Test
+        @DisplayName("every 90 minutes is refused, naming every hour and every 2 hours")
+        void ninetyMinutes() {
+            assertThat(suggestionsOf(refusalOf("every 90 minutes"))).containsExactly("every hour", "every 2 hours");
+        }
+
+        @Test
+        @DisplayName("every 120 minutes becomes every 2 hours")
+        void hundredTwentyMinutes() {
+            ParsedSchedule parsed = ScheduleParser.parse("every 120 minutes", ZONE, NOW);
+            assertThat(parsed.cron()).isEqualTo("0 0 */2 * * *");
+            assertThat(parsed.description()).isEqualTo("Every 2 hours");
+        }
+
+        @Test
+        @DisplayName("every 60 minutes and every 1 hour both read as every hour")
+        void oneHour() {
+            assertThat(ScheduleParser.parse("every 60 minutes", ZONE, NOW).cron()).isEqualTo("0 0 * * * *");
+            ParsedSchedule parsed = ScheduleParser.parse("every 1 hour", ZONE, NOW);
+            assertThat(parsed.cron()).isEqualTo("0 0 * * * *");
+            assertThat(parsed.description()).isEqualTo("Every hour");
+        }
+
+        @Test
+        @DisplayName("every divisor of the hour is accepted as a cron step")
+        void evenMinutes() {
+            for (int n : List.of(5, 6, 10, 12, 15, 20, 30)) {
+                assertThat(ScheduleParser.parse("every " + n + " minutes", ZONE, NOW).cron())
+                        .isEqualTo("0 */" + n + " * * * *");
+            }
+        }
+
+        @Test
+        @DisplayName("every 0 hours is a readable refusal, not a cron crash")
+        void zeroHours() {
+            refusalOf("every 0 hours");
+        }
+
+        @Test
+        @DisplayName("every 7 hours is refused, naming every 6 hours and every 8 hours")
+        void sevenHours() {
+            assertThat(suggestionsOf(refusalOf("every 7 hours"))).containsExactly("every 6 hours", "every 8 hours");
+        }
+
+        @Test
+        @DisplayName("every 24 hours becomes the daily default")
+        void twentyFourHours() {
+            ParsedSchedule parsed = ScheduleParser.parse("every 24 hours", ZONE, NOW);
+            assertThat(parsed.cron()).isEqualTo("0 0 9 * * *");
+            assertThat(parsed.description()).isEqualTo("Every day at 9:00 am");
+        }
+
+        @Test
+        @DisplayName("every 25 hours is refused as longer than a day, suggesting every day")
+        void twentyFiveHours() {
+            ApiException refused = refusalOf("every 25 hours");
+            assertThat(suggestionsOf(refused)).containsExactly("every day");
+            assertThat((String) refused.details().get("problem")).contains("longer than a day");
+        }
+
+        @Test
+        @DisplayName("a very large number is a readable refusal, never a number-format crash")
+        void veryLargeNumber() {
+            refusalOf("every 99999999999999999999 minutes");
+            refusalOf("every 99999999999999999999 hours");
+            refusalOf("in 99999999999999999999 days");
+            refusalOf("every 9999 minutes");
+        }
+
+        @Test
+        @DisplayName("tryParse answers empty for an uneven interval rather than throwing")
+        void tryParseUneven() {
+            assertThat(ScheduleParser.tryParse("every 45 minutes", ZONE, NOW)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a stored cron the library cannot read surfaces as a validation error from nextRuns")
+        void unreadableStoredCron() {
+            ParsedSchedule broken = new ParsedSchedule("recurring", "0 0 */0 * * *", null, "Every 0 hours");
+            assertThatThrownBy(() -> ScheduleParser.nextRuns(broken, ZONE, NOW, 5))
+                    .isInstanceOfSatisfying(
+                            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+        }
+    }
+
+    @Nested
     @DisplayName("nextRuns")
     class NextRuns {
 

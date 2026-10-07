@@ -2,6 +2,7 @@ package os.aiworkforce.orchestrator.web;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
@@ -49,6 +50,10 @@ public class QuestionController {
     private final QuestionService questions;
     private final RunExecutor executor;
     private final Runs runs;
+
+    /** Who may read which conversation; absent only where a test builds this by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.chat.ConversationAccess access;
 
     public QuestionController(QuestionService questions, RunExecutor executor, Runs runs) {
         this.questions = questions;
@@ -98,6 +103,12 @@ public class QuestionController {
                             && row.getRequestedBy().toString().equals(me))
                     .toList();
         }
+        if (access != null && !rows.isEmpty()) {
+            Set<UUID> hidden = access.hiddenConversationIds(orgId, actor);
+            rows = rows.stream()
+                    .filter(row -> row.getConversationId() == null || !hidden.contains(row.getConversationId()))
+                    .toList();
+        }
         return questions.views(rows, actor);
     }
 
@@ -106,6 +117,7 @@ public class QuestionController {
     @Operation(summary = "One question")
     public QuestionService.QuestionView get(@PathVariable UUID id) {
         RunQuestion question = questions.find(orgId(), id).orElseThrow(() -> ApiException.notFound("question", id));
+        requireVisible(question);
         return questions.views(List.of(question), RequestContext.requireActor()).getFirst();
     }
 
@@ -117,10 +129,12 @@ public class QuestionController {
     @Operation(summary = "Answer a question, and let the run that asked it continue")
     public AnswerResult answer(@PathVariable UUID id, @Valid @RequestBody AnswerRequest request) {
         // Commits on return, so the resume below reads the answer from the database.
+        questions.find(orgId(), id).ifPresent(this::requireVisible);
         QuestionService.AnswerOutcome outcome = questions.answer(orgId(), id, toInput(request));
         RunQuestion answered = outcome.question();
         if (outcome.newlyAnswered()) {
-            executor.submitResume(answered.getOrgId(), answered.getRunId());
+            // A run with no goal resumes as the person who answered, as an approval resumes as its approver.
+            executor.submitResume(answered.getOrgId(), answered.getRunId(), RequestContext.requireActor());
         }
         String runStatus =
                 runs.findById(answered.getRunId()).map(Run::getStatus).orElse("unknown");
@@ -137,8 +151,16 @@ public class QuestionController {
             mode = RequiresPermission.Mode.ANY)
     @Operation(summary = "Keep a question open for longer, up to seven days from when it was asked")
     public QuestionService.QuestionView extend(@PathVariable UUID id) {
+        questions.find(orgId(), id).ifPresent(this::requireVisible);
         RunQuestion extended = questions.extend(orgId(), id);
         return questions.views(List.of(extended), RequestContext.requireActor()).getFirst();
+    }
+
+    /** A question asked in somebody else's private conversation does not exist for this person. */
+    private void requireVisible(RunQuestion question) {
+        if (access != null && access.hidden(orgId(), RequestContext.requireActor(), question.getConversationId())) {
+            throw ApiException.notFound("question", question.getId());
+        }
     }
 
     private static QuestionService.AnswerInput toInput(AnswerRequest request) {

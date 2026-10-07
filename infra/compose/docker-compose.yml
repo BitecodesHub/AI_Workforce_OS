@@ -3,6 +3,11 @@
 # Every service starts with sandbox providers and sandbox tool drivers, so `make up` gives a
 # working system rather than a system waiting for secrets. Adding a real provider key later is a
 # row in the console, not a change to this file.
+#
+# Every image is pinned to an explicit version, so a rebuild next month runs what ran today.
+# PostgreSQL, Redis, Qdrant and Redpanda are the versions the stack was last run with. Prometheus
+# (its 3.5 long-term release) and Grafana had never been pulled for this stack, so they are pinned
+# to stable releases chosen when the pins were added.
 
 name: aiwos
 
@@ -21,7 +26,8 @@ x-service-defaults: &service-defaults
     KAFKA_BOOTSTRAP: redpanda:9092
     QDRANT_URL: http://qdrant:6333
     AIWOS_JWKS_URI: http://identity:8080/.well-known/jwks.json
-    AIWOS_OTLP_ENDPOINT: http://otel-collector:4318
+    AIWOS_LOG_FORMAT_CONSOLE: ecs
+    # No trace collector runs in this stack; set MANAGEMENT_OTLP_TRACING_ENDPOINT to export traces.
     AIWOS_CORS_ORIGINS: http://localhost:5173
     AIWOS_URL_GATEWAY: http://gateway:8080
     AIWOS_URL_IDENTITY: http://identity:8080
@@ -42,7 +48,7 @@ services:
   # ---- Infrastructure ------------------------------------------------------------------------
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17.11-alpine
     networks: [aiwos]
     environment:
       POSTGRES_DB: aiwos
@@ -68,7 +74,7 @@ services:
       - shared_buffers=256MB
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine
     networks: [aiwos]
     ports: ["6379:6379"]
     command:
@@ -90,7 +96,7 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.19.1
     networks: [aiwos]
     ports: ["6333:6333"]
     volumes:
@@ -104,7 +110,7 @@ services:
   redpanda:
     # Speaks the Kafka protocol in a single container with no ZooKeeper, which keeps a
     # development machine's memory for the services rather than the broker.
-    image: redpandadata/redpanda:latest
+    image: redpandadata/redpanda:v26.2.3
     networks: [aiwos]
     ports: ["9092:9092", "19092:19092"]
     command:
@@ -127,15 +133,16 @@ services:
       start_period: 20s
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.5.0
     networks: [aiwos]
     ports: ["9090:9090"]
     volumes:
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.1.0
     networks: [aiwos]
     ports: ["3001:3000"]
     environment:
@@ -145,6 +152,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
 
   # ---- Platform services ---------------------------------------------------------------------
 

@@ -5,7 +5,8 @@ import { useCountUp } from '../../../hooks/useCountUp'
 import { useInView } from '../../../hooks/useInView'
 import { Icon } from '../shared/Icon'
 import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
-import { CTA, DEMO_ACCOUNTS_HEDGE } from '../shared/landingFacts'
+import { useDemoCta } from '../shared/useDemoCta'
+import { useInPageLink } from '../shared/useInPageLink'
 import {
   ALL_CODES,
   CAPABILITIES,
@@ -35,6 +36,9 @@ import type { RoleId } from './roleData'
  * WAI-ARIA tabs with automatic activation: arrow keys, Home and End move between roles and select
  * as they go. Announcements go to one polite, visually hidden line and are set only in the event
  * handlers that change the selection or the comparison.
+ *
+ * The closing link signs in as the selected role only where this site offers demo accounts;
+ * otherwise it goes to the demos on the page (see useDemoCta).
  */
 
 type CompareTarget = RoleId | 'none'
@@ -79,6 +83,8 @@ export function RoleSwitcher(): ReactElement {
   const tabs = useRef<Partial<Record<RoleId, HTMLButtonElement | null>>>({})
   const selectId = useId()
   const { ref: panelRef, inView } = useInView<HTMLDivElement>({ threshold: 0.2 })
+  const demo = useDemoCta()
+  const inPage = useInPageLink()
 
   const held = ROLE_CODES[selected]
   const heldCount = held.size
@@ -338,11 +344,10 @@ export function RoleSwitcher(): ReactElement {
           </div>
 
           <div className="lp-roles-foot">
-            <a className="lp-link" href={CTA.signIn.href}>
-              Sign in as {ROLE_ARTICLE[selected]} {label.toLowerCase()}
+            <a className="lp-link" href={demo.href} onClick={inPage}>
+              {demo.accounts ? `Sign in as ${ROLE_ARTICLE[selected]} ${label.toLowerCase()}` : demo.label}
               <Icon name="arrow-right" />
             </a>
-            <p className="caption">{DEMO_ACCOUNTS_HEDGE}</p>
           </div>
         </div>
 

@@ -109,6 +109,11 @@ function StepRow({
 
       {task.result && (
         <div style={{ marginTop: 'var(--space-2)' }}>
+          {task.status.toLowerCase() === 'failed' && (
+            <p className="caption" style={{ marginBottom: 'var(--space-1)' }}>
+              Incomplete answer
+            </p>
+          )}
           <ClampedResult text={task.result} />
         </div>
       )}

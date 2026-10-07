@@ -1,0 +1,23 @@
+groups:
+  - name: aiwos
+    rules:
+      - alert: AgentRunsAbandoned
+        expr: increase(aiwos_runs_abandoned_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: Agent runs were abandoned in the last 15 minutes
+          description: A run lost its worker and was given up on. Check the orchestrator logs for the run id.
+      - alert: ModelProviderFailureRate
+        expr: |
+          sum by (provider) (rate(aiwos_llm_call_seconds_count{outcome!="success"}[10m]))
+            / sum by (provider) (rate(aiwos_llm_call_seconds_count[10m])) > 0.2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 20 percent of calls to a model provider are failing
+      - alert: ServiceNotReady
+        expr: up{job="aiwos-services"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: A service is not answering its readiness probe

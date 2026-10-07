@@ -4,17 +4,29 @@ import { formatElapsed } from '../../lib/format'
 import { useRunSteps, type Agent, type BoardGoal, type BoardTask, type RunQuestion } from '../../lib/queries'
 import { can } from '../../lib/session'
 import { useNow } from '../../lib/useNow'
-import { canStopGoal, currentTaskIndex, liveStepText } from './chatModel'
+import { canStopGoal, currentTaskIndex, liveStepText, workStripSummary } from './chatModel'
 
 /*
  * One line per active goal, in the dock (B1.6) or the Work panel (B1.2). A goal that is running
  * shows its live step and elapsed time; one that is parked for a person points straight at what
- * needs deciding instead.
+ * needs deciding instead: "Go to question" for a question, and "Review" for an approval, which
+ * hands the goal to `onReview` (Chat.tsx opens its progress card and focuses Approve there).
  */
 
 function currentTaskOf(goal: BoardGoal): BoardTask | undefined {
   const index = currentTaskIndex(goal.tasks)
   return index === -1 ? undefined : goal.tasks[index]
+}
+
+/**
+ * The step a running task is on. Its own component so the steps query only exists once the task
+ * has a run: a task still queued has no run id, and asking for its steps would request
+ * /api/runs//steps.
+ */
+function LiveStep({ runId, active }: { runId: string; active: boolean }) {
+  const stepsQuery = useRunSteps(runId, { active })
+  const steps = stepsQuery.data
+  return <span className="caption muted">{liveStepText(steps?.[steps.length - 1])}</span>
 }
 
 function WorkStripLine({
@@ -24,6 +36,7 @@ function WorkStripLine({
   question,
   onStop,
   onGoTo,
+  onReview,
 }: {
   goal: BoardGoal
   agentNames: Record<string, Agent>
@@ -31,14 +44,11 @@ function WorkStripLine({
   question: RunQuestion | undefined
   onStop: (goalId: string) => void
   onGoTo: (elementId: string) => void
+  onReview: (goalId: string) => void
 }) {
   const now = useNow(1_000)
   const task = currentTaskOf(goal)
   const [confirmStop, setConfirmStop] = useState(false)
-  const active = task?.status === 'running'
-  const stepsQuery = useRunSteps(task?.runId ?? '', { active })
-  const steps = stepsQuery.data
-  const latestStep = steps?.[steps.length - 1]
   const agent = task?.agentId ? agentNames[task.agentId] : undefined
   const name = agent?.name ?? 'An agent'
   const stoppable = canStopGoal(goal, me, can)
@@ -62,9 +72,9 @@ function WorkStripLine({
 
   if (task.status === 'waiting_approval') {
     return (
-      <div className="chat-workstrip-line">
+      <div className="chat-workstrip-line" data-approval>
         <span>{name} is waiting for approval</span>
-        <button type="button" className="link" onClick={() => onGoTo(`progress-${goal.id}`)}>
+        <button type="button" className="link" onClick={() => onReview(goal.id)}>
           Review
         </button>
       </div>
@@ -75,7 +85,11 @@ function WorkStripLine({
     <div className="chat-workstrip-line">
       <span className="chat-pulse-soft" aria-hidden="true" />
       <span>{name} is working</span>
-      <span className="caption muted">{liveStepText(latestStep)}</span>
+      {task.runId ? (
+        <LiveStep runId={task.runId} active={task.status === 'running'} />
+      ) : (
+        <span className="caption muted">{liveStepText(undefined)}</span>
+      )}
       <span className="caption tabular">{formatElapsed(goal.createdAt, null, now)}</span>
       {stoppable && (
         <>
@@ -109,6 +123,7 @@ export function WorkStrip({
   compact,
   onStop,
   onGoTo,
+  onReview,
 }: {
   goals: BoardGoal[]
   questions: RunQuestion[]
@@ -117,19 +132,24 @@ export function WorkStrip({
   compact: boolean
   onStop: (goalId: string) => void
   onGoTo: (elementId: string) => void
+  /** "Review" on a goal waiting for an approval: open its decision. */
+  onReview: (goalId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
   if (goals.length === 0) return null
 
   const questionFor = (goalId: string) => questions.find((q) => q.status === 'pending' && q.goalId === goalId)
-  const hasQuestion = goals.some((g) => currentTaskOf(g)?.status === 'waiting_input')
+  const summary = workStripSummary(goals)
+  // Marks a strip parked on a person, an answer (data-question) or an approval (data-approval).
+  const hasQuestion = summary.answers > 0
+  const hasApproval = summary.approvals > 0
 
   if (compact && !expanded) {
     return (
-      <div className="chat-workstrip" data-question={hasQuestion || undefined}>
+      <div className="chat-workstrip" data-question={hasQuestion || undefined} data-approval={hasApproval || undefined}>
         <button type="button" className="chat-workstrip-line chat-workstrip-disclosure" aria-expanded={false} onClick={() => setExpanded(true)}>
-          {goals.length === 1 ? '1 piece of work running' : `${goals.length} pieces of work running`} · Show
+          {summary.text} · Show
         </button>
       </div>
     )
@@ -139,14 +159,23 @@ export function WorkStrip({
   const rest = goals.length - shown.length
 
   return (
-    <div className="chat-workstrip" data-question={hasQuestion || undefined}>
+    <div className="chat-workstrip" data-question={hasQuestion || undefined} data-approval={hasApproval || undefined}>
       {compact && (
         <button type="button" className="chat-workstrip-line chat-workstrip-disclosure" aria-expanded={true} onClick={() => setExpanded(false)}>
           Hide
         </button>
       )}
       {shown.map((goal) => (
-        <WorkStripLine key={goal.id} goal={goal} agentNames={agentNames} me={me} question={questionFor(goal.id)} onStop={onStop} onGoTo={onGoTo} />
+        <WorkStripLine
+          key={goal.id}
+          goal={goal}
+          agentNames={agentNames}
+          me={me}
+          question={questionFor(goal.id)}
+          onStop={onStop}
+          onGoTo={onGoTo}
+          onReview={onReview}
+        />
       ))}
       {rest > 0 && <p className="caption muted">and {rest} more</p>}
     </div>

@@ -1,167 +1,141 @@
-import { useMemo } from 'react'
-import { Card, DataTable, EmptyState, Eyebrow, Notice, PageHeader, StatRow, StatTile, Tag } from '../components/ui'
-import type { Column, TagTone } from '../components/ui'
+import { Button, Card, EmptyState, PageHeader } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
-import { formatCount, formatDate, sentenceCase } from '../lib/format'
-import { OUTCOME_LABEL, OUTCOME_TONE, auditActionLabel, type AuditOutcome } from '../lib/labels'
-import { useAnalytics } from '../lib/queries'
-import type { ActionCount, AnalyticsSummary, OutcomeCount } from '../lib/queries'
+import { ActivityLog } from '../components/analytics/ActivityLog'
+import { AgentsTable } from '../components/analytics/AgentsTable'
+import { BudgetCard } from '../components/analytics/BudgetCard'
+import { DailyTrend } from '../components/analytics/DailyTrend'
+import { OutcomesCard } from '../components/analytics/OutcomesCard'
+import { SpendBreakdown } from '../components/analytics/SpendBreakdown'
+import { ValueInputs } from '../components/analytics/ValueInputs'
+import { ValueTiles } from '../components/analytics/ValueTiles'
+import type { Insights, InsightsWindow } from '../lib/insightsQueries'
+import {
+  INSIGHTS_WINDOWS,
+  WINDOW_LABEL,
+  parseWindow,
+  useAgentInsights,
+  useInsights,
+} from '../lib/insightsQueries'
+import { useRouter } from '../lib/router'
 import { can } from '../lib/session'
 
 /*
- * Analytics.
+ * Analytics: what the workforce got done, what it cost and what it was worth.
  *
- * Derived directly from the audit log rather than from a daily rollup table: nothing populates
- * that rollup yet, so reading it would show zeros forever, indistinguishable from a workspace
- * with no activity. Counting the audit projection instead means every figure here reflects rows
- * that actually exist, even before the rollup job is built - see AnalyticsController on the
- * analytics service for how the count is produced.
+ * The figures come from the orchestrator's own records of goals, tasks, runs, approvals, questions
+ * and model spend, over a window of 7, 30 or 90 days, each with how it moved against the same
+ * length of time before. They follow three rules so none can mislead: a rate counts finished work
+ * only and needs a handful of runs, work with no price is called unpriced and never free, and
+ * anything worked out from the inputs an administrator typed is labelled as an estimate.
  *
- * Where the viewer can read the audit log, an action or outcome links to the matching entries
- * there. The audit log filters only the entries it has loaded, and says so, so a 30-day count
- * here can be larger than the matches shown there.
+ * Under the figures: the days, each agent, the budget (the Orchestrator's "Spend today" tile lands
+ * on it), where the money went with a file for finance, and the two inputs the estimate rests on.
+ * The audit log's counts, which this page used to be, are folded away at the bottom for the people
+ * who read them for the blocked and failed totals.
  */
 
-const isAuditOutcome = (value: string): value is AuditOutcome => Object.hasOwn(OUTCOME_LABEL, value)
-
-function outcomeWords(outcome: string): { tone: TagTone; label: string } {
-  return isAuditOutcome(outcome)
-    ? { tone: OUTCOME_TONE[outcome], label: OUTCOME_LABEL[outcome] }
-    : { tone: 'neutral', label: sentenceCase(outcome) || 'Unknown' }
+function WindowPicker({ window, onChange }: { window: InsightsWindow; onChange: (next: InsightsWindow) => void }) {
+  return (
+    <div role="group" aria-label="Time window" className="row" style={{ gap: 'var(--space-2)' }}>
+      {INSIGHTS_WINDOWS.map((option) => (
+        <Button
+          key={option}
+          variant={option === window ? 'primary' : 'outline'}
+          aria-pressed={option === window}
+          onClick={() => onChange(option)}
+        >
+          {WINDOW_LABEL[option].replace('Last ', '')}
+        </Button>
+      ))}
+    </div>
+  )
 }
 
-/** The audit log filtered to one action, found by the same words this table shows. */
-const auditSearchHref = (label: string) => `/audit?q=${encodeURIComponent(label)}`
-
-function Summary({ data }: { data: AnalyticsSummary }) {
-  const canReadAudit = can('audit:read')
-  const denied = data.byOutcome.find((row) => row.outcome === 'denied')?.count ?? 0
-  const failed = data.byOutcome.find((row) => row.outcome === 'failed')?.count ?? 0
-
-  const actionColumns = useMemo<Column<ActionCount>[]>(
-    () => [
-      {
-        key: 'action',
-        header: 'Action',
-        sortValue: (row) => auditActionLabel(row.action),
-        render: (row) => {
-          const label = auditActionLabel(row.action)
-          return canReadAudit ? (
-            <a className="link" href={auditSearchHref(label)} title={row.action}>
-              {label}
-            </a>
-          ) : (
-            <span title={row.action}>{label}</span>
-          )
-        },
-      },
-      {
-        key: 'count',
-        header: 'Entries',
-        numeric: true,
-        sortValue: (row) => row.count,
-        render: (row) => formatCount(row.count),
-      },
-    ],
-    [canReadAudit],
-  )
+function Figures({ insights, window }: { insights: Insights; window: InsightsWindow }) {
+  const canReadRuns = can('run:read')
+  const agents = useAgentInsights(window, { enabled: canReadRuns })
+  const empty = insights.runs.total === 0 && insights.goals.completed + insights.goals.failed === 0
 
   return (
-    <>
-      <div style={{ marginTop: 'var(--space-6)' }}>
-        <StatRow>
-          <StatTile label="Audit entries" value={formatCount(data.totalEvents)} unit="last 30 days" />
-          <StatTile label="Distinct actions" value={formatCount(data.byAction.length)} unit="kinds of event" />
-          <StatTile
-            label="Denied"
-            value={formatCount(denied)}
-            unit="blocked by policy"
-            href={canReadAudit && denied > 0 ? '/audit?outcome=denied' : undefined}
-          />
-          <StatTile
-            label="Failed"
-            value={formatCount(failed)}
-            unit="did not succeed"
-            href={canReadAudit && failed > 0 ? '/audit?outcome=failed' : undefined}
-          />
-        </StatRow>
+    <div className="page-sections">
+      <div>
+        <ValueTiles insights={insights} window={window} />
         <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
-          {formatDate(data.windowStart)} to {formatDate(data.windowEnd)}, counted from the
-          append-only audit projection.
+          {WINDOW_LABEL[window]}, compared with the {WINDOW_LABEL[window].replace('Last ', '')} before. Goals are
+          counted on the day they finished, runs on the day they started. Spend is estimated at catalogue prices.
         </p>
       </div>
 
-      <section style={{ marginTop: 'var(--space-7)' }}>
-        <Card as="section">
-          <Eyebrow as="h2">Outcomes</Eyebrow>
-          {data.byOutcome.length === 0 ? (
-            <p className="muted">No audit entries in this window.</p>
-          ) : (
-            <div className="row" style={{ gap: 'var(--space-4)', flexWrap: 'wrap' }}>
-              {data.byOutcome.map((row: OutcomeCount) => {
-                const words = outcomeWords(row.outcome)
-                return (
-                  <Tag key={row.outcome} tone={words.tone} withDot>
-                    {words.label} · {formatCount(row.count)}
-                  </Tag>
-                )
-              })}
-            </div>
-          )}
-        </Card>
-      </section>
-
-      <section style={{ marginTop: 'var(--space-6)' }}>
-        <Card as="section">
-          <Eyebrow as="h2">By action</Eyebrow>
-          <DataTable
-            columns={actionColumns}
-            rows={data.byAction}
-            getKey={(row) => row.action}
-            caption="Audit entries grouped by action, for the window above."
+      {empty ? (
+        <Card>
+          <EmptyState
+            icon={<EmptyIcon kind="task" />}
+            title="No work in this window"
+            body="Once agents start running goals, what they got done, what it cost and how it went will appear here. Try a longer window if work was quieter lately."
           />
         </Card>
-      </section>
-    </>
+      ) : (
+        <>
+          <DailyTrend insights={insights} />
+          <OutcomesCard insights={insights} />
+        </>
+      )}
+
+      {canReadRuns ? (
+        <QueryState query={agents} permission="run:read" what="how each agent is doing" rows={4}>
+          {(loaded) =>
+            loaded ? (
+              <AgentsTable
+                agents={loaded.agents}
+                window={window}
+                hourlyRateSet={(insights.value?.hourlyRate ?? loaded.hourlyRate) !== null}
+              />
+            ) : (
+              <Card>
+                <p className="muted">How each agent is doing could not be read.</p>
+              </Card>
+            )
+          }
+        </QueryState>
+      ) : null}
+    </div>
   )
 }
 
 export function Analytics() {
-  const analyticsQuery = useAnalytics()
+  const { search, hash, navigate } = useRouter()
+  const window = parseWindow(search.get('window'))
+  const insights = useInsights(window)
+
+  const choose = (next: InsightsWindow) => navigate(`/analytics?window=${next}${hash}`, { replace: true })
 
   return (
     <div className="page admin-analytics">
       <PageHeader
         eyebrow="How the workforce is doing"
         title="Analytics"
-        description="Activity for this workspace over the last 30 days, derived from the audit log."
+        description="What your agents got done, what it cost, and what it was worth, over the window you choose."
+        action={<WindowPicker window={window} onChange={choose} />}
       />
 
-      <Notice tone="info">
-        These figures are counted directly from the audit log, not from a separate rollup. A
-        number here is always as many entries as actually exist, never a placeholder.
-      </Notice>
+      <div className="page-sections">
+        <QueryState query={insights} permission="analytics:read" what="the analytics dashboard" rows={4}>
+          {(loaded) =>
+            loaded ? (
+              <Figures insights={loaded} window={window} />
+            ) : (
+              <Card>
+                <p className="muted">The analytics could not be read. Try again in a moment.</p>
+              </Card>
+            )
+          }
+        </QueryState>
 
-      <QueryState
-        query={analyticsQuery}
-        permission="analytics:read"
-        what="the analytics dashboard"
-        rows={4}
-        isEmpty={(data) => data.totalEvents === 0}
-        empty={
-          <div style={{ marginTop: 'var(--space-6)' }}>
-            <Card>
-              <EmptyState
-                icon={<EmptyIcon kind="task" />}
-                title="No activity yet"
-                body="Once agents start running and approvals are decided, activity will appear here."
-              />
-            </Card>
-          </div>
-        }
-      >
-        {(data) => <Summary data={data} />}
-      </QueryState>
+        <BudgetCard />
+        <SpendBreakdown window={window} />
+        <ValueInputs value={insights.data?.value ?? null} />
+        <ActivityLog />
+      </div>
     </div>
   )
 }

@@ -5,8 +5,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import os.aiworkforce.knowledge.domain.Document;
 
@@ -24,6 +26,14 @@ public interface Documents extends JpaRepository<Document, UUID> {
     List<Document> findBySourceIdOrderByTitle(UUID sourceId);
 
     Optional<Document> findByIdAndOrgId(UUID id, UUID orgId);
+
+    boolean existsBySourceIdAndExternalId(UUID sourceId, String externalId);
+
+    /** Erases every document of a source. Their passages are deleted first, by the caller. */
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Document d where d.sourceId = :sourceId")
+    int deleteBySourceId(@Param("sourceId") UUID sourceId);
 
     /**
      * Documents the last crawl did not see, so they can be tombstoned.

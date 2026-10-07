@@ -1,12 +1,16 @@
 package os.aiworkforce.orchestrator.service;
 
+import java.util.UUID;
+
+import os.aiworkforce.orchestrator.domain.Approval;
 import os.aiworkforce.orchestrator.domain.Goal;
 import os.aiworkforce.orchestrator.domain.RunQuestion;
 import os.aiworkforce.orchestrator.domain.Task;
 
 /**
- * Notified as {@link TaskProgress} settles a task's or a goal's fate, and as a goal is stopped,
- * retried or asks its requester something.
+ * Notified as {@link TaskProgress} settles a task's or a goal's fate, as a goal is stopped,
+ * retried or asks its requester something, as an approval is raised or expires, and as a schedule
+ * pauses itself.
  *
  * <p>Every Spring bean implementing this is called, in no particular order, after the write that
  * changed the task or the goal commits, each listener in its own transaction. This is how the
@@ -41,4 +45,28 @@ public interface GoalLifecycleListener {
      * for a run started directly on an agent rather than for a task.
      */
     default void onQuestionAsked(Goal goal, Task task, RunQuestion question) {}
+
+    /**
+     * A run parked on {@code approval}, waiting for a person to decide it. {@code goal} and {@code
+     * task} are null for a run started directly on an agent.
+     */
+    default void onApprovalRaised(Goal goal, Task task, Approval approval) {}
+
+    /**
+     * Nobody decided {@code approval} before its deadline: it closed as expired, and its run was
+     * stopped. {@code goal} and {@code task} are null for a run started directly on an agent.
+     */
+    default void onApprovalExpired(Goal goal, Task task, Approval approval) {}
+
+    /** A schedule paused itself after too many failed runs in a row. */
+    default void onSchedulePaused(SchedulePause pause) {}
+
+    /**
+     * A schedule that paused itself, as the schedule package reports it. Plain values rather than
+     * the schedule itself, so this package never depends on that one.
+     *
+     * @param ownerId the person the schedule works for, or null for one nobody owns
+     * @param failures how many runs in a row failed
+     */
+    record SchedulePause(UUID orgId, UUID scheduleId, UUID ownerId, String reason, int failures) {}
 }

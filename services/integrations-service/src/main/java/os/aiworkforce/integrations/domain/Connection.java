@@ -71,6 +71,9 @@ public class Connection extends OrgScopedEntity {
     @Column(nullable = false)
     private boolean sandbox = true;
 
+    @Column(name = "last_checked_at")
+    private Instant lastCheckedAt;
+
     public boolean isUsable() {
         return !reconnectRequired && ("connected".equals(status) || "sandbox".equals(status));
     }
@@ -102,6 +105,102 @@ public class Connection extends OrgScopedEntity {
         this.connectedAt = Instant.now();
         this.reconnectRequired = false;
         this.lastError = null;
+    }
+
+    /**
+     * Stores a token that its provider has just accepted.
+     *
+     * @param encryptedCredential the token, already encrypted for this workspace
+     */
+    public void connectWithToken(String encryptedCredential, String accountLabel, UUID connectedBy) {
+        this.credentialRef = encryptedCredential;
+        this.status = "connected";
+        this.sandbox = false;
+        this.accountLabel = accountLabel;
+        this.connectedBy = connectedBy;
+        this.connectedAt = Instant.now();
+        this.lastCheckedAt = this.connectedAt;
+        this.lastError = null;
+        this.reconnectRequired = false;
+        this.tokenExpiresAt = null;
+    }
+
+    /**
+     * Stores the tokens of a completed sign-in.
+     *
+     * @param encryptedCredential the access and refresh tokens, already encrypted for this workspace
+     * @param requested the permissions that were asked for and are checked afterwards
+     * @param granted what the provider says was approved
+     */
+    public void connectWithOAuth(
+            String encryptedCredential,
+            String accountLabel,
+            UUID connectedBy,
+            List<String> requested,
+            List<String> granted,
+            Instant expiresAt) {
+        connectWithToken(encryptedCredential, accountLabel, connectedBy);
+        this.requestedScopes = requested;
+        this.grantedScopes = granted;
+        this.tokenExpiresAt = expiresAt;
+        this.lastRefreshedAt = this.connectedAt;
+    }
+
+    /** Stores the tokens after a successful refresh. The account and the consent are unchanged. */
+    public void recordRefresh(String encryptedCredential, Instant expiresAt) {
+        this.credentialRef = encryptedCredential;
+        this.tokenExpiresAt = expiresAt;
+        this.lastRefreshedAt = Instant.now();
+        this.lastError = null;
+        this.reconnectRequired = false;
+        if (!"connected".equals(status)) {
+            this.status = "connected";
+        }
+    }
+
+    /**
+     * Records the result of checking the stored token again.
+     *
+     * <p>A failed check marks the connection as needing attention but keeps the token, so a
+     * provider that was briefly unreachable does not cost the administrator a reconnect, and
+     * agents keep reaching the real account - where a failure is reported - rather than quietly
+     * falling back to practice data.
+     */
+    public void recordCheck(boolean ok, String error) {
+        this.lastCheckedAt = Instant.now();
+        this.lastError = ok ? null : error;
+        if (!sandbox) {
+            this.status = ok ? "connected" : "error";
+        }
+    }
+
+    /** Notes that a check ran, without changing the state a refresh failure left behind. */
+    public void setLastCheckedAtNow() {
+        this.lastCheckedAt = Instant.now();
+    }
+
+    /** Forgets the token and returns the connector to practice data. */
+    public void disconnect() {
+        this.credentialRef = null;
+        this.status = "sandbox";
+        this.sandbox = true;
+        this.accountLabel = null;
+        this.connectedBy = null;
+        this.connectedAt = null;
+        this.tokenExpiresAt = null;
+        this.lastRefreshedAt = null;
+        this.lastCheckedAt = null;
+        this.lastError = null;
+        this.reconnectRequired = false;
+        this.grantedScopes = List.of();
+    }
+
+    /** Whether a live token is stored that agents should use. */
+    public boolean hasLiveCredential() {
+        return !sandbox
+                && credentialRef != null
+                && !reconnectRequired
+                && ("connected".equals(status) || "error".equals(status));
     }
 
     public List<String> missingScopes() {
@@ -200,5 +299,9 @@ public class Connection extends OrgScopedEntity {
 
     public UUID getConnectedBy() {
         return connectedBy;
+    }
+
+    public Instant getLastCheckedAt() {
+        return lastCheckedAt;
     }
 }

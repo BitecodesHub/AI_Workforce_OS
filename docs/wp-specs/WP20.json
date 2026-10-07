@@ -1,0 +1,23 @@
+{
+ "id": "WP20",
+ "title": "Agent management controls",
+ "priority": 7,
+ "wave": 3,
+ "effort": "M",
+ "findings": [
+  "Agent management is incomplete where admins look for it: no pause or resume on the agent pages, \"Resume all\" skips General Employee, and revisions and per-agent routing cannot be used",
+  "Managers cannot compare agents or spot underperformers: agent cards and detail show configuration, not outcomes"
+ ],
+ "ownedFiles": [
+  "web/src/routes/AgentDetail.tsx (all sections except the connectors section)",
+  "web/src/routes/Agents.tsx",
+  "web/src/components/orchestrator/AgentsStrip.tsx",
+  "web/src/routes/ModelRouting.tsx",
+  "web/src/components/routing/PolicyEditor.tsx (new)",
+  "web/src/lib/agentQueries.ts (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/AgentRevisionsController.java (new)",
+  "services/orchestrator-service/src/main/java/os/aiworkforce/orchestrator/web/ModelPolicyController.java",
+  "platform-core/src/main/java/os/aiworkforce/platform/rbac/Permission.java (planned-flag flip only)"
+ ],
+ "spec": "Rules:\n- Standard rules apply.\n- Do not edit the connectors section of AgentDetail.tsx; another agent is rewriting it.\n- Do not edit AgentController.java.\n- Edit Permission.java only to clear the planned flag on agent:set_model_policy, and only if WP04 set it.\n\n1) AgentsStrip bulk filter\n- Replace the filter with: action === 'resume' ? a.status === 'paused' : a.status === 'active' && (includeGeneral || !a.fallback).\n- Give each row its own pending state.\n- The toast counts only real changes.\n\n2) Pause and Resume buttons\n- Add them to the AgentDetail header and to every Agents.tsx card.\n- Gate them on agent:update and hide them for retired agents.\n- Use the existing useSetAgentStatus. The per-id hooks are deleted by WP17.\n- Pausing General Employee needs a confirm step that warns that unmatched requests will ask people to choose an agent.\n\n3) Outcomes, using the WP19 contract GET /api/orchestrator/insights/agents?window=30d\n- Gate on run:read.\n- AgentDetail tiles: Success rate (30 days), Cost (30 days) and Runs (30 days). Keep the Connectors tile.\n- Agents cards show two figures: success rate and 30-day cost.\n- Show 'Not enough runs yet' when an agent has fewer than 5 finished runs.\n\n4) Revisions\n- New AgentRevisionsController: GET /api/agents/{id}/revisions (agent:read).\n  - Returns view DTOs: revision, createdAt, createdBy, changed-field summary, usedByRuns flag.\n  - Never returns JPA entities.\n- AgentDetail Revisions card lists the revisions.\n- Restore re-submits the old revision's prompt, goals, temperature, maxOutputTokens and maxSteps through the existing PUT /api/agents/{id}/configuration after a confirm step. This creates revision N+1.\n\n5) Per-agent routing\n- Extract the candidate-chain editor from ModelRouting.tsx into components/routing/PolicyEditor.tsx. ModelRouting uses it unchanged.\n- AgentDetail embeds it, gated on agent:set_model_policy. Model pickers additionally need provider:read.\n- Add DELETE /api/agents/{id}/model-policy to ModelPolicyController. In the UI it is the 'Use the workspace policy' option, which clears the agent's policy.\n- Audit every model-policy change with the orchestrator AuditClient after commit.\n\nTests:\n- AgentsStrip filter unit test.\n- Revisions controller returns DTOs.\n- DELETE clears the policy, and routing falls back to the workspace policy.\n- PolicyEditor renders in both places.\n\nAcceptance (live):\n- Pause all, then Resume all, leaves General Employee active.\n- AgentDetail shows Pause and the success tiles.\n- Restoring revision 1 creates a new revision."
+}

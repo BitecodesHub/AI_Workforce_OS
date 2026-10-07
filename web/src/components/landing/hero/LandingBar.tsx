@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Brand } from '../../layout/Brand'
 import { CTA } from '../shared/landingFacts'
+import { useDemoCta } from '../shared/useDemoCta'
 import { useInPageLink } from '../shared/useInPageLink'
 
 /*
  * The public page's sticky bar.
  *
  * It floats transparent over the hero and turns into a glass capsule once the page scrolls. The
- * in-page links mark the section being read, and the "Try a demo account" button joins "Sign in"
- * only after the hero's own calls to action have scrolled away, so the same offer is never shown
- * twice at once.
+ * in-page links mark the section being read, and the demo button joins "Sign in" only after the
+ * hero's own calls to action have scrolled away, so the same offer is never shown twice at once.
+ * Like the hero's, that button offers the demo accounts only where this site has them (see
+ * useDemoCta); otherwise it offers "Create your workspace", since the bar already links to the
+ * demos on the page.
  *
  * All three behaviours come from IntersectionObservers; there are no scroll listeners. Where the
  * observer does not exist, the bar stays transparent, no link is marked and the button shows.
@@ -34,6 +37,7 @@ export type LandingBarProps = { sections?: readonly BarSection[] }
 
 export function LandingBar({ sections = HOME_SECTIONS }: LandingBarProps): ReactElement {
   const inPage = useInPageLink()
+  const demo = useDemoCta()
   const sentinelRef = useRef<HTMLDivElement>(null)
   const [solid, setSolid] = useState(false)
   const [ctaVisible, setCtaVisible] = useState<boolean>(() => typeof IntersectionObserver === 'undefined')
@@ -115,12 +119,15 @@ export function LandingBar({ sections = HOME_SECTIONS }: LandingBarProps): React
             <a className="button button-outline" href={CTA.signIn.href}>
               {CTA.signIn.label}
             </a>
+            {/* Without demo accounts the demo button would repeat the "See it work" link beside it,
+                so the bar offers the next step instead. */}
             <a
               className="button button-primary lp-bar-cta"
-              href={CTA.demo.href}
+              href={demo.accounts ? demo.href : CTA.create.href}
+              onClick={inPage}
               data-visible={ctaVisible ? 'true' : 'false'}
             >
-              {CTA.demo.label}
+              {demo.accounts ? demo.label : CTA.create.label}
             </a>
           </div>
         </div>

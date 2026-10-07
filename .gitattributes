@@ -1,0 +1,4 @@
+# Windows launchers need CRLF; shell scripts and the macOS launchers must keep LF.
+*.bat     text eol=crlf
+*.sh      text eol=lf
+*.command text eol=lf

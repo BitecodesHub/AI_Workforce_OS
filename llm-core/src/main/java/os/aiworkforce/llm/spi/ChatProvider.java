@@ -28,6 +28,15 @@ public interface ChatProvider {
     ProviderDescriptor.Kind kind();
 
     /**
+     * Whether this adapter sends a turn's pictures to the provider. One that does not has them
+     * replaced by a note before the call (see {@code ImagePart#unreadableNote}), so a model is
+     * never asked about an image it was silently not given.
+     */
+    default boolean sendsImages() {
+        return false;
+    }
+
+    /**
      * Sends one request and returns one answer.
      *
      * <p>Fails with {@code ProviderException} carrying a classified {@code ProviderFailure}. An

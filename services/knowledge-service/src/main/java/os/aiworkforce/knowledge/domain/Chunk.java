@@ -6,7 +6,12 @@ import java.util.UUID;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+
+import org.springframework.data.domain.Persistable;
 
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
@@ -16,10 +21,15 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  * <p>The text is stored here as well as in the vector store, because a citation has to be able to
  * show the passage it refers to and a vector database is not a document store. The page and
  * character offsets are what let a citation point at a place rather than at a whole file.
+ *
+ * <p>It reports whether it is new for the same reason {@code BaseEntity} does: the identifier is
+ * assigned in Java, so Spring Data would otherwise take every fresh chunk for an existing one and
+ * merge it, which costs a SELECT per passage before each insert - thousands of them for one large
+ * document.
  */
 @Entity
 @Table(name = "chunks")
-public class Chunk {
+public class Chunk implements Persistable<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -58,8 +68,23 @@ public class Chunk {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    @Transient
+    private boolean isNew = true;
+
+    @Override
     public UUID getId() {
         return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostPersist
+    @PostLoad
+    void markPersisted() {
+        this.isNew = false;
     }
 
     public void setOrgId(UUID orgId) {

@@ -74,6 +74,10 @@ public class Approval extends OrgScopedEntity {
     @Column(name = "decision_note", columnDefinition = "text")
     private String decisionNote;
 
+    /** Rejected as written, with feedback, and the run carried on rather than ended. */
+    @Column(name = "sent_back", nullable = false)
+    private boolean sentBack = false;
+
     /** Defaults to rejection: an action nobody approved must not happen because everybody was busy. */
     @Column(name = "on_expiry", nullable = false)
     private String onExpiry = "reject";
@@ -88,8 +92,29 @@ public class Approval extends OrgScopedEntity {
     @Column(name = "reason", columnDefinition = "text")
     private String reason;
 
-    @Column(name = "created_at")
-    private Instant createdAt;
+    /** Where the call was going when the approval was raised: {@code live} or {@code sandbox}; null before this was recorded. */
+    @Column(name = "mode")
+    private String mode;
+
+    /** What happened when the approved call was carried out, in one sentence; null until it was. */
+    @Column(name = "outcome", columnDefinition = "text")
+    private String outcome;
+
+    public String getMode() {
+        return mode;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
+    }
+
+    public String getOutcome() {
+        return outcome;
+    }
+
+    public void setOutcome(String outcome) {
+        this.outcome = outcome;
+    }
 
     public UUID getRunId() {
         return runId;
@@ -161,6 +186,14 @@ public class Approval extends OrgScopedEntity {
 
     public void setPayload(String payload) {
         this.payload = payload;
+    }
+
+    public boolean isSentBack() {
+        return sentBack;
+    }
+
+    public void setSentBack(boolean sentBack) {
+        this.sentBack = sentBack;
     }
 
     public String getStatus() {
@@ -249,14 +282,6 @@ public class Approval extends OrgScopedEntity {
 
     public void setReason(String reason) {
         this.reason = reason;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
     }
 
     public boolean isPending() {

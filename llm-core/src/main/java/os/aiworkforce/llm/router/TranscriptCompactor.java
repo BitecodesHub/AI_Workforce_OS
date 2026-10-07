@@ -3,6 +3,10 @@ package os.aiworkforce.llm.router;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -27,7 +31,9 @@ import os.aiworkforce.llm.model.TokenEstimate;
  *       guardrails. An agent that forgets its own constraints mid-task is worse than one that
  *       stops.
  *   <li><b>The most recent turns are never dropped.</b> They hold the immediate task and the
- *       results the model is currently reasoning about.
+ *       results the model is currently reasoning about. An oversized tool result among them is
+ *       shortened, though, because one list call against a live system can be larger than the
+ *       whole window, and it is usually what made the prompt too large in the first place.
  *   <li><b>The middle is summarised, not deleted.</b> Deleting it would leave a tool result
  *       answering a call that is no longer in the transcript, which several providers reject
  *       outright and all of them handle badly.
@@ -42,14 +48,31 @@ public class TranscriptCompactor {
 
     private static final Logger log = LoggerFactory.getLogger(TranscriptCompactor.class);
 
-    /** Turns at the end that are always kept verbatim. */
+    /** Turns at the end that are always kept, though an oversized tool result among them is cut. */
     private static final int PROTECTED_RECENT_TURNS = 6;
 
     /** Fraction of the window to aim for, leaving room for the answer. */
     private static final double TARGET_FILL = 0.55;
 
+    /** How much of the original request the summary keeps: the task, in full, within reason. */
+    static final int REQUEST_KEEP_CHARS = 2_000;
+
+    /** A tool result is never cut below this; past it, the result says little enough to be useless. */
+    static final int MIN_TOOL_RESULT_CHARS = 1_000;
+
+    /** The line chat puts between its context preamble and what the person actually asked. */
+    private static final String REQUEST_MARKER = "Request:";
+
+    /** How a shortened tool result begins, so a second compaction can find the original text. */
+    private static final String SHORTENED_PREFIX = "{\"truncated\":true,";
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     /**
      * Returns a shortened request, or null when nothing more can be removed.
+     *
+     * <p>Aims for a little over half of {@code model}'s window. The result can still be over that
+     * aim when the protected turns alone are larger; the caller re-checks whether it fits.
      *
      * <p>Null means the caller should move to a model with a larger window rather than keep
      * trimming: past this point the only thing left to cut is the current task itself.
@@ -57,6 +80,7 @@ public class TranscriptCompactor {
     public ChatRequest compact(ChatRequest request, ModelSpec model) {
         List<ChatMessage> messages = request.messages();
         int budget = (int) (model.contextWindowTokens() * TARGET_FILL);
+        int before = TokenEstimate.forRequest(request);
 
         List<ChatMessage> system = messages.stream()
                 .filter(message -> message.role() == ChatMessage.Role.SYSTEM)
@@ -65,28 +89,25 @@ public class TranscriptCompactor {
                 .filter(message -> message.role() != ChatMessage.Role.SYSTEM)
                 .toList();
 
-        if (conversation.size() <= PROTECTED_RECENT_TURNS) {
-            log.debug("Nothing left to compact: only {} turns remain", conversation.size());
-            return null;
-        }
-
-        int keepFrom = conversation.size() - PROTECTED_RECENT_TURNS;
-        // A tool result must keep the assistant turn that requested it, otherwise the transcript
-        // contains an answer to a question nobody asked.
-        keepFrom = adjustForToolPairing(conversation, keepFrom);
-
-        List<ChatMessage> recent = conversation.subList(keepFrom, conversation.size());
-        List<ChatMessage> older = conversation.subList(0, keepFrom);
-
         List<ChatMessage> compacted = new ArrayList<>(system);
-        compacted.add(ChatMessage.system(summarise(older)));
-        compacted.addAll(recent);
+        int keepFrom = conversation.size() <= PROTECTED_RECENT_TURNS
+                ? 0
+                // A tool result must keep the assistant turn that requested it, otherwise the
+                // transcript contains an answer to a question nobody asked.
+                : adjustForToolPairing(conversation, conversation.size() - PROTECTED_RECENT_TURNS);
+        if (keepFrom > 0) {
+            compacted.add(ChatMessage.system(summarise(conversation.subList(0, keepFrom))));
+        }
+        compacted.addAll(conversation.subList(keepFrom, conversation.size()));
 
         ChatRequest result = request.withMessages(compacted);
-        int before = TokenEstimate.forRequest(request);
+        if (TokenEstimate.forRequest(result) > budget) {
+            result = shrinkToolResults(result, budget);
+        }
         int after = TokenEstimate.forRequest(result);
 
         if (after >= before) {
+            log.debug("Nothing left to compact: about {} tokens against a budget of {}", before, budget);
             return null;
         }
         log.info("Compacted transcript from about {} to about {} tokens (budget {})", before, after, budget);
@@ -106,6 +127,112 @@ public class TranscriptCompactor {
             index--;
         }
         return index;
+    }
+
+    /**
+     * Cuts every tool result longer than one shared limit, the largest limit that brings the
+     * request within {@code budget}, and never below {@link #MIN_TOOL_RESULT_CHARS}.
+     *
+     * <p>One shared limit rather than cutting the newest or the oldest first: the result the
+     * model is reasoning about is usually the newest and the one that set the task is usually the
+     * oldest, so neither end is safe to sacrifice whole. The cut keeps the beginning, which is
+     * where list responses put their count and first items, and says plainly that it is a cut.
+     */
+    private ChatRequest shrinkToolResults(ChatRequest request, int budget) {
+        List<ChatMessage> messages = request.messages();
+        int longest = 0;
+        for (ChatMessage message : messages) {
+            if (isToolResult(message)) {
+                longest = Math.max(longest, originalText(message.content()).text().length());
+            }
+        }
+        if (longest <= MIN_TOOL_RESULT_CHARS) {
+            return request;
+        }
+
+        int low = MIN_TOOL_RESULT_CHARS;
+        int high = longest;
+        while (low < high) {
+            int limit = low + (high - low + 1) / 2;
+            if (TokenEstimate.forRequest(withToolResultsCut(request, limit)) <= budget) {
+                low = limit;
+            } else {
+                high = limit - 1;
+            }
+        }
+        return withToolResultsCut(request, low);
+    }
+
+    private static ChatRequest withToolResultsCut(ChatRequest request, int limit) {
+        List<ChatMessage> cut = new ArrayList<>(request.messages().size());
+        for (ChatMessage message : request.messages()) {
+            if (isToolResult(message)) {
+                cut.add(new ChatMessage(
+                        message.role(),
+                        shorten(message.content(), limit),
+                        message.toolCalls(),
+                        message.toolCallId(),
+                        message.name()));
+            } else {
+                cut.add(message);
+            }
+        }
+        return request.withMessages(cut);
+    }
+
+    private static boolean isToolResult(ChatMessage message) {
+        return message.role() == ChatMessage.Role.TOOL && message.content() != null;
+    }
+
+    /** The text a tool result started as, looking through a cut made by an earlier compaction. */
+    private record Original(String text, int length) {}
+
+    private static Original originalText(String content) {
+        if (content.startsWith(SHORTENED_PREFIX)) {
+            try {
+                JsonNode node = JSON.readTree(content);
+                String text = node.path("text").asText("");
+                return new Original(text, node.path("originalCharacters").asInt(text.length()));
+            } catch (JsonProcessingException e) {
+                // Not one of ours after all; treat it as ordinary text.
+            }
+        }
+        return new Original(content, content.length());
+    }
+
+    /**
+     * A tool result cut to about {@code limit} characters, as valid JSON that says it was cut.
+     *
+     * <p>Valid JSON rather than the text with an ellipsis on the end: a model given half a JSON
+     * document tends to "repair" it with invented values, and says nothing about having done so.
+     */
+    static String shorten(String content, int limit) {
+        if (content.length() <= limit) {
+            return content;
+        }
+        // Cut from the original text, so a second compaction never wraps the first one's wrapper.
+        Original original = originalText(content);
+        // Room for the wrapper's own fields, so the whole value stays near the limit.
+        int keep = Math.min(original.text().length(), Math.max(0, limit - 200));
+        if (keep > 0 && Character.isHighSurrogate(original.text().charAt(keep - 1))) {
+            keep--;
+        }
+        String head = original.text().substring(0, keep);
+        ObjectNode node = JSON.createObjectNode();
+        node.put("truncated", true);
+        node.put("originalCharacters", original.length());
+        node.put("shownCharacters", head.length());
+        node.put(
+                "note",
+                "This result was shortened to fit the model's context window. Ask again with a narrower"
+                        + " query, or for the next page, if the rest is needed.");
+        node.put("text", head);
+        try {
+            return JSON.writeValueAsString(node);
+        } catch (JsonProcessingException e) {
+            // Writing a tree of strings and numbers cannot fail; this keeps the compiler content.
+            throw new IllegalStateException(e);
+        }
     }
 
     /**
@@ -140,20 +267,44 @@ public class TranscriptCompactor {
                     .append(".");
         }
 
-        // The first request is kept verbatim: it is the task, and losing it is how an agent
-        // finishes something nobody asked for.
+        // The first request is kept: it is the task, and losing it is how an agent finishes
+        // something nobody asked for.
         older.stream()
                 .filter(message -> message.role() == ChatMessage.Role.USER && message.content() != null)
                 .findFirst()
-                .ifPresent(first -> {
-                    String text = first.content().strip();
-                    if (text.length() > 600) {
-                        text = text.substring(0, 597) + "…";
-                    }
-                    summary.append(" The original request was: \"").append(text).append("\"");
-                });
+                .ifPresent(first -> summary
+                        .append(" The original request was: \"")
+                        .append(originalRequest(first.content()))
+                        .append("\""));
 
         summary.append(" Treat the removed detail as unavailable rather than as agreed.");
         return summary.toString();
+    }
+
+    /**
+     * The part of a first message that is the request itself.
+     *
+     * <p>Chat sends its context first - the thread so far, document passages - and the person's
+     * words after a closing "Request:" line. Keeping the start of such a message kept the
+     * preamble and lost the request, so the text after the last marker is kept instead, and the
+     * start of the message only when there is no marker.
+     */
+    static String originalRequest(String content) {
+        String text = content.strip();
+        int marker = text.lastIndexOf(REQUEST_MARKER);
+        if (marker >= 0) {
+            String request = text.substring(marker + REQUEST_MARKER.length()).strip();
+            if (!request.isEmpty()) {
+                text = request;
+            }
+        }
+        if (text.length() > REQUEST_KEEP_CHARS) {
+            int keep = REQUEST_KEEP_CHARS - 1;
+            if (Character.isHighSurrogate(text.charAt(keep - 1))) {
+                keep--;
+            }
+            text = text.substring(0, keep) + "…";
+        }
+        return text;
     }
 }

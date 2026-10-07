@@ -1,0 +1,10 @@
+**/node_modules
+**/target
+**/dist
+.git
+web
+docs
+*.pdf
+# The launcher's secrets never need to reach a build.
+infra/launcher/.env
+infra/launcher/.env.tmp

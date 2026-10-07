@@ -1,0 +1,182 @@
+# The stack behind the one-click launcher (Start AI Workforce OS.command / .bat).
+#
+# Separate from infra/compose so it can run beside a native development stack: only the web
+# client is published on the host (port 4173 by default), so nothing here competes with a local
+# PostgreSQL, Redis or services already listening on 5432, 6379 or 8080-8087. The web port is
+# bound to 127.0.0.1, so only this computer can open it; the start scripts publish it on the
+# network only when AIWOS_EXPOSE_LAN=1 is set and demo data is off.
+#
+# Secrets come from infra/launcher/.env, which the start scripts write once, on the first start,
+# and never rewrite (see prepare-env.sh and prepare-env.ps1). It is gitignored. Without it every
+# variable below falls back to the values the launcher used before per-install secrets existed,
+# which are published in the source; that is what keeps `docker compose config` valid on a fresh
+# checkout, and why the scripts, not this file, are the way to start the stack.
+#
+# Every image is pinned to the version it was built and tested with, so a rebuild cannot pull in
+# a new major release unannounced.
+
+name: aiwos-app
+
+x-service: &service
+  restart: unless-stopped
+  networks: [aiwos]
+  environment:
+    AIWOS_ENVIRONMENT: local
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_NAME: aiwos
+    DB_USER: aiwos
+    DB_PASSWORD: ${AIWOS_DB_PASSWORD:-aiwos}
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    QDRANT_URL: http://qdrant:6333
+    # Envelope encryption of stored credentials. A new install gets its own random master key
+    # under the id launcher-1. An install that predates .env keeps the id local-dev and the old
+    # development secret its key was derived from, or the credentials it stored would be
+    # unreadable: decryption accepts only the active key id.
+    AIWOS_ENCRYPTION_KEY_ID: ${AIWOS_ENCRYPTION_KEY_ID:-local-dev}
+    AIWOS_ENCRYPTION_MASTER_KEY: ${AIWOS_ENCRYPTION_MASTER_KEY:-}
+    AIWOS_SECURITY_DEVELOPMENT_SECRET: ${AIWOS_SECURITY_DEVELOPMENT_SECRET:-insecure-local-development-secret-change-me}
+    AIWOS_SECURITY_INTERNAL_SERVICE_SECRET: ${AIWOS_SECURITY_INTERNAL_SERVICE_SECRET:-insecure-local-internal-secret-change-me}
+    # Sample workspace, demo accounts and their shared password. On by default, for sales demos;
+    # the start scripts turn it off with --no-demo.
+    AIWOS_DEMO_ENABLED: ${AIWOS_DEMO_ENABLED:-true}
+    # Nothing produces or consumes events yet, so no broker runs and nothing waits for one.
+    AIWOS_EVENTS_ENABLED: "false"
+    SPRING_KAFKA_LISTENER_AUTO_STARTUP: "false"
+    AIWOS_JWKS_URI: http://identity:8080/.well-known/jwks.json
+    AIWOS_TRACING_ENABLED: "false"
+    AIWOS_CORS_ORIGINS: http://localhost:${AIWOS_WEB_PORT:-4173}
+    AIWOS_URL_GATEWAY: http://gateway:8080
+    AIWOS_URL_IDENTITY: http://identity:8080
+    AIWOS_URL_ORGANISATION: http://organisation:8080
+    AIWOS_URL_ORCHESTRATOR: http://orchestrator:8080
+    AIWOS_URL_MEMORY: http://memory:8080
+    AIWOS_URL_KNOWLEDGE: http://knowledge:8080
+    AIWOS_URL_INTEGRATIONS: http://integrations:8080
+    AIWOS_URL_ANALYTICS: http://analytics:8080
+    # Eight JVMs share the Docker VM, so each gets a fixed, modest heap.
+    JAVA_TOOL_OPTIONS: "-Xms64m -Xmx512m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Duser.timezone=UTC"
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 30
+    # Eight services boot at once on the first launch; give them room before counting failures.
+    start_period: 300s
+  depends_on: &service-deps
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    qdrant: {condition: service_started}
+
+x-build: &build
+  context: ../..
+  dockerfile: infra/launcher/services.Dockerfile
+
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    networks: [aiwos]
+    environment:
+      POSTGRES_DB: aiwos
+      POSTGRES_USER: aiwos
+      # Read only when the data volume is first created; changing it later changes nothing.
+      POSTGRES_PASSWORD: ${AIWOS_DB_PASSWORD:-aiwos}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    command: ["postgres", "-c", "max_connections=300"]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiwos -d aiwos"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4.11-alpine
+    restart: unless-stopped
+    networks: [aiwos]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    networks: [aiwos]
+    volumes: [qdrant-data:/qdrant/storage]
+
+  identity:
+    <<: *service
+    image: aiwos-app/identity-service
+    build: {<<: *build, args: {SERVICE: identity-service}}
+
+  organisation:
+    <<: *service
+    image: aiwos-app/org-service
+    build: {<<: *build, args: {SERVICE: org-service}}
+
+  orchestrator:
+    <<: *service
+    image: aiwos-app/orchestrator-service
+    build: {<<: *build, args: {SERVICE: orchestrator-service}}
+
+  memory:
+    <<: *service
+    image: aiwos-app/memory-service
+    build: {<<: *build, args: {SERVICE: memory-service}}
+
+  knowledge:
+    <<: *service
+    image: aiwos-app/knowledge-service
+    build: {<<: *build, args: {SERVICE: knowledge-service}}
+
+  integrations:
+    <<: *service
+    image: aiwos-app/integrations-service
+    build: {<<: *build, args: {SERVICE: integrations-service}}
+
+  analytics:
+    <<: *service
+    image: aiwos-app/analytics-service
+    build: {<<: *build, args: {SERVICE: analytics-service}}
+
+  gateway:
+    <<: *service
+    image: aiwos-app/gateway
+    build: {<<: *build, args: {SERVICE: gateway}}
+
+  web:
+    image: aiwos-app/web
+    build:
+      context: ../../web
+      dockerfile: ../infra/launcher/web.Dockerfile
+      additional_contexts: {launcher: .}
+    restart: unless-stopped
+    networks: [aiwos]
+    ports: ["${AIWOS_BIND_ADDRESS:-127.0.0.1}:${AIWOS_WEB_PORT:-4173}:80"]
+    depends_on:
+      identity: {condition: service_healthy}
+      organisation: {condition: service_healthy}
+      orchestrator: {condition: service_healthy}
+      memory: {condition: service_healthy}
+      knowledge: {condition: service_healthy}
+      integrations: {condition: service_healthy}
+      analytics: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  aiwos:
+
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:

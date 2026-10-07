@@ -1,8 +1,11 @@
 package os.aiworkforce.identity.web;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import os.aiworkforce.identity.domain.User;
 import os.aiworkforce.identity.service.AuthService;
+import os.aiworkforce.identity.service.PasswordResetService;
 import os.aiworkforce.platform.config.PlatformProperties;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
@@ -47,11 +51,17 @@ public class AuthController {
 
     private static final String REFRESH_COOKIE = "aiwos_refresh";
 
+    private static final Pattern IPV4 =
+            Pattern.compile("^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$");
+    private static final Pattern IPV6 = Pattern.compile("^[0-9A-Fa-f:.]{2,45}$");
+
     private final AuthService auth;
+    private final PasswordResetService resets;
     private final PlatformProperties properties;
 
-    public AuthController(AuthService auth, PlatformProperties properties) {
+    public AuthController(AuthService auth, PasswordResetService resets, PlatformProperties properties) {
         this.auth = auth;
+        this.resets = resets;
         this.properties = properties;
     }
 
@@ -61,6 +71,10 @@ public class AuthController {
             @NotBlank @Size(min = 12, max = 256) String password) {}
 
     public record SignInRequest(@NotBlank @Email String email, @NotBlank String password, UUID workspaceId) {}
+
+    /** A reset link's token, and the password the person chose. Same length rule as registering. */
+    public record PasswordResetRequest(
+            @NotBlank @Size(max = 128) String token, @NotBlank @Size(min = 12, max = 256) String newPassword) {}
 
     /**
      * @param accessToken bearer token for subsequent requests
@@ -94,7 +108,11 @@ public class AuthController {
     @Operation(summary = "Sign in and start a session")
     public ResponseEntity<SessionResponse> signIn(@Valid @RequestBody SignInRequest request, HttpServletRequest http) {
         AuthService.AuthResult result = auth.signIn(
-                request.email(), request.password(), request.workspaceId(), http.getHeader(HttpHeaders.USER_AGENT));
+                request.email(),
+                request.password(),
+                request.workspaceId(),
+                http.getHeader(HttpHeaders.USER_AGENT),
+                clientAddress(http));
         return respond(result);
     }
 
@@ -107,7 +125,8 @@ public class AuthController {
         if (cookieToken == null || cookieToken.isBlank()) {
             throw new ApiException(ErrorCode.NOT_AUTHENTICATED);
         }
-        AuthService.AuthResult result = auth.refresh(cookieToken, workspaceId, http.getHeader(HttpHeaders.USER_AGENT));
+        AuthService.AuthResult result =
+                auth.refresh(cookieToken, workspaceId, http.getHeader(HttpHeaders.USER_AGENT), clientAddress(http));
         return respond(result);
     }
 
@@ -124,6 +143,65 @@ public class AuthController {
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, clearedCookie().toString())
                 .build();
+    }
+
+    /**
+     * Sets a new password from a reset link an administrator created.
+     *
+     * <p>Open, like sign-in: the person has no session, which is the point. The link's own token
+     * is the credential, checked as a hash, single use and short-lived. Every session the account
+     * had is revoked, so the refresh cookie in this browser, if any, is cleared with it.
+     */
+    @PostMapping("/password-reset")
+    @Operation(summary = "Choose a new password with a reset link")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody PasswordResetRequest request) {
+        resets.redeem(request.token(), request.newPassword());
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, clearedCookie().toString())
+                .build();
+    }
+
+    /**
+     * Where the request came from, for the session list, or null when that cannot be told.
+     *
+     * <p>The first X-Forwarded-For entry when a proxy set one, which is the browser's own address
+     * behind the gateway and the web server; otherwise the connection's address. It is shown to
+     * the person and decides nothing, so a client that writes its own header only mislabels its
+     * own session. Anything that is not an address literal is dropped, because the column is INET
+     * and a malformed value would fail the sign-in itself.
+     */
+    static String clientAddress(HttpServletRequest http) {
+        String forwarded = http.getHeader("X-Forwarded-For");
+        String candidate = forwarded != null && !forwarded.isBlank()
+                ? forwarded.split(",", 2)[0].strip()
+                : http.getRemoteAddr();
+        return addressLiteral(candidate);
+    }
+
+    static String addressLiteral(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String candidate = value.strip();
+        if (candidate.startsWith("[") && candidate.endsWith("]")) {
+            candidate = candidate.substring(1, candidate.length() - 1);
+        }
+        int zone = candidate.indexOf('%');
+        if (zone >= 0) {
+            candidate = candidate.substring(0, zone);
+        }
+        boolean v4 = IPV4.matcher(candidate).matches();
+        // Only something shaped like an IPv6 literal reaches getByName, which parses a literal
+        // without any lookup; a host name never gets that far.
+        boolean v6 = !v4 && candidate.indexOf(':') >= 0 && IPV6.matcher(candidate).matches();
+        if (!v4 && !v6) {
+            return null;
+        }
+        try {
+            return InetAddress.getByName(candidate).getHostAddress();
+        } catch (UnknownHostException e) {
+            return null;
+        }
     }
 
     private ResponseEntity<SessionResponse> respond(AuthService.AuthResult result) {

@@ -1,5 +1,6 @@
 package os.aiworkforce.orchestrator.chat;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,11 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import os.aiworkforce.orchestrator.board.BoardService;
 import os.aiworkforce.orchestrator.board.GoalViews;
+import os.aiworkforce.orchestrator.board.GoalViews.TaskRuns;
 import os.aiworkforce.orchestrator.domain.ChatMessage;
 import os.aiworkforce.orchestrator.domain.Conversation;
 import os.aiworkforce.orchestrator.domain.ConversationMark;
 import os.aiworkforce.orchestrator.domain.Goal;
-import os.aiworkforce.orchestrator.domain.Run;
+import os.aiworkforce.orchestrator.domain.RunQuestion;
 import os.aiworkforce.orchestrator.domain.Task;
 import os.aiworkforce.orchestrator.repository.ChatMessages;
 import os.aiworkforce.orchestrator.repository.ConversationMarks;
@@ -52,6 +54,15 @@ public class ConversationQueries {
     private static final int DETAIL_MAX_LIMIT = 500;
     private static final int MESSAGES_MIN_LIMIT = 1;
     private static final int MESSAGES_MAX_LIMIT = 200;
+    /** The most new messages one incremental read returns; more than this and it reads the whole window instead. */
+    private static final int DELTA_MESSAGE_LIMIT = 50;
+    private static final int QUESTION_LIMIT = 100;
+    /**
+     * How far back an incremental read looks before the moment it was asked about. A row written
+     * just before that moment may commit just after the read that produced it, and would otherwise
+     * be missed by every read that follows. Seeing a row twice costs nothing: readers merge by id.
+     */
+    private static final Duration DELTA_OVERLAP = Duration.ofSeconds(5);
     private static final int SEARCH_MATCH_BATCH = 500;
     private static final int SNIPPET_BEFORE = 60;
     private static final int SNIPPET_AFTER = 80;
@@ -67,6 +78,10 @@ public class ConversationQueries {
     private final Tasks tasks;
     private final Runs runs;
     private final QuestionService questions;
+
+    /** Who may read which conversation; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ConversationAccess access;
 
     public ConversationQueries(
             Conversations conversations,
@@ -102,7 +117,11 @@ public class ConversationQueries {
             String activity,
             boolean canManage,
             boolean unread,
-            SearchMatch match) {}
+            SearchMatch match,
+            /** {@code private} (its creator and the people added) or {@code workspace} (everyone with Chat access). */
+            String visibility,
+            /** Whether this person may change who can read it: its creator, or a holder of chat:read_all. */
+            boolean canShare) {}
 
     public record ConversationPage(
             List<ConversationView> pinned,
@@ -127,7 +146,8 @@ public class ConversationQueries {
             List<ChatMessageView> messages,
             List<BoardService.GoalView> goals,
             List<QuestionService.QuestionView> questions,
-            boolean hasEarlier) {}
+            boolean hasEarlier,
+            Instant generatedAt) {}
 
     public record MessagesPage(List<ChatMessageView> messages, boolean hasEarlier) {}
 
@@ -149,6 +169,7 @@ public class ConversationQueries {
 
         UUID me = parseUuidOrNull(actor.humanId());
         String actorId = actor.humanId();
+        boolean readAll = actor.hasPermission(Permission.Codes.CHAT_READ_ALL);
         boolean mine = "mine".equals(effectiveScope);
         List<ConversationMark> myMarks = me == null ? List.of() : marks.findByOrgIdAndUserId(orgId, me);
         Map<UUID, ConversationMark> markByConversation = new LinkedHashMap<>();
@@ -167,7 +188,7 @@ public class ConversationQueries {
         if ("archived".equals(effectiveScope)) {
             List<Conversation> archivedRows = archivedIds.isEmpty()
                     ? List.of()
-                    : conversations.searchAmong(orgId, archivedIds, false, actorId, pattern);
+                    : conversations.searchAmong(orgId, archivedIds, false, actorId, readAll, pattern);
             int from = Math.min(effectivePage * effectiveSize, archivedRows.size());
             int to = Math.min(from + effectiveSize, archivedRows.size());
             List<Conversation> page1 = archivedRows.subList(from, to);
@@ -186,7 +207,7 @@ public class ConversationQueries {
         if (effectivePage == 0) {
             pinnedRows = pinnedIds.isEmpty()
                     ? List.of()
-                    : conversations.searchAmong(orgId, pinnedIds, mine, actorId, pattern);
+                    : conversations.searchAmong(orgId, pinnedIds, mine, actorId, readAll, pattern);
 
             Set<UUID> needsYouIds = new LinkedHashSet<>(questions.conversationsNeedingAnswerFrom(orgId, me));
             if (actor.hasPermission(Permission.Codes.APPROVAL_DECIDE)) {
@@ -195,13 +216,13 @@ public class ConversationQueries {
             needsYouIds.removeAll(pinnedIds);
             needsYouRows = needsYouIds.isEmpty()
                     ? List.of()
-                    : conversations.searchAmong(orgId, needsYouIds, false, actorId, pattern);
+                    : conversations.searchAmong(orgId, needsYouIds, false, actorId, readAll, pattern);
         }
 
         Set<UUID> excluded = new LinkedHashSet<>(pinnedIds);
         excluded.addAll(archivedIds);
         List<Conversation> mainRowsFetched = conversations.searchExcluding(
-                orgId, orDummy(excluded), mine, actorId, pattern, PageRequest.of(effectivePage, effectiveSize + 1));
+                orgId, orDummy(excluded), mine, actorId, readAll, pattern, PageRequest.of(effectivePage, effectiveSize + 1));
         boolean hasMore = mainRowsFetched.size() > effectiveSize;
         List<Conversation> mainRows = hasMore ? mainRowsFetched.subList(0, effectiveSize) : mainRowsFetched;
 
@@ -309,7 +330,9 @@ public class ConversationQueries {
                 activity,
                 canManage,
                 unread,
-                match);
+                match,
+                conversation.getVisibility(),
+                canShare(conversation, actor));
     }
 
     private static String activityOf(
@@ -345,6 +368,12 @@ public class ConversationQueries {
             }
         }
         return present;
+    }
+
+    static boolean canShare(Conversation conversation, Actor actor) {
+        String human = actor.humanId();
+        return (human != null && human.equals(conversation.getCreatedBy()))
+                || actor.hasPermission(Permission.Codes.CHAT_READ_ALL);
     }
 
     static boolean canManage(Conversation conversation, Actor actor) {
@@ -392,10 +421,43 @@ public class ConversationQueries {
 
     // ---- Conversation detail ------------------------------------------------------------------
 
+    /** The conversation's whole recent window: its newest messages, their goals, and its questions. */
     @Transactional(readOnly = true)
     public ConversationDetail detail(UUID orgId, Actor actor, UUID id, int limit) {
-        Conversation conversation =
-                conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+        return detail(orgId, actor, id, limit, null, null);
+    }
+
+    /**
+     * A conversation, whole or as what changed since a reader last looked.
+     *
+     * <p>With neither {@code after} nor {@code since} it is the conversation's newest {@code limit}
+     * messages, the goals they and the open work refer to, and its questions. With both, it is only
+     * what a reader holding everything up to message {@code after}, read at {@code since}, does not
+     * have yet: the messages after that position, the goals that are still open or changed since
+     * (with their tasks and latest runs), and the questions that are still open, changed since, or
+     * belong to one of those goals. {@code generatedAt} is the moment to ask about next time, taken
+     * from this server's clock so no reader's own clock matters. A reader merges what it gets by id,
+     * which is also all it takes to read a whole response.
+     *
+     * <p>When more than {@link #DELTA_MESSAGE_LIMIT} messages arrived since {@code after}, the
+     * change would not fit in a small response, so the whole window is returned instead and the
+     * reader replaces what it holds.
+     */
+    @Transactional(readOnly = true)
+    public ConversationDetail detail(UUID orgId, Actor actor, UUID id, int limit, Integer after, Instant since) {
+        Instant generatedAt = Instant.now();
+        // Only a whole read is logged when chat:read_all is what allowed it: a thread open on screen
+        // polls for changes every few seconds, and one entry per poll would drown the log.
+        boolean whole = after == null || since == null;
+        Conversation conversation = access == null
+                ? conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id))
+                : whole ? access.requireForRead(orgId, actor, id) : access.require(orgId, actor, id);
+        if (after != null && since != null) {
+            ConversationDetail changes = changesSince(orgId, actor, conversation, after, since, generatedAt);
+            if (changes != null) {
+                return changes;
+            }
+        }
         int effectiveLimit = Math.max(DETAIL_MIN_LIMIT, Math.min(DETAIL_MAX_LIMIT, limit));
 
         List<ChatMessage> fetched =
@@ -416,12 +478,81 @@ public class ConversationQueries {
         for (Goal goal : goals.findByOrgIdAndConversationIdAndStatusIn(orgId, id, GOAL_ACTIVE_STATUSES)) {
             goalIds.add(goal.getId());
         }
+        List<BoardService.GoalView> goalViews = goalViews(orgId, goalIds);
+
+        List<QuestionService.QuestionView> questionViews =
+                questions.views(questions.forConversation(orgId, id, QUESTION_LIMIT), actor);
+
+        return new ConversationDetail(
+                view(orgId, actor, conversation), messageViews, goalViews, questionViews, hasEarlier, generatedAt);
+    }
+
+    /**
+     * What changed in a conversation since a reader looked, or null when too much did for a small
+     * answer (see {@link #detail(UUID, Actor, UUID, int, Integer, Instant)}).
+     */
+    private ConversationDetail changesSince(
+            UUID orgId, Actor actor, Conversation conversation, int after, Instant since, Instant generatedAt) {
+        UUID id = conversation.getId();
+        List<ChatMessage> newest =
+                messages.findByConversationIdOrderByPositionDesc(id, PageRequest.of(0, DELTA_MESSAGE_LIMIT + 1));
+        // Newest first, so these cover everything after `after` unless every one of them is newer
+        // and the thread goes on beyond them.
+        boolean covered = newest.size() <= DELTA_MESSAGE_LIMIT || newest.getLast().getPosition() <= after;
+        if (!covered) {
+            return null;
+        }
+        List<ChatMessage> fresh = new ArrayList<>(
+                newest.stream().filter(message -> message.getPosition() > after).toList());
+        java.util.Collections.reverse(fresh);
+        Instant cut = since.minus(DELTA_OVERLAP);
+
+        Set<UUID> goalIds = new LinkedHashSet<>();
+        for (ChatMessage message : fresh) {
+            if (message.getGoalId() != null) {
+                goalIds.add(message.getGoalId());
+            }
+        }
+        // Open goals every time: their steps, cost and status move without the goal's own row
+        // changing. A finished goal is sent once, when its row last changed.
+        for (Goal goal : goals.findByOrgIdAndConversationIdAndStatusIn(orgId, id, GOAL_ACTIVE_STATUSES)) {
+            goalIds.add(goal.getId());
+        }
+        for (Goal goal : goals.findByOrgIdAndConversationIdAndUpdatedAtGreaterThanEqual(orgId, id, cut)) {
+            goalIds.add(goal.getId());
+        }
+        List<BoardService.GoalView> goalViews = goalViews(orgId, goalIds);
+        Set<UUID> sentGoalIds = new LinkedHashSet<>();
+        goalViews.forEach(goal -> sentGoalIds.add(goal.id()));
+
+        // A question is sent while it is open, once it changes, and whenever its goal is sent: its
+        // run's status (the "still working on it" line) moves with the goal, not with the question.
+        List<RunQuestion> changed = questions.forConversation(orgId, id, QUESTION_LIMIT).stream()
+                .filter(question -> "pending".equals(question.getStatus())
+                        || (question.getUpdatedAt() != null && !question.getUpdatedAt().isBefore(cut))
+                        || (question.getGoalId() != null && sentGoalIds.contains(question.getGoalId())))
+                .toList();
+
+        // A delta carries no window, so it never claims there is anything earlier: the reader
+        // keeps what it already knew about that.
+        return new ConversationDetail(
+                view(orgId, actor, conversation),
+                fresh.stream().map(ConversationQueries::toMessageView).toList(),
+                goalViews,
+                questions.views(changed, actor),
+                false,
+                generatedAt);
+    }
+
+    /** The goals with these ids in this workspace, oldest first, each with its tasks and what its runs add up to. */
+    private List<BoardService.GoalView> goalViews(UUID orgId, Set<UUID> goalIds) {
+        if (goalIds.isEmpty()) {
+            return List.of();
+        }
         Map<UUID, Goal> goalById = new LinkedHashMap<>();
-        if (!goalIds.isEmpty()) {
-            for (Goal goal : goals.findAllById(goalIds)) {
-                if (orgId.equals(goal.getOrgId())) {
-                    goalById.put(goal.getId(), goal);
-                }
+        for (Goal goal : goals.findAllById(goalIds)) {
+            if (orgId.equals(goal.getOrgId())) {
+                goalById.put(goal.getId(), goal);
             }
         }
         List<Task> allTasks =
@@ -430,23 +561,20 @@ public class ConversationQueries {
                 .collect(java.util.stream.Collectors.groupingBy(
                         Task::getGoalId, LinkedHashMap::new, java.util.stream.Collectors.toList()));
         List<UUID> taskIds = allTasks.stream().map(Task::getId).toList();
-        Map<UUID, Run> latestRunByTask = GoalViews.latestRunByTask(runs, taskIds);
-        List<BoardService.GoalView> goalViews = goalById.values().stream()
+        Map<UUID, TaskRuns> runsByTask = GoalViews.runsByTask(runs, taskIds);
+        return goalById.values().stream()
                 .sorted(Comparator.comparing(Goal::getCreatedAt))
-                .map(goal ->
-                        GoalViews.goalView(goal, tasksByGoal.getOrDefault(goal.getId(), List.of()), latestRunByTask))
+                .map(goal -> GoalViews.goalView(goal, tasksByGoal.getOrDefault(goal.getId(), List.of()), runsByTask))
                 .toList();
-
-        List<QuestionService.QuestionView> questionViews =
-                questions.views(questions.forConversation(orgId, id, 100), actor);
-
-        return new ConversationDetail(
-                view(orgId, actor, conversation), messageViews, goalViews, questionViews, hasEarlier);
     }
 
     @Transactional(readOnly = true)
-    public MessagesPage messagesPage(UUID orgId, UUID id, int before, int limit) {
-        conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+    public MessagesPage messagesPage(UUID orgId, Actor actor, UUID id, int before, int limit) {
+        if (access == null) {
+            conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+        } else {
+            access.require(orgId, actor, id);
+        }
         int effectiveLimit = Math.max(MESSAGES_MIN_LIMIT, Math.min(MESSAGES_MAX_LIMIT, limit));
         List<ChatMessage> fetched = messages.findByConversationIdAndPositionLessThanOrderByPositionDesc(
                 id, before, PageRequest.of(0, effectiveLimit + 1));

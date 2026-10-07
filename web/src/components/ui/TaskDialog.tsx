@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Notice, Select, Textarea } from './index'
-import { ApiError, describeApiError } from '../../lib/api'
+import { ApiError, api, describeApiError } from '../../lib/api'
 import { sentenceCase, truncateWords } from '../../lib/format'
 import { CATEGORY_LABEL, statusLabel } from '../../lib/labels'
 import { markStepDone } from '../../lib/onboarding'
-import { useAgents, useCreateGoal, useCreateRun } from '../../lib/queries'
-import type { Agent, Goal, RunStarted } from '../../lib/queries'
+import { useAgents, useCreateGoal } from '../../lib/queries'
+import type { Agent, Goal } from '../../lib/queries'
 import { useRouter } from '../../lib/router'
 import { can, profile } from '../../lib/session'
 import { useToast } from '../../lib/toast'
@@ -17,11 +17,12 @@ import { useToast } from '../../lib/toast'
  * The same dialog opens from several places: the Command Map, an agent's own page, Tasks and
  * Runs. From an agent's page the agent is already decided, so the dialog only asks what to do; it
  * starts a run directly. From everywhere else it asks which agent, and creates a goal with that
- * one task, which the orchestrator starts at once unless earlier work is still queued.
+ * one task, which the orchestrator starts at once.
  *
- * Either way the request waits while the agent works: the platform drives a run until it finishes
- * or stops for an approval before it answers. The dialog says so, cannot be dismissed half way,
- * and then opens the run's trace, so the person lands on what the agent actually did.
+ * Either way the platform answers as soon as the work is saved, and the agent works in the
+ * background. The dialog closes straight away and opens the run's trace, which shows each step as
+ * it happens. A goal's run starts a moment after the goal is saved, so for a goal the dialog looks
+ * for that run for a few seconds, and opens the goal on Tasks if it has not appeared by then.
  */
 
 /** Where a task ended up once the dialog's request came back. */
@@ -33,6 +34,13 @@ export type TaskStarted = {
   /** Where the dialog would go next: the run's trace, or the goal on Tasks when no run started. */
   href: string
 }
+
+/** What the person is told once the work is saved. The run's own page then shows how it goes. */
+export const STARTED_MESSAGE = 'Started. The agent is working on it.'
+
+/** How long the dialog looks for a new goal's first run before opening the goal instead. */
+export const FIRST_RUN_WAIT_MS = 5_000
+const FIRST_RUN_POLL_MS = 500
 
 interface TaskDialogProps {
   open: boolean
@@ -57,22 +65,18 @@ export function TaskDialog({ open, onClose, agentId, onSuccess }: TaskDialogProp
     }
   }
 
-  // Closing while the request is in flight would not stop the agent, only hide what it did.
-  const close = () => {
-    if (!busy) onClose()
-  }
-
+  // Always dismissible: the request only saves the task, so there is nothing to wait for, and
+  // closing early never stops the agent - the task still opens once it has been saved.
   return (
     <Dialog
       open={open}
-      onClose={close}
-      dismissible={!busy}
+      onClose={onClose}
       error={error}
       eyebrow="Give an agent a task"
       title={agentId ? 'What should this agent do?' : 'What should the agent do?'}
       description={
         agentId
-          ? 'It starts on the task now, and its trace opens when it finishes or stops for an approval.'
+          ? 'It starts on the task now, and its trace opens so you can follow along.'
           : 'This creates a goal with one task and starts it now.'
       }
     >
@@ -83,7 +87,7 @@ export function TaskDialog({ open, onClose, agentId, onSuccess }: TaskDialogProp
           busy={busy}
           onBusyChange={setBusy}
           onError={setError}
-          onCancel={close}
+          onCancel={onClose}
           onFinished={onClose}
           {...(agentId ? { agentId } : {})}
           {...(onSuccess ? { onSuccess } : {})}
@@ -95,12 +99,25 @@ export function TaskDialog({ open, onClose, agentId, onSuccess }: TaskDialogProp
 
 /* ---- The form ---------------------------------------------------------------------------------- */
 
-const LAST_AGENT_KEY = 'aiwos.lastAgentId'
+/**
+ * The unscoped key used before the choice was kept per person. Anyone who signed in next on the
+ * same browser inherited the previous person's agent, so it is removed rather than read.
+ */
+const LEGACY_LAST_AGENT_KEY = 'aiwos.lastAgentId'
 
-/** The agent picked last time, so a person handing out several tasks is not made to pick again. */
+/** Where the signed-in person's last choice is kept; null when nobody is signed in. */
+export function lastAgentKey(): string | null {
+  const userId = profile()?.userId
+  return userId ? `${LEGACY_LAST_AGENT_KEY}.${userId}` : null
+}
+
+/** The agent this person picked last time, so handing out several tasks does not mean picking again. */
 function readLastAgent(): string | null {
   try {
-    return window.localStorage.getItem(LAST_AGENT_KEY)
+    // Gone after the first opening; removing a key that is not there costs nothing.
+    window.localStorage.removeItem(LEGACY_LAST_AGENT_KEY)
+    const key = lastAgentKey()
+    return key ? window.localStorage.getItem(key) : null
   } catch {
     return null
   }
@@ -108,7 +125,8 @@ function readLastAgent(): string | null {
 
 function rememberAgent(id: string) {
   try {
-    window.localStorage.setItem(LAST_AGENT_KEY, id)
+    const key = lastAgentKey()
+    if (key) window.localStorage.setItem(key, id)
   } catch {
     /* Blocked storage only costs the convenience of the default. */
   }
@@ -133,47 +151,48 @@ function withGeneralFirst(agents: Agent[]): Agent[] {
   return [...agents].sort((a, b) => Number(Boolean(b.fallback)) - Number(Boolean(a.fallback)))
 }
 
-type Outcome = { tone: 'success' | 'info'; message: string }
-
-/** What a run's status means for the person who just started it. */
-function runOutcome(status: string): Outcome {
-  switch (status) {
-    case 'completed':
-      return { tone: 'success', message: 'The agent finished.' }
-    case 'waiting_approval':
-      return { tone: 'info', message: 'The agent is waiting for an approval.' }
-    case 'waiting_input':
-      return { tone: 'info', message: 'The agent asked a question. You can answer it on the goal.' }
-    case 'failed':
-    case 'abandoned':
-      return { tone: 'info', message: 'The run failed. The trace shows why.' }
-    case 'cancelled':
-      return { tone: 'info', message: 'The run was stopped.' }
-    default:
-      return { tone: 'info', message: 'The run started.' }
-  }
+/** Where to take the person for a goal: its first task's run, or the goal on Tasks while there is none. */
+function startedFor(goal: Goal): TaskStarted {
+  const runId = goal.tasks[0]?.runId ?? undefined
+  return { runId, goalId: goal.id, href: runId ? `/runs/${runId}` : `/tasks?goal=${goal.id}` }
 }
 
-/** Where the goal's one task stands, and where to take the person next. */
-function goalOutcome(goal: Goal): Outcome & { runId: string | undefined; href: string } {
+/** A task that has given up before any run began: nothing more is coming to wait for. */
+const couldNotStart = (goal: Goal) => {
   const task = goal.tasks[0]
-  const goalHref = `/tasks?goal=${goal.id}`
-  if (task?.runId) {
-    const href = `/runs/${task.runId}`
-    // A failed attempt with attempts left goes back to waiting, keeping the reason.
-    if (task.status === 'pending' && task.failureReason) {
-      return { tone: 'info', message: 'The first attempt failed. The trace shows why.', runId: task.runId, href }
-    }
-    return { ...runOutcome(task.status), runId: task.runId, href }
-  }
-  if (task?.failureReason) {
-    return { tone: 'info', message: 'The task could not start. Tasks shows why.', runId: undefined, href: goalHref }
-  }
-  if (task?.status === 'pending') {
-    return { tone: 'info', message: 'The task is queued behind earlier work.', runId: undefined, href: goalHref }
-  }
-  return { tone: 'success', message: 'The goal was created.', runId: undefined, href: goalHref }
+  return !task?.runId && Boolean(task?.failureReason)
 }
+
+const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+
+/**
+ * Looks for a new goal's first run for up to `waitMs`, asking every `pollMs`. The goal is saved
+ * first and its run starts a moment later, so the answer to creating it seldom names the run yet.
+ * Resolves with the goal as last read: with the run when it appeared, without it when it did not,
+ * and as soon as the task is known to have failed to start. A read that fails is tried again.
+ */
+export async function waitForFirstRun(
+  goal: Goal,
+  load: (goalId: string) => Promise<Goal>,
+  { waitMs = FIRST_RUN_WAIT_MS, pollMs = FIRST_RUN_POLL_MS }: { waitMs?: number; pollMs?: number } = {},
+): Promise<Goal> {
+  let latest = goal
+  const deadline = Date.now() + waitMs
+  while (!latest.tasks[0]?.runId && !couldNotStart(latest) && Date.now() < deadline) {
+    await pause(Math.min(pollMs, Math.max(0, deadline - Date.now())))
+    try {
+      latest = await load(goal.id)
+    } catch {
+      /* A failed read only costs this one look; the next one, or the goal on Tasks, follows. */
+    }
+  }
+  return latest
+}
+
+const loadGoal = (goalId: string) => api<Goal>(`/api/goals/${goalId}`)
+
+/** Where the person is now, to tell whether they have moved on while the dialog was still looking. */
+const currentLocation = () => window.location.pathname + window.location.search
 
 const FIELD_LABELS: Record<string, string> = {
   instruction: 'Instruction',
@@ -181,16 +200,6 @@ const FIELD_LABELS: Record<string, string> = {
   'tasks[0].instruction': 'Instruction',
   'tasks[0].title': 'Title',
   'tasks[0].agentId': 'Agent',
-}
-
-function failureMessage(error: unknown, goalMode: boolean): string {
-  // The gateway stops waiting after a minute, but the agent carries on: say where to find it.
-  if (error instanceof ApiError && error.status === 504) {
-    return goalMode
-      ? 'This window stopped waiting, but the agent is probably still working. Its goal will appear in Tasks.'
-      : 'This window stopped waiting, but the agent is probably still working. Its run will appear in Runs.'
-  }
-  return describeApiError(error, FIELD_LABELS)
 }
 
 type TaskFormProps = {
@@ -225,12 +234,31 @@ function TaskForm({ agentId, onSuccess, busy, onBusyChange, onError, onCancel, o
   const selectedAgentId = chosenAgentId || rememberedAgent?.id || generalAgent?.id || startable[0]?.id || ''
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId)
   const effectiveAgentId = agentId ?? selectedAgentId
-  const createRunMutation = useCreateRun(effectiveAgentId || 'unselected')
   const createGoalMutation = useCreateGoal()
 
   const agentsReady = !needsAgentPicker || (!agentsQuery.isLoading && !agentsQuery.error)
   const noAgentCanStart = needsAgentPicker && agentsReady && startable.length === 0
   const canSubmit = instruction.trim().length > 0 && effectiveAgentId.length > 0 && agentsReady && !noAgentCanStart
+
+  // Whether the person closed the dialog (Cancel, Escape or the close button) before the save
+  // returned. The work is still saved and said so, but they are not then taken to it: closing was
+  // their way of staying where they are. Set on unmount unless this form closed itself on success;
+  // reset on mount, since StrictMode mounts twice in development.
+  const finishing = useRef(false)
+  const dismissed = useRef(false)
+  useEffect(() => {
+    dismissed.current = false
+    return () => {
+      if (!finishing.current) dismissed.current = true
+    }
+  }, [])
+
+  // Opens what the task started, unless the person has moved on to another page meanwhile.
+  const openStarted = (started: TaskStarted, from: string) => {
+    if (dismissed.current || currentLocation() !== from) return
+    if (onSuccess) onSuccess(started.runId, started)
+    else navigate(started.href)
+  }
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -238,39 +266,40 @@ function TaskForm({ agentId, onSuccess, busy, onBusyChange, onError, onCancel, o
 
     onError(null)
     onBusyChange(true)
+    const from = currentLocation()
+    let saved: { goal: Goal }
     try {
-      let started: TaskStarted
-      let outcome: Outcome
-      if (agentId) {
-        const result: RunStarted = await createRunMutation.mutateAsync({ instruction })
-        outcome = runOutcome(result.status)
-        started = { runId: result.runId, goalId: undefined, href: `/runs/${result.runId}` }
-      } else {
-        const goal = await createGoalMutation.mutateAsync({
+      // Always a one-task goal, from the agent's own page too: the work then shows on the board,
+      // and can be stopped and tried again like any other. (Starting a run directly stays in the
+      // API, for integrations.)
+      saved = {
+        goal: await createGoalMutation.mutateAsync({
           // The backend allows 200 characters; a title cut at a word reads better in lists.
           title: truncateWords(instruction, 80),
           agentId: effectiveAgentId,
           instruction,
-        })
-        const result = goalOutcome(goal)
-        outcome = result
-        started = { runId: result.runId, goalId: goal.id, href: result.href }
+        }),
       }
-
-      rememberAgent(effectiveAgentId)
-      const userId = profile()?.userId
-      if (userId) markStepDone(userId, 'give-task')
-
-      onBusyChange(false)
-      if (outcome.tone === 'success') toast.success(outcome.message)
-      else toast.info(outcome.message)
-      if (onSuccess) onSuccess(started.runId, started)
-      else navigate(started.href)
-      onFinished()
     } catch (error) {
       onBusyChange(false)
-      onError(failureMessage(error, !agentId))
+      onError(describeApiError(error, FIELD_LABELS))
+      return
     }
+
+    // The work is saved and the agent is starting on it: the dialog has nothing left to wait for.
+    rememberAgent(effectiveAgentId)
+    const userId = profile()?.userId
+    if (userId) markStepDone(userId, 'give-task')
+    onBusyChange(false)
+    if (!dismissed.current) {
+      finishing.current = true
+      onFinished()
+    }
+    toast.success(STARTED_MESSAGE)
+
+    const latest = await waitForFirstRun(saved.goal, loadGoal)
+    if (couldNotStart(latest)) toast.info('The task could not start. Tasks shows why.')
+    openStarted(startedFor(latest), from)
   }
 
   return (
@@ -347,16 +376,8 @@ function TaskForm({ agentId, onSuccess, busy, onBusyChange, onError, onCancel, o
         data-autofocus
       />
 
-      {busy && (
-        <div style={{ marginTop: 'var(--space-5)' }}>
-          <Notice tone="info" live>
-            The agent is working. This window waits until it finishes or stops for an approval.
-          </Notice>
-        </div>
-      )}
-
       <div className="dialog-footer">
-        <Button variant="outline" type="button" onClick={onCancel} disabled={busy}>
+        <Button variant="outline" type="button" onClick={onCancel}>
           Cancel
         </Button>
         <Button type="submit" loading={busy} disabled={!canSubmit}>

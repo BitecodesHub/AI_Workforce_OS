@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import reactor.core.publisher.Mono;
 
+import os.aiworkforce.mcp.model.ConnectionCheck;
 import os.aiworkforce.mcp.model.ToolDefinition;
 import os.aiworkforce.mcp.model.ToolInvocation;
 import os.aiworkforce.mcp.model.ToolResult;
@@ -36,6 +37,17 @@ public interface McpServerAdapter {
 
     /** Whether the server is reachable and the credential is accepted. */
     Mono<Boolean> healthCheck(String credential);
+
+    /**
+     * Checks a credential and says, in plain words, what was found.
+     *
+     * <p>A live adapter overrides this with a real "who am I" call so the console can show which
+     * account a token belongs to. The default only restates {@link #healthCheck}.
+     */
+    default Mono<ConnectionCheck> check(String credential) {
+        return healthCheck(credential)
+                .map(ok -> ok ? ConnectionCheck.passed(null) : ConnectionCheck.failed("The connection check failed."));
+    }
 
     /** Scopes this server needs in total, for the consent screen. */
     default List<String> allScopes() {

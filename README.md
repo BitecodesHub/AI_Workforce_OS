@@ -1,9 +1,11 @@
 # AI Workforce OS
 
 An enterprise multi-agent platform for business operations. A company configures a team of
-role-specialised AI agents, the agents share memory and answer from the company's own documents,
-and they act on real business tools through Model Context Protocol servers. Every action is
-permission-checked and logged, and sensitive actions wait for a person's approval.
+role-specialised AI agents, Chat answers from the company's own documents with citations, and the
+agents act on business tools through Model Context Protocol servers: GitHub, Slack, Notion,
+Linear, HubSpot and webhooks can be connected live with a token, and every other connector works
+with practice data. Every action is permission-checked, sensitive actions wait for a person's
+approval, and approval decisions and run outcomes are written to a hash-chained audit log.
 
 Course project for Web Services & Service-Oriented Architecture (IT644), Autumn 2026.
 
@@ -12,9 +14,26 @@ Course project for Web Services & Service-Oriented Architecture (IT644), Autumn 
 Nothing needs configuring. The platform starts with an offline sandbox model and sandbox tool
 drivers, so it is fully demonstrable with no API key anywhere. Five demo accounts, one per role
 (`owner`/`admin`/`manager`/`employee`/`viewer`, all `@demo.aiworkforce.os`), are seeded on startup
-and listed on the sign-in screen with their shared password.
+and listed on the sign-in screen with their shared password, unless demo data is switched off
+with `AIWOS_DEMO_ENABLED=false`.
 
-Two ways to run it, both verified:
+**One-click launcher** — for a demo machine with only Docker Desktop: double-click
+`Start AI Workforce OS.command` (macOS) or `Start AI Workforce OS.bat` (Windows), and the matching
+Stop file to stop it. The app opens on http://localhost:4173, reachable from this computer only.
+
+- The first start writes per-install secrets to `infra/launcher/.env` (gitignored): the master key
+  that encrypts stored provider and connector keys, the internal service secret and the database
+  password. They are never regenerated; keep that file. An install created by an earlier launcher
+  keeps its old, published key so stored keys stay readable, and says how to replace it
+  (`--new-keys`).
+- Demo data is on by default, for sales demos; the first start asks, and `--no-demo` turns it off.
+- `AIWOS_EXPOSE_LAN=1` shares the app on the network, and is refused while demo sign-ins exist.
+- Give Docker at least 6 GB of memory (Docker Desktop, Settings, Resources); the launcher warns
+  when it has less.
+- Events are switched off, so the launcher no longer runs Redpanda. An older install's
+  `aiwos-app_redpanda-data` volume is left in place, and the launcher says how to remove it.
+
+Two ways to run it for development, both verified:
 
 **Docker Compose** — the whole stack, as originally designed:
 
@@ -28,19 +47,24 @@ verified against — a machine without a Docker daemon running for the applicati
 though Redis and Qdrant below do need one):
 
 ```bash
-make build                 # or: mvn clean install
-make dev-backend            # the seven business services, from their jars, against PostgreSQL on 55432
-# separately, the gateway (needs Redis; see below) and the web client:
-java -jar services/gateway/target/gateway.jar
+make build                 # mvn install -DskipTests; the format check is `make lint`, on JDK 21
+make dev-backend            # the seven business services against PostgreSQL on 55432
+make dev-backend ARGS=--with-gateway   # the same, plus the gateway when Redis answers
+make dev-status             # which services are ready; non-zero if any is not
 cd web && pnpm install && pnpm dev
 ```
 
-The gateway needs Redis for rate limiting, and vector search needs Qdrant; neither is started by
-`dev-backend`. On a machine with Docker installed but not otherwise used for the stack:
+`dev-backend` runs each service from a copy of its jar in `~/.aiwos-dev/run`, so a rebuild cannot
+pull a jar out from under a running service, and writes logs to `~/.aiwos-dev/logs` (the previous
+run's as `<name>.log.1`). It waits for every service's readiness check and exits non-zero, naming
+each service that did not become ready, with the end of its log.
+
+The gateway needs Redis for rate limiting, and vector search needs Qdrant; `dev-backend` starts
+neither. On a machine with Docker installed but not otherwise used for the stack:
 
 ```bash
-brew install redis && brew services start redis        # or: docker run -d -p 6379:6379 redis
-docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant   # vector store, for the dense half of retrieval
+brew install redis && brew services start redis        # or: docker run -d -p 6379:6379 redis:7.4.11-alpine
+docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant:v1.19.1   # vector store, for meaning-based search
 ```
 
 Both are optional in the sense that the platform degrades correctly without them — rate limiting
@@ -76,7 +100,7 @@ Shared libraries: `platform-core` (context, errors, configuration, cryptography,
 `llm-core` and `mcp-core`.
 
 Stack: Java 21 · Spring Boot 3.5 · Spring Cloud 2025.0 · PostgreSQL 17 · Redis · Qdrant ·
-Redpanda · React 19 + Vite + TypeScript.
+Redpanda (wired, not yet used) · React 19 + Vite + TypeScript.
 
 ## Two decisions worth knowing
 
@@ -95,22 +119,23 @@ the gateway's check is a first pass, not a control.
 
 ## State of the work
 
-Everything described below is built, compiles, and has been exercised live end to end — every
-service running together against a real PostgreSQL instance, a real Redis, and a real Qdrant, not
-merely compiled in isolation.
+Everything described below is built and compiles, and the rows say how far each part has been
+exercised: most live end to end, with every service running together against a real PostgreSQL
+instance, a real Redis and a real Qdrant, and some only partly, as stated.
 
 | Area | State |
 |---|---|
 | Build, shared libraries, configuration, cryptography, resilience, observability | Built and verified |
 | Identity, sessions, RBAC, token signing and JWKS | Built and verified |
 | Organisations, envelope-encrypted credentials, working hours, invitations | Built and verified |
-| `llm-core`: seven providers, sandbox, router, budgets, usage accounting | Built, tested, and live-verified against OpenRouter |
-| `mcp-core`: tool gateway, argument validation, six sandbox servers | Built and verified |
+| `llm-core`: seven providers, sandbox, router, usage accounting | Built, tested, and live-verified against OpenRouter |
+| Budgets: a guard checked before every model call | Partial: the guard is enforced and unit-tested, but no screen or endpoint sets a cap, so no workspace has one |
+| `mcp-core`: tool gateway, argument validation, a catalogue of 19 connectors plus voice notes; live adapters for GitHub, Slack, Notion, Linear, HubSpot and webhooks, practice data for the rest | Built and unit-tested |
 | Orchestrator: agents, versions, task graph, runs, approvals, model routing policy, reaper | Built and verified |
-| Memory: working, episodic, compaction | Built |
-| Knowledge: chunking, embeddings, Qdrant, hybrid retrieval with citations | Built and live-verified, including the dense half |
+| Memory: working and episodic storage, compaction | Partial: storage only, not yet used by agents. No run reads or writes memory, compaction and retention never run, and there is no screen to inspect or forget a memory |
+| Knowledge: chunking, keyword retrieval with citations, a Qdrant path for meaning-based search | Built; keyword search live-verified. Meaning-based search needs an embedding model to be configured: by default every source uses the sandbox embedder, whose vectors are random, so retrieval is in effect keyword search |
 | Integrations: connections, scopes, tool invocation records | Built and verified |
-| Analytics: audit hash chain, live-emitted events, dashboards | Built and verified |
+| Analytics: hash-chained audit log of approval decisions and run outcomes, dashboards | Built. Nothing re-walks the chain yet (no endpoint or job verifies it), and sign-ins, member and role changes are not recorded |
 | Web client: 22 screens, design system, design-system tests, a usability pass for first-time evaluators, a UI/UX polish pass against the UI UX Pro Max guidelines, an axe-core WCAG 2.2 AA audit of every page at laptop and mobile widths | Built, tested, and checked live at 375px, 1366px and 1440px |
 | Workforce Chat: one conversation with every agent; @mention, model-planned or keyword routing, each reply saying who took the work and why; multi-agent chains with handoffs; inline approvals; document questions answered from Knowledge; a General Employee fallback so no request ever dead-ends; agents can ask a clarifying question mid-run, answerable as a question card, by typing in the composer, or from the Orchestrator; a collapsible sidebar, grouped conversations and a Work panel on wide screens | Built and live-verified against OpenRouter and the sandbox provider |
 | Orchestrator: live flow map of the coordinator and agents, per-agent swimlanes, a board of queued, working, waiting and finished work with who asked for it, a "Needs you" inbox of open questions and approvals ordered by urgency, pause per agent, stop everything | Built and live-verified |
@@ -119,30 +144,37 @@ merely compiled in isolation.
 | Public home page (`/home`), written for business buyers: plain-language offer, how it works in three steps, the AI team, two demos (approval, cited answers) behind tabs, safety promises with a who-can-do-what table, questions and answers | Built, tested, axe-clean at 375px and 1366px |
 | Page for IT and security teams (`/trust`): all four technical demos (approval gate, provider failover, audit chain, cited retrieval), the full permission explorer, what runs, and the limits | Built, tested, axe-clean at 375px and 1366px |
 | Sign in, create a workspace, accept an invitation: one shared layout, a one-row demo-role picker, show-password control, a stepper for sign-up | Built, tested, live-verified |
-| Gateway: routing, JWT verification, Redis-backed rate limiting | Built and live-verified |
+| Gateway: routing, JWT verification, Redis-backed rate limiting that lets requests through when Redis is down | Built; its route table is checked against the dev proxy and the launcher by `GatewayRoutesTest`, and it was live-verified with every service (401 at the edge without a token). The dev proxy and the launcher's nginx call the services directly, so everyday use does not pass through it |
 | Containers, compose stack, Kubernetes manifests, CI | Built |
 
 Verified running, not merely compiled. All eight services, including the gateway, start together
 and stay healthy; sign-in issues an ES256 token, and every service verifies that token
 independently through the published key set. Role-based access is enforced inside each service:
 an employee is refused `/api/roles` and `/api/providers` with 403, an unauthenticated request gets
-401 at the gateway itself, and the eight seeded providers and six sandbox tool servers are served
-from the database. A stored OpenRouter credential was routed to live, for both a plain completion
+401 at the gateway itself, and the seeded providers and tool servers are served from the
+database. A stored OpenRouter credential was routed to live, for both a plain completion
 and a tool-calling run that parked for a real approval and resumed afterward. The two project PDFs
-are indexed as 60 passages with both halves of retrieval working: keyword search and, now that a
-local Qdrant is running, vector search — a query for "approval queue human review sensitive
-actions" returns genuinely ranked, cited passages from the source documents, not a fabricated
-sample.
+are indexed as 60 passages, and keyword search returns genuinely ranked, cited passages from them -
+a query for "approval queue human review sensitive actions" among them, not a fabricated sample.
+The vector half runs end to end against a local Qdrant, but with the default sandbox embedder its
+vectors are random, so it adds nothing until an embedding model is configured.
 
 Not yet done, and worth stating plainly:
 
-- **OAuth flows for the tool servers are not implemented.** The sandbox drivers are complete and
-  the connection model is in place; the authorisation-code exchange is not written, because it
-  needs a registered OAuth application per real provider (Google, Slack, GitHub, ...) — a business
-  decision, not something a code change can supply on its own.
+- **Most connectors work with practice data only.** GitHub, Slack, Notion, Linear, HubSpot and
+  webhooks connect live with a token or address an administrator adds. Gmail, Google Calendar,
+  Drive, Sheets, Outlook, Teams, Zoom and Salesforce need an OAuth application per provider, which
+  is a business decision, not something a code change can supply on its own; Jira, Confluence,
+  Asana, Zendesk and Stripe have no live adapter yet. No real mailbox or calendar is connected.
+- **Agents do not use memory yet.** The memory service stores episodes, but no run reads or
+  writes them.
+- **A revoked permission lingers until the next refresh.** Nothing compares a token with the
+  role's current permissions yet, so a removed member, a narrowed role or a sign-out everywhere is
+  felt when the access token is next refreshed. Access tokens live five minutes to bound that.
 - **Kafka is wired but unused.** The envelope, topics and idempotency table exist; the orchestrator
   drives tasks synchronously rather than over the bus. Moving execution onto the bus is an
-  architectural change this project does not yet need, not a defect.
+  architectural change this project does not yet need, not a defect. The one-click launcher runs
+  no broker at all.
 - **Only upload ingestion works.** A document can be uploaded, extracted, chunked, indexed and
   cited. The Drive, Notion, Confluence and GitHub wiki connectors are not written, so nothing
   crawls a source automatically yet.
@@ -220,26 +252,22 @@ natively by the JDK, needs no third-party crypto library, and is equally sound.
 
 ## Font
 
-The whole web client uses one typeface, **Aperçu** (Colophon Foundry). It is a commercial font,
-so it is not loaded from a font CDN and its files are not in this repository. Put the licensed web
-files in `web/public/fonts/` under exactly these names:
-
-```
-web/public/fonts/apercu-regular.woff2
-web/public/fonts/apercu-medium.woff2
-web/public/fonts/apercu-bold.woff2
-```
-
-`web/src/styles/fonts.css` declares them, and a machine with Aperçu installed uses its own copy
-first. Until the files are added, text falls back to the system sans-serif.
+The whole web client uses one typeface, **Inter** (Rasmus Andersson, SIL Open Font License 1.1),
+at weights 400, 500 and 600. It is self-hosted from the `@fontsource-variable/inter` package,
+imported once in `web/src/main.tsx`, so no font CDN is involved; `web/src/styles/fonts.css`
+describes the metric-matched fallback used while it loads.
 
 ## Tests
 
 ```bash
-make verify      # formatting, unit and slice tests
+make verify      # formatting (JDK 21), unit and slice tests
 make test-it     # integration tests, needs Docker
 make design-check
 ```
+
+The format check is not part of the default Maven build, so `make build` and `make test` work on a
+newer JDK too. CI should run it with `mvn verify -Pformat-check` on JDK 21; the workflow in
+`.github/workflows/ci.yml` does not do so yet. `.java-version` names the JDK the build targets.
 
 # AI Workforce OS
 

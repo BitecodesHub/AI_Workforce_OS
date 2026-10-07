@@ -52,6 +52,8 @@ public record AttemptRecord(
         PROVIDER_DISABLED,
         MODEL_DISABLED,
         CREDENTIAL_MISSING,
+        /** The credential store could not be reached, so whether a key is stored is unknown. */
+        CREDENTIAL_UNAVAILABLE,
         CIRCUIT_OPEN,
         TOOLS_UNSUPPORTED,
         JSON_MODE_UNSUPPORTED,

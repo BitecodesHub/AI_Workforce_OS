@@ -73,7 +73,7 @@ public class EpisodicMemory {
         if (query == null || query.isBlank()) {
             return episodes.findRecent(orgId, agentId, PageRequest.of(0, capped));
         }
-        return episodes.search(orgId, query, PageRequest.of(0, capped));
+        return episodes.search(orgId, agentId, query, PageRequest.of(0, capped));
     }
 
     @Transactional(readOnly = true)

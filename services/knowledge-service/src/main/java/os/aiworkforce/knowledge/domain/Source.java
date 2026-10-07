@@ -71,8 +71,46 @@ public class Source extends OrgScopedEntity {
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
+    /**
+     * Searchable, listed and counted only for people who manage knowledge. Everyone else is told
+     * the source does not exist, rather than that it is hidden, so its name does not leak either.
+     */
+    @Column(nullable = false)
+    private boolean restricted;
+
+    /**
+     * The one agent this source belongs to, or null for a workspace source. An agent's own source is
+     * searched only by that agent and is not part of the workspace's list or search.
+     */
+    @Column(name = "agent_id")
+    private java.util.UUID agentId;
+
+    public java.util.UUID getAgentId() {
+        return agentId;
+    }
+
+    public void setAgentId(java.util.UUID agentId) {
+        this.agentId = agentId;
+    }
+
+    /** The provider that produces offline vectors which carry no meaning (see SandboxProvider). */
+    public static final String SANDBOX_PROVIDER = "sandbox";
+
     public boolean isReady() {
         return "ready".equals(status);
+    }
+
+    /**
+     * Whether this source can be searched by meaning. Sandbox vectors are pseudo-random, so for a
+     * sandbox source only the keyword half of retrieval is real, and the source says so.
+     */
+    public boolean isSearchableByMeaning() {
+        return !SANDBOX_PROVIDER.equalsIgnoreCase(embeddingProvider);
+    }
+
+    /** How this source is searched, in the words the console shows: keyword, or keyword and meaning. */
+    public String getSearchMode() {
+        return isSearchableByMeaning() ? "keyword+meaning" : "keyword";
     }
 
     /** Set when a stored credential stops working, so the console can prompt for re-consent. */
@@ -207,5 +245,13 @@ public class Source extends OrgScopedEntity {
 
     public void setLastError(String lastError) {
         this.lastError = lastError;
+    }
+
+    public boolean isRestricted() {
+        return restricted;
+    }
+
+    public void setRestricted(boolean restricted) {
+        this.restricted = restricted;
     }
 }

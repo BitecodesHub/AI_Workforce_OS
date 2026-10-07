@@ -1,21 +1,28 @@
 import type { CSSProperties } from 'react'
 import { Tag, Time } from '../ui'
-import { formatDuration, sentenceCase } from '../../lib/format'
+import { useApproval, useMemberNamer } from '../../lib/approvalQueries'
+import { formatDuration } from '../../lib/format'
 import { statusLabel, toolLabel } from '../../lib/labels'
 import type { RunStep } from '../../lib/queries'
+import { can } from '../../lib/session'
 import { ClipAudio } from './ClipAudio'
 import {
-  STEP_KIND,
+  MODE_LABEL,
+  citationsOf,
   clipIdOf,
   detailNumber,
   detailStrings,
   detailText,
   isInstruction,
   isSandboxStep,
+  memoriesOf,
   questionItemsOf,
   readableAttempt,
+  searchQueryOf,
   stepDescription,
   stepHeading,
+  stepKind,
+  stepMode,
 } from './traceModel'
 
 /*
@@ -24,13 +31,107 @@ import {
  * Used by RunDetail's full trace; RunTraceCompact renders the same steps more briefly.
  */
 
-const STEP_STYLE: CSSProperties = {
-  borderLeft: '1px solid var(--line)',
-  paddingLeft: 'var(--space-5)',
-  paddingBottom: 'var(--space-2)',
+const PROSE: CSSProperties = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
+
+/**
+ * What a document search looked for and which passages it cited, each with the document, the page
+ * and a short excerpt, and a way to open the source when the person may read Knowledge. A passage
+ * from a restricted source is listed by name without its text.
+ */
+function SearchedDocuments({ step }: { step: RunStep }) {
+  const query = searchQueryOf(step)
+  const citations = citationsOf(step)
+  const mayReadKnowledge = can('knowledge:read')
+  if (!query && citations.length === 0) return null
+  return (
+    <div style={{ marginBottom: 'var(--space-3)' }}>
+      {query && (
+        <p className="caption" style={{ ...PROSE, marginBottom: 'var(--space-2)' }}>
+          Searched for: {query}
+        </p>
+      )}
+      {citations.length > 0 && (
+        <ol className="stack" style={{ gap: 'var(--space-2)', margin: 0, paddingLeft: 'var(--space-5)' }}>
+          {citations.map((citation) => (
+            <li key={citation.number} className="caption">
+              <span style={PROSE}>
+                [{citation.number}] {citation.title}
+                {citation.page != null ? `, page ${citation.page}` : ''}
+                {citation.heading ? `, ${citation.heading}` : ''}
+              </span>
+              {citation.restricted && (
+                <>
+                  {' '}
+                  <Tag tone="neutral">Restricted source</Tag>
+                </>
+              )}
+              {citation.sourceId && mayReadKnowledge && (
+                <>
+                  {' '}
+                  <a className="link" href={`/knowledge/${encodeURIComponent(citation.sourceId)}`}>
+                    Open in Knowledge
+                  </a>
+                </>
+              )}
+              {citation.excerpt && (
+                <span className="muted" style={{ ...PROSE, display: 'block', marginTop: 'var(--space-1)' }}>
+                  {citation.excerpt}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
 }
 
-const PROSE: CSSProperties = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
+/**
+ * What became of an approval the run asked for, read from the approval itself: who decided, when
+ * and what they said, or that nobody did. Names come from the member directory.
+ */
+function ApprovalDecision({ approvalId }: { approvalId: string }) {
+  const approval = useApproval(approvalId, { enabled: can('approval:read') })
+  const { me, nameOf } = useMemberNamer()
+  const found = approval.data
+  if (!found) return null
+  const who = found.decidedBy ? (found.decidedBy === me ? 'You' : nameOf(found.decidedBy)) : null
+  const note = found.decisionNote ? `: ${found.decisionNote}` : ''
+  let line: React.ReactNode
+  if (found.status === 'pending') {
+    line = 'Waiting for a decision'
+  } else if (found.status === 'approved') {
+    line = (
+      <>
+        Approved by {who ?? 'someone'} at <Time iso={found.decidedAt} mode="absolute" />
+        {note}
+      </>
+    )
+  } else if (found.status === 'rejected' && found.sentBack) {
+    line = (
+      <>
+        Sent back by {who ?? 'someone'}
+        {note}
+      </>
+    )
+  } else if (found.status === 'rejected') {
+    line = (
+      <>
+        Rejected by {who ?? 'someone'}
+        {note}
+      </>
+    )
+  } else if (found.status === 'expired') {
+    line = 'Expired without a decision'
+  } else {
+    line = 'Withdrawn when the run stopped'
+  }
+  return (
+    <p className="caption" style={{ ...PROSE, marginBottom: 'var(--space-3)' }}>
+      {line}
+    </p>
+  )
+}
 
 export function TraceStep({ step }: { step: RunStep }) {
   const time = (
@@ -41,8 +142,8 @@ export function TraceStep({ step }: { step: RunStep }) {
 
   if (isInstruction(step)) {
     return (
-      <li style={STEP_STYLE}>
-        <div className="row" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
+      <li className="trace-step">
+        <div className="trace-step-head">
           <Tag tone="blue">Instruction</Tag>
           <h3 className="section-heading">What the agent was asked</h3>
         </div>
@@ -52,10 +153,12 @@ export function TraceStep({ step }: { step: RunStep }) {
     )
   }
 
-  const kind = STEP_KIND[step.kind] ?? { tone: 'neutral' as const, label: sentenceCase(step.kind) }
+  const kind = stepKind(step)
   const heading = stepHeading(step)
   const status = step.kind === 'tool_call' ? detailText(step.detail, 'status') : null
   const toolStatus = status ? statusLabel('toolCall', status) : null
+  // Where a tool call's answer came from, so practice data is never read as a real result.
+  const mode = stepMode(step)
   // A model step's time is its own; a tool call's is recorded in its detail.
   const ms = step.durationMs > 0 ? step.durationMs : (detailNumber(step.detail, 'durationMs') ?? 0)
   const description = stepDescription(step)
@@ -64,8 +167,8 @@ export function TraceStep({ step }: { step: RunStep }) {
   const clipId = clipIdOf(step)
 
   return (
-    <li style={STEP_STYLE}>
-      <div className="row" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
+    <li className="trace-step">
+      <div className="trace-step-head">
         <Tag tone={kind.tone}>{kind.label}</Tag>
         {heading && heading !== kind.label && (
           <h3 className="section-heading" style={{ overflowWrap: 'anywhere' }}>
@@ -73,6 +176,14 @@ export function TraceStep({ step }: { step: RunStep }) {
           </h3>
         )}
         {toolStatus && <Tag tone={toolStatus.tone}>{toolStatus.label}</Tag>}
+        {mode && (
+          <Tag
+            tone={mode === 'live' ? 'blue' : 'neutral'}
+            title={mode === 'live' ? 'Answered by the connected service.' : 'Answered from practice data, not a real service.'}
+          >
+            {MODE_LABEL[mode]}
+          </Tag>
+        )}
         {isSandboxStep(step) && <Tag tone="neutral">Offline sandbox</Tag>}
         {ms > 0 && <span className="caption tabular">{formatDuration(ms)}</span>}
       </div>
@@ -81,6 +192,22 @@ export function TraceStep({ step }: { step: RunStep }) {
         <p className="muted" style={{ ...PROSE, marginBottom: 'var(--space-3)' }}>
           {description}
         </p>
+      )}
+
+      <SearchedDocuments step={step} />
+
+      {memoriesOf(step).length > 0 && (
+        <ul className="stack" style={{ gap: 'var(--space-1)', margin: 0, marginBottom: 'var(--space-3)', paddingLeft: 'var(--space-5)' }}>
+          {memoriesOf(step).map((note, index) => (
+            <li key={index} className="caption" style={PROSE}>
+              {note.content}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {step.kind === 'approval' && detailText(step.detail, 'approvalId') && (
+        <ApprovalDecision approvalId={detailText(step.detail, 'approvalId') as string} />
       )}
 
       {step.kind === 'question' && (

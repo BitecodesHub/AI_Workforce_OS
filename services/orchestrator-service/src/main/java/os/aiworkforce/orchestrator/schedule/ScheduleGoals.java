@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import os.aiworkforce.orchestrator.domain.Goal;
@@ -17,6 +19,13 @@ import os.aiworkforce.orchestrator.domain.Goal;
 public interface ScheduleGoals extends JpaRepository<Goal, UUID> {
 
     List<Goal> findByOrgIdAndScheduleIdOrderByCreatedAtDesc(UUID orgId, UUID scheduleId);
+
+    /**
+     * One page of a schedule's goals, newest first: a schedule that fires every few minutes starts
+     * thousands of goals a month, so its history is read a page at a time, served by the
+     * {@code (schedule_id, created_at desc)} index.
+     */
+    Page<Goal> findByOrgIdAndScheduleIdOrderByCreatedAtDesc(UUID orgId, UUID scheduleId, Pageable pageable);
 
     Optional<Goal> findFirstByScheduleIdOrderByCreatedAtDesc(UUID scheduleId);
 }

@@ -5,11 +5,17 @@ import type { Agent, Conversation } from '../../lib/queries'
 import type { useSpeaker } from '../../lib/voice'
 import type { DetailsMode } from './detailsContext'
 import { AgentAvatar } from '../ui/AgentAvatar'
+import { visibilityLabel } from '../../lib/chatQueries'
 
 /*
- * The 52px band above the thread (B1.4): the conversation's title (renamable), who is in it, a
+ * The one-row band at the top of the chat panel (B1.4): the conversation's title (renamable), who is in it, a
  * compact notice for a questions-only role, and the menu that holds everything else a conversation
  * can do.
+ *
+ * Beside the title, a small pill says who can read the conversation ("Private": only its creator
+ * and the people added; "Workspace": everyone in it), with the full sentence for screen readers
+ * and as its tooltip. The creator can change that from the menu. A conversation
+ * that could not be opened (`unavailable`) offers none of the actions that would act on it.
  */
 
 function MenuIcon() {
@@ -47,10 +53,29 @@ function PanelIcon() {
   )
 }
 
+function LockIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="3" y="7" width="10" height="7" rx="1.6" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+function WorkspaceIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M1.8 13.5a4.2 4.2 0 0 1 8.4 0M10.5 4a2.2 2.2 0 0 1 0 4.2M12 9.6a3.8 3.8 0 0 1 2.2 3.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function ThreadHeader({
   eyebrow,
   title,
   conversation,
+  unavailable = false,
   participants,
   readOnly,
   onOpenSidebar,
@@ -60,6 +85,8 @@ export function ThreadHeader({
   onCopyLink,
   onCopyConversation,
   onDelete,
+  onSetVisibility,
+  onAddPeople,
   speaker,
   detailsMode,
   onDetailsMode,
@@ -70,6 +97,8 @@ export function ThreadHeader({
   eyebrow: string
   title: string
   conversation: Conversation | null
+  /** The conversation could not be opened: deleted, not this person's to see, or failed to load. */
+  unavailable?: boolean
   participants: Agent[]
   readOnly: boolean
   onOpenSidebar?: () => void
@@ -79,6 +108,8 @@ export function ThreadHeader({
   onCopyLink: () => void
   onCopyConversation: () => void
   onDelete: () => void
+  onSetVisibility?: (visibility: 'private' | 'workspace') => void
+  onAddPeople?: () => void
   speaker: ReturnType<typeof useSpeaker>
   detailsMode: DetailsMode
   onDetailsMode: (mode: DetailsMode) => void
@@ -106,9 +137,14 @@ export function ThreadHeader({
     setEditing(false)
   }
 
-  const canManage = conversation?.canManage ?? false
+  const canManage = !unavailable && (conversation?.canManage ?? false)
+  const usable = !unavailable && conversation !== null
+  const canShare = usable && (conversation?.canShare ?? false)
   const shown = participants.slice(0, 4)
   const extra = participants.length - shown.length
+  // A conversation not yet started is private until it is shared.
+  const visibility = conversation ? (conversation.visibility ?? 'workspace') : 'private'
+  const visibilityText = visibilityLabel(visibility)
 
   return (
     <header className="chat-thread-header">
@@ -124,7 +160,10 @@ export function ThreadHeader({
       )}
 
       <div className="chat-thread-heading">
-        <Eyebrow>{eyebrow}</Eyebrow>
+        {/* The screen's eyebrow, kept for screen readers; the row itself carries the title. */}
+        <div className="visually-hidden">
+          <Eyebrow>{eyebrow}</Eyebrow>
+        </div>
         {editing ? (
           <input
             ref={inputRef}
@@ -144,21 +183,26 @@ export function ThreadHeader({
             onBlur={(event) => void commitRename(event.currentTarget.value)}
           />
         ) : (
-          <div className="chat-thread-title-row">
-            <h1 id="chat-thread-title" className="chat-thread-title" tabIndex={-1}>
-              {title}
-            </h1>
-            {shown.length > 0 && (
-              <ul className="chat-thread-agents" aria-label="Agents in this conversation">
-                {shown.map((agent) => (
-                  <li key={agent.id} title={agent.name}>
-                    <AgentAvatar name={agent.name} category={agent.category} fallback={agent.fallback ?? false} size="sm" />
-                  </li>
-                ))}
-                {extra > 0 && <li className="caption muted">+{extra}</li>}
-              </ul>
-            )}
-          </div>
+          <h1 id="chat-thread-title" className="chat-thread-title" tabIndex={-1} title={title}>
+            {title}
+          </h1>
+        )}
+        {!unavailable && (
+          <span className="chat-thread-privacy" data-visibility={visibility} title={visibilityText}>
+            {visibility === 'private' ? <LockIcon /> : <WorkspaceIcon />}
+            <span aria-hidden="true">{visibility === 'private' ? 'Private' : 'Workspace'}</span>
+            <span className="visually-hidden">{visibilityText}</span>
+          </span>
+        )}
+        {!editing && shown.length > 0 && (
+          <ul className="chat-thread-agents" aria-label="Agents in this conversation">
+            {shown.map((agent) => (
+              <li key={agent.id} title={agent.name}>
+                <AgentAvatar name={agent.name} category={agent.category} fallback={agent.fallback ?? false} size="sm" />
+              </li>
+            ))}
+            {extra > 0 && <li className="caption muted">+{extra}</li>}
+          </ul>
         )}
       </div>
 
@@ -193,14 +237,27 @@ export function ThreadHeader({
           align="end"
           items={[
             ...(canManage ? [{ id: 'rename', label: 'Rename', onSelect: () => setEditing(true) }] : []),
-            { id: 'pin', label: conversation?.pinned ? 'Unpin' : 'Pin', onSelect: onTogglePin, disabled: !conversation },
-            { id: 'copy-link', label: 'Copy link', onSelect: onCopyLink, disabled: !conversation },
-            { id: 'copy-conversation', label: 'Copy conversation', onSelect: onCopyConversation, disabled: !conversation },
+            ...(unavailable
+              ? []
+              : [
+                  { id: 'pin', label: conversation?.pinned ? 'Unpin' : 'Pin', onSelect: onTogglePin, disabled: !usable },
+                  { id: 'copy-link', label: 'Copy link', onSelect: onCopyLink, disabled: !usable },
+                  { id: 'copy-conversation', label: 'Copy conversation', onSelect: onCopyConversation, disabled: !usable },
+                ]),
+            ...(canShare && (conversation?.visibility ?? 'workspace') === 'private' && onSetVisibility
+              ? [{ id: 'share', label: 'Share with workspace', onSelect: () => onSetVisibility('workspace') }]
+              : []),
+            ...(canShare && (conversation?.visibility ?? 'workspace') === 'workspace' && onSetVisibility
+              ? [{ id: 'make-private', label: 'Make private', onSelect: () => onSetVisibility('private') }]
+              : []),
+            ...(canShare && (conversation?.visibility ?? 'workspace') === 'private' && onAddPeople
+              ? [{ id: 'add-people', label: 'Add people', onSelect: onAddPeople }]
+              : []),
             ...(speaker.provider !== 'none'
               ? [
                   {
                     id: 'read-aloud',
-                    label: 'Read new replies aloud',
+                    label: speaker.muted ? 'Sound off, turn on' : 'Sound on, turn off',
                     checked: !speaker.muted,
                     onSelect: () => speaker.setMuted(!speaker.muted),
                   },

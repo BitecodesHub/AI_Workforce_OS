@@ -161,6 +161,27 @@ describe('buildNeedsYou', () => {
     expect(items.map((item) => item.id)).toEqual(['a-mine'])
   })
 
+  it('reads an approval in words, whichever way the tool is named', () => {
+    const dotted = approval({
+      id: 'a-dotted',
+      tool: 'gmail.send_message',
+      summary: 'Send something outside the workspace using gmail.send_message',
+    })
+    const wire = approval({
+      id: 'a-wire',
+      tool: 'slack__post_message',
+      summary: 'Send something outside the workspace using slack__post_message',
+    })
+    const noTool = approval({ id: 'a-none', tool: null, summary: 'Send an email' })
+
+    const items = buildNeedsYou(board({ approvals: [dotted, wire, noTool] }), { me: 'me', scope: 'everyone' })
+
+    const summaries = Object.fromEntries(items.map((item) => [item.id, (item as { summary: string }).summary]))
+    expect(summaries['a-dotted']).toBe('Send something outside the workspace using Gmail · send message')
+    expect(summaries['a-wire']).toBe('Send something outside the workspace using Slack · post message')
+    expect(summaries['a-none']).toBe('Send an email')
+  })
+
   it('reads a failed goal from failedToday even when the window would otherwise exclude it', () => {
     const failed = goal({ id: 'g1', requestedBy: 'me', tasks: [task({ id: 't1', failureReason: 'The tool timed out.' })] })
     const items = buildNeedsYou(board({ window: 'PT1H', windowMinutes: 60, goals: [], failedToday: [failed] }), {

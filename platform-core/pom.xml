@@ -76,6 +76,15 @@
       <groupId>io.github.resilience4j</groupId>
       <artifactId>resilience4j-retry</artifactId>
     </dependency>
+    <!--
+      The per-provider requests-per-minute limit in ModelRouter. Not managed in the parent pom, so
+      it takes the same version property as the other resilience4j modules.
+    -->
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-ratelimiter</artifactId>
+      <version>${resilience4j.version}</version>
+    </dependency>
     <dependency>
       <groupId>com.networknt</groupId>
       <artifactId>json-schema-validator</artifactId>
@@ -92,14 +101,18 @@
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-tracing-bridge-otel</artifactId>
     </dependency>
+    <!--
+      Carries MDC and the trace context onto the virtual threads that run agents (RunExecutor) and
+      across reactor operators at the gateway. It arrives with micrometer-tracing; named here
+      because the platform now calls it directly and should not depend on that staying true.
+    -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>context-propagation</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.opentelemetry</groupId>
       <artifactId>opentelemetry-exporter-otlp</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>net.logstash.logback</groupId>
-      <artifactId>logstash-logback-encoder</artifactId>
-      <version>8.1</version>
     </dependency>
 
     <!--

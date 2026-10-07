@@ -1,0 +1,476 @@
+/*
+ * The Connectors page's one-line toolbar (components/connectors/ConnectorToolbar.tsx): a search
+ * that widens while it is used, two dropdowns, and a live-status pill on the right. It sticks under
+ * the top of the window while the connector grid scrolls beneath it. On a narrow screen the search
+ * takes a line of its own and the dropdowns follow on the next.
+ */
+
+.cx-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 0 calc(var(--space-3) * -1) var(--space-5);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--radius-card);
+}
+
+.cx-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.cx-dropdowns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.cx-toolbar-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  min-width: 0;
+}
+
+.cx-toolbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: 24px;
+  margin-top: var(--space-3);
+}
+
+.cx-results {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ---- Search ---- */
+
+.cx-search {
+  position: relative;
+  flex: 0 1 220px;
+  min-width: 0;
+  transition: flex-basis var(--transition);
+}
+
+.cx-search:focus-within,
+.cx-search[data-filled] {
+  flex-basis: 300px;
+}
+
+.cx-search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-4);
+  display: inline-flex;
+  color: var(--muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.cx-search-input {
+  width: 100%;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-4) 0 calc(var(--space-4) + 22px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-body);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.cx-search-input::placeholder {
+  color: var(--muted);
+}
+
+.cx-search-input:hover {
+  border-color: var(--border-hover);
+}
+
+.cx-search-input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.cx-search-input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+/* ---- Dropdown buttons and pills ---- */
+
+.cx-dropdown,
+.cx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-height-sm);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.cx-dropdown:hover,
+.cx-pill:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+.cx-dropdown:active,
+.cx-pill:active {
+  transform: scale(0.98);
+}
+
+.cx-dropdown[aria-expanded='true'] {
+  border-color: var(--blue);
+}
+
+.cx-dropdown[data-active] {
+  background: var(--blue-light);
+  border-color: color-mix(in srgb, var(--blue) 22%, transparent);
+  color: var(--blue);
+}
+
+.cx-dropdown-icon,
+.cx-option-icon,
+.cx-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: var(--muted);
+}
+
+.cx-dropdown[data-active] .cx-dropdown-icon {
+  color: inherit;
+}
+
+.cx-dropdown-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cx-dropdown-caret {
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform var(--transition);
+}
+
+.cx-dropdown[aria-expanded='true'] .cx-dropdown-caret {
+  transform: rotate(180deg);
+}
+
+.cx-count {
+  min-width: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: var(--text-micro);
+  line-height: 18px;
+  text-align: center;
+}
+
+.cx-dropdown[data-active] .cx-count {
+  background: var(--surface);
+  color: var(--blue);
+}
+
+.cx-attention {
+  background: var(--warning-bg);
+  border-color: color-mix(in srgb, var(--warning-ink) 22%, transparent);
+  color: var(--warning-ink);
+}
+
+.cx-attention:hover {
+  background: var(--warning-bg);
+  border-color: color-mix(in srgb, var(--warning-ink) 40%, transparent);
+}
+
+.cx-attention[aria-pressed='true'] {
+  border-color: var(--warning-ink);
+}
+
+.cx-summary[aria-expanded='true'] {
+  border-color: var(--blue);
+}
+
+/* ---- Status dots ---- */
+
+.cx-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+}
+
+.cx-dot-connected {
+  background: var(--green);
+}
+
+.cx-dot-sandbox {
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
+.cx-dot-attention {
+  background: var(--warning-ink);
+}
+
+.cx-dot-all {
+  background: conic-gradient(var(--green) 0 33%, var(--muted) 0 66%, var(--warning-ink) 0);
+}
+
+/* A slow ring around the live dot: something on this page is reaching a real account. */
+.cx-dot-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--green) 35%, transparent);
+  animation: cx-pulse 2.4s var(--ease-standard) infinite;
+}
+
+@keyframes cx-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* ---- Floating panels ---- */
+
+.cx-popover {
+  z-index: 1000;
+  min-width: 232px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: min(420px, calc(100dvh - 16px));
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--transition);
+}
+
+.cx-listbox {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  outline: none;
+}
+
+.cx-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 34px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  font-size: var(--text-body);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.cx-option-all {
+  margin-bottom: var(--space-1);
+}
+
+.cx-option[data-active] {
+  background: var(--surface-hover);
+}
+
+.cx-listbox:focus-visible .cx-option[data-active] {
+  outline: var(--focus-outline);
+  outline-offset: -2px;
+}
+
+.cx-option[aria-selected='true'] {
+  color: var(--blue);
+}
+
+.cx-option[aria-selected='true'] .cx-option-icon {
+  color: inherit;
+}
+
+.cx-option[data-empty] .cx-option-label {
+  color: var(--muted);
+}
+
+.cx-option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cx-option-check {
+  display: inline-flex;
+  width: 14px;
+  color: var(--blue);
+}
+
+.cx-note {
+  max-width: min(300px, calc(100vw - 16px));
+  padding: var(--space-4) var(--space-5);
+}
+
+.cx-note-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+}
+
+.cx-note-body {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ---- Active filter chips ---- */
+
+.cx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 220px;
+  height: 24px;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--blue-light);
+  color: var(--blue);
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+  animation: pop-in var(--transition-fast);
+  transition: background-color var(--transition-fast);
+}
+
+.cx-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cx-chip:hover {
+  background: color-mix(in srgb, var(--blue) 14%, var(--surface));
+}
+
+.cx-clear {
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.cx-clear:hover {
+  text-decoration: underline;
+}
+
+/* ---- Narrow screens and touch ---- */
+
+@media (max-width: 720px) {
+  /* Wrapped onto several lines it would cover too much of a phone screen to stay pinned. */
+  .cx-toolbar {
+    position: static;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .cx-search,
+  .cx-search:focus-within,
+  .cx-search[data-filled] {
+    flex: 1 1 100%;
+  }
+
+  .cx-toolbar-end {
+    margin-left: 0;
+  }
+}
+
+@media (pointer: coarse) {
+  .cx-dropdown,
+  .cx-pill,
+  .cx-search-input {
+    height: 44px;
+  }
+
+  .cx-search-input {
+    font-size: 16px;
+  }
+
+  .cx-option {
+    min-height: 44px;
+  }
+
+  .cx-chip {
+    height: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cx-popover,
+  .cx-chip,
+  .cx-dot-pulse::after {
+    animation: none;
+  }
+
+  .cx-search,
+  .cx-dropdown-caret {
+    transition: none;
+  }
+}

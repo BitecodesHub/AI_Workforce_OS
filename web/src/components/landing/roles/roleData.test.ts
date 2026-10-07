@@ -1,7 +1,8 @@
 import { createElement } from 'react'
 import axe from 'axe-core'
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetDemoAccountsForTests } from '../../../lib/demo'
 import {
   ALL_CODES,
   CAPABILITIES,
@@ -44,7 +45,7 @@ describe('roleData', () => {
     for (const area of CONSOLE_AREAS) if (area.code !== null) expect(known.has(area.code)).toBe(true)
   })
 
-  it('makes employee a subset of manager, and admin everything but closing the workspace', () => {
+  it('makes employee a subset of manager, and admin everything but workspace:delete', () => {
     for (const code of ROLE_CODES.employee) expect(ROLE_CODES.manager.has(code)).toBe(true)
     expect(compareRoles('owner', 'admin')).toEqual({ added: ['workspace:delete'], removed: [] })
   })
@@ -61,6 +62,12 @@ describe('roleData', () => {
     expect(ROLE_ORDER.map((role) => countAreas(role))).toEqual([11, 11, 10, 8, 7])
   })
 
+  it('claims nothing in plain words that no screen does', () => {
+    // workspace:delete exists as a code, but nothing closes a workspace, so no sentence offers it.
+    expect(CAPABILITIES.flatMap((capability) => capability.codes)).not.toContain('workspace:delete')
+    expect(CAPABILITIES.map((capability) => capability.label).join(' ')).not.toMatch(/close|billing/i)
+  })
+
   it('keeps the plain-words claims true to the seeder', () => {
     expect(holdsAll('manager', ['approval:decide'])).toBe(true)
     expect(holdsAll('employee', ['approval:read'])).toBe(true)
@@ -72,6 +79,25 @@ describe('roleData', () => {
 })
 
 describe('RoleSwitcher', () => {
+  /** Offers demo accounts, or leaves the question unanswered, which renders the same as none. */
+  function demoAccounts(answer: 'pending' | 'offered') {
+    const body = { accounts: [{ email: 'manager@demo.aiworkforce.os', displayName: 'Maya Manager', role: 'manager', describes: '' }] }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => (answer === 'pending' ? new Promise<Response>(() => {}) : Promise.resolve(new Response(JSON.stringify(body))))),
+    )
+  }
+
+  beforeEach(() => {
+    resetDemoAccountsForTests()
+    demoAccounts('pending')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
   function announcer(container: HTMLElement): HTMLElement {
     const region = container.querySelector<HTMLElement>('p[aria-live="polite"]')
     if (!region) throw new Error('no polite announcer')
@@ -88,8 +114,19 @@ describe('RoleSwitcher', () => {
     expect(panel).toHaveAttribute('aria-labelledby', 'roles-tab-manager')
     expect(within(panel).getByRole('heading', { level: 3, name: 'Manager' })).toBeInTheDocument()
     expect(within(panel).getByText('10 of 11 areas')).toBeInTheDocument()
-    expect(within(panel).getByRole('link', { name: /Sign in as a manager/ })).toHaveAttribute('href', '/sign-in')
+    // Until the site says it has demo accounts, the link goes to the demos on the page.
+    expect(within(panel).getByRole('link', { name: 'See it work' })).toHaveAttribute('href', '#demos')
     expect(announcer(container).textContent).toBe('')
+  })
+
+  it('offers to sign in as the selected role only where the site has demo accounts', async () => {
+    demoAccounts('offered')
+    render(createElement(RoleSwitcher))
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+    const link = screen.getByRole('link', { name: /Sign in as a manager/ })
+    expect(link).toHaveAttribute('href', '/sign-in')
+    fireEvent.click(screen.getByRole('tab', { name: /^Viewer/ }))
+    expect(screen.getByRole('link', { name: /Sign in as a viewer/ })).toHaveAttribute('href', '/sign-in')
   })
 
   it('moves and selects with the arrow keys, Home and End, and announces', () => {

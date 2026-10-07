@@ -1,0 +1,35 @@
+{
+ "id": "WP21",
+ "title": "A trustworthy audit log: chain integrity, auditor tools, full coverage and durable delivery",
+ "priority": 7,
+ "wave": 3,
+ "effort": "L",
+ "findings": [
+  "Audit log omits all identity and admin events and its marketed tamper evidence is never verified",
+  "Administrative and access changes never reach the audit log, and audit writes are dropped silently when analytics is unavailable",
+  "Audit log cannot be filtered, exported or verified server-side, and the hash chain forks under the shipped two-replica analytics deployment",
+  "The audit hash chain forks under concurrent writes, is never verified, and loses entries whenever analytics-service is unavailable",
+  "Documents and sources cannot be deleted; tombstoning and the vector purge exist only as dead code",
+  "Analytics counts are structurally wrong: 'Denied' can never be non-zero and stopped, abandoned or expired work is never counted"
+ ],
+ "ownedFiles": [
+  "services/analytics-service/",
+  "platform-web/src/main/java/os/aiworkforce/platform/web/audit/ (new)",
+  "services/identity-service/src/main/java/os/aiworkforce/identity/service/AuthService.java",
+  "services/identity-service/src/main/java/os/aiworkforce/identity/web/MemberController.java",
+  "services/identity-service/src/main/java/os/aiworkforce/identity/web/RoleController.java",
+  "services/identity-service/src/main/java/os/aiworkforce/identity/web/PasswordController.java",
+  "services/identity-service/src/main/resources/db/migration/V4__audit_outbox.sql",
+  "services/org-service/src/main/java/os/aiworkforce/organisation/service/InvitationService.java",
+  "services/org-service/src/main/java/os/aiworkforce/organisation/web/CredentialController.java",
+  "services/org-service/src/main/java/os/aiworkforce/organisation/web/WorkspaceController.java",
+  "services/org-service/src/main/resources/db/migration/V2__audit_outbox.sql",
+  "services/knowledge-service/src/main/java/os/aiworkforce/knowledge/web/KnowledgeController.java",
+  "services/knowledge-service/src/main/java/os/aiworkforce/knowledge/service/IngestionService.java",
+  "services/knowledge-service/src/main/resources/db/migration/V4__audit_outbox.sql",
+  "web/src/routes/AuditLog.tsx",
+  "web/src/lib/labels.ts",
+  "web/src/components/landing/sections/AuditChainDemo.tsx"
+ ],
+ "spec": "Rules: standard rules apply. This package owns analytics V2, identity V4, org V2 and knowledge V4. Orchestrator keeps its existing best-effort AuditClient; its durable outbox is deferred. Do not touch integrations-service.\n\n1) Chain integrity (analytics-service)\n- Migration V2:\n  - Add hash_version SMALLINT NOT NULL DEFAULT 1.\n  - Add chain_key TEXT: the org id, or 'platform' when org_id is null.\n  - Add event_uuid UUID UNIQUE, for idempotent delivery.\n  - Add UNIQUE(chain_key, previous_hash) for v2 rows.\n  - Add indexes on (org_id, occurred_at desc), (org_id, action), (org_id, actor_id), (org_id, resource_type, resource_id) and (org_id, outcome).\n  - Add a BEFORE UPDATE OR DELETE trigger that raises an exception.\n- InternalAuditController.append:\n  - Remove `synchronized`.\n  - Make the first statement pg_advisory_xact_lock(hashtext(chainKey)).\n  - Take the previous entry from the latest row of the same chain.\n  - Truncate occurredAt to microseconds.\n  - Build the v2 hash with recursive canonical JSON (ORDER_MAP_ENTRIES_BY_KEYS). Include org_id, actor_kind, on_behalf_of and request_id.\n  - Use the instance returned by save/flush and return its persisted sequence. This fixes the merge bug that always returns 0.\n  - If eventId already exists, return the existing entry.\n- AuditChain.findFirstBreak: verify per chain, use the hash formula for each row's version, and page through rows.\n\n2) Auditor tools (AuditController)\n- Filters: actorId, onBehalfOf, action, resourceType, resourceId, outcome, from and to.\n- GET /api/audit/export?format=csv|jsonl streams the result. Neutralise spreadsheet formulas in cells.\n- Expose previousHash and entryHash.\n- GET /api/audit/verify (audit:read) walks the caller's org chain and returns {verified, checked, firstBrokenSequence?}.\n- Add a nightly @Scheduled verification that logs the result and exposes a gauge when Micrometer is present.\n\n3) Shared delivery (platform-web audit package)\n- AuditClient.record(action, resourceType, resourceId, outcome, detail):\n  - Register the event after commit with a generated event UUID.\n  - Write it to an audit_outbox table in the same transaction.\n  - A @Scheduled relay sends outbox rows every 10 s with backoff. After the maximum number of attempts it logs WARN.\n- Each service enables the client by property.\n- Outbox tables come from identity V4, org V2 and knowledge V4.\n- Identity mints its service token through the existing TokenService method; org and knowledge use their own InternalTokenProvider.\n\n4) Events\n- Identity:\n  - auth.sign_in with outcome succeeded, failed or locked. A failure for an unknown email goes to the platform chain. A lockout is written to each org the user belongs to. Failure events are written in the transaction that survives (WP03 added noRollbackFor).\n  - auth.password_change, auth.password_reset_link.create, auth.password_reset_link.redeem and session.revoke_all.\n  - member.role_change with the old and new role, and member.remove.\n  - role.create, role.update and role.delete, with the permission diff.\n- Org:\n  - invitation.create, invitation.accept and invitation.revoke.\n  - credential.store and credential.delete. Record the ref only, never the value.\n  - credential.reveal, with the calling service and the person it acted for.\n  - workspace.update, with the old and new name and timezone.\n- Knowledge:\n  - document.upload, document.replace and document.delete.\n  - source.create, source.update and source.delete.\n\n5) Web\n- AuditLog.tsx: server-side filters, a date range, export buttons and a 'Verify integrity' button. The button shows 'Chain verified up to entry N' or the first broken entry.\n- Change the AuditLog description so it matches the actual coverage.\n- labels.ts AUDIT_ACTIONS: add labels for every new action.\n- AuditChainDemo: the title stays accurate.\n\nTests\n- Concurrent appends from several threads produce an unbroken chain.\n- Rows read back verify (microseconds and nested detail).\n- v1 rows still verify.\n- The trigger blocks UPDATE.\n- A repeated eventId is idempotent.\n- The filters work.\n- CSV escaping works.\n- Each new event is emitted (mocked client).\n- The outbox relay retries.\n\nAcceptance (live)\n- Change a member's role and the audit log shows member.role_change.\n- Stop analytics-service, change a role, then start analytics again. The event arrives within a minute.\n- Verify integrity passes."
+}

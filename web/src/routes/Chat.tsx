@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { Composer } from '../components/chat/Composer'
+import { ThreadSkeleton } from '../components/chat/ChatSkeletons'
 import { JumpToLatest } from '../components/chat/JumpToLatest'
 import { MessageList } from '../components/chat/MessageList'
+import { AddPeopleDialog } from '../components/chat/AddPeopleDialog'
 import { ThreadHeader } from '../components/chat/ThreadHeader'
 import { WelcomeScreen } from '../components/chat/WelcomeScreen'
 import { WorkPanel } from '../components/chat/WorkPanel'
@@ -13,18 +15,25 @@ import {
   autoAnswerTarget,
   composerAnswer,
   conversationText,
+  draftKey,
+  goalTarget,
+  newestPosition,
   newMessageIds,
+  pendingEchoed,
   readyAnswers,
   routingMessageForGoal,
+  sendsAsNewRequest,
 } from '../components/chat/chatModel'
 import { DetailsContext } from '../components/chat/detailsContext'
-import type { DetailsMode } from '../components/chat/detailsContext'
+import type { DetailsMode, RevealGoal } from '../components/chat/detailsContext'
 import { useStickToBottom } from '../components/chat/useStickToBottom'
 import { useChatShortcuts, chatShortcutGroups } from '../components/chat/useChatShortcuts'
-import { ConfirmDialog } from '../components/ui'
+import { Button, ConfirmDialog, EmptyState, ErrorState } from '../components/ui'
 import { Sheet } from '../components/ui/Sheet'
 import { ShortcutsDialog } from '../components/ui/ShortcutsDialog'
 import { ApiError, api, describeApiError } from '../lib/api'
+import { useEarlierPages, useSetConversationVisibility } from '../lib/chatQueries'
+import { useCopyText } from '../lib/clipboard'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import {
   isGoalActive,
@@ -33,7 +42,6 @@ import {
   useAnswerFromDocuments,
   useAnswerQuestion,
   useConversation,
-  useConversationList,
   useCreateConversation,
   useDeleteConversation,
   useMarkConversationRead,
@@ -45,9 +53,9 @@ import {
   useSendMessage,
   useStopChatGoal,
 } from '../lib/queries'
-import type { Agent, BoardGoal, ChatMessage, RunQuestion } from '../lib/queries'
+import type { Agent, BoardGoal, ChatMessage, ConversationPage, MessagesPage, RunQuestion } from '../lib/queries'
 import { usePersistentState } from '../lib/persist'
-import { useDocumentTitle, useRouter } from '../lib/router'
+import { useRouter } from '../lib/router'
 import { can, profile } from '../lib/session'
 import { useToast } from '../lib/toast'
 import { useNow } from '../lib/useNow'
@@ -58,7 +66,17 @@ import { useSpeaker } from '../lib/voice'
  * the reply target (chosen or automatic, B1.7), the details mode, dismissed auto-answer ids,
  * announcements and shortcuts; every card and list below it is a small, mostly stateless component
  * in components/chat/.
+ *
+ * The thread shown is the conversation's live window plus anything older already loaded
+ * (lib/chatQueries' useEarlierPages): "Show earlier messages" and a deep link to an older message
+ * page back through it. A conversation that cannot be opened (deleted, someone else's, or a
+ * failed load) says so in place of the thread, and nothing can be sent into it.
  */
+
+const NO_MESSAGES: ChatMessage[] = []
+
+/** What the person is told about a conversation that is gone, in the thread and when it vanishes mid-visit. */
+const NOT_AVAILABLE = 'This conversation was deleted or you do not have access to it.'
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => (typeof window !== 'undefined' ? window.matchMedia(query).matches : false))
@@ -72,16 +90,60 @@ function useMediaQuery(query: string): boolean {
   return matches
 }
 
+/**
+ * A function with one identity for as long as its component lives, which always runs the latest
+ * `fn`. The thread is memoised, and its handlers close over state that changes on every poll, so
+ * handing it the handlers themselves would redraw every message each time anything moved.
+ */
+function useStableCallback<Args extends unknown[], Result>(fn: (...args: Args) => Result): (...args: Args) => Result {
+  const latest = useRef(fn)
+  useEffect(() => {
+    latest.current = fn
+  })
+  return useCallback((...args: Args) => latest.current(...args), [])
+}
+
+/**
+ * The ids of the conversations in the sidebar's list, in the order it shows them (pinned, needing
+ * you, then the rest), read from the cache. The sidebar owns that list and its filters, so this
+ * reads what it fetched rather than running a second list query of its own. It is asked when a
+ * shortcut is pressed, so nothing here needs to re-render when the list changes.
+ */
+function listedConversationIds(client: QueryClient): string[] {
+  const cache = client.getQueryCache()
+  const active = cache.findAll({ queryKey: ['conversations', 'list'], type: 'active' })
+  const [list] = active.length > 0 ? active : cache.findAll({ queryKey: ['conversations', 'list'] })
+  const pages = (list?.state.data as InfiniteData<ConversationPage, number> | undefined)?.pages ?? []
+  const seen = new Set<string>()
+  const ids: string[] = []
+  for (const page of pages) {
+    for (const row of [...page.pinned, ...page.needsYou, ...page.conversations]) {
+      if (!seen.has(row.id)) {
+        seen.add(row.id)
+        ids.push(row.id)
+      }
+    }
+  }
+  return ids
+}
+
 const isSidebarMode = (value: unknown): value is 'open' | 'rail' => value === 'open' || value === 'rail'
 const isPanelMode = (value: unknown): value is 'open' | 'closed' => value === 'open' || value === 'closed'
 const isDetailsMode = (value: unknown): value is DetailsMode => value === 'auto' || value === 'expanded' || value === 'collapsed'
 
 export function Chat() {
-  const { search, navigate } = useRouter()
+  const { search, hash, navigate } = useRouter()
   const toast = useToast()
+  const copy = useCopyText()
   const client = useQueryClient()
   const reduceMotion = useReducedMotion()
-  const speaker = useSpeaker()
+  // useSpeaker returns a new object on every render; the thread is memoised, so it is handed one
+  // that changes only when something in it does.
+  const { speak, stop, speaking, speakingKey, provider, muted, setMuted } = useSpeaker()
+  const speaker = useMemo(
+    () => ({ speak, stop, speaking, speakingKey, provider, muted, setMuted }),
+    [speak, stop, speaking, speakingKey, provider, muted, setMuted],
+  )
   const me = profile()?.userId ?? null
   const canCreateWork = can('task:create')
 
@@ -99,27 +161,42 @@ export function Chat() {
   const [overlayOpen, setOverlayOpen] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [addPeopleOpen, setAddPeopleOpen] = useState(false)
   const [focusSection, setFocusSection] = useState<'search' | 'needs-you' | null>(null)
 
   const [sending, setSending] = useState(false)
-  const [pending, setPending] = useState<{ text: string; mentioned: string[] } | null>(null)
+  // `afterPosition`: the newest position in the thread when the send started, so the stored copy
+  // of the message can be told apart from an earlier one with the same words.
+  const [pending, setPending] = useState<{ text: string; mentioned: string[]; afterPosition: number } | null>(null)
+  // A message that could not be sent stays on screen with the reason and a way to send it again,
+  // rather than vanishing into a toast.
+  const [failedSend, setFailedSend] = useState<{
+    text: string
+    agentIds: string[]
+    attachmentIds?: string[]
+    reason: string
+  } | null>(null)
   const [reroutingId, setReroutingId] = useState<string | null>(null)
   const [answeringMessageId, setAnsweringMessageId] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState('')
-  const [replyChoice, setReplyChoice] = useState<{ questionId: string; agentName: string } | null>(null)
+  const [replyChoice, setReplyChoice] = useState<{ questionId: string; agentName: string; agentId: string } | null>(null)
   const [dismissedIds, setDismissedIds] = useState<ReadonlySet<string>>(new Set())
   const [prefill, setPrefill] = useState<{ token: number; text: string } | null>(null)
+  const [mentionRequest, setMentionRequest] = useState<{ token: number; agent: Agent } | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [revealGoal, setRevealGoal] = useState<RevealGoal | null>(null)
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  /** The chat panel, where files dropped anywhere on it are attached (Composer). */
+  const mainRef = useRef<HTMLElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const shellRef = useRef<HTMLDivElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
-  const now = useNow(5_000)
+  // Only the day dividers read the clock, and they change at midnight, so a minute is plenty.
+  const now = useNow(60_000)
 
   const conversationQuery = useConversation(selectedId)
-  const titleListQuery = useConversationList({})
   const agentsQuery = useAgents()
   const agentNames = useAgentNames()
   const memberNames = useMemberNames()
@@ -129,6 +206,7 @@ export function Chat() {
   const sendMessage = useSendMessage(selectedId ?? '')
   const reroute = useReroute(selectedId ?? '')
   const rename = useRenameConversation()
+  const setVisibility = useSetConversationVisibility()
   const pinConversation = usePinConversation()
   const deleteConversation = useDeleteConversation()
   const answerQuestion = useAnswerQuestion()
@@ -139,8 +217,51 @@ export function Chat() {
 
   const detail = conversationQuery.data
   const conversation = detail?.conversation ?? null
-  const messages = useMemo(() => detail?.messages ?? [], [detail])
+  // The live window (newest messages, polled), and the whole thread as far as it is loaded.
+  const liveMessages = useMemo(() => detail?.messages ?? NO_MESSAGES, [detail])
+  const earlier = useEarlierPages(selectedId, liveMessages, detail?.hasEarlier ?? false)
+  const messages = earlier.messages
   const goals = useMemo(() => detail?.goals ?? [], [detail])
+
+  /* ---- A conversation that cannot be opened ------------------------------------------------- */
+  const loadError = conversationQuery.error
+  const loadNotFound = loadError instanceof ApiError && loadError.isNotFound
+  const hasDetail = detail !== undefined
+  // A conversation found gone while it was open stays unavailable until the person moves on, even
+  // while its removed copy is asked for again. Adjusted during render (the "previous value"
+  // pattern, 0.2), like the rest of this screen's derived state.
+  const [goneId, setGoneId] = useState<string | null>(null)
+  if (goneId !== null && goneId !== selectedId) setGoneId(null)
+  else if (selectedId && loadNotFound && hasDetail && goneId !== selectedId) setGoneId(selectedId)
+  const gone = selectedId !== null && goneId === selectedId
+  const notFound = loadNotFound || gone
+  // Otherwise only when nothing was ever loaded: a failed background refresh keeps the thread readable.
+  const unavailable = Boolean(selectedId) && ((conversationQuery.isError && !detail) || gone)
+  const handledNotFound = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedId || !loadNotFound || handledNotFound.current === selectedId) return
+    handledNotFound.current = selectedId
+    try {
+      localStorage.removeItem(draftKey(me ?? 'anonymous', selectedId))
+    } catch {
+      // Storage blocked: there is no draft to clear.
+    }
+    if (hasDetail) {
+      // Deleted (or closed to this person) while open: say so, drop the copy still on screen,
+      // and refresh the list so its row goes too.
+      toast.info(NOT_AVAILABLE)
+      client.removeQueries({ queryKey: ['conversations', selectedId] })
+      void client.invalidateQueries({ queryKey: ['conversations', 'list'] })
+    }
+  }, [selectedId, loadNotFound, hasDetail, me, client, toast])
+  // A conversation that was never there leaves the cache once the person moves on. Not before:
+  // removing the query it is still showing would only send the same request again.
+  useEffect(() => {
+    const id = selectedId
+    return () => {
+      if (id && handledNotFound.current === id) client.removeQueries({ queryKey: ['conversations', id] })
+    }
+  }, [selectedId, client])
 
   // The sidebar polls slowly (15 s). When work in the open conversation settles, refresh it at
   // once, so its row does not keep saying "Working" after the answer has already arrived.
@@ -159,9 +280,9 @@ export function Chat() {
   /* ---- Which question the composer answers (B1.7, D-14) ------------------------------------- */
   const autoTarget = replyChoice ? null : autoAnswerTarget(questions, messages, me, dismissedIds)
   const replyTo = replyChoice
-    ? { questionId: replyChoice.questionId, agentName: replyChoice.agentName, auto: false }
+    ? { questionId: replyChoice.questionId, agentName: replyChoice.agentName, agentId: replyChoice.agentId, auto: false }
     : autoTarget
-      ? { questionId: autoTarget.id, agentName: nameOf(autoTarget.agentId), auto: true }
+      ? { questionId: autoTarget.id, agentName: nameOf(autoTarget.agentId), agentId: autoTarget.agentId, auto: true }
       : null
 
   const lastUserText = useMemo(() => {
@@ -188,7 +309,7 @@ export function Chat() {
   }, [goals, agentNames])
 
   /* ---- Scrolling (B1.8) ---------------------------------------------------------------------- */
-  const stick = useStickToBottom(scrollRef, { itemCount: messages.length, resetKey: selectedId, reducedMotion: reduceMotion })
+  const stick = useStickToBottom(scrollRef, { newestPosition: newestPosition(messages), resetKey: selectedId, reducedMotion: reduceMotion })
 
   const lastMarkedPosition = useRef(-1)
   useEffect(() => {
@@ -239,41 +360,91 @@ export function Chat() {
     }
   }, [])
 
-  /* ---- Deep link: #m-, #question- or ?goal= on first load ------------------------------------ */
-  const { hash } = useRouter()
+  /* ---- Deep link: #m-, #question- or ?goal=, whenever the link or the conversation changes ----
+   * A message older than everything loaded is paged back to, one earlier page at a time, until it
+   * turns up or the conversation has nothing earlier left.
+   */
+  const deepLinkReady = Boolean(selectedId) && detail !== undefined
   useEffect(() => {
-    if (!detail) return
-    let id: string | null = null
-    if (hash.startsWith('#m-') || hash.startsWith('#question-')) id = hash.slice(1)
-    else if (goalDeepLink) id = routingMessageForGoal(goalDeepLink, messages)?.id ? `m-${routingMessageForGoal(goalDeepLink, messages)!.id}` : null
-    if (!id) return
-    const el = document.getElementById(id)
-    if (el) {
-      el.scrollIntoView({ block: 'center' })
-      const article = el.matches('article') ? el : el.querySelector('article')
-      article?.focus()
+    if (!deepLinkReady) return
+    if (hash.startsWith('#question-')) {
+      handleGoTo(hash.slice(1))
+      return
+    }
+    const messageId = hash.startsWith('#m-') ? hash.slice('#m-'.length) : null
+    if (!messageId && !goalDeepLink) return
+    const find = (list: readonly ChatMessage[]) =>
+      messageId ? list.find((message) => message.id === messageId) : routingMessageForGoal(goalDeepLink!, list)
+
+    let cancelled = false
+    async function seek() {
+      let target = find(messages)
+      let more = earlier.hasEarlier
+      while (!target && more && !cancelled) {
+        let page: MessagesPage | null
+        try {
+          page = await earlier.loadEarlier(stick.keepPosition)
+        } catch {
+          break
+        }
+        if (!page) break
+        target = find(page.messages)
+        more = page.hasEarlier
+      }
+      if (cancelled) return
+      if (target) handleGoTo(`m-${target.id}`)
+      else toast.info('That message could not be found.')
+    }
+    void seek()
+    return () => {
+      cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail !== undefined])
+  }, [deepLinkReady, selectedId, hash, goalDeepLink])
 
-  function selectConversation(id: string | null) {
-    navigate(id ? `/chat?c=${id}` : '/chat')
+  /** Opens a conversation; `messageId` (a search hit) is the message to scroll to in it. */
+  function selectConversation(id: string | null, messageId?: string) {
+    navigate(id ? `/chat?c=${id}${messageId ? `#m-${messageId}` : ''}` : '/chat')
     setOverlayOpen(false)
     setMobileSidebarOpen(false)
   }
 
-  async function handleSend(text: string, agentIds: string[]): Promise<boolean> {
-    if (replyTo) {
-      const question = questions.find((q) => q.id === replyTo.questionId)
-      if (!question) {
-        toast.error('This question is no longer open.')
-        return false
+  async function handleShowEarlier() {
+    try {
+      const page = await earlier.loadEarlier(stick.keepPosition)
+      if (!page) return
+      if (page.messages.length > 0) {
+        setAnnouncement(page.messages.length === 1 ? 'Loaded 1 earlier message.' : `Loaded ${page.messages.length} earlier messages.`)
       }
+      // The button goes once there is nothing earlier: keep focus in the thread, on the oldest message.
+      const oldest = page.messages[0]
+      if (!page.hasEarlier && oldest) document.getElementById(`m-${oldest.id}`)?.querySelector('article')?.focus()
+    } catch (error) {
+      toast.error(describeApiError(error))
+    }
+  }
+
+  async function handleSend(text: string, agentIds: string[], attachmentIds: string[] = []): Promise<boolean> {
+    if (unavailable) return false
+    const question = replyTo ? questions.find((q) => q.id === replyTo.questionId) : undefined
+    if (replyTo && !question) {
+      toast.error('This question is no longer open.')
+      return false
+    }
+    // An automatic answer gives way to a mention of some other agent: that is a new request.
+    if (replyTo && question && !sendsAsNewRequest({ auto: replyTo.auto, agentId: question.agentId }, agentIds)) {
       const payload = composerAnswer(question, text)
       try {
         await answerQuestion.mutateAsync({ id: question.id, answers: payload.answers, note: payload.note ?? null, via: 'chat' })
         setReplyChoice(null)
         setAnnouncement(`Answer sent. ${nameOf(question.agentId)} is continuing.`)
+        const others = agentIds.filter((id) => id !== question.agentId).map((id) => nameOf(id))
+        if (others.length > 0) {
+          // A reply the person chose stays a reply: the mention goes with the answer, not to the agent.
+          toast.info(
+            `Sent as your answer to ${nameOf(question.agentId)}. To ask ${others.join(' and ')} as well, send a new message.`,
+          )
+        }
         return true
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
@@ -287,9 +458,17 @@ export function Chat() {
     }
 
     setSending(true)
-    setPending({ text, mentioned: agentIds.map((id) => agentNames[id]?.name).filter((n): n is string => Boolean(n)) })
+    setFailedSend(null)
+    setPending({
+      text: text || (attachmentIds.length === 1 ? 'Sending 1 file' : `Sending ${attachmentIds.length} files`),
+      mentioned: agentIds.map((id) => agentNames[id]?.name).filter((n): n is string => Boolean(n)),
+      afterPosition: selectedId ? newestPosition(messages) : -1,
+    })
     try {
-      const agentIdsField = agentIds.length > 0 ? { agentIds } : {}
+      const agentIdsField = {
+        ...(agentIds.length > 0 ? { agentIds } : {}),
+        ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+      }
       let conversationId = selectedId
       if (conversationId) {
         await sendMessage.mutateAsync({ text, ...agentIdsField })
@@ -311,7 +490,8 @@ export function Chat() {
       await client.invalidateQueries({ queryKey: ['conversations', conversationId] })
       return true
     } catch (error) {
-      toast.error(describeApiError(error))
+      setFailedSend({ text, agentIds, attachmentIds, reason: describeApiError(error) })
+      setAnnouncement('Your message could not be sent.')
       return false
     } finally {
       setPending(null)
@@ -338,6 +518,11 @@ export function Chat() {
     void handleSend(text, agentIds)
   }
 
+  function handleWelcomeMention(agent: Agent) {
+    setMentionRequest({ token: Date.now(), agent })
+    window.setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
   function handleEditAndResend(text: string) {
     setPrefill({ token: Date.now(), text })
     // After the prefill renders, so the caret lands in the filled box.
@@ -352,7 +537,7 @@ export function Chat() {
   function handleReplyInOwnWords(questionId: string) {
     const question = questions.find((q) => q.id === questionId)
     if (!question) return
-    setReplyChoice({ questionId, agentName: nameOf(question.agentId) })
+    setReplyChoice({ questionId, agentName: nameOf(question.agentId), agentId: question.agentId })
     inputRef.current?.focus()
   }
 
@@ -396,9 +581,23 @@ export function Chat() {
   function handleGoTo(elementId: string) {
     const el = document.getElementById(elementId)
     if (!el) return
-    el.scrollIntoView({ block: 'center' })
+    el.scrollIntoView?.({ block: 'center' })
     const article = el.matches('article') ? el : el.querySelector('article')
     ;(article as HTMLElement | null)?.focus?.()
+  }
+
+  /**
+   * "Review" on a goal waiting for an approval: its progress card, opened, with Approve focused
+   * (ProgressCard reads `revealGoal`). When that card is not loaded, the approvals queue instead.
+   */
+  function handleReview(goalId: string) {
+    const target = goalTarget(goalId, messages, 'approval')
+    if ('href' in target) {
+      navigate(target.href)
+      return
+    }
+    setRevealGoal((current) => ({ goalId, nonce: (current?.nonce ?? 0) + 1 }))
+    handleGoTo(target.elementId)
   }
 
   async function handleRename(title: string): Promise<boolean> {
@@ -410,6 +609,21 @@ export function Chat() {
     } catch (error) {
       toast.error(describeApiError(error))
       return false
+    }
+  }
+
+  async function handleVisibility(visibility: 'private' | 'workspace') {
+    if (!selectedId) return
+    try {
+      await setVisibility.mutateAsync({ id: selectedId, visibility })
+      const words =
+        visibility === 'workspace'
+          ? 'Shared. Everyone in this workspace can read this conversation now.'
+          : 'Made private. Only you and people you add can read this conversation.'
+      setAnnouncement(words)
+      toast.success(words)
+    } catch (error) {
+      toast.error(describeApiError(error))
     }
   }
 
@@ -435,7 +649,10 @@ export function Chat() {
     }
   }
 
-  function handleEscape() {
+  function handleEscape(event?: KeyboardEvent) {
+    // An Esc that closed a menu (which has already handed focus back to its trigger, and may
+    // already be gone from the page) stays with the menu: it must not also jump to the composer.
+    if (event?.target instanceof Element && event.target.closest('.menu-panel, .more-menu')) return
     const active = document.activeElement
     if (active?.closest('.menu-panel, dialog[open]')) return
     if (isTablet && !isDesktop && overlayOpen) {
@@ -447,22 +664,8 @@ export function Chat() {
     inputRef.current?.focus()
   }
 
-  const conversationOrder = useMemo(() => {
-    const pages = titleListQuery.data?.pages ?? []
-    const seen = new Set<string>()
-    const ids: string[] = []
-    for (const page of pages) {
-      for (const row of [...page.pinned, ...page.needsYou, ...page.conversations]) {
-        if (!seen.has(row.id)) {
-          seen.add(row.id)
-          ids.push(row.id)
-        }
-      }
-    }
-    return ids
-  }, [titleListQuery.data])
-
   function stepConversation(step: 1 | -1) {
+    const conversationOrder = listedConversationIds(client)
     if (conversationOrder.length === 0) return
     const index = selectedId ? conversationOrder.indexOf(selectedId) : -1
     const next = conversationOrder[(index + step + conversationOrder.length) % conversationOrder.length]
@@ -492,25 +695,21 @@ export function Chat() {
     onEscape: handleEscape,
   })
 
-  const needsYouCount = titleListQuery.data?.pages[titleListQuery.data.pages.length - 1]?.needsYou.length ?? 0
-  const unreadCount = useMemo(() => {
-    const seen = new Set<string>()
-    let count = 0
-    for (const page of titleListQuery.data?.pages ?? []) {
-      for (const row of page.conversations) {
-        if (row.unread && !seen.has(row.id)) {
-          seen.add(row.id)
-          count += 1
-        }
-      }
-    }
-    return count
-  }, [titleListQuery.data])
-  const titleCount = needsYouCount + unreadCount
-  useDocumentTitle(titleCount > 0 ? `(${titleCount}) Chat` : 'Chat')
+  // One identity each for as long as the screen lives, so the memoised thread is not redrawn by a
+  // poll that changed nothing in it.
+  const onReroute = useStableCallback((messageId: string, agentId: string) => void handleReroute(messageId, agentId))
+  const onAskAgain = useStableCallback((goal: BoardGoal) => handleAskAgain(goal))
+  const onEditAndResend = useStableCallback((text: string) => handleEditAndResend(text))
+  const onReplyInOwnWords = useStableCallback((questionId: string) => handleReplyInOwnWords(questionId))
+  const onStop = useStableCallback((goalId: string) => void handleStop(goalId))
+  const onRetry = useStableCallback((goalId: string) => void handleRetry(goalId))
+  const onAnswerFromDocuments = useStableCallback((messageId: string) => void handleAnswerFromDocuments(messageId))
 
   const workGoals = activeGoals(goals)
   const showWorkPanel = isWide && panelMode === 'open'
+
+  const detailsValue = useMemo(() => ({ mode: detailsMode, version: detailsVersion, revealGoal }), [detailsMode, detailsVersion, revealGoal])
+  const pendingBubbleShown = pending ? !pendingEchoed(messages, pending, me) : false
 
   const sidebarVariant: 'panel' | 'rail' | 'overlay' = !isTablet ? 'panel' : !isDesktop ? (overlayOpen ? 'overlay' : 'rail') : sidebarMode === 'open' ? 'panel' : 'rail'
 
@@ -528,7 +727,7 @@ export function Chat() {
         else setSidebarMode('rail')
       }}
       selectedId={selectedId}
-      onSelect={selectConversation}
+      onSelect={(id, messageId) => selectConversation(id, messageId)}
       onNew={() => selectConversation(null)}
       searchRef={searchRef}
       focusSection={focusSection}
@@ -547,7 +746,7 @@ export function Chat() {
 
       <AnswerAnnouncer
         key={selectedId}
-        messages={messages}
+        messages={liveMessages}
         questions={questions}
         me={me}
         dismissedIds={dismissedIds}
@@ -565,24 +764,33 @@ export function Chat() {
         </Sheet>
       )}
 
-      <DetailsContext.Provider value={{ mode: detailsMode, version: detailsVersion }}>
-        <main className="chat-main">
+      <DetailsContext.Provider value={detailsValue}>
+        <main className="chat-main" ref={mainRef}>
           <ThreadHeader
             eyebrow="Chat"
-            title={conversation?.title || 'New conversation'}
+            title={unavailable ? 'Conversation unavailable' : conversation?.title || 'New conversation'}
             conversation={conversation}
+            unavailable={unavailable}
             participants={participants}
             readOnly={!canCreateWork}
             onOpenSidebar={() => setMobileSidebarOpen(true)}
             onNewConversation={() => selectConversation(null)}
             onRename={handleRename}
             onTogglePin={() => void handleTogglePin()}
-            onCopyLink={() => void navigator.clipboard?.writeText(`${window.location.origin}/chat?c=${selectedId ?? ''}`)}
-            onCopyConversation={() => void navigator.clipboard?.writeText(conversationText(messages, agentNames))}
+            onCopyLink={() => void copy(`${window.location.origin}/chat?c=${selectedId ?? ''}`, 'Link copied')}
+            onCopyConversation={() =>
+              void copy(
+                conversationText(messages, agentNames),
+                // Only what is loaded is copied; a long thread says how much that is.
+                earlier.hasEarlier ? `Copied the ${messages.length} loaded messages` : 'Conversation copied',
+              )
+            }
             onDelete={() => {
               setDeleteError(null)
               setDeleteConfirmOpen(true)
             }}
+            onSetVisibility={(visibility) => void handleVisibility(visibility)}
+            onAddPeople={() => setAddPeopleOpen(true)}
             speaker={speaker}
             detailsMode={detailsMode}
             onDetailsMode={(mode) => {
@@ -593,20 +801,38 @@ export function Chat() {
             {...(isWide ? { workPanelOpen: showWorkPanel, onToggleWorkPanel: () => setPanelMode(showWorkPanel ? 'closed' : 'open') } : {})}
           />
 
-          <div className="chat-scroll" role="region" aria-label="Messages" tabIndex={0} ref={scrollRef} data-jump-visible={stick.farFromBottom || stick.newCount > 0 || undefined}>
+          <div className="chat-scroll" role="region" aria-label="Messages" tabIndex={0} ref={scrollRef} data-jump-visible={(!stick.nearBottom && stick.newCount > 0) || undefined}>
             <div className="chat-column">
               {!selectedId && pending ? (
-                <PendingMessage text={pending.text} mentioned={pending.mentioned} />
+                <PendingMessage text={pending.text} mentioned={pending.mentioned} showBubble={pendingBubbleShown} />
               ) : !selectedId ? (
-                <WelcomeScreen agents={agentsQuery.data} can={can} onPick={handleEditAndResend} />
+                <WelcomeScreen agents={agentsQuery.data} {...(canCreateWork ? { onMention: handleWelcomeMention } : {})} />
+              ) : unavailable && notFound ? (
+                <EmptyState
+                  icon={<UnavailableIcon />}
+                  title="This conversation cannot be opened"
+                  body={NOT_AVAILABLE}
+                  action={<Button onClick={() => selectConversation(null)}>Start a new conversation</Button>}
+                />
+              ) : unavailable ? (
+                <ErrorState
+                  title="This conversation could not be loaded"
+                  message={describeApiError(loadError)}
+                  onRetry={() => void conversationQuery.refetch()}
+                />
               ) : conversationQuery.isLoading ? (
-                <p className="caption muted" role="status" aria-busy="true">
-                  Loading this conversation…
-                </p>
+                <ThreadSkeleton />
               ) : messages.length === 0 && !pending ? (
-                <WelcomeScreen agents={agentsQuery.data} can={can} onPick={handleEditAndResend} />
+                <WelcomeScreen agents={agentsQuery.data} {...(canCreateWork ? { onMention: handleWelcomeMention } : {})} />
               ) : (
                 <>
+                  {earlier.hasEarlier && (
+                    <div className="row" style={{ justifyContent: 'center', marginBottom: 'var(--space-5)' }}>
+                      <Button variant="outline" loading={earlier.loading} onClick={() => void handleShowEarlier()}>
+                        Show earlier messages
+                      </Button>
+                    </div>
+                  )}
                   <MessageList
                     messages={messages}
                     goals={goals}
@@ -617,39 +843,60 @@ export function Chat() {
                     speaker={speaker}
                     freshIds={freshIds}
                     reroutingId={reroutingId}
-                    onReroute={(messageId, agentId) => void handleReroute(messageId, agentId)}
-                    onAskAgain={handleAskAgain}
-                    onEditAndResend={handleEditAndResend}
-                    onReplyInOwnWords={handleReplyInOwnWords}
-                    onStop={(goalId) => void handleStop(goalId)}
-                    onRetry={(goalId) => void handleRetry(goalId)}
-                    onAnswerFromDocuments={(messageId) => void handleAnswerFromDocuments(messageId)}
+                    onReroute={onReroute}
+                    onAskAgain={onAskAgain}
+                    onEditAndResend={onEditAndResend}
+                    onReplyInOwnWords={onReplyInOwnWords}
+                    onStop={onStop}
+                    onRetry={onRetry}
+                    onAnswerFromDocuments={onAnswerFromDocuments}
                     conversationId={selectedId}
                     agentsForReroute={activeAgents}
                     answeringMessageId={answeringMessageId}
                     composerTargetQuestionId={replyTo?.questionId ?? null}
-                    now={new Date(now)}
+                    now={now}
                   />
-                  {pending && <PendingMessage text={pending.text} mentioned={pending.mentioned} />}
+                  {pending && <PendingMessage text={pending.text} mentioned={pending.mentioned} showBubble={pendingBubbleShown} />}
                 </>
+              )}
+              {failedSend && !pending && (
+                <div className="chat-pending" role="alert">
+                  <span>
+                    Your message was not sent. {failedSend.reason}
+                  </span>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const again = failedSend
+                      void handleSend(again.text, again.agentIds, again.attachmentIds ?? [])
+                    }}
+                  >
+                    Try again
+                  </Button>
+                  <Button variant="quiet" onClick={() => setFailedSend(null)}>
+                    Dismiss
+                  </Button>
+                </div>
               )}
             </div>
           </div>
 
           <div className="chat-dock">
-            <JumpToLatest visible={stick.farFromBottom || stick.newCount > 0} newCount={stick.newCount} onJump={stick.jump} />
-            {!showWorkPanel && (
+            <JumpToLatest visible={!stick.nearBottom && stick.newCount > 0} newCount={stick.newCount} onJump={stick.jump} />
+            {!showWorkPanel && !unavailable && (
               <WorkStrip
                 goals={workGoals}
                 questions={questions}
                 agentNames={agentNames}
                 me={me}
                 compact={!isTablet}
-                onStop={(goalId) => void handleStop(goalId)}
+                onStop={onStop}
                 onGoTo={handleGoTo}
+                onReview={handleReview}
               />
             )}
             <Composer
+              userId={me}
               conversationId={selectedId}
               agents={activeAgents}
               onSend={handleSend}
@@ -658,28 +905,34 @@ export function Chat() {
               onClearReply={handleClearReply}
               lastUserText={lastUserText}
               inputRef={inputRef}
+              dropZoneRef={mainRef}
               {...(prefill ? { prefill } : {})}
-              {...(!canCreateWork
-                ? { readOnlyNote: 'Your role can ask document questions here, but cannot start agents on new work.' }
-                : {})}
+              {...(mentionRequest ? { mention: mentionRequest } : {})}
+              {...(unavailable
+                ? { disabled: true, readOnlyNote: 'Nothing can be sent here. Start a new conversation instead.' }
+                : !canCreateWork
+                  ? { readOnlyNote: 'Your role can ask document questions here, but cannot start agents on new work.' }
+                  : {})}
             />
           </div>
         </main>
 
-        {showWorkPanel && (
+        {showWorkPanel && !unavailable && (
           <WorkPanel
             goals={workGoals}
             questions={questions}
             participants={participants}
             agentNames={agentNames}
             me={me}
-            onStop={(goalId) => void handleStop(goalId)}
+            onStop={onStop}
             onGoTo={handleGoTo}
+            onReview={handleReview}
             onClose={() => setPanelMode('closed')}
           />
         )}
       </DetailsContext.Provider>
 
+      <AddPeopleDialog open={addPeopleOpen} conversationId={selectedId} onClose={() => setAddPeopleOpen(false)} />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} groups={chatShortcutGroups()} />
 
       <ConfirmDialog
@@ -772,17 +1025,36 @@ function AnswerAnnouncer({
   return null
 }
 
-/** The message just sent, and what the coordinator is doing with it, until the reply arrives. */
-function PendingMessage({ text, mentioned }: { text: string; mentioned: string[] }) {
+function UnavailableIcon() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+      <path d="M4 6.5h16v10H9l-4 3.5v-3.5H4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9.5 9.5l5 4M14.5 9.5l-5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/**
+ * The message just sent, and what the coordinator is doing with it, until the reply arrives. The
+ * bubble itself goes as soon as the thread shows the stored copy (`showBubble` false); the status
+ * line stays until the send has finished.
+ */
+function PendingMessage({ text, mentioned, showBubble }: { text: string; mentioned: string[]; showBubble: boolean }) {
   return (
     <>
-      <div className="chat-bubble-row chat-bubble-row-user">
-        <div className="chat-bubble chat-bubble-user">
-          <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0 }}>{text}</p>
+      {showBubble && (
+        <div className="chat-bubble-row chat-bubble-row-user chat-bubble-sending">
+          <div className="chat-bubble chat-bubble-user">
+            <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0 }}>{text}</p>
+          </div>
         </div>
-      </div>
-      <div className="chat-pending" role="status">
-        <span className="chat-pulse-soft" aria-hidden="true" />
+      )}
+      <div className="chat-pending chat-typing" role="status">
+        <span className="chat-typing-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
         <span>{mentioned.length > 0 ? `Handing this to ${mentioned.join(' and ')}.` : 'Finding the right agent for this.'}</span>
       </div>
     </>

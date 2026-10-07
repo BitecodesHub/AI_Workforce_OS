@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react'
-import { Button, Card, DataTable, EmptyState, Eyebrow, Notice, PageHeader, Tag, Time } from '../components/ui'
+import { useCallback, useMemo, useState } from 'react'
+import { Button, Card, DataTable, EmptyState, Eyebrow, Input, Notice, PageHeader, Select, Tag, Time } from '../components/ui'
 import type { Column } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 // Imported from its own module, not the ../components/ui barrel: this screen is lazy-loaded, and
@@ -8,9 +8,19 @@ import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { describeApiError } from '../lib/api'
 import { formatCount, sentenceCase, shortId, truncateWords } from '../lib/format'
-import { OUTCOME_LABEL, OUTCOME_TONE, auditActionLabel, toolLabel, type AuditOutcome } from '../lib/labels'
-import { useAgentNames, useAgents, useAuditPages, useMemberNames, useMembers } from '../lib/queries'
-import type { Agent, AuditEvent, Member } from '../lib/queries'
+import { AUDIT_ACTION_CODES, OUTCOME_LABEL, OUTCOME_TONE, auditActionLabel, toolLabel, type AuditOutcome } from '../lib/labels'
+import { downloadAuthorised } from '../lib/insightsQueries'
+import { useToast } from '../lib/toast'
+import {
+  auditFilterParams,
+  useAgentNames,
+  useAgents,
+  useAuditPages,
+  useMemberNames,
+  useMembers,
+  useVerifyAudit,
+} from '../lib/queries'
+import type { Agent, AuditEvent, AuditFilters, Member } from '../lib/queries'
 import { can } from '../lib/session'
 import { useListFilter } from '../lib/useListFilter'
 
@@ -28,7 +38,7 @@ import { useListFilter } from '../lib/useListFilter'
  * loaded so far, and the count under the filters says so while older entries remain.
  */
 
-const OUTCOMES: AuditOutcome[] = ['succeeded', 'failed', 'denied']
+const OUTCOMES: AuditOutcome[] = ['succeeded', 'failed', 'denied', 'locked']
 
 const FACETS = { outcome: (row: AuditEvent) => row.outcome }
 
@@ -140,8 +150,110 @@ function ResourceCell({ row, canReadRuns }: { row: AuditEvent; canReadRuns: bool
   )
 }
 
+/** The filters the server applies, the export buttons and the integrity check: an auditor's tools. */
+function AuditorTools({
+  filters,
+  onChange,
+}: {
+  filters: AuditFilters
+  onChange: (next: AuditFilters) => void
+}) {
+  const toast = useToast()
+  const verify = useVerifyAudit()
+  const [exporting, setExporting] = useState<'csv' | 'jsonl' | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+  const set = (patch: Partial<AuditFilters>) => onChange({ ...filters, ...patch })
+
+  const download = async (format: 'csv' | 'jsonl') => {
+    setExporting(format)
+    setFailure(null)
+    try {
+      const params = auditFilterParams(filters)
+      params.set('format', format)
+      const name = await downloadAuthorised(`/api/audit/export?${params.toString()}`, `audit-log.${format}`, {
+        forbidden: 'You do not have permission to export the audit log.',
+        other: 'The audit log could not be exported. Try again.',
+      })
+      toast.success(`Downloaded ${name}.`)
+    } catch (error) {
+      setFailure(describeApiError(error))
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  const result = verify.data
+  return (
+    <div className="stack" style={{ gap: 'var(--space-4)', marginBottom: 'var(--space-5)' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
+          gap: 'var(--space-4)',
+        }}
+      >
+        <Select
+          label="What happened"
+          value={filters.action ?? ''}
+          onChange={(event) => set({ action: event.target.value || undefined })}
+        >
+          <option value="">Anything</option>
+          {AUDIT_ACTION_CODES.map((code) => (
+            <option key={code} value={code}>
+              {auditActionLabel(code)}
+            </option>
+          ))}
+        </Select>
+        <Input
+          label="From"
+          type="date"
+          value={filters.from ?? ''}
+          max={filters.to}
+          onChange={(event) => set({ from: event.target.value || undefined })}
+        />
+        <Input
+          label="To"
+          type="date"
+          value={filters.to ?? ''}
+          min={filters.from}
+          onChange={(event) => set({ to: event.target.value || undefined })}
+        />
+      </div>
+      <div className="row" style={{ gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+        <Button variant="outline" loading={exporting === 'csv'} onClick={() => void download('csv')}>
+          Export CSV
+        </Button>
+        <Button variant="outline" loading={exporting === 'jsonl'} onClick={() => void download('jsonl')}>
+          Export JSON lines
+        </Button>
+        <Button variant="outline" loading={verify.isPending} onClick={() => verify.mutate()}>
+          Verify integrity
+        </Button>
+      </div>
+      {failure && (
+        <Notice tone="warning" live>
+          {failure}
+        </Notice>
+      )}
+      {verify.isError && (
+        <Notice tone="warning" live>
+          {describeApiError(verify.error)}
+        </Notice>
+      )}
+      {result && (
+        <Notice tone={result.verified ? 'success' : 'warning'} live>
+          {result.verified
+            ? `Chain verified up to entry ${formatCount(result.lastSequence)}. ${formatCount(result.checked)} entries checked.`
+            : `The chain is broken at entry ${result.firstBrokenSequence ?? 'unknown'}. ${result.reason ?? 'That entry does not match the one before it.'}`}
+        </Notice>
+      )}
+    </div>
+  )
+}
+
 export function AuditLog() {
-  const auditQuery = useAuditPages()
+  const [serverFilters, setServerFilters] = useState<AuditFilters>({})
+  const auditQuery = useAuditPages(serverFilters)
   const canReadRuns = can('run:read')
 
   // Names for the people and agents behind each entry. Both lists come from queries other screens
@@ -220,7 +332,7 @@ export function AuditLog() {
       <PageHeader
         eyebrow="Everything that happened"
         title="Audit log"
-        description="Approval decisions and agent runs that completed or failed, with the person accountable for each."
+        description="Sign-ins, changes to people, roles and keys, documents, approval decisions and agent runs, with the person accountable for each."
       />
 
       <Notice tone="info">
@@ -254,6 +366,7 @@ export function AuditLog() {
           >
             {() => (
               <>
+                <AuditorTools filters={serverFilters} onChange={setServerFilters} />
                 <FilterBar
                   searchLabel="Search the audit log"
                   placeholder="Action, person, agent or run id"

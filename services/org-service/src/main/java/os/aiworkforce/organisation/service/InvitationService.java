@@ -7,12 +7,17 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -21,8 +26,11 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import os.aiworkforce.organisation.domain.Invitation;
 import os.aiworkforce.organisation.repository.Invitations;
 import os.aiworkforce.platform.config.PlatformProperties;
+import os.aiworkforce.platform.context.Actor;
+import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
+import os.aiworkforce.platform.web.audit.AuditClient;
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
 /**
@@ -32,16 +40,37 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  * opaque token, stores only its hash - the same "never the raw value" rule as
  * {@link CredentialService} - and returns the raw token exactly once, in the create response, so
  * an administrator can copy the accept-invitation link and send it however they already reach
- * that person. Accepting it registers the person with identity-service and grants them the
- * invited role there through the internal service-to-service path, the same shape
- * {@code WorkspaceController} uses to grant a workspace's creator the owner role.
+ * that person.
+ *
+ * <p>Accepting has two doors. A person new to the platform registers with identity-service and is
+ * granted the invited role there, through the internal service-to-service path, the same shape
+ * {@code WorkspaceController} uses to grant a workspace's creator the owner role. A person who
+ * already has an account - someone removed and asked back, a consultant in two workspaces -
+ * signs in first and accepts as themselves; the invitation's address must be theirs.
+ *
+ * <p>Identity decides every role question, since it holds the roles: whether the inviter may give
+ * the role is asked when the invitation is created, and asked again when it is accepted, because
+ * the inviter may have been demoted in the week between.
  */
 @Service
 public class InvitationService {
 
+    /** Absent in a test that builds the service by hand; present in the running service. */
+    @Autowired(required = false)
+    private AuditClient audit;
+
     private static final Logger log = LoggerFactory.getLogger(InvitationService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Duration INVITATION_TTL = Duration.ofDays(7);
+    private static final Duration IDENTITY_TIMEOUT = Duration.ofSeconds(10);
+    private static final ParameterizedTypeReference<Map<String, Object>> JSON_OBJECT =
+            new ParameterizedTypeReference<>() {};
+
+    /**
+     * The {@code reason} detail on the refusal sent when an invitation's address already has an
+     * account. The client switches on it to offer "Sign in to accept" instead of the form.
+     */
+    public static final String ACCOUNT_EXISTS = "account_exists";
 
     private final Invitations invitations;
     private final WebClient identityClient;
@@ -74,24 +103,40 @@ public class InvitationService {
 
     public record AcceptResult(UUID userId, UUID orgId, String email, String roleName) {}
 
+    /** What identity said about one person giving one role. */
+    private record GrantCheck(boolean allowed, String reason) {}
+
     @Transactional
     public InvitationView create(UUID orgId, UUID invitedBy, String email, String roleName, String originForLink) {
-        String normalisedEmail = email == null ? "" : email.strip().toLowerCase(java.util.Locale.ROOT);
+        String normalisedEmail = normaliseEmail(email);
         if (normalisedEmail.isBlank()) {
             throw ApiException.validation("email", "must not be empty");
         }
         if (roleName == null || roleName.isBlank()) {
             throw ApiException.validation("roleName", "must not be empty");
         }
+        String role = roleName.strip();
+
+        // Asked before anything is written. A role that does not exist would otherwise be found
+        // out only when the person accepts - after their account had already been created.
+        GrantCheck check = checkGrant(orgId, invitedBy, role);
+        if (!check.allowed()) {
+            if ("unknown_role".equals(check.reason())) {
+                throw ApiException.validation("roleName", "no such role is available to this workspace");
+            }
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, refusalSentence(check.reason()))
+                    .with("reason", check.reason());
+        }
 
         // Re-inviting the same address replaces the still-open invitation rather than piling up
         // a second one nobody can tell apart from the first - the same open-invitation-per-
-        // address rule the unique index in the database already enforces.
+        // address rule the unique index in the database already enforces. It is also what the
+        // console's Resend does.
         invitations
                 .findByOrgIdAndEmailIgnoreCaseAndStatus(orgId, normalisedEmail, "pending")
                 .ifPresent(existing -> {
-                    existing.setStatus("revoked");
-                    invitations.save(existing);
+                    existing.revoke();
+                    invitations.saveAndFlush(existing);
                 });
 
         String rawToken = generateToken();
@@ -100,14 +145,15 @@ public class InvitationService {
         invitation.setId(UuidV7.generate());
         invitation.setOrgId(orgId);
         invitation.setEmail(normalisedEmail);
-        invitation.setRoleName(roleName.strip());
+        invitation.setRoleName(role);
         invitation.setTokenHash(hashToken(rawToken));
         invitation.setInvitedBy(invitedBy);
         invitation.setStatus("pending");
         invitation.setExpiresAt(Instant.now().plus(INVITATION_TTL));
         invitations.save(invitation);
+        recordAudit(orgId, "invitation.create", invitation, Map.of("role", role, "email", normalisedEmail));
 
-        log.info("Invitation created for {} in workspace {} at role {}", normalisedEmail, orgId, roleName);
+        log.info("Invitation created for {} in workspace {} at role {}", normalisedEmail, orgId, role);
 
         String acceptUrl = originForLink + "/accept-invite?token=" + rawToken;
         return toView(invitation, rawToken, acceptUrl);
@@ -121,17 +167,109 @@ public class InvitationService {
     }
 
     /**
-     * Turns an accepted invitation into a registered account with an active membership.
+     * Withdraws an invitation, so its link stops working at once.
      *
-     * <p>Two calls to identity-service, in sequence rather than one transaction spanning two
-     * services: register the account, then grant the invited role. If the second call fails after
-     * the first succeeds, the person has an account but no membership yet - recoverable by
-     * re-running the invitation, unlike the workspace-creation path this mirrors, this is not
-     * rolled back automatically, because undoing someone else's just-created account from here
-     * is a worse failure mode than leaving it to a retry.
+     * <p>Withdrawing one already withdrawn changes nothing and is not an error. One that was
+     * accepted cannot be withdrawn - the person is a member by then, and removing them is a
+     * separate, deliberate step on the Members screen.
      */
     @Transactional
+    public InvitationView revoke(UUID orgId, UUID invitationId) {
+        Invitation invitation = invitations
+                .findByIdAndOrgId(invitationId, orgId)
+                .orElseThrow(() -> ApiException.notFound("invitation", invitationId));
+        if (invitation.isAccepted()) {
+            throw ApiException.conflict(
+                    "This invitation was already accepted. Remove the member instead if they should not have access.");
+        }
+        if (!invitation.isRevoked()) {
+            invitation.revoke();
+            invitations.save(invitation);
+            recordAudit(orgId, "invitation.revoke", invitation, Map.of("email", invitation.getEmail()));
+            String actor = RequestContext.actor().map(Actor::id).orElse("unknown");
+            log.info("Invitation for {} in workspace {} revoked by {}", invitation.getEmail(), orgId, actor);
+        }
+        return toView(invitation, null, null);
+    }
+
+    /**
+     * Turns an accepted invitation into a registered account with an active membership.
+     *
+     * <p>Three calls to identity-service, in sequence rather than one transaction spanning two
+     * services: check that the role can still be given, register the account, then grant the
+     * role. The check comes first so a role that has since disappeared, or an inviter who has
+     * since been demoted, refuses the invitation before an account exists.
+     *
+     * <p>If the grant fails after registration succeeded, the person has an account but no
+     * membership yet. That is not undone - deleting someone else's just-created account from here
+     * is a worse failure than the alternative - and it is recoverable: the invitation stays open,
+     * and signing in and accepting it again ({@link #acceptSignedIn}) finishes the job.
+     */
+    @Transactional(noRollbackFor = ApiException.class)
     public AcceptResult accept(String rawToken, String displayName, String password) {
+        Invitation invitation = openInvitation(rawToken);
+
+        GrantCheck check = checkGrant(invitation.getOrgId(), invitation.getInvitedBy(), invitation.getRoleName());
+        if (!check.allowed()) {
+            throw cannotBeAccepted(check.reason());
+        }
+
+        UUID userId = registerAccount(invitation.getEmail(), displayName, password);
+        String role = grantMembership(
+                invitation,
+                userId,
+                "Your account was created, but joining the workspace did not finish. Sign in to accept the"
+                        + " invitation again.");
+
+        markAccepted(invitation);
+        recordAccepted(invitation, userId.toString(), role);
+        return new AcceptResult(userId, invitation.getOrgId(), invitation.getEmail(), role);
+    }
+
+    /**
+     * Accepts an invitation as the person already signed in, without registering anything.
+     *
+     * <p>For an account that already exists: someone removed and invited back, someone joining a
+     * second workspace, or someone whose first acceptance created the account but stopped before
+     * the membership. The invitation's address must be the signed-in account's own, compared
+     * without regard to case, so a forwarded link cannot place a different account in the
+     * workspace.
+     *
+     * @param authorization the caller's own {@code Authorization} header, used once to ask identity
+     *     for the account's address; never stored
+     */
+    @Transactional(noRollbackFor = ApiException.class)
+    public AcceptResult acceptSignedIn(String rawToken, String authorization) {
+        Actor actor = RequestContext.requireActor();
+        if (actor.kind() != Actor.Kind.USER) {
+            throw new ApiException(ErrorCode.PERMISSION_DENIED, "Sign in as yourself to accept an invitation.");
+        }
+        Invitation invitation = openInvitation(rawToken);
+
+        String accountEmail = signedInEmail(authorization);
+        if (!normaliseEmail(accountEmail).equals(normaliseEmail(invitation.getEmail()))) {
+            throw new ApiException(
+                            ErrorCode.PERMISSION_DENIED,
+                            "This invitation was sent to a different email address. Sign in with that address to"
+                                    + " accept it.")
+                    .with("reason", "email_mismatch");
+        }
+
+        String role = grantMembership(
+                invitation,
+                UUID.fromString(actor.id()),
+                "Joining the workspace did not finish. Try again in a moment.");
+
+        markAccepted(invitation);
+        recordAccepted(invitation, actor.id(), role);
+        return new AcceptResult(UUID.fromString(actor.id()), invitation.getOrgId(), invitation.getEmail(), role);
+    }
+
+    /**
+     * The invitation a token names, provided it can still be accepted. Each reason it cannot is
+     * said in words the person can act on.
+     */
+    private Invitation openInvitation(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
             throw ApiException.validation("token", "must not be empty");
         }
@@ -139,24 +277,91 @@ public class InvitationService {
                 .findByTokenHash(hashToken(rawToken))
                 .orElseThrow(() -> ApiException.notFound("invitation", "token"));
 
+        if (invitation.isRevoked()) {
+            throw ApiException.conflict("This invitation was withdrawn. Ask whoever invited you for a new one.")
+                    .with("reason", "revoked");
+        }
+        if (invitation.isAccepted()) {
+            throw ApiException.conflict("This invitation has already been used. Sign in to open the workspace.")
+                    .with("reason", "accepted");
+        }
         if (!invitation.isPending()) {
-            throw ApiException.conflict("This invitation has already been used or withdrawn.");
+            throw ApiException.conflict("This invitation has expired. Ask for a new one.")
+                    .with("reason", "expired");
         }
         if (invitation.hasExpired()) {
             invitation.setStatus("expired");
             invitations.save(invitation);
-            throw ApiException.conflict("This invitation has expired. Ask for a new one.");
+            throw ApiException.conflict("This invitation has expired. Ask for a new one.")
+                    .with("reason", "expired");
         }
+        return invitation;
+    }
 
-        UUID userId = registerAccount(invitation.getEmail(), displayName, password);
-        grantMembership(invitation.getOrgId(), userId, invitation.getRoleName());
+    private void recordAudit(UUID orgId, String action, Invitation invitation, Map<String, Object> detail) {
+        if (audit != null) {
+            audit.record(action, "invitation", invitation.getId().toString(), "succeeded", detail);
+        }
+    }
 
+    /** The person accepting is not signed in as anybody yet, so the event names them explicitly. */
+    private void recordAccepted(Invitation invitation, String userId, String role) {
+        if (audit != null) {
+            audit.record(
+                    invitation.getOrgId(),
+                    userId,
+                    "USER",
+                    null,
+                    "invitation.accept",
+                    "invitation",
+                    invitation.getId().toString(),
+                    "succeeded",
+                    Map.of("role", role == null ? "" : role));
+        }
+    }
+
+    private void markAccepted(Invitation invitation) {
         invitation.setStatus("accepted");
         invitation.setAcceptedAt(Instant.now());
         invitations.save(invitation);
-
         log.info("Invitation for {} accepted into workspace {}", invitation.getEmail(), invitation.getOrgId());
-        return new AcceptResult(userId, invitation.getOrgId(), invitation.getEmail(), invitation.getRoleName());
+    }
+
+    /** Asks identity whether {@code invitedBy} may give {@code roleName} in the workspace now. */
+    private GrantCheck checkGrant(UUID orgId, UUID invitedBy, String roleName) {
+        if (invitedBy == null) {
+            // Every invitation records who sent it; one that does not cannot be checked, and a
+            // role nobody can vouch for is not granted.
+            return new GrantCheck(false, "not_a_member");
+        }
+        Map<String, Object> body = new HashMap<>();
+        body.put("orgId", orgId);
+        body.put("actorUserId", invitedBy);
+        body.put("roleName", roleName);
+        try {
+            Map<String, Object> answer = identityClient
+                    .post()
+                    .uri("/internal/memberships/check-grant")
+                    .header("Authorization", "Bearer " + tokens.forService("identity"))
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(JSON_OBJECT)
+                    .timeout(IDENTITY_TIMEOUT)
+                    .block();
+            if (answer == null) {
+                throw new ApiException(ErrorCode.UPSTREAM_ERROR, "The role could not be checked. Try again.");
+            }
+            boolean allowed = Boolean.TRUE.equals(answer.get("allowed"));
+            Object reason = answer.get("reason");
+            return new GrantCheck(allowed, reason == null ? null : reason.toString());
+        } catch (WebClientResponseException e) {
+            throw new ApiException(ErrorCode.UPSTREAM_ERROR, "The role could not be checked. Try again.", e);
+        } catch (ApiException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // A timeout or a refused connection. Failing closed: an unchecked role is not granted.
+            throw new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, "The role could not be checked. Try again.", e);
+        }
     }
 
     private UUID registerAccount(String email, String displayName, String password) {
@@ -167,7 +372,7 @@ public class InvitationService {
                     .bodyValue(Map.of("email", email, "displayName", displayName, "password", password))
                     .retrieve()
                     .toBodilessEntity()
-                    .timeout(Duration.ofSeconds(10))
+                    .timeout(IDENTITY_TIMEOUT)
                     .block();
             String userId = response == null ? null : response.getHeaders().getFirst("X-User-Id");
             if (userId == null) {
@@ -177,29 +382,132 @@ public class InvitationService {
         } catch (WebClientResponseException.Conflict e) {
             // The address already has an account. Registration deliberately does not say which
             // addresses exist, but here the invitation already named the address, so pointing the
-            // person at signing in instead is not a new leak.
-            throw ApiException.conflict(
-                    "An account for " + email + " already exists. Sign in, then ask an administrator to add you.");
+            // person at signing in instead is not a new leak. The reason and the flag let the
+            // client offer "Sign in to accept", which finishes through acceptSignedIn.
+            throw new ApiException(
+                            ErrorCode.ALREADY_EXISTS,
+                            "An account for " + email + " already exists. Sign in to accept the invitation.")
+                    .with("reason", ACCOUNT_EXISTS)
+                    .with("signInRequired", true);
         } catch (WebClientResponseException e) {
             throw new ApiException(ErrorCode.UPSTREAM_ERROR, "The new account could not be created.", e);
         }
     }
 
-    private void grantMembership(UUID orgId, UUID userId, String roleName) {
+    /**
+     * Grants the invited role through identity, which checks the inviter's current membership and,
+     * for a returning member, makes their old membership active again.
+     *
+     * @return the role the person now holds - for somebody already a member, the one they had
+     */
+    private String grantMembership(Invitation invitation, UUID userId, String failureSentence) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("orgId", invitation.getOrgId());
+        body.put("userId", userId);
+        body.put("roleName", invitation.getRoleName());
+        body.put("invitedBy", invitation.getInvitedBy());
+        body.put("email", invitation.getEmail());
         try {
-            identityClient
+            Map<String, Object> granted = identityClient
                     .post()
                     .uri("/internal/memberships/bootstrap-member")
                     .header("Authorization", "Bearer " + tokens.forService("identity"))
-                    .bodyValue(Map.of("orgId", orgId, "userId", userId, "roleName", roleName))
+                    .bodyValue(body)
                     .retrieve()
-                    .bodyToMono(Object.class)
-                    .timeout(Duration.ofSeconds(10))
+                    .bodyToMono(JSON_OBJECT)
+                    .timeout(IDENTITY_TIMEOUT)
                     .block();
+            Object role = granted == null ? null : granted.get("role");
+            return role == null ? invitation.getRoleName() : role.toString();
         } catch (WebClientResponseException e) {
-            throw new ApiException(
-                    ErrorCode.UPSTREAM_ERROR, "The account was created but could not be added to the workspace.", e);
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.FORBIDDEN)) {
+                throw new ApiException(
+                        ErrorCode.PERMISSION_DENIED,
+                        problemDetail(e, "This invitation can no longer be accepted. Ask for a new one."));
+            }
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.UNPROCESSABLE_ENTITY)) {
+                throw cannotBeAccepted("unknown_role");
+            }
+            throw new ApiException(ErrorCode.UPSTREAM_ERROR, failureSentence, e);
+        } catch (RuntimeException e) {
+            if (e instanceof ApiException api) {
+                throw api;
+            }
+            throw new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, failureSentence, e);
         }
+    }
+
+    /** The signed-in account's own address, from identity, using the caller's own token. */
+    private String signedInEmail(String authorization) {
+        if (authorization == null || authorization.isBlank()) {
+            throw new ApiException(ErrorCode.NOT_AUTHENTICATED);
+        }
+        try {
+            Map<String, Object> me = identityClient
+                    .get()
+                    .uri("/api/users/me")
+                    .header("Authorization", authorization)
+                    .retrieve()
+                    .bodyToMono(JSON_OBJECT)
+                    .timeout(IDENTITY_TIMEOUT)
+                    .block();
+            Object email = me == null ? null : me.get("email");
+            if (email == null) {
+                throw new ApiException(ErrorCode.UPSTREAM_ERROR, "Your account could not be read. Try again.");
+            }
+            return email.toString();
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
+                throw new ApiException(ErrorCode.NOT_AUTHENTICATED);
+            }
+            throw new ApiException(ErrorCode.UPSTREAM_ERROR, "Your account could not be read. Try again.", e);
+        } catch (RuntimeException e) {
+            if (e instanceof ApiException api) {
+                throw api;
+            }
+            throw new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, "Your account could not be read. Try again.", e);
+        }
+    }
+
+    /** The refusal for an invitation identity will no longer honour, in words the invitee can act on. */
+    private static ApiException cannotBeAccepted(String reason) {
+        if ("unknown_role".equals(reason)) {
+            return ApiException.conflict(
+                            "The role this invitation offered no longer exists. Ask whoever invited you for a new"
+                                    + " invitation.")
+                    .with("reason", reason);
+        }
+        return new ApiException(
+                        ErrorCode.PERMISSION_DENIED,
+                        "The person who invited you can no longer give this role. Ask them, or another"
+                                + " administrator, for a new invitation.")
+                .with("reason", reason == null ? "refused" : reason);
+    }
+
+    /** Why the person creating an invitation may not offer that role. */
+    private static String refusalSentence(String reason) {
+        if ("owner_only".equals(reason)) {
+            return "Only an owner can invite someone as an owner.";
+        }
+        if ("not_a_member".equals(reason)) {
+            return "Your membership of this workspace is no longer active.";
+        }
+        return "That role includes permissions you do not have, so you cannot invite someone to it.";
+    }
+
+    /** Identity's own sentence from a refusal, which is written for people, or a fallback. */
+    private static String problemDetail(WebClientResponseException e, String fallback) {
+        try {
+            Map<?, ?> problem = e.getResponseBodyAs(Map.class);
+            Object detail = problem == null ? null : problem.get("detail");
+            return detail instanceof String text && !text.isBlank() ? text : fallback;
+        } catch (RuntimeException ignored) {
+            return fallback;
+        }
+    }
+
+    private static String normaliseEmail(String email) {
+        return email == null ? "" : email.strip().toLowerCase(Locale.ROOT);
     }
 
     private static String generateToken() {

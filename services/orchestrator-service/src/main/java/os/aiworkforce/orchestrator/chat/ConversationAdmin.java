@@ -48,6 +48,17 @@ public class ConversationAdmin {
     private final ConversationQueries queries;
     private final AuditClient audit;
 
+    /** Who may read which conversation; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ConversationAccess access;
+
+    private Conversation visible(UUID orgId, Actor actor, UUID id) {
+        if (access != null) {
+            return access.require(orgId, actor, id);
+        }
+        return conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+    }
+
     public ConversationAdmin(
             Conversations conversations,
             ConversationMarks marks,
@@ -70,7 +81,7 @@ public class ConversationAdmin {
     @Transactional
     public ConversationQueries.ConversationView rename(UUID orgId, Actor actor, UUID id, String title) {
         Conversation conversation =
-                conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+                visible(orgId, actor, id);
         requireCanManage(conversation, actor, "rename");
         Conversation locked = appender.lock(orgId, id).orElseThrow(() -> ApiException.notFound("conversation", id));
         locked.setTitle(title == null ? "" : title.strip());
@@ -99,7 +110,7 @@ public class ConversationAdmin {
     }
 
     private void upsertFlags(UUID orgId, Actor actor, UUID id, Boolean pinned, Boolean archived, String action) {
-        conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+        visible(orgId, actor, id);
         UUID me = parseUuidOrNull(actor.humanId());
         if (me == null) {
             throw new ApiException(
@@ -108,11 +119,113 @@ public class ConversationAdmin {
         marks.upsertFlags(UuidV7.generate(), orgId, id, me, pinned, archived);
     }
 
+    // ---- Who may read a conversation ------------------------------------------------------------
+
+    /** The visibility of a new conversation in this workspace: its own setting, or private. */
+    static final os.aiworkforce.platform.runtimeconfig.ConfigKey DEFAULT_VISIBILITY =
+            os.aiworkforce.platform.runtimeconfig.ConfigKey.choice(
+                    "chat.defaultVisibility",
+                    os.aiworkforce.platform.runtimeconfig.ConfigKey.Scope.WORKSPACE,
+                    "private",
+                    List.of("private", "workspace"),
+                    "Who can read a new conversation: private (the person who started it and people they add) or"
+                            + " workspace (everyone with Chat access).");
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.platform.runtimeconfig.RuntimeConfigService runtimeConfig;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.repository.ConversationParticipants participants;
+
+    /** What a new conversation starts as. Private when the setting cannot be read: the safer of the two. */
+    public String defaultVisibility(UUID orgId) {
+        if (runtimeConfig == null) {
+            return "private";
+        }
+        try {
+            runtimeConfig.register(List.of(DEFAULT_VISIBILITY));
+            return "workspace".equals(runtimeConfig.getString(DEFAULT_VISIBILITY, orgId.toString()))
+                    ? "workspace"
+                    : "private";
+        } catch (RuntimeException unreadable) {
+            return "private";
+        }
+    }
+
+    /** Opens a conversation to the workspace, or makes it private again. */
+    @Transactional
+    public ConversationQueries.ConversationView setVisibility(UUID orgId, Actor actor, UUID id, String visibility) {
+        if (!"private".equals(visibility) && !"workspace".equals(visibility)) {
+            throw ApiException.validation("visibility", "must be private or workspace");
+        }
+        Conversation conversation = access.requireOwner(orgId, actor, id);
+        Conversation locked = appender.lock(orgId, id).orElseThrow(() -> ApiException.notFound("conversation", id));
+        String before = locked.getVisibility();
+        locked.setVisibility(visibility);
+        conversations.save(locked);
+        if (!before.equals(visibility)) {
+            audit.record(
+                    orgId,
+                    actor,
+                    "private".equals(visibility) ? "conversation.make_private" : "conversation.share",
+                    "conversation",
+                    id.toString(),
+                    "succeeded",
+                    java.util.Map.of("from", before, "to", visibility));
+        }
+        return queries.view(orgId, actor, locked);
+    }
+
+    /** People who may read a private conversation besides its creator. */
+    @Transactional(readOnly = true)
+    public List<String> participantIds(UUID orgId, Actor actor, UUID id) {
+        access.require(orgId, actor, id);
+        return participants.findByConversationId(id).stream()
+                .map(os.aiworkforce.orchestrator.domain.ConversationParticipant::getUserId)
+                .toList();
+    }
+
+    /** Adds people to a conversation. Already-present people are left alone. */
+    @Transactional
+    public List<String> addParticipants(UUID orgId, Actor actor, UUID id, List<String> userIds) {
+        access.requireOwner(orgId, actor, id);
+        List<String> added = new java.util.ArrayList<>();
+        for (String userId : userIds == null ? List.<String>of() : userIds) {
+            if (userId == null || userId.isBlank() || parseUuidOrNull(userId) == null) {
+                throw ApiException.validation("userIds", "each entry must be a person's id");
+            }
+            if (!participants.existsByConversationIdAndUserId(id, userId)) {
+                participants.save(new os.aiworkforce.orchestrator.domain.ConversationParticipant(
+                        id, userId, String.valueOf(actor.humanId())));
+                added.add(userId);
+            }
+        }
+        if (!added.isEmpty()) {
+            audit.record(
+                    orgId,
+                    actor,
+                    "conversation.add_people",
+                    "conversation",
+                    id.toString(),
+                    "succeeded",
+                    java.util.Map.of("added", added));
+        }
+        return participantIds(orgId, actor, id);
+    }
+
+    @Transactional
+    public void removeParticipant(UUID orgId, Actor actor, UUID id, String userId) {
+        access.requireOwner(orgId, actor, id);
+        participants.findById(new os.aiworkforce.orchestrator.domain.ConversationParticipant.Key(id, userId))
+                .ifPresent(participants::delete);
+    }
+
+
     /** A caller with no person behind them gets a quiet no-op, not an error - nothing to mark read for them. */
     @Transactional
     public void markRead(UUID orgId, Actor actor, UUID id, int position) {
         Conversation conversation =
-                conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+                visible(orgId, actor, id);
         UUID me = parseUuidOrNull(actor.humanId());
         if (me == null) {
             return;
@@ -129,7 +242,7 @@ public class ConversationAdmin {
     @Transactional
     public void delete(UUID orgId, Actor actor, UUID id) {
         Conversation conversation =
-                conversations.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("conversation", id));
+                visible(orgId, actor, id);
         requireCanManage(conversation, actor, "delete");
 
         List<Goal> active = goals.findByOrgIdAndConversationIdAndStatusIn(orgId, id, ACTIVE_GOAL_STATUSES);

@@ -7,14 +7,26 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Locale;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.tika.Tika;
+import org.apache.tika.exception.TikaException;
+import org.apache.tika.exception.WriteLimitReachedException;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.metadata.TikaCoreProperties;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
+import org.apache.tika.sax.BodyContentHandler;
+import org.apache.tika.sax.WriteOutContentHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.xml.sax.SAXException;
 
 /**
  * Pulls readable text out of a file, or explains why it could not.
@@ -24,6 +36,12 @@ import org.springframework.stereotype.Component;
  * if each failure says what it was: an encrypted file needs a password, a scanned page needs
  * optical character recognition, and an empty file needs replacing. "Ingestion failed" sends
  * somebody looking in the wrong place for all three.
+ *
+ * <p>Text is kept up to a stated limit, {@code knowledge.extraction.max-chars}, and a document cut
+ * at it says so. The Tika facade this used to call stopped at 100,000 characters without a word,
+ * so a 300-page handbook reported success while only its first 40 or so pages could be found. A
+ * limit is still needed - a 25 MB spreadsheet can expand to tens of millions of characters, every
+ * one of them chunked and embedded inside the upload - but it is generous, and never silent.
  */
 @Component
 public class TextExtractor {
@@ -39,7 +57,24 @@ public class TextExtractor {
      */
     private static final int MIN_CHARS_PER_PAGE = 60;
 
+    /** The limit when none is configured: roughly 1,700 printed pages. */
+    public static final int DEFAULT_MAX_CHARS = 5_000_000;
+
+    /**
+     * About how much text a printed page holds, for describing a cut in pages when the format
+     * has none. Five hundred words of six characters, near enough for "about N pages".
+     */
+    static final int CHARS_PER_PAGE = 3_000;
+
+    /** Detection only. Text goes through {@link #parser}, where the limit can be seen being hit. */
     private final Tika tika = new Tika();
+
+    private final Parser parser = new AutoDetectParser();
+    private final int maxChars;
+
+    public TextExtractor(@Value("${knowledge.extraction.max-chars:" + DEFAULT_MAX_CHARS + "}") int maxChars) {
+        this.maxChars = maxChars;
+    }
 
     /**
      * @param text the extracted text, empty when the document is not indexable
@@ -47,8 +82,24 @@ public class TextExtractor {
      * @param pageCount pages, where the format has them
      * @param contentHash identifies the exact bytes, so an unchanged file is skipped on re-ingest
      * @param skipReason why it cannot be indexed, written for a person to act on
+     * @param notice something worth knowing that does not stop indexing, such as the text having
+     *     been cut at the limit; never a reason to skip, which is what {@code skipReason} is for
+     * @param textPages the pages {@code text} spans, for placing a passage on a page: fewer than
+     *     {@code pageCount} only when a long PDF was cut at the limit
      */
-    public record Extraction(String text, String mediaType, Integer pageCount, String contentHash, String skipReason) {
+    public record Extraction(
+            String text,
+            String mediaType,
+            Integer pageCount,
+            String contentHash,
+            String skipReason,
+            String notice,
+            Integer textPages) {
+
+        /** An extraction with nothing to note: indexed whole, or not at all. */
+        public Extraction(String text, String mediaType, Integer pageCount, String contentHash, String skipReason) {
+            this(text, mediaType, pageCount, contentHash, skipReason, null, pageCount);
+        }
 
         public boolean isIndexable() {
             return skipReason == null && text != null && !text.isBlank();
@@ -84,12 +135,13 @@ public class TextExtractor {
                             + "recognition before indexing it.");
         }
 
-        try (InputStream stream = new ByteArrayInputStream(content)) {
-            String text = tika.parseToString(stream);
-            if (text == null || text.isBlank()) {
+        try {
+            Parsed parsed = parse(content, filename);
+            if (parsed.text() == null || parsed.text().isBlank()) {
                 return new Extraction("", mediaType, null, hash, "No readable text could be extracted from this file.");
             }
-            return new Extraction(normalise(text), mediaType, null, hash, null);
+            String notice = parsed.truncated() ? truncationNotice(Math.max(1, maxChars / CHARS_PER_PAGE)) : null;
+            return new Extraction(normalise(parsed.text()), mediaType, null, hash, null, notice, null);
         } catch (Exception e) {
             log.debug("Extraction failed for {}: {}", filename, e.toString());
             return new Extraction(
@@ -99,6 +151,47 @@ public class TextExtractor {
                     hash,
                     "The file could not be read: " + e.getClass().getSimpleName() + ".");
         }
+    }
+
+    private record Parsed(String text, boolean truncated) {}
+
+    /**
+     * Parses with a limit it can see being reached.
+     *
+     * <p>The limit surfaces as a SAX exception from inside the parse, sometimes wrapped by the
+     * parser that was running, so the whole cause chain is checked. Everything written before it is
+     * kept: that is the part of the document that will be indexed. A parse that ends normally with
+     * the limit filled counts as cut too, because a parser reading an embedded file can swallow
+     * the exception and carry on.
+     */
+    private Parsed parse(byte[] content, String filename) throws IOException, SAXException, TikaException {
+        BodyContentHandler handler = new BodyContentHandler(new WriteOutContentHandler(maxChars > 0 ? maxChars : -1));
+        Metadata metadata = new Metadata();
+        metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, filename);
+        ParseContext context = new ParseContext();
+        // Set as the facade did, so text inside embedded files (a sheet in a deck) is still read.
+        context.set(Parser.class, parser);
+        try (InputStream stream = new ByteArrayInputStream(content)) {
+            parser.parse(stream, handler, metadata, context);
+            String text = handler.toString();
+            return new Parsed(text, maxChars > 0 && text.length() >= maxChars);
+        } catch (SAXException | TikaException | IOException e) {
+            if (WriteLimitReachedException.isWriteLimitReached(e)) {
+                return new Parsed(handler.toString(), true);
+            }
+            throw e;
+        }
+    }
+
+    /** Said in characters, which is exact, and in pages, which is what a person can picture. */
+    private String truncationNotice(long aboutPages) {
+        return String.format(
+                Locale.ENGLISH,
+                "Only the first %,d characters (about %,d %s) were indexed. Split the file into smaller "
+                        + "ones to index the rest.",
+                maxChars,
+                aboutPages,
+                aboutPages == 1 ? "page" : "pages");
     }
 
     /**
@@ -142,6 +235,20 @@ public class TextExtractor {
                         hash,
                         "The PDF holds very little text for its length, which usually means it is a "
                                 + "scan. Run optical character recognition over it before indexing.");
+            }
+
+            if (maxChars > 0 && text.length() > maxChars) {
+                // Cut after the scan check above, which needs the whole text. The pages the kept
+                // part spans are estimated from its share of the text, so citations stay in range.
+                int textPages = Math.max(1, (int) Math.round((double) pages * maxChars / text.length()));
+                return new Extraction(
+                        normalise(text.substring(0, maxChars)),
+                        mediaType,
+                        pages,
+                        hash,
+                        null,
+                        truncationNotice(textPages),
+                        textPages);
             }
 
             return new Extraction(normalise(text), mediaType, pages, hash, null);

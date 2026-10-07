@@ -37,8 +37,19 @@ import {
   useUpdateMemberRole,
   useUpdateRoleMutation,
 } from '../lib/queries'
+import {
+  absoluteLink,
+  canGrantRole,
+  canManageMember,
+  grantableRoles,
+  holdsAll,
+  usePasswordResetLink,
+  useResendInvitation,
+  useRevokeInvitation,
+} from '../lib/memberQueries'
 import { ROLE_CHANGE_DELAY_COPY, can, profile } from '../lib/session'
 import type { Column } from '../components/ui'
+import type { Grantor, ResetLink } from '../lib/memberQueries'
 import type { Invitation, Member, PermissionInfo, Role } from '../lib/queries'
 
 /*
@@ -47,6 +58,11 @@ import type { Invitation, Member, PermissionInfo, Role } from '../lib/queries'
  * Who belongs to the workspace, the links that let someone join, and the roles that decide what
  * each person can do. Every control is shown only to a role that can use it; everyone else sees
  * the same lists, read-only.
+ *
+ * Handing out authority follows one rule (memberQueries.ts, enforced by the identity service):
+ * nobody gives a role carrying a permission they do not hold, and only an owner gives the owner
+ * role or changes or removes an owner. So the role choices offered are the ones the viewer may
+ * give, and an owner's row shows no actions to anyone else.
  *
  * Timing matters here and is stated plainly. A role change, a new role composition and a removal
  * all reach a signed-in person when their session renews (ROLE_CHANGE_DELAY_COPY), not at once.
@@ -107,11 +123,11 @@ function InvitationTiming({ invitation, now }: { invitation: Invitation; now: nu
 }
 
 /**
- * A one-time invitation link with a way to copy it. Where the clipboard is unavailable or
- * refused, the link is selected instead so it can be copied from the keyboard. The result is said
- * beside the button: a toast would sit behind the dialog's backdrop.
+ * A one-time link with a way to copy it: an invitation, or a password reset. Where the clipboard
+ * is unavailable or refused, the link is selected instead so it can be copied from the keyboard.
+ * The result is said beside the button: a toast would sit behind the dialog's backdrop.
  */
-function InviteLink({ url, inputId }: { url: string; inputId: string }) {
+function InviteLink({ url, inputId, label = 'Invitation link' }: { url: string; inputId: string; label?: string }) {
   const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'manual'>('idle')
 
   const copy = async () => {
@@ -135,7 +151,7 @@ function InviteLink({ url, inputId }: { url: string; inputId: string }) {
         <div style={{ flex: '1 1 240px', minWidth: 0 }}>
           <Input
             id={inputId}
-            label="Invitation link"
+            label={label}
             value={url}
             readOnly
             className="input mono"
@@ -165,13 +181,19 @@ function groupPermissions(catalogue: PermissionInfo[]): Array<[string, Permissio
   return [...groups.entries()]
 }
 
+/**
+ * The permission checkboxes. A permission the viewer does not hold cannot be added, since a role
+ * may only carry what its author holds; one already in the role can still be taken out.
+ */
 function PermissionPicker({
   catalogue,
   selected,
+  held,
   onChange,
 }: {
   catalogue: PermissionInfo[] | undefined
   selected: string[]
+  held: ReadonlySet<string>
   onChange: (next: string[]) => void
 }) {
   const hintId = React.useId()
@@ -191,22 +213,30 @@ function PermissionPicker({
           {groups.map(([resource, permissions]) => (
             <div key={resource} className="stack permission-group">
               <p className="caption">{sentenceCase(resource)}</p>
-              {permissions.map((permission) => (
-                <label
-                  key={permission.code}
-                  title={permission.code}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)' }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(permission.code)}
-                    onChange={(event) => toggle(permission.code, event.target.checked)}
-                    style={{ marginTop: '2px' }}
-                  />
-                  <span>{permission.description}</span>
-                  {permission.administrative && <Tag tone="warning">Administrative</Tag>}
-                </label>
-              ))}
+              {permissions.map((permission) => {
+                const checked = selected.includes(permission.code)
+                const outsideRole = !held.has(permission.code)
+                return (
+                  <label
+                    key={permission.code}
+                    title={permission.code}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={outsideRole && !checked}
+                      onChange={(event) => toggle(permission.code, event.target.checked)}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <span className={outsideRole && !checked ? 'muted' : undefined}>
+                      {permission.description}
+                      {outsideRole && <span className="caption"> Not in your role.</span>}
+                    </span>
+                    {permission.administrative && <Tag tone="warning">Administrative</Tag>}
+                  </label>
+                )
+              })}
             </div>
           ))}
         </div>
@@ -257,6 +287,16 @@ export function Members() {
   const toast = useToast()
   const now = useNow()
 
+  // The viewer as a grantor. Keyed on the codes' text, since profile() reads a fresh copy of the
+  // session on every render and a new array each time would rebuild every table below.
+  const myRole = me?.role ?? null
+  const myPermissionsKey = (me?.permissions ?? []).join(' ')
+  const grantor = React.useMemo<Grantor>(
+    () => ({ permissions: myPermissionsKey ? myPermissionsKey.split(' ') : [], role: myRole }),
+    [myPermissionsKey, myRole],
+  )
+  const held = React.useMemo(() => new Set(grantor.permissions), [grantor])
+
   const canInvite = can('member:invite')
   const canUpdateMember = can('member:update')
   const canRemoveMember = can('member:remove')
@@ -273,6 +313,10 @@ export function Members() {
   const rolesQuery = useRoles({ enabled: canReadRoles })
   const roles = rolesQuery.data
   const { data: catalogue } = usePermissionCatalogue({ enabled: canCreateRole || canUpdateRole })
+  const catalogueCodes = React.useMemo(
+    () => (catalogue ? new Set(catalogue.map((permission) => permission.code)) : null),
+    [catalogue],
+  )
   const invitationsQuery = useInvitations(orgId, { enabled: canInvite })
 
   const createRole = useCreateRole()
@@ -280,6 +324,9 @@ export function Members() {
   const deleteRole = useDeleteRoleMutation()
   const updateMemberRole = useUpdateMemberRole()
   const removeMember = useRemoveMember()
+  const revokeInvitation = useRevokeInvitation(orgId)
+  const resendInvitation = useResendInvitation(orgId)
+  const passwordResetLink = usePasswordResetLink()
 
   const filter = useListFilter({ rows: membersQuery.data, text: memberText, facets: MEMBER_FACETS })
 
@@ -296,6 +343,10 @@ export function Members() {
   const dialogLinkId = React.useId()
   const pageLinkId = React.useId()
   const inviteMember = useInviteMember(orgId, inviteEmail.trim(), inviteRoleName)
+  const [revoking, setRevoking] = React.useState<Invitation | null>(null)
+  const [revokeError, setRevokeError] = React.useState<string | null>(null)
+  // Set by Resend, so the new link takes focus once it is on the page.
+  const focusKeptLink = React.useRef(false)
 
   // ---- People -------------------------------------------------------------------------------
   const [changing, setChanging] = React.useState<Member | null>(null)
@@ -303,6 +354,10 @@ export function Members() {
   const [changeError, setChangeError] = React.useState<string | null>(null)
   const [removing, setRemoving] = React.useState<Member | null>(null)
   const [removeError, setRemoveError] = React.useState<string | null>(null)
+  const [resetFor, setResetFor] = React.useState<Member | null>(null)
+  const [resetLink, setResetLink] = React.useState<ResetLink | null>(null)
+  const [resetError, setResetError] = React.useState<string | null>(null)
+  const resetLinkId = React.useId()
 
   // ---- Roles --------------------------------------------------------------------------------
   const [roleDraft, setRoleDraft] = React.useState<RoleDraft | null>(null)
@@ -319,6 +374,26 @@ export function Members() {
       input.select()
     }
   }, [createdInvitation, dialogLinkId])
+
+  // The same for a password reset link.
+  React.useEffect(() => {
+    if (!resetLink) return
+    const input = document.getElementById(resetLinkId)
+    if (input instanceof HTMLInputElement) {
+      input.focus()
+      input.select()
+    }
+  }, [resetLink, resetLinkId])
+
+  React.useEffect(() => {
+    if (!focusKeptLink.current || !keptInvitation) return
+    focusKeptLink.current = false
+    const input = document.getElementById(pageLinkId)
+    if (input instanceof HTMLInputElement) {
+      input.focus()
+      input.select()
+    }
+  }, [keptInvitation, pageLinkId])
 
   const sortedRoles = React.useMemo(() => [...(roles ?? [])].sort((a, b) => byRoleRank(a.name, b.name)), [roles])
   const roleByName = React.useMemo(() => Object.fromEntries((roles ?? []).map((role) => [role.name, role])), [roles])
@@ -368,41 +443,69 @@ export function Members() {
       columns.push({
         key: 'actions',
         header: 'Actions',
-        render: (row) => (
-          <div className="row action-group">
-            {canUpdateMember && (
-              <Button
-                variant="outline"
-                className="button-sm"
-                aria-label={`Change role for ${row.displayName}`}
-                onClick={() => {
-                  setChanging(row)
-                  setNewRoleName(row.role)
-                  setChangeError(null)
-                }}
-              >
-                Change role
-              </Button>
-            )}
-            {canRemoveMember && row.status !== 'removed' && (
-              <Button
-                variant="danger"
-                className="button-sm"
-                aria-label={row.userId === myId ? 'Remove yourself' : `Remove ${row.displayName}`}
-                onClick={() => {
-                  setRemoving(row)
-                  setRemoveError(null)
-                }}
-              >
-                Remove
-              </Button>
-            )}
-          </div>
-        ),
+        render: (row) => {
+          // Only an owner touches an owner, and nobody changes someone whose role carries more
+          // than their own. The row says why rather than showing buttons that can only be refused.
+          if (!canManageMember(row, roleByName, grantor)) {
+            return (
+              <span className="caption">
+                {row.role === 'owner'
+                  ? 'Only an owner can change an owner.'
+                  : 'Their role includes permissions you do not have.'}
+              </span>
+            )
+          }
+          return (
+            <div className="row action-group">
+              {canUpdateMember && (
+                <Button
+                  variant="outline"
+                  className="button-sm"
+                  aria-label={`Change role for ${row.displayName}`}
+                  onClick={() => {
+                    setChanging(row)
+                    setNewRoleName(row.role)
+                    setChangeError(null)
+                  }}
+                >
+                  Change role
+                </Button>
+              )}
+              {canUpdateMember && row.userId !== myId && (
+                <Button
+                  variant="outline"
+                  className="button-sm"
+                  aria-label={`Create a password reset link for ${row.displayName}`}
+                  title="Create a password reset link"
+                  onClick={() => {
+                    setResetFor(row)
+                    setResetLink(null)
+                    setResetError(null)
+                  }}
+                >
+                  Create reset link
+                </Button>
+              )}
+              {canRemoveMember && row.status !== 'removed' && (
+                <Button
+                  variant="danger"
+                  className="button-sm"
+                  aria-label={row.userId === myId ? 'Remove yourself' : `Remove ${row.displayName}`}
+                  onClick={() => {
+                    setRemoving(row)
+                    setRemoveError(null)
+                  }}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          )
+        },
       })
     }
     return columns
-  }, [canUpdateMember, canRemoveMember, myId])
+  }, [canUpdateMember, canRemoveMember, myId, roleByName, grantor])
 
   const roleColumns = React.useMemo<Column<Role>[]>(() => {
     const columns: Column<Role>[] = [
@@ -413,7 +516,14 @@ export function Members() {
         header: 'Type',
         render: (row) => <Tag tone={row.system ? 'neutral' : 'blue'}>{row.system ? 'Built-in' : 'Custom'}</Tag>,
       },
-      { key: 'permissions', header: 'Permissions', numeric: true, render: (row) => formatCount(row.permissions.length) },
+      {
+        key: 'permissions',
+        header: 'Permissions',
+        numeric: true,
+        // Only what the role builder can show: planned codes a role still carries are not counted.
+        render: (row) =>
+          formatCount(catalogueCodes ? row.permissions.filter((code) => catalogueCodes.has(code)).length : row.permissions.length),
+      },
       { key: 'holders', header: 'Held by', numeric: true, render: (row) => formatCount(row.holders) },
     ]
     if (canCreateRole || canUpdateRole || canDeleteRole) {
@@ -422,9 +532,12 @@ export function Members() {
         header: 'Actions',
         render: (row) => {
           const name = roleLabel(row.name)
+          // A role is built only from permissions its author holds, so one carrying more than the
+          // viewer's own can be neither edited nor copied by them.
+          const composable = holdsAll(row.permissions, grantor)
           return (
             <div className="row action-group">
-              {canUpdateRole && !row.system && (
+              {canUpdateRole && !row.system && composable && (
                 <Button
                   variant="outline"
                   className="button-sm"
@@ -444,7 +557,7 @@ export function Members() {
                   Edit
                 </Button>
               )}
-              {canCreateRole && (
+              {canCreateRole && composable && (
                 <Button
                   variant="outline"
                   className="button-sm"
@@ -483,24 +596,67 @@ export function Members() {
       })
     }
     return columns
-  }, [canCreateRole, canUpdateRole, canDeleteRole])
+  }, [canCreateRole, canUpdateRole, canDeleteRole, grantor, catalogueCodes])
 
-  const invitationColumns = React.useMemo<Column<Invitation>[]>(
-    () => [
-      { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
-      { key: 'roleName', header: 'Role', render: (row) => <Tag tone="blue">{roleLabel(row.roleName)}</Tag> },
-      {
-        key: 'status',
-        header: 'Status',
-        render: (row) => {
-          const status = statusLabel('invitation', invitationStatus(row, now))
-          return <Tag tone={status.tone} title={status.label}>{status.label}</Tag>
-        },
+  // Resend is offered only for a role the viewer may still give. Without the roles list (no
+  // role:read) that cannot be known here, so it is offered and the server decides.
+  const mayResend = (invitation: Invitation) => {
+    if (!roles) return true
+    const role = roleByName[invitation.roleName]
+    return role !== undefined && canGrantRole(role, grantor)
+  }
+  const resendingId = resendInvitation.isPending ? (resendInvitation.variables?.invitationId ?? null) : null
+
+  const invitationColumns: Column<Invitation>[] = [
+    { key: 'email', header: 'Email', render: (row) => <span className="mono">{row.email}</span> },
+    { key: 'roleName', header: 'Role', render: (row) => <Tag tone="blue">{roleLabel(row.roleName)}</Tag> },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (row) => {
+        const status = statusLabel('invitation', invitationStatus(row, now))
+        return <Tag tone={status.tone} title={status.label}>{status.label}</Tag>
       },
-      { key: 'expiresAt', header: 'When', render: (row) => <InvitationTiming invitation={row} now={now} /> },
-    ],
-    [now],
-  )
+    },
+    { key: 'expiresAt', header: 'When', render: (row) => <InvitationTiming invitation={row} now={now} /> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (row) => {
+        const status = invitationStatus(row, now)
+        if (status === 'accepted') return <span className="muted">—</span>
+        return (
+          <div className="row action-group">
+            {mayResend(row) && (
+              <Button
+                variant="outline"
+                className="button-sm"
+                aria-label={`Resend the invitation to ${row.email}`}
+                loading={resendingId === row.invitationId}
+                disabled={resendingId !== null && resendingId !== row.invitationId}
+                onClick={() => void handleResend(row)}
+              >
+                Resend
+              </Button>
+            )}
+            {status === 'pending' && (
+              <Button
+                variant="danger"
+                className="button-sm"
+                aria-label={`Revoke the invitation for ${row.email}`}
+                onClick={() => {
+                  setRevoking(row)
+                  setRevokeError(null)
+                }}
+              >
+                Revoke
+              </Button>
+            )}
+          </div>
+        )
+      },
+    },
+  ]
 
   // ---- Handlers -----------------------------------------------------------------------------
 
@@ -571,6 +727,53 @@ export function Members() {
       closeRemove()
     } catch (err) {
       setRemoveError(memberErrorMessage(err))
+    }
+  }
+
+  const handleResend = async (invitation: Invitation) => {
+    try {
+      const fresh = await resendInvitation.mutateAsync(invitation)
+      focusKeptLink.current = true
+      setKeptInvitation(fresh)
+      toast.success(`A new link for ${invitation.email} is ready under Invitations. The earlier link no longer works.`)
+    } catch (err) {
+      toast.error(describeApiError(err, INVITE_FIELD_LABELS))
+    }
+  }
+
+  const closeRevoke = () => {
+    setRevoking(null)
+    setRevokeError(null)
+  }
+
+  const handleRevoke = async () => {
+    if (!revoking) return
+    setRevokeError(null)
+    try {
+      await revokeInvitation.mutateAsync(revoking.invitationId)
+      // A link kept on the page for this invitation no longer works, so it is not left there.
+      if (keptInvitation?.invitationId === revoking.invitationId) setKeptInvitation(null)
+      toast.success(`The invitation for ${revoking.email} was revoked. Its link no longer works.`)
+      closeRevoke()
+    } catch (err) {
+      setRevokeError(describeApiError(err))
+    }
+  }
+
+  const closeReset = () => {
+    setResetFor(null)
+    setResetLink(null)
+    setResetError(null)
+  }
+
+  const handleCreateResetLink = async () => {
+    if (!resetFor) return
+    setResetError(null)
+    try {
+      const link = await passwordResetLink.mutateAsync(resetFor.userId)
+      setResetLink({ ...link, url: absoluteLink(link.url) })
+    } catch (err) {
+      setResetError(describeApiError(err))
     }
   }
 
@@ -652,11 +855,21 @@ export function Members() {
   const editedRole = roleDraft?.roleId ? roles?.find((role) => role.id === roleDraft.roleId) : undefined
   const deletingHolders = deletingRole?.holders ?? 0
 
-  const roleOptions = sortedRoles.map((role) => (
+  // Only the roles the viewer may give: never Owner unless they are an owner, and never one
+  // carrying a permission they lack. A change to one's own role may only narrow it.
+  const offeredRoles = grantableRoles(sortedRoles, grantor)
+  const currentRole = changing ? roleByName[changing.role] : undefined
+  const changeRoles =
+    changingSelf && currentRole
+      ? offeredRoles.filter((role) => role.permissions.every((code) => currentRole.permissions.includes(code)))
+      : offeredRoles
+  // Starting a new role from one copies its permissions, so only roles within the viewer's own.
+  const startFromRoles = sortedRoles.filter((role) => holdsAll(role.permissions, grantor))
+  const roleOption = (role: Role) => (
     <option key={role.id} value={role.name}>
       {roleLabel(role.name)}
     </option>
-  ))
+  )
 
   const facetRoles = React.useMemo(
     () => [...new Set((membersQuery.data ?? []).map((member) => member.role))].sort(byRoleRank),
@@ -887,7 +1100,7 @@ export function Members() {
               <option value="" disabled>
                 Choose a role…
               </option>
-              {roleOptions}
+              {offeredRoles.map(roleOption)}
             </Select>
           </form>
         )}
@@ -932,7 +1145,7 @@ export function Members() {
             onChange={(event) => setNewRoleName(event.target.value)}
             hint={roleUnchanged ? 'Choose a different role.' : chosenRole?.description || undefined}
           >
-            {roleOptions}
+            {changeRoles.map(roleOption)}
           </Select>
         </form>
       </Dialog>
@@ -945,8 +1158,8 @@ export function Members() {
         title={removingSelf ? 'Remove yourself?' : `Remove ${removing?.displayName ?? ''}?`}
         description={
           removingSelf
-            ? 'You lose access to this workspace within 15 minutes, when your session renews.'
-            : 'They lose access to this workspace within 15 minutes, when their session renews. The record of their membership is kept.'
+            ? 'You lose access to this workspace within 5 minutes, when your session renews.'
+            : 'They lose access to this workspace within 5 minutes, when their session renews. The record of their membership is kept.'
         }
         confirmLabel={removingSelf ? 'Remove myself' : 'Remove member'}
         cancelLabel="Cancel"
@@ -956,9 +1169,75 @@ export function Members() {
       >
         <div className="stack" style={{ gap: 'var(--space-4)' }}>
           {removing?.role === 'owner' && <Notice tone="info">{OWNER_RULE}</Notice>}
-          <p className="muted">This cannot be undone from the console.</p>
+          <p className="muted">
+            {removingSelf
+              ? 'You can be invited again later. Your schedules will be paused.'
+              : 'They can be invited again later. Their schedules will be paused.'}
+          </p>
         </div>
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={revoking !== null}
+        onClose={closeRevoke}
+        onConfirm={handleRevoke}
+        eyebrow="Revoke invitation"
+        title={`Revoke the invitation for ${revoking?.email ?? ''}?`}
+        description="The link stops working at once. Anyone who opens it is told the invitation was withdrawn."
+        confirmLabel="Revoke invitation"
+        cancelLabel="Keep it"
+        tone="danger"
+        loading={revokeInvitation.isPending}
+        error={revokeError}
+      >
+        <p className="muted">You can invite them again later with a new link.</p>
+      </ConfirmDialog>
+
+      <Dialog
+        open={resetFor !== null}
+        onClose={closeReset}
+        eyebrow="Password reset"
+        title={`Password reset link for ${resetFor?.displayName ?? ''}`}
+        description={
+          resetLink
+            ? undefined
+            : 'This creates a one-time link they can use to choose a new password. It works for 30 minutes. Any earlier link for them stops working.'
+        }
+        dismissible={!passwordResetLink.isPending}
+        // The link is shown only once, so a stray click beside the dialog must not lose it.
+        closeOnBackdrop={!resetLink}
+        error={resetError}
+        footer={
+          resetLink ? (
+            <Button variant="primary" onClick={closeReset}>
+              Done
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={closeReset} disabled={passwordResetLink.isPending}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => void handleCreateResetLink()} loading={passwordResetLink.isPending}>
+                Create link
+              </Button>
+            </>
+          )
+        }
+      >
+        {resetLink ? (
+          <div className="stack" style={{ gap: 'var(--space-4)' }}>
+            <Notice tone="success" live>
+              Send this link to {resetFor?.displayName ?? 'them'} yourself. It is not shown again.
+            </Notice>
+            <InviteLink url={resetLink.url} inputId={resetLinkId} label="Password reset link" />
+            <p className="caption">
+              The link works once and expires in 30 minutes, <Time iso={resetLink.expiresAt} />.
+            </p>
+          </div>
+        ) : (
+          <p className="muted">The platform does not send email, so you pass the link on yourself.</p>
+        )}
+      </Dialog>
 
       <Dialog
         open={roleDraft !== null}
@@ -992,7 +1271,7 @@ export function Members() {
                 onChange={(event) => changeStartFrom(event.target.value)}
               >
                 <option value="">A blank role</option>
-                {sortedRoles.map((role) => (
+                {startFromRoles.map((role) => (
                   <option key={role.id} value={role.id}>
                     {roleLabel(role.name)}
                   </option>
@@ -1024,6 +1303,7 @@ export function Members() {
             <PermissionPicker
               catalogue={catalogue}
               selected={roleDraft.permissions}
+              held={held}
               onChange={(permissions) => setRoleDraft((draft) => (draft ? { ...draft, permissions } : draft))}
             />
           </form>

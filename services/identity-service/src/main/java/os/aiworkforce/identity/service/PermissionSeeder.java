@@ -32,7 +32,8 @@ import os.aiworkforce.platform.rbac.Permission;
  *   <li><b>System roles are created once.</b> If {@code manager} already exists, its composition
  *       is left exactly as it is. An operator who narrowed a role during an incident would
  *       otherwise find it widened again by the next deployment - which is the sort of surprise
- *       that makes people stop trusting the console.
+ *       that makes people stop trusting the console. Only its description follows the build,
+ *       because a description grants nothing and a stale one misdescribes the role.
  * </ul>
  */
 @Component
@@ -109,10 +110,11 @@ public class PermissionSeeder {
     private void seedSystemRoles() {
         ensureRole(
                 "owner",
-                "Full control of the workspace, including billing and closure.",
+                "Full control of the workspace, and the only role that can add or remove owners.",
                 Permission.ALL.stream()
                         .map(Permission::code)
-                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
+                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)),
+                true);
 
         ensureRole(
                 "admin",
@@ -229,7 +231,35 @@ public class PermissionSeeder {
     }
 
     private void ensureRole(String name, String description, Set<String> permissionCodes) {
-        if (roles.findSystemRole(name).isPresent()) {
+        ensureRole(name, description, permissionCodes, false);
+    }
+
+    /**
+     * @param topUp whether a role that already exists is given any permission in {@code
+     *     permissionCodes} it lacks. True only for the owner, who holds everything by definition:
+     *     without it, a permission added in a later release (such as reading every private
+     *     conversation) would never reach the owners of a workspace created before it.
+     */
+    private void ensureRole(String name, String description, Set<String> permissionCodes, boolean topUp) {
+        Role existing = roles.findSystemRole(name).orElse(null);
+        if (existing != null) {
+            // The composition is the operator's; the wording is the build's.
+            if (!description.equals(existing.getDescription())) {
+                existing.setDescription(description);
+                roles.save(existing);
+                log.info("Updated the description of system role '{}'", name);
+            }
+            if (topUp) {
+                Set<String> missing = new LinkedHashSet<>(permissionCodes);
+                missing.removeAll(existing.getPermissions());
+                if (!missing.isEmpty()) {
+                    Set<String> all = new LinkedHashSet<>(existing.getPermissions());
+                    all.addAll(missing);
+                    existing.replacePermissions(all);
+                    roles.save(existing);
+                    log.info("Gave system role '{}' {} new permission(s): {}", name, missing.size(), missing);
+                }
+            }
             return;
         }
         Role role = new Role();

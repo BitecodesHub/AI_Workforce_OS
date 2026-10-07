@@ -73,6 +73,19 @@ class RuleRouterTest {
     }
 
     @Test
+    @DisplayName("a request about a repository goes to the Engineering Manager")
+    void repositoryRequestsGoToEngineering() {
+        Map<UUID, List<String>> tools = Map.of(engineering.getId(), List.of("github"));
+        for (String text : List.of("create a new repo named test repo by aiworkforce",
+                "list the branches of the website repository")) {
+            RuleRouter.Result result = RuleRouter.route(text, agents, tools);
+
+            assertThat(result.needsChoice()).as(text).isFalse();
+            assertThat(result.steps().getFirst().agent()).as(text).isEqualTo(engineering);
+        }
+    }
+
+    @Test
     @DisplayName("a tie between two equally-plausible agents asks rather than guesses")
     void tieAsksRatherThanGuesses() {
         // Two different agents that happen to score identically against this clause - same key,
@@ -111,6 +124,19 @@ class RuleRouterTest {
         assertThat(result.needsChoice()).isFalse();
         assertThat(result.steps().getFirst().agent()).isEqualTo(hr);
         assertThat(result.steps().getFirst().matched()).containsExactly("operations");
+    }
+
+    @Test
+    @DisplayName("a plainly HR request routes to HR even when it never says HR")
+    void peopleAndEmploymentWordsRouteToHr() {
+        for (String text : List.of(
+                "How much annual leave do new employees get during probation?",
+                "Draft an offer letter for the new recruit",
+                "Summarise our parental leave policy for staff")) {
+            RuleRouter.Result result = RuleRouter.route(text, agents, noTools);
+            assertThat(result.needsChoice()).as(text).isFalse();
+            assertThat(result.steps().getFirst().agent()).as(text).isEqualTo(hr);
+        }
     }
 
     @Test

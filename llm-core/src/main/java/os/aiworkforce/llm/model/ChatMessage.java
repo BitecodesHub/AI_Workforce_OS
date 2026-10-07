@@ -19,9 +19,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param toolCalls tools the assistant asked to run
  * @param toolCallId the call this message answers, when the role is {@code TOOL}
  * @param name optional speaker name, used by some providers for multi-participant chats
+ * @param images pictures sent with a user turn, for a model that can look at them; empty for every
+ *     other turn. The router strips them, with a note in their place, for a model that cannot.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record ChatMessage(Role role, String content, List<ToolCall> toolCalls, String toolCallId, String name) {
+public record ChatMessage(
+        Role role, String content, List<ToolCall> toolCalls, String toolCallId, String name, List<ImagePart> images) {
 
     public enum Role {
         SYSTEM,
@@ -33,6 +36,40 @@ public record ChatMessage(Role role, String content, List<ToolCall> toolCalls, S
     public ChatMessage {
         Objects.requireNonNull(role, "role");
         toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+        images = images == null ? List.of() : List.copyOf(images);
+    }
+
+    /** A turn with no pictures, which is every turn but a person's message with images attached. */
+    public ChatMessage(Role role, String content, List<ToolCall> toolCalls, String toolCallId, String name) {
+        this(role, content, toolCalls, toolCallId, name, List.of());
+    }
+
+    /** A person's turn with pictures beside its text. */
+    public static ChatMessage userWithImages(String content, List<ImagePart> images) {
+        return new ChatMessage(Role.USER, content, List.of(), null, null, images);
+    }
+
+    public boolean hasImages() {
+        return !images.isEmpty();
+    }
+
+    /**
+     * The same turn with its pictures replaced by a note for each, for a model that cannot see them.
+     *
+     * @param model the model answering, as it is named to people
+     */
+    public ChatMessage withImagesAsNotes(String model) {
+        if (images.isEmpty()) {
+            return this;
+        }
+        StringBuilder text = new StringBuilder(content == null ? "" : content);
+        for (ImagePart image : images) {
+            if (!text.isEmpty()) {
+                text.append("\n\n");
+            }
+            text.append(image.unreadableNote(model));
+        }
+        return new ChatMessage(role, text.toString(), toolCalls, toolCallId, name, List.of());
     }
 
     public static ChatMessage system(String content) {
@@ -68,6 +105,6 @@ public record ChatMessage(Role role, String content, List<ToolCall> toolCalls, S
                 .sum();
         // Every provider adds framing per message - role markers, separators. Four tokens is the
         // conventional allowance and errs slightly high, which is the safe direction.
-        return textTokens + toolTokens + 4;
+        return textTokens + toolTokens + images.size() * ImagePart.APPROXIMATE_TOKENS + 4;
     }
 }

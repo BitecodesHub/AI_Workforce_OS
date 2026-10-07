@@ -7,7 +7,6 @@ import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
 
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -26,7 +25,39 @@ import os.aiworkforce.orchestrator.domain.Goal;
 
 public interface Goals extends JpaRepository<Goal, UUID> {
 
-    Page<Goal> findByOrgIdOrderByCreatedAtDesc(UUID orgId, Pageable pageable);
+    /**
+     * The newest goals of a workspace, as a plain list.
+     *
+     * <p>A {@code Page} would add a {@code count(*)} over every goal the workspace has ever had to
+     * each call, and the board reads this every few seconds.
+     */
+    @Query("select g from Goal g where g.orgId = :orgId order by g.createdAt desc")
+    List<Goal> findRecent(@Param("orgId") UUID orgId, Pageable pageable);
+
+    /**
+     * The newest goals of a workspace, narrowed by any of status, source and schedule, as a plain
+     * list. A filter that is not wanted is passed as its "any" value: {@code ''} for a status or a
+     * source, {@code anySchedule = true} for the schedule (its id is then ignored, and never null).
+     */
+    @Query(
+            """
+            select g from Goal g
+            where g.orgId = :orgId
+              and (:status = '' or g.status = :status)
+              and (:source = '' or g.source = :source)
+              and (:anySchedule = true or g.scheduleId = :scheduleId)
+            order by g.createdAt desc
+            """)
+    List<Goal> findFiltered(
+            @Param("orgId") UUID orgId,
+            @Param("status") String status,
+            @Param("source") String source,
+            @Param("anySchedule") boolean anySchedule,
+            @Param("scheduleId") UUID scheduleId,
+            Pageable pageable);
+
+    /** A conversation's goals that changed at or after a moment, for the conversation's incremental reads. */
+    List<Goal> findByOrgIdAndConversationIdAndUpdatedAtGreaterThanEqual(UUID orgId, UUID conversationId, Instant since);
 
     Optional<Goal> findByIdAndOrgId(UUID id, UUID orgId);
 

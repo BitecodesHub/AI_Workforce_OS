@@ -84,9 +84,14 @@ public class User extends BaseEntity {
     }
 
     public void recordSuccessfulLogin() {
+        clearLockout();
+        lastLoginAt = Instant.now();
+    }
+
+    /** Forgets earlier failures, as a successful sign-in or a password reset does. */
+    public void clearLockout() {
         failedLoginCount = 0;
         lockedUntil = null;
-        lastLoginAt = Instant.now();
     }
 
     // ---- Accessors -----------------------------------------------------------------------
@@ -119,8 +124,21 @@ public class User extends BaseEntity {
         return passwordHash;
     }
 
+    /**
+     * Stores a hash without recording a change of password.
+     *
+     * <p>For registration, seeding and the silent re-hash on sign-in when the cost parameters have
+     * been raised. None of those is the person choosing a new password, and stamping
+     * {@code password_changed_at} on them would make the column useless for its one purpose:
+     * telling apart what was issued before a real change from what was issued after it.
+     */
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    /** A new password chosen by the person, or set through a reset link. */
+    public void changePassword(String newHash) {
+        this.passwordHash = newHash;
         this.passwordChangedAt = Instant.now();
     }
 

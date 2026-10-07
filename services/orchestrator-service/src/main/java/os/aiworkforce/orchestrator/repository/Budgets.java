@@ -4,6 +4,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,4 +21,15 @@ public interface Budgets extends JpaRepository<Budget, UUID> {
 
     @Query("select b from Budget b where b.id = :orgId")
     Optional<Budget> findForOrg(@Param("orgId") UUID orgId);
+
+    /**
+     * Creates the workspace's row if it has none, and does nothing if it has.
+     *
+     * <p>An atomic upsert rather than "find, then insert": two admins saving a first cap at the
+     * same moment would otherwise both insert, and the second would fail on the primary key. Every
+     * other column takes its default - no caps, and stop at a cap.
+     */
+    @Modifying
+    @Query(value = "insert into budgets (id) values (:orgId) on conflict (id) do nothing", nativeQuery = true)
+    int insertIfAbsent(@Param("orgId") UUID orgId);
 }

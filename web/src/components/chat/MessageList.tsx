@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { formatDateTime } from '../../lib/format'
 import type { Agent, BoardGoal, ChatMessage, Member, RunQuestion } from '../../lib/queries'
 import type { useSpeaker } from '../../lib/voice'
@@ -32,7 +32,7 @@ function articleLabel(message: ChatMessage, agentNames: Record<string, Agent>, m
  * thread is a single Tab stop the way the sidebar's conversation list is (B1.3).
  */
 
-export function MessageList({
+function MessageListInner({
   messages,
   goals,
   questions,
@@ -75,13 +75,26 @@ export function MessageList({
   agentsForReroute: Agent[]
   answeringMessageId: string | null
   composerTargetQuestionId: string | null
-  now: Date
+  /**
+   * Milliseconds since the epoch. Pass a number, not a new Date each render, so an unchanged clock
+   * does not look like a changed prop; a Date is still read, for callers that have one.
+   */
+  now: number | Date
 }) {
-  const entries = useMemo(() => withDayDividers(messages, now), [messages, now])
+  const nowMs = typeof now === 'number' ? now : now.getTime()
+  // A progress update draws its goal's card, and the thread's goals cover only the live window and
+  // the work still going. An older update, loaded with earlier messages, would otherwise be an
+  // empty article in the keyboard order; it is left out until its goal is known.
+  const shown = useMemo(() => {
+    const known = new Set(goals.map((goal) => goal.id))
+    return messages.filter((message) => message.kind !== 'progress' || (message.goalId !== null && known.has(message.goalId)))
+  }, [messages, goals])
+  const entries = useMemo(() => withDayDividers(shown, new Date(nowMs)), [shown, nowMs])
+  const goalById = useMemo(() => new Map(goals.map((goal) => [goal.id, goal])), [goals])
   const orphans = useMemo(() => orphanQuestions(questions, messages), [questions, messages])
   const articleIds = useMemo(
-    () => [...messages.map((message) => message.id), ...orphans.map((question) => `orphan-${question.id}`)],
-    [messages, orphans],
+    () => [...shown.map((message) => message.id), ...orphans.map((question) => `orphan-${question.id}`)],
+    [shown, orphans],
   )
   const roving = useRovingList(articleIds)
   const latestAnswerId = lastAnswer(messages)?.id ?? null
@@ -118,7 +131,7 @@ export function MessageList({
                 message={entry.message}
                 grouped={entry.grouped}
                 latest={entry.message.id === latestAnswerId}
-                goals={goals}
+                goal={entry.message.goalId ? goalById.get(entry.message.goalId) : undefined}
                 questions={questions}
                 messages={messages}
                 agentNames={agentNames}
@@ -160,3 +173,9 @@ export function MessageList({
     </ol>
   )
 }
+
+/**
+ * Wrapped in React.memo: Chat re-renders on every poll, and a poll that changed nothing in the
+ * thread hands this the same props. Chat passes the handlers through stable callbacks for this.
+ */
+export const MessageList = memo(MessageListInner)

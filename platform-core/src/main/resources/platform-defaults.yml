@@ -16,7 +16,11 @@ aiwos:
     issuer: ${AIWOS_ISSUER:aiwos}
     audience: ${AIWOS_AUDIENCE:aiwos-api}
     jwks-uri: ${AIWOS_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
-    access-token-ttl: PT15M
+    # Five minutes is the interim answer to revocation. No service compares a token's permission
+    # version with the role's current one yet, so a removed member, a narrowed role or a sign-out
+    # everywhere is felt only when the token is next refreshed. The lifetime is what bounds that
+    # delay, so it is kept short until a real revocation check exists.
+    access-token-ttl: PT5M
     refresh-token-ttl: P30D
     # An internal token lives only long enough to cross the cluster once. A leaked one is
     # useless a minute later, which is the point.
@@ -59,9 +63,10 @@ aiwos:
     default-call-timeout: PT60S
 
   observability:
-    log-format: ${AIWOS_LOG_FORMAT:json}
-    tracing-enabled: ${AIWOS_TRACING_ENABLED:true}
-    otlp-endpoint: ${AIWOS_OTLP_ENDPOINT:http://localhost:4318}
+    # The same ratio Spring's tracer samples with, read back here so the startup validator checks
+    # the value that is actually in force. It used to read an unbound field that always held 1.0,
+    # which production refuses, so no deployment that set AIWOS_TRACE_SAMPLE_RATIO could start.
+    trace-sample-ratio: ${management.tracing.sampling.probability}
 
   runtime-config:
     enabled: true
@@ -136,17 +141,44 @@ management:
         enabled: true
       show-details: when-authorized
       group:
-        # Readiness must fail when a dependency is gone, so traffic stops arriving.
+        # Readiness decides whether traffic arrives, so it holds only what a service cannot work
+        # without: its own state and its database. Redis is a cache here - runtime configuration
+        # reads through to the database and working memory degrades when it is gone - so a Redis
+        # restart must not take every service out of rotation at once. The gateway has no
+        # database and turns off group validation, so it ends up with readinessState alone.
         readiness:
-          include: readinessState,db,redis
+          include: readinessState,db
+        # Everything a service talks to, for dashboards and alerts rather than for routing.
+        # Details are shown only to an authorised caller, like the main health endpoint.
+        dependencies:
+          include: db,redis
+          show-details: when-authorized
   metrics:
     tags:
       service: ${aiwos.service-name:unknown}
   tracing:
+    # Spans are always created and carried (the trace id is in every log line and every error body);
+    # AIWOS_TRACING_ENABLED=false turns even that off, as the one-click launcher does.
+    enabled: ${AIWOS_TRACING_ENABLED:true}
     sampling:
       probability: ${AIWOS_TRACE_SAMPLE_RATIO:1.0}
+  # Nothing is exported unless an endpoint is set, and none is set here on purpose: Spring Boot
+  # builds an exporter for any value of management.otlp.tracing.endpoint, an empty one included,
+  # so a blank default would aim every service at nothing. Kubernetes and compose set
+  # MANAGEMENT_OTLP_TRACING_ENDPOINT (the collector's full /v1/traces address); a laptop does not.
 
 logging:
+  structured:
+    format:
+      # ecs, gelf or logstash print one JSON object per line, MDC included, which is what a log
+      # pipeline wants. Empty keeps the plain text below, so a laptop and scripts/dev-backend.sh
+      # stay readable. Kubernetes and compose set AIWOS_LOG_FORMAT_CONSOLE=ecs.
+      console: ${AIWOS_LOG_FORMAT_CONSOLE:}
+  pattern:
+    # Plain-text mode prints the same references the JSON fields carry, so the "Reference" a person
+    # reads out from an error screen is findable either way, and a run's lines can be pulled out
+    # of a busy log by run or workspace. Empty where the work has no such id.
+    correlation: "[req=%X{requestId:-} run=%X{runId:-} org=%X{orgId:-}] "
   level:
     root: INFO
     os.aiworkforce: ${AIWOS_LOG_LEVEL:INFO}

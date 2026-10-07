@@ -119,6 +119,37 @@ export function useRouter(): RouterValue {
 
 const APP_NAME = 'AI Workforce OS'
 
+/*
+ * The tab title has two parts that change independently: what the screen is called, and how many
+ * things are waiting on this person ("(2) Approvals · AI Workforce OS"). Either can change first
+ * - a detail screen names itself once its record arrives, the count changes whenever the poll
+ * answers - so both are kept here and the title is written from the pair, rather than one writer
+ * overwriting what the other wrote.
+ */
+let pageTitle = APP_NAME
+let waitingCount = 0
+
+/** A leading "(3) " a screen added itself: the count is ours to write, once. */
+const LEADING_COUNT = /^\(\d+\)\s+/
+
+function writeTitle() {
+  document.title = waitingCount > 0 ? `(${waitingCount}) ${pageTitle}` : pageTitle
+}
+
+/** Sets the screen's part of the tab title, as the shell does on every route. */
+export function setPageTitle(title: string): void {
+  pageTitle = title.replace(LEADING_COUNT, '')
+  writeTitle()
+}
+
+/** Sets how many things are waiting on this person; 0 shows none. Every route shows it. */
+export function setAttentionCount(count: number): void {
+  const next = Math.max(0, Math.floor(count))
+  if (next === waitingCount) return
+  waitingCount = next
+  writeTitle()
+}
+
 /**
  * Names the browser tab after what the screen shows ("Maya · AI Workforce OS"), so tabs and
  * history entries can be told apart. Does nothing until the title is known; the shell's
@@ -126,8 +157,22 @@ const APP_NAME = 'AI Workforce OS'
  */
 export function useDocumentTitle(title?: string | null) {
   useEffect(() => {
-    if (title) document.title = `${title} · ${APP_NAME}`
+    if (title) setPageTitle(`${title} · ${APP_NAME}`)
   }, [title])
+}
+
+/**
+ * Addresses that moved, old to new, so a bookmark or a link pasted into a message before the move
+ * still lands on the screen it meant. Integrations became Connectors on 3 October 2026.
+ */
+const REDIRECTS: Readonly<Record<string, string>> = {
+  '/integrations': '/connectors',
+}
+
+/** Where an old address now lives, or null for an address that has not moved. A trailing slash is ignored. */
+export function redirectFor(path: string): string | null {
+  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
+  return REDIRECTS[trimmed] ?? null
 }
 
 /** Matches "/agents/:id" against a path, returning the parameters or null. */

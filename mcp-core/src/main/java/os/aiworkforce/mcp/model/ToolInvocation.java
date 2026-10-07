@@ -36,6 +36,11 @@ public record ToolInvocation(
         context = context == null ? Map.of() : Map.copyOf(context);
     }
 
+    /** The same invocation with its arguments replaced, for example after they were normalised. */
+    public ToolInvocation withArguments(String arguments) {
+        return new ToolInvocation(orgId, agentId, runId, server, tool, arguments, idempotencyKey, context);
+    }
+
     public String qualifiedName() {
         return server + "." + tool;
     }

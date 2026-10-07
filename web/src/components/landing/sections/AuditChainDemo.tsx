@@ -100,7 +100,7 @@ export function AuditChainDemo(): ReactElement {
       area="audit"
       index="03"
       name="Audit chain"
-      title="It writes down everything"
+      title="It records decisions and outcomes"
       lead="Every approval decision and how a run finished is recorded against the person accountable. Each entry carries the previous entry hash, so an altered entry is detectable."
       status={status}
       footnote="Illustrative short hashes computed in your browser, to show how chaining exposes an edit."

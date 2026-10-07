@@ -17,6 +17,11 @@ import os.aiworkforce.identity.service.TokenService;
  * <p>Deliberately unauthenticated: a public key is public, and every other service needs it before
  * it can verify anything, including a token that would authenticate a request for the key itself.
  *
+ * <p>The set holds the active key and every retiring key still inside its overlap, so a token
+ * signed just before a key change keeps verifying until it expires. A verifier does not wait for
+ * the cache below to lapse before it sees a new key: each key is named by its own thumbprint, and
+ * a token naming a key the verifier has not seen makes it fetch this set again at once.
+ *
  * <p>The cache header is a balance. Too long, and a rotated key takes hours to propagate; too
  * short, and seven services fetch this endpoint on every request they cannot verify. Ten minutes
  * with a stale-while-revalidate window keeps verification working through a brief outage here.

@@ -23,10 +23,9 @@ import { WaitingForAnswer } from '../components/run/WaitingForAnswer'
 import { WaitingForApproval } from '../components/run/WaitingForApproval'
 import { describeApiError } from '../lib/api'
 import { formatCount, formatElapsed, formatRunElapsed, truncateWords } from '../lib/format'
-import { canRetryGoal } from '../lib/goals'
+import { canRetryGoal, canStopGoal } from '../lib/goals'
 import { categoryTone, statusLabel } from '../lib/labels'
 import {
-  isGoalActive,
   useAgentNames,
   useAgents,
   useCancelGoal,
@@ -49,9 +48,19 @@ import { useNow } from '../lib/useNow'
  * The list shows each goal once; a goal's tasks, their agents and what each one produced live on
  * the goal's own view at /tasks?goal=<id>, which loads the goal by id so a deep link or an older
  * goal opens as reliably as a recent one.
+ *
+ * The status filter is sent to the server, so "Failed" means every failed goal in the workspace,
+ * not the failures among the goals already loaded. The text search is the one filter that runs in
+ * the browser, over the loaded pages, and says so while older goals remain unloaded. Both live in
+ * the URL (?status=failed&q=offsite), so a filtered list survives opening a goal and coming Back.
  */
 
 const GOAL_STATUSES = ['planning', 'running', 'waiting', 'completed', 'failed', 'cancelled'] as const
+
+/** The first value of a comma-separated URL parameter, as useListFilter writes them. */
+function firstValue(raw: string | null): string | null {
+  return raw?.split(',')[0]?.trim() || null
+}
 
 /** Statuses after which a task will not run again. */
 const FINISHED_TASK = new Set(['completed', 'failed', 'cancelled', 'skipped'])
@@ -108,7 +117,13 @@ export function Tasks() {
 /* ---- The list of goals ------------------------------------------------------------------------ */
 
 function GoalList() {
-  const query = useGoalPages()
+  const { search } = useRouter()
+  // The server filters, read from the URL. A status the server would refuse (a mistyped link) is
+  // not sent; the list then says nothing matches, with a way out.
+  const wantedStatus = firstValue(search.get('status'))
+  const query = useGoalPages({
+    status: wantedStatus && (GOAL_STATUSES as readonly string[]).includes(wantedStatus) ? wantedStatus : null,
+  })
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const canCreate = can('task:create')
 
@@ -133,7 +148,8 @@ function GoalList() {
         query={{ data: goals, error: goals ? null : query.error, isLoading: query.isLoading, refetch: query.refetch }}
         permission="task:read"
         what="the goals list"
-        isEmpty={(data) => data.length === 0}
+        // A filter that matches nothing is not "no goals yet": the bar below stays, with a way out.
+        isEmpty={(data) => data.length === 0 && !filter.active}
         empty={
           <div style={{ marginTop: 'var(--space-7)' }}>
             <Card>
@@ -155,21 +171,23 @@ function GoalList() {
         {(loaded) => {
           const filtering = loaded.length > FILTER_THRESHOLD || filter.active
           const shown = filtering ? filter.filtered : loaded
-          const statusCounts = filter.counts.status ?? {}
           const selectedStatuses = filter.selected.status ?? []
+          const selectedStatus = selectedStatuses[0] ?? ''
           const statusFacet: FilterFacet = {
             param: 'status',
             label: 'Status',
-            options: GOAL_STATUSES.filter(
-              (status) => (statusCounts[status] ?? 0) > 0 || selectedStatuses.includes(status),
-            ).map((status) => ({
-              value: status,
-              label: statusLabel('goal', status).label,
-              count: statusCounts[status] ?? 0,
-            })),
+            // One status at a time, because the server filters by one; pressing the chosen one
+            // again shows every status.
+            options: GOAL_STATUSES.map((status) => ({ value: status, label: statusLabel('goal', status).label })),
             selected: selectedStatuses,
-            onToggle: (value) => filter.toggle('status', value),
+            onToggle: (value) => filter.setOnly('status', value === selectedStatus ? null : value),
           }
+          const searching = filter.query.trim() !== ''
+          const scopeNote = query.hasNextPage
+            ? searching
+              ? `The search covers the ${formatCount(loaded.length)} most recent goals loaded so far; show older goals to search further back.`
+              : 'Older goals are not loaded yet.'
+            : undefined
           return (
             <div style={{ marginTop: 'var(--space-6)' }}>
               <Card as="section">
@@ -183,11 +201,7 @@ function GoalList() {
                     facets={[statusFacet]}
                     shown={shown.length}
                     total={loaded.length}
-                    scopeNote={
-                      query.hasNextPage
-                        ? `Search and the status filter cover the ${formatCount(loaded.length)} most recent goals loaded so far.`
-                        : undefined
-                    }
+                    scopeNote={scopeNote}
                     active={filter.active}
                     onClear={filter.clear}
                   />
@@ -289,7 +303,8 @@ function GoalView({ goal }: { goal: Goal }) {
   const [retryError, setRetryError] = useState<string | null>(null)
   const columns = useTaskColumns()
 
-  const canCancel = can('task:cancel') && isGoalActive(goal)
+  // The requester can stop their own goal, as they can retry it; anyone else needs task:cancel.
+  const canCancel = canStopGoal(goal, me, can)
   const canRetry = canRetryGoal(goal, me, can)
   const unfinished = goal.tasks.filter((task) => !isTaskFinished(task)).length
   const withOutcome = goal.tasks.filter((task) => task.result || task.failureReason)
@@ -491,6 +506,11 @@ function TaskOutcome({ task }: { task: Task }) {
         <p style={{ marginBottom: 'var(--space-3)' }}>
           <strong>{failureLead}</strong>
           {task.failureReason}
+        </p>
+      )}
+      {result && task.status.toLowerCase() === 'failed' && (
+        <p className="caption" style={{ marginBottom: 'var(--space-1)' }}>
+          Incomplete answer
         </p>
       )}
       {result && (

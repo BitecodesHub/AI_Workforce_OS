@@ -31,8 +31,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import os.aiworkforce.orchestrator.chat.WorkspaceZoneLookup;
 import os.aiworkforce.orchestrator.domain.Agent;
@@ -89,14 +89,15 @@ class BoardServiceTest {
 
         when(zones.zoneFor(ORG)).thenReturn(ZoneId.of("Australia/Melbourne"));
         lenient().when(usage.spendSince(eq(ORG), any())).thenReturn(BigDecimal.TEN);
-        lenient().when(runs.findByOrgIdOrderByStartedAtDesc(eq(ORG), any())).thenReturn(new PageImpl<>(List.of()));
+        lenient().when(runs.findRecent(eq(ORG), any())).thenReturn(List.of());
         lenient().when(runs.findFirstByTaskIdOrderByStartedAtDesc(any())).thenReturn(Optional.empty());
         lenient().when(runs.findByTaskIdInOrderByTaskIdAscStartedAtDesc(any())).thenReturn(List.of());
         lenient()
                 .when(runs.findByOrgIdAndTaskIdIsNullAndStatusIn(eq(ORG), any()))
                 .thenReturn(List.of());
         lenient().when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of());
-        lenient().when(goals.findByOrgIdOrderByCreatedAtDesc(eq(ORG), any())).thenReturn(new PageImpl<>(List.of()));
+        lenient().when(goals.findRecent(eq(ORG), any())).thenReturn(List.of());
+        lenient().when(goals.activeIds(ORG)).thenReturn(List.of());
         lenient()
                 .when(goals.findFinishedSince(eq(ORG), anyString(), any(), any()))
                 .thenReturn(List.of());
@@ -142,10 +143,8 @@ class BoardServiceTest {
     }
 
     private void stubGoalAndTasks(Goal g, List<Task> taskList) {
-        when(goals.findByOrgIdOrderByCreatedAtDesc(eq(ORG), any())).thenReturn(new PageImpl<>(List.of(g)));
-        when(tasks.findByGoalIdOrderByPosition(g.getId())).thenReturn(taskList);
+        when(goals.findRecent(eq(ORG), any())).thenReturn(List.of(g));
         lenient().when(tasks.findByGoalIdInOrderByPositionAsc(any())).thenReturn(taskList);
-        lenient().when(goals.findById(g.getId())).thenReturn(Optional.of(g));
     }
 
     private void stubQueued(List<Task> queued) {
@@ -236,24 +235,144 @@ class BoardServiceTest {
     }
 
     @Test
-    @DisplayName("the siblings fallback query runs only for a goal whose tasks were not already fetched")
-    void siblingsFallbackQueriesOnlyWhenMissing() {
+    @DisplayName("queued tasks whose goals were not read with the board are looked up in one batch, not one by one")
+    void queueLooksUpMissingGoalsInOneBatch() {
         Goal inWindow = goal("running");
         Task fetched = task(inWindow, 0, "pending", null);
         stubGoalAndTasks(inWindow, List.of(fetched));
 
-        Goal outsideWindow = goal("running");
-        Task notFetched = task(outsideWindow, 0, "pending", null);
-        when(goals.findById(outsideWindow.getId())).thenReturn(Optional.of(outsideWindow));
-        when(tasks.findByGoalIdOrderByPosition(outsideWindow.getId())).thenReturn(List.of(notFetched));
+        Goal firstOutside = goal("running");
+        Task firstNotFetched = task(firstOutside, 0, "pending", null);
+        Goal secondOutside = goal("running");
+        Task secondNotFetched = task(secondOutside, 0, "pending", null);
+        when(goals.findAllById(Set.of(firstOutside.getId(), secondOutside.getId())))
+                .thenReturn(List.of(firstOutside, secondOutside));
+        when(tasks.findByGoalIdInOrderByPositionAsc(Set.of(firstOutside.getId(), secondOutside.getId())))
+                .thenReturn(List.of(firstNotFetched, secondNotFetched));
 
-        stubQueued(List.of(fetched, notFetched));
+        stubQueued(List.of(fetched, firstNotFetched, secondNotFetched));
 
         BoardService.Board result = board.board(ORG, BoardService.Window.H2, ACTOR);
 
-        assertThat(result.queue()).hasSize(2);
-        verify(tasks, times(1)).findByGoalIdOrderByPosition(outsideWindow.getId());
-        verify(tasks, never()).findByGoalIdOrderByPosition(inWindow.getId());
+        assertThat(result.queue()).hasSize(3);
+        verify(goals, times(1)).findAllById(Set.of(firstOutside.getId(), secondOutside.getId()));
+        verify(goals, never()).findById(any());
+        verify(tasks, never()).findByGoalIdOrderByPosition(any());
+    }
+
+    @Test
+    @DisplayName("a goal waiting for approval stays on the board however many newer goals have finished")
+    void anOldWaitingGoalIsNotPushedOffTheBoardByNewerFinishedOnes() {
+        Agent agent = agent("active");
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(agent));
+
+        // The newest 200 goals are all finished; the one still waiting on a person is older than them.
+        List<Goal> newerFinished = Stream.generate(() -> goal("completed"))
+                .limit(250)
+                .peek(finished -> {
+                    finished.setCompletedAt(Instant.now());
+                    ReflectionTestUtils.setField(finished, "createdAt", Instant.now());
+                })
+                .toList();
+        when(goals.findRecent(eq(ORG), any())).thenReturn(newerFinished.subList(0, 200));
+
+        Goal waiting = goal("running");
+        ReflectionTestUtils.setField(waiting, "createdAt", Instant.now().minus(3, ChronoUnit.DAYS));
+        Task parked = task(waiting, 0, "waiting_approval", agent.getId());
+        when(goals.activeIds(ORG)).thenReturn(List.of(waiting.getId()));
+        when(goals.findAllById(List.of(waiting.getId()))).thenReturn(List.of(waiting));
+        lenient().when(tasks.findByGoalIdInOrderByPositionAsc(any())).thenReturn(List.of(parked));
+        Run run = new Run();
+        run.setId(UUID.randomUUID());
+        run.setOrgId(ORG);
+        run.setTaskId(parked.getId());
+        run.setStatus("waiting_approval");
+        when(runs.findByTaskIdInOrderByTaskIdAscStartedAtDesc(any())).thenReturn(List.of(run));
+
+        Approval approval = new Approval();
+        approval.setId(UUID.randomUUID());
+        approval.setOrgId(ORG);
+        approval.setRunId(run.getId());
+        approval.setTaskId(parked.getId());
+        approval.setAgentId(agent.getId());
+        approval.setTool("email.send");
+        approval.setActionClass("OUTBOUND");
+        approval.setSummary("Send the email");
+        approval.setRequestedAt(Instant.now());
+        approval.setExpiresAt(Instant.now().plusSeconds(3600));
+        when(approvals.pending(ORG)).thenReturn(List.of(approval));
+
+        BoardService.Board result = board.board(ORG, BoardService.Window.H2, ACTOR);
+
+        assertThat(result.goals()).extracting(BoardService.GoalView::id).contains(waiting.getId());
+        assertThat(result.stats().waitingApproval()).isEqualTo(1);
+        BoardService.AgentSummary summary = result.agents().stream()
+                .filter(a -> a.id().equals(agent.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(summary.waitingRunIds()).containsExactly(run.getId());
+        // The approval in the inbox and the card it belongs to now agree.
+        assertThat(result.approvals())
+                .extracting(BoardService.ApprovalSummary::goalId)
+                .containsExactly(waiting.getId());
+        // And no goal was looked up one at a time to get there.
+        verify(goals, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("a goal from another workspace is never added to the board as an active goal")
+    void activeGoalsAreFilteredToTheWorkspace() {
+        Goal foreign = goal("running");
+        foreign.setOrgId(UUID.randomUUID());
+        when(goals.activeIds(ORG)).thenReturn(List.of(foreign.getId()));
+        when(goals.findAllById(List.of(foreign.getId()))).thenReturn(List.of(foreign));
+
+        BoardService.Board result = board.board(ORG, BoardService.Window.H2, ACTOR);
+
+        assertThat(result.goals()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a task's cost is what every one of its runs cost, and its attempts are the runs it has had")
+    void taskCostAddsUpEveryRun() {
+        Goal g = goal("running");
+        Task retried = task(g, 0, "running", null);
+        stubGoalAndTasks(g, List.of(retried));
+
+        Run first = new Run();
+        first.setId(UUID.randomUUID());
+        first.setOrgId(ORG);
+        first.setTaskId(retried.getId());
+        first.setStatus("failed");
+        first.setTotalCost(new BigDecimal("0.40"));
+        first.setStepCount(7);
+        Run second = new Run();
+        second.setId(UUID.randomUUID());
+        second.setOrgId(ORG);
+        second.setTaskId(retried.getId());
+        second.setStatus("running");
+        second.setTotalCost(new BigDecimal("0.15"));
+        second.setStepCount(2);
+        // Most recent first, as the repository orders them.
+        when(runs.findByTaskIdInOrderByTaskIdAscStartedAtDesc(any())).thenReturn(List.of(second, first));
+
+        BoardService.Board result = board.board(ORG, BoardService.Window.H2, ACTOR);
+
+        BoardService.TaskView view = result.goals().getFirst().tasks().getFirst();
+        assertThat(view.cost()).isEqualByComparingTo("0.55");
+        assertThat(view.attempts()).isEqualTo(2);
+        assertThat(view.runId()).isEqualTo(second.getId());
+        assertThat(view.stepCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("the board's goal and timeline reads are plain lists, which never add a count query")
+    void boardReadsListsRatherThanPages() {
+        board.board(ORG, BoardService.Window.H2, ACTOR);
+
+        verify(goals).findRecent(eq(ORG), any());
+        verify(runs).findRecent(eq(ORG), any());
+        verify(runs, never()).findByOrgIdOrderByStartedAtDesc(any(), any());
     }
 
     @Test
@@ -416,8 +535,8 @@ class BoardServiceTest {
         board.board(ORG, BoardService.Window.H2, ACTOR);
         board.board(ORG, BoardService.Window.H24, ACTOR);
 
-        verify(goals, times(2)).findByOrgIdOrderByCreatedAtDesc(eq(ORG), goalPageable.capture());
-        verify(runs, times(2)).findByOrgIdOrderByStartedAtDesc(eq(ORG), runPageable.capture());
+        verify(goals, times(2)).findRecent(eq(ORG), goalPageable.capture());
+        verify(runs, times(2)).findRecent(eq(ORG), runPageable.capture());
 
         assertThat(goalPageable.getAllValues().stream()
                         .map(Pageable::getPageSize)
@@ -451,9 +570,9 @@ class BoardServiceTest {
     @DisplayName("a goal that failed today shows even when it falls outside the window")
     void failedTodayIgnoresTheWindow() {
         Goal old = goal("failed");
-        old.setCompletedAt(Instant.now());
+        // Three hours ago: after midnight, but before the one-hour window starts.
+        old.setCompletedAt(Instant.now().minus(3, ChronoUnit.HOURS));
         when(goals.findFinishedSince(eq(ORG), eq("failed"), any(), any())).thenReturn(List.of(old));
-        when(goals.findByOrgIdOrderByCreatedAtDesc(eq(ORG), any())).thenReturn(new PageImpl<>(List.of()));
 
         BoardService.Board result = board.board(ORG, BoardService.Window.H1, ACTOR);
 
@@ -564,7 +683,7 @@ class BoardServiceTest {
         board.stopAll(ORG, true, withTaskCreate);
 
         InOrder order = inOrder(schedules, goalService);
-        order.verify(schedules).pause(ORG, schedule.getId());
+        order.verify(schedules).pauseInternal(eq(ORG), eq(schedule.getId()), eq(ScheduleService.STOPPED_EVERYTHING_REASON));
         order.verify(goalService).cancelIfActive(eq(ORG), eq(goalId), anyString());
     }
 
@@ -575,6 +694,6 @@ class BoardServiceTest {
 
         assertThat(thrown.details()).containsEntry("requiredPermission", Permission.Codes.TASK_CREATE);
         verifyNoInteractions(goalService);
-        verify(schedules, never()).pause(any(), any());
+        verify(schedules, never()).pauseInternal(any(), any(), any());
     }
 }

@@ -71,10 +71,10 @@ class ConversationQueriesTest {
                 .when(tasks.waitingApprovalByConversation(any(), anyCollection()))
                 .thenReturn(List.of());
         lenient()
-                .when(conversations.searchExcluding(any(), anyCollection(), anyBoolean(), any(), anyString(), any()))
+                .when(conversations.searchExcluding(any(), anyCollection(), anyBoolean(), any(), anyBoolean(), anyString(), any()))
                 .thenReturn(List.of());
         lenient()
-                .when(conversations.searchAmong(any(), anyCollection(), anyBoolean(), any(), anyString()))
+                .when(conversations.searchAmong(any(), anyCollection(), anyBoolean(), any(), anyBoolean(), anyString()))
                 .thenReturn(List.of());
     }
 
@@ -102,7 +102,7 @@ class ConversationQueriesTest {
     void pinnedRowsComeFirstOnPageZeroOnly() {
         Conversation pinned = conversationRow();
         when(marks.findByOrgIdAndUserId(ORG, me)).thenReturn(List.of(markFor(pinned.getId(), me, true, false)));
-        when(conversations.searchAmong(eq(ORG), eq(Set.of(pinned.getId())), anyBoolean(), any(), anyString()))
+        when(conversations.searchAmong(eq(ORG), eq(Set.of(pinned.getId())), anyBoolean(), any(), anyBoolean(), anyString()))
                 .thenReturn(List.of(pinned));
 
         ConversationQueries.ConversationPage firstPage = queries.list(ORG, actor, "", "all", 0, 20);
@@ -119,13 +119,13 @@ class ConversationQueriesTest {
     void archivedRowsExcludedFromAllAndListedAloneInArchived() {
         Conversation archived = conversationRow();
         when(marks.findByOrgIdAndUserId(ORG, me)).thenReturn(List.of(markFor(archived.getId(), me, false, true)));
-        when(conversations.searchAmong(eq(ORG), eq(Set.of(archived.getId())), eq(false), any(), anyString()))
+        when(conversations.searchAmong(eq(ORG), eq(Set.of(archived.getId())), eq(false), any(), anyBoolean(), anyString()))
                 .thenReturn(List.of(archived));
 
         ArgumentCaptor<Collection<UUID>> excludedCaptor = ArgumentCaptor.forClass(Collection.class);
         queries.list(ORG, actor, "", "all", 0, 20);
         verify(conversations)
-                .searchExcluding(eq(ORG), excludedCaptor.capture(), anyBoolean(), any(), anyString(), any());
+                .searchExcluding(eq(ORG), excludedCaptor.capture(), anyBoolean(), any(), anyBoolean(), anyString(), any());
         assertThat(excludedCaptor.getValue()).contains(archived.getId());
 
         ConversationQueries.ConversationPage archivedPage = queries.list(ORG, actor, "", "archived", 0, 20);
@@ -140,7 +140,7 @@ class ConversationQueriesTest {
     @DisplayName("hasMore is true only when one row more than the page size came back")
     void hasMoreDetection() {
         List<Conversation> rows = List.of(conversationRow(), conversationRow(), conversationRow());
-        when(conversations.searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), anyString(), any()))
+        when(conversations.searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), anyBoolean(), anyString(), any()))
                 .thenReturn(rows);
 
         ConversationQueries.ConversationPage page = queries.list(ORG, actor, "", "all", 0, 2);
@@ -193,7 +193,7 @@ class ConversationQueriesTest {
     void workingAndIdleActivity() {
         Conversation working = conversationRow();
         Conversation idle = conversationRow();
-        when(conversations.searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), anyString(), any()))
+        when(conversations.searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), anyBoolean(), anyString(), any()))
                 .thenReturn(List.of(working, idle));
         when(goals.activeByConversation(eq(ORG), anyCollection()))
                 .thenReturn(List.<Object[]>of(new Object[] {working.getId(), 1L}));
@@ -209,7 +209,7 @@ class ConversationQueriesTest {
         Conversation needsYou = conversationRow();
         when(marks.findByOrgIdAndUserId(ORG, me)).thenReturn(List.of(markFor(needsYou.getId(), me, false, true)));
         when(questions.conversationsNeedingAnswerFrom(ORG, me)).thenReturn(List.of(needsYou.getId()));
-        when(conversations.searchAmong(eq(ORG), eq(Set.of(needsYou.getId())), eq(false), any(), anyString()))
+        when(conversations.searchAmong(eq(ORG), eq(Set.of(needsYou.getId())), eq(false), any(), anyBoolean(), anyString()))
                 .thenReturn(List.of(needsYou));
 
         ConversationQueries.ConversationPage page = queries.list(ORG, actor, "", "mine", 0, 20);
@@ -265,12 +265,12 @@ class ConversationQueriesTest {
 
         ArgumentCaptor<String> patternCaptor = ArgumentCaptor.forClass(String.class);
         verify(conversations)
-                .searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), patternCaptor.capture(), any());
+                .searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), anyBoolean(), patternCaptor.capture(), any());
         assertThat(patternCaptor.getValue()).isEqualTo("%50!%!_off%");
     }
 
     private void stubMainList(Conversation... rows) {
-        when(conversations.searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), anyString(), any()))
+        when(conversations.searchExcluding(eq(ORG), anyCollection(), anyBoolean(), any(), anyBoolean(), anyString(), any()))
                 .thenReturn(List.of(rows));
     }
 

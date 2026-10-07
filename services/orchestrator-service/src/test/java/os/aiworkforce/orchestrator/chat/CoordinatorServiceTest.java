@@ -120,9 +120,7 @@ class CoordinatorServiceTest {
         lenient().when(modelPlanner.plan(eq(ORG), any(), any())).thenReturn(Optional.empty());
         lenient().when(modelPlanner.plan(eq(ORG), any(), any(), any())).thenReturn(Optional.empty());
         lenient().when(generalEmployee.activeIn(any())).thenReturn(Optional.empty());
-        lenient()
-                .when(messages.findByConversationIdAndPositionLessThanOrderByPositionDesc(any(), anyInt(), any()))
-                .thenReturn(List.of());
+        lenient().when(messages.findEarlierTurns(any(), anyInt(), any())).thenReturn(List.of());
         lenient()
                 .when(messages.findByConversationIdAndPositionGreaterThanOrderByPosition(any(), anyInt()))
                 .thenReturn(List.of());
@@ -332,17 +330,9 @@ class CoordinatorServiceTest {
     @Test
     @DisplayName("a document question searches the knowledge base rather than routing to an agent")
     void documentsQuestionSearchesKnowledge() {
-        KnowledgeClient.Passage passage = new KnowledgeClient.Passage(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "Employee Handbook",
-                "https://example/doc",
-                3,
-                "Refunds",
-                "Refunds are processed within five days.",
-                0.9);
+        KnowledgeClient.Passage passage = passage("Employee Handbook", 3, "Refunds are processed within five days.");
         when(knowledge.search(eq(ORG), any(), any()))
-                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(passage), true)));
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(passage), true, false)));
 
         List<ChatMessage> created = coordinator.handleMessage(
                 ORG, conversation.getId(), "What is our refund policy?", null, "Bearer token");
@@ -374,7 +364,7 @@ class CoordinatorServiceTest {
         when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, general));
         when(generalEmployee.activeIn(List.of(research, support, general))).thenReturn(Optional.of(general));
         when(knowledge.search(eq(ORG), any(), any()))
-                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(), false)));
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(), false, false)));
 
         List<ChatMessage> created = coordinator.handleMessage(
                 ORG, conversation.getId(), "What is our refund policy?", null, "Bearer token");
@@ -393,7 +383,7 @@ class CoordinatorServiceTest {
         when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, general));
         when(generalEmployee.activeIn(List.of(research, support, general))).thenReturn(Optional.of(general));
         when(knowledge.search(eq(ORG), any(), any()))
-                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(), false)));
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(), false, false)));
         RequestContext.setActor(Actor.user(requesterId.toString(), ORG.toString(), "role", Set.of("chat:use"), 0L));
 
         List<ChatMessage> created = coordinator.handleMessage(
@@ -480,8 +470,7 @@ class CoordinatorServiceTest {
     void threadContextPrependedToFirstTaskOnly() {
         ChatMessage earlierUser = ChatMessage.of(
                 ORG, conversation.getId(), 0, "user", requesterId, null, "text", "context from before", Map.of(), null);
-        when(messages.findByConversationIdAndPositionLessThanOrderByPositionDesc(
-                        eq(conversation.getId()), anyInt(), any()))
+        when(messages.findEarlierTurns(eq(conversation.getId()), anyInt(), any()))
                 .thenReturn(new ArrayList<>(List.of(earlierUser)));
 
         coordinator.handleMessage(
@@ -498,8 +487,7 @@ class CoordinatorServiceTest {
     void plannerGetsLastAnswerAgentHint() {
         ChatMessage earlierAnswer = ChatMessage.of(
                 ORG, conversation.getId(), 0, "agent", null, support.getId(), "answer", "Here you go.", Map.of(), null);
-        when(messages.findByConversationIdAndPositionLessThanOrderByPositionDesc(
-                        eq(conversation.getId()), anyInt(), any()))
+        when(messages.findEarlierTurns(eq(conversation.getId()), anyInt(), any()))
                 .thenReturn(new ArrayList<>(List.of(earlierAnswer)));
 
         coordinator.handleMessage(ORG, conversation.getId(), "now make it shorter", null, null);
@@ -683,7 +671,7 @@ class CoordinatorServiceTest {
     // ---- Stop and retry -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("stopping a goal requires being its requester or holding task:cancel")
+    @DisplayName("stopping a goal asks the goal service whether the person may, the rule the board and endpoint share")
     void stopRequiresRequesterOrCancel() {
         UUID goalId = UUID.randomUUID();
         Goal goal = new Goal();
@@ -693,15 +681,22 @@ class CoordinatorServiceTest {
         goal.setConversationId(conversation.getId());
         goal.setRequestedBy(UUID.randomUUID());
         when(goals.findByIdAndOrgId(goalId, ORG)).thenReturn(Optional.of(goal));
+        // The authority rule lives in GoalService, shared with the goal endpoint and the board.
+        org.mockito.Mockito.doThrow(new ApiException(ErrorCode.PERMISSION_DENIED, "Not yours to stop."))
+                .when(goalService)
+                .requireCanStop(eq(goal), any(Actor.class));
 
         assertThatThrownBy(() -> coordinator.stopGoal(ORG, conversation.getId(), goalId))
                 .isInstanceOfSatisfying(
                         ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.PERMISSION_DENIED));
         verify(goalService, never()).cancel(any(), any(), any());
 
-        goal.setRequestedBy(requesterId);
+        org.mockito.Mockito.doNothing().when(goalService).requireCanStop(eq(goal), any(Actor.class));
         CoordinatorService.GoalActionResult result = coordinator.stopGoal(ORG, conversation.getId(), goalId);
         assertThat(result.status()).isEqualTo("cancelled");
+        ArgumentCaptor<Actor> actor = ArgumentCaptor.forClass(Actor.class);
+        verify(goalService, org.mockito.Mockito.atLeastOnce()).requireCanStop(eq(goal), actor.capture());
+        assertThat(actor.getValue().id()).isEqualTo(requesterId.toString());
         verify(goalService).cancel(ORG, goalId, "Stopped from the chat.");
     }
 
@@ -855,6 +850,534 @@ class CoordinatorServiceTest {
     void knowledgeBlockShape() {
         String block = CoordinatorService.withKnowledge(
                 "", List.of(Map.of("documentTitle", "SIH deck", "content", "Quantified cyber risk.")));
-        assertThat(block).contains("[1] SIH deck\nQuantified cyber risk.").endsWith("Request:\n");
+        assertThat(block).contains("[1] SIH deck\n<passage n=\"1\" source=\"SIH deck\">Quantified cyber risk.</passage>").endsWith("Request:\n");
+    }
+
+    // ---- The person's own words -----------------------------------------------------------------
+
+    private static KnowledgeClient.Passage passage(String title, Integer page, String content) {
+        return new KnowledgeClient.Passage(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                title,
+                "https://example/doc",
+                page,
+                "Heading",
+                content,
+                0.9);
+    }
+
+    private void plannerChooses(Agent agent, String label) {
+        when(modelPlanner.plan(eq(ORG), any(), any(), any()))
+                .thenReturn(Optional.of(new ModelRouterPlanner.Plan(
+                        List.of(new ModelRouterPlanner.PlannedStep(agent.getId(), label)), "The model chose it.")));
+    }
+
+    private GoalService.NewGoal createdGoal() {
+        ArgumentCaptor<GoalService.NewGoal> spec = ArgumentCaptor.forClass(GoalService.NewGoal.class);
+        verify(goalService).createGoal(eq(ORG), spec.capture(), eq(true));
+        return spec.getValue();
+    }
+
+    private static ChatMessage routingOf(List<ChatMessage> created) {
+        return created.stream()
+                .filter(m -> "routing".equals(m.getKind()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> passagesOf(ChatMessage routing) {
+        return (List<Map<String, Object>>) routing.getDetail().get("passages");
+    }
+
+    @Test
+    @DisplayName("in model mode the agent is given the person's own text, and the planner's sentence only names the task")
+    void modelPlanLeavesTheRequestAsWritten() {
+        String text = "Please summarise the risks for the board.\n\nContract text:\n  Clause 4.2: the supplier may terminate "
+                + "on 30 days' notice.\n  Clause 9: liability is capped at $50,000.\n";
+        plannerChooses(support, "Summarise the risks in the pasted contract");
+
+        List<ChatMessage> created = coordinator.handleMessage(ORG, conversation.getId(), text, null, null);
+
+        GoalService.NewTask task = createdGoal().tasks().getFirst();
+        assertThat(task.instruction()).isEqualTo(text);
+        assertThat(task.title()).isEqualTo("Summarise the risks in the pasted contract");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> routed = (List<Map<String, Object>>) routingOf(created).getDetail().get("agents");
+        assertThat(routed.getFirst()).containsEntry("instruction", "Summarise the risks in the pasted contract");
+    }
+
+    @Test
+    @DisplayName("the planner's own sentence is cut to a label for the task title but kept whole on the routing card")
+    void taskTitleIsTheLabelCutAtAWord() {
+        String label = "Summarise the risks in the pasted contract for the board, naming each clause and its owner";
+        plannerChooses(support, label);
+
+        List<ChatMessage> created =
+                coordinator.handleMessage(ORG, conversation.getId(), "please summarise the risks", null, null);
+
+        assertThat(createdGoal().tasks().getFirst().title())
+                .hasSizeLessThanOrEqualTo(60)
+                .isEqualTo(CoordinatorService.truncateAtWord(label, 60));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> routed = (List<Map<String, Object>>) routingOf(created).getDetail().get("agents");
+        assertThat(routed.getFirst()).containsEntry("instruction", label);
+    }
+
+    @Test
+    @DisplayName("in a chain every step is given the person's request verbatim, then its own part")
+    void modelChainGivesEveryStepTheRequest() {
+        String text = "Research our top three competitors, then draft a reply to the customer who asked about them.\n"
+                + "Keep the tone friendly - they are a long-standing client (account notes pasted below).";
+        when(modelPlanner.plan(eq(ORG), any(), any(), any()))
+                .thenReturn(Optional.of(new ModelRouterPlanner.Plan(
+                        List.of(
+                                new ModelRouterPlanner.PlannedStep(research.getId(), "Research the competitors"),
+                                new ModelRouterPlanner.PlannedStep(support.getId(), "Draft the customer reply")),
+                        "Two steps.")));
+
+        coordinator.handleMessage(ORG, conversation.getId(), text, null, null);
+
+        List<GoalService.NewTask> tasks = createdGoal().tasks();
+        assertThat(tasks).hasSize(2);
+        assertThat(tasks.get(0).instruction())
+                .endsWith("The person's request (verbatim):\n" + text + "\n\nYour part: Research the competitors");
+        assertThat(tasks.get(1).instruction())
+                .isEqualTo("The person's request (verbatim):\n" + text + "\n\nYour part: Draft the customer reply");
+        assertThat(tasks.get(0).title()).isEqualTo("Research the competitors");
+        assertThat(tasks.get(1).title()).isEqualTo("Draft the customer reply");
+        assertThat(tasks.get(1).dependsOnPositions()).containsExactly(0);
+    }
+
+    @Test
+    @DisplayName("without a model the rules' routing also hands the agent the whole text, not a clause of it")
+    void rulesRoutingLeavesTheRequestAsWritten() {
+        String text = "A customer wants a refund for order 4471.\nTheir message: \"The parcel arrived broken\".";
+
+        coordinator.handleMessage(ORG, conversation.getId(), text, null, null);
+
+        GoalService.NewTask task = createdGoal().tasks().getFirst();
+        assertThat(task.agentId()).isEqualTo(support.getId());
+        assertThat(task.instruction()).isEqualTo(text);
+    }
+
+    @Test
+    @DisplayName("a mention hands every named agent the message exactly as it was written")
+    void mentionKeepsTheMessageAsWritten() {
+        String text = "@Research  look at the three quotes below:\n\n  Quote A: $4,100\n  Quote B: $3,950";
+
+        coordinator.handleMessage(ORG, conversation.getId(), text, null, null);
+
+        GoalService.NewTask task = createdGoal().tasks().getFirst();
+        assertThat(task.instruction()).isEqualTo(text);
+        assertThat(task.title()).startsWith("look at the three quotes below:");
+    }
+
+    @Test
+    @DisplayName("a schedule's standing instruction is the person's own words minus the timing, whatever the planner wrote")
+    void scheduleInstructionIsVerbatim() {
+        when(schedulePreviewer.tryParse(any(), any(), any()))
+                .thenReturn(Optional.of(
+                        new ParsedSchedule("recurring", "0 0 9 * * MON-FRI", null, "every weekday at 9am")));
+        String text = "Every weekday at 9am summarise new support tickets:\n- group them by product\n- flag anything "
+                + "from enterprise customers";
+        when(modelPlanner.plan(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new ModelRouterPlanner.Plan(
+                        List.of(new ModelRouterPlanner.PlannedStep(support.getId(), "Daily ticket digest")), "reason")));
+
+        List<ChatMessage> created = coordinator.handleMessage(ORG, conversation.getId(), text, null, null);
+
+        ChatMessage suggestion = created.get(1);
+        assertThat(suggestion.getKind()).isEqualTo("schedule_suggestion");
+        assertThat(suggestion.getDetail())
+                .containsEntry("instruction", IntentDetector.withoutTimingPhrase(text))
+                .containsEntry("name", "Daily ticket digest");
+        assertThat((String) suggestion.getDetail().get("instruction"))
+                .contains("\n- group them by product\n- flag anything from enterprise customers")
+                .doesNotContain("Every weekday");
+    }
+
+    // ---- Follow-up context ----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a 2,000-character answer followed by 'now send it' reaches the agent intact")
+    void followUpCarriesTheWholeLastAnswer() {
+        String draft = ("Dear Priya, welcome to the team. Your first week starts with a tour of the office.\n\n"
+                        + "Day one: collect your laptop. ")
+                .repeat(20)
+                .substring(0, 2_000);
+        ChatMessage ask = ChatMessage.of(
+                ORG, conversation.getId(), 0, "user", requesterId, null, "text", "Draft a welcome email", Map.of(), null);
+        ChatMessage reply = ChatMessage.of(
+                ORG, conversation.getId(), 3, "agent", null, support.getId(), "answer", draft, Map.of(), null);
+        when(messages.findEarlierTurns(eq(conversation.getId()), anyInt(), any()))
+                .thenReturn(new ArrayList<>(List.of(reply, ask)));
+        plannerChooses(support, "Send the email");
+
+        coordinator.handleMessage(ORG, conversation.getId(), "now send it", null, null);
+
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        assertThat(instruction).contains("Your last reply (verbatim):\n" + draft.strip() + "\n");
+        assertThat(instruction).doesNotContain("more characters not shown");
+        assertThat(instruction).contains("The requester: Draft a welcome email");
+        assertThat(instruction).endsWith("\nRequest:\nnow send it");
+    }
+
+    @Test
+    @DisplayName("without a model a follow-up still goes to the agent that answered, with its full last reply")
+    void followUpWithoutAModelKeepsTheLastReply() {
+        Agent general = fallbackAgent();
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, general));
+        when(generalEmployee.activeIn(List.of(research, support, general))).thenReturn(Optional.of(general));
+        String reply = "Line one of the draft.\n\nLine two of the draft.\n\n- point a\n- point b";
+        ChatMessage earlier = ChatMessage.of(
+                ORG, conversation.getId(), 1, "agent", null, research.getId(), "answer", reply, Map.of(), null);
+        when(messages.findEarlierTurns(eq(conversation.getId()), anyInt(), any()))
+                .thenReturn(new ArrayList<>(List.of(earlier)));
+
+        coordinator.handleMessage(ORG, conversation.getId(), "make it shorter", null, null);
+
+        GoalService.NewTask task = createdGoal().tasks().getFirst();
+        assertThat(task.agentId()).isEqualTo(research.getId());
+        assertThat(task.instruction()).contains("Your last reply (verbatim):\n" + reply + "\n");
+        assertThat(task.instruction()).endsWith("\nRequest:\nmake it shorter");
+    }
+
+    @Test
+    @DisplayName("earlier turns are fetched in a window of 30 text and answer messages")
+    void earlierTurnsWindow() {
+        coordinator.handleMessage(ORG, conversation.getId(), "@Research hello", null, null);
+
+        verify(messages)
+                .findEarlierTurns(eq(conversation.getId()), anyInt(), argThat(page -> page.getPageSize() == 30));
+    }
+
+    @Test
+    @DisplayName("a colleague's message in a shared thread is not read as the requester's own")
+    void colleaguesAreLabelled() {
+        ChatMessage colleague = ChatMessage.of(
+                ORG,
+                conversation.getId(),
+                0,
+                "user",
+                UUID.randomUUID(),
+                null,
+                "text",
+                "Please also copy finance",
+                Map.of(),
+                null);
+        when(messages.findEarlierTurns(eq(conversation.getId()), anyInt(), any()))
+                .thenReturn(new ArrayList<>(List.of(colleague)));
+
+        coordinator.handleMessage(ORG, conversation.getId(), "@Research carry on", null, null);
+
+        assertThat(createdGoal().tasks().getFirst().instruction()).contains("Another person: Please also copy finance");
+    }
+
+    @Test
+    @DisplayName("past the budget only the older turns give way; the header, last reply, passages and request stay whole")
+    void budgetDropsOlderTurnsFirst() {
+        List<Map<String, Object>> passages = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            passages.add(Map.<String, Object>of(
+                    "documentTitle", "Doc " + i, "pageNumber", i, "content", ("passage" + i + " ").repeat(120).strip()));
+        }
+        List<ChatMessage> turns = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            turns.add(ChatMessage.of(
+                    ORG, conversation.getId(), i, "user", requesterId, null, "text", "older-" + i + " " + "filler ".repeat(90), Map.of(), null));
+        }
+        String lastReply = "reply line\n".repeat(540); // about 5,900 characters
+        turns.add(ChatMessage.of(
+                ORG, conversation.getId(), 4, "agent", null, support.getId(), "answer", lastReply, Map.of(), null));
+        CoordinatorService.Background background = new CoordinatorService.Background(
+                ThreadContext.of(turns, Map.of(support.getId(), "Customer Support"), Map.of(), requesterId),
+                passages,
+                false);
+        String request = "r".repeat(CoordinatorService.MAX_INSTRUCTION_CHARS - 13_000);
+
+        String roomy = CoordinatorService.withPreamble(background, support.getId(), "now send it");
+        String tight = CoordinatorService.withPreamble(background, support.getId(), request);
+
+        assertThat(roomy).contains("older-0 ").contains("older-3 ");
+        assertThat(tight.length()).isLessThanOrEqualTo(CoordinatorService.MAX_INSTRUCTION_CHARS);
+        assertThat(tight).doesNotContain("older-0 ");
+        assertThat(tight).contains(ThreadContext.HEADER);
+        assertThat(tight).contains("Your last reply (verbatim):\n" + lastReply.strip() + "\n");
+        assertThat(tight).contains("\nRequest:\n" + request);
+        assertThat(tight).contains("older-3 ");
+        for (int i = 1; i <= 6; i++) {
+            assertThat(tight).contains("[" + i + "] Doc " + i + ", page " + i + "\n<passage n=\"" + i + "\" source=\"Doc " + i + "\">");
+        }
+        assertThat(tight).contains(("passage6 ").repeat(99) + "passage6</passage>\n\n");
+        assertThat(tight).startsWith(GoalService.PASSAGES_HEADING);
+    }
+
+    @Test
+    @DisplayName("the request itself is never cut, even when it fills the whole budget")
+    void theRequestIsNeverCut() {
+        String request = "x".repeat(CoordinatorService.MAX_INSTRUCTION_CHARS + 500);
+        ChatMessage turn = ChatMessage.of(
+                ORG, conversation.getId(), 0, "user", requesterId, null, "text", "older request", Map.of(), null);
+        CoordinatorService.Background background = CoordinatorService.Background.of(
+                ThreadContext.of(List.of(turn), Map.of(), Map.of(), requesterId));
+
+        String instruction = CoordinatorService.withPreamble(background, support.getId(), request);
+
+        assertThat(instruction).endsWith(request);
+        assertThat(instruction).startsWith(ThreadContext.HEADER);
+    }
+
+    // ---- Knowledge for work -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a work request that leans on documents is searched, and grounded passages are attached and recorded")
+    void workRequestWithGroundedSearchAttachesPassages() {
+        KnowledgeClient.Passage first = passage("Refund policy", 2, "Refunds are issued within 5 business days.");
+        KnowledgeClient.Passage second = passage("Support handbook", null, "Escalate refunds over $500 to a manager.");
+        when(knowledge.search(eq(ORG), any(), eq("Bearer token")))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(first, second), true, false)));
+        plannerChooses(support, "Reply about the refund");
+        String text = "Draft a reply using our refund policy";
+
+        List<ChatMessage> created = coordinator.handleMessage(ORG, conversation.getId(), text, null, "Bearer token");
+
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        assertThat(instruction).startsWith(GoalService.PASSAGES_HEADING);
+        assertThat(instruction).contains("[1] Refund policy, page 2\n<passage n=\"1\" source=\"Refund policy\">Refunds are issued within 5 business days.</passage>");
+        assertThat(instruction).contains("[2] Support handbook\n<passage n=\"2\" source=\"Support handbook\">Escalate refunds over $500 to a manager.</passage>");
+        assertThat(instruction).endsWith("Request:\n" + text);
+        ChatMessage routing = routingOf(created);
+        assertThat(routing.getDetail()).containsEntry("grounded", true);
+        assertThat(passagesOf(routing)).hasSize(2);
+        assertThat(passagesOf(routing).getFirst())
+                .containsEntry("documentTitle", "Refund policy")
+                .containsEntry("pageNumber", 2)
+                .containsEntry("sourceId", first.sourceId().toString())
+                .containsEntry("documentId", first.documentId().toString())
+                .containsEntry("chunkId", first.chunkId().toString());
+        assertThat(routing.getContent()).startsWith("Found 2 passages in Refund policy, Support handbook. ");
+        verify(knowledge).search(eq(ORG), eq(text), eq("Bearer token"));
+    }
+
+    @Test
+    @DisplayName("the recorded passages are at most six, in the order the agent reads them, with the same 900-character cut")
+    void recordedPassagesMatchWhatTheAgentRead() {
+        List<KnowledgeClient.Passage> found = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) {
+            found.add(passage("Document " + i, i, ("Sentence number " + i + " of the policy. ").repeat(80)));
+        }
+        when(knowledge.search(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(found, true, false)));
+        plannerChooses(support, "Reply about the policy");
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "Write a note based on the policy documents", null, "Bearer token");
+
+        List<Map<String, Object>> recorded = passagesOf(routingOf(created));
+        assertThat(recorded).hasSize(CoordinatorService.MAX_KNOWLEDGE_PASSAGES);
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        int previous = -1;
+        for (int i = 0; i < recorded.size(); i++) {
+            assertThat(recorded.get(i)).containsEntry("documentTitle", "Document " + (i + 1));
+            String content = (String) recorded.get(i).get("content");
+            assertThat(content).hasSizeLessThanOrEqualTo(CoordinatorService.MAX_KNOWLEDGE_PASSAGE_CHARS);
+            int at = instruction.indexOf("[" + (i + 1) + "] Document " + (i + 1) + ", page " + (i + 1) + "\n<passage n=\"" + (i + 1) + "\" source=\"Document " + (i + 1) + "\">" + content);
+            assertThat(at).isGreaterThan(previous);
+            previous = at;
+        }
+        assertThat(instruction).doesNotContain("[7] ");
+    }
+
+    @Test
+    @DisplayName("when nothing is grounded and the request names documents, the agent is told to say so")
+    void uncoveredRequestGetsTheNote() {
+        when(knowledge.search(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(), false, false)));
+        plannerChooses(support, "Reply about the refund");
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "Draft a reply using our refund policy", null, "Bearer token");
+
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        assertThat(instruction).startsWith(CoordinatorService.NO_COVERAGE_NOTE);
+        assertThat(instruction).endsWith("Request:\nDraft a reply using our refund policy");
+        assertThat(routingOf(created).getDetail()).doesNotContainKeys("passages", "grounded");
+    }
+
+    @Test
+    @DisplayName("an ungrounded search adds no note to a request that does not mention documents")
+    void ordinaryRequestGetsNoNote() {
+        when(knowledge.search(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(), false, false)));
+        plannerChooses(support, "Welcome email");
+
+        coordinator.handleMessage(ORG, conversation.getId(), "Draft a welcome email for Priya", null, "Bearer token");
+
+        assertThat(createdGoal().tasks().getFirst().instruction()).isEqualTo("Draft a welcome email for Priya");
+    }
+
+    @Test
+    @DisplayName("a search that cannot run leaves the work going ahead with no passages and no claim about documents")
+    void unavailableSearchDoesNotBlockWork() {
+        when(knowledge.search(eq(ORG), any(), any())).thenReturn(Optional.empty());
+        plannerChooses(support, "Reply about the refund");
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "Draft a reply using our refund policy", null, "Bearer token");
+
+        assertThat(createdGoal().tasks().getFirst().instruction()).isEqualTo("Draft a reply using our refund policy");
+        assertThat(routingOf(created).getDetail()).doesNotContainKeys("passages", "grounded");
+    }
+
+    @Test
+    @DisplayName("a mention is searched too, and its passages are attached to that agent's work")
+    void mentionedWorkGetsPassages() {
+        KnowledgeClient.Passage leave = passage("Leave policy", 4, "Parental leave is 18 weeks.");
+        when(knowledge.search(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(leave), true, false)));
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "@Research what is our parental leave policy?", null, "Bearer token");
+
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        assertThat(instruction).contains("[1] Leave policy, page 4\n<passage n=\"1\" source=\"Leave policy\">Parental leave is 18 weeks.</passage>");
+        assertThat(instruction).endsWith("Request:\n@Research what is our parental leave policy?");
+        assertThat(passagesOf(routingOf(created))).hasSize(1);
+        // The search is for what the person asked, not for the addressing.
+        verify(knowledge).search(eq(ORG), eq("what is our parental leave policy?"), eq("Bearer token"));
+    }
+
+    @Test
+    @DisplayName("an agent chosen from the picker is searched for as well")
+    void explicitAgentWorkGetsPassages() {
+        KnowledgeClient.Passage leave = passage("Leave policy", 4, "Parental leave is 18 weeks.");
+        when(knowledge.search(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(leave), true, false)));
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "Summarise our parental leave policy", List.of(research.getId()), "Bearer token");
+
+        assertThat(passagesOf(routingOf(created))).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a schedule is not searched: nobody is present to read the answer when it runs")
+    void scheduleIsNotSearched() {
+        when(schedulePreviewer.tryParse(any(), any(), any()))
+                .thenReturn(Optional.of(new ParsedSchedule("recurring", "0 0 9 * * *", null, "every day at 9am")));
+
+        coordinator.handleMessage(ORG, conversation.getId(), "Every day at 9am summarise the tickets", null, "Bearer token");
+
+        verify(knowledge, never()).search(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a question about documents with an agent to hand is searched once, not twice")
+    void documentQuestionIsSearchedOnce() {
+        KnowledgeClient.Passage leave = passage("Leave policy", 4, "Parental leave is 18 weeks.");
+        when(knowledge.search(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(leave), true, false)));
+        Agent general = fallbackAgent();
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, general));
+        when(generalEmployee.activeIn(List.of(research, support, general))).thenReturn(Optional.of(general));
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "What does our leave policy say about parental leave?", null, "Bearer token");
+
+        verify(knowledge, org.mockito.Mockito.times(1)).search(any(), any(), any());
+        assertThat(passagesOf(routingOf(created))).hasSize(1);
+        assertThat(routingOf(created).getContent()).startsWith("Found 1 passage in Leave policy. ");
+    }
+
+    @Test
+    @DisplayName("the passages card records which source each passage came from, and whether the search was degraded")
+    void documentsCardCarriesSourceAndDegraded() {
+        KnowledgeClient.Passage leave = passage("Leave policy", 4, "Parental leave is 18 weeks.");
+        when(knowledge.search(eq(ORG), any(), any()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(leave), true, true)));
+        RequestContext.setActor(Actor.user(requesterId.toString(), ORG.toString(), "role", Set.of("chat:use"), 0L));
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "What is our leave policy?", null, "Bearer token");
+
+        ChatMessage documents = created.get(1);
+        assertThat(documents.getKind()).isEqualTo("documents");
+        assertThat(documents.getDetail()).containsEntry("degraded", true);
+        assertThat(passagesOf(documents).getFirst()).containsEntry("sourceId", leave.sourceId().toString());
+    }
+
+    @Test
+    @DisplayName("rerouting keeps the passages the first routing gave the agent, and records them again")
+    void rerouteCarriesThePassages() {
+        Map<String, Object> stored = new java.util.LinkedHashMap<>();
+        stored.put("chunkId", UUID.randomUUID().toString());
+        stored.put("documentId", UUID.randomUUID().toString());
+        stored.put("sourceId", UUID.randomUUID().toString());
+        stored.put("documentTitle", "Refund policy");
+        stored.put("pageNumber", 2);
+        stored.put("content", "Refunds are issued within 5 business days.");
+        Map<String, Object> extra = new java.util.LinkedHashMap<>(stored);
+        extra.put("documentTitle", "Support handbook");
+        extra.put("pageNumber", null);
+        ChatMessage routingMessage = routingMessageFor(
+                null, Map.of("requestText", "Draft a reply using our refund policy", "passages", List.of(stored, extra)));
+        when(messages.findByIdAndConversationId(routingMessage.getId(), conversation.getId()))
+                .thenReturn(Optional.of(routingMessage));
+
+        List<ChatMessage> created =
+                coordinator.reroute(ORG, conversation.getId(), routingMessage.getId(), support.getId());
+
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        assertThat(instruction).startsWith(GoalService.PASSAGES_HEADING);
+        assertThat(instruction).contains("[1] Refund policy, page 2\n<passage n=\"1\" source=\"Refund policy\">Refunds are issued within 5 business days.</passage>");
+        assertThat(instruction).contains("[2] Support handbook\n<passage n=\"2\"");
+        assertThat(instruction).endsWith("Request:\nDraft a reply using our refund policy");
+        ChatMessage routing = routingOf(created);
+        assertThat(routing.getDetail()).containsEntry("grounded", true);
+        assertThat(passagesOf(routing)).hasSize(2);
+        assertThat(passagesOf(routing).getFirst()).containsEntry("sourceId", stored.get("sourceId"));
+    }
+
+    @Test
+    @DisplayName("rerouting gives the new agent the same thread, without the request repeated as an earlier turn")
+    void rerouteKeepsTheThreadWithoutDuplicatingTheRequest() {
+        ChatMessage earlierReply = ChatMessage.of(
+                ORG, conversation.getId(), 0, "agent", null, research.getId(), "answer", "The draft email.\n\nThanks", Map.of(), null);
+        ChatMessage request = ChatMessage.of(
+                ORG, conversation.getId(), 1, "user", requesterId, null, "text", "now send it to Slack", Map.of(), null);
+        ChatMessage routingMessage =
+                routingMessageFor(null, Map.of("requestText", "now send it to Slack"));
+        when(messages.findByIdAndConversationId(routingMessage.getId(), conversation.getId()))
+                .thenReturn(Optional.of(routingMessage));
+        when(messages.findEarlierTurns(eq(conversation.getId()), anyInt(), any()))
+                .thenReturn(new ArrayList<>(List.of(request, earlierReply)));
+
+        coordinator.reroute(ORG, conversation.getId(), routingMessage.getId(), support.getId());
+
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        assertThat(instruction).contains("Research's last reply (verbatim):\nThe draft email.\n\nThanks\n");
+        assertThat(instruction).doesNotContain("The requester: now send it to Slack");
+        assertThat(instruction).endsWith("\nRequest:\nnow send it to Slack");
+    }
+
+    @Test
+    @DisplayName("the numbered block the coordinator writes is the one a later step of a chain reads its passage titles from")
+    void passageBlockRoundTripsToTheChain() {
+        List<Map<String, Object>> passages = List.of(
+                Map.<String, Object>of("documentTitle", "Refund policy", "pageNumber", 2, "content", "Five business days."),
+                Map.<String, Object>of("documentTitle", "Support handbook", "content", "Escalate over $500."));
+        ChatMessage turn = ChatMessage.of(
+                ORG, conversation.getId(), 0, "user", requesterId, null, "text", "earlier", Map.of(), null);
+        CoordinatorService.Background background = new CoordinatorService.Background(
+                ThreadContext.of(List.of(turn), Map.of(), Map.of(), requesterId), passages, false);
+
+        String instruction = CoordinatorService.withPreamble(
+                background, research.getId(), GoalService.chainStepInstruction("the ask", "research it"));
+
+        assertThat(GoalService.passageTitles(instruction))
+                .containsExactly("[1] Refund policy, page 2", "[2] Support handbook");
     }
 }

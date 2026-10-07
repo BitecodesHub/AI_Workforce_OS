@@ -1,6 +1,7 @@
-import type { RefObject } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, ConfirmDialog, IconButton } from '../ui'
+import { useCopyText } from '../../lib/clipboard'
 import { modLabel } from '../../lib/hotkeys'
 import { usePersistentState } from '../../lib/persist'
 import {
@@ -13,9 +14,10 @@ import {
 import type { Conversation, ConversationScope } from '../../lib/queries'
 import { useToast } from '../../lib/toast'
 import { useNow } from '../../lib/useNow'
+import { SidebarSkeleton } from './ChatSkeletons'
 import { ConversationRow } from './ConversationRow'
 import { groupConversations, nextAfterRemoval } from './conversationGroups'
-import { useRovingList } from './useRovingList'
+import { nextRovingId, useRovingList } from './useRovingList'
 
 /*
  * The conversation sidebar (B1.3): a collapsible panel with search, a Mine/Everyone scope, the
@@ -50,6 +52,23 @@ function NeedsYouIcon() {
   )
 }
 
+function ExpandIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M12 3v10M6 6l2.5 2L6 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ArchiveIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="3.2" rx="1" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M3.2 6.2V12a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V6.2M6.5 9h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function CollapseIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -74,13 +93,17 @@ export function ChatSidebar({
   onExpand: () => void
   onCollapse: () => void
   selectedId: string | null
-  onSelect: (id: string) => void
+  /** Opens a conversation; `messageId` is a search hit's matching message, to scroll to. */
+  onSelect: (id: string, messageId?: string) => void
   onNew: () => void
   searchRef: RefObject<HTMLInputElement | null>
   focusSection: 'search' | 'needs-you' | null
 }) {
   const now = useNow(60_000)
+  const searchShortcut = modLabel() === 'Cmd' ? 'Cmd K' : 'Ctrl K'
+  const newShortcut = modLabel() === 'Cmd' ? 'Cmd Shift O' : 'Ctrl Shift O'
   const toast = useToast()
+  const copy = useCopyText()
   const needsYouRef = useRef<HTMLLIElement | null>(null)
 
   const [scope, setScope] = usePersistentState<ConversationScope>(
@@ -130,6 +153,32 @@ export function ChatSidebar({
   const groups = useMemo(() => groupConversations(pinned, needsYou, rows, new Date(now)), [pinned, needsYou, rows, now])
   const allIds = useMemo(() => groups.flatMap((group) => group.conversations.map((c) => c.id)), [groups])
   const roving = useRovingList(allIds)
+  const rowRefs = useRef(new Map<string, HTMLAnchorElement>())
+
+  // Up/Down (and Home/End) on a row move real focus to the next row, scrolled into view inside
+  // the list; useRovingList only tracks which row is the Tab stop.
+  function navigateRows(event: ReactKeyboardEvent) {
+    const key = event.key
+    const isNavKey = key === 'ArrowUp' || key === 'ArrowDown' || key === 'Home' || key === 'End'
+    const next = isNavKey && event.target === event.currentTarget ? nextRovingId(allIds, roving.activeId, key) : null
+    roving.onKeyDown(event)
+    if (!next) return
+    const row = rowRefs.current.get(next)
+    row?.focus()
+    row?.scrollIntoView?.({ block: 'nearest' })
+  }
+
+  // The open conversation is the list's Tab stop and is kept in view, including once the list
+  // first loads or a new page arrives.
+  const selectedInList = selectedId !== null && allIds.includes(selectedId)
+  const { setActiveId } = roving
+  useEffect(() => {
+    if (!selectedInList || !selectedId) return
+    setActiveId(selectedId)
+    rowRefs.current.get(selectedId)?.scrollIntoView?.({ block: 'nearest' })
+    // setActiveId is recreated each render; the selection alone decides when this runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedInList])
 
   const hasAnyRows = pinned.length > 0 || needsYou.length > 0 || rows.length > 0
 
@@ -170,7 +219,7 @@ export function ChatSidebar({
     return (
       <nav className="chat-rail" aria-label="Conversations">
         <IconButton label="Show conversations" aria-expanded={false} aria-controls="chat-sidebar-panel" onClick={onExpand}>
-          <CollapseIcon />
+          <ExpandIcon />
         </IconButton>
         <IconButton label="New conversation" onClick={onNew}>
           <NewConversationIcon />
@@ -179,6 +228,8 @@ export function ChatSidebar({
           label="Search conversations"
           onClick={() => {
             onExpand()
+            // The panel (and its search field) renders on the next commit.
+            window.setTimeout(() => searchRef.current?.focus(), 0)
           }}
         >
           <SearchIcon />
@@ -199,29 +250,53 @@ export function ChatSidebar({
 
   return (
     <div className="chat-sidebar" id="chat-sidebar-panel" data-variant={variant}>
-      <div className="chat-sidebar-header">
-        <Button variant="outline" className="chat-sidebar-new" onClick={onNew} icon={<NewConversationIcon />}>
-          New conversation
-        </Button>
-        {variant !== 'sheet' && (
-          <IconButton label="Hide conversations" aria-expanded={true} aria-controls="chat-sidebar-panel" onClick={onCollapse}>
-            <CollapseIcon />
-          </IconButton>
-        )}
+      <div className="chat-sidebar-scope" role="group" aria-label="Which conversations to show">
+        <div className="chat-segmented">
+          <button
+            type="button"
+            className="chat-scope-button"
+            aria-pressed={scope === 'mine'}
+            onClick={() => setScope('mine')}
+          >
+            Mine
+          </button>
+          <button
+            type="button"
+            className="chat-scope-button"
+            aria-pressed={scope === 'all'}
+            onClick={() => setScope('all')}
+          >
+            Everyone
+          </button>
+        </div>
+        <button
+          type="button"
+          className="chat-sidebar-archived-link"
+          aria-pressed={scope === 'archived'}
+          title={scope === 'archived' ? 'Back to your conversations' : 'Show archived conversations'}
+          onClick={() => setScope(scope === 'archived' ? 'mine' : 'archived')}
+        >
+          <ArchiveIcon />
+          Archived
+        </button>
       </div>
 
-      <div className="chat-sidebar-search">
-        <label htmlFor="chat-sidebar-search-input" className="visually-hidden">
-          Search conversations
-        </label>
+      {/* One row: search fills it, then New conversation and Hide as compact icon buttons, all
+          one height. The shortcuts live in the tooltips and aria-keyshortcuts, not on screen. */}
+      <div className="chat-sidebar-header">
         <div className="chat-sidebar-search-field">
+          <label htmlFor="chat-sidebar-search-input" className="visually-hidden">
+            Search conversations
+          </label>
           <SearchIcon />
           <input
             id="chat-sidebar-search-input"
             ref={searchRef}
-            className="input"
+            className="input chat-sidebar-search-input"
             type="search"
             placeholder="Search"
+            title={`Search conversations (${searchShortcut})`}
+            aria-keyshortcuts={modLabel() === 'Cmd' ? 'Meta+K' : 'Control+K'}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -231,44 +306,26 @@ export function ChatSidebar({
               }
             }}
           />
-          <kbd className="kbd chat-sidebar-search-kbd">{modLabel() === 'Cmd' ? 'Cmd K' : 'Ctrl K'}</kbd>
         </div>
-      </div>
-
-      <div className="chat-sidebar-scope row" role="group" aria-label="Which conversations to show">
-        <button
-          type="button"
-          className="chat-scope-button"
-          aria-pressed={scope === 'mine'}
-          onClick={() => setScope('mine')}
+        <IconButton
+          label="New conversation"
+          title={`New conversation (${newShortcut})`}
+          aria-keyshortcuts={modLabel() === 'Cmd' ? 'Meta+Shift+O' : 'Control+Shift+O'}
+          className="chat-sidebar-new"
+          onClick={onNew}
         >
-          Mine
-        </button>
-        <button
-          type="button"
-          className="chat-scope-button"
-          aria-pressed={scope === 'all'}
-          onClick={() => setScope('all')}
-        >
-          Everyone
-        </button>
-        <button
-          type="button"
-          className="link chat-sidebar-archived-link"
-          onClick={() => setScope(scope === 'archived' ? 'mine' : 'archived')}
-        >
-          {scope === 'archived' ? 'Back to conversations' : 'Archived'}
-        </button>
+          <NewConversationIcon />
+        </IconButton>
+        {variant !== 'sheet' && (
+          <IconButton label="Hide conversations" aria-expanded={true} aria-controls="chat-sidebar-panel" onClick={onCollapse}>
+            <CollapseIcon />
+          </IconButton>
+        )}
       </div>
 
       <div className="chat-sidebar-list">
         {list.isLoading ? (
-          <div className="stack" style={{ gap: 'var(--space-3)', padding: 'var(--space-4)' }} role="status" aria-busy="true">
-            <span className="visually-hidden">Loading conversations</span>
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="skeleton" aria-hidden="true" style={{ height: 52 }} />
-            ))}
-          </div>
+          <SidebarSkeleton />
         ) : !hasAnyRows ? (
           <p className="caption muted chat-sidebar-empty">
             {debounced ? (
@@ -304,10 +361,8 @@ export function ChatSidebar({
                     aria-expanded={open}
                     onClick={() => toggleGroup(group.key)}
                   >
-                    <span>
-                      {group.label}
-                      {!open && ` · ${group.conversations.length}`}
-                    </span>
+                    <span className="chat-group-label">{group.label}</span>
+                    {!open && <span className="chat-group-count">{group.conversations.length}</span>}
                   </button>
                   {open && (
                     <ul className="chat-row-list">
@@ -316,14 +371,18 @@ export function ChatSidebar({
                           key={conversation.id}
                           conversation={conversation}
                           current={conversation.id === selectedId}
+                          needsYou={group.key === 'needs-you'}
                           tabbable={roving.activeId === conversation.id}
                           now={now}
                           highlight={debounced}
-                          rowRef={() => {}}
-                          onNavigate={roving.onKeyDown}
-                          onSelect={() => {
+                          rowRef={(el) => {
+                            if (el) rowRefs.current.set(conversation.id, el)
+                            else rowRefs.current.delete(conversation.id)
+                          }}
+                          onNavigate={navigateRows}
+                          onSelect={(messageId) => {
                             roving.setActiveId(conversation.id)
-                            onSelect(conversation.id)
+                            onSelect(conversation.id, messageId)
                           }}
                           onRename={async (title) => {
                             await rename.mutateAsync({ id: conversation.id, title })
@@ -331,9 +390,7 @@ export function ChatSidebar({
                           }}
                           onTogglePin={() => void pin.mutateAsync({ id: conversation.id, pinned: !conversation.pinned })}
                           onToggleArchive={() => void handleArchive(conversation)}
-                          onCopyLink={() =>
-                            void navigator.clipboard?.writeText(`${window.location.origin}/chat?c=${conversation.id}`)
-                          }
+                          onCopyLink={() => void copy(`${window.location.origin}/chat?c=${conversation.id}`, 'Link copied')}
                           onDelete={() => {
                             setDeleteError(null)
                             setDeleteTarget(conversation)

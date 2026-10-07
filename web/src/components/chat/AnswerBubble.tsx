@@ -1,15 +1,37 @@
-import { CopyButton } from '../ui/CopyButton'
+import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
+import { Collapsible } from '../ui/Collapsible'
 import { Markdown } from '../ui/Markdown'
 import { MenuButton } from '../ui/Menu'
 import { IconButton, Tag } from '../ui'
-import type { Agent, BoardGoal, ChatMessage } from '../../lib/queries'
+import { useCopyText } from '../../lib/clipboard'
+import type { Agent, BoardGoal, ChatMessage, ConversationDetail } from '../../lib/queries'
 import type { useSpeaker } from '../../lib/voice'
 import { AgentAvatar } from '../ui/AgentAvatar'
+import { RatingButtons, RatingReason, useAnswerRating } from '../analytics/AnswerRating'
+import { PassageList, passageItemId } from './PassageList'
+import { sourcesForAnswer } from './chatModel'
+
+/**
+ * The thread the answer sits in, as the conversation query last stored it, for a caller that does
+ * not hand it over. Read once per render, never subscribed to: the routing message that says which
+ * passages the agent was given is written before its answer arrives and does not change.
+ */
+function storedThread(client: QueryClient, conversationId: string | null): readonly ChatMessage[] {
+  if (!conversationId) return []
+  return client.getQueryData<ConversationDetail>(['conversations', conversationId])?.messages ?? []
+}
 
 /**
  * An agent's reply: its name, whether a sandbox model stood in, the answer itself (as safe
- * Markdown) and its action bar - copy, read aloud, the full trace, and a menu to send the same
- * request elsewhere or ask again.
+ * Markdown) and its action bar - copy, read aloud, a thumbs up or down (with an optional reason, for
+ * the managers who read how agents are doing), the full trace, and a menu to send the same request
+ * elsewhere or ask again.
+ *
+ * When the agent was given passages from the workspace's documents, they sit under the answer as a
+ * folded "Sources" list, and a [2] in the answer opens source 2. Only the goal's first step reads
+ * the passages, so only its answers show them.
  */
 export function AnswerBubble({
   message,
@@ -17,6 +39,8 @@ export function AnswerBubble({
   speaker,
   grouped,
   latest,
+  goal,
+  messages,
   agentsForReroute,
   conversationId,
   onSendTo,
@@ -28,11 +52,31 @@ export function AnswerBubble({
   grouped: boolean
   latest: boolean
   goal?: BoardGoal
+  /** The thread, to find the routing message of this answer's goal; read from the query cache when left out. */
+  messages?: readonly ChatMessage[] | undefined
   agentsForReroute: Agent[]
   conversationId: string | null
   onSendTo: (agentId: string) => void
   onAskAgain: () => void
 }) {
+  const copy = useCopyText()
+  const client = useQueryClient()
+  const thread = messages ?? storedThread(client, conversationId)
+  const sources = useMemo(() => sourcesForAnswer(message, thread, goal), [message, thread, goal])
+  const [sourcesOpen, setSourcesOpen] = useState(false)
+  // Which source a click on [n] asked for. The count changes on every click, so asking for the
+  // same one twice moves focus there twice even after the person has tabbed away.
+  const [cited, setCited] = useState<{ index: number; count: number } | null>(null)
+  // After the list has opened (the folded body shows in the commit that sets it), move focus to the
+  // passage: a person who followed a citation lands on what it cites, and a screen reader says so.
+  useEffect(() => {
+    if (cited) document.getElementById(passageItemId(`answer-${message.id}`, cited.index))?.focus()
+  }, [cited, message.id])
+  const openSource = (index: number) => {
+    setSourcesOpen(true)
+    setCited((previous) => ({ index, count: (previous?.count ?? 0) + 1 }))
+  }
+  const rating = useAnswerRating(conversationId, message.id)
   const runId = message.detail.runId
   const name = agent?.name ?? 'An agent'
   const speaking = speaker.speakingKey === message.id
@@ -40,18 +84,36 @@ export function AnswerBubble({
 
   return (
     <div className="chat-bubble-row chat-bubble-row-agent">
-      {!grouped && <AgentAvatar name={name} category={agent?.category} fallback={agent?.fallback ?? false} />}
+      {!grouped && <AgentAvatar name={name} category={agent?.category} fallback={agent?.fallback ?? false} quietInitials />}
       <div className={`chat-answer${grouped ? ' chat-bubble-grouped' : ''}`} data-latest={latest || undefined}>
         {!grouped && (
           <div className="row chat-answer-head" style={{ gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
             <span className="chat-bubble-agent-name">{name}</span>
-            <Tag tone="neutral">AI agent</Tag>
+            <span className="chat-answer-label caption">AI agent</span>
             {message.detail.sandbox === true && <Tag tone="neutral">Offline sandbox model</Tag>}
           </div>
         )}
-        <Markdown text={message.content} />
-        <div className="row chat-actions" style={{ gap: 'var(--space-3)' }}>
-          <CopyButton text={message.content} label="Copy" />
+        <Markdown
+          text={message.content}
+          citations={sources.length > 0 ? { count: sources.length, onOpen: openSource } : undefined}
+        />
+        {sources.length > 0 && (
+          <div className="chat-sources" style={{ marginTop: 'var(--space-3)' }}>
+            <Collapsible title={`Sources (${sources.length})`} open={sourcesOpen} onToggle={setSourcesOpen} headingLevel="p">
+              <p className="caption muted" style={{ margin: 'var(--space-1) 0 var(--space-3)' }}>
+                Sources given to the agent
+              </p>
+              <PassageList passages={sources} idPrefix={`answer-${message.id}`} activeIndex={cited?.index ?? null} compact />
+            </Collapsible>
+          </div>
+        )}
+        <div className="row chat-actions chat-answer-actions" style={{ gap: 'var(--space-3)' }}>
+          <IconButton label="Copy answer" onClick={() => void copy(message.content, 'Answer copied')}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M3.5 10.5V3.5a1 1 0 0 1 1-1h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+          </IconButton>
           {speaker.provider !== 'none' && (
             <IconButton
               label={speaking ? 'Stop reading aloud' : 'Read aloud'}
@@ -64,6 +126,7 @@ export function AnswerBubble({
               </svg>
             </IconButton>
           )}
+          <RatingButtons state={rating} />
           {runId && (
             <a className="link caption" href={`/runs/${runId}`}>
               Open full trace
@@ -91,11 +154,12 @@ export function AnswerBubble({
                 id: 'copy-link',
                 label: 'Copy link to this message',
                 onSelect: () =>
-                  void navigator.clipboard?.writeText(`${window.location.origin}/chat?c=${conversationId ?? ''}#m-${message.id}`),
+                  void copy(`${window.location.origin}/chat?c=${conversationId ?? ''}#m-${message.id}`, 'Link copied'),
               },
             ]}
           />
         </div>
+        <RatingReason state={rating} />
       </div>
     </div>
   )

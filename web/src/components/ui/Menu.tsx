@@ -1,5 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /*
  * A dropdown of actions, opened from an icon, a link or a button.
@@ -14,6 +15,8 @@ export type MenuEntry =
       id: string
       label: string
       note?: string
+      /** A leading glyph (an agent's avatar, say), drawn before the label and note. */
+      icon?: ReactNode
       danger?: boolean
       disabled?: boolean
       /** Present (even `false`) turns the item into a menuitemcheckbox, or a menuitemradio when `group` is also set. */
@@ -31,6 +34,30 @@ const isActionEntry = (entry: MenuEntry): entry is ActionEntry => 'onSelect' in 
 
 const MENU_ITEM_SELECTOR = '[role^="menuitem"]:not(:disabled)'
 
+/** The gap between a floating panel and its trigger, and the least room kept to the window's edge. */
+const FLOAT_GAP = 4
+const VIEWPORT_MARGIN = 8
+
+/**
+ * Where a floating (portalled) panel sits: below its trigger, or above it when there is no room
+ * below, aligned to the trigger's start or end edge and clamped inside the window.
+ */
+export function floatingMenuPosition(
+  trigger: { top: number; bottom: number; left: number; right: number },
+  panel: { width: number; height: number },
+  viewport: { width: number; height: number },
+  align: 'start' | 'end',
+): { top: number; left: number; placement: 'below' | 'above' } {
+  const roomBelow = viewport.height - trigger.bottom - FLOAT_GAP - VIEWPORT_MARGIN
+  const roomAbove = trigger.top - FLOAT_GAP - VIEWPORT_MARGIN
+  const placement = panel.height <= roomBelow || roomBelow >= roomAbove ? 'below' : 'above'
+  let top = placement === 'below' ? trigger.bottom + FLOAT_GAP : trigger.top - FLOAT_GAP - panel.height
+  top = Math.max(VIEWPORT_MARGIN, Math.min(top, viewport.height - VIEWPORT_MARGIN - panel.height))
+  let left = align === 'end' ? trigger.right - panel.width : trigger.left
+  left = Math.max(VIEWPORT_MARGIN, Math.min(left, viewport.width - VIEWPORT_MARGIN - panel.width))
+  return { top, left, placement }
+}
+
 function CaretIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
@@ -45,13 +72,25 @@ function MenuItemRow({ entry, onSelect }: { entry: ActionEntry; onSelect: (entry
     <button
       type="button"
       role={role}
-      className={`menu-item${entry.danger ? ' menu-item-danger' : ''}`}
+      className={`menu-item${entry.danger ? ' menu-item-danger' : ''}${entry.icon ? ' menu-item-with-icon' : ''}`}
       disabled={entry.disabled}
       aria-checked={entry.checked === undefined ? undefined : entry.checked}
       onClick={() => onSelect(entry)}
     >
-      <span className="menu-item-label">{entry.label}</span>
-      {entry.note && <span className="menu-item-note">{entry.note}</span>}
+      {entry.icon ? (
+        <>
+          <span className="menu-item-icon">{entry.icon}</span>
+          <span className="menu-item-text">
+            <span className="menu-item-label">{entry.label}</span>
+            {entry.note && <span className="menu-item-note">{entry.note}</span>}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="menu-item-label">{entry.label}</span>
+          {entry.note && <span className="menu-item-note">{entry.note}</span>}
+        </>
+      )}
     </button>
   )
 }
@@ -96,6 +135,13 @@ function MenuItems({ items, onSelect }: { items: MenuEntry[]; onSelect: (entry: 
   return <>{nodes}</>
 }
 
+/** Where a floating panel is mounted: inside an open modal dialog (the phone's conversation sheet)
+    when the trigger is in one, since a modal dialog sits in the top layer above everything else in
+    the document, and on the document body otherwise. */
+function portalHost(trigger: HTMLElement | null): HTMLElement {
+  return trigger?.closest('dialog') ?? document.body
+}
+
 export function MenuButton({
   label,
   items,
@@ -106,6 +152,7 @@ export function MenuButton({
   className,
   triggerTabIndex,
   openRef,
+  portal = false,
 }: {
   label: string
   items: MenuEntry[]
@@ -121,12 +168,21 @@ export function MenuButton({
   triggerTabIndex?: 0 | -1
   /** Lets a caller open this menu without a click, for that same shortcut. */
   openRef?: RefObject<(() => void) | null>
+  /** Renders the panel in a layer of its own, fixed beside the trigger, so a scrolling or clipped
+      ancestor (the chat sidebar's list) can neither hide it nor paint over it. */
+  portal?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const panelId = useId()
+  const [host, setHost] = useState<HTMLElement | null>(null)
+
+  const openMenu = () => {
+    if (portal) setHost(portalHost(triggerRef.current))
+    setOpen(true)
+  }
 
   const close = (focusTrigger: boolean) => {
     setOpen(false)
@@ -135,10 +191,12 @@ export function MenuButton({
 
   useEffect(() => {
     if (!openRef) return
-    openRef.current = () => setOpen(true)
+    openRef.current = openMenu
     return () => {
       openRef.current = null
     }
+    // openMenu reads only refs and the `portal` prop, which a caller does not change while open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRef])
 
   useEffect(() => {
@@ -152,12 +210,44 @@ export function MenuButton({
     // elsewhere on the page - `pointerdown` fires before any of that, `click` fires after (D17).
     // Closes without moving focus to the trigger: the press already moved it somewhere else.
     const onPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && wrapperRef.current?.contains(event.target)) return
+      if (
+        event.target instanceof Node &&
+        (wrapperRef.current?.contains(event.target) || panelRef.current?.contains(event.target))
+      )
+        return
       setOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [open])
+
+  // A floating panel is placed after it renders, once its own size is known, and follows its
+  // trigger while anything around it scrolls or the window is resized.
+  useLayoutEffect(() => {
+    if (!open || !portal) return
+    const place = () => {
+      const trigger = triggerRef.current
+      const panel = panelRef.current
+      if (!trigger || !panel) return
+      const rect = trigger.getBoundingClientRect()
+      const position = floatingMenuPosition(
+        rect,
+        { width: panel.offsetWidth, height: panel.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+        align,
+      )
+      panel.style.top = `${position.top}px`
+      panel.style.left = `${position.left}px`
+      panel.style.transformOrigin = `${position.placement === 'below' ? 'top' : 'bottom'} ${align === 'end' ? 'right' : 'left'}`
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open, portal, align])
 
   const moveFocus = (from: HTMLElement, step: 1 | -1 | 'home' | 'end') => {
     const enabled = Array.from(panelRef.current?.querySelectorAll<HTMLButtonElement>(MENU_ITEM_SELECTOR) ?? [])
@@ -182,7 +272,12 @@ export function MenuButton({
       return
     }
     if (event.key === 'Tab') {
-      close(false)
+      // A floating panel sits at the end of the document, so Tab from it would land nowhere near
+      // the trigger: close and hand focus back to the trigger instead.
+      if (portal) {
+        event.preventDefault()
+        close(true)
+      } else close(false)
       return
     }
     if (!(event.target instanceof HTMLElement)) return
@@ -214,8 +309,28 @@ export function MenuButton({
     'aria-expanded': open,
     'aria-controls': panelId,
     tabIndex: triggerTabIndex,
-    onClick: () => setOpen((current) => !current),
+    onClick: () => (open ? setOpen(false) : openMenu()),
   }
+
+  const panel = (
+    <div
+      id={panelId}
+      className={`menu-panel${portal ? ' menu-panel-floating' : ''}`}
+      role="menu"
+      ref={panelRef}
+      style={
+        portal
+          ? { position: 'fixed', right: 'auto' }
+          : align === 'start'
+            ? { left: 0, right: 'auto' }
+            : undefined
+      }
+      aria-label={label}
+      onKeyDown={onPanelKeyDown}
+    >
+      <MenuItems items={items} onSelect={selectEntry} />
+    </div>
+  )
 
   return (
     <div className={`more-menu ${className ?? ''}`.trim()} ref={wrapperRef}>
@@ -233,19 +348,7 @@ export function MenuButton({
           <CaretIcon />
         </button>
       )}
-      {open && (
-        <div
-          id={panelId}
-          className="menu-panel"
-          role="menu"
-          ref={panelRef}
-          style={align === 'start' ? { left: 0, right: 'auto' } : undefined}
-          aria-label={label}
-          onKeyDown={onPanelKeyDown}
-        >
-          <MenuItems items={items} onSelect={selectEntry} />
-        </div>
-      )}
+      {open && (portal ? createPortal(panel, host ?? document.body) : panel)}
     </div>
   )
 }

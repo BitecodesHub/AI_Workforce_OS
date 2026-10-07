@@ -4,6 +4,7 @@ import { revealStyle } from '../../../hooks/useReveal'
 import { Icon } from '../shared/Icon'
 import type { IconName } from '../shared/Icon'
 import { CTA } from '../shared/landingFacts'
+import { useDemoCta } from '../shared/useDemoCta'
 import { useInPageLink } from '../shared/useInPageLink'
 import { HeroConsole } from './HeroConsole'
 
@@ -15,17 +16,21 @@ import { HeroConsole } from './HeroConsole'
  * a person's yes. Four plain benefits sit under the offer, each a link to the part of the page
  * that shows it. The console beneath is a simulation of the product doing that work, labelled as
  * one. The copy rises in on load, one line after another, only when motion is on.
+ *
+ * The first button offers the demo accounts only where this site has them; otherwise it leads to
+ * the demos further down this page (see useDemoCta).
  */
 
 const BENEFITS: ReadonlyArray<{ icon: IconName; label: string; href: string }> = [
   { icon: 'gate', label: 'Asks before it sends', href: '#approval' },
   { icon: 'document', label: 'Shows its sources', href: '#cited' },
   { icon: 'lock', label: 'The right access for everyone', href: '#safety' },
-  { icon: 'check', label: 'A record of every action', href: '#safety' },
+  { icon: 'check', label: 'A record of every decision', href: '#safety' },
 ]
 
 export function Hero(): ReactElement {
   const inPage = useInPageLink()
+  const demo = useDemoCta()
 
   return (
     <section className="lp-hero" aria-labelledby="hero-title">
@@ -44,8 +49,8 @@ export function Hero(): ReactElement {
           </p>
 
           <div id="lp-hero-ctas" className="lp-hero-ctas" style={revealStyle(3)}>
-            <a className="button button-primary lp-button-lg lp-sheen" href={CTA.demo.href}>
-              {CTA.demo.label}
+            <a className="button button-primary lp-button-lg lp-sheen" href={demo.href} onClick={inPage}>
+              {demo.label}
               <Icon name="arrow-right" />
             </a>
             <a className="button button-outline lp-button-lg" href={CTA.create.href}>
@@ -55,7 +60,11 @@ export function Hero(): ReactElement {
 
           <p className="lp-hero-caption" style={revealStyle(4)}>
             <span className="lp-dot lp-dot-green" aria-hidden="true" />
-            <span>Try it with sample data. Nothing to install, and no technical skills needed.</span>
+            <span>
+              {demo.accounts
+                ? 'Try it with sample data. Nothing to install, and no technical skills needed.'
+                : 'Try it on this page with sample data. Nothing to install, and no technical skills needed.'}
+            </span>
           </p>
         </div>
 

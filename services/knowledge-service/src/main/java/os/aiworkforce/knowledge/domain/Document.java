@@ -18,6 +18,10 @@ import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
  * <p>{@code skipReason} exists so a document that cannot be indexed says why in words somebody can
  * act on. "Encrypted" and "no text layer" need completely different remedies, and a generic
  * failure sends a person looking in the wrong place.
+ *
+ * <p>{@code notice} is its non-blocking counterpart: something worth knowing about a document that
+ * was indexed, such as only the first part of a very long file being kept. It is never written to
+ * {@code skipReason}, because a skip reason means nothing of the document was indexed at all.
  */
 @Entity
 @Table(name = "documents")
@@ -56,6 +60,9 @@ public class Document extends OrgScopedEntity {
     @Column(name = "skip_reason", columnDefinition = "text")
     private String skipReason;
 
+    @Column(columnDefinition = "text")
+    private String notice;
+
     @Column(name = "indexed_at")
     private Instant indexedAt;
 
@@ -66,6 +73,14 @@ public class Document extends OrgScopedEntity {
     public void tombstone() {
         this.tombstonedAt = Instant.now();
         this.status = "tombstoned";
+    }
+
+    /**
+     * Makes the document citable again when a file is uploaded under its name. Without this, a
+     * re-upload would report "indexed" while retrieval, which skips tombstoned rows, never found it.
+     */
+    public void clearTombstone() {
+        this.tombstonedAt = null;
     }
 
     public boolean isIndexed() {
@@ -158,6 +173,14 @@ public class Document extends OrgScopedEntity {
 
     public void setSkipReason(String skipReason) {
         this.skipReason = skipReason;
+    }
+
+    public String getNotice() {
+        return notice;
+    }
+
+    public void setNotice(String notice) {
+        this.notice = notice;
     }
 
     public Instant getIndexedAt() {

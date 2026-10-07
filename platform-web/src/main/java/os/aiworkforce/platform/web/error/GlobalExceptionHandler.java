@@ -181,7 +181,15 @@ public class GlobalExceptionHandler {
 
     private void logDeliberate(ApiException e, HttpServletRequest request) {
         if (e.status() >= 500) {
-            log.error("{} on {} {}", e.code().wire(), request.getMethod(), request.getRequestURI(), e);
+            // The request identifier is the reference a person reads from the error screen, so it is
+            // in the message itself and not only in the log's MDC fields.
+            log.error(
+                    "{} on {} {} (requestId={})",
+                    e.code().wire(),
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    RequestContext.requestId(),
+                    e);
         } else if (e.status() == 403 || e.status() == 401) {
             // Security decisions are logged at info even when routine: an access-denied pattern
             // is the signal an operator looks for after an incident.

@@ -7,6 +7,9 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import os.aiworkforce.platform.web.persistence.BaseEntity;
 
 /**
@@ -52,6 +55,17 @@ public class Session extends BaseEntity {
 
     @Column(name = "user_agent")
     private String userAgent;
+
+    /**
+     * Where the sign-in or refresh came from, shown to the person in their session list.
+     *
+     * <p>Display only: it is taken from forwarding headers a client can influence, so nothing
+     * decides anything on it. The column is INET, so a value that is not an address literal is
+     * dropped before it gets here rather than failing the insert.
+     */
+    @Column(name = "ip_address")
+    @JdbcTypeCode(SqlTypes.INET)
+    private String ipAddress;
 
     @Column(name = "org_id")
     private UUID orgId;
@@ -137,6 +151,14 @@ public class Session extends BaseEntity {
 
     public void setUserAgent(String userAgent) {
         this.userAgent = userAgent;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public void setIpAddress(String ipAddress) {
+        this.ipAddress = ipAddress;
     }
 
     public UUID getOrgId() {

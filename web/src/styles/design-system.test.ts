@@ -45,14 +45,22 @@ describe('tokens', () => {
     }
   })
 
-  it('keeps radii to the two families the brief allows', () => {
-    const radii = [...TOKENS.matchAll(/--radius-[\w-]+:\s*(\d+)px/g)].map((match) => Number(match[1]))
-    expect(radii.length).toBeGreaterThan(5)
-    for (const radius of radii) {
-      const chrome = radius >= 15 && radius <= 22
-      const control = radius >= 4 && radius <= 12
-      const pill = radius === 999
-      expect(chrome || control || pill, `radius ${radius}px belongs to neither family`).toBe(true)
+  it('keeps radii to one scale, every other radius an alias onto it', () => {
+    const literal = [...TOKENS.matchAll(/--radius-([\w-]+):\s*(\d+)px/g)].map((match) => Number(match[2]))
+    expect(literal.sort((a, b) => a - b)).toEqual([6, 10, 16, 20, 999])
+    const aliases = [...TOKENS.matchAll(/--radius-([\w-]+):\s*([^;]+);/g)].filter((match) => !/^\d+px$/.test(match[2]!.trim()))
+    expect(aliases.length).toBeGreaterThan(5)
+    for (const alias of aliases) {
+      expect(alias[2]!.trim(), `--radius-${alias[1]} must alias the scale`).toMatch(/^var\(--radius-(sm|md|lg|xl|pill)\)$/)
+    }
+  })
+
+  it('defines the motion and depth tokens every transition and float draws from', () => {
+    for (const token of ['--duration-fast: 120ms', '--duration-base: 180ms', '--duration-slow: 260ms', '--ease-standard:']) {
+      expect(TOKENS).toContain(token)
+    }
+    for (const token of ['--shadow-sm:', '--shadow-md:', '--shadow-lg:', '--focus-outline:']) {
+      expect(TOKENS).toContain(token)
     }
   })
 
@@ -61,15 +69,44 @@ describe('tokens', () => {
       expect(TOKENS).toContain(`${step}px`)
     }
   })
+
+  it('sets everything in Inter, self-hosted, with mono drawing the same family', () => {
+    expect(TOKENS).toMatch(/--font-body:\s*'Inter Variable'/)
+    expect(TOKENS).toContain('--font-mono: var(--font-body);')
+    const main = readFileSync(join(SRC, 'main.tsx'), 'utf8')
+    expect(main).toContain("import '@fontsource-variable/inter")
+    // No font CDN, and nothing left of the typeface Inter replaced.
+    const index = readFileSync(join(SRC, '..', 'index.html'), 'utf8')
+    expect(index).not.toMatch(/fonts\.(googleapis|gstatic)\.com|apercu/i)
+    expect(TOKENS).not.toMatch(/Aper[cç]u/)
+  })
+
+  it('keeps every weight token at 600 or lighter', () => {
+    const weights = [...TOKENS.matchAll(/--weight-[\w-]+:\s*(\d+)/g)].map((m) => Number(m[1]))
+    expect(weights.length).toBeGreaterThanOrEqual(4)
+    for (const weight of weights) expect(weight, `weight ${weight} is heavier than the system allows`).toBeLessThanOrEqual(600)
+  })
+})
+
+describe('type weights', () => {
+  const STYLE_FILES = walk(join(SRC, 'styles'), ['.css']).map((file) => ({ file, source: readFileSync(file, 'utf8') }))
+
+  it('takes every font weight from a token, never a raw number or keyword', () => {
+    for (const { file, source } of STYLE_FILES) {
+      for (const m of source.matchAll(/font-weight:\s*([^;]+);/g)) {
+        expect(m[1]!.trim(), `${file} sets font-weight "${m[1]}"`).toMatch(/^var\(--weight-[a-z-]+\)$/)
+      }
+    }
+  })
 })
 
 describe('components', () => {
-  it('draws every border from --line', () => {
+  it('draws every border from --line (or --line-strong, for form controls)', () => {
     const borders = [...COMPONENTS.matchAll(/border(?:-\w+)?:\s*1px solid ([^;]+);/g)].map((m) => m[1]!.trim())
     expect(borders.length).toBeGreaterThan(5)
     for (const border of borders) {
       const allowed =
-        border.includes('var(--line)') ||
+        (border.includes('var(--line)') || border.includes('var(--line-strong)')) ||
         border.includes('rgba(210, 221, 238') ||
         border === 'transparent'
       expect(allowed, `border "${border}" is not --line`).toBe(true)
@@ -111,7 +148,8 @@ describe('screens', () => {
   })
 
   it('opens every screen with an eyebrow', () => {
-    const screens = TSX_FILES.filter((file) => file.includes('/routes/'))
+    // A test file beside its screen is not a screen; it need not mention an eyebrow to pass.
+    const screens = TSX_FILES.filter((file) => file.includes('/routes/') && !/\.test\.tsx$/.test(file))
     expect(screens.length).toBeGreaterThan(0)
     for (const file of screens) {
       const source = readFileSync(file, 'utf8')
@@ -165,7 +203,7 @@ describe('landing styles', () => {
     expect(borders.length).toBeGreaterThanOrEqual(6)
     for (const border of borders) {
       const allowed =
-        border.includes('var(--line)') ||
+        (border.includes('var(--line)') || border.includes('var(--line-strong)')) ||
         border.includes('rgba(210, 221, 238') ||
         border === 'transparent'
       expect(allowed, `border "${border}" is not --line`).toBe(true)
@@ -215,7 +253,7 @@ describe('polish styles', () => {
       for (const m of source.matchAll(/border(?:-\w+)?:\s*1px solid ([^;]+);/g)) {
         const border = m[1]!.trim()
         expect(
-          border.includes('var(--line)') || border.includes('rgba(210, 221, 238') || border === 'transparent',
+          (border.includes('var(--line)') || border.includes('var(--line-strong)')) || border.includes('rgba(210, 221, 238') || border === 'transparent',
           `${file} border "${border}" is not --line`,
         ).toBe(true)
       }

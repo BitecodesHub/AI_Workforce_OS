@@ -12,6 +12,9 @@ import type { TagTone } from '../../ui'
  *
  * The public page must never claim a role can do more, or less, than it can. Where the seeder and
  * another screen disagree, the seeder is the truth, because it is what a new workspace receives.
+ * A code is listed because it exists, but a plain-words claim needs a feature behind it: no
+ * screen or endpoint closes a workspace, so workspace:delete appears in the map and nowhere in
+ * the sentences.
  */
 
 export type RoleId = 'owner' | 'admin' | 'manager' | 'employee' | 'viewer'
@@ -129,7 +132,7 @@ export const ROLE_CODES: Record<RoleId, ReadonlySet<string>> = {
 
 /** Verbatim from PermissionSeeder. */
 export const ROLE_DESCRIPTION: Record<RoleId, string> = {
-  owner: 'Full control of the workspace, including billing and closure.',
+  owner: 'Full control of the workspace, and the only role that can add or remove owners.',
   admin: 'Manages people, agents, integrations and settings.',
   manager: 'Runs agents, assigns work and approves actions.',
   employee: 'Asks questions and hands routine work to agents.',
@@ -137,8 +140,8 @@ export const ROLE_DESCRIPTION: Record<RoleId, string> = {
 }
 
 export const ROLE_SUMMARY: Record<RoleId, string> = {
-  owner: 'Everything, including billing and closing the workspace.',
-  admin: 'Everything except closing the workspace.',
+  owner: 'Everything, and the only role that can add or remove owners.',
+  admin: 'Everything except adding, changing or removing owners.',
   manager: 'Runs agents, approves actions, cancels runs and tasks, and edits agents. Cannot change who may.',
   employee: 'Asks questions in chat and hands routine work to agents. Can see approvals, cannot decide them.',
   viewer: 'Reads dashboards and traces. Changes nothing.',
@@ -162,7 +165,6 @@ export const CAPABILITIES: ReadonlyArray<{ label: string; codes: readonly string
   { label: 'Approve or reject agent actions', codes: ['approval:decide'] },
   { label: 'Cancel runs and edit agents', codes: ['run:cancel', 'agent:update'] },
   { label: 'Change who may do what', codes: ['member:invite', 'role:update'] },
-  { label: 'Close the workspace', codes: ['workspace:delete'] },
 ]
 
 /**
@@ -176,7 +178,7 @@ export const CONSOLE_AREAS: ReadonlyArray<{ label: string; code: string | null }
   { label: 'Approvals', code: 'approval:read' },
   { label: 'Chat', code: 'chat:use' },
   { label: 'Knowledge', code: 'knowledge:read' },
-  { label: 'Integrations', code: 'integration:read' },
+  { label: 'Connectors', code: 'integration:read' },
   { label: 'Model routing', code: 'provider:read' },
   { label: 'Members', code: 'member:read' },
   { label: 'Audit log', code: 'audit:read' },

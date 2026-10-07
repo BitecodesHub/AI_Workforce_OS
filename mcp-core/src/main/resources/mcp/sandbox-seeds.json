@@ -1,0 +1,194 @@
+{
+  "gmail": {
+    "messages": [
+      {"id": "msg_1001", "from": "jordan.lee@example.com", "subject": "Application for the support coordinator role", "snippet": "Please find my resume attached. I have four years in community care and a current first aid certificate.", "receivedAt": "2026-10-02T09:14:00Z", "labels": ["INBOX", "UNREAD"]},
+      {"id": "msg_1002", "from": "accounts@northwind-supplies.example.com", "subject": "Invoice INV-2207 for September", "snippet": "Your invoice for September is attached. Payment is due on 16 October.", "receivedAt": "2026-10-01T16:40:00Z", "labels": ["INBOX"]},
+      {"id": "msg_1003", "from": "priya.shah@example.com", "subject": "Can we move Thursday's onboarding?", "snippet": "Something came up on Thursday morning. Could we do the afternoon instead?", "receivedAt": "2026-09-30T11:02:00Z", "labels": ["INBOX"]}
+    ]
+  },
+  "calendar": {
+    "events": [
+      {"id": "evt_2001", "title": "Weekly team stand-up", "start": "2026-10-05T09:00:00+10:00", "end": "2026-10-05T09:30:00+10:00", "attendees": ["team@example.com"]},
+      {"id": "evt_2002", "title": "Interview: support coordinator", "start": "2026-10-06T14:00:00+10:00", "end": "2026-10-06T14:45:00+10:00", "attendees": ["jordan.lee@example.com"]},
+      {"id": "evt_2003", "title": "Onboarding: Priya Shah", "start": "2026-10-08T10:00:00+10:00", "end": "2026-10-08T12:00:00+10:00", "attendees": ["priya.shah@example.com"]}
+    ]
+  },
+  "slack": {
+    "channels": [
+      {"id": "C01GENERAL", "name": "general", "topic": "Company-wide announcements", "members": 42},
+      {"id": "C02SUPPORT", "name": "support", "topic": "Customer issues that need a second pair of eyes", "members": 11},
+      {"id": "C03ENG", "name": "engineering", "topic": "Releases, incidents and stand-up notes", "members": 9}
+    ],
+    "messages": [
+      {"id": "1727912040.000100", "channel": "engineering", "user": "sam", "text": "Release 2.14 is on staging. Please check the billing page before Friday."},
+      {"id": "1727913600.000200", "channel": "support", "user": "alex", "text": "Customer at Riverside Care cannot reset their password. Looking into it now."},
+      {"id": "1727920800.000300", "channel": "general", "user": "morgan", "text": "Reminder: the office is closed on Monday for the public holiday."}
+    ]
+  },
+  "github": {
+    "issues": [
+      {"id": "41", "number": 41, "repo": "acme/website", "title": "Checkout button overlaps the footer on small phones", "state": "open", "labels": ["bug"], "author": "sam"},
+      {"id": "42", "number": 42, "repo": "acme/website", "title": "Add a dark mode toggle to settings", "state": "open", "labels": ["enhancement"], "author": "morgan"},
+      {"id": "38", "number": 38, "repo": "acme/website", "title": "Broken link in the privacy policy", "state": "closed", "labels": ["bug"], "author": "alex"}
+    ],
+    "pulls": [
+      {"id": "43", "number": 43, "repo": "acme/website", "title": "Fix checkout button spacing on small screens", "author": "sam", "draft": false, "state": "open"},
+      {"id": "44", "number": 44, "repo": "acme/website", "title": "Upgrade the payment library to version 5", "author": "taylor", "draft": true, "state": "open"}
+    ],
+    "repos": [
+      {"id": "acme/website", "name": "website", "owner": "acme", "private": false, "description": "The public marketing site and checkout", "defaultBranch": "main"},
+      {"id": "acme/mobile-app", "name": "mobile-app", "owner": "acme", "private": true, "description": "The iOS and Android app", "defaultBranch": "main"}
+    ],
+    "branches": [
+      {"id": "main", "name": "main", "repo": "acme/website", "protected": true},
+      {"id": "fix-checkout-spacing", "name": "fix-checkout-spacing", "repo": "acme/website", "protected": false}
+    ],
+    "comments": [
+      {"id": "comment_9001", "repo": "acme/website", "issue": "41", "author": "morgan", "body": "Seen on an iPhone SE as well."}
+    ],
+    "files": [
+      {"id": "file_7001", "repo": "acme/website", "path": "README.md", "type": "file", "content": "# Acme website\n\nRun npm install, then npm run dev."}
+    ]
+  },
+  "jira": {
+    "issues": [
+      {"id": "OPS-101", "project": "OPS", "summary": "Rotate the shared mailbox password", "status": "To Do", "type": "Task", "assignee": "morgan"},
+      {"id": "OPS-102", "project": "OPS", "summary": "Roster export misses weekend shifts", "status": "In Progress", "type": "Bug", "assignee": "sam"},
+      {"id": "OPS-97", "project": "OPS", "summary": "Set up quarterly access review", "status": "Done", "type": "Task", "assignee": "alex"}
+    ]
+  },
+  "drive": {
+    "files": [
+      {"id": "file_3001", "name": "Support handbook", "mimeType": "document", "folderId": "folder_support", "content": "Refunds: a customer may ask for a refund within 30 days of purchase. Password resets: send the reset link from the admin console; never ask for the old password. Escalation: anything involving a safety concern goes to the team lead the same day."},
+      {"id": "file_3002", "name": "Competitor notes Q3", "mimeType": "document", "folderId": "folder_research", "content": "Three competitors launched scheduling features this quarter. Two charge per seat; one charges per site. None offers an approval step before messages are sent."},
+      {"id": "file_3003", "name": "Onboarding checklist", "mimeType": "document", "folderId": "folder_people", "content": "Day one: laptop, accounts, buddy introduction. Week one: policies, shadow shifts, first check-in with the manager."}
+    ]
+  },
+  "outlook": {
+    "messages": [
+      {"id": "out_1101", "from": "facilities@example.com", "subject": "Air conditioning service on Wednesday", "snippet": "Technicians will be on level 2 from 8am. Please clear the desks near the windows.", "receivedAt": "2026-10-02T07:30:00Z"},
+      {"id": "out_1102", "from": "casey.ng@example.com", "subject": "Quote request for 40 seats", "snippet": "We are comparing options for our three sites and would like a quote for 40 seats.", "receivedAt": "2026-10-01T13:12:00Z"},
+      {"id": "out_1103", "from": "payroll@example.com", "subject": "Timesheets due Friday", "snippet": "Please submit timesheets for the fortnight by 5pm Friday.", "receivedAt": "2026-09-29T08:00:00Z"}
+    ],
+    "events": [
+      {"id": "oev_1201", "title": "Board pack review", "start": "2026-10-07T15:00:00+10:00", "end": "2026-10-07T16:00:00+10:00"},
+      {"id": "oev_1202", "title": "Supplier call: Northwind", "start": "2026-10-09T11:00:00+10:00", "end": "2026-10-09T11:30:00+10:00"}
+    ]
+  },
+  "teams": {
+    "channels": [
+      {"id": "19:general", "team": "Operations", "name": "General", "description": "Day-to-day operations"},
+      {"id": "19:rostering", "team": "Operations", "name": "Rostering", "description": "Shift swaps and cover requests"}
+    ],
+    "messages": [
+      {"id": "tm_1301", "channel": "Rostering", "from": "Jamie", "text": "Can anyone cover the Saturday afternoon shift at the north site?"},
+      {"id": "tm_1302", "channel": "General", "from": "Morgan", "text": "New visitor sign-in process starts Monday. Details are in the handbook."}
+    ]
+  },
+  "notion": {
+    "pages": [
+      {"id": "page_1401", "title": "Team wiki", "url": "https://www.notion.so/example/Team-wiki", "content": "Start here. Links to policies, the support handbook, and how we run planning."},
+      {"id": "page_1402", "title": "Q4 planning", "url": "https://www.notion.so/example/Q4-planning", "parentId": "page_1401", "content": "Goals: launch the scheduling add-on, reduce first response time to under two hours, hire two support coordinators."},
+      {"id": "page_1403", "title": "Meeting notes: 30 September", "url": "https://www.notion.so/example/Meeting-notes-30-September", "parentId": "page_1401", "content": "Agreed to move the release to 10 October. Alex to draft the customer announcement."}
+    ]
+  },
+  "linear": {
+    "issues": [
+      {"id": "ENG-210", "identifier": "ENG-210", "team": "ENG", "title": "Search results ignore the date filter", "state": "In Progress", "priority": 2, "assignee": "sam"},
+      {"id": "ENG-211", "identifier": "ENG-211", "team": "ENG", "title": "Export invoices as CSV", "state": "Todo", "priority": 3, "assignee": null},
+      {"id": "ENG-198", "identifier": "ENG-198", "team": "ENG", "title": "Slow dashboard load for large workspaces", "state": "Done", "priority": 1, "assignee": "taylor"}
+    ]
+  },
+  "hubspot": {
+    "contacts": [
+      {"id": "501", "firstName": "Casey", "lastName": "Ng", "email": "casey.ng@example.com", "company": "Riverside Care", "lifecycleStage": "opportunity"},
+      {"id": "502", "firstName": "Robin", "lastName": "Patel", "email": "robin.patel@example.com", "company": "Harbour Health", "lifecycleStage": "lead"},
+      {"id": "503", "firstName": "Drew", "lastName": "Martin", "email": "drew.martin@example.com", "company": "Northwind Supplies", "lifecycleStage": "customer"}
+    ],
+    "deals": [
+      {"id": "701", "name": "Riverside Care - 40 seats", "stage": "presentationscheduled", "amount": 24000, "closeDate": "2026-11-15"},
+      {"id": "702", "name": "Harbour Health - pilot", "stage": "appointmentscheduled", "amount": 6000, "closeDate": "2026-10-31"},
+      {"id": "703", "name": "Northwind Supplies - renewal", "stage": "closedwon", "amount": 18000, "closeDate": "2026-09-20"}
+    ]
+  },
+  "salesforce": {
+    "accounts": [
+      {"id": "001A0001", "name": "Riverside Care", "industry": "Healthcare", "city": "Brisbane"},
+      {"id": "001A0002", "name": "Harbour Health", "industry": "Healthcare", "city": "Sydney"},
+      {"id": "001A0003", "name": "Northwind Supplies", "industry": "Wholesale", "city": "Melbourne"}
+    ],
+    "opportunities": [
+      {"id": "006B0001", "name": "Riverside Care expansion", "account": "Riverside Care", "stage": "Proposal", "amount": 24000, "closeDate": "2026-11-15"},
+      {"id": "006B0002", "name": "Harbour Health pilot", "account": "Harbour Health", "stage": "Qualification", "amount": 6000, "closeDate": "2026-10-31"},
+      {"id": "006B0003", "name": "Northwind renewal", "account": "Northwind Supplies", "stage": "Closed Won", "amount": 18000, "closeDate": "2026-09-20"}
+    ]
+  },
+  "zendesk": {
+    "tickets": [
+      {"id": "9001", "subject": "Cannot reset my password", "requester": "member@riverside-care.example.com", "status": "open", "priority": "high", "conversation": ["I clicked reset but never got an email.", "Thanks, we are looking into it."]},
+      {"id": "9002", "subject": "Refund for duplicate charge", "requester": "billing@harbour-health.example.com", "status": "new", "priority": "normal", "conversation": ["We were charged twice for September."]},
+      {"id": "9003", "subject": "How do I add a new site?", "requester": "ops@northwind.example.com", "status": "solved", "priority": "low", "conversation": ["Where do I add our new warehouse?", "Settings, then Sites, then Add site."]}
+    ]
+  },
+  "confluence": {
+    "pages": [
+      {"id": "conf_1501", "space": "OPS", "title": "Incident response runbook", "content": "Declare the incident in the incidents channel, name a lead, and post updates every 30 minutes until resolved."},
+      {"id": "conf_1502", "space": "OPS", "title": "On-call rota", "content": "Primary and secondary on-call rotate weekly on Mondays at 9am."},
+      {"id": "conf_1503", "space": "HR", "title": "Leave policy", "content": "Request leave at least two weeks ahead through the people portal. Sick leave needs no notice."}
+    ]
+  },
+  "asana": {
+    "tasks": [
+      {"id": "1209001", "name": "Draft October newsletter", "project": "Marketing", "assignee": "alex", "dueOn": "2026-10-10", "completed": false},
+      {"id": "1209002", "name": "Book venue for the end-of-year event", "project": "Operations", "assignee": "morgan", "dueOn": "2026-10-20", "completed": false},
+      {"id": "1209003", "name": "Review supplier contracts", "project": "Operations", "assignee": "drew", "dueOn": "2026-10-15", "completed": false},
+      {"id": "1209004", "name": "Publish the Q3 results summary", "project": "Marketing", "assignee": "alex", "dueOn": "2026-09-30", "completed": true}
+    ]
+  },
+  "sheets": {
+    "spreadsheets": [
+      {"id": "sheet_1601", "name": "Sales pipeline 2026", "sheets": ["Deals"]},
+      {"id": "sheet_1602", "name": "Staff roster", "sheets": ["This week"]}
+    ],
+    "rows": [
+      {"id": "row_1", "spreadsheetId": "sheet_1601", "sheet": "Deals", "values": ["Riverside Care", "Proposal", "24000"]},
+      {"id": "row_2", "spreadsheetId": "sheet_1601", "sheet": "Deals", "values": ["Harbour Health", "Qualification", "6000"]},
+      {"id": "row_3", "spreadsheetId": "sheet_1602", "sheet": "This week", "values": ["Monday", "Jamie", "North site"]},
+      {"id": "row_4", "spreadsheetId": "sheet_1602", "sheet": "This week", "values": ["Tuesday", "Priya", "South site"]}
+    ]
+  },
+  "stripe": {
+    "customers": [
+      {"id": "cus_R1verside", "name": "Riverside Care", "email": "billing@riverside-care.example.com"},
+      {"id": "cus_H4rbour", "name": "Harbour Health", "email": "billing@harbour-health.example.com"},
+      {"id": "cus_N0rthwind", "name": "Northwind Supplies", "email": "accounts@northwind.example.com"}
+    ],
+    "payments": [
+      {"id": "pi_1001", "customer": "cus_H4rbour", "amount": 500.00, "currency": "aud", "status": "succeeded", "description": "September subscription", "createdAt": "2026-09-01T00:05:00Z"},
+      {"id": "pi_1002", "customer": "cus_H4rbour", "amount": 500.00, "currency": "aud", "status": "succeeded", "description": "September subscription", "createdAt": "2026-09-01T00:06:00Z"},
+      {"id": "pi_1003", "customer": "cus_R1verside", "amount": 2000.00, "currency": "aud", "status": "succeeded", "description": "September subscription", "createdAt": "2026-09-01T00:07:00Z"}
+    ],
+    "invoices": [
+      {"id": "in_2001", "customer": "cus_R1verside", "amount": 2000.00, "currency": "aud", "status": "paid", "dueDate": "2026-09-15"},
+      {"id": "in_2002", "customer": "cus_H4rbour", "amount": 500.00, "currency": "aud", "status": "open", "dueDate": "2026-10-15"},
+      {"id": "in_2003", "customer": "cus_N0rthwind", "amount": 1500.00, "currency": "aud", "status": "draft", "dueDate": "2026-10-31"}
+    ]
+  },
+  "zoom": {
+    "meetings": [
+      {"id": "8100001", "topic": "Customer onboarding: Riverside Care", "start": "2026-10-06T10:00:00+10:00", "durationMinutes": 45, "joinUrl": "https://zoom.example.com/j/8100001", "status": "scheduled"},
+      {"id": "8100002", "topic": "Monthly all-hands", "start": "2026-10-09T16:00:00+10:00", "durationMinutes": 60, "joinUrl": "https://zoom.example.com/j/8100002", "status": "scheduled"},
+      {"id": "8100003", "topic": "Interview: support coordinator", "start": "2026-10-06T14:00:00+10:00", "durationMinutes": 45, "joinUrl": "https://zoom.example.com/j/8100003", "status": "scheduled"}
+    ],
+    "recordings": [
+      {"id": "rec_1701", "topic": "September all-hands", "recordedAt": "2026-09-11T16:00:00+10:00", "durationMinutes": 52},
+      {"id": "rec_1702", "topic": "Product demo for Harbour Health", "recordedAt": "2026-09-24T11:00:00+10:00", "durationMinutes": 38}
+    ]
+  },
+  "webhook": {
+    "events": [
+      {"id": "evt_hook_1", "event": "order.shipped", "data": {"order": "SO-1042"}, "status": "sent", "createdAt": "2026-10-01T03:00:00Z"},
+      {"id": "evt_hook_2", "event": "ticket.escalated", "data": {"ticket": "9001"}, "status": "sent", "createdAt": "2026-10-02T05:30:00Z"}
+    ]
+  }
+}

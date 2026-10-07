@@ -2,6 +2,7 @@ import axe from 'axe-core'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
+import { DEMO_ACCOUNTS_URL, resetDemoAccountsForTests } from '../../lib/demo'
 import { RouterProvider } from '../../lib/router'
 import { Trust } from '../../routes/Trust'
 
@@ -30,10 +31,17 @@ function region(id: string): HTMLElement {
 let fetchSpy: MockInstance<typeof globalThis.fetch>
 
 beforeEach(() => {
+  resetDemoAccountsForTests()
   if (typeof globalThis.fetch !== 'function') {
     vi.stubGlobal('fetch', () => Promise.reject(new Error('No network in tests')))
   }
-  fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('The public page must not make network requests'))
+  // The one request allowed: whether this site offers demo accounts. It is left unanswered,
+  // which renders exactly like a site that offers none.
+  fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+    String(input) === DEMO_ACCOUNTS_URL
+      ? new Promise<Response>(() => {})
+      : Promise.reject(new Error('The public page makes no request but the demo-account lookup')),
+  )
 })
 
 afterEach(() => {
@@ -42,10 +50,19 @@ afterEach(() => {
 })
 
 describe('Trust', () => {
-  it('makes no network request and has exactly one h1', () => {
+  it('asks the network only whether demo accounts exist, and has exactly one h1', () => {
     const { container } = renderTrust()
     expect(container.querySelectorAll('h1')).toHaveLength(1)
-    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([DEMO_ACCOUNTS_URL])
+  })
+
+  it('names every connector as able to connect live', () => {
+    renderTrust()
+    const live = screen.getByRole('list', { name: 'Connect live' })
+    const names = within(live).getAllByRole('listitem').map((item) => item.textContent)
+    expect(names).toHaveLength(19)
+    expect(names).toEqual(expect.arrayContaining(['GitHub', 'Gmail', 'Salesforce', 'Webhook']))
+    expect(screen.queryByRole('list', { name: 'Practice data only' })).not.toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {

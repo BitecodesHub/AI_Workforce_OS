@@ -21,6 +21,11 @@ public interface Memberships extends JpaRepository<Membership, UUID> {
 
     Optional<Membership> findByUserIdAndOrgId(UUID userId, UUID orgId);
 
+    /** The person's membership in the workspace, only while it is active. */
+    default Optional<Membership> findActive(UUID userId, UUID orgId) {
+        return findByUserIdAndOrgId(userId, orgId).filter(Membership::isActive);
+    }
+
     List<Membership> findByUserIdAndStatus(UUID userId, String status);
 
     List<Membership> findByOrgIdAndStatus(UUID orgId, String status);

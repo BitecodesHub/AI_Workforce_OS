@@ -22,4 +22,7 @@ public interface Invitations extends JpaRepository<Invitation, UUID> {
     List<Invitation> findByOrgIdOrderByCreatedAtDesc(UUID orgId);
 
     Optional<Invitation> findByOrgIdAndEmailIgnoreCaseAndStatus(UUID orgId, String email, String status);
+
+    /** One invitation, only if it belongs to the workspace named in the path. */
+    Optional<Invitation> findByIdAndOrgId(UUID id, UUID orgId);
 }

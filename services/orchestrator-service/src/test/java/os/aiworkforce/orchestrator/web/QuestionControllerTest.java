@@ -97,7 +97,7 @@ class QuestionControllerTest {
     void answerSubmitsResumeOnce() {
         QuestionController.AnswerResult result = controller.answer(question.getId(), managers());
 
-        verify(executor).submitResume(ORG, run.getId());
+        verify(executor).submitResume(eq(ORG), eq(run.getId()), any());
         assertThat(result.question().status()).isEqualTo("answered");
         assertThat(result.runStatus()).isEqualTo("waiting_input");
     }
@@ -109,7 +109,7 @@ class QuestionControllerTest {
 
         QuestionController.AnswerResult again = controller.answer(question.getId(), managers());
 
-        verify(executor, times(1)).submitResume(ORG, run.getId());
+        verify(executor, times(1)).submitResume(eq(ORG), eq(run.getId()), any());
         assertThat(again.question().status()).isEqualTo("answered");
     }
 
@@ -123,7 +123,7 @@ class QuestionControllerTest {
                     assertThat(e.code()).isEqualTo(ErrorCode.PERMISSION_DENIED);
                     assertThat(e.details()).containsEntry("requiredPermission", "task:cancel");
                 });
-        verify(executor, never()).submitResume(any(), any());
+        verify(executor, never()).submitResume(any(), any(), any());
         assertThat(question.getStatus()).isEqualTo("pending");
     }
 

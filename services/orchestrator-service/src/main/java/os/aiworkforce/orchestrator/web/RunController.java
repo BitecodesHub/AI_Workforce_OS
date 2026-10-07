@@ -62,6 +62,10 @@ public class RunController {
     private final QuestionService questions;
     private final GoalService goalService;
 
+    /** Who may read which conversation; absent only where a test builds this by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.chat.ConversationAccess access;
+
     public RunController(
             Runs runs, RunSteps steps, Tasks tasks, Goals goals, QuestionService questions, GoalService goalService) {
         this.runs = runs;
@@ -136,14 +140,21 @@ public class RunController {
         } else {
             result = runs.findByOrgIdOrderByStartedAtDesc(orgId, pageable);
         }
-        return toViews(result.getContent());
+        List<Run> visible = result.getContent();
+        if (access != null && !visible.isEmpty()) {
+            Set<UUID> hiddenTasks = access.hiddenTaskIds(orgId, RequestContext.requireActor());
+            visible = visible.stream()
+                    .filter(run -> run.getTaskId() == null || !hiddenTasks.contains(run.getTaskId()))
+                    .toList();
+        }
+        return toViews(visible);
     }
 
     @GetMapping("/{runId}")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "One run")
     public RunView get(@PathVariable UUID runId) {
-        Run run = runs.findByIdAndOrgId(runId, orgId()).orElseThrow(() -> ApiException.notFound("run", runId));
+        Run run = visibleRun(runId);
         return toViews(List.of(run)).getFirst();
     }
 
@@ -151,7 +162,7 @@ public class RunController {
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "The full trace, including attempts that failed")
     public List<StepView> trace(@PathVariable UUID runId) {
-        runs.findByIdAndOrgId(runId, orgId()).orElseThrow(() -> ApiException.notFound("run", runId));
+        visibleRun(runId);
         return steps.findByRunIdOrderByPosition(runId).stream()
                 .map(RunController::toStepView)
                 .toList();
@@ -162,7 +173,7 @@ public class RunController {
     @Operation(summary = "The questions this run asked, oldest first")
     public List<QuestionService.QuestionView> questions(@PathVariable UUID runId) {
         UUID orgId = orgId();
-        runs.findByIdAndOrgId(runId, orgId).orElseThrow(() -> ApiException.notFound("run", runId));
+        visibleRun(runId);
         return questions.views(questions.forRun(orgId, runId), RequestContext.requireActor());
     }
 
@@ -178,6 +189,18 @@ public class RunController {
         goalService.stopRun(orgId, runId, RUN_STOPPED);
         Run run = runs.findByIdAndOrgId(runId, orgId).orElseThrow(() -> ApiException.notFound("run", runId));
         return toViews(List.of(run)).getFirst();
+    }
+
+    /** The run, unless it belongs to work a private conversation started and this person is not part of it. */
+    private Run visibleRun(UUID runId) {
+        Run run = runs.findByIdAndOrgId(runId, orgId()).orElseThrow(() -> ApiException.notFound("run", runId));
+        if (access != null && run.getTaskId() != null) {
+            Set<UUID> hiddenTasks = access.hiddenTaskIds(orgId(), RequestContext.requireActor());
+            if (hiddenTasks.contains(run.getTaskId())) {
+                throw ApiException.notFound("run", runId);
+            }
+        }
+        return run;
     }
 
     /**
