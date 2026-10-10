@@ -1,44 +1,45 @@
-# @find: cloudformation, aws stack, ec2, free plan, ap-southeast-2, sydney, m7i-flex.large, elastic ip, ecr repositories, github oidc, deploy role, ssm session manager, bedrock permissions, budget alarm, sslip.io https
-# @what: One CloudFormation stack that runs AI Workforce OS on a single free-plan-eligible EC2 instance with HTTPS, ECR, GitHub OIDC deploys and a budget alarm.
-# @flow: Created once by hand in the CloudFormation console (docs/2026-10-11_AWS-Deployment_v1.md); the instance then runs infra/aws/aiwos.sh, and .github/workflows/deploy.yml deploys through the role and instance this stack outputs
+# @find: cloudformation, aws stack, ec2, free plan, ap-southeast-2, sydney, m7i-flex.large, elastic ip, pull deployment, systemd timer, ssm session manager, bedrock permissions, budget alarm, optional ecr, sslip.io https, service control policy
+# @what: One CloudFormation stack that runs AI Workforce OS on a single free-plan-eligible EC2 instance with HTTPS; the server deploys itself by pulling the public repository (no CI credentials).
+# @flow: Created once by hand in the CloudFormation console (docs/2026-10-11_AWS-Deployment_v1.md); the instance then runs infra/aws/aiwos.sh from a systemd timer, and .github/workflows/deploy.yml only reads https://<host>/deploy-status.json
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   AI Workforce OS on one EC2 instance (ap-southeast-2): Docker Compose stack with automatic HTTPS
-  on an sslip.io name, ECR repositories, GitHub OIDC deploy role, SSM access (no SSH) and a budget alarm.
+  on an sslip.io name. The server pulls and builds the public repository itself every 2 minutes,
+  so nothing outside AWS holds AWS credentials. SSM access (no SSH), optional budget alarm and ECR.
+
+# Written for an account under an AWS Organizations service control policy that denies some IAM
+# actions (iam:CreateOpenIDConnectProvider is denied, so there is no GitHub OIDC role). Every
+# resource that is not needed to serve the app sits behind a parameter: if a create fails with an
+# explicit deny, delete the stack and create it again with that parameter off.
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
-      - Label: {default: Required}
-        Parameters: [BudgetEmail]
       - Label: {default: Server}
         Parameters: [InstanceType, AvailabilityZoneIndex, LatestAmiId]
       - Label: {default: Application}
         Parameters: [DemoData, LocalModel, OllamaModel, BedrockModel]
-      - Label: {default: GitHub}
-        Parameters: [GitHubRepository, GitHubBranch, CreateGitHubOidcProvider]
-      - Label: {default: Cost alarm}
-        Parameters: [BudgetCountsCredits]
+      - Label: {default: Source}
+        Parameters: [GitHubRepository, GitHubBranch]
+      - Label: {default: Optional resources (turn off any that a service control policy denies)}
+        Parameters: [CreateInstanceRole, CreateBudget, BudgetEmail, BudgetCountsCredits, CreateEcrRepositories]
     ParameterLabels:
-      BudgetEmail: {default: Email for budget alerts}
       InstanceType: {default: EC2 instance type}
       DemoData: {default: Load the demo workspace and its published demo sign-ins}
       LocalModel: {default: Run the local Ollama model as the last fallback}
+      CreateInstanceRole: {default: Create the instance role (SSM shell and Bedrock)}
+      CreateBudget: {default: Create the monthly budget alarm}
+      BudgetEmail: {default: Email for budget alerts}
+      CreateEcrRepositories: {default: Also keep a copy of each deployed image in ECR}
 
 Parameters:
-  BudgetEmail:
-    Type: String
-    Description: Address AWS Budgets emails when actual spend passes 5 USD and 20 USD in a month.
-    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
-    ConstraintDescription: Enter a valid email address.
-
   InstanceType:
     Type: String
     Default: m7i-flex.large
     AllowedValues: [m7i-flex.large, c7i-flex.large, t3.small]
     Description: >-
-      Free-plan-eligible x86 types. m7i-flex.large (2 vCPU, 8 GiB) runs the whole stack with the
-      local model. c7i-flex.large (2 vCPU, 4 GiB) needs LocalModel=false and leans on swap.
+      Free-plan-eligible x86 types. m7i-flex.large (2 vCPU, 8 GiB) runs and builds the whole stack
+      with the local model. c7i-flex.large (2 vCPU, 4 GiB) needs LocalModel=false and leans on swap.
       t3.small (2 GiB) cannot run the full stack; it is listed only for a stripped-down test.
 
   AvailabilityZoneIndex:
@@ -87,19 +88,35 @@ Parameters:
     Type: String
     Default: BitecodesHub/AI_Workforce_OS
     AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
-    Description: owner/name of the public repository the server is built from and that may deploy to it.
+    Description: owner/name of the PUBLIC GitHub repository the server clones and builds (read-only, no token).
 
   GitHubBranch:
     Type: String
     Default: main
     AllowedPattern: "^[A-Za-z0-9_./-]+$"
-    Description: The only branch whose workflow may assume the deploy role.
+    Description: The branch the server follows; a new commit on it is built and deployed within minutes.
 
-  CreateGitHubOidcProvider:
+  CreateInstanceRole:
     Type: String
     Default: "true"
     AllowedValues: ["true", "false"]
-    Description: false when this account already has the token.actions.githubusercontent.com identity provider (an account can hold only one).
+    Description: >-
+      true creates an IAM role and instance profile for SSM Session Manager and Bedrock calls.
+      false only if iam:CreateRole or iam:PassRole is denied: the app then runs on the local model
+      only, and there is no shell on the server (status is still at /deploy-status.json).
+
+  CreateBudget:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: false if budgets:* is denied in this account. Also skipped when BudgetEmail is empty.
+
+  BudgetEmail:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    ConstraintDescription: Enter a valid email address, or leave it empty for no budget alarm.
+    Description: Address AWS Budgets emails when actual spend passes 5 USD and 20 USD in a month.
 
   BudgetCountsCredits:
     Type: String
@@ -109,8 +126,23 @@ Parameters:
       false (recommended on the Free plan) counts usage before credits are applied, so the 5 USD and
       20 USD alerts tell you how fast credits are being used. true counts only what credits do not cover.
 
+  CreateEcrRepositories:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Not needed: the server builds its own images. true creates nine ECR repositories and the
+      server pushes each successfully deployed image there as an off-instance copy. Needs
+      CreateInstanceRole=true.
+
 Conditions:
-  CreateOidcProvider: !Equals [!Ref CreateGitHubOidcProvider, "true"]
+  HasRole: !Equals [!Ref CreateInstanceRole, "true"]
+  HasBudget: !And
+    - !Equals [!Ref CreateBudget, "true"]
+    - !Not [!Equals [!Ref BudgetEmail, ""]]
+  HasEcr: !And
+    - !Equals [!Ref CreateEcrRepositories, "true"]
+    - !Condition HasRole
   IsBurstable: !Equals [!Ref InstanceType, t3.small]
   IncludeCredits: !Equals [!Ref BudgetCountsCredits, "true"]
 
@@ -175,7 +207,7 @@ Resources:
         - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS}
         - {IpProtocol: udp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTP/3}
       SecurityGroupEgress:
-        - {IpProtocol: "-1", CidrIp: 0.0.0.0/0, Description: "Image pulls, model downloads and AWS APIs"}
+        - {IpProtocol: "-1", CidrIp: 0.0.0.0/0, Description: "git fetch, image and model downloads, AWS APIs"}
       Tags: [{Key: Name, Value: aiwos-web}]
 
   ElasticIp:
@@ -185,113 +217,96 @@ Resources:
       Domain: vpc
       Tags: [{Key: Name, Value: aiwos}]
 
-  # ---- Images ------------------------------------------------------------------------------------
+  # ---- Optional off-instance image copies (off by default) -------------------------------------
 
   IdentityRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/identity-service
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   OrgRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/org-service
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   OrchestratorRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/orchestrator-service
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   MemoryRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/memory-service
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   KnowledgeRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/knowledge-service
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   IntegrationsRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/integrations-service
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   AnalyticsRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/analytics-service
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   GatewayRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/gateway
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   WebRepository:
     Type: AWS::ECR::Repository
+    Condition: HasEcr
     Properties:
       RepositoryName: aiwos/web
       EmptyOnDelete: true
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration: {ScanOnPush: true}
       LifecyclePolicy:
-        LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the 2 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
 
   # ---- The server ------------------------------------------------------------------------------
 
   InstanceRole:
     Type: AWS::IAM::Role
+    Condition: HasRole
     Properties:
-      Description: AI Workforce OS server - SSM access, ECR pulls and Bedrock calls
+      Description: AI Workforce OS server - SSM Session Manager and Bedrock calls
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -301,20 +316,6 @@ Resources:
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
-        - PolicyName: ecr-pull
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: ecr:GetAuthorizationToken
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:BatchGetImage
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:DescribeImages
-                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/aiwos/*
         - PolicyName: bedrock-invoke
           PolicyDocument:
             Version: "2012-10-17"
@@ -336,51 +337,62 @@ Resources:
                   - bedrock:ListInferenceProfiles
                   - bedrock:GetInferenceProfile
                 Resource: "*"
+        - !If
+          - HasEcr
+          - PolicyName: ecr-push-copies
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: ecr:GetAuthorizationToken
+                  Resource: "*"
+                - Effect: Allow
+                  Action:
+                    - ecr:BatchCheckLayerAvailability
+                    - ecr:BatchGetImage
+                    - ecr:CompleteLayerUpload
+                    - ecr:GetDownloadUrlForLayer
+                    - ecr:InitiateLayerUpload
+                    - ecr:PutImage
+                    - ecr:UploadLayerPart
+                  Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/aiwos/*
+          - !Ref AWS::NoValue
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
+    Condition: HasRole
     Properties:
       Roles: [!Ref InstanceRole]
-
-  LaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
-    Properties:
-      LaunchTemplateData:
-        # IMDSv2 only. Hop limit 2 so the services inside Docker can reach the instance role.
-        MetadataOptions:
-          HttpEndpoint: enabled
-          HttpTokens: required
-          HttpPutResponseHopLimit: 2
-        BlockDeviceMappings:
-          - DeviceName: /dev/xvda
-            Ebs:
-              VolumeType: gp3
-              VolumeSize: 30
-              Encrypted: true
-              DeleteOnTermination: true
-        # A burstable type stays within its baseline instead of buying surplus credits.
-        CreditSpecification: !If [IsBurstable, {CpuCredits: standard}, !Ref AWS::NoValue]
-        TagSpecifications:
-          - ResourceType: instance
-            Tags: [{Key: Name, Value: aiwos}]
-          - ResourceType: volume
-            Tags: [{Key: Name, Value: aiwos}]
 
   Instance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref LatestAmiId
       InstanceType: !Ref InstanceType
-      LaunchTemplate:
-        LaunchTemplateId: !Ref LaunchTemplate
-        Version: !GetAtt LaunchTemplate.LatestVersionNumber
-      IamInstanceProfile: !Ref InstanceProfile
+      IamInstanceProfile: !If [HasRole, !Ref InstanceProfile, !Ref AWS::NoValue]
       SubnetId: !Ref PublicSubnet
       SecurityGroupIds: [!Ref WebSecurityGroup]
-      # A thin bootstrap: Docker, the Compose and Buildx plugins, a clone of the public repository,
-      # then infra/aws/aiwos.sh, which generates the secrets on the instance (openssl), writes
-      # /opt/aiwos/.env, pulls the images from ECR or builds them on the first boot, and starts the
-      # stack. Log: /var/log/aiwos-bootstrap.log. Secrets never appear in this template.
+      # IMDSv2 only. Hop limit 2 so the services inside Docker can reach the instance role.
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 2
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 30
+            Encrypted: true
+            DeleteOnTermination: true
+      # A burstable type stays within its baseline instead of buying surplus credits.
+      CreditSpecification: !If [IsBurstable, {CPUCredits: standard}, !Ref AWS::NoValue]
+      Tags: [{Key: Name, Value: aiwos}]
+      # A thin bootstrap: swap, Docker with the Compose and Buildx plugins, a clone of the public
+      # repository, then infra/aws/aiwos.sh: "init" generates the secrets on the instance (openssl)
+      # and writes /opt/aiwos/.env, "install" sets up the systemd timer that runs "aiwos update"
+      # every 2 minutes, and the first update builds and starts the stack. Logs:
+      # /var/log/aiwos-bootstrap.log, then /var/log/aiwos-deploy.log and journalctl -u aiwos-update.
+      # Secrets never appear in this template.
       UserData:
         Fn::Base64: !Sub
           - |
@@ -388,18 +400,18 @@ Resources:
             set -euxo pipefail
             exec > >(tee -a /var/log/aiwos-bootstrap.log) 2>&1
 
-            # 4 GB of swap, used only under pressure.
+            # 4 GB of swap, used only under pressure (image builds beside the running stack).
             if [ ! -f /swapfile ]; then
               dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
               chmod 600 /swapfile
               mkswap /swapfile
               echo '/swapfile none swap sw 0 0' >> /etc/fstab
             fi
-            swapon -a
+            swapon -a || true
             echo 'vm.swappiness=10' > /etc/sysctl.d/90-aiwos.conf
             sysctl --system >/dev/null
 
-            dnf install -y docker git
+            dnf install -y docker git logrotate jq
             mkdir -p /etc/docker
             echo '{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"}}' > /etc/docker/daemon.json
             systemctl enable --now docker
@@ -420,7 +432,8 @@ Resources:
             cat > /opt/aiwos/bootstrap.env <<'EOF'
             PUBLIC_IP=${PublicIp}
             AWS_REGION=${AWS::Region}
-            ECR_REGISTRY=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+            GIT_BRANCH=${GitHubBranch}
+            ECR_REGISTRY=${EcrRegistry}
             DEMO_DATA=${DemoData}
             LOCAL_MODEL=${LocalModel}
             OLLAMA_MODEL=${OllamaModel}
@@ -428,7 +441,12 @@ Resources:
             EOF
 
             bash /opt/aiwos/repo/infra/aws/aiwos.sh init
+            bash /opt/aiwos/repo/infra/aws/aiwos.sh install
+            # The first deploy (about 20-25 minutes) runs in the background under systemd, so the
+            # stack reaches CREATE_COMPLETE now; follow it at https://<host>/deploy-status.json.
+            systemctl start --no-block aiwos-update.service
           - PublicIp: !GetAtt ElasticIp.PublicIp
+            EcrRegistry: !If [HasEcr, !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com", ""]
 
   ElasticIpAssociation:
     Type: AWS::EC2::EIPAssociation
@@ -436,85 +454,11 @@ Resources:
       AllocationId: !GetAtt ElasticIp.AllocationId
       InstanceId: !Ref Instance
 
-  # ---- GitHub Actions deploys, with short-lived OIDC credentials and no stored AWS keys ---------
-
-  GitHubOidcProvider:
-    Type: AWS::IAM::OIDCProvider
-    Condition: CreateOidcProvider
-    Properties:
-      Url: https://token.actions.githubusercontent.com
-      ClientIdList: [sts.amazonaws.com]
-      ThumbprintList:
-        - 6938fd4d98bab03faadb97b34396831e3780aea1
-        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
-
-  DeployRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Description: !Sub Assumed by GitHub Actions in ${GitHubRepository} on ${GitHubBranch} to push images and roll out
-      MaxSessionDuration: 3600
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Federated: !If
-                - CreateOidcProvider
-                - !Ref GitHubOidcProvider
-                - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
-            Action: sts:AssumeRoleWithWebIdentity
-            Condition:
-              StringEquals:
-                token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:refs/heads/${GitHubBranch}
-      Policies:
-        - PolicyName: push-images
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: ecr:GetAuthorizationToken
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:BatchGetImage
-                  - ecr:CompleteLayerUpload
-                  - ecr:DescribeImages
-                  - ecr:DescribeRepositories
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:InitiateLayerUpload
-                  - ecr:PutImage
-                  - ecr:UploadLayerPart
-                Resource:
-                  - !GetAtt IdentityRepository.Arn
-                  - !GetAtt OrgRepository.Arn
-                  - !GetAtt OrchestratorRepository.Arn
-                  - !GetAtt MemoryRepository.Arn
-                  - !GetAtt KnowledgeRepository.Arn
-                  - !GetAtt IntegrationsRepository.Arn
-                  - !GetAtt AnalyticsRepository.Arn
-                  - !GetAtt GatewayRepository.Arn
-                  - !GetAtt WebRepository.Arn
-        - PolicyName: roll-out
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: ssm:SendCommand
-                Resource:
-                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Instance}
-                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript
-              - Effect: Allow
-                Action:
-                  - ssm:GetCommandInvocation
-                  - ssm:ListCommandInvocations
-                Resource: "*"
-
-  # ---- Cost alarm --------------------------------------------------------------------------------
+  # ---- Cost alarm (optional) ---------------------------------------------------------------------
 
   MonthlyBudget:
     Type: AWS::Budgets::Budget
+    Condition: HasBudget
     Properties:
       Budget:
         BudgetName: !Sub aiwos-${AWS::StackName}
@@ -532,22 +476,31 @@ Resources:
 
 Outputs:
   PublicUrl:
-    Description: The live address, with a Let's Encrypt certificate (ready about 15-20 minutes after the stack completes)
+    Description: The live address, with a Let's Encrypt certificate (ready about 20-25 minutes after the stack completes)
     Value: !Sub
       - https://${Dashed}.sslip.io
       - Dashed: !Join ["-", !Split [".", !GetAtt ElasticIp.PublicIp]]
+  PublicHost:
+    Description: GitHub repository variable AIWOS_PUBLIC_HOST (lets the Deploy workflow report whether a push went live)
+    Value: !Sub
+      - ${Dashed}.sslip.io
+      - Dashed: !Join ["-", !Split [".", !GetAtt ElasticIp.PublicIp]]
+  DeployStatusUrl:
+    Description: What the server last deployed, and whether it worked (no secrets)
+    Value: !Sub
+      - https://${Dashed}.sslip.io/deploy-status.json
+      - Dashed: !Join ["-", !Split [".", !GetAtt ElasticIp.PublicIp]]
   InstanceId:
-    Description: GitHub repository variable AIWOS_INSTANCE_ID
+    Description: The server
     Value: !Ref Instance
-  DeployRoleArn:
-    Description: GitHub repository variable AWS_DEPLOY_ROLE_ARN
-    Value: !GetAtt DeployRole.Arn
   ElasticIp:
     Description: The server's fixed public address
     Value: !GetAtt ElasticIp.PublicIp
   EcrRegistry:
-    Description: Where the images are pushed
+    Condition: HasEcr
+    Description: Where the server keeps copies of deployed images
     Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/aiwos
   SessionManagerUrl:
+    Condition: HasRole
     Description: Open a shell on the server in the browser (no SSH)
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/systems-manager/session-manager/${Instance}?region=${AWS::Region}

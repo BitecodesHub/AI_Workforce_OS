@@ -1,6 +1,6 @@
-# @find: aws production compose, ec2 stack, docker compose prod, caddy https, sslip.io, ollama local model, ecr images, 8 GB tuning, jvm heap 320m, log rotation, AIWOS_IMAGE_TAG
+# @find: aws production compose, ec2 stack, docker compose prod, caddy https, sslip.io, ollama local model, images built on the server, 8 GB tuning, jvm heap 320m, maven memory cap, log rotation, AIWOS_IMAGE_TAG, deploy-status.json
 # @what: The production Docker Compose stack for one EC2 instance: Caddy (HTTPS) in front of the web client, seven services, PostgreSQL, Redis, Qdrant and a local Ollama model.
-# @flow: Run on the server only through infra/aws/aiwos.sh, which supplies /opt/aiwos/.env; images come from ECR, pushed by .github/workflows/deploy.yml
+# @flow: Run on the server only through infra/aws/aiwos.sh, which supplies /opt/aiwos/.env, builds the images on the server tagged with the commit SHA (aiwos/<image>:<sha>) and starts them
 #
 # Based on infra/launcher/docker-compose.yml and built from the same Dockerfiles, tuned for one
 # 8 GB server (m7i-flex.large):
@@ -13,7 +13,10 @@
 #   - The gateway is not on the browser's path (the web client's nginx routes each API prefix to
 #     its service), so it is the optional "gateway" profile.
 #   - Only Caddy publishes ports: 80 and 443, with a Let's Encrypt certificate for the server's
-#     sslip.io name. Nothing else is reachable from outside the Docker network.
+#     sslip.io name. Nothing else is reachable from outside the Docker network. Caddy also serves
+#     /deploy-status.json, which aiwos.sh writes (no secrets).
+#   - Images are built on the server, one service at a time, with the Maven and Node heaps capped
+#     (AIWOS_MAVEN_OPTS, AIWOS_NODE_OPTIONS) so a build fits beside the running stack and swap.
 #
 # Secrets are required (":?"), so this file cannot start with a published placeholder. They come
 # from /opt/aiwos/.env, generated on the server by aiwos.sh with openssl; they are never in the
@@ -100,6 +103,9 @@ x-build: &build
   context: ../..
   dockerfile: infra/launcher/services.Dockerfile
 
+# Passed to the Maven build stage of services.Dockerfile (declared there as an ARG).
+x-maven-opts: &maven_opts ${AIWOS_MAVEN_OPTS:--Xmx1g -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=384m}
+
 services:
   caddy:
     image: caddy:2.10.0-alpine
@@ -113,8 +119,11 @@ services:
       - "443:443/udp"
     environment:
       AIWOS_PUBLIC_HOST: ${AIWOS_PUBLIC_HOST:?set AIWOS_PUBLIC_HOST in /opt/aiwos/.env}
+    # Directories, not single files: aiwos.sh replaces the Caddyfile and the status file by rename,
+    # which a single-file bind mount would never see.
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${AIWOS_CONFIG_DIR:-./config}/caddy:/etc/caddy:ro
+      - ${AIWOS_STATUS_DIR:-./status}:/srv/status:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
@@ -196,51 +205,53 @@ services:
 
   identity:
     <<: *service
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/identity-service:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: identity-service}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/identity-service:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: identity-service, MAVEN_OPTS: *maven_opts}}
 
   organisation:
     <<: *service
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/org-service:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: org-service}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/org-service:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: org-service, MAVEN_OPTS: *maven_opts}}
 
   orchestrator:
     <<: *service
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/orchestrator-service:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: orchestrator-service}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/orchestrator-service:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: orchestrator-service, MAVEN_OPTS: *maven_opts}}
 
   memory:
     <<: *service
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/memory-service:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: memory-service}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/memory-service:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: memory-service, MAVEN_OPTS: *maven_opts}}
 
   knowledge:
     <<: *service
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/knowledge-service:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: knowledge-service}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/knowledge-service:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: knowledge-service, MAVEN_OPTS: *maven_opts}}
 
   integrations:
     <<: *service
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/integrations-service:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: integrations-service}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/integrations-service:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: integrations-service, MAVEN_OPTS: *maven_opts}}
 
   analytics:
     <<: *service
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/analytics-service:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: analytics-service}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/analytics-service:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: analytics-service, MAVEN_OPTS: *maven_opts}}
 
   gateway:
     <<: *service
     profiles: ["gateway"]
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/gateway:${AIWOS_IMAGE_TAG:-latest}
-    build: {<<: *build, args: {SERVICE: gateway}}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/gateway:${AIWOS_IMAGE_TAG:-latest}
+    build: {<<: *build, args: {SERVICE: gateway, MAVEN_OPTS: *maven_opts}}
 
   web:
-    image: ${AIWOS_IMAGE_PREFIX:-aiwos-local}/web:${AIWOS_IMAGE_TAG:-latest}
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/web:${AIWOS_IMAGE_TAG:-latest}
     build:
       context: ../../web
       dockerfile: ../infra/launcher/web.Dockerfile
       additional_contexts: {launcher: ../launcher}
+      args:
+        NODE_OPTIONS: ${AIWOS_NODE_OPTIONS:---max-old-space-size=1536}
     restart: unless-stopped
     logging: *logging
     networks: [aiwos]

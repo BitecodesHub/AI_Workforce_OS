@@ -1,6 +1,6 @@
-# @find: caddy, https, tls, lets encrypt, sslip.io, automatic certificate, reverse proxy, hsts, http to https redirect
-# @what: The TLS edge of the AWS deployment: a Let's Encrypt certificate for the server's sslip.io name, proxying to the web client's nginx.
-# @flow: Mounted by infra/aws/docker-compose.prod.yml; AIWOS_PUBLIC_HOST comes from /opt/aiwos/.env
+# @find: caddy, https, tls, lets encrypt, sslip.io, automatic certificate, reverse proxy, hsts, http to https redirect, deploy-status.json
+# @what: The TLS edge of the AWS deployment: a Let's Encrypt certificate for the server's sslip.io name, the deploy status file, and a proxy to the web client's nginx.
+# @flow: aiwos.sh copies this file to /opt/aiwos/config/caddy/ (mounted by infra/aws/docker-compose.prod.yml) and reloads Caddy when it changes; AIWOS_PUBLIC_HOST comes from /opt/aiwos/.env
 #
 # AIWOS_PUBLIC_HOST is the Elastic IP written with dashes under sslip.io (3.104.1.2 becomes
 # 3-104-1-2.sslip.io), a public DNS name that resolves to that address, so Caddy can obtain a real
@@ -18,12 +18,22 @@
 		-Server
 	}
 
-	reverse_proxy web:80 {
-		# Agent runs and voice replies can take minutes and stream.
-		flush_interval -1
-		transport http {
-			read_timeout 600s
-			write_timeout 600s
+	# What the server last deployed and whether it worked, written by aiwos.sh (no secrets). Read by
+	# .github/workflows/deploy.yml to report whether a push went live.
+	handle /deploy-status.json {
+		root * /srv/status
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	handle {
+		reverse_proxy web:80 {
+			# Agent runs and voice replies can take minutes and stream.
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
 		}
 	}
 }

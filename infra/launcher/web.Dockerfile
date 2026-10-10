@@ -12,6 +12,8 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
+# Empty for the launcher; the AWS server caps the Node heap here (infra/aws/docker-compose.prod.yml).
+ARG NODE_OPTIONS=""
 # Type checking is CI's job; the launcher only needs the bundle.
 RUN pnpm exec vite build
 

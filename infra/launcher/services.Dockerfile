@@ -18,6 +18,8 @@ COPY platform-web platform-web
 COPY llm-core llm-core
 COPY mcp-core mcp-core
 COPY services services
+# Empty for the launcher; the AWS server caps the Maven heap here (infra/aws/docker-compose.prod.yml).
+ARG MAVEN_OPTS=""
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -ntp -q install -DskipTests -Dspotless.check.skip=true -Djacoco.skip=true
 
