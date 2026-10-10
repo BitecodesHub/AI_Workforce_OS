@@ -250,3 +250,10 @@ ap-south-1 too, so after an upgrade the same template can be created there uncha
 - `infra/launcher/services.Dockerfile`, `infra/launcher/web.Dockerfile`: shared with the launcher;
   they accept `MAVEN_OPTS` / `NODE_OPTIONS` build arguments (empty by default) for the heap caps.
 - `.github/workflows/deploy.yml`: CI, then waits for the server to report the push live.
+
+## Live deployment (11 Oct 2026)
+
+- Live link: https://13-55-126-54.sslip.io (stack `aiwos-prod`, ap-southeast-2, instance i-06120f7207f36f4ea, Elastic IP 13.55.126.54)
+- Deploy status: https://13-55-126-54.sslip.io/deploy-status.json
+- Every push to `main` is picked up by the server within about 2 minutes, built, health-checked and rolled back automatically if unhealthy. GitHub's Deploy workflow reports whether the push went live (repository variable `AIWOS_PUBLIC_HOST`).
+- Demo data is off: the first person to register creates the first workspace.
