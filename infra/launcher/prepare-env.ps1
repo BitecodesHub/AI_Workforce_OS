@@ -1,3 +1,6 @@
+# @find: prepare env, windows, generate secrets, encryption master key, .env file, db password, demo switch, --new-keys, expose lan, powershell, first start settings
+# @what: Windows PowerShell script that writes the launcher's private .env file with generated secrets on the first start.
+# @flow: Called by Start AI Workforce OS.bat; twin of prepare-env.sh
 # Writes infra\launcher\.env, the launcher's private settings, for "Start AI Workforce OS.bat".
 # prepare-env.sh does the same for the macOS .command; keep the two in step.
 #

@@ -1,3 +1,6 @@
+// @find: audit export, export audit log, csv export, jsonl export, formula injection protection, download audit log, auditor file
+// @what: Formats audit entries as CSV or JSON lines for auditors, with spreadsheet formula protection.
+// @flow: Used by AuditController.export
 package os.aiworkforce.analytics.service;
 
 import java.util.LinkedHashMap;

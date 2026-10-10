@@ -1,3 +1,6 @@
+// @find: log context, MDC, run id in logs, trace logs by run goal agent workspace, logging
+// @what: Puts run, goal, agent and workspace ids into the log context while a run executes.
+// @flow: Used by RunExecutor and AgentRunner
 package os.aiworkforce.orchestrator.service;
 
 import java.util.LinkedHashMap;

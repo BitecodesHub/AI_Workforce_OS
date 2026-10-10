@@ -1,3 +1,6 @@
+// @find: demo accounts, demo data, seed demo users, sample workspace, demo password, owner admin manager employee viewer, DemoDataSeeder, try the platform
+// @what: Creates one demo account per role at startup in local and test environments only.
+// @flow: Runs after PermissionSeeder; listed to the sign-in screen by DemoController.
 package os.aiworkforce.identity.service;
 
 import java.time.Instant;
@@ -104,6 +107,7 @@ public class DemoDataSeeder {
     }
 
     /*
+    // @find: seed demo accounts, create demo users at startup
      * Ordered after PermissionSeeder, which creates the system roles these memberships point at.
      * The annotation belongs on the method: @Order on the class does not order event listeners,
      * and the seeder silently created nothing when it ran first.
@@ -158,6 +162,7 @@ public class DemoDataSeeder {
         }
     }
 
+    // @find: published demo accounts list, sign in screen demo buttons
     /** What the sign-in screen offers, so the list exists in one place rather than two. */
     public static List<DemoAccountView> published() {
         return ACCOUNTS.stream()

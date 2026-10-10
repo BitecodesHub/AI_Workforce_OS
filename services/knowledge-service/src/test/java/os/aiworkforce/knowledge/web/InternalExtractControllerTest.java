@@ -1,3 +1,5 @@
+// @find: tests for attachment text extraction, chat attachments, PDF docx xlsx pptx csv extract, POST /internal/knowledge/extract, text extractor
+// @what: Checks chat attachment text is read correctly for each file format.
 package os.aiworkforce.knowledge.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,5 @@
+// @find: tests for transcript compaction, shorten long conversation, tool results shortened, context window
+// @what: Checks what compaction keeps and what it cuts.
 package os.aiworkforce.llm.router;
 
 import static org.assertj.core.api.Assertions.assertThat;

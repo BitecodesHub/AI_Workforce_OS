@@ -1,3 +1,6 @@
+// @find: organisation entity, workspace entity, workspace name, slug, timezone, working hours, status, owner id, organisations table
+// @what: JPA entity for a workspace (organisation) and its settings.
+// @flow: Mapped to the organisations table; used by Organisations repository and WorkspaceController.
 package os.aiworkforce.organisation.domain;
 
 import java.time.DayOfWeek;

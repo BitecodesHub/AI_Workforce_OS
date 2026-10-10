@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, tool names, server__tool names, wire names, gmail.draft_message, tool name sanitising, person tools, memory tools, toWire, fromWire, ToolNames
+// @what: Converts tool names such as server.tool to and from the form providers accept.
+// @flow: Used by provider adapters and orchestrator-service engine.
 package os.aiworkforce.llm.model;
 
 /**
@@ -28,23 +31,27 @@ public final class ToolNames {
 
     private ToolNames() {}
 
+    // @find: is this a person tool
     /** A tool answered by a person rather than a server: person.ask_question, in either form. */
     public static boolean isPersonTool(String name) {
         return name != null
                 && (name.startsWith(PERSON_SERVER + ".") || name.startsWith(PERSON_SERVER + DOT_ON_THE_WIRE));
     }
 
+    // @find: is this a memory tool
     /** A tool an agent uses on its own memory: memory.remember or memory.recall, in either form. */
     public static boolean isMemoryTool(String name) {
         return name != null
                 && (name.startsWith(MEMORY_SERVER + ".") || name.startsWith(MEMORY_SERVER + DOT_ON_THE_WIRE));
     }
 
+    // @find: tool name to provider form, dot to double underscore
     /** {@code gmail.draft_message} → {@code gmail__draft_message}. */
     public static String toWire(String name) {
         return name == null ? null : name.replace(".", DOT_ON_THE_WIRE);
     }
 
+    // @find: tool name from provider form
     /** {@code gmail__draft_message} → {@code gmail.draft_message}; a name without the marker is unchanged. */
     public static String fromWire(String name) {
         return name == null ? null : name.replace(DOT_ON_THE_WIRE, ".");

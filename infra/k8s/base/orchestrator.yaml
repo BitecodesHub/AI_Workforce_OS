@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, orchestrator deployment, orchestrator, agents, runs, workflows, approvals, schedules, chat, deployment, service, resources, probes, replicas, manifest
+# @what: Kubernetes deployment and service for the orchestrator service (agents, runs, approvals).
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 # orchestrator service.
 #
 # Resource requests are what the scheduler places on and what the JVM sizes its heap against, so

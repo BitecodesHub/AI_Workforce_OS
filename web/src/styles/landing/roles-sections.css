@@ -1,4 +1,9 @@
 /*
+ * @find: landing styles, agents section, audit chain demo, role explorer, platform band, limits, call to action, footer, lp-agents, lp-audit, lp-roles, lp-cta
+ * @what: Styles for the agents, audit, roles, limits, call-to-action and footer sections of the home page.
+ * @flow: Imported by landing/index.css
+ */
+/*
  * Public home page: agents, the audit chain demo, the role explorer, the platform band, limits and
  * the call to action, and the footer. Owner: roles-and-sections.
  *

@@ -1,4 +1,9 @@
 /*
+ * @find: fonts, typeface, Inter, font face, font weights, optical size, typography
+ * @what: Declares the Inter typeface used across the product.
+ * @flow: Loaded with the app styles; see main.tsx
+ */
+/*
  * The one typeface: Inter, by Rasmus Andersson (SIL Open Font License 1.1).
  *
  * It replaced Aperçu on 3 October 2026. Aperçu's licensed web files were never added, so the

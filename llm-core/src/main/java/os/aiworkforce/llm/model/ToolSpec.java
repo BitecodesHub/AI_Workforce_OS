@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, tool spec, tool definition offered to model, granted tools only, JSON schema, ToolSpec
+// @what: A tool offered to the model, built only for tools the agent has been granted.
 package os.aiworkforce.llm.model;
 
 import java.util.Objects;

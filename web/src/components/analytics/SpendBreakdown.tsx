@@ -1,3 +1,6 @@
+// @find: spend breakdown, usage report, cost by model, cost by agent, download usage, export csv, spend report, SpendBreakdown, tokens
+// @what: Analytics spend table grouped by model, agent or other grouping, with a download.
+// @flow: Rendered on Analytics; uses useUsageReport
 import { useMemo, useState } from 'react'
 import { Button, Card, DataTable, Eyebrow, Notice } from '../ui'
 import type { Column } from '../ui'
@@ -78,6 +81,7 @@ function Breakdown({ title, first, grouping, range }: { title: string; first: st
   )
 }
 
+// @find: SpendBreakdown, usage report, spend by model, download usage csv
 export function SpendBreakdown({ window }: { window: InsightsWindow }) {
   const canRead = can('budget:read')
   const toast = useToast()

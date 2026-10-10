@@ -1,3 +1,6 @@
+// @find: coordinator, chat coordinator, handle message, send message, route message to agent, @mention, schedule from chat, answer from documents, queue, reroute, stop goal, retry goal, CoordinatorService, goal creation from chat
+// @what: Reads one chat message and decides what the workforce does: route to agents, set up a schedule, answer from documents, queue or ask for a choice.
+// @flow: Called by ChatController and ChatQueueRunner; uses MentionParser, IntentDetector, ModelRouterPlanner, RuleRouter, KnowledgeClient and the goal engine.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;
@@ -124,6 +127,27 @@ public class CoordinatorService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private AttachmentService attachmentService;
 
+    /** One answer at a time per conversation; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ChatQueue chatQueue;
+
+    /** The messages waiting their turn; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.repository.ChatQueuedMessages queued;
+
+    /** Starts the next waiting message once work ends; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ChatQueueRunner queueRunner;
+
+    void useQueue(
+            ChatQueue chatQueue,
+            os.aiworkforce.orchestrator.repository.ChatQueuedMessages queued,
+            ChatQueueRunner queueRunner) {
+        this.chatQueue = chatQueue;
+        this.queued = queued;
+        this.queueRunner = queueRunner;
+    }
+
     /** The conversation, when the caller may read it; otherwise "not found", so a private thread is not confirmed. */
     private Conversation visible(UUID orgId, UUID conversationId) {
         Conversation conversation = conversations
@@ -205,6 +229,18 @@ public class CoordinatorService {
         }
     }
 
+    /**
+     * The background for a message that came with files. "Using the attached files, ..." reads as
+     * a request that leans on documents, and none in the workspace covers it, but the files are
+     * the documents it means: the note that none covers it was repeated to the person as the
+     * answer's first line.
+     */
+    static Background withFiles(Background background, boolean withFiles) {
+        return withFiles && background.uncovered()
+                ? new Background(background.history(), background.passages(), false)
+                : background;
+    }
+
     /** The goal id and the task a stop or retry from chat leaves it at. */
     public record GoalActionResult(UUID goalId, String status, UUID fromTaskId) {}
 
@@ -239,6 +275,7 @@ public class CoordinatorService {
 
     // ---- Sending a message --------------------------------------------------------------------
 
+    // @find: handle message, process chat message, route and start work
     public List<ChatMessage> handleMessage(
             UUID orgId, UUID conversationId, String text, List<UUID> explicitAgentIds, String authorizationHeader) {
         return handleMessage(orgId, conversationId, text, explicitAgentIds, List.of(), authorizationHeader);
@@ -251,7 +288,34 @@ public class CoordinatorService {
      * for an agent - never a schedule or a search of the workspace's documents - because the files
      * are what it is about, and only an agent's run reads them.
      */
+    // @find: handle message with attachments, process chat message
     public List<ChatMessage> handleMessage(
+            UUID orgId,
+            UUID conversationId,
+            String typed,
+            List<UUID> explicitAgentIds,
+            List<UUID> attachmentIds,
+            String authorizationHeader) {
+        return send(orgId, conversationId, typed, explicitAgentIds, attachmentIds, authorizationHeader)
+                .messages();
+    }
+
+    /**
+     * What sending a message came to: the messages it added to the thread, or - when the
+     * conversation already had work in progress - the message as it waits in the queue.
+     */
+    public record SendOutcome(List<ChatMessage> messages, os.aiworkforce.orchestrator.domain.ChatQueuedMessage queued) {}
+
+    private record Recorded(ChatMessage message, os.aiworkforce.orchestrator.domain.ChatQueuedMessage queued) {}
+
+    /**
+     * Sends a message. While the conversation has work in progress - a goal planning, running or
+     * parked for a decision, or another message still being routed - the message is not answered
+     * alongside: it is stored as queued, checked under the same conversation lock every sender
+     * takes, so two messages sent together are put one after the other, never both started.
+     */
+    // @find: send message, record person message then decide, queue if busy
+    public SendOutcome send(
             UUID orgId,
             UUID conversationId,
             String typed,
@@ -264,7 +328,7 @@ public class CoordinatorService {
         List<ChatAttachments.Row> files = new ArrayList<>();
 
         // Phase 1: record what the person said, so it is never lost to anything that follows.
-        ChatMessage userMessage = inTransaction(() -> {
+        Recorded recorded = inTransaction(() -> {
             Conversation c = appender.lock(orgId, conversationId)
                     .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
             requireReadable(c);
@@ -274,6 +338,18 @@ public class CoordinatorService {
             }
             if (written.isBlank() && files.isEmpty()) {
                 throw ApiException.validation("text", "Write a message or attach a file.");
+            }
+            if (chatQueue != null && queued != null && chatQueue.busy(orgId, c)) {
+                os.aiworkforce.orchestrator.domain.ChatQueuedMessage waiting =
+                        os.aiworkforce.orchestrator.domain.ChatQueuedMessage.of(
+                                orgId,
+                                conversationId,
+                                requesterId,
+                                written,
+                                explicitAgentIds,
+                                files.stream().map(ChatAttachments.Row::id).toList(),
+                                ChatQueue.snapshot(RequestContext.actor().orElse(null)));
+                return new Recorded(null, queued.save(waiting));
             }
             Map<String, Object> detail = files.isEmpty()
                     ? Map.of()
@@ -288,55 +364,280 @@ public class CoordinatorService {
             if (c.getTitle().isBlank()) {
                 c.setTitle(truncateAtWord(written.isBlank() ? files.getFirst().name() : written, 60));
             }
-            return m;
+            c.startDeciding(m.getId());
+            return new Recorded(m, null);
         });
+        if (recorded.queued() != null) {
+            // The work may have ended between the check and now; the runner looks again.
+            drainSoon(orgId, conversationId);
+            return new SendOutcome(List.of(), recorded.queued());
+        }
+        return new SendOutcome(
+                process(orgId, conversationId, recorded.message(), written, files, explicitAgentIds, authorizationHeader),
+                null);
+    }
+
+    /**
+     * Phases two and three for a message already in the thread and marked as being decided:
+     * decide who takes it, act on it, and clear the mark in the same transaction that starts the
+     * work, so there is no moment in which the conversation looks idle with work about to begin.
+     */
+    private List<ChatMessage> process(
+            UUID orgId,
+            UUID conversationId,
+            ChatMessage userMessage,
+            String written,
+            List<ChatAttachments.Row> files,
+            List<UUID> explicitAgentIds,
+            String authorizationHeader) {
+        UUID requesterId = requesterIdFromContext();
         String text = AttachmentService.requestWithNames(written, files);
         boolean withFiles = !files.isEmpty();
-
-        // Phase 2: decide, with no transaction open - the planner can take up to 20 seconds and a
-        // document search up to 10.
-        Decision decision;
         try {
-            decision = decide(
-                    orgId,
-                    conversationId,
-                    userMessage,
-                    text,
-                    explicitAgentIds,
-                    authorizationHeader,
-                    requesterId,
-                    withFiles);
-        } catch (RuntimeException e) {
-            log.warn("Could not decide what to do with a chat message in conversation {}", conversationId, e);
-            decision = new ErrorDecision(
-                    "The coordinator could not decide who takes this. Try again, or mention an agent with @.", text);
-        }
+            // Phase 2: decide, with no transaction open - the planner can take up to 20 seconds and a
+            // document search up to 10.
+            Decision decision;
+            try {
+                decision = decide(
+                        orgId,
+                        conversationId,
+                        userMessage,
+                        text,
+                        explicitAgentIds,
+                        authorizationHeader,
+                        requesterId,
+                        withFiles);
+            } catch (RuntimeException e) {
+                log.warn("Could not decide what to do with a chat message in conversation {}", conversationId, e);
+                decision = new ErrorDecision(
+                        "The coordinator could not decide who takes this. Try again, or mention an agent with @.",
+                        text);
+            }
 
-        // Phase 3: act on the decision and record the replies.
-        List<ChatMessage> created = new ArrayList<>(List.of(userMessage));
-        Decision toApply = decision;
-        try {
-            created.addAll(inTransaction(() -> {
-                List<ChatMessage> replies = apply(orgId, conversationId, toApply);
-                if (withFiles) {
-                    // In the transaction that creates the goal: its first run starts only once this
-                    // commits, so it always finds its files.
-                    replies.stream()
-                            .map(ChatMessage::getGoalId)
-                            .filter(java.util.Objects::nonNull)
-                            .findFirst()
-                            .ifPresent(goalId -> attachmentService.linkGoal(orgId, userMessage.getId(), goalId));
-                }
-                return replies;
-            }));
-        } catch (RuntimeException e) {
-            log.error("Could not act on a chat message in conversation {}", conversationId, e);
-            String problem = problemMessage(e);
-            created.addAll(inTransaction(
-                    () -> applySimple(orgId, conversationId, "error", problem, errorDetail(problem, text))));
+            // Phase 3: act on the decision and record the replies.
+            List<ChatMessage> created = new ArrayList<>(List.of(userMessage));
+            Decision toApply = decision;
+            try {
+                created.addAll(inTransaction(() -> {
+                    List<ChatMessage> replies = apply(orgId, conversationId, toApply);
+                    if (withFiles) {
+                        // In the transaction that creates the goal: its first run starts only once this
+                        // commits, so it always finds its files.
+                        replies.stream()
+                                .map(ChatMessage::getGoalId)
+                                .filter(java.util.Objects::nonNull)
+                                .findFirst()
+                                .ifPresent(goalId -> attachmentService.linkGoal(orgId, userMessage.getId(), goalId));
+                    }
+                    finishDeciding(orgId, conversationId, userMessage.getId());
+                    return replies;
+                }));
+            } catch (RuntimeException e) {
+                log.error("Could not act on a chat message in conversation {}", conversationId, e);
+                String problem = problemMessage(e);
+                created.addAll(inTransaction(() -> {
+                    List<ChatMessage> replies =
+                            applySimple(orgId, conversationId, "error", problem, errorDetail(problem, text));
+                    finishDeciding(orgId, conversationId, userMessage.getId());
+                    return replies;
+                }));
+            }
+            return created;
+        } finally {
+            // Whatever happened above, this message no longer holds the conversation, and a waiting
+            // one can start if no work did.
+            try {
+                inTransaction(() -> {
+                    finishDeciding(orgId, conversationId, userMessage.getId());
+                    return null;
+                });
+            } catch (RuntimeException e) {
+                log.warn("Could not clear the routing mark in conversation {}: {}", conversationId, e.toString());
+            }
+            drainSoon(orgId, conversationId);
         }
-        return created;
     }
+
+    /** Clears this message's "being decided" mark; another message's mark is left alone. */
+    private void finishDeciding(UUID orgId, UUID conversationId, UUID messageId) {
+        appender.lock(orgId, conversationId).ifPresent(c -> {
+            if (c.finishDeciding(messageId)) {
+                conversations.save(c);
+            }
+        });
+    }
+
+    private void drainSoon(UUID orgId, UUID conversationId) {
+        if (queueRunner != null) {
+            queueRunner.drainSoon(orgId, conversationId);
+        }
+    }
+
+    // ---- Starting a waiting message ---------------------------------------------------------
+
+    /** A waiting message, now in the thread and marked as being decided, with what it needs to go on. */
+    private record Claimed(
+            ChatMessage message,
+            String written,
+            List<ChatAttachments.Row> files,
+            List<UUID> agentIds,
+            Actor actor) {}
+
+    /**
+     * Starts the oldest waiting message of a conversation when it has no work in progress. Called
+     * when work ends, and by a periodic sweep; safe to call at any time and from anywhere, because
+     * the check and the claim happen under the conversation lock.
+     *
+     * @return true when a message was started
+     */
+    // @find: start next queued message, claim waiting message
+    public boolean startNextQueued(UUID orgId, UUID conversationId) {
+        if (chatQueue == null || queued == null) {
+            return false;
+        }
+        Claimed claimed = inTransaction(() -> {
+            Conversation c = appender.lock(orgId, conversationId).orElse(null);
+            if (c == null || chatQueue.busy(orgId, c)) {
+                return null;
+            }
+            return chatQueue.next(conversationId).map(q -> claim(orgId, c, q)).orElse(null);
+        });
+        if (claimed == null) {
+            return false;
+        }
+        runClaimed(orgId, conversationId, claimed);
+        return true;
+    }
+
+    /**
+     * "Start now anyway": stops the work in progress in the conversation - only when the caller may
+     * stop all of it - and starts this waiting message straight away.
+     */
+    // @find: start queued message now, Start now anyway
+    public SendOutcome startQueuedNow(UUID orgId, UUID conversationId, UUID queuedId) {
+        if (chatQueue == null || queued == null) {
+            throw ApiException.notFound("queued message", queuedId);
+        }
+        Actor actor = RequestContext.requireActor();
+        // First: claim it and stop the old work, without the conversation lock (lock order puts the
+        // conversation last). "starting" keeps the runner from starting another message meanwhile.
+        inTransaction(() -> {
+            visible(orgId, conversationId);
+            os.aiworkforce.orchestrator.domain.ChatQueuedMessage q =
+                    chatQueue.require(orgId, conversationId, queuedId, actor);
+            if (!os.aiworkforce.orchestrator.domain.ChatQueuedMessage.QUEUED.equals(q.getStatus())) {
+                throw new ApiException(
+                        ErrorCode.CONFLICT,
+                        os.aiworkforce.orchestrator.domain.ChatQueuedMessage.EXPIRED.equals(q.getStatus())
+                                ? "This message expired. Send it again instead."
+                                : "This message is already starting.");
+            }
+            List<Goal> active = chatQueue.activeGoals(orgId, conversationId);
+            active.forEach(goal -> goalService.requireCanStop(goal, actor));
+            q.setStatus(os.aiworkforce.orchestrator.domain.ChatQueuedMessage.STARTING);
+            queued.save(q);
+            active.forEach(goal ->
+                    goalService.cancel(orgId, goal.getId(), "Stopped so a newer message could start."));
+            return null;
+        });
+        // Then: put it in the thread and start it.
+        Claimed claimed = inTransaction(() -> {
+            Conversation c = appender.lock(orgId, conversationId)
+                    .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
+            os.aiworkforce.orchestrator.domain.ChatQueuedMessage q = queued.findByIdAndOrgIdAndConversationId(
+                            queuedId, orgId, conversationId)
+                    .orElseThrow(() -> ApiException.notFound("queued message", queuedId));
+            return claim(orgId, c, q);
+        });
+        if (claimed == null) {
+            return new SendOutcome(List.of(), null);
+        }
+        return new SendOutcome(runClaimed(orgId, conversationId, claimed), null);
+    }
+
+    /**
+     * Moves a waiting message into the thread as the sender's own message, marks it as being
+     * decided, and removes it from the queue - all under the conversation lock the caller holds.
+     * Null when it can no longer be sent (its files are gone and it had no words).
+     */
+    private Claimed claim(UUID orgId, Conversation c, os.aiworkforce.orchestrator.domain.ChatQueuedMessage q) {
+        Actor actor = ChatQueue.restore(q.getActor());
+        List<ChatAttachments.Row> files = new ArrayList<>();
+        if (attachmentService != null && actor != null && !q.getAttachmentIds().isEmpty()) {
+            try {
+                files.addAll(attachmentService.checkForSend(orgId, actor, c.getId(), q.getAttachmentIds()));
+            } catch (ApiException gone) {
+                log.info("A queued message's files could not be attached in conversation {}: {}", c.getId(), gone.getMessage());
+            }
+        }
+        queued.delete(q);
+        if (actor == null || (q.getText().isBlank() && files.isEmpty())) {
+            appender.append(
+                    c,
+                    "coordinator",
+                    null,
+                    null,
+                    "error",
+                    "A queued message could not be started. Send it again.",
+                    errorDetail("A queued message could not be started. Send it again.", q.getText()),
+                    null);
+            return null;
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        if (!files.isEmpty()) {
+            detail.put("attachments", AttachmentService.detailOf(files));
+        }
+        detail.put("fromQueue", true);
+        ChatMessage m = appender.append(c, "user", q.getAuthorId(), null, "text", q.getText(), detail, null);
+        if (!files.isEmpty()) {
+            messages.flush();
+            attachmentService.bind(orgId, c.getId(), m.getId(), files);
+        }
+        c.startDeciding(m.getId());
+        conversations.save(c);
+        return new Claimed(m, q.getText(), files, q.getAgentIds(), actor);
+    }
+
+    /** Decides and starts a claimed message as the person who sent it. */
+    private List<ChatMessage> runClaimed(UUID orgId, UUID conversationId, Claimed claimed) {
+        // The request that sent it is long gone: its sender's authority was kept with it, and a
+        // document search is made with a token naming them rather than their own header.
+        return RequestContext.as(
+                claimed.actor(),
+                () -> process(
+                        orgId,
+                        conversationId,
+                        claimed.message(),
+                        claimed.written(),
+                        claimed.files(),
+                        claimed.agentIds(),
+                        null));
+    }
+
+    /**
+     * Refuses to start more work in a conversation that already has some, other than the goal
+     * {@code except} the caller is replacing.
+     */
+    private void requireIdle(UUID orgId, UUID conversationId, UUID except) {
+        if (chatQueue == null) {
+            return;
+        }
+        Conversation c = conversations.findByIdAndOrgId(conversationId, orgId).orElse(null);
+        if (c == null) {
+            return;
+        }
+        boolean deciding = c.getDecidingSince() != null
+                && c.getDecidingSince().isAfter(java.time.Instant.now().minus(ChatQueue.DECIDING_STALE));
+        boolean otherWork = chatQueue.activeGoals(orgId, conversationId).stream()
+                .anyMatch(goal -> except == null || !goal.getId().equals(except));
+        if (deciding || otherWork) {
+            ErrorCode code = ErrorCode.RESOURCE_IN_USE;
+            throw new ApiException(code, BUSY_MESSAGE);
+        }
+    }
+
+    static final String BUSY_MESSAGE =
+            "An answer is still being worked on in this conversation. Wait for it to finish or stop it first.";
 
     private <T> T inTransaction(Supplier<T> body) {
         return tx.execute(status -> body.get());
@@ -377,8 +678,10 @@ public class CoordinatorService {
             Agent paused =
                     chosen.stream().filter(a -> !a.isActive()).findFirst().orElse(null);
             if (paused != null) {
-                String reason = paused.getName()
-                        + " is paused, so nothing was started. Resume it in Agents, or choose someone else.";
+                String reason = paused.isRetired()
+                        ? paused.getName() + " is retired, so nothing was started. Restore it in Agents, or choose someone else."
+                        : paused.getName()
+                                + " is paused, so nothing was started. Resume it in Agents, or choose someone else.";
                 return new ChoiceDecision(reason, pausedMentionAlternatives(fallback, workspaceAgents), text);
             }
             // The label for each agent's task; what each reads is the message as it was written.
@@ -395,7 +698,7 @@ public class CoordinatorService {
                     mentionReason(chosen),
                     List.of(),
                     text,
-                    withDocuments(background, orgId, part, chronological, authorizationHeader));
+                    withFiles(withDocuments(background, orgId, part, chronological, authorizationHeader), withFiles));
         }
 
         if (withFiles) {
@@ -407,7 +710,7 @@ public class CoordinatorService {
                     conversationId,
                     text,
                     chronological,
-                    withDocuments(background, orgId, text, chronological, authorizationHeader));
+                    withFiles(withDocuments(background, orgId, text, chronological, authorizationHeader), true));
         }
 
         ZoneId zone = zones.zoneFor(orgId);
@@ -649,7 +952,7 @@ public class CoordinatorService {
                     orgId, workspaceAgents, fallback, requesterId, conversationId, text, chronological, background);
         }
         String query = searchQueryFor(text, chronological);
-        Optional<KnowledgeClient.SearchResult> result = knowledge.search(orgId, query, authorizationHeader);
+        Optional<KnowledgeClient.SearchResult> result = searchDocuments(orgId, query, authorizationHeader);
         if (result.isEmpty()) {
             // Search is down: treat the question as ordinary work, so the best agent answers it.
             if (canFallback) {
@@ -703,6 +1006,23 @@ public class CoordinatorService {
     }
 
     /**
+     * Searches as the person who sent the message: with their own header while their request is in
+     * flight, and - for a queued message started later - with a token that names them, so the
+     * knowledge service decides what they may read exactly as it would have.
+     */
+    private Optional<KnowledgeClient.SearchResult> searchDocuments(UUID orgId, String query, String authorization) {
+        if (authorization != null && !authorization.isBlank()) {
+            return knowledge.search(orgId, query, authorization);
+        }
+        UUID requester = requesterIdFromContext();
+        if (requester == null) {
+            return Optional.empty();
+        }
+        KnowledgeClient.AgentSearch found = knowledge.searchFor(orgId, requester, query, 5, null, null);
+        return found == null ? Optional.empty() : Optional.ofNullable(found.result());
+    }
+
+    /**
      * The background with the workspace's documents searched for what bears on a piece of work, so
      * that an agent given "Draft a reply using our refund policy" reads the policy rather than
      * inventing one. A search that cannot run leaves the work to go ahead without passages.
@@ -714,7 +1034,7 @@ public class CoordinatorService {
             return background;
         }
         String query = searchQueryFor(text, chronological);
-        Optional<KnowledgeClient.SearchResult> result = knowledge.search(orgId, query, authorization);
+        Optional<KnowledgeClient.SearchResult> result = searchDocuments(orgId, query, authorization);
         return result.map(search -> documentsBackground(background, text, query, search))
                 .orElse(background);
     }
@@ -997,6 +1317,7 @@ public class CoordinatorService {
      * Reroutes a routing message: cancels its goal if it is still active and the caller may cancel
      * it, then starts a new one for the chosen agent with the same original instruction.
      */
+    // @find: reroute message, send to chosen agent after choice
     @Transactional
     public List<ChatMessage> reroute(UUID orgId, UUID conversationId, UUID messageId, UUID chosenAgentId) {
         visible(orgId, conversationId);
@@ -1014,9 +1335,14 @@ public class CoordinatorService {
         Agent agent = agents.findByIdAndOrgId(chosenAgentId, orgId)
                 .orElseThrow(() -> ApiException.notFound("agent", chosenAgentId));
         if (!agent.isActive()) {
-            throw new ApiException(ErrorCode.CONFLICT, "That agent is paused. Resume it in Agents first.");
+            throw new ApiException(
+                    ErrorCode.CONFLICT,
+                    agent.isRetired()
+                            ? "That agent is retired. Restore it in Agents first."
+                            : "That agent is paused. Resume it in Agents first.");
         }
 
+        requireIdle(orgId, conversationId, target.getGoalId());
         Actor actor = RequestContext.requireActor();
         Goal activeGoal = null;
         if (target.getGoalId() != null) {
@@ -1145,6 +1471,7 @@ public class CoordinatorService {
 
     // ---- Stop and retry from chat (A3.7) ---------------------------------------------------------
 
+    // @find: stop goal from chat, cancel work
     @Transactional
     public GoalActionResult stopGoal(UUID orgId, UUID conversationId, UUID goalId) {
         visible(orgId, conversationId);
@@ -1156,10 +1483,12 @@ public class CoordinatorService {
         return new GoalActionResult(goalId, "cancelled", null);
     }
 
+    // @find: retry goal from chat, run again
     @Transactional
     public GoalActionResult retryGoal(UUID orgId, UUID conversationId, UUID goalId) {
         visible(orgId, conversationId);
         goalForConversation(orgId, conversationId, goalId);
+        requireIdle(orgId, conversationId, goalId);
         Actor actor = RequestContext.requireActor();
         GoalService.RetryResult result = goalService.retry(orgId, goalId, actor);
         return new GoalActionResult(
@@ -1176,6 +1505,7 @@ public class CoordinatorService {
 
     // ---- Answer from documents (A3.9) -------------------------------------------------------------
 
+    // @find: answer from documents, Answer from these passages, grounded answer
     @SuppressWarnings("unchecked")
     @Transactional
     public List<ChatMessage> answerFromDocuments(
@@ -1191,6 +1521,7 @@ public class CoordinatorService {
             throw ApiException.validation("messageId", "only a documents message with passages can be answered from");
         }
 
+        requireIdle(orgId, conversationId, null);
         List<Agent> workspaceAgents = agents.findByOrgIdOrderByName(orgId);
         Agent agent = explicitAgentId == null
                 ? null

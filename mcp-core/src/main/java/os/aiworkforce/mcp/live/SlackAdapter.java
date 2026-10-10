@@ -1,3 +1,6 @@
+// @find: slack, channels, chat, messages, list channels, get messages, post message, bot token, live adapter, real API, communication
+// @what: Live Slack connector: runs slack__ tools (list channels, get messages, post message) against the Slack Web API with a bot token; posting always needs approval.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.LinkedHashMap;
@@ -48,6 +51,7 @@ public final class SlackAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Slack list channels, tool slack__list_channels, live Slack call
     private Mono<ToolResult> listChannels(ToolInvocation invocation, JsonNode arguments, String token) {
         return api(token, "conversations.list", channelQuery()).map(body -> {
             ArrayNode items = json.createArrayNode();
@@ -64,6 +68,7 @@ public final class SlackAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Slack get messages, tool slack__get_messages, live Slack call
     private Mono<ToolResult> getMessages(ToolInvocation invocation, JsonNode arguments, String token) {
         String channel = required(arguments, "channel");
         int limit = limit(arguments, 20, 100);
@@ -83,6 +88,7 @@ public final class SlackAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: Slack post message, tool slack__post_message, live Slack call
     private Mono<ToolResult> postMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String channel = bare(required(arguments, "channel"));
         ObjectNode body = json.createObjectNode();

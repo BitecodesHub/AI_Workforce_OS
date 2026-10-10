@@ -1,3 +1,5 @@
+// @find: tests for audit chain, hash rules, verify chain, find first break, tampered entry detected
+// @what: Checks hashing and chain verification rules without a database.
 package os.aiworkforce.analytics.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

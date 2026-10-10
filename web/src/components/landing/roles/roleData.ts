@@ -1,3 +1,6 @@
+// @find: role data, roles, permission codes, permission groups, role compositions, ROLE_CODES, capabilities, console areas, owner admin manager employee viewer, RBAC, who can do what
+// @what: Role and permission data for the public page, kept in step with Permission.java, PermissionSeeder and App.tsx.
+// @flow: Used by RoleSwitcher and SafetySection
 import type { TagTone } from '../../ui'
 
 /*

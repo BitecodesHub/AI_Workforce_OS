@@ -1,3 +1,6 @@
+// @find: eslint config, lint rules, react hooks rules, typescript lint, code style checks
+// @what: Lint rules for the web app.
+// @flow: Read by pnpm lint
 import js from '@eslint/js'
 import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'

@@ -1,3 +1,9 @@
+// @find: providers repository, list providers visible to workspace, platform providers, priority order, Providers
+// @what: Spring Data repository for LlmProviderEntity rows.
+// @flow: Used by the provider registry and Providers page.
+// @find: providers repository, list providers visible to workspace, platform providers, priority order, Providers
+// @what: Spring Data repository for LlmProviderEntity rows.
+// @flow: Used by the provider registry and Providers page.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.List;
@@ -25,6 +31,8 @@ import os.aiworkforce.orchestrator.domain.LlmProviderEntity;
  */
 public interface Providers extends JpaRepository<LlmProviderEntity, String> {
 
+    // @find: providers visible to a workspace, platform and own, by priority
+    // @find: providers visible to a workspace, platform and own, by priority
     /** Platform-wide providers plus any the workspace added for itself. */
     @Query("select p from LlmProviderEntity p where p.orgId is null or p.orgId = :orgId order by p.priority")
     List<LlmProviderEntity> findVisibleTo(@Param("orgId") UUID orgId);

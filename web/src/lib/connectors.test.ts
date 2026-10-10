@@ -1,3 +1,5 @@
+// @find: tests for connectors, capability groups, asks first, grant tools, call limit, connector state, OAuth return
+// @what: Unit tests for connector rules and wording.
 import { describe, expect, it } from 'vitest'
 import {
   CAPABILITY_GROUPS,
@@ -242,6 +244,13 @@ describe('connectorSummary', () => {
   const base = { status: 'sandbox', sandbox: true, liveAvailable: true }
   const live = { server: 'gmail', status: 'connected', sandbox: false }
   const broken = { server: 'slack', status: 'error', sandbox: false }
+
+  it('does not count a built-in connector such as Voice notes as practice data', () => {
+    const voiceNotes = { server: 'voice', status: 'sandbox', sandbox: true, authType: 'none' }
+    expect(connectorState(voiceNotes)).toBe('builtin')
+    const result = connectorSummary([live, voiceNotes, { ...base, server: 'jira' }])
+    expect(result.short).toBe('1 live · 1 practice')
+  })
 
   it('counts live, practice and attention, with short words for the pill', () => {
     const result = connectorSummary([live, broken, { ...base, server: 'jira' }, { ...base, server: 'zoom' }])

@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, routing policy, ordered candidates, fallback order, when all models fail, exhausted behaviour, agent model preference, RoutingPolicy
+// @what: Ordered list of models to try for an agent and what to do when none work.
+// @flow: Built from the agent's settings; consumed by ModelRouter.route.
 package os.aiworkforce.llm.router;
 
 import java.time.Duration;

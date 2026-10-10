@@ -1,3 +1,6 @@
+// @find: resilience, circuit breaker, timeout, retry, backoff, outbound calls, provider resilience, service call patience
+// @what: Builds circuit breakers, timeouts and retry settings for outbound calls to models and sibling services.
+// @flow: Used by LLM routing and service clients
 package os.aiworkforce.platform.resilience;
 
 import java.time.Duration;

@@ -1,3 +1,6 @@
+// @find: landing facts, product facts, agents, providers, live connectors, practice connectors, connector count, sandbox model, CTA links, AGENTS, PROVIDERS
+// @what: Single source of the figures and names the public pages state.
+// @flow: Used by hero, sections and demos
 /*
  * The facts the public pages state, in one place.
  *

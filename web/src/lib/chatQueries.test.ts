@@ -1,3 +1,5 @@
+// @find: tests for chat queries, earlier messages paging, merge thread, slid out messages, lowest position, show earlier messages
+// @what: Tests for how earlier pages merge with the live conversation window without gaps or duplicates.
 import { createElement } from 'react'
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

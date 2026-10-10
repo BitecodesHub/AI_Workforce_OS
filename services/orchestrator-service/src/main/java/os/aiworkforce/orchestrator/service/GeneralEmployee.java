@@ -1,3 +1,6 @@
+// @find: general employee, fallback agent, agent of last resort, is_fallback, default agent, unmatched request, routing to general assistant, ensure fallback agent
+// @what: Guarantees each workspace has exactly one fallback agent that takes requests no specialist covers.
+// @flow: Called when routing a request or creating a workspace; reads Agents and AgentVersions
 package os.aiworkforce.orchestrator.service;
 
 import java.util.List;
@@ -44,6 +47,9 @@ public class GeneralEmployee {
 
     public static final String NAME = "General Employee";
     public static final String CATEGORY = "operations";
+    /** What it does, in one line written about it (V20 writes the same line for existing workspaces). */
+    public static final String DESCRIPTION =
+            "Takes any request no specialist covers: questions, explanations, drafting, planning and analysis.";
     static final int MAX_STEPS = 10;
 
     static final String PROMPT =
@@ -84,6 +90,7 @@ public class GeneralEmployee {
         this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    // @find: ensure fallback agent exists, create general employee
     /**
      * Creates the workspace's General Employee when it has none, choosing a free key from
      * {@link #FALLBACK_KEYS}. Does nothing when a flagged agent already exists, whatever its
@@ -113,6 +120,7 @@ public class GeneralEmployee {
                 agent.setKey(key);
                 agent.setName(NAME);
                 agent.setCategory(CATEGORY);
+                agent.setDescription(DESCRIPTION);
                 agent.setFallback(true);
                 agents.save(agent);
 
@@ -138,6 +146,7 @@ public class GeneralEmployee {
         }
     }
 
+    // @find: find active fallback agent
     /** The active General Employee among the workspace's agents, if any. */
     public Optional<Agent> activeIn(List<Agent> workspaceAgents) {
         return workspaceAgents.stream()

@@ -1,3 +1,6 @@
+// @find: episode, episodic memory, episodes table, what an agent did, observed, decided, importance, run id, append only record, expiry
+// @what: Database entity for one append-only record of something an agent observed, decided or did.
+// @flow: Written by EpisodicMemory.record; read by MemoryController
 package os.aiworkforce.memory.domain;
 
 import java.time.Instant;

@@ -1,4 +1,9 @@
 /*
+ * @find: landing styles, hero, landing bar, top bar, simulated console, benefits, lp-hero, lp-bar, lp-console, home page
+ * @what: Styles for the landing bar and hero with its simulated console.
+ * @flow: Imported by landing/index.css
+ */
+/*
  * Public home page: the landing bar, the hero and its simulated console.
  *
  * Owner: hero. Classes use .lp-bar-*, .lp-hero-*, .lp-benefit* and .lp-console-*;
@@ -207,19 +212,19 @@
   min-width: 0;
 }
 
+/* Inline, not flex: when the line wraps on a phone the dot stays beside the first word instead
+ * of drifting to the far edge of a full-width text box. */
 .lp-hero-caption {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 8px;
   margin-top: 16px;
+  text-align: center;
   font-size: var(--text-caption);
   line-height: 1.45;
   color: var(--lp-hero-soft-ink);
 }
 
 .lp-hero-caption > .lp-dot {
-  margin-top: 5px;
+  margin-right: 8px;
+  vertical-align: 0.15em;
 }
 
 /* ---- Benefits --------------------------------------------------------------------------
@@ -868,6 +873,23 @@
   .lp .lp-console-table th,
   .lp .lp-console-table td {
     padding-inline: 6px;
+  }
+
+  /* With the goal column gone the agent column takes the slack, and a long agent name is cut
+   * short rather than pushing the time column past the card's edge on a 375px phone. */
+  .lp .lp-console-table td:first-child {
+    width: 100%;
+    max-width: 0;
+  }
+
+  .lp .lp-console-table td:first-child > .tag {
+    max-width: 100%;
+  }
+
+  .lp .lp-console-table td:first-child .tag-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* Tighter, so the first row of figures stays visible above the approval card. */

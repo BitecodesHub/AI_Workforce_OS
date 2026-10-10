@@ -1,3 +1,6 @@
+// @find: format, date, time, duration, relative time, ago, count, money, tokens, plural, sentence case, truncate, name list, short id, en-AU locale
+// @what: Every date, time, duration, count and money value the console shows, formatted one consistent way.
+// @flow: Used everywhere; useNow.ts supplies the ticking clock
 /*
  * Every date, time, duration, count and amount the console shows, formatted one way.
  *
@@ -37,6 +40,7 @@ function countedUnit(count: number, unit: string): string {
   return `${count} ${unit}${count === 1 ? '' : 's'}`
 }
 
+// @find: plural, singular, 1 item 2 items
 /** '1 run', '3 runs': `one` for exactly one, `many` otherwise. */
 export function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
@@ -54,6 +58,7 @@ function timePart(date: Date): string {
   return `${hour12}:${pad2(date.getMinutes())} ${hours < 12 ? 'am' : 'pm'}`
 }
 
+// @find: format date time, timestamp
 /** '27 Sep 2026, 3:04 pm', or an em dash when there is no time to show. */
 export function formatDateTime(iso?: string | null): string {
   const date = parse(iso)
@@ -119,6 +124,7 @@ export function formatDate(iso?: string | null): string {
   return date ? datePart(date) : EMPTY
 }
 
+// @find: relative time, 5 minutes ago
 /**
  * How long ago, or how long until, in words.
  *
@@ -160,7 +166,10 @@ export function formatRelative(iso?: string | null, now: number = Date.now()): s
  */
 export function formatRelativeTicked(iso: string | null | undefined, now: number, tickMs: number): string {
   const at = iso ? Date.parse(iso) : Number.NaN
-  const reference = Number.isFinite(at) && at > now && at - now <= tickMs ? at : now
+  // A browser slows the timers of a hidden tab to a minute or more, so the shared clock can lag
+  // far more than one tick; the real time is read too, so it never runs behind the present.
+  const current = Math.max(now, Date.now())
+  const reference = Number.isFinite(at) && at > current && at - current <= tickMs ? at : current
   return formatRelative(iso, reference)
 }
 
@@ -202,6 +211,7 @@ export function formatAgo(ms: number): string {
 
 /* ---- Durations ------------------------------------------------------------------------------- */
 
+// @find: format duration, how long
 /**
  * A length of time: '850 ms', '5.2 s', '12 s', '4 min 05 s', '2 h 05 min', '3 d 4 h'.
  *
@@ -262,6 +272,7 @@ export function formatCount(n?: number | null): string {
   return COUNT.format(n)
 }
 
+// @find: tokens, compact number, 1.2k
 /** Token counts at a glance: '950', '12.5K', '131K', '1.05M'. Exact figures belong in a title. */
 export function formatCompactTokens(n?: number | null): string {
   if (n == null || !Number.isFinite(n)) return EMPTY
@@ -284,6 +295,7 @@ function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
 
+// @find: format money, cost, USD
 /**
  * An amount in US dollars: 'US$3.00', 'US$1,204.50'. Amounts under a cent keep their significant
  * digits ('US$0.0042') because a single model call often costs less than a cent, and 'US$0.00'
@@ -309,6 +321,7 @@ export function formatMoney(amount?: number | null, currency: 'USD' = 'USD'): st
 
 /* ---- Text ------------------------------------------------------------------------------------ */
 
+// @find: sentence case, humanise code, SNAKE_CASE to words
 /**
  * A code as words: 'waiting_approval' reads 'Waiting approval', 'HALF_OPEN' 'Half open',
  * 'run.fail' 'Run fail'. The fallback for any code without a label of its own, so the console
@@ -324,6 +337,7 @@ export function sentenceCase(code?: string | null): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : ''
 }
 
+// @find: truncate text, shorten, ellipsis
 /** Shortens text to at most `max` characters, at a word boundary, ending with an ellipsis. */
 export function truncateWords(text?: string | null, max = 80): string {
   if (!text) return ''

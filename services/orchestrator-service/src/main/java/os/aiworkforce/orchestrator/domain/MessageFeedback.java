@@ -1,3 +1,9 @@
+// @find: message feedback, thumbs up, thumbs down, rate answer, rating reason, satisfaction, agent rating, chat_message_feedback, MessageFeedback entity, answer rating
+// @what: Entity for one person's thumbs up or down (with optional reason) on one agent answer.
+// @flow: Written by native upsert in MessageFeedbacks; read for agent satisfaction and run trace ratings.
+// @find: message feedback, thumbs up, thumbs down, rate answer, rating reason, satisfaction, agent rating, chat_message_feedback, MessageFeedback entity, answer rating
+// @what: Entity for one person's thumbs up or down (with optional reason) on one agent answer.
+// @flow: Written by native upsert in MessageFeedbacks; read for agent satisfaction and run trace ratings.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;

@@ -1,3 +1,6 @@
+// @find: task progress, goal progress, run finished, run parked, run resumed, start failed, close goal, task status, goal status sync, retry attempts, settle task
+// @what: Keeps a task and its goal in step with the run doing the work, on finish, park, resume, failure, rejection and cancel.
+// @flow: Called by AgentRunner and ApprovalService; announces via LifecycleAnnouncer
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -165,6 +168,7 @@ public class TaskProgress {
         }
     }
 
+    // @find: run finished, task done or failed
     /**
      * Applies a run's terminal outcome to its task.
      *
@@ -222,6 +226,7 @@ public class TaskProgress {
         announceSettled(task);
     }
 
+    // @find: run parked waiting for approval or answer
     /**
      * The run stopped to wait for a person, so its task is waiting too, for the same thing: an
      * approval ({@code waiting_approval}) or an answer ({@code waiting_input}).
@@ -240,6 +245,7 @@ public class TaskProgress {
         tasks.save(task);
     }
 
+    // @find: run resumed
     /** The approval was granted, or the question answered, and the run picked up again. */
     @Transactional
     public void onRunResumed(Run run) {
@@ -251,6 +257,7 @@ public class TaskProgress {
         tasks.save(task);
     }
 
+    // @find: task start failed
     /**
      * A task whose run could not even begin: the agent is paused, has been removed, or has no
      * configuration. The attempt has already been counted, so the retry rule still bounds it.
@@ -264,6 +271,7 @@ public class TaskProgress {
         announceSettled(task);
     }
 
+    // @find: close goal when all tasks settled
     /**
      * Closes a goal once every task under it has finished.
      *

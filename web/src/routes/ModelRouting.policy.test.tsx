@@ -1,3 +1,6 @@
+// @find: tests for model routing policy, PUT /api/model-policy, fallback chain, vitest, ModelRouting component tests, Model routing page
+// @what: Automated tests that check the model routing policy screen (/routing) behaves as users expect.
+// @flow: Renders ModelRouting from ModelRouting.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -159,18 +162,19 @@ describe('the routing policy on Model routing', () => {
     expect(screen.queryByRole('button', { name: 'Save routing policy' })).not.toBeInTheDocument()
   })
 
-  it("offers every model the provider lists, free first, with the saved ones folded in", async () => {
+  it("offers the models the provider lists, free first, and swaps a filled-in saved model it does not offer", async () => {
     open(['provider:read', 'provider:manage'])
 
     fireEvent.click(await screen.findByRole('button', { name: 'Add a candidate' }))
     expect(await screen.findByText('2 models that can use tools, 1 free.')).toBeInTheDocument()
+    // The saved list filled in Llama Fast, which Groq's own list leaves out for this key.
+    expect(screen.getByRole('combobox', { name: 'Candidate 1 model' })).toHaveValue('Qwen3 32B')
     fireEvent.click(screen.getByRole('combobox', { name: 'Candidate 1 model' }))
 
     const list = screen.getByRole('listbox')
     expect(within(list).getAllByRole('option').map((node) => node.getAttribute('data-model-id'))).toEqual([
       'qwen/qwen3-32b',
       'openai/gpt-oss-120b',
-      'llama-fast',
     ])
     fireEvent.click(within(list).getByRole('option', { name: /GPT OSS 120B/ }))
     await act(async () => {
@@ -180,6 +184,30 @@ describe('the routing policy on Model routing', () => {
     expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({
       candidates: [{ providerId: 'groq', modelId: 'openai/gpt-oss-120b', temperature: null, maxOutputTokens: null }],
     })
+  })
+
+  it('marks a saved candidate the provider does not offer as not available to this account, and keeps it', async () => {
+    const original = (fetch as unknown as { getMockImplementation: () => (url: string, init?: RequestInit) => Promise<Response> }).getMockImplementation()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if ((init.method ?? 'GET') === 'GET' && url.split('?')[0] === '/api/model-policy') {
+          return json(200, {
+            configured: true,
+            exhaustedBehaviour: 'FAIL_CLOSED',
+            candidates: [{ position: 0, providerId: 'groq', modelId: 'llama-fast' }],
+          })
+        }
+        return original(url, init)
+      }),
+    )
+    open(['provider:read', 'provider:manage'])
+
+    expect(
+      await screen.findByText('Not available to this account: Groq does not offer this model to your key, so runs skip it. Choose another.'),
+    ).toBeInTheDocument()
+    // A model somebody chose is never swapped behind their back.
+    expect(screen.getByRole('combobox', { name: 'Candidate 1 model' })).toHaveValue('Llama Fast')
   })
 
   it('says so in plain words when the list cannot be loaded, and still offers the saved models', async () => {

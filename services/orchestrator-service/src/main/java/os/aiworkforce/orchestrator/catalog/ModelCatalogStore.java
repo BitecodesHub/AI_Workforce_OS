@@ -1,3 +1,6 @@
+// @find: model catalog store, llm_models table, save discovered models, save embedding models, seeded models, ModelCatalogStore, routing policy validation, model prices
+// @what: Writes discovered tool-capable and embedding models into llm_models without altering hand-corrected seeded rows.
+// @flow: Called by ModelCatalogService.
 package os.aiworkforce.orchestrator.catalog;
 
 import java.math.BigDecimal;
@@ -45,6 +48,7 @@ public class ModelCatalogStore {
     }
 
     /** Saves the tool-capable models of one listing. Returns how many were written. */
+    // @find: save discovered models, upsert llm_models
     @Transactional
     public int saveDiscovered(String providerId, List<CatalogModel> listed, Instant now) {
         List<CatalogModel> capable = listed.stream()
@@ -73,7 +77,42 @@ public class ModelCatalogStore {
         return capable.size();
     }
 
-    /** Unknown is stored as zero, the column's own default; the listing view says "price not listed". */
+    /**
+     * Saves the embedding models of one listing, so the embedding endpoint can price and use the
+     * one a workspace chooses. Stored the way the seeded embedding rows are: no tools, no streaming
+     * and one output token, which keeps them out of every chat model list and out of routing.
+     */
+    // @find: save embedding models, upsert embedding llm_models
+    @Transactional
+    public int saveEmbedding(String providerId, List<CatalogModel> listed, Instant now) {
+        List<CatalogModel> usable =
+                listed.stream().filter(model -> model.id().length() <= 300).toList();
+        if (usable.isEmpty()) {
+            return 0;
+        }
+        Timestamp at = Timestamp.from(now);
+        jdbc.batchUpdate(EMBEDDING_UPSERT, usable, 200, (statement, model) -> {
+            statement.setString(1, providerId);
+            statement.setString(2, model.id());
+            statement.setString(3, truncate(model.displayName(), 200));
+            statement.setInt(4, model.contextLength() > 0 ? model.contextLength() : 512);
+            statement.setBigDecimal(5, price(model.pricePerMTokIn()));
+            statement.setBoolean(6, model.free());
+            statement.setTimestamp(7, at);
+        });
+        return usable.size();
+    }
+
+    private static final String EMBEDDING_UPSERT = "INSERT INTO llm_models (provider_id, model_id, display_name,"
+            + " context_window, max_output_tokens, supports_tools, supports_json_mode, supports_streaming,"
+            + " supports_vision, input_cost_per_million, output_cost_per_million, enabled, source, free,"
+            + " discovered_at) VALUES (?, ?, ?, ?, 1, FALSE, FALSE, FALSE, FALSE, ?, 0, TRUE, 'discovered', ?, ?)"
+            + " ON CONFLICT (provider_id, model_id) DO UPDATE SET display_name = EXCLUDED.display_name,"
+            + " context_window = EXCLUDED.context_window, input_cost_per_million = EXCLUDED.input_cost_per_million,"
+            + " free = EXCLUDED.free, discovered_at = EXCLUDED.discovered_at, updated_at = now()"
+            + " WHERE llm_models.source = 'discovered' AND llm_models.max_output_tokens = 1";
+
+    /** Unknown is stored as zero    /** Unknown is stored as zero, the column's own default; the listing view says "price not listed". */
     private static BigDecimal price(BigDecimal value) {
         if (value == null || value.signum() < 0) {
             return BigDecimal.ZERO;

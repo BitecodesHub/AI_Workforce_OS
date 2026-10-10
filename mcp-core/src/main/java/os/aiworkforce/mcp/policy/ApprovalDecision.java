@@ -1,3 +1,6 @@
+// @find: approval decision, proceed, await approval, refuse, invalid arguments, approver permission, approvals, human in the loop, gate outcome, approve or reject tool call
+// @what: Sealed type for the gateway verdict on a tool call: proceed, wait for a person, refuse, or invalid arguments.
+// @flow: Returned by ToolGateway.evaluate; the orchestrator parks the run on AwaitApproval
 package os.aiworkforce.mcp.policy;
 
 /**

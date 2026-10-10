@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, chat message, conversation turn, system user assistant tool role, message content, images, ChatMessage
+// @what: One conversation turn in a provider-neutral shape.
+// @flow: Translated by each provider adapter.
 package os.aiworkforce.llm.model;
 
 import java.util.List;

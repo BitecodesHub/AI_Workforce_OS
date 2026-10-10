@@ -1,3 +1,6 @@
+// @find: app shell, routes, routing table, navigation, permissions per route, sign in redirect, restore session, session unreachable, tab title, waiting count, page titles, Navbar, error boundary, App
+// @what: The root component: route table, permission checks, sign-in redirects, session restore, page shell and tab titles.
+// @flow: Rendered by main.tsx; renders the screens in src/routes and the Navbar
 import type { ReactElement, ReactNode } from 'react'
 import { Suspense, lazy, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { QueryClientContext } from '@tanstack/react-query'
@@ -44,6 +47,7 @@ const Members = lazy(() => import('./routes/Members').then((m) => ({ default: m.
 const AuditLog = lazy(() => import('./routes/AuditLog').then((m) => ({ default: m.AuditLog })))
 const Analytics = lazy(() => import('./routes/Analytics').then((m) => ({ default: m.Analytics })))
 const Settings = lazy(() => import('./routes/Settings').then((m) => ({ default: m.Settings })))
+const Setup = lazy(() => import('./routes/Setup').then((m) => ({ default: m.Setup })))
 
 /*
  * The application shell and its routes.
@@ -90,6 +94,7 @@ const PRIVATE: Array<[string, RouteMeta]> = [
   ['/audit', { permission: 'audit:read', screen: () => <AuditLog /> }],
   ['/analytics', { permission: 'analytics:read', screen: () => <Analytics /> }],
   ['/settings', { permission: 'workspace:update', screen: () => <Settings /> }],
+  ['/setup', { permission: 'workspace:update', screen: () => <Setup /> }],
   ['/profile', { permission: null, screen: () => <Profile /> }],
 ]
 
@@ -108,6 +113,7 @@ function find(routes: Array<[string, RouteMeta]>, path: string) {
  * them) and puts the number in the tab title, so it shows on every screen, with the tab in the
  * background, and for a person with the navigation bar out of sight. See lib/attention.ts.
  */
+// @find: Shell component, signed-in page frame, navbar and content
 function Shell({ path, children }: { path: string; children: ReactNode }) {
   useAttention()
   return (
@@ -127,6 +133,7 @@ function Shell({ path, children }: { path: string; children: ReactNode }) {
 }
 
 /** A screen without the shell: the public pages, which have their own header and landmarks. */
+// @find: PublicScreen, signed-out page frame
 function PublicScreen({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundary variant="page">
@@ -139,6 +146,7 @@ function PublicScreen({ children }: { children: ReactNode }) {
  * Shown while a tab that opened without a token asks for one from the refresh cookie. Quiet at
  * "/", where a first-time visitor has no session and should not read about restoring one.
  */
+// @find: restoring session screen, signing you back in
 function RestoringSession({ quiet }: { quiet: boolean }) {
   return (
     <main id="main" tabIndex={-1} className="page" aria-busy="true">
@@ -150,6 +158,7 @@ function RestoringSession({ quiet }: { quiet: boolean }) {
 }
 
 /** The session could not be restored because nothing reached the service. Signing in would fail too. */
+// @find: session unreachable screen, retry connecting
 function SessionUnreachable({ onRetry }: { onRetry: () => void }) {
   return (
     <main id="main" tabIndex={-1} className="page">
@@ -170,6 +179,7 @@ function SessionUnreachable({ onRetry }: { onRetry: () => void }) {
  */
 type Restore = 'pending' | 'unreachable' | 'settled'
 
+// @find: App component, route table, permission gate, sign-in redirect, tab title with waiting count
 export function App() {
   const { path, search, hash, navigate } = useRouter()
   const signedIn = isSignedIn()
@@ -360,6 +370,7 @@ function titleFor(pattern: string): string {
     '/audit': 'Audit log',
     '/analytics': 'Analytics',
     '/settings': 'Workspace settings',
+    '/setup': 'Set up your workspace',
     '/profile': 'Your profile',
   }
   return titles[pattern] ?? 'Not found'

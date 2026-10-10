@@ -1,3 +1,5 @@
+// @find: tests for insights queries, analytics figures, normaliseInsights, window range, budget cap used, usage report parsing, ratings parsing, csv file name, figure absent not zero
+// @what: Unit tests for how raw insights, budget, usage and rating payloads are read into safe figures.
 import { describe, expect, it } from 'vitest'
 import {
   capUsed,

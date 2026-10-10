@@ -1,3 +1,5 @@
+// @find: tests for sandbox server adapter, create_voice_note, voice connector, script length summary, sandbox summary
+// @what: Checks the voice note tool's sandbox summary names the script length.
 package os.aiworkforce.mcp.sandbox;
 
 import static org.assertj.core.api.Assertions.assertThat;

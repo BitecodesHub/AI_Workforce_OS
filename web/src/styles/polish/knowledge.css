@@ -1,3 +1,8 @@
+/*
+ * @find: polish styles, knowledge screens, upload dropzone, drag files, source detail
+ * @what: Styles for the knowledge upload dropzone.
+ * @flow: Used by SourceDetail.tsx; imported by polish/index.css
+ */
 /* UI/UX polish: knowledge screens. Loaded after components.css, so rules here refine it. */
 
 /* ---- Upload dropzone (SourceDetail) ---------------------------------------------------------

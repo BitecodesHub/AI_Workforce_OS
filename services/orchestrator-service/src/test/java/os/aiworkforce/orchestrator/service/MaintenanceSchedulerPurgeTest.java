@@ -1,3 +1,5 @@
+// @find: tests for maintenance scheduler purge, maintenance scheduler, purge, retention purge, processed events, nightly cron
+// @what: Unit and integration tests (4 cases) for maintenance scheduler purge, for example: forgets ids older than seven days; a failing purge does not escape; without the repository it does nothing; runs daily in the small hours.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

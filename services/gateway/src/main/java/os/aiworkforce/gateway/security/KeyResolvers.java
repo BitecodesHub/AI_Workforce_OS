@@ -1,3 +1,6 @@
+// @find: rate limit key, rate limiter, key resolver, throttling, per user limit, per ip limit, remote address, principal key resolver, KeyResolvers, too many requests, 429, sign in rate limit
+// @what: Chooses who a rate limit is charged against: the caller's address before sign-in, the verified token's subject afterwards.
+// @flow: Referenced by name from application.yml RequestRateLimiter filters; backed by Redis rate limiter.
 package os.aiworkforce.gateway.security;
 
 import java.net.InetSocketAddress;
@@ -25,6 +28,7 @@ import reactor.core.publisher.Mono;
 @Configuration
 public class KeyResolvers {
 
+    // @find: rate limit by IP address, remote address key resolver, login and auth routes limit
     @Bean
     public KeyResolver remoteAddressKeyResolver() {
         return exchange -> Mono.just(remoteAddress(exchange));
@@ -36,6 +40,7 @@ public class KeyResolvers {
      * pick either resolver explicitly by name ({@code #{@principalKeyResolver}} or
      * {@code #{@remoteAddressKeyResolver}}) in application.yml regardless of which is primary.
      */
+    // @find: rate limit by signed-in user, principal key resolver, token subject, default rate limit key
     @Primary
     @Bean
     public KeyResolver principalKeyResolver() {

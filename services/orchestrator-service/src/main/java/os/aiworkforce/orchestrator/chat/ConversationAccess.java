@@ -1,3 +1,6 @@
+// @find: conversation access, who can read a conversation, private chat, workspace chat, chat:read_all, conversation members, hidden conversations, ConversationAccess, permission check chat, participants
+// @what: Decides who may read or change a conversation and which goals, tasks and conversations are hidden from a person.
+// @flow: Called by ChatController services, AttachmentService, FeedbackController and board code.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.LinkedHashMap;
@@ -62,6 +65,7 @@ public class ConversationAccess {
     }
 
     /** The conversation, when this person may read it; otherwise "not found". */
+    // @find: require access to conversation, check chat permission
     public Conversation require(UUID orgId, Actor actor, UUID id) {
         Conversation conversation = conversations
                 .findByIdAndOrgId(id, orgId)
@@ -76,6 +80,7 @@ public class ConversationAccess {
      * Like {@link #require}, for a read that should be logged when {@code chat:read_all} is the only
      * reason it is allowed.
      */
+    // @find: require read access to conversation
     public Conversation requireForRead(UUID orgId, Actor actor, UUID id) {
         Conversation conversation = require(orgId, actor, id);
         if (conversation.isPrivate() && !isMember(conversation, actor)) {
@@ -110,6 +115,7 @@ public class ConversationAccess {
     }
 
     /** Only the person who started a conversation, or a holder of chat:read_all, changes who may read it. */
+    // @find: require conversation owner, only owner can change
     public Conversation requireOwner(UUID orgId, Actor actor, UUID id) {
         Conversation conversation = require(orgId, actor, id);
         boolean creator = actor.humanId() != null && actor.humanId().equals(conversation.getCreatedBy());
@@ -122,6 +128,7 @@ public class ConversationAccess {
     }
 
     /** Goals started from a private conversation this person is not part of. Empty for a holder of chat:read_all. */
+    // @find: hidden goal ids, goals in private chats
     public Set<UUID> hiddenGoalIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
             return Set.of();
@@ -137,6 +144,7 @@ public class ConversationAccess {
     }
 
     /** Tasks of those goals. */
+    // @find: hidden task ids, tasks in private chats
     public Set<UUID> hiddenTaskIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
             return Set.of();
@@ -164,6 +172,7 @@ public class ConversationAccess {
     }
 
     /** Conversation ids this person may not read, for filtering a list of conversation ids. */
+    // @find: hidden conversation ids, private chats hidden from a person
     public Set<UUID> hiddenConversationIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
             return Set.of();

@@ -1,3 +1,6 @@
+// @find: audit client, record audit event, write audit log entry, audit outbox, who did what, action recorded, resource type, outcome, on behalf of
+// @what: Lets a service record an audit event into its own outbox in the same transaction as the change.
+// @flow: Writes to AuditOutbox; AuditOutboxRelay delivers to analytics-service
 package os.aiworkforce.platform.web.audit;
 
 import java.time.Instant;
@@ -78,6 +81,7 @@ public class AuditClient {
      * @param outcome {@code succeeded}, {@code failed}, {@code denied} or {@code locked}
      * @return the event's id
      */
+    // @find: record audit event, log who did what
     public UUID record(String action, String resourceType, String resourceId, String outcome, Map<String, Object> detail) {
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
         return record(workspaceOf(actor), actor, action, resourceType, resourceId, outcome, detail);

@@ -1,6 +1,10 @@
+// @find: voice clip, audio player, play clip, tool call audio, clipId, speech
+// @what: Plays a voice clip a tool step produced.
+// @flow: Used by TraceStep.
 import { useEffect, useState } from 'react'
 import { fetchAudio } from '../../lib/voice'
 
+// @find: ClipAudio, clip audio, voice clip, audio player, play clip, tool call audio
 /**
  * A voice clip a tool_call step produced (its detail.clipId), played from an ordinary <audio>
  * element. GET /api/voice/clips/{id} needs the viewer's own bearer token, which an <audio src>

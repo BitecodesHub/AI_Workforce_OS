@@ -1,3 +1,6 @@
+// @find: attention, needs you, pending approvals, agent questions, notification badge, browser notifications, polling, unseen items, tab title count, decidable approvals, useAttention
+// @what: Polls for approvals and agent questions waiting on the signed-in person, drives the badge count and optional browser notifications.
+// @flow: Used by the app shell, sidebar badge and tab title; reads /api/approvals and questions via api.ts
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
@@ -52,11 +55,13 @@ export type AttentionItem = {
   tag: string
 }
 
+// @find: decidable approvals, approvals this person may decide
 /** Approvals this person could decide now. One they could not (a four-eyes rule, a role) is not theirs to act on. */
 export function decidable(approvals: readonly AttentionApproval[]): AttentionApproval[] {
   return approvals.filter((approval) => approval.canDecide !== false)
 }
 
+// @find: attention items, needs you list, waiting on you
 /** Everything waiting on this person, approvals first, each with where to go. */
 export function attentionItems(
   approvals: readonly AttentionApproval[],
@@ -86,6 +91,7 @@ export function attentionItems(
   return items
 }
 
+// @find: unseen items, new since last look, notification trigger
 /**
  * The items not seen before, and the set of ids to remember afterwards.
  *
@@ -159,6 +165,7 @@ export function setBrowserNotifications(userId: string, on: boolean): boolean {
 /** How turning notifications on ended. */
 export type EnableOutcome = 'on' | 'denied' | 'unsupported' | 'not-saved'
 
+// @find: enable browser notifications, desktop alerts, permission prompt
 /**
  * Turns browser notifications on, asking the browser for permission only now, because the person
  * just asked for them. A refusal leaves the setting off, and says so, rather than showing a toggle
@@ -187,6 +194,7 @@ function subscribeToPreference(listener: () => void): () => void {
   }
 }
 
+// @find: browser notifications setting, notifications on or off
 /** The person's browser-notification choice, kept in step with changes made in this tab or another. */
 export function useBrowserNotifications(userId: string): boolean {
   return useSyncExternalStore(
@@ -212,6 +220,7 @@ function show(item: AttentionItem, open: (url: string) => void) {
 
 /* ---- The hook ------------------------------------------------------------------------------------ */
 
+// @find: use attention, pending count, approvals and questions count, sidebar badge; route: GET /api/approvals; used by: app shell
 /**
  * Counts what is waiting on this person, keeps the tab title in step, and fires a browser
  * notification for what is new while the tab is hidden, when the person has opted in. Mounted once,

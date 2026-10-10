@@ -1,3 +1,6 @@
+// @find: thread header, conversation title, rename conversation, who is in conversation, private pill, add people, details mode, chat top bar
+// @what: Top band of the chat panel: title, members, privacy and details control.
+// @flow: Used by the Chat page; opens AddPeopleDialog.
 import { useEffect, useRef, useState } from 'react'
 import { Eyebrow, IconButton, Tag } from '../ui'
 import { MenuButton } from '../ui/Menu'
@@ -71,6 +74,7 @@ function WorkspaceIcon() {
   )
 }
 
+// @find: ThreadHeader, thread header, thread header, conversation title, rename conversation, who is in conversation
 export function ThreadHeader({
   eyebrow,
   title,

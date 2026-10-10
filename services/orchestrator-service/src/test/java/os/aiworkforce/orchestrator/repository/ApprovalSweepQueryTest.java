@@ -1,3 +1,6 @@
+// @find: tests for approval sweep query, repository, starts from parked runs, only the newest approval counts, ApprovalSweepQueryTest, ApprovalSweepQuery
+// @what: Tests for ApprovalSweepQuery in the orchestrator repository package (2 test methods).
+// @flow: Exercises ApprovalSweepQuery
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +28,7 @@ class ApprovalSweepQueryTest {
                 .replaceAll("\\s+", " ");
     }
 
+    // @find: test starts from parked runs, approval sweep query
     @Test
     @DisplayName("the sweep starts from the runs that are parked, not from every approval ever granted")
     void startsFromParkedRuns() throws NoSuchMethodException {
@@ -34,6 +38,7 @@ class ApprovalSweepQueryTest {
         assertThat(query).contains("r.status = 'waiting_approval'");
     }
 
+    // @find: test only the newest approval counts, approval sweep query
     @Test
     @DisplayName("only a run's newest approval counts, and only once it was approved before the cutoff")
     void onlyTheNewestApprovalCounts() throws NoSuchMethodException {

@@ -1,3 +1,5 @@
+// @find: tests for AuthService, sign in, lockout, locked account, disabled account, sign out everywhere, refresh workspace
+// @what: Unit tests of sign-in, lockout and session behaviour in AuthService.
 package os.aiworkforce.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

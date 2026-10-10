@@ -1,3 +1,6 @@
+// @find: voice api, /api/voice, speech, text to speech, transcriptions, dictation, microphone, voices list, voice status, check key, clip audio, VoiceController, Voice settings page, read aloud button
+// @what: REST endpoints for voice: status, voices, speech, transcription and clip playback.
+// @flow: Calls VoiceService and VoiceClips
 package os.aiworkforce.orchestrator.voice;
 
 import java.io.IOException;
@@ -59,6 +62,24 @@ public class VoiceController {
 
     public record TranscriptionView(String text) {}
 
+    public record KeyCheckRequest(@NotBlank @Size(max = 512) String key) {}
+
+    public record KeyCheckView(boolean verified, String message) {}
+
+    /**
+     * Asks ElevenLabs whether a key works before the console stores it, so a mistyped key is
+     * refused under the field instead of showing ElevenLabs as connected while every clip fails.
+     */
+    // @find: check ElevenLabs key, POST /api/voice/key/check
+    @PostMapping("/key/check")
+    @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
+    @Operation(summary = "Check an ElevenLabs key with ElevenLabs, without storing it")
+    public KeyCheckView checkKey(@Valid @RequestBody KeyCheckRequest request) {
+        VoiceService.KeyCheck check = voice.checkKey(request.key().strip());
+        return new KeyCheckView(check.verified(), check.message());
+    }
+
+    // @find: voice status, is voice enabled, GET /api/voice/status
     @GetMapping("/status")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Whether a workspace ElevenLabs key is stored, and its quota")
@@ -68,6 +89,7 @@ public class VoiceController {
                 status.provider(), status.keyStored(), status.tier(), status.charactersUsed(), status.characterLimit());
     }
 
+    // @find: list voices, GET /api/voice/voices
     @GetMapping("/voices")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "The voices the stored key offers; empty without one")
@@ -77,6 +99,7 @@ public class VoiceController {
                 .toList();
     }
 
+    // @find: text to speech, read aloud, POST /api/voice/speech
     @PostMapping(value = "/speech", produces = "audio/mpeg")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Read a piece of text aloud, in an agent's voice when one is given")
@@ -92,6 +115,7 @@ public class VoiceController {
                 .body(audio);
     }
 
+    // @find: transcribe recording, dictate message, POST /api/voice/transcriptions
     @PostMapping("/transcriptions")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Turn a short recording into text")
@@ -114,6 +138,7 @@ public class VoiceController {
         }
     }
 
+    // @find: play voice clip, GET /api/voice/clips/{id}
     @GetMapping("/clips/{clipId}")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "The audio for one clip a run produced")

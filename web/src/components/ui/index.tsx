@@ -1,3 +1,6 @@
+// @find: ui kit, design system components, buttons, inputs, select, textarea, cards, tags, status tag, data table, dialog, confirm dialog, notice, loading state, error state, empty state, permission state, page header, stat tile, primitives
+// @what: The shared UI primitives every screen is built from, mapped to classes in components.css.
+// @flow: Imported as ../ui by nearly every component and page; sibling files add FilterBar, TaskDialog, Menu, Sheet.
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -28,6 +31,7 @@ export { CATEGORY_LABEL } from '../../lib/labels'
 
 /* ---- Eyebrow -------------------------------------------------------------------------------- */
 
+// @find: eyebrow label
 /**
  * The mono line that opens every page and every card section.
  *
@@ -53,6 +57,7 @@ export function Eyebrow({
 
 /* ---- Page header ---------------------------------------------------------------------------- */
 
+// @find: page header, page title
 export function PageHeader({
   eyebrow,
   title,
@@ -85,6 +90,7 @@ export function PageHeader({
   )
 }
 
+// @find: section heading
 export function SectionHeading({ children, note }: { children: ReactNode; note?: string }) {
   return (
     <div className="section-heading-row">
@@ -96,6 +102,7 @@ export function SectionHeading({ children, note }: { children: ReactNode; note?:
 
 /* ---- Card ------------------------------------------------------------------------------------ */
 
+// @find: card container
 /**
  * A card, optionally clickable.
  *
@@ -117,6 +124,9 @@ export function Card({
   onClick?: () => void
   as?: 'div' | 'section' | 'article'
   className?: string
+  /** For a card that is one link or button: a short name instead of every line on it read out. */
+  'aria-label'?: string
+  'aria-describedby'?: string | undefined
 }) {
   const interactive = Boolean(href || onClick)
   const classes = `card ${interactive ? 'card-interactive' : ''} ${className}`.trim()
@@ -144,6 +154,7 @@ export function Card({
 
 /* ---- Stat tiles ------------------------------------------------------------------------------ */
 
+// @find: stat row
 export function StatRow({ children }: { children: ReactNode }) {
   return <div className="stat-row">{children}</div>
 }
@@ -157,6 +168,7 @@ function StatTilePressedGlyph() {
   )
 }
 
+// @find: stat tile, KPI tile, filter tile
 /**
  * One figure in a stat row.
  *
@@ -222,6 +234,7 @@ export function StatTile({
 
 /* ---- Tag -------------------------------------------------------------------------------------- */
 
+// @find: tag, badge, pill
 /**
  * A small label carrying a status or a category.
  *
@@ -255,6 +268,7 @@ export function Tag({
 
 /* ---- Time ------------------------------------------------------------------------------------- */
 
+// @find: time, relative time, date
 /**
  * A moment, as a <time> element.
  *
@@ -302,6 +316,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   loading?: boolean
 }
 
+// @find: button, primary button, loading button
 export function Button({
   variant = 'primary',
   icon,
@@ -325,6 +340,7 @@ export function Button({
   )
 }
 
+// @find: spinner, loading indicator
 export function Spinner({ size = 14 }: { size?: number }) {
   return (
     <svg className="spinner" width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -334,6 +350,7 @@ export function Spinner({ size = 14 }: { size?: number }) {
   )
 }
 
+// @find: icon button
 export function IconButton({
   label,
   badge,
@@ -418,6 +435,7 @@ function Field({ id, label, optional, hint, error, children }: FieldProps & { id
   )
 }
 
+// @find: text input field, labelled input
 /** A labelled input. */
 export function Input({
   label,
@@ -453,6 +471,7 @@ export function Input({
   )
 }
 
+// @find: password input, show password
 /**
  * A password field with a show and hide control inside it, so a long passphrase can be checked
  * before it is sent. The control's name stays "Show password"; aria-pressed carries its state.
@@ -491,6 +510,7 @@ export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>,
   )
 }
 
+// @find: select dropdown field
 export function Select({
   label,
   error,
@@ -511,6 +531,7 @@ export function Select({
   )
 }
 
+// @find: textarea field, multi-line input
 export function Textarea({
   label,
   error,
@@ -538,6 +559,7 @@ export function Textarea({
  * One sentence, once per page. A caveat repeated beside every figure stops being read.
  */
 
+// @find: notice, alert, info warning message
 export function Notice({
   tone = 'info',
   live = false,
@@ -564,6 +586,7 @@ export function Notice({
 
 /* ---- Table -------------------------------------------------------------------------------------- */
 
+// @find: table column type
 export type Column<T> = {
   key: string
   header: string
@@ -643,6 +666,7 @@ function SortIcon({ direction }: { direction: 'ascending' | 'descending' | 'none
   )
 }
 
+// @find: data table, list table, clickable rows, sortable
 export function DataTable<T>({
   columns,
   rows,
@@ -774,6 +798,7 @@ export function DataTable<T>({
 
 /* ---- Empty state ---------------------------------------------------------------------------------- */
 
+// @find: empty state, nothing here yet
 export function EmptyState({
   icon,
   title,
@@ -802,6 +827,7 @@ export function EmptyState({
 
 /* ---- Assistant launcher ----------------------------------------------------------------------------- */
 
+// @find: assistant launcher, chat bubble button
 export function AssistantLauncher({ onClick, panelOpen = false }: { onClick: () => void; panelOpen?: boolean }) {
   return (
     <button type="button" className="assistant-launcher" onClick={onClick} data-panel-open={panelOpen}>
@@ -823,6 +849,7 @@ export function AssistantLauncher({ onClick, panelOpen = false }: { onClick: () 
  * when it fails, and a person cannot tell those apart from "there is nothing here".
  */
 
+// @find: loading state, skeleton
 /** Placeholder shapes in the layout of what is coming, so the page does not jump when it arrives. */
 export function LoadingState({ rows = 3, label = 'Loading' }: { rows?: number; label?: string }) {
   return (
@@ -837,6 +864,7 @@ export function LoadingState({ rows = 3, label = 'Loading' }: { rows?: number; l
   )
 }
 
+// @find: error state, retry
 /**
  * A failure, explained, with a way forward.
  *
@@ -884,6 +912,7 @@ function permissionWords(code: string): string {
   return `${sentenceCase(resource)}: ${sentenceCase(action).toLowerCase()}`
 }
 
+// @find: permission state, not allowed, missing permission
 /**
  * What a person sees when their role does not allow something.
  *
@@ -938,6 +967,7 @@ function initialFocusTarget(dialog: HTMLDialogElement): HTMLElement {
   return dialog.querySelector('.dialog-content')?.querySelector<HTMLElement>(FIRST_FIELD) ?? dialog
 }
 
+// @find: dialog, modal
 export function Dialog({
   open,
   onClose,
@@ -1055,12 +1085,14 @@ export function Dialog({
   )
 }
 
+// @find: confirm dialog, are you sure, delete confirmation
 /**
  * A question before an action that cannot be undone, or that changes something for other people.
  *
  * The caller owns the action: it passes `loading` while the request runs and `error` if it failed,
  * so the dialog stays open with the reason rather than closing on a failure. A dangerous action
- * starts with focus on the button that keeps things as they are.
+ * starts with focus on the button that keeps things as they are, and so does one that is not
+ * destructive but widens who can see something (`startOnCancel`): Enter must not share by accident.
  */
 export function ConfirmDialog({
   open,
@@ -1074,6 +1106,7 @@ export function ConfirmDialog({
   tone,
   loading = false,
   error,
+  startOnCancel = false,
   children,
 }: {
   open: boolean
@@ -1087,10 +1120,13 @@ export function ConfirmDialog({
   tone: 'danger' | 'primary'
   loading?: boolean | undefined
   error?: string | null | undefined
+  /** Start on the button that keeps things as they are, though the action is not destructive. */
+  startOnCancel?: boolean
   /** Anything more the decision needs, such as a field for a reason. */
   children?: ReactNode
 }) {
   const danger = tone === 'danger'
+  const safeStart = danger || startOnCancel
   return (
     <Dialog
       open={open}
@@ -1102,14 +1138,14 @@ export function ConfirmDialog({
       error={error}
       footer={
         <>
-          <Button variant="outline" onClick={onClose} disabled={loading} data-autofocus={danger || undefined}>
+          <Button variant="outline" onClick={onClose} disabled={loading} data-autofocus={safeStart || undefined}>
             {cancelLabel}
           </Button>
           <Button
             variant={danger ? 'danger' : 'primary'}
             onClick={() => void onConfirm()}
             loading={loading}
-            data-autofocus={danger ? undefined : true}
+            data-autofocus={safeStart ? undefined : true}
           >
             {confirmLabel}
           </Button>
@@ -1159,6 +1195,7 @@ function legacyStatus(status: string | null | undefined): { tone: TagTone; label
   return LEGACY_STATUS[status] ?? { tone: 'neutral', label: sentenceCase(status) }
 }
 
+// @find: status tag, status badge
 export function StatusTag({
   kind,
   status,
@@ -1176,14 +1213,17 @@ export function StatusTag({
   )
 }
 
+// @find: re-export FilterBar
 export { FilterBar, FilterEmpty } from './FilterBar'
 export type { FilterFacet, FilterOption, FilterSelect } from './FilterBar'
+// @find: re-export TaskDialog
 export { TaskDialog } from './TaskDialog'
 
 /* ---- Keyboard key ------------------------------------------------------------------------------
  * A single key or chord, shown the way a shortcuts list or a hint in a control names it.
  */
 
+// @find: keyboard key, Kbd
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="kbd">{children}</kbd>
 }

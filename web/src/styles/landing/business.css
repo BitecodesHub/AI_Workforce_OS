@@ -1,4 +1,9 @@
 /*
+ * @find: landing styles, how it works, promise, who is it for, FAQ, trust section, footer, lp-how, lp-promise, lp-faq, lp-trust
+ * @what: Styles for the buyer-focused sections of the public pages.
+ * @flow: Used by Landing.tsx and Trust.tsx
+ */
+/*
  * Public pages: the sections written for the people who choose the product.
  *
  * Owner: sections. Prefixes: .lp-how-*, .lp-promise*, .lp-who-*, .lp-faq-*, .lp-trust-* and

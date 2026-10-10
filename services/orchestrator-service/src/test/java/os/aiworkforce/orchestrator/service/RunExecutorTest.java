@@ -1,3 +1,5 @@
+// @find: tests for run executor, run executor, background run, virtual thread, submit drive, submit resume, next tasks
+// @what: Unit and integration tests (15 cases) for run executor, for example: stops when nothing more is claimed; caps at five per pass; starts each task on its own thread; dispatch runs as the platform.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

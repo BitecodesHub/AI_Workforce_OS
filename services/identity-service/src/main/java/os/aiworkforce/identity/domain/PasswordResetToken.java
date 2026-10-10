@@ -1,3 +1,6 @@
+// @find: password reset token, reset link, forgot password, admin reset password, one-time link, token hash, PasswordResetToken entity, password_reset_tokens table
+// @what: JPA entity for a single-use password reset link stored as a hash.
+// @flow: Used by PasswordResetTokens repository and PasswordResetService.
 package os.aiworkforce.identity.domain;
 
 import java.time.Instant;

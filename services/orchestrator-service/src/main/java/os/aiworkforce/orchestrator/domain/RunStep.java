@@ -1,3 +1,9 @@
+// @find: run step, trace, run trace, step detail, tool call step, model call step, immutable step, run_steps, RunStep entity, Trace tab
+// @what: Entity for one immutable event in a run (model call, tool call, result) with JSON detail.
+// @flow: Appended by the run engine; read by RunSteps and the trace view.
+// @find: run step, trace, run trace, step detail, tool call step, model call step, immutable step, run_steps, RunStep entity, Trace tab
+// @what: Entity for one immutable event in a run (model call, tool call, result) with JSON detail.
+// @flow: Appended by the run engine; read by RunSteps and the trace view.
 package os.aiworkforce.orchestrator.domain;
 
 import java.math.BigDecimal;
@@ -71,6 +77,8 @@ public class RunStep {
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt = Instant.now();
 
+    // @find: create run step, append trace step
+    // @find: create run step, append trace step
     public static RunStep of(UUID orgId, UUID runId, int position, String kind, Map<String, Object> detail) {
         RunStep step = new RunStep();
         step.orgId = orgId;

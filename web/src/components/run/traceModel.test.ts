@@ -1,3 +1,6 @@
+// @find: tests for traceModel, trace model, step mode, step heading, step kind, answer step, incomplete answer, run steps rules, pure functions, detail text
+// @what: Automated tests for traceModel.
+// @flow: Run with the web test runner; covers traceModel.
 import { describe, expect, it } from 'vitest'
 import type { RunStep } from '../../lib/queries'
 import { completedAnswer, incompleteAnswerText, stepHeading, stepMode } from './traceModel'

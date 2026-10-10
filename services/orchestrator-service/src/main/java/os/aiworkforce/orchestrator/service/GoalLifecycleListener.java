@@ -1,3 +1,6 @@
+// @find: goal lifecycle listener, goal stopped, goal retried, run asked question, approval raised, approval expired, schedule paused, chat notifications, listener interface, hooks after commit
+// @what: Callback interface told when a goal, task, approval, question or schedule changes state.
+// @flow: Implemented by chat and notification code; called by LifecycleAnnouncer and TaskProgress
 package os.aiworkforce.orchestrator.service;
 
 import java.util.UUID;

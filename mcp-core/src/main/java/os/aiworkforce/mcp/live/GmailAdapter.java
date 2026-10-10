@@ -1,3 +1,6 @@
+// @find: gmail, email, inbox, mail, list messages, get message, draft message, send message, draft email, send email, OAuth, MIME, live adapter, real API, Gmail API
+// @what: Live Gmail connector: runs gmail__ tools (list, read, draft, send messages) against the Gmail API with an OAuth access token; sending always needs approval.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.nio.charset.StandardCharsets;
@@ -43,6 +46,7 @@ public final class GmailAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Gmail list messages, tool gmail__list_messages, live Gmail call
     private Mono<ToolResult> listMessages(ToolInvocation invocation, JsonNode arguments, String token) {
         String query = text(arguments, "query");
         int max = limit(arguments, 10, 50);
@@ -82,6 +86,7 @@ public final class GmailAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Gmail get message, tool gmail__get_message, live Gmail call
     private Mono<ToolResult> getMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(token, USER + "/messages/{id}?format=full", id).map(message -> {
@@ -100,6 +105,7 @@ public final class GmailAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Gmail draft message, tool gmail__draft_message, live Gmail call
     private Mono<ToolResult> draftMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String raw = raw(arguments);
         ObjectNode body = json.createObjectNode();
@@ -113,6 +119,7 @@ public final class GmailAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Gmail send message, tool gmail__send_message, live Gmail call
     private Mono<ToolResult> sendMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         body.put("raw", raw(arguments));

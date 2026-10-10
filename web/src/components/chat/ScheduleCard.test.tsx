@@ -1,3 +1,6 @@
+// @find: tests for ScheduleCard, schedule card, scheduled task in chat, recurring task, created schedule, open schedules, Schedules page link
+// @what: Automated tests for ScheduleCard.
+// @flow: Run with the web test runner; covers ScheduleCard.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

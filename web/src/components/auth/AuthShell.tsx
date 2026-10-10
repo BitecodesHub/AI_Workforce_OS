@@ -1,3 +1,6 @@
+// @find: sign in page frame, auth layout, signed-out screens, login shell, create workspace page, accept invitation page, brand header, footer links, AuthShell
+// @what: Shared frame (brand, atmosphere, footer links) around every signed-out screen.
+// @flow: Wraps sign in, sign up and invitation pages; renders Brand
 import type { ReactNode } from 'react'
 import { Brand } from '../layout/Brand'
 
@@ -15,6 +18,7 @@ export type AuthShellProps = {
   footer?: ReactNode
 }
 
+// @find: AuthShell, sign in layout, login page frame
 export function AuthShell({ children, footer }: AuthShellProps) {
   return (
     <main id="main" className="auth-page">

@@ -1,3 +1,6 @@
+// @find: navbar, top navigation, primary navigation, menu, gear menu, account menu, sign out, approvals bell, notification badge, nav items, Command Map, Chat, Orchestrator, Agents, Connectors, Knowledge, role permissions, guide toggle, Navbar
+// @what: The top navigation bar: capsule of main destinations, grouped gear menu, approvals bell and account panel, filtered by permission.
+// @flow: Rendered by the app shell on every screen; uses useApprovals, useQuestions, session permissions and the router.
 import { useEffect, useRef, useState } from 'react'
 import type { FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Brand } from './Brand'
@@ -65,6 +68,7 @@ const MENU_GROUPS = [
   {
     heading: 'Configuration',
     items: [
+      { label: 'Set up your workspace', href: '/setup', note: 'What is left to set up, step by step', needs: 'workspace:update' },
       { label: 'Model routing', href: '/routing', note: 'Providers, models and the routing chain', needs: 'provider:read' },
       { label: 'Members and roles', href: '/members', note: 'Who can do what', needs: 'member:read' },
     ],
@@ -83,6 +87,7 @@ function holds(href: string, currentPath: string): boolean {
   return currentPath === href || currentPath.startsWith(`${href}/`)
 }
 
+// @find: navbar, top navigation, gear menu, account menu, sign out, approvals bell, hide guide
 export function Navbar({ currentPath = '/', glass = false }: { currentPath?: string; glass?: boolean }) {
   // Who is signed in comes from the session, never from a default. A hard-coded name here made
   // every demo account appear to be the same person.

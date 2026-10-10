@@ -1,3 +1,6 @@
+// @find: ready-made assistants, agent templates, HR, engineering manager, research, support, TEMPLATES, templateFor, connectPrompts, Which assistants do you want, Create workspace page, Agents page
+// @what: Offline copy of the four ready-made assistants shown before a session exists.
+// @flow: Source of truth is orchestrator-service AgentTemplates.java; used by templateQueries.ts, routes/CreateWorkspace.tsx and routes/Agents.tsx.
 /*
  * The ready-made assistants, as the console knows them before it can ask the platform.
  *
@@ -24,6 +27,7 @@ export type AgentTemplate = {
   suggestedConnectors: readonly string[]
 }
 
+// @find: assistant templates list, four ready-made assistants, hr, engineering-manager, research, support; used by: Create workspace page
 export const TEMPLATES: readonly AgentTemplate[] = [
   {
     key: 'hr',
@@ -60,11 +64,13 @@ export const TEMPLATES: readonly AgentTemplate[] = [
 
 export const TEMPLATE_KEYS: readonly TemplateKey[] = TEMPLATES.map((template) => template.key)
 
+// @find: find template by key; used by: Create workspace page
 /** The template with this key, or undefined for one this build does not know. */
 export function templateFor(key: string): AgentTemplate | undefined {
   return TEMPLATES.find((template) => template.key === key)
 }
 
+// @find: connect prompts, suggested connectors to connect, new assistant next steps; used by: Agents page
 /**
  * The prompt that follows a new assistant: "Connect Gmail to let it act." One sentence per
  * connector, in the order the template lists them, with the connector named as people know it.

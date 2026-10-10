@@ -1,3 +1,6 @@
+// @find: component scan marker, mcp-core package scan, tool gateway beans, argument validator bean, sandbox servers bean, orchestrator uses mcp
+// @what: Marker class so services can component-scan the mcp-core package.
+// @flow: Scanned by integrations-service and the orchestrator to get ToolGateway and sandbox servers
 package os.aiworkforce.mcp;
 
 /**

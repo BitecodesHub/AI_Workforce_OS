@@ -1,3 +1,5 @@
+// @find: tests for audit controller, GET /api/audit, export, verify, permission audit:read, workspace from token, filters
+// @what: Checks the audit endpoints use the caller's workspace, need audit:read and pass filters through.
 package os.aiworkforce.analytics.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

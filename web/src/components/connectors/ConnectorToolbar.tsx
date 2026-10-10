@@ -1,3 +1,6 @@
+// @find: connector filters, search connectors, category filter, status filter, live summary, connected, disconnected, filter chips, Connectors page toolbar
+// @what: Filters and search for the Connectors page, plus the live summary.
+// @flow: Used by the Connectors page; state kept in URL by useListFilter.
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -137,6 +140,7 @@ function CloseGlyph() {
   )
 }
 
+// @find: CategoryGlyph, category glyph, connector filters, search connectors, category filter, status filter
 /** A small line drawing per connector category; anything unknown gets the generic one. */
 export function CategoryGlyph({ category }: { category: string }) {
   switch (category) {
@@ -220,8 +224,9 @@ export function CategoryGlyph({ category }: { category: string }) {
   }
 }
 
+// @find: StatusDot, status dot, connector filters, search connectors, category filter, status filter
 /** The coloured dot beside a status: green for live, grey for practice, amber for a problem. */
-export function StatusDot({ state }: { state: ConnectorState | 'all' }) {
+export function StatusDot({ state }: { state: ConnectorState | 'disconnected' | 'all' }) {
   return <span className={`cx-dot cx-dot-${state}`} aria-hidden="true" />
 }
 
@@ -234,6 +239,7 @@ export type DropdownOption = {
   icon?: ReactNode
 }
 
+// @find: FilterDropdown, filter dropdown, connector filters, search connectors, category filter, status filter
 /**
  * A single choice from a short list, as a button that opens a listbox. The empty value is the
  * "all" choice at the top. Arrow keys, Home and End move, Enter or Space chooses, Escape and Tab
@@ -425,6 +431,7 @@ export function FilterDropdown({
 
 /* ---- Live summary ------------------------------------------------------------------------------- */
 
+// @find: LiveSummary, live summary, connector filters, search connectors, category filter, status filter
 /** "1 live · 19 practice", with the whole sentence about practice data one press away. */
 export function LiveSummary({ summary }: { summary: ConnectorSummary }) {
   const [open, setOpen] = useState(false)
@@ -486,6 +493,7 @@ export type FilterChoice = {
 
 export type ActiveChip = { key: string; label: string; onRemove: () => void }
 
+// @find: ConnectorToolbar, connector toolbar, connector filters, search connectors, category filter, status filter
 export function ConnectorToolbar({
   query,
   onQueryChange,

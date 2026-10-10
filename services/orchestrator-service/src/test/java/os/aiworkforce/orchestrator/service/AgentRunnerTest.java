@@ -1,3 +1,5 @@
+// @find: tests for agent runner, agent run, agent runner, tool call, approval, retry, routing, model fallback, memory, grounding, budget, run loop, steps, trace, question, resume, cancel
+// @what: Unit and integration tests (83 cases) for agent runner, for example: start records instruction; resume rebuilds instruction; voice note captures aclip; voice note without key notes it plainly.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -1930,6 +1932,19 @@ class AgentRunnerTest {
     }
 
     @Test
+    @DisplayName("prepare refuses a retired agent, and says it is retired rather than paused")
+    void prepareRefusesRetiredAgent() {
+        agent.setStatus("retired");
+
+        assertThatThrownBy(() -> runner.prepare(ORG, agent.getId(), null, INSTRUCTION, "manual"))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.POLICY_VIOLATION);
+                    assertThat(e.getMessage()).contains("retired");
+                });
+        verifyNoInteractions(runs, steps);
+    }
+
+    @Test
     @DisplayName("prepare saves the run and its instruction, and drives nothing")
     void prepareSavesWithoutDriving() {
         when(steps.highestPosition(any())).thenReturn(-1);
@@ -2280,6 +2295,25 @@ class AgentRunnerTest {
                     .containsEntry("summary", "Slack was disconnected, so nothing was sent.");
             assertThat(String.valueOf(step.getDetail().get("modelContent"))).doesNotContain(PRACTICE);
         });
+    }
+
+    @Test
+    @DisplayName("a call that needs approval on a connection already disconnected fails at once, without asking anybody")
+    void disconnectedBeforeApprovalFailsWithoutAsking() {
+        slackPostCall();
+        when(tools.evaluate(any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(new ApprovalDecision.AwaitApproval("Outbound messages need approval", "approval:decide"));
+        when(runs.liveServersOf(any())).thenReturn("slack");
+        when(credentials.resolve(ORG, "slack")).thenReturn(ToolCredentialResolver.NOT_CONNECTED);
+
+        AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        verify(approvals, never()).raise(any(), any(), any(), any(), any(), any());
+        verify(tools, never()).invoke(any(), any(), any());
+        assertThat(outcome.status()).isEqualTo("completed");
+        assertThat(savedToolCalls()).singleElement().satisfies(step -> assertThat(step.getDetail())
+                .containsEntry("status", "FAILED")
+                .containsEntry("summary", "Slack was disconnected, so nothing was sent."));
     }
 
     @Test

@@ -1,3 +1,6 @@
+// @find: pause agent, resume agent, agent status, activate, deactivate, agent card button, agent list, agent page, agent:update, Pause button
+// @what: Button to pause or resume one agent, from its page and its card in the agent list.
+// @flow: Used by the Agents page and agent detail page.
 import { useState } from 'react'
 import { Button, ConfirmDialog } from '../ui'
 import { describeApiError } from '../../lib/api'
@@ -15,6 +18,7 @@ import { useToast } from '../../lib/toast'
  * answers when no other fits, and while it is held those requests ask people to choose one.
  */
 
+// @find: AgentStatusButton, agent status button, pause agent, resume agent, agent status, activate
 export function AgentStatusButton({
   agent,
   variant = 'outline',

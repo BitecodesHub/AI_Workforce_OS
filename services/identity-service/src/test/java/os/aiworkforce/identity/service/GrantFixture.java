@@ -1,3 +1,5 @@
+// @find: test fixture for grant guard, roles and members setup, owner admin manager fixtures
+// @what: Shared test fixture building roles and members for grant tests.
 package os.aiworkforce.identity.service;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -161,6 +163,11 @@ public final class GrantFixture {
                         .filter(role -> Objects.equals(role.getOrgId(), call.getArgument(0))
                                 && role.getName().equals(call.getArgument(1)))
                         .findFirst());
+        when(roles.findNameClashes(any(), anyString()))
+                .thenAnswer(call -> roleById.values().stream()
+                        .filter(role -> (role.getOrgId() == null || Objects.equals(role.getOrgId(), call.getArgument(0)))
+                                && role.getName().equalsIgnoreCase(call.getArgument(1)))
+                        .toList());
         when(roles.findAvailable(any(), any())).thenCallRealMethod();
         when(roles.findAvailableTo(any()))
                 .thenAnswer(call -> roleById.values().stream()
@@ -214,6 +221,10 @@ public final class GrantFixture {
             List<UUID> ids = call.getArgument(0);
             return ids.stream().map(userById::get).filter(Objects::nonNull).toList();
         });
+        // Case-insensitive, as the real query is.
+        when(users.findByEmail(anyString())).thenAnswer(call -> userById.values().stream()
+                .filter(user -> user.getEmail().equalsIgnoreCase(call.<String>getArgument(0)))
+                .findFirst());
     }
 
     private static String key(Object userId, Object orgId) {

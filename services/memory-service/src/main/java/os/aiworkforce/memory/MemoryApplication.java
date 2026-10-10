@@ -1,3 +1,5 @@
+// @find: memory service, application entry, spring boot main, agent memory app, episodes
+// @what: Spring Boot entry point of memory-service.
 package os.aiworkforce.memory;
 
 import org.springframework.boot.SpringApplication;

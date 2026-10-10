@@ -1,3 +1,6 @@
+// @find: audit chain, tamper evident log, hash, sha-256, verify chain, find first break, platform chain, workspace chain, chain key, legacy chain
+// @what: Computes audit entry hashes and verifies that a chain of entries has not been changed.
+// @flow: Used by AuditAppender and AuditVerification
 package os.aiworkforce.analytics.service;
 
 import java.nio.charset.StandardCharsets;
@@ -130,6 +133,7 @@ public class AuditChain {
     /* ---- The two formulas ---------------------------------------------------------------------- */
 
     /** The version 1 digest, given the entry before it. Kept exactly as it was written. */
+    // @find: compute audit entry hash
     public String hash(
             String previousHash,
             String actorId,
@@ -232,6 +236,7 @@ public class AuditChain {
      * linked into the old platform-wide chain, whose neighbours belong to other workspaces and are
      * checked by {@link #verifyLegacy}.
      */
+    // @find: verify audit chain, tamper check
     public Verification verify(String chainKey, ChainPages pages) {
         Walk walk = new Walk(chainKey);
         long after = 0;
@@ -253,6 +258,7 @@ public class AuditChain {
     }
 
     /** The first broken sequence in an in-memory run of one chain, or empty when it is intact. */
+    // @find: find first broken audit entry
     public Optional<Long> findFirstBreak(List<ChainEntry> entries) {
         Walk walk = new Walk("in-memory");
         for (ChainEntry entry : entries) {

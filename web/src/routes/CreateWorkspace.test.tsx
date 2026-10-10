@@ -1,3 +1,6 @@
+// @find: tests for creating a workspace, steps, time zone, sign up, vitest, CreateWorkspace component tests, Create a workspace page
+// @what: Automated tests that check the creating a workspace screen (/create-workspace) behaves as users expect.
+// @flow: Renders CreateWorkspace from CreateWorkspace.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

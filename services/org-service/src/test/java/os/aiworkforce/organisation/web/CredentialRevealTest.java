@@ -1,3 +1,6 @@
+// @find: tests for credential reveal, internal credentials endpoint, service token only, person token refused, workspace mismatch, GET /internal/credentials/{ref}
+// @what: Tests who may call the internal credential reveal endpoint.
+// @flow: Exercises CredentialController.reveal.
 package os.aiworkforce.organisation.web;
 
 import static org.mockito.ArgumentMatchers.any;

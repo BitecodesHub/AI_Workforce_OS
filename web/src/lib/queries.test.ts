@@ -1,3 +1,6 @@
+// @find: tests for queries, react-query hooks tests, conversation polling, board polling, chat merge, goal pages, run list polling, questions defaults, invalidateWork, deprecated useConversations
+// @what: Unit tests for the data hooks in queries.ts: poll intervals, thread merging, paged lists and cache invalidation.
+// @flow: Runs under vitest with mocked api(); exercises hooks from queries.ts used by the Chat, Orchestrator, Runs and Tasks pages.
 import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
@@ -7,8 +10,10 @@ import { ApiError } from './api'
 import {
   boardPollMs,
   conversationPollMs,
+  deltaMissesHeldWork,
   invalidateWork,
   mergeConversationDetail,
+  settleWithWholeRead,
   mergeFirstPage,
   useBoard,
   useConversation,
@@ -559,6 +564,29 @@ describe('mergeConversationDetail', () => {
   })
 })
 
+describe('deltaMissesHeldWork and settleWithWholeRead', () => {
+  const running = { ...goal('running', [task('running')]), id: 'g1' }
+  const done = { ...goal('completed', [task('completed')]), id: 'g2' }
+
+  it('needs a whole read only when an open goal or a pending question went missing', () => {
+    expect(deltaMissesHeldWork(thread([0], { goals: [running] }), thread([], { goals: [running] }))).toBe(false)
+    expect(deltaMissesHeldWork(thread([0], { goals: [done] }), thread([]))).toBe(false)
+    expect(deltaMissesHeldWork(thread([0], { goals: [running] }), thread([]))).toBe(true)
+    expect(deltaMissesHeldWork(thread([0], { questions: [question('pending')] }), thread([]))).toBe(true)
+    expect(deltaMissesHeldWork(thread([0], { questions: [question('answered')] }), thread([]))).toBe(false)
+  })
+
+  it('drops an open goal or pending question the whole read no longer has, so polling can stop', () => {
+    const settled = settleWithWholeRead(
+      thread([0], { goals: [running, done], questions: [question('pending')] }),
+      thread([0], { goals: [done] }),
+    )
+    expect(settled.goals.map((g) => g.id)).toEqual(['g2'])
+    expect(settled.questions).toEqual([])
+    expect(conversationPollMs(settled)).toBe(false)
+  })
+})
+
 describe('useConversation', () => {
   const key = ['conversations', 'c1']
 
@@ -621,6 +649,46 @@ describe('useConversation', () => {
     await act(() => client.refetchQueries({ queryKey: key }))
 
     expect(urls).toEqual(['/api/conversations/c1?limit=200', '/api/conversations/c1?limit=200'])
+  })
+
+  // Regression: a goal that finished in a change the "what changed since" reply did not cover was
+  // held as open for good: its card stayed on "Starting" and the thread polled on until a reload.
+  it('reads the whole window again when a reply leaves out a goal it holds as open', async () => {
+    const running = { ...goal('running', [task('running')]), id: 'g1' }
+    const finished = { ...goal('completed', [task('completed')]), id: 'g1' }
+    const urls = stubReplies(
+      thread([0, 1, 2], { goals: [running] }),
+      // The change: no goal at all, since an open one is always sent and this one is no longer open.
+      thread([], { generatedAt: '2026-10-04T01:00:05.000Z' }),
+      thread([0, 1, 2, 3], { goals: [finished], generatedAt: '2026-10-04T01:00:06.000Z' }),
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useConversation('c1'), { wrapper: wrapperWith(client) })
+    await waitFor(() => expect(result.current.data?.goals[0]?.status).toBe('running'))
+
+    await act(() => client.refetchQueries({ queryKey: key }))
+
+    expect(urls).toHaveLength(3)
+    expect(new URL(urls[1]!, 'http://localhost').searchParams.get('since')).toBe('2026-10-04T01:00:00.000Z')
+    expect(urls[2]).toBe('/api/conversations/c1?limit=200')
+    await waitFor(() => expect(result.current.data!.goals.map((g) => g.status)).toEqual(['completed']))
+    expect(result.current.data!.messages.map((m) => m.position)).toEqual([0, 1, 2, 3])
+    expect(result.current.data!.generatedAt).toBe('2026-10-04T01:00:06.000Z')
+    const query = client.getQueryCache().find({ queryKey: key })!
+    const interval = query.observers[0]!.options.refetchInterval as (q: typeof query) => number | false
+    expect(interval(query)).toBe(false)
+  })
+
+  it('does not read again when every goal it holds as open is in the reply', async () => {
+    const running = { ...goal('running', [task('running')]), id: 'g1' }
+    const urls = stubReplies(thread([0], { goals: [running] }), thread([1], { goals: [running] }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useConversation('c1'), { wrapper: wrapperWith(client) })
+    await waitFor(() => expect(result.current.data?.goals).toHaveLength(1))
+
+    await act(() => client.refetchQueries({ queryKey: key }))
+
+    expect(urls).toHaveLength(2)
   })
 
   it('does not read at all without a conversation', () => {

@@ -1,3 +1,6 @@
+// @find: agent answer, reply bubble, answer message, copy answer, read aloud, thumbs up, thumbs down, feedback, sources, citations, sandbox model, markdown answer, chat thread
+// @what: An agent's reply in the thread: name, markdown answer, action bar (copy, read aloud, feedback) and document sources.
+// @flow: Used by MessageItem; uses PassageList.
 import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -11,7 +14,7 @@ import type { useSpeaker } from '../../lib/voice'
 import { AgentAvatar } from '../ui/AgentAvatar'
 import { RatingButtons, RatingReason, useAnswerRating } from '../analytics/AnswerRating'
 import { PassageList, passageItemId } from './PassageList'
-import { sourcesForAnswer } from './chatModel'
+import { PRACTICE_DATA_NOTE, sourcesForAnswer } from './chatModel'
 
 /**
  * The thread the answer sits in, as the conversation query last stored it, for a caller that does
@@ -23,6 +26,7 @@ function storedThread(client: QueryClient, conversationId: string | null): reado
   return client.getQueryData<ConversationDetail>(['conversations', conversationId])?.messages ?? []
 }
 
+// @find: AnswerBubble, answer bubble, agent answer, reply bubble, answer message, copy answer
 /**
  * An agent's reply: its name, whether a sandbox model stood in, the answer itself (as safe
  * Markdown) and its action bar - copy, read aloud, a thumbs up or down (with an optional reason, for
@@ -97,6 +101,9 @@ export function AnswerBubble({
           text={message.content}
           citations={sources.length > 0 ? { count: sources.length, onOpen: openSource } : undefined}
         />
+        {message.detail.practiceData === true && (
+          <p className="caption muted chat-answer-practice">{PRACTICE_DATA_NOTE}</p>
+        )}
         {sources.length > 0 && (
           <div className="chat-sources" style={{ marginTop: 'var(--space-3)' }}>
             <Collapsible title={`Sources (${sources.length})`} open={sourcesOpen} onToggle={setSourcesOpen} headingLevel="p">

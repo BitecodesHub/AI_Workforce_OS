@@ -1,3 +1,6 @@
+// @find: landing footer, footer links, page footer, sections list, LandingFooter
+// @what: The closing footer of the public pages.
+// @flow: Used by Landing and Trust
 import type { ReactElement } from 'react'
 import { HOME_SECTIONS } from '../hero/LandingBar'
 import type { BarSection } from '../hero/LandingBar'
@@ -15,6 +18,7 @@ export type LandingFooterProps = {
   other?: { label: string; href: string }
 }
 
+// @find: LandingFooter component, footer
 export function LandingFooter({ sections = HOME_SECTIONS, other = CTA.technical }: LandingFooterProps): ReactElement {
   const inPage = useInPageLink()
   return (

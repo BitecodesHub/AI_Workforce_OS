@@ -1,3 +1,6 @@
+// @find: audit outbox, pending audit events, outbox interface, queue of audit events, deliver later
+// @what: Interface for the local queue of audit events waiting to be delivered.
+// @flow: Implemented by JdbcAuditOutbox
 package os.aiworkforce.platform.web.audit;
 
 import java.time.Duration;

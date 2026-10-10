@@ -1,3 +1,6 @@
+// @find: source detail, knowledge source, upload files, drag and drop, documents in a source, delete document, re-index, rescan, search inside source, restrict access, sharing, source error, leave, /knowledge/:id, SourceDetail
+// @what: The page for one knowledge source: its documents, uploads, search inside the source and settings.
+// @flow: Routed from App.tsx at /knowledge/:id; opened from Knowledge.tsx; calls the knowledge service via lib/queries
 import { useId, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent } from 'react'
 import {
@@ -26,7 +29,7 @@ import { KnowledgeSearch } from '../components/knowledge/KnowledgeSearch'
 // dependency (Rollup warned of a "broken execution order").
 import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { ApiError, describeApiError } from '../lib/api'
-import { formatCount, formatDate, formatRelative, nameList } from '../lib/format'
+import { formatCount, formatDate, formatRelativeTicked, nameList } from '../lib/format'
 import {
   documentNotice,
   findClashes,
@@ -42,7 +45,7 @@ import {
 } from '../lib/knowledgeQueries'
 import type { ClashChoice, PlannedUpload, UploadOutcome } from '../lib/knowledgeQueries'
 import { embeddingProviderLabel, mediaTypeLabel, sourceKindLabel } from '../lib/labels'
-import { useSource, useSourceDocuments, useReindexSource } from '../lib/queries'
+import { useAgents, useSource, useSourceDocuments, useReindexSource } from '../lib/queries'
 import type { Source, SourceDocument } from '../lib/queries'
 import { useDocumentTitle, useRouter } from '../lib/router'
 import { can } from '../lib/session'
@@ -175,6 +178,7 @@ function documentColumns(
 }
 
 /** The source's last error in plain words, with the service's own message kept as the detail. */
+// @find: source error notice, last error, why a document failed
 function SourceErrorNotice({ lastError, canManage }: { lastError: string; canManage: boolean }) {
   const vectorDetail = vectorErrorDetail(lastError)
   return (
@@ -363,6 +367,7 @@ function summaryFeedback(outcomes: FileOutcome[], skipped: string[]): Feedback {
 /** Files waiting on the person's choice, because some of their names are already in use. */
 type ClashPrompt = { files: File[]; clashes: string[] }
 
+// @find: SourceDetail component, knowledge source page, upload document, delete document, update source, search in source, /knowledge/:id
 export function SourceDetail({ id }: { id: string }) {
   const sourceQuery = useSource(id)
   const documentsQuery = useSourceDocuments(id)
@@ -371,7 +376,12 @@ export function SourceDetail({ id }: { id: string }) {
   const deleteDocument = useDeleteDocument(id)
   const deleteSource = useDeleteSource()
   const updateSource = useUpdateSource(id)
-  const canManage = can('knowledge:source_manage')
+  // An agent's own documents are kept from its page and searched by it alone, so none of the
+  // workspace-source controls (upload, rename, who can search, delete) apply here.
+  const ownerAgentId = sourceQuery.data?.agentId ?? null
+  const canManage = can('knowledge:source_manage') && ownerAgentId == null
+  const ownerAgent = useAgents({ enabled: ownerAgentId != null && can('agent:read') })
+  const ownerAgentName = ownerAgent.data?.find((agent) => agent.id === ownerAgentId)?.name ?? null
   // Asking in Chat needs chat:use as well as knowledge:query. Trying a search here does not: it
   // reads the documents directly, with no agent, so knowledge:query is all it takes.
   const canQuery = can('knowledge:query')
@@ -403,7 +413,9 @@ export function SourceDetail({ id }: { id: string }) {
   const [openError, setOpenError] = useState<string | null>(null)
   const uploading = progress !== null
 
-  useDocumentTitle(sourceQuery.data?.name)
+  useDocumentTitle(
+    ownerAgentId ? (ownerAgentName ? `${ownerAgentName}’s documents` : 'An agent’s documents') : sourceQuery.data?.name,
+  )
 
   const filter = useListFilter({ rows: documentsQuery.data, text: documentText, facets: DOCUMENT_FACETS })
 
@@ -655,9 +667,26 @@ export function SourceDetail({ id }: { id: string }) {
         {(source) => (
           <>
             <PageHeader
-              eyebrow={sourceKindLabel(source.kind)}
-              title={source.name}
-              description="Documents uploaded here can be searched in Chat, with the passage each result came from."
+              eyebrow={ownerAgentId ? 'An agent’s own documents' : sourceKindLabel(source.kind)}
+              title={ownerAgentId ? (ownerAgentName ? `${ownerAgentName}’s documents` : 'An agent’s documents') : source.name}
+              description={
+                ownerAgentId ? (
+                  <>
+                    Documents {ownerAgentName ?? 'this agent'} keeps for its own work. Only it searches them, and
+                    they are added or removed on{' '}
+                    {can('agent:read') ? (
+                      <a className="link" href={`/agents/${encodeURIComponent(ownerAgentId)}`}>
+                        the agent’s page
+                      </a>
+                    ) : (
+                      'the agent’s page'
+                    )}
+                    .
+                  </>
+                ) : (
+                  'Documents uploaded here can be searched in Chat, with the passage each result came from.'
+                )
+              }
               meta={
                 <>
                   <StatusTag kind="source" status={source.status} />
@@ -670,7 +699,7 @@ export function SourceDetail({ id }: { id: string }) {
               }
               action={
                 <>
-                  {canAskInChat && source.documentCount > 0 && (
+                  {canAskInChat && source.documentCount > 0 && ownerAgentId == null && (
                     <a className="button button-outline button-sm" href="/chat">
                       Ask in Chat
                     </a>
@@ -718,7 +747,7 @@ export function SourceDetail({ id }: { id: string }) {
                 )}
                 <StatTile
                   label="Last indexed"
-                  value={source.lastIngestedAt ? formatRelative(source.lastIngestedAt, now) : 'Never'}
+                  value={source.lastIngestedAt ? formatRelativeTicked(source.lastIngestedAt, now, 60_000) : 'Never'}
                 />
               </StatRow>
               <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
@@ -968,6 +997,7 @@ export function SourceDetail({ id }: { id: string }) {
                 confirmLabel="Let everyone search"
                 cancelLabel="Keep it restricted"
                 tone="primary"
+                startOnCancel
                 loading={updateSource.isPending}
                 error={openError}
               />

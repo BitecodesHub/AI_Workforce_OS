@@ -1,3 +1,6 @@
+// @find: tests for Composer, message box, composer, write message, send message, mention agent, @mention, draft, attach files, paste image, answer question, Send button, chat input, POST message
+// @what: Automated tests for Composer.
+// @flow: Run with the web test runner; covers Composer.
 import axe from 'axe-core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen } from '@testing-library/react'

@@ -1,3 +1,6 @@
+// @find: runtime config, runtime settings, operator settings, change setting without deploy, workspace override, platform value, default, cache, set setting, clear setting, effective settings
+// @what: Reads and changes runtime settings, resolving workspace override, then platform value, then default.
+// @flow: Backed by a RuntimeConfigStore; each service has a runtime_settings table
 package os.aiworkforce.platform.runtimeconfig;
 
 import java.time.Duration;
@@ -143,6 +146,7 @@ public class RuntimeConfigService {
      * writer: a migration, a support script or another service can call this, and each of them
      * would otherwise need its own copy of the rules.
      */
+    // @find: change runtime setting, set operator setting
     public void set(String keyName, String orgId, String value, String actorId) {
         ConfigKey key = key(keyName);
         if (orgId != null && !key.workspaceOverridable()) {
@@ -154,6 +158,7 @@ public class RuntimeConfigService {
         log.info("Runtime setting {} changed for {} by {}", keyName, orgId == null ? "platform" : orgId, actorId);
     }
 
+    // @find: clear runtime setting override
     public void clear(String keyName, String orgId, String actorId) {
         ConfigKey key = key(keyName);
         store.getObject().clear(key.name(), orgId, actorId);
@@ -302,6 +307,7 @@ public class RuntimeConfigService {
     }
 
     /** Every setting visible to a workspace, with its effective value and where it came from. */
+    // @find: list effective settings for workspace
     public List<EffectiveSetting> effectiveSettings(String orgId) {
         return registry.values().stream()
                 .filter(key -> orgId == null || key.workspaceOverridable())

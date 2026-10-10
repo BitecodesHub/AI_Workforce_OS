@@ -1,3 +1,6 @@
+// @find: tool credential, connector token, integrations service, OAuth token for tool server, is live, credential lookup, MCP server credential
+// @what: Fetches the credential for one tool server from the integrations service.
+// @flow: Called by AgentRunner when a tool call executes
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -90,6 +93,7 @@ public class ToolCredentialResolver {
         this.retryDelay = retryDelay;
     }
 
+    // @find: resolve tool credential
     /**
      * The credential for {@code server} in workspace {@code orgId}.
      *
@@ -128,6 +132,7 @@ public class ToolCredentialResolver {
         return new Unavailable(reason);
     }
 
+    // @find: is tool server live
     /** Whether this server has a real connector behind it, so a missing token is a change and not the default. */
     public boolean isLive(String server) {
         return liveCapable(server);

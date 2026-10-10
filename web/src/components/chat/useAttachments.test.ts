@@ -1,3 +1,6 @@
+// @find: tests for useAttachments, attachments hook, upload attachment, attach files, upload progress, cancel upload, remove attachment, draft attachments, composer files
+// @what: Automated tests for useAttachments.
+// @flow: Run with the web test runner; covers useAttachments.
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'

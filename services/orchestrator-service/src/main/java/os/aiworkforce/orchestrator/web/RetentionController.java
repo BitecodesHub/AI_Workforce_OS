@@ -1,3 +1,6 @@
+// @find: retention settings, how long run detail is kept, data retention days, /api/orchestrator/retention-settings, Privacy settings
+// @what: REST endpoints to read and change how many days run detail is kept.
+// @flow: Delegates to RetentionService
 package os.aiworkforce.orchestrator.web;
 
 import java.util.LinkedHashMap;
@@ -60,6 +63,7 @@ public class RetentionController {
     public record UpdateRequest(
             @NotNull @Min(7) @Max(3650) Integer runDetailDays) {}
 
+    // @find: get retention settings, GET /api/orchestrator/retention-settings
     @GetMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
     @Operation(summary = "How long this workspace keeps the detail of finished runs")
@@ -67,6 +71,7 @@ public class RetentionController {
         return view(retention.runDetailDays(orgId()));
     }
 
+    // @find: update retention days, PUT /api/orchestrator/retention-settings
     @PutMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
     @Operation(summary = "Set how long this workspace keeps the detail of finished runs")

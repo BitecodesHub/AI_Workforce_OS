@@ -1,3 +1,6 @@
+// @find: oauth properties, oauth callback path, /api/oauth/callback, redirect uri, base url, state secret, integrations oauth settings, aiwos.integrations.oauth
+// @what: Configuration for the OAuth flow, including the redirect address providers send people back to.
+// @flow: Read by OAuthService and OAuthController
 package os.aiworkforce.integrations.oauth;
 
 import java.time.Duration;

@@ -1,3 +1,6 @@
+// @find: linear, issues, tickets, teams, list issues, get issue, create issue, update issue, GraphQL, API key, live adapter, real API, engineering
+// @what: Live Linear connector: runs linear__ tools (list, get, create, update issues) against the Linear GraphQL API with an API key.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -55,6 +58,7 @@ public final class LinearAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: Linear list issues, tool linear__list_issues, live Linear call
     private Mono<ToolResult> listIssues(ToolInvocation invocation, JsonNode arguments, String key) {
         ObjectNode variables = json.createObjectNode();
         variables.put("first", limit(arguments, 25, 100));
@@ -80,12 +84,14 @@ public final class LinearAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Linear get issue, tool linear__get_issue, live Linear call
     private Mono<ToolResult> getIssue(ToolInvocation invocation, JsonNode arguments, String key) {
         String id = required(arguments, "id");
         return issueById(key, id, ISSUE_FIELDS).map(issue -> done(
                 issue(issue, true), "Read " + issue.path("identifier").asText(id) + " from Linear."));
     }
 
+    // @find: Linear create issue, tool linear__create_issue, live Linear call
     private Mono<ToolResult> createIssue(ToolInvocation invocation, JsonNode arguments, String key) {
         String title = required(arguments, "title");
         return teamId(key, text(arguments, "team")).flatMap(teamId -> {
@@ -104,6 +110,7 @@ public final class LinearAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Linear update issue, tool linear__update_issue, live Linear call
     private Mono<ToolResult> updateIssue(ToolInvocation invocation, JsonNode arguments, String key) {
         String id = required(arguments, "id");
         String state = text(arguments, "state");

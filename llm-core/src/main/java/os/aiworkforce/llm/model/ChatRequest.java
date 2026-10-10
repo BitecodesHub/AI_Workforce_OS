@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, chat request, what to ask the model, requirements not model name, tools, max tokens, temperature, json output, ChatRequest
+// @what: Provider-neutral request stating what is needed from a model rather than naming one.
+// @flow: Built by orchestrator-service; routed by ModelRouter.route.
 package os.aiworkforce.llm.model;
 
 import java.time.Duration;

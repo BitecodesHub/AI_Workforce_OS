@@ -1,3 +1,6 @@
+// @find: tests for PolicyEditor, routing policy, model policy, candidate chain, fallback models, model order, provider keys, enable provider, save policy, clear policy, Routing page, agent routing
+// @what: Automated tests for PolicyEditor.
+// @flow: Run with the web test runner; covers PolicyEditor.
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialView, Model, ModelPolicy, Provider } from '../../lib/queries'
@@ -117,7 +120,25 @@ describe('in the workspace policy', () => {
     expect(screen.getByLabelText('Candidate 1 model')).toHaveValue('Llama Fast')
     expect(screen.getByLabelText('Candidate 2 provider')).toHaveValue('openrouter')
     expect(screen.getByRole('button', { name: 'Save routing policy' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Use the workspace policy' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /workspace default/ })).not.toBeInTheDocument()
+  })
+
+  it('offers removal from all routing for each model in the chain', () => {
+    const onRemoveEverywhere = vi.fn()
+    editor({ onRemoveEverywhere })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Mixtral from all routing' }))
+    expect(onRemoveEverywhere).toHaveBeenCalledWith({ providerId: 'openrouter', modelId: 'mixtral', name: 'Mixtral' })
+  })
+
+  it('never shows a provider as paused after failures, and treats a refused key as information', () => {
+    editor({
+      providers: [{ ...PROVIDERS[0]!, circuitState: 'OPEN', credentialStatus: 'rejected' }, PROVIDERS[1]!],
+    })
+
+    expect(screen.queryByText(/Paused/)).not.toBeInTheDocument()
+    expect(screen.getAllByText('Ready')).toHaveLength(2)
+    expect(screen.getByText('Key refused last time, still tried')).toBeInTheDocument()
   })
 
   it('saves the chain as arranged', async () => {
@@ -160,24 +181,26 @@ describe('in the workspace policy', () => {
     const items = screen.getAllByRole('listitem').map((item) => item.textContent)
     expect(items[0]).toContain('Groq')
     expect(items[1]).toContain('OpenRouter')
+    // And says why it cannot be changed here.
+    expect(screen.getByText(/Changing the routing policy needs a role that can manage model providers/)).toBeInTheDocument()
   })
 })
 
 describe('on an agent', () => {
-  it('is that agent\'s model routing, and offers the workspace policy while it has its own chain', () => {
+  it("is that agent's model routing, and offers the workspace default", () => {
     editor({ scope: 'agent', subject: 'Legal', onClear })
 
     expect(screen.getByRole('heading', { name: 'Model routing' })).toBeInTheDocument()
     expect(screen.getByText(/Which language models answer for Legal/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save these models' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Use the workspace policy' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use the workspace default for Legal' })).toBeEnabled()
   })
 
-  it('does not offer the workspace policy to an agent that has no chain of its own', () => {
+  it('offers the workspace default at any time, also to an agent with no chain of its own', () => {
     editor({ scope: 'agent', subject: 'Legal', policy: UNSET, onClear })
 
-    expect(screen.getByText('Legal has no models of its own, so it follows the workspace routing policy.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Use the workspace policy' })).not.toBeInTheDocument()
+    expect(screen.getByText('Legal has no models of its own, so it uses the workspace default.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use the workspace default for Legal' })).toBeEnabled()
   })
 
   it('gives an agent its first chain', async () => {
@@ -194,34 +217,106 @@ describe('on an agent', () => {
     expect(await screen.findByText("Legal's models were saved.")).toBeInTheDocument()
   })
 
-  it('hands the agent back to the workspace policy after a confirm step', async () => {
+  it('hands the agent back to the workspace default after a confirm step, and shows the warning', async () => {
+    onClear.mockResolvedValueOnce({
+      ...UNSET,
+      warning: 'No AI model is set for this agent or the workspace — add one in Model routing',
+    } as never)
     editor({ scope: 'agent', subject: 'Legal', onClear })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Use the workspace policy' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Use the workspace policy for Legal?' })
+    fireEvent.click(screen.getByRole('button', { name: 'Use the workspace default for Legal' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Use the workspace default for Legal?' })
     expect(onClear).not.toHaveBeenCalled()
     await act(async () => {
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Use the workspace policy' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Use workspace default' }))
     })
 
     expect(onClear).toHaveBeenCalledTimes(1)
     expect(onSave).not.toHaveBeenCalled()
-    expect(await screen.findByText('Legal now follows the workspace routing policy.')).toBeInTheDocument()
+    expect(await screen.findByText('Legal now uses the workspace default.')).toBeInTheDocument()
+    expect(
+      screen.getByText('No AI model is set for this agent or the workspace — add one in Model routing'),
+    ).toBeInTheDocument()
   })
 
   it('treats saving an empty chain as handing the agent back, not as saving no models', async () => {
     editor({ scope: 'agent', subject: 'Legal', onClear })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove candidate 2' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove candidate 1' }))
+    fireEvent.click(screen.getByRole('button', { name: "Remove Mixtral from Legal's routing" }))
+    fireEvent.click(screen.getByRole('button', { name: "Remove Llama Fast from Legal's routing" }))
     fireEvent.click(screen.getByRole('button', { name: 'Save these models' }))
 
-    const dialog = await screen.findByRole('dialog', { name: 'Use the workspace policy for Legal?' })
+    const dialog = await screen.findByRole('dialog', { name: 'Use the workspace default for Legal?' })
     await act(async () => {
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Use the workspace policy' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Use workspace default' }))
     })
     expect(onClear).toHaveBeenCalledTimes(1)
     expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('removes a saved model at once, without a save, and shows the service warning', async () => {
+    const onRemoveCandidate = vi.fn(async () => ({
+      ...OWN,
+      candidates: [OWN.candidates[0]],
+      warning: 'Every provider this agent lists is turned off, so its runs will fail until one is turned on.',
+    }))
+    editor({ scope: 'agent', subject: 'Legal', onClear, onRemoveCandidate })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: "Remove Mixtral from Legal's routing" }))
+    })
+
+    expect(onRemoveCandidate).toHaveBeenCalledWith({ providerId: 'openrouter', modelId: 'mixtral' })
+    expect(onSave).not.toHaveBeenCalled()
+    expect(await screen.findByText("Mixtral was removed from Legal's routing.")).toBeInTheDocument()
+    expect(
+      screen.getByText('Every provider this agent lists is turned off, so its runs will fail until one is turned on.'),
+    ).toBeInTheDocument()
+  })
+
+  it('says the agent is back on the workspace default when the last model is removed', async () => {
+    const onRemoveCandidate = vi.fn(async () => ({ ...UNSET, warning: 'This agent will use the workspace default: Groq · Llama Fast.' }))
+    editor({ scope: 'agent', subject: 'Legal', onClear, onRemoveCandidate })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: "Remove Llama Fast from Legal's routing" }))
+    })
+    expect(await screen.findByText('Llama Fast was removed. Legal now uses the workspace default.')).toBeInTheDocument()
+    expect(screen.getByText('This agent will use the workspace default: Groq · Llama Fast.')).toBeInTheDocument()
+  })
+
+  it('only takes the row out of the draft while other changes wait to be saved', () => {
+    const onRemoveCandidate = vi.fn(async () => OWN)
+    editor({ scope: 'agent', subject: 'Legal', onClear, onRemoveCandidate })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move candidate 2 up' }))
+    fireEvent.click(screen.getByRole('button', { name: "Remove Llama Fast from Legal's routing" }))
+
+    expect(onRemoveCandidate).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('Candidate 2 provider')).not.toBeInTheDocument()
+  })
+
+  it('shows the warning the service sends with the chain when it is read', () => {
+    editor({ scope: 'agent', subject: 'Legal', onClear, policy: { ...OWN, warning: 'Every provider this agent lists is turned off.' } })
+
+    expect(screen.getByText('Every provider this agent lists is turned off.')).toBeInTheDocument()
+  })
+
+  it('saves a chain whose providers are all off, and shows the warning instead of refusing', async () => {
+    onSave.mockResolvedValueOnce({ ...OWN, warning: 'Every provider this agent lists is turned off.' } as never)
+    editor({
+      scope: 'agent',
+      subject: 'Legal',
+      onClear,
+      providers: PROVIDERS.map((entry) => ({ ...entry, enabled: false })),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move candidate 2 up' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save these models' }))
+    })
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Every provider this agent lists is turned off.')).toBeInTheDocument()
   })
 
   it('keeps what was arranged when a save fails', async () => {

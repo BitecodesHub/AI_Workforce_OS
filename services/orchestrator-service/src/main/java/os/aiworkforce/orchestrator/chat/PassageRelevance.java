@@ -1,3 +1,6 @@
+// @find: passage relevance, is the message conversational, skip document search, filter passages, distinctive terms, stopwords, greeting, PassageRelevance, relevant passages
+// @what: Decides whether a message needs a document search at all and which returned passages actually bear on it.
+// @flow: Called by CoordinatorService with KnowledgeClient results.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.LinkedHashSet;
@@ -15,7 +18,12 @@ import java.util.regex.Pattern;
  * question about the workspace's documents, and a search for it only returns whatever slide deck
  * shares the most common words. Such a message is never searched for. For any other message the
  * passages returned are filtered on the question's distinctive terms - stopwords such as "what",
- * "is" and "your" do not count - so a passage that shares only filler with the question is dropped.
+ * "is" and "your" do not count - so a passage that shares only filler with the question is dropped,
+ * unless the search by meaning found it close to the question.
+ *
+ * <p>Held to the labelled set in {@code src/test/resources/relevance/labelled-set.json}
+ * (PassageRelevanceSetTest): document questions and paraphrases that must be grounded, and small
+ * talk, questions about the assistant, off-topic questions and connector actions that must not.
  */
 public final class PassageRelevance {
 
@@ -85,6 +93,7 @@ public final class PassageRelevance {
      * Whether the message is about the agent, a greeting or small talk, so that no document can be
      * what it asks for. A message that names documents ("what documents do you have") is not.
      */
+    // @find: is message conversational, greeting, thank you, no search needed
     public static boolean isConversational(String text) {
         if (text == null || text.isBlank()) {
             return true;
@@ -122,6 +131,7 @@ public final class PassageRelevance {
      * The passages that bear on the query: score above the floor and, for a query with more than
      * four distinctive terms, at least two of them present in the passage's text, heading or title.
      */
+    // @find: filter relevant passages for a question
     public static List<KnowledgeClient.Passage> relevant(String query, List<KnowledgeClient.Passage> passages) {
         if (passages == null || passages.isEmpty() || isConversational(query)) {
             return List.of();
@@ -138,8 +148,21 @@ public final class PassageRelevance {
         int required = action ? Math.min(2, terms.size()) : terms.size() <= 4 ? 1 : 2;
         return passages.stream()
                 .filter(p -> p.score() >= MIN_SCORE)
-                .filter(p -> covered(terms, p) >= required)
+                .filter(p -> closeInMeaning(p, action) || covered(terms, p) >= required)
                 .toList();
+    }
+
+    /**
+     * Whether the search by meaning found the passage close to the question. The knowledge service
+     * sends a similarity only for a passage that cleared the floor measured for its embedding model
+     * (see the knowledge service's EmbeddingSettings), so such a passage bears on the question even
+     * when it shares none of its words: "how far ahead must I tell my manager before going on
+     * holiday" against "annual leave requests need two weeks notice". Not for an action in a
+     * connected service, which is about the service, not a document: there only shared subject
+     * words count, as before.
+     */
+    private static boolean closeInMeaning(KnowledgeClient.Passage passage, boolean action) {
+        return !action && passage.similarity() != null;
     }
 
     /**

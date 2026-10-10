@@ -1,3 +1,6 @@
+// @find: formatting helpers, format percent, format seconds, format hours, change vs previous period, chart scale niceMax, success text, cost text, unpriced, free, not enough runs
+// @what: Shared formatting and wording helpers for analytics numbers, changes, chart scales and per-agent text.
+// @flow: Used by ValueTiles, AgentsTable, DailyTrend and the Runs list
 import { formatCount, formatDuration, formatMoney } from '../../lib/format'
 import type { AgentInsight, Delta, InsightsWindow } from '../../lib/insightsQueries'
 import { WINDOW_DAYS } from '../../lib/insightsQueries'
@@ -13,23 +16,27 @@ import { WINDOW_DAYS } from '../../lib/insightsQueries'
 
 export const NOT_ENOUGH_RUNS = 'Not enough runs yet'
 export const UNPRICED = 'Unpriced'
+export const FREE = 'Free'
 export const NOT_ESTIMATED = 'Not estimated'
 
 const EMPTY = '—'
 
 /** '75%'; an em dash when there is no rate. */
+// @find: formatPercent, percent text
 export function formatPercent(rate: number | null | undefined, digits = 0): string {
   if (rate == null || !Number.isFinite(rate)) return EMPTY
   return `${(rate * 100).toFixed(digits)}%`
 }
 
 /** A wait or an answer time given in seconds: '2 min 00 s', '1 h 05 min'. An em dash when unknown. */
+// @find: formatSeconds, duration text
 export function formatSeconds(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds)) return EMPTY
   return formatDuration(Math.max(0, seconds) * 1000)
 }
 
 /** Hours to a tenth, without a trailing '.0': '6 h', '1.5 h'. */
+// @find: formatHours, hours text
 export function formatHours(hours: number | null | undefined): string {
   if (hours == null || !Number.isFinite(hours)) return EMPTY
   if (hours > 0 && hours < 0.05) return 'Under 0.1 h'
@@ -65,6 +72,7 @@ function formatChange(amount: number, kind: FigureKind): string {
  * 'Down US$0.20 on the previous 30 days', 'Same as the previous 7 days'. When there is nothing to
  * compare with it says so, and a change from nothing carries no percentage.
  */
+// @find: describeChange, change versus previous period text
 export function describeChange(delta: Delta | undefined, kind: FigureKind, window: InsightsWindow): string {
   const against = previousPeriod(window)
   if (!delta || delta.current === null) return ''
@@ -78,6 +86,7 @@ export function describeChange(delta: Delta | undefined, kind: FigureKind, windo
 }
 
 /** The rounded-up top of a chart's scale: 1, 2, 5, 10, 20, 50 and so on, so the gridlines read cleanly. */
+// @find: niceMax, chart axis maximum
 export function niceMax(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 1
   const power = 10 ** Math.floor(Math.log10(value))
@@ -88,6 +97,7 @@ export function niceMax(value: number): number {
 }
 
 /** The day as a short label for a chart's axis: '14 Oct'. The day is a UTC date, written YYYY-MM-DD. */
+// @find: dayLabel, chart day label
 export function dayLabel(day: string): string {
   const [year, month, date] = day.split('-').map(Number)
   if (!year || !month || !date) return day
@@ -101,12 +111,14 @@ export function dayLabel(day: string): string {
 /* ---- One agent ------------------------------------------------------------------------------------ */
 
 /** The success rate, or the words for why there is none. */
+// @find: successText, agent success rate wording
 export function successText(agent: Pick<AgentInsight, 'enoughRuns' | 'successRate' | 'finishedRuns'>): string {
   if (!agent.enoughRuns || agent.successRate === null) return NOT_ENOUGH_RUNS
   return formatPercent(agent.successRate)
 }
 
 /** What an agent's runs cost: a figure, 'Unpriced' when no run had a price, or 'Free' on the sandbox. */
+// @find: costText, agent cost wording, unpriced, free
 export function costText(agent: Pick<AgentInsight, 'totalCost' | 'unpricedRuns' | 'sandboxRuns' | 'runs'>): string {
   if (agent.totalCost === null) return UNPRICED
   if (agent.totalCost === 0) {
@@ -123,7 +135,8 @@ export function costText(agent: Pick<AgentInsight, 'totalCost' | 'unpricedRuns' 
 export function satisfactionText(agent: Pick<AgentInsight, 'ratings' | 'thumbsDown' | 'satisfactionRate'>): string {
   if (agent.ratings === 0 || agent.satisfactionRate === null) return 'No ratings yet'
   const down = agent.thumbsDown === 0 ? 'no thumbs down' : `${formatCount(agent.thumbsDown)} thumbs down`
-  return `${formatPercent(agent.satisfactionRate)} of ${formatCount(agent.ratings)} ratings, ${down}`
+  const ratings = agent.ratings === 1 ? 'rating' : 'ratings'
+  return `${formatPercent(agent.satisfactionRate)} of ${formatCount(agent.ratings)} ${ratings}, ${down}`
 }
 
 /** Hours an agent returned, as an estimate, or 'Not estimated' when nobody has said what a task is worth. */
@@ -140,7 +153,12 @@ export function hoursText(agent: Pick<AgentInsight, 'minutesPerTask' | 'hoursRet
  * model or the offline sandbox answered, and the run's own page says which - and a run that used
  * nothing yet (still starting, or stopped before a model call) has no cost to show.
  */
-export function runCost(run: { cost: number; promptTokens: number; completionTokens: number }): {
+export function runCost(run: {
+  cost: number
+  promptTokens: number
+  completionTokens: number
+  pricing?: string | null
+}): {
   text: string
   /** For sorting; null when there is no price, so those runs sort last either way round. */
   value: number | null
@@ -148,6 +166,16 @@ export function runCost(run: { cost: number; promptTokens: number; completionTok
 } {
   const cost = Number(run.cost)
   if (Number.isFinite(cost) && cost > 0) return { text: formatMoney(cost), value: cost }
+  switch (run.pricing) {
+    case 'free':
+      return { text: FREE, value: 0, title: 'Every model this run used is free in the model catalogue.' }
+    case 'sandbox':
+      return { text: FREE, value: 0, title: 'The offline sandbox answered, which costs nothing.' }
+    case 'unpriced':
+      return { text: UNPRICED, value: null, title: 'Used a model with no price on file, so the cost is not known.' }
+    case 'none':
+      return { text: EMPTY, value: null, title: 'No model has answered for this run yet.' }
+  }
   const tokens = (Number(run.promptTokens) || 0) + (Number(run.completionTokens) || 0)
   if (tokens > 0) {
     return {

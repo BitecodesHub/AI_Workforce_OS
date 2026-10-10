@@ -1,3 +1,6 @@
+// @find: value settings, hours saved, cost per hour, ROI settings, value of work, /api/orchestrator/value-settings, Value settings page
+// @what: REST endpoints to read and change the settings used to estimate the value of agent work.
+// @flow: Used by the dashboard ROI figures
 package os.aiworkforce.orchestrator.web;
 
 import java.math.BigDecimal;
@@ -95,6 +98,7 @@ public class ValueSettingsController {
         this.audit = audit;
     }
 
+    // @find: get value settings, GET /api/orchestrator/value-settings
     @GetMapping
     @RequiresPermission(Permission.Codes.ANALYTICS_READ)
     @Transactional(readOnly = true)
@@ -104,6 +108,7 @@ public class ValueSettingsController {
         return view(orgId, insights.valueInputs(orgId));
     }
 
+    // @find: update value settings, PUT /api/orchestrator/value-settings
     @PutMapping
     @RequiresPermission(Permission.Codes.BUDGET_MANAGE)
     @Transactional

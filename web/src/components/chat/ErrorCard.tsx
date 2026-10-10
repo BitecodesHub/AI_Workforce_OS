@@ -1,3 +1,6 @@
+// @find: chat error, agent failed, try again, retry, incomplete answer, step limit, output limit, error message, run failed
+// @what: Plain-words error card in the thread with a Try again button and any partial answer.
+// @flow: Used by MessageItem.
 import { MenuButton } from '../ui/Menu'
 import { Markdown } from '../ui/Markdown'
 import { Notice } from '../ui'
@@ -17,6 +20,7 @@ import { canRetryGoal, errorHelp } from './chatModel'
  * the message as `incompleteAnswer`, and it is offered here folded away and called what it is.
  */
 
+// @find: incompleteAnswerOf, incomplete answer of, chat error, agent failed, try again, retry
 /**
  * What the server kept of an answer the agent did not finish. The value is checked at run time
  * as well as typed, because the detail comes from the network.
@@ -26,6 +30,7 @@ export function incompleteAnswerOf(message: ChatMessage): string | null {
   return typeof value === 'string' && value.trim() ? value : null
 }
 
+// @find: ErrorCard, error card, chat error, agent failed, try again, retry
 export function ErrorCard({
   message,
   live,

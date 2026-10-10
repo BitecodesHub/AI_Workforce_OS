@@ -1,3 +1,6 @@
+// @find: copy button, copy to clipboard, copy link, copy text, clipboard fallback, Copied, CopyButton
+// @what: Button that copies text to the clipboard with a fallback and a confirmation word.
+// @flow: Used by Markdown code blocks, invite links and similar.
 import { useEffect, useRef, useState } from 'react'
 import { IconButton } from './index'
 
@@ -42,6 +45,7 @@ const COPY_ICON = (
   </svg>
 )
 
+// @find: copy to clipboard button, copied confirmation
 export function CopyButton({
   text,
   label = 'Copy',

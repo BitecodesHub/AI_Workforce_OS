@@ -1,3 +1,6 @@
+// @find: tests for approval model, approval reducer, canDecide, startSteps approveSteps expireSteps, approval state machine, guards
+// @what: Tests the approval-gate reducer, role guards and step timelines.
+// @flow: Covers approvalModel.ts
 import { describe, expect, it } from 'vitest'
 import {
   ANNOUNCE,

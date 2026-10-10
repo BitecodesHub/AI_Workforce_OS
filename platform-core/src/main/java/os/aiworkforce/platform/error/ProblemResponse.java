@@ -1,3 +1,6 @@
+// @find: problem response, error body, RFC 7807, error json shape, request id, trace id, field errors, retryable
+// @what: The error body every service returns, so the web client can show any failure the same way.
+// @flow: Built by GlobalExceptionHandler
 package os.aiworkforce.platform.error;
 
 import java.time.Instant;

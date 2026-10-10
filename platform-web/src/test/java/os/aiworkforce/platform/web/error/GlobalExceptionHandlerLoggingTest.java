@@ -1,3 +1,5 @@
+// @find: tests for exception handler logging, request reference in log, 5xx error reference, log line matches error screen
+// @what: Checks the reference shown on an error screen can be found in the log.
 package os.aiworkforce.platform.web.error;
 
 import static org.assertj.core.api.Assertions.assertThat;

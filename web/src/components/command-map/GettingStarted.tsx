@@ -1,3 +1,6 @@
+// @find: getting started, onboarding guide, setup checklist, first steps, connect model, add knowledge source, first task, approvals, hide guide, command map, home dashboard, GettingStarted
+// @what: The getting started checklist on the command map that walks a new workspace through its first steps.
+// @flow: Uses lib/onboarding step state and queries for models, sources, runs and approvals; opens ConnectModelDialog and TaskDialog
 import { useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Card, Eyebrow } from '../ui'
@@ -63,6 +66,7 @@ type Step = {
   satisfied: boolean
 }
 
+// @find: getting started component, onboarding checklist
 export function GettingStarted() {
   const { navigate } = useRouter()
   const toast = useToast()
@@ -184,11 +188,11 @@ export function GettingStarted() {
       // Not live yet: the title opens the dialog that does the whole job. Live: a statement.
       kind: live ? 'state' : 'connect',
       href: '/routing',
-      title: live ? `Runs try ${routing.first?.providerName ?? 'a live model'} first.` : 'Connect a live model',
+      title: live ? `Agents answer with ${routing.first?.providerName ?? 'a live AI model'}.` : 'Connect a live model',
       // The notice above the guide gives the full reason; this line only says what it means now.
       body: live ? (
         <>
-          From the workspace routing policy.{' '}
+          It is the first choice in Model routing.{' '}
           <a className="link" href="/routing">
             Open Model routing
           </a>
@@ -262,6 +266,15 @@ export function GettingStarted() {
               ? 'You have been through every step. Hide this guide when you no longer need it.'
               : 'A short tour of what your role can do here. Take the steps in any order.'}
           </p>
+          {can('workspace:update') && can('provider:manage') && (
+            <p className="caption" style={{ marginTop: 'var(--space-2)' }}>
+              Setting the workspace up?{' '}
+              <a className="link" href="/setup">
+                Set up your workspace
+              </a>{' '}
+              walks through models, tools, knowledge and your team on one page.
+            </p>
+          )}
         </div>
         <Button variant="quiet" className="button-sm" onClick={hide}>
           Hide this guide

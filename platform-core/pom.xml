@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  @find: platform core, shared library, maven module, rbac, encryption, error codes, runtime config, resilience, redaction
+  @what: Maven module definition for the framework-free platform core shared by every service.
+  @flow: Child of the root pom.xml; depended on by platform-web and the services
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

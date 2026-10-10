@@ -1,3 +1,6 @@
+// @find: sign in, login, register, sign up, refresh token, sign out, logout, sign out everywhere, list sessions, end session, change password, lockout, audit sign in, AuthService
+// @what: Core service for registration, sign-in, refresh, sign-out, session list and password change.
+// @flow: Called by AuthController and PasswordController; uses TokenService, PasswordService, Sessions, Users.
 package os.aiworkforce.identity.service;
 
 import java.nio.charset.StandardCharsets;
@@ -139,6 +142,7 @@ public class AuthService {
         static final Scope NONE = new Scope(null, null, null, Set.of(), 0);
     }
 
+    // @find: register account, sign up, create user, POST /api/auth/register
     @Transactional
     public User register(String email, String displayName, String rawPassword) {
         String normalised = email == null ? "" : email.strip();
@@ -162,6 +166,7 @@ public class AuthService {
         return users.save(user);
     }
 
+    // @find: sign in, login, authenticate, wrong password, lockout, POST /api/auth/sign-in
     @Transactional(noRollbackFor = ApiException.class)
     public AuthResult signIn(
             String email, String rawPassword, UUID requestedOrgId, String userAgent, String ipAddress) {
@@ -234,6 +239,7 @@ public class AuthService {
         return result;
     }
 
+    // @find: refresh token, renew access token, token reuse detection, POST /api/auth/refresh
     /**
      * Exchanges a refresh token for a new pair.
      *
@@ -290,6 +296,7 @@ public class AuthService {
         return result;
     }
 
+    // @find: sign out, logout, sign out everywhere, POST /api/auth/sign-out
     @Transactional
     public void signOut(String refreshToken, boolean allDevices) {
         String hash = tokens.hashRefreshToken(refreshToken);
@@ -318,6 +325,7 @@ public class AuthService {
         // to probe which tokens are live.
     }
 
+    // @find: list sessions, my devices, signed in devices, GET /api/users/me/sessions
     /**
      * The devices a person is signed in on, newest activity first.
      *
@@ -347,6 +355,7 @@ public class AuthService {
                 .toList();
     }
 
+    // @find: end session, sign out one device, DELETE /api/users/me/sessions/{familyId}
     /** Signs one of a person's devices out. A family that is not theirs is reported as not found. */
     @Transactional
     public void endSession(UUID userId, UUID familyId) {
@@ -356,6 +365,7 @@ public class AuthService {
         sessions.revokeFamily(familyId, Instant.now(), "signed out from another device");
     }
 
+    // @find: change password, update my password, PUT /api/users/me/password
     /**
      * Changes a signed-in person's password, and signs out every other device.
      *

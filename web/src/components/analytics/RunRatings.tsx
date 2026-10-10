@@ -1,3 +1,6 @@
+// @find: run ratings, who rated a run, answer feedback on a run, rating list, members who rated, RunRatings
+// @what: Lists the ratings people gave to a run, with member names.
+// @flow: Shown in run detail; uses useRunRatings and useMemberNames
 import { Card, Eyebrow, Tag, Time } from '../ui'
 import { useMemberNames } from '../../lib/queries'
 import { useRunRatings } from '../../lib/insightsQueries'
@@ -12,6 +15,7 @@ import { can } from '../../lib/session'
  * failed read says nothing rather than a guess. A rater is named only to someone who can see the
  * member list; everyone else sees "A member of the workspace".
  */
+// @find: RunRatings, ratings on a run
 export function RunRatings({ runId }: { runId: string }) {
   const ratings = useRunRatings(runId, { enabled: can('run:read') })
   const members = useMemberNames({ enabled: can('member:read') })

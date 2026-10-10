@@ -1,3 +1,6 @@
+// @find: landing bar, sticky nav, top bar, header navigation, in-page links, sign in, create your workspace, try the demo button, HOME_SECTIONS, LandingBar
+// @what: The sticky top bar of the public pages, with section links and sign-in and demo buttons.
+// @flow: Used by routes/Landing and routes/Trust; uses useDemoCta
 import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Brand } from '../../layout/Brand'
@@ -35,6 +38,7 @@ const SCROLLSPY_MARGIN = '-45% 0px -50% 0px'
 
 export type LandingBarProps = { sections?: readonly BarSection[] }
 
+// @find: LandingBar component, sticky top bar
 export function LandingBar({ sections = HOME_SECTIONS }: LandingBarProps): ReactElement {
   const inPage = useInPageLink()
   const demo = useDemoCta()

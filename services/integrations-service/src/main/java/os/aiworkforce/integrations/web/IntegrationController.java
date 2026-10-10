@@ -1,3 +1,6 @@
+// @find: integrations controller, integrations page api, GET /api/integrations, PUT /api/integrations/{server}/connection, POST /api/integrations/{server}/test, DELETE /api/integrations/{server}/connection, oauth app, oauth start, internal credential, connectors, integrations, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: REST endpoints behind the Integrations page: list connectors, connect, test, disconnect, OAuth app setup, plus internal credential endpoints for the orchestrator.
+// @flow: Calls ConnectorService and OAuthService; internal endpoints are called by the orchestrator and OAuth adapters
 package os.aiworkforce.integrations.web;
 
 import java.time.Instant;
@@ -8,6 +11,7 @@ import java.util.UUID;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -132,7 +136,10 @@ public class IntegrationController {
             @Size(max = 120) String accountLabel) {}
 
     public record OAuthAppRequest(
-            @NotBlank @Size(max = 512) String clientId,
+            @NotBlank
+                    @Size(max = 512)
+                    @Pattern(regexp = "\\s*\\S+\\s*", message = "A client ID has no spaces. Copy it again from the provider.")
+                    String clientId,
             @Size(max = 2048) String clientSecret,
             @Size(max = 16) Map<String, @Size(max = 512) String> settings) {}
 
@@ -151,6 +158,7 @@ public class IntegrationController {
     /** Why a connection needs a reconnect, in a sentence an administrator can read. */
     public record ReconnectRequest(String reason) {}
 
+    // @find: list connectors, Integrations page, GET /api/integrations
     @GetMapping("/api/integrations")
     @RequiresPermission(Permission.Codes.INTEGRATION_READ)
     @Operation(summary = "Every connector, its status, and what each one offers")
@@ -166,6 +174,7 @@ public class IntegrationController {
                 .toList();
     }
 
+    // @find: connect connector, Add connector dialog, PUT /api/integrations/{server}/connection
     @PutMapping("/api/integrations/{server}/connection")
     @RequiresPermission(Permission.Codes.INTEGRATION_CONNECT)
     @Operation(summary = "Check a token with the provider and store it, encrypted")
@@ -175,6 +184,7 @@ public class IntegrationController {
         return view(server, connection, oauth.configuredProviders(orgId()));
     }
 
+    // @find: get oauth app, GET /api/integrations/{server}/oauth/app
     @GetMapping("/api/integrations/{server}/oauth/app")
     @RequiresPermission(Permission.Codes.INTEGRATION_CONNECT)
     @Operation(summary = "The OAuth app saved for this connector's provider, without its secret")
@@ -182,6 +192,7 @@ public class IntegrationController {
         return oauth.app(orgId(), server);
     }
 
+    // @find: save oauth app, PUT /api/integrations/{server}/oauth/app
     @PutMapping("/api/integrations/{server}/oauth/app")
     @RequiresPermission(Permission.Codes.INTEGRATION_CONNECT)
     @Operation(summary = "Save the OAuth app (client id, secret and provider settings) for this connector's provider")
@@ -195,6 +206,7 @@ public class IntegrationController {
                 request.settings());
     }
 
+    // @find: start oauth sign in, GET /api/integrations/{server}/oauth/start
     /**
      * Opens a consent screen: answers the provider's address, and sets a short-lived cookie that
      * ties the sign-in to this browser. The browser is sent to the address by the console.
@@ -218,6 +230,7 @@ public class IntegrationController {
         return new OAuthStartView(start.authorizeUrl());
     }
 
+    // @find: test connection, POST /api/integrations/{server}/test
     @PostMapping("/api/integrations/{server}/test")
     @RequiresPermission(Permission.Codes.INTEGRATION_READ)
     @Operation(summary = "Check the stored token with the provider again")
@@ -225,6 +238,7 @@ public class IntegrationController {
         return connectors.test(orgId(), server);
     }
 
+    // @find: disconnect connector, DELETE /api/integrations/{server}/connection
     @DeleteMapping("/api/integrations/{server}/connection")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.INTEGRATION_DISCONNECT)
@@ -233,6 +247,7 @@ public class IntegrationController {
         connectors.disconnect(orgId(), server);
     }
 
+    // @find: internal get credential, GET /internal/connections/{server}/credential
     /**
      * The credential for one server, for the orchestrator.
      *
@@ -254,6 +269,7 @@ public class IntegrationController {
         return new InternalCredential(found.value(), found.state(), found.message());
     }
 
+    // @find: internal refresh credential, POST /internal/connections/{server}/refresh
     /**
      * A new access token after the provider rejected the one handed out. Empty (a null value) when
      * the sign-in cannot be renewed; the connection is then marked as needing a reconnect.
@@ -270,6 +286,7 @@ public class IntegrationController {
                 .orElseGet(() -> new InternalCredential(null, "reconnect_required", null));
     }
 
+    // @find: internal reconnect required, POST /internal/connections/{server}/reconnect-required
     @PostMapping("/internal/connections/{server}/reconnect-required")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Internal: mark a connection as needing to be connected again")

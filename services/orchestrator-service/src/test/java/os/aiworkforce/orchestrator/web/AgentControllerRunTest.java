@@ -1,3 +1,5 @@
+// @find: tests for agent controller run, POST /api/agents/{agentId}/runs, run agent, start run, give agent a task
+// @what: Unit and integration tests (2 cases) for agent controller run, for example: run answers before the agent works; paused agent is refused in the request.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

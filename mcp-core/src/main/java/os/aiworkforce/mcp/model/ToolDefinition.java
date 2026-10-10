@@ -1,3 +1,6 @@
+// @find: tool definition, tool spec, side effect, read write outbound destructive, required scopes, idempotent, timeout, rate limit, always requires approval, qualified name server.tool, tools list, connector tools
+// @what: Record defining one tool of one connector, including its side-effect class which decides whether approval is needed.
+// @flow: Declared in SandboxServerRegistry; read by ToolGateway and the live adapters
 package os.aiworkforce.mcp.model;
 
 import java.time.Duration;
@@ -56,6 +59,7 @@ public record ToolDefinition(
         return server + "." + name;
     }
 
+    // @find: always requires approval, outbound destructive approval gate, cannot be disabled
     /**
      * Whether this tool always needs approval, whatever the workspace policy says.
      *
@@ -68,6 +72,7 @@ public record ToolDefinition(
         return sideEffect == ToolSpec.SideEffect.OUTBOUND || sideEffect == ToolSpec.SideEffect.DESTRUCTIVE;
     }
 
+    // @find: tool shown to model, tool spec for LLM
     /** The shape the model is shown, derived so the two can never drift apart. */
     public ToolSpec toSpec() {
         return new ToolSpec(qualifiedName(), description, parametersJson, sideEffect);

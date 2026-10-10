@@ -1,3 +1,5 @@
+// @find: tests for goals, canStopGoal, canRetryGoal, stop, retry, permissions
+// @what: Unit tests for goal stop and retry permissions.
 import { describe, expect, it } from 'vitest'
 import { canRetryGoal, canStopGoal } from './goals'
 

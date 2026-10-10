@@ -1,9 +1,12 @@
+// @find: tests for model catalogue, filterModels, groupModels, mergeSaved, formatContext, formatPrice, optionSummary, model picker
+// @what: Unit tests for the model picker search, grouping and wording.
 import { describe, expect, it } from 'vitest'
 import {
   capGroups,
   filterModels,
   formatContext,
   formatPrice,
+  firstAvailable,
   groupModels,
   mergeSaved,
   shortPrice,
@@ -81,6 +84,20 @@ describe('folding in saved models', () => {
     const merged = mergeSaved('nvidia', [option('qwen/qwen3', 'Qwen3', { free: true })], saved)
     expect(merged.map((model) => model.id)).toEqual(['qwen/qwen3', 'meta/llama-3.3-70b-instruct'])
     expect(merged[1]!.free).toBe(true)
+  })
+
+  it('leaves out a saved model a provider-answered list does not offer, unless it is the chosen one, which it marks', () => {
+    const saved = [
+      { providerId: 'groq', modelId: 'llama-3.1-8b-instant', displayName: 'Llama 3.1 8B', contextWindow: 128000, maxOutputTokens: 8192, supportsTools: true, inputCostPerMillion: 0.05, outputCostPerMillion: 0.08 },
+    ]
+    const listed = [option('openai/gpt-oss-120b', 'GPT OSS 120B')]
+    expect(mergeSaved('groq', listed, saved, { fromProvider: true }).map((model) => model.id)).toEqual(['openai/gpt-oss-120b'])
+    const kept = mergeSaved('groq', listed, saved, { fromProvider: true, keep: 'llama-3.1-8b-instant' })
+    expect(kept[1]).toMatchObject({ id: 'llama-3.1-8b-instant', unavailable: true })
+    expect(groupModels(kept).map((group) => group.label)).toEqual(['Paid', 'Not available to this account'])
+    expect(firstAvailable(kept)?.id).toBe('openai/gpt-oss-120b')
+    // Without a provider-answered list, nothing is marked.
+    expect(mergeSaved('groq', undefined, saved)[0]!.unavailable).toBeUndefined()
   })
 })
 

@@ -1,3 +1,5 @@
+// @find: tests for OpenAI compatible provider, OpenRouter, NVIDIA, Groq, failure classification, 429, content filter, payload too large, embeddings
+// @what: Checks failure classification against the response shapes real services return.
 package os.aiworkforce.llm.provider;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -198,6 +200,23 @@ class OpenAiCompatibleProviderTest {
         assertThat(failure.failure()).isEqualTo(ProviderFailure.QUOTA_EXHAUSTED);
         assertThat(failure.failure().retrySameCandidate()).isFalse();
         assertThat(failure.failure().operatorActionRequired()).isTrue();
+    }
+
+    @Test
+    @DisplayName("classifies Groq's rate limit as rate limited, although its message links to billing")
+    void groqRateLimitIsNotOutOfCredit() {
+        stub(
+                429,
+                """
+                {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM):
+                Limit 8000, Used 7000, Requested 2000. Please try again in 7.5s. Need more tokens? Upgrade to Dev Tier
+                today at https://console.groq.com/settings/billing","type":"tokens","code":"rate_limit_exceeded"}}
+                """);
+
+        ProviderException failure = expectFailure(request("hello"));
+
+        assertThat(failure.failure()).isEqualTo(ProviderFailure.RATE_LIMITED);
+        assertThat(failure.failure().operatorActionRequired()).isFalse();
     }
 
     @Test
@@ -479,5 +498,74 @@ class OpenAiCompatibleProviderTest {
                 .contains("\"scan.png\" could not be shown to you: Llama 3.3 70B cannot read images")
                 .contains("vision-capable model in Model routing");
         assertThat(turn.approximateTokens()).isGreaterThan(noted.approximateTokens() - 200);
+    }
+
+    @Test
+    @DisplayName("Embeddings come back in input order, by index, and OpenRouter is sent no NVIDIA-only fields")
+    void embeddingsAreOrderedByIndex() {
+        server.stubFor(post(urlPathEqualTo("/embeddings"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[{\"index\":1,\"embedding\":[0.5,0.25]},"
+                                + "{\"index\":0,\"embedding\":[1.0,0.0]}]}")));
+
+        List<float[]> vectors = provider.embed(
+                        descriptor,
+                        model,
+                        List.of("first", "second"),
+                        "key",
+                        os.aiworkforce.llm.model.EmbeddingPurpose.QUERY)
+                .block(Duration.ofSeconds(5));
+
+        assertThat(vectors).hasSize(2);
+        assertThat(vectors.get(0)).containsExactly(1.0f, 0.0f);
+        assertThat(vectors.get(1)).containsExactly(0.5f, 0.25f);
+        String sent = server.getAllServeEvents().get(0).getRequest().getBodyAsString();
+        assertThat(sent).contains("\"input\":[\"first\",\"second\"]").doesNotContain("input_type");
+    }
+
+    @Test
+    @DisplayName("NVIDIA is told whether it is embedding a question or a passage, and to truncate")
+    void nvidiaGetsInputType() {
+        server.stubFor(post(urlPathEqualTo("/embeddings"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2,0.3]}]}")));
+        ProviderDescriptor nvidia = new ProviderDescriptor(
+                "nvidia",
+                "NVIDIA NIM",
+                ProviderDescriptor.Kind.OPENAI_COMPATIBLE,
+                server.baseUrl(),
+                "provider:nvidia",
+                true,
+                Map.of(),
+                List.of(),
+                null,
+                null,
+                0);
+
+        provider.embed(nvidia, model, List.of("what is the leave rule"), "key", os.aiworkforce.llm.model.EmbeddingPurpose.QUERY)
+                .block(Duration.ofSeconds(5));
+        provider.embed(nvidia, model, List.of("Annual leave needs notice."), "key")
+                .block(Duration.ofSeconds(5));
+
+        String first = server.getAllServeEvents().get(1).getRequest().getBodyAsString();
+        String second = server.getAllServeEvents().get(0).getRequest().getBodyAsString();
+        assertThat(first).contains("\"input_type\":\"query\"").contains("\"truncate\":\"END\"");
+        assertThat(second).contains("\"input_type\":\"passage\"");
+    }
+
+    @Test
+    @DisplayName("A vector count that does not match the texts is a malformed response, never a misaligned index")
+    void wrongVectorCountIsRefused() {
+        server.stubFor(post(urlPathEqualTo("/embeddings"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[{\"index\":0,\"embedding\":[0.1]}]}")));
+
+        assertThatThrownBy(() -> provider.embed(descriptor, model, List.of("a", "b"), "key")
+                        .block(Duration.ofSeconds(5)))
+                .isInstanceOfSatisfying(ProviderException.class, e -> assertThat(e.failure())
+                        .isEqualTo(ProviderFailure.MALFORMED_RESPONSE));
     }
 }

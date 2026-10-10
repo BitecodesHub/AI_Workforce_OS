@@ -1,3 +1,6 @@
+// @find: tests for landing page, home page, public page, accessibility axe, one h1, demo accounts lookup, reduced motion, demo buttons, Landing route, /home, buyers page
+// @what: Tests the composed public home page as a whole: one network request at most, no accessibility violations, one h1, demo end states.
+// @flow: Renders routes/Landing; exercises every landing section and demo together
 import axe from 'axe-core'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

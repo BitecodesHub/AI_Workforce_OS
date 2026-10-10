@@ -1,3 +1,6 @@
+// @find: permission interceptor, enforce requires permission, 403 forbidden, 401 unauthenticated, workspace in scope, rbac enforcement
+// @what: Enforces @RequiresPermission on every controller method that carries it.
+// @flow: Registered by WebMvcConfig; reads Actor from RequestContext
 package os.aiworkforce.platform.web.security;
 
 import java.util.Arrays;

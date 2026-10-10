@@ -1,3 +1,6 @@
+// @find: exception handler, error handling, error response, 400 validation error, 403 forbidden, 404 not found, 409 conflict, 500 internal error, request id in error, field errors, hide internal detail
+// @what: Turns every exception into one error response shape and keeps internal detail out of 5xx responses.
+// @flow: Uses ApiException, ErrorCode and ProblemResponse
 package os.aiworkforce.platform.web.error;
 
 import java.time.Duration;
@@ -158,7 +161,33 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ProblemResponse> handleIntegrity(
             DataIntegrityViolationException e, HttpServletRequest request) {
         log.warn("Constraint violation on {}: {}", request.getRequestURI(), rootMessage(e));
-        return respond(new ApiException(ErrorCode.ALREADY_EXISTS), request);
+        return respond(new ApiException(integrityCode(e)), request);
+    }
+
+    /**
+     * What a broken constraint means to the caller, from its SQL state.
+     *
+     * <p>Only a unique constraint means "that already exists". A check, not-null, foreign-key or
+     * length constraint means a value was not acceptable, and reporting it as a duplicate sent
+     * people looking for an item that was never there (seen 8 Oct 2026: an agent created with an
+     * unknown category was refused as "That item already exists").
+     */
+    static ErrorCode integrityCode(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.sql.SQLException sql && sql.getSQLState() != null) {
+                String state = sql.getSQLState();
+                if ("23505".equals(state)) {
+                    return ErrorCode.ALREADY_EXISTS;
+                }
+                if (state.startsWith("23") || state.startsWith("22")) {
+                    return ErrorCode.VALIDATION_FAILED;
+                }
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return ErrorCode.ALREADY_EXISTS;
     }
 
     /**

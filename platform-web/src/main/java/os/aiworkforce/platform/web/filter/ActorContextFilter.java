@@ -1,3 +1,6 @@
+// @find: actor context filter, request id, X-Request-Id, trace id, request context setup and teardown, first filter
+// @what: First filter in the chain; sets request and trace identifiers and clears the context afterwards.
+// @flow: Writes RequestContext; JwtActorConverter adds the actor later
 package os.aiworkforce.platform.web.filter;
 
 import java.io.IOException;

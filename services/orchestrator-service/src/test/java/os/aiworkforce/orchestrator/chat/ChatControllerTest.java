@@ -1,3 +1,6 @@
+// @find: tests for chat controller, chat, stop of goal from another conversation is404, retry of goal from another conversation is404, detail clamps limit and reports has earlier, earlier messages require the orgs conversation, earlier messages are ascending, list rejects unknown scope, ChatControllerTest, ChatController
+// @what: Tests for ChatController in the orchestrator chat package (6 test methods).
+// @flow: Exercises ChatController
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -105,6 +108,7 @@ class ChatControllerTest {
                 null);
     }
 
+    // @find: test stop of goal from another conversation is404, chat controller
     @Test
     @DisplayName("stopping a goal from another conversation surfaces the coordinator's 404")
     void stopOfGoalFromAnotherConversationIs404() {
@@ -116,6 +120,7 @@ class ChatControllerTest {
                         ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
     }
 
+    // @find: test retry of goal from another conversation is404, chat controller
     @Test
     @DisplayName("retrying a goal from another conversation surfaces the coordinator's 404")
     void retryOfGoalFromAnotherConversationIs404() {
@@ -127,6 +132,7 @@ class ChatControllerTest {
                         ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
     }
 
+    // @find: test detail clamps limit and reports has earlier, chat controller
     @Test
     @DisplayName("a limit below the minimum is clamped to 20, and one extra row reports hasEarlier")
     void detailClampsLimitAndReportsHasEarlier() {
@@ -143,6 +149,7 @@ class ChatControllerTest {
         assertThat(detail.messages()).hasSize(20);
     }
 
+    // @find: test earlier messages require the orgs conversation, chat controller
     @Test
     @DisplayName("earlier messages require the conversation to belong to this org, and reads no messages otherwise")
     void earlierMessagesRequireTheOrgsConversation() {
@@ -155,6 +162,7 @@ class ChatControllerTest {
         verifyNoInteractions(messages);
     }
 
+    // @find: test earlier messages are ascending, chat controller
     @Test
     @DisplayName("an older page of messages is returned oldest first")
     void earlierMessagesAreAscending() {
@@ -173,6 +181,7 @@ class ChatControllerTest {
                 .containsExactly(3, 4, 5);
     }
 
+    // @find: test list rejects unknown scope, chat controller
     @Test
     @DisplayName("an unknown scope is rejected")
     void listRejectsUnknownScope() {

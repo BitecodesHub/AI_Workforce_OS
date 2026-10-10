@@ -1,3 +1,6 @@
+// @find: tests for role data, roles permissions, Permission.java, PermissionSeeder, console areas, 46 permission codes
+// @what: Tests that role data matches the platform's permission registry, seeder and routes.
+// @flow: Covers roleData.ts
 import { createElement } from 'react'
 import axe from 'axe-core'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'

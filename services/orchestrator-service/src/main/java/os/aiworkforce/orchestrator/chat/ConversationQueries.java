@@ -1,3 +1,6 @@
+// @find: conversation queries, list conversations, conversation list, search chats, conversation detail, messages page, earlier messages, unread, pinned, archived, needs me, ConversationQueries, chat sidebar
+// @what: Read-only queries that build the conversation list, a conversation's detail and its pages of messages for a person.
+// @flow: Called by ChatController.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
@@ -83,6 +86,10 @@ public class ConversationQueries {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ConversationAccess access;
 
+    /** The conversation's waiting messages; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ChatQueue chatQueue;
+
     public ConversationQueries(
             Conversations conversations,
             ConversationMarks marks,
@@ -147,12 +154,33 @@ public class ConversationQueries {
             List<BoardService.GoalView> goals,
             List<QuestionService.QuestionView> questions,
             boolean hasEarlier,
-            Instant generatedAt) {}
+            Instant generatedAt,
+            /** Every message waiting its turn, oldest first; always the whole queue, also on a delta read. */
+            List<ChatQueue.QueuedMessageView> queued,
+            /** idle, working or waiting_decision. */
+            String busy) {
+
+        public ConversationDetail(
+                ConversationView conversation,
+                List<ChatMessageView> messages,
+                List<BoardService.GoalView> goals,
+                List<QuestionService.QuestionView> questions,
+                boolean hasEarlier,
+                Instant generatedAt) {
+            this(conversation, messages, goals, questions, hasEarlier, generatedAt, List.of(), "idle");
+        }
+
+        ConversationDetail withQueue(List<ChatQueue.QueuedMessageView> waiting, String state) {
+            return new ConversationDetail(
+                    conversation, messages, goals, questions, hasEarlier, generatedAt, waiting, state);
+        }
+    }
 
     public record MessagesPage(List<ChatMessageView> messages, boolean hasEarlier) {}
 
     // ---- The conversation list ----------------------------------------------------------------
 
+    // @find: list conversations, search messages, chat sidebar, filters pinned archived unread, GET /api/conversations
     @Transactional(readOnly = true)
     public ConversationPage list(UUID orgId, Actor actor, String q, String scope, int page, int size) {
         String query = q == null ? "" : q.strip();
@@ -283,6 +311,7 @@ public class ConversationQueries {
     }
 
     /** The view for a single, freshly created or freshly changed conversation, with no marks yet loaded. */
+    // @find: conversation view, row in chat list
     @Transactional(readOnly = true)
     public ConversationView view(UUID orgId, Actor actor, Conversation conversation) {
         UUID me = parseUuidOrNull(actor.humanId());
@@ -422,6 +451,7 @@ public class ConversationQueries {
     // ---- Conversation detail ------------------------------------------------------------------
 
     /** The conversation's whole recent window: its newest messages, their goals, and its questions. */
+    // @find: conversation detail, open a chat with messages
     @Transactional(readOnly = true)
     public ConversationDetail detail(UUID orgId, Actor actor, UUID id, int limit) {
         return detail(orgId, actor, id, limit, null, null);
@@ -443,6 +473,7 @@ public class ConversationQueries {
      * change would not fit in a small response, so the whole window is returned instead and the
      * reader replaces what it holds.
      */
+    // @find: conversation detail polling, messages after position or since time
     @Transactional(readOnly = true)
     public ConversationDetail detail(UUID orgId, Actor actor, UUID id, int limit, Integer after, Instant since) {
         Instant generatedAt = Instant.now();
@@ -455,7 +486,7 @@ public class ConversationQueries {
         if (after != null && since != null) {
             ConversationDetail changes = changesSince(orgId, actor, conversation, after, since, generatedAt);
             if (changes != null) {
-                return changes;
+                return withQueue(orgId, actor, conversation, changes);
             }
         }
         int effectiveLimit = Math.max(DETAIL_MIN_LIMIT, Math.min(DETAIL_MAX_LIMIT, limit));
@@ -483,8 +514,22 @@ public class ConversationQueries {
         List<QuestionService.QuestionView> questionViews =
                 questions.views(questions.forConversation(orgId, id, QUESTION_LIMIT), actor);
 
-        return new ConversationDetail(
-                view(orgId, actor, conversation), messageViews, goalViews, questionViews, hasEarlier, generatedAt);
+        return withQueue(
+                orgId,
+                actor,
+                conversation,
+                new ConversationDetail(
+                        view(orgId, actor, conversation), messageViews, goalViews, questionViews, hasEarlier, generatedAt));
+    }
+
+    /** The detail with the conversation's queue and whether it is busy, read fresh every time. */
+    private ConversationDetail withQueue(UUID orgId, Actor actor, Conversation conversation, ConversationDetail detail) {
+        if (chatQueue == null) {
+            return detail;
+        }
+        return detail.withQueue(
+                chatQueue.views(conversation.getId(), conversation, actor),
+                chatQueue.state(orgId, conversation).wire());
     }
 
     /**
@@ -568,6 +613,7 @@ public class ConversationQueries {
                 .toList();
     }
 
+    // @find: messages page, load earlier messages
     @Transactional(readOnly = true)
     public MessagesPage messagesPage(UUID orgId, Actor actor, UUID id, int before, int limit) {
         if (access == null) {

@@ -1,3 +1,6 @@
+// @find: workspaces, create workspace, update workspace settings, rename workspace, timezone, slug, POST /api/workspaces, GET /api/workspaces/{id}, PATCH /api/workspaces/{id}/settings, Settings page, new workspace, become owner
+// @what: REST endpoints to create a workspace (and make the caller its owner), read one, and update its name and timezone.
+// @flow: Calls identity-service /internal/memberships/bootstrap-owner after saving; audits updates.
 package os.aiworkforce.organisation.web;
 
 import java.time.DateTimeException;
@@ -89,6 +92,7 @@ public class WorkspaceController {
 
     public record WorkspaceView(UUID id, String name, String slug, String timezone, String status) {}
 
+    // @find: create workspace, new workspace, POST /api/workspaces, bootstrap owner
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Create a workspace and become its owner")
@@ -134,6 +138,7 @@ public class WorkspaceController {
         return toView(org);
     }
 
+    // @find: get workspace, GET /api/workspaces/{workspaceId}
     /**
      * One workspace, for a person signed in to it or for a sibling service.
      *
@@ -155,6 +160,7 @@ public class WorkspaceController {
                 organisations.findById(workspaceId).orElseThrow(() -> ApiException.notFound("workspace", workspaceId)));
     }
 
+    // @find: update workspace settings, rename workspace, change timezone, PATCH /api/workspaces/{workspaceId}/settings
     /**
      * Renames the workspace or moves it to another timezone.
      *

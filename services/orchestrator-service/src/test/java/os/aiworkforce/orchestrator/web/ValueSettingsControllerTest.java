@@ -1,3 +1,5 @@
+// @find: tests for value settings controller, value settings, hours saved, ROI, /api/orchestrator/value-settings
+// @what: Unit and integration tests (10 cases) for value settings controller, for example: permissions; reads every agent; saves inputs; no rate clears it.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

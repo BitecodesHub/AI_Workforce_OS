@@ -1,3 +1,6 @@
+// @find: command map, home dashboard, overview, start page, approvals waiting, routing status, week figures, recent runs, sandbox notice, connect your AI, /, Command Map page
+// @what: The signed-in home page: a one-screen overview of approvals waiting, model routing status, this week's figures and recent runs.
+// @flow: Routed from App.tsx at /; links onward to Approvals, Model routing and Runs
 import { useState } from 'react'
 import {
   Button,
@@ -17,9 +20,10 @@ import type { Column } from '../components/ui'
 import { QueryState, EmptyIcon } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
 import { GettingStarted } from '../components/command-map/GettingStarted'
+import { SetupBanner } from '../components/setup/SetupBanner'
 import { ConnectModelDialog } from '../components/onboarding/ConnectModelDialog'
 import { describeChange } from '../components/analytics/figures'
-import { formatCount, formatMoney, formatRelative, formatRunElapsed, truncateWords } from '../lib/format'
+import { formatCount, formatMoney, formatRelativeTicked, formatRunElapsed, truncateWords } from '../lib/format'
 import { useAgentInsights, useInsights } from '../lib/insightsQueries'
 import { categoryTone, startedByLabel } from '../lib/labels'
 import {
@@ -49,6 +53,7 @@ import { useNow } from '../lib/useNow'
 /** Runs shown under the figures. The Runs page has the rest, filterable and sortable. */
 const LIVE_ACTIVITY_ROWS = 8
 
+// @find: CommandMap component, home dashboard, overview page, sandbox notice, connect your AI button, /
 export function CommandMap() {
   const runsQuery = useRuns()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
@@ -91,6 +96,7 @@ export function CommandMap() {
 
       <div className="page-sections">
         <ApprovalsWaiting />
+        <SetupBanner />
         <RoutingStatus />
         <GettingStarted />
 
@@ -123,6 +129,7 @@ export function CommandMap() {
 }
 
 /** Pending approvals, shared with the navigation badge through the ['approvals'] cache. */
+// @find: approvals waiting card, pending count
 function ApprovalsWaiting() {
   const canRead = can('approval:read')
   const approvals = useApprovals({ enabled: canRead })
@@ -146,6 +153,7 @@ function ApprovalsWaiting() {
  * on the first screen that turns out to be wrong is worse than none, so a failed request makes no
  * claim at all. Other roles see sandbox answers marked on each trace instead.
  */
+// @find: routing status card, model provider health, sandbox mode
 function RoutingStatus() {
   const canRead = can('provider:read')
   const canManage = can('provider:manage')
@@ -200,6 +208,7 @@ function RoutingStatus() {
  * somebody who can only read runs gets what the agents' own rows add up to, without the comparison
  * or the money. A failed or unreadable answer shows nothing rather than a row of zeros.
  */
+// @find: this week figures, runs, cost, success
 function WeekFigures() {
   const canAnalytics = can('analytics:read')
   const canRuns = can('run:read')
@@ -208,9 +217,15 @@ function WeekFigures() {
   const approvals = useApprovals({ enabled: can('approval:read') })
   const waiting = approvals.data?.length ?? null
 
+  // The figures count the whole workspace; the lists behind them leave out work from private
+  // conversations this person is not part of, so a figure can be larger than its list.
+  const privateNote = can('chat:read_all')
+    ? ''
+    : ' The figures include work from private chats you are not part of, which the lists do not show.'
   const caption = (
     <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
       The last 7 days{canAnalytics ? ', compared with the 7 days before' : ''}. Select a figure to see more.
+      {privateNote}
     </p>
   )
 
@@ -274,6 +289,7 @@ function WeekFigures() {
   return null
 }
 
+// @find: recent runs list on the home page
 function RecentRuns({ runs }: { runs: Run[] }) {
   const agentsQuery = useAgents()
   const agents = useAgentNames()
@@ -333,7 +349,7 @@ function RecentRuns({ runs }: { runs: Run[] }) {
           getRowHref={(run) => `/runs/${run.id}`}
           getRowLabel={(run) => {
             const name = agents[run.agentId]?.name
-            const started = formatRelative(run.startedAt, now)
+            const started = formatRelativeTicked(run.startedAt, now, 15_000)
             return name ? `Open the ${name} run started ${started}` : `Open the run started ${started}`
           }}
           caption={`The ${shown.length === 1 ? 'latest agent run' : `${shown.length} latest agent runs`}, newest first.`}

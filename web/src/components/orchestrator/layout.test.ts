@@ -1,3 +1,6 @@
+// @find: tests for orchestrator layout, board cards, columns, flow map geometry, swimlane geometry, ring layout, edges, tooltip placement, summary tile notes, card meta
+// @what: Unit tests for the pure layout, grouping and geometry rules of the Orchestrator.
+// @flow: Exercises layout.ts
 import { describe, expect, it } from 'vitest'
 import {
   FLOW_VIEWBOX,

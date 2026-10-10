@@ -1,3 +1,6 @@
+// @find: tool result, succeeded failed blocked indeterminate, timeout unknown outcome, tool output, result for model, never retry send, run trace summary
+// @what: Record for what a tool produced, including the indeterminate status used when an outcome is unknown.
+// @flow: Returned by adapters and ToolGateway.invoke; shown in run traces and audit
 package os.aiworkforce.mcp.model;
 
 import java.time.Duration;

@@ -1,3 +1,6 @@
+// @find: webhook, outgoing webhook, http post, send event, list events, custom url, endpoint, SSRF, private network block, loopback, live adapter, automation
+// @what: Live webhook connector: delivers webhook__send_event as an HTTP POST to the pasted URL after refusing private or internal addresses, and remembers recent deliveries.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.net.Inet4Address;
@@ -70,6 +73,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Webhook send event, tool webhook__send_event, live Webhook call
     private Mono<ToolResult> sendEvent(ToolInvocation invocation, JsonNode arguments, String url) {
         String event = required(arguments, "event");
         String problem = problem(url, allowLoopback);
@@ -90,6 +94,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
                         : Mono.error(new VendorException(refusal)));
     }
 
+    // @find: Webhook deliver, tool webhook__deliver, live Webhook call
     private Mono<ToolResult> deliver(ToolInvocation invocation, URI target, ObjectNode payload) {
         WebClient.RequestBodySpec request = http.post()
                 .uri(target)
@@ -123,6 +128,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
                                 + ", so the event was not accepted.")));
     }
 
+    // @find: Webhook list events, tool webhook__list_events, live Webhook call
     private Mono<ToolResult> listEvents(ToolInvocation invocation, JsonNode arguments, String url) {
         int limit = limit(arguments, 20, KEPT_DELIVERIES);
         ArrayNode items = json.createArrayNode();

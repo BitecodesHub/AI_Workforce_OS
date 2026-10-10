@@ -1,3 +1,9 @@
+// @find: llm usage, token usage, model cost, spend, usage record, failed call, skipped candidate, prompt tokens, completion tokens, cached tokens, llm_usage, LlmUsageRecord, Usage page, spend report
+// @what: Entity for one attempt against one model (success, failure or skip) with tokens, cost and duration.
+// @flow: Written by the model router after each attempt; summed by Usage for budgets and reports.
+// @find: llm usage, token usage, model cost, spend, usage record, failed call, skipped candidate, prompt tokens, completion tokens, cached tokens, llm_usage, LlmUsageRecord, Usage page, spend report
+// @what: Entity for one attempt against one model (success, failure or skip) with tokens, cost and duration.
+// @flow: Written by the model router after each attempt; summed by Usage for budgets and reports.
 package os.aiworkforce.orchestrator.domain;
 
 import java.math.BigDecimal;

@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, provider interface, ChatProvider, adapter contract, complete, stream, health check, embed, embeddings, knowledge base embeddings
+// @what: Interface every model provider adapter implements, including optional embeddings.
+// @flow: Implemented by the classes in provider/.
 package os.aiworkforce.llm.spi;
 
 import java.util.List;
@@ -66,12 +69,35 @@ public interface ChatProvider {
     }
 
     /**
+     * Embeds text for a stated purpose. Adapters whose provider embeds questions and passages
+     * differently override this; the rest embed both the same way.
+     */
+    default Mono<List<float[]>> embed(
+            ProviderDescriptor provider,
+            ModelSpec model,
+            List<String> inputs,
+            String credential,
+            os.aiworkforce.llm.model.EmbeddingPurpose purpose) {
+        return embed(provider, model, inputs, credential);
+    }
+
+    /**
      * A cheap call that proves the credential works and the provider is reachable.
      *
      * <p>Used by the health panel and by the breaker's half-open probe, so a recovering provider
      * is tested with something trivial rather than with a person's real request.
      */
     Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential);
+
+    /**
+     * Whether this adapter can reach the provider with the server's own identity when a workspace
+     * has stored no credential - an AWS instance role for Bedrock, for example. When true, the
+     * router calls the adapter with a null credential instead of skipping the candidate for a
+     * missing key. Off unless an operator turns it on for the deployment.
+     */
+    default boolean hasAmbientCredential(ProviderDescriptor provider) {
+        return false;
+    }
 
     /** Whether this adapter supports streaming at all, regardless of the model. */
     default boolean supportsStreaming() {

@@ -1,3 +1,6 @@
+// @find: retention store interface, purge deletes, run detail clear, usage delete, session lock
+// @what: Interface for the deletes behind retention so rules can be tested without a database.
+// @flow: Implemented by JdbcRetentionStore
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Instant;

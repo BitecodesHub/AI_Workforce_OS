@@ -1,3 +1,6 @@
+// @find: approvals, approval queue, pending approvals, decided approvals, approval history, approve, reject, decide approvals, bulk decision, approval count, run approval, four-eyes, POST /api/approvals/decisions, Approvals page
+// @what: Pages the approvals queue and history, counts what waits, finds the request a run is parked on, and decides several approvals at once.
+// @flow: Called by Approvals route, TraceStep, InlineApproval and WaitingForApproval; calls api() against /api/approvals; the single decision stays in queries.ts.
 import { useCallback } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
@@ -103,6 +106,7 @@ async function fetchPage(params: Record<string, string | number | null | undefin
   return (await api<Array<Approval & Partial<ApprovalItem>>>(`/api/approvals?${query(params)}`)).map(approvalItemRow)
 }
 
+// @find: pending approvals queue, load more; route: GET /api/approvals?status=pending; used by: Approvals page
 /**
  * The queue, soonest to expire first, a page at a time (approval:read). Refreshed every 30 seconds
  * while it is on screen, like the plain list.
@@ -118,6 +122,7 @@ export function usePendingApprovalPages(options: QueryOptions = {}) {
   })
 }
 
+// @find: approval history, decided approvals; route: GET /api/approvals (decided); used by: Approvals page
 /**
  * What was decided, newest first, a page at a time (approval:read). `status` narrows to one
  * outcome - approved, rejected, expired or cancelled - and `agentId` to one agent; both are asked
@@ -138,6 +143,7 @@ export function useDecidedApprovalPages(
   })
 }
 
+// @find: approval count, badge number; route: GET /api/approvals/count; used by: Approvals page
 /** How many are waiting, counted by the server without loading a payload (approval:read). */
 export function useApprovalCount(options: QueryOptions & { agentId?: string | null } = {}) {
   const agentId = options.agentId || null
@@ -149,6 +155,7 @@ export function useApprovalCount(options: QueryOptions & { agentId?: string | nu
   })
 }
 
+// @find: approval a run is waiting on; route: GET /api/approvals?runId=; used by: run trace (InlineApproval, WaitingForApproval)
 /**
  * The request one run is parked on, if any (approval:read): what a run's own page and the chat
  * show for a run that is waiting. Asked of the server by run, so it is found however long the
@@ -162,6 +169,7 @@ export function useRunApproval(runId: string, options: QueryOptions = {}) {
   })
 }
 
+// @find: one approval detail; route: GET /api/approvals/{id}; used by: Approvals page, run trace (TraceStep)
 /** One approval, waiting or decided (approval:read): what a run's trace links to. */
 export function useApproval(id: string | null | undefined, options: QueryOptions = {}) {
   return useQuery({
@@ -171,6 +179,7 @@ export function useApproval(id: string | null | undefined, options: QueryOptions
   })
 }
 
+// @find: approve or reject several approvals; route: POST /api/approvals/decisions; used by: Approvals page
 /**
  * Decides several requests the same way, each on its own (approval:decide). The answer says what
  * happened to every one, so a request someone else decided first is reported, not an error.
@@ -195,6 +204,7 @@ export function useDecideApprovals() {
   })
 }
 
+// @find: who decided, member names for approvals; route: none (reads cached members); used by: Approvals page, run trace (InlineApproval, TraceStep)
 /**
  * Names a person from the workspace's member list, and says nothing false when the list cannot:
  * only a list that loaded can say somebody has left. A role that may not read members is never

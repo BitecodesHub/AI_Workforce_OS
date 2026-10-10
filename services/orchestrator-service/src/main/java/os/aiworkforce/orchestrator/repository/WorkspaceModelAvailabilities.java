@@ -1,3 +1,9 @@
+// @find: workspace model availability repository, set model aside, forget unavailable model, other workspaces reporting, upsert, WorkspaceModelAvailabilities
+// @what: Spring Data repository for per-workspace model availability, written by native upsert.
+// @flow: Used by the provider registry on provider failures.
+// @find: workspace model availability repository, set model aside, forget unavailable model, other workspaces reporting, upsert, WorkspaceModelAvailabilities
+// @what: Spring Data repository for per-workspace model availability, written by native upsert.
+// @flow: Used by the provider registry on provider failures.
 package os.aiworkforce.orchestrator.repository;
 
 import java.time.Instant;
@@ -21,8 +27,12 @@ import os.aiworkforce.orchestrator.domain.WorkspaceModelAvailability;
 public interface WorkspaceModelAvailabilities
         extends JpaRepository<WorkspaceModelAvailability, WorkspaceModelAvailability.Key> {
 
+    // @find: list models set aside for workspace
+    // @find: list models set aside for workspace
     List<WorkspaceModelAvailability> findByOrgId(UUID orgId);
 
+    // @find: set model aside for workspace
+    // @find: set model aside for workspace
     /**
      * Sets a model aside for one workspace until {@code until}. An atomic upsert, because two
      * runs in the same workspace can hit the same empty account at the same moment.
@@ -52,6 +62,8 @@ public interface WorkspaceModelAvailabilities
             @Param("cause") String cause,
             @Param("reason") String reason);
 
+    // @find: other workspaces reporting same model missing
+    // @find: other workspaces reporting same model missing
     /**
      * The other workspaces with a note for this model, for this cause, still in force at
      * {@code now}. How one workspace's "this model does not exist" is told apart from two
@@ -69,4 +81,15 @@ public interface WorkspaceModelAvailabilities
             @Param("cause") String cause,
             @Param("orgId") UUID orgId,
             @Param("now") Instant now);
+
+    // @find: clear set-aside model
+    // @find: clear set-aside model
+    /** Forgets every note for one workspace's model, or every model of a provider when {@code modelId} is null. */
+    @Modifying
+    @Query(
+            """
+            delete from WorkspaceModelAvailability w
+            where w.orgId = :orgId and w.providerId = :providerId and (:modelId is null or w.modelId = :modelId)
+            """)
+    int forget(@Param("orgId") UUID orgId, @Param("providerId") String providerId, @Param("modelId") String modelId);
 }

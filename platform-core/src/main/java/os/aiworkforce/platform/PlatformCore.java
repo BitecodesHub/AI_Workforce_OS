@@ -1,3 +1,5 @@
+// @find: platform core marker, component scanning, configuration properties scan, shared platform
+// @what: Marker type services reference to scan the shared platform package.
 package os.aiworkforce.platform;
 
 /**

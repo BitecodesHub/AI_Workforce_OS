@@ -1,3 +1,6 @@
+// @find: attachment service, upload chat file, attach file to message, who can read attachment, delete attachment, save attachment to knowledge, sweep unsent attachments, AttachmentService, bind attachment to message, link attachment to goal
+// @what: Takes in chat attachments, decides who may read them, binds them to the message that sends them and cleans up unsent ones.
+// @flow: Called by AttachmentController and CoordinatorService; uses ChatAttachments, AttachmentReader and the knowledge service.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
@@ -130,6 +133,7 @@ public class AttachmentService {
      *
      * @param conversationId the conversation it is for, or null for a chat its first message will create
      */
+    // @find: upload attachment, add file to chat, accept attachment, size and type check
     public AttachmentView upload(UUID orgId, Actor actor, UUID conversationId, String filename, byte[] content) {
         String me = requirePerson(actor);
         if (conversationId != null) {
@@ -183,10 +187,12 @@ public class AttachmentService {
 
     // ---- Reading -------------------------------------------------------------------------------
 
+    // @find: view attachment, attachment details
     public AttachmentView view(UUID orgId, Actor actor, UUID id) {
         return AttachmentView.of(readable(orgId, actor, id));
     }
 
+    // @find: download attachment, read attachment content
     public Download download(UUID orgId, Actor actor, UUID id) {
         ChatAttachments.Row row = readable(orgId, actor, id);
         byte[] content = attachments.content(orgId, id).orElseThrow(() -> ApiException.notFound("attachment", id));
@@ -213,6 +219,7 @@ public class AttachmentService {
     // ---- Removing ------------------------------------------------------------------------------
 
     /** Takes back a file attached but not sent. A sent file goes with its conversation. */
+    // @find: delete attachment, remove file from chat
     public void delete(UUID orgId, Actor actor, UUID id) {
         ChatAttachments.Row row = attachments.find(orgId, id).orElseThrow(() -> ApiException.notFound("attachment", id));
         if (!row.uploadedBy().equals(actor.humanId())) {
@@ -226,6 +233,7 @@ public class AttachmentService {
     }
 
     /** Files attached and never sent are let go after a day. */
+    // @find: scheduled sweep, delete unsent attachments, clean up abandoned uploads, hourly job
     @Scheduled(fixedDelayString = "${aiwos.chat.attachment-sweep-interval:PT1H}", initialDelayString = "PT5M")
     public void sweepUnsent() {
         try {
@@ -247,6 +255,7 @@ public class AttachmentService {
      *
      * @return the files, in the order they were attached, for the message's detail
      */
+    // @find: check attachments before send, validate attachment ids for message
     public List<ChatAttachments.Row> checkForSend(UUID orgId, Actor actor, UUID conversationId, List<UUID> ids) {
         if (ids == null || ids.isEmpty()) {
             return List.of();
@@ -275,6 +284,7 @@ public class AttachmentService {
     }
 
     /** Ties the checked files to the message that carries them. */
+    // @find: bind attachments to message, attach files to sent message
     public void bind(UUID orgId, UUID conversationId, UUID messageId, List<ChatAttachments.Row> rows) {
         if (!rows.isEmpty()) {
             attachments.bindToMessage(
@@ -283,6 +293,7 @@ public class AttachmentService {
     }
 
     /** Gives a message's files to the work it started, so its runs read them. */
+    // @find: link attachment to goal, attach file to run
     public void linkGoal(UUID orgId, UUID messageId, UUID goalId) {
         attachments.linkGoal(orgId, messageId, goalId);
     }
@@ -292,6 +303,7 @@ public class AttachmentService {
      * when the coordinator could not choose and nothing was started - those of the message the
      * person sent just above the choice.
      */
+    // @find: follow reroute, move attachments to new goal after reroute
     public void followReroute(UUID orgId, UUID conversationId, UUID previousGoalId, int routingPosition, UUID goalId) {
         int moved = previousGoalId == null ? 0 : attachments.moveGoal(orgId, previousGoalId, goalId);
         if (moved == 0) {
@@ -346,6 +358,7 @@ public class AttachmentService {
      * Adds a sent or unsent file to the workspace's documents, as the person asking, into the
      * {@value #KNOWLEDGE_SOURCE_NAME} source. The knowledge service decides whether they may.
      */
+    // @find: save attachment to knowledge base, add chat file to documents
     public Saved saveToKnowledge(UUID orgId, Actor actor, UUID id, String authorization) {
         Download file = download(orgId, actor, id);
         if (authorization == null || authorization.isBlank()) {

@@ -1,3 +1,6 @@
+// @find: audit token, service token for analytics, internal token, relay credential
+// @what: Interface that supplies the service token the relay presents to analytics-service.
+// @flow: Implemented per service via its internal token provider
 package os.aiworkforce.platform.web.audit;
 
 /**

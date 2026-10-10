@@ -1,3 +1,6 @@
+// @find: agents table, agent performance, per agent success rate, per agent cost, runs per agent, analytics agents, AgentsTable
+// @what: Analytics table comparing each agent by runs, success rate, cost and time.
+// @flow: Rendered on the Analytics page from Insights data
 import { useMemo } from 'react'
 import { Card, DataTable, EmptyState, Eyebrow, Tag, Time } from '../ui'
 import type { Column } from '../ui'
@@ -18,6 +21,7 @@ import { NOT_ESTIMATED, NOT_ENOUGH_RUNS, costText, formatPercent, hoursText, sat
  * too. A figure that is not known says so in words and sorts last, never as a zero.
  */
 
+// @find: AgentsTable, agent performance table, success rate and cost per agent
 export function AgentsTable({
   agents,
   window,
@@ -129,13 +133,16 @@ export function AgentsTable({
           return agent.ratings === 0 ? (
             <span className="muted">{text}</span>
           ) : (
+            // The short form is for the eye; a screen reader hears the sentence once, not both.
             <span style={{ whiteSpace: 'nowrap' }}>
-              {formatPercent(agent.satisfactionRate)}{' '}
-              <span className="caption muted">
-                of {formatCount(agent.ratings)}
-                {agent.thumbsDown > 0 ? `, ${formatCount(agent.thumbsDown)} thumbs down` : ''}
+              <span aria-hidden="true">
+                {formatPercent(agent.satisfactionRate)}{' '}
+                <span className="caption muted">
+                  of {formatCount(agent.ratings)}
+                  {agent.thumbsDown > 0 ? `, ${formatCount(agent.thumbsDown)} thumbs down` : ''}
+                </span>
               </span>
-              <span className="visually-hidden">{`. ${text}`}</span>
+              <span className="visually-hidden">{text}</span>
             </span>
           )
         },

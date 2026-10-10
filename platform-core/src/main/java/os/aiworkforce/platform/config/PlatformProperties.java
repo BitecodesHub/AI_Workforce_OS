@@ -1,3 +1,6 @@
+// @find: platform properties, aiwos configuration, settings tree, environment variables, AIWOS_* variables, signing key, encryption key, database, redis, kafka, observability sampling, startup settings
+// @what: Typed tree of every startup setting a service reads, with development defaults and AIWOS_* overrides.
+// @flow: Read by every service; checked by PlatformStartupValidator
 package os.aiworkforce.platform.config;
 
 import java.security.GeneralSecurityException;

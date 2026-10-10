@@ -1,3 +1,6 @@
+// @find: voice config, elevenlabs rest client bean, VoiceConfig, base url, timeouts
+// @what: Spring configuration creating the ElevenLabs HTTP client.
+// @flow: Used by ElevenLabsClient
 package os.aiworkforce.orchestrator.voice;
 
 import org.springframework.context.annotation.Bean;
@@ -16,6 +19,7 @@ import org.springframework.web.client.RestClient;
 @Configuration
 class VoiceConfig {
 
+    // @find: elevenlabs rest client bean
     @Bean
     RestClient elevenLabsRestClient(RestClient.Builder builder, VoiceProperties properties) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();

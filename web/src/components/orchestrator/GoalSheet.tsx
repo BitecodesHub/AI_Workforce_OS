@@ -1,3 +1,6 @@
+// @find: goal sheet, goal drawer, goal details, goal steps, retry goal, stop goal, approve inline, answer question, copy goal id, side panel, GoalSheet, Orchestrator
+// @what: The side sheet showing one goal with its steps, approvals and questions, and retry or stop actions.
+// @flow: Opened from Board cards; uses StepList, InlineApproval, QuestionCard and the retry or stop goal mutations
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Button, ConfirmDialog, StatusTag, Tag, Time } from '../ui'
@@ -65,6 +68,7 @@ function sourceLink(goal: BoardGoal) {
   return null
 }
 
+// @find: goal sheet component, goal details drawer, retry or stop goal
 export function GoalSheet({
   goalId,
   board,

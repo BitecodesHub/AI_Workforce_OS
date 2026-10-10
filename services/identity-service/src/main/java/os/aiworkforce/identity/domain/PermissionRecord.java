@@ -1,3 +1,6 @@
+// @find: permission, permission code, permissions table, PermissionRecord, permission catalogue, role permissions list, administrative permission
+// @what: JPA entity mirroring each permission code from the build registry into the database.
+// @flow: Written by PermissionSeeder; read by RoleController.permissions.
 package os.aiworkforce.identity.domain;
 
 import java.time.Instant;

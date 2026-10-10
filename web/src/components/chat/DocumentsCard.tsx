@@ -1,8 +1,12 @@
+// @find: documents card, sources in chat, documents an agent used, knowledge documents in thread, cited documents
+// @what: Card in the thread showing the workspace documents an agent used or found.
+// @flow: Used by MessageItem.
 import { Button, Card, Eyebrow } from '../ui'
 import type { ChatMessage, ChatMessageDetail } from '../../lib/queries'
 import { can } from '../../lib/session'
 import { PassageList } from './PassageList'
 
+// @find: DocumentsCard, documents card, documents card, sources in chat, documents an agent used, knowledge documents in thread
 /** A document question's answer: the passages that matched it, quoted, each with its source. */
 export function DocumentsCard({
   message,

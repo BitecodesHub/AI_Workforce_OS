@@ -1,3 +1,5 @@
+// @find: tests for token verification, jwks, signing and verifying jwt, identity token accepted by other services, 401 missing keys
+// @what: Checks a token signed by identity can be verified by another service through the key set.
 package os.aiworkforce.platform.web.security;
 
 import static org.assertj.core.api.Assertions.assertThat;

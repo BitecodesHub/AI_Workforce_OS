@@ -1,3 +1,6 @@
+// @find: tests for navbar, primary navigation, nav permissions, Connectors link, role based menu, Navbar
+// @what: Tests that the navbar offers destinations only to roles with the needed permissions.
+// @flow: Renders Navbar with a saved session and mocked fetch.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

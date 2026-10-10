@@ -1,3 +1,6 @@
+// @find: agent revisions, change history, who changed agent, audit of agent edits, GET /api/agents/{agentId}/revisions, history tab
+// @what: Read-only endpoint listing the revision history of an agent's configuration.
+// @flow: Called by the Agent detail History view
 package os.aiworkforce.orchestrator.web;
 
 import java.math.BigDecimal;
@@ -86,6 +89,7 @@ public class AgentRevisionsController {
             Integer maxOutputTokens,
             int maxSteps) {}
 
+    // @find: agent revision history, GET /api/agents/{agentId}/revisions
     @GetMapping("/{agentId}/revisions")
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "Every revision of an agent's configuration, newest first, with what changed in each")

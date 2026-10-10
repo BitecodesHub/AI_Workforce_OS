@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# @find: prepare env, mac, linux, generate secrets, encryption master key, .env file, db password, demo switch, --new-keys, expose lan, first start settings
+# @what: macOS and Linux script that writes the launcher's private .env file with generated secrets on the first start.
+# @flow: Called by Start AI Workforce OS.command; twin of prepare-env.ps1
 #
 # Writes infra/launcher/.env, the launcher's private settings, for "Start AI Workforce OS.command".
 # prepare-env.ps1 does the same for the Windows .bat; keep the two in step.

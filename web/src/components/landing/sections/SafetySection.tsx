@@ -1,3 +1,6 @@
+// @find: safety section, why it is safe, approvals, roles, audit record, citations, provider fallback, schedules, who can do what table, SafetySection, #safety
+// @what: Six safety promises plus a who-can-do-what table for buyers.
+// @flow: Uses roleData
 import type { ReactElement } from 'react'
 import { Icon } from '../shared/Icon'
 import type { IconName } from '../shared/Icon'
@@ -72,6 +75,7 @@ function Mark({ held, role, label }: { held: boolean; role: RoleId; label: strin
   )
 }
 
+// @find: SafetySection component, safety promises
 export function SafetySection(): ReactElement {
   return (
     <LandingSection id="safety" labelledBy="safety-title">

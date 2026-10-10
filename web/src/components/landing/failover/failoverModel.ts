@@ -1,3 +1,6 @@
+// @find: failover model, planRoute, route events, provider chain, faults, presets, circuit open, rate limited, credential rejected, safety refusal, FAIL_CLOSED, DEGRADE_TO_SANDBOX, trace lines
+// @what: Turns a provider chain and fault setup into a timed list of routing events for the failover demo.
+// @flow: Used by FailoverDemo
 import type { ProviderName } from '../shared/landingFacts'
 
 /*
@@ -143,6 +146,7 @@ export function sameConfig(a: Config, b: Config): boolean {
  * fault. A circuit breaker opening on a single failure is this demo's own simplification - the
  * real router only opens one after a run of failures crosses its threshold.
  */
+// @find: applyBreakers, circuit breaker applied
 export function applyBreakers(config: Config, ids: ReadonlyArray<ProviderId>): Config {
   if (ids.length === 0) return config
   const next: Config = { ...config }
@@ -195,6 +199,7 @@ export const ROUTE_TIMING = {
 
 export const IDLE_LABEL = 'Standing by'
 
+// @find: planRoute, plan failover route, retry, skip, fail over
 export function planRoute(config: Config, policy: Policy): RouteEvent[] {
   const events: RouteEvent[] = []
   let at = 0
@@ -302,6 +307,7 @@ export type RouteView = {
   outcome: Outcome | null
 }
 
+// @find: initialView, failover initial view
 export function initialView(): RouteView {
   return {
     nodes: CHAIN.map(() => ({ state: 'idle', label: IDLE_LABEL })),
@@ -317,6 +323,7 @@ export function initialView(): RouteView {
 /** States during which a node's progress bar keeps running. */
 const HOLDING: ReadonlyArray<NodeState> = ['waiting', 'backing_off']
 
+// @find: applyEvent, fold route event
 export function applyEvent<V extends RouteView>(view: V, event: RouteEvent): V {
   switch (event.kind) {
     case 'hop':
@@ -342,6 +349,7 @@ export function applyEvent<V extends RouteView>(view: V, event: RouteEvent): V {
 }
 
 /** Folds events synchronously, in order. */
+// @find: applyEvents, fold route events, end state
 export function applyEvents<V extends RouteView>(view: V, events: ReadonlyArray<RouteEvent>): V {
   return events.reduce<V>((current, event) => applyEvent(current, event), view)
 }
@@ -353,6 +361,7 @@ function plural(count: number, one: string, many: string): string {
 }
 
 /** The sentence the status line announces when a run ends. */
+// @find: summarise, failover outcome sentence
 export function summarise(outcome: Outcome): string {
   switch (outcome.kind) {
     case 'answered': {

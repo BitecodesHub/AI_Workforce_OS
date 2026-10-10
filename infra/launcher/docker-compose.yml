@@ -1,3 +1,6 @@
+# @find: launcher compose, one-click stack, docker compose, web port 4173, postgres, redis, qdrant, eight services, pinned images, .env, AIWOS_EXPOSE_LAN, demo data, healthchecks
+# @what: Docker Compose stack behind the one-click launcher, publishing only the web client on the local machine.
+# @flow: Started by the Start AI Workforce OS .command/.bat files; settings come from infra/launcher/.env
 # The stack behind the one-click launcher (Start AI Workforce OS.command / .bat).
 #
 # Separate from infra/compose so it can run beside a native development stack: only the web

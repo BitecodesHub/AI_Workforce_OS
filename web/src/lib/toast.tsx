@@ -1,3 +1,6 @@
+// @find: toast, notification, feedback message, saved, success error message, ToastProvider, useToast
+// @what: Shows a brief message after every action finishes (saved, approved, failed).
+// @flow: Used by useCopyText and every mutation handler
 import { createContext, useCallback, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 
@@ -25,6 +28,7 @@ const ToastContext = createContext<(tone: Tone, message: string, opts?: ToastOpt
 const DEFAULT_LIFETIME_MS = 4500
 const ACTION_LIFETIME_MS = 8000
 
+// @find: toast provider, toast container
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
@@ -84,6 +88,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// @find: use toast, show success or error message
 export function useToast() {
   const push = useContext(ToastContext)
   return {

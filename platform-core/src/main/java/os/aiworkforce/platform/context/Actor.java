@@ -1,3 +1,6 @@
+// @find: actor, who is acting, user, api key, agent, system, on behalf of, accountable person, permissions in token, organisation id
+// @what: Describes who is responsible for the current work: person, key, agent or system, and the person an agent acts for.
+// @flow: Built by JwtActorConverter; held in RequestContext; recorded in audit events
 package os.aiworkforce.platform.context;
 
 import java.util.Collections;

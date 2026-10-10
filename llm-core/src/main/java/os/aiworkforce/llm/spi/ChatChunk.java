@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, streaming chunk, streamed answer, partial tool calls, terminal chunk, ChatChunk
+// @what: One piece of a streamed model answer.
 package os.aiworkforce.llm.spi;
 
 import java.util.List;

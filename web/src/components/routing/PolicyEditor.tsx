@@ -1,12 +1,17 @@
+// @find: routing policy, model policy, candidate chain, fallback models, model order, provider keys, enable provider, save policy, clear policy, Routing page, agent routing
+// @what: Editor for the ordered chain of models a run tries.
+// @flow: Used by the Routing page and agent page; uses CandidateModelField and TestNow.
 import React from 'react'
-import { Button, Card, ConfirmDialog, Eyebrow, Select, Tag } from '../ui'
+import { Button, Card, ConfirmDialog, Eyebrow, Notice, Select, Tag } from '../ui'
 import type { TagTone } from '../ui'
 import { describeApiError } from '../../lib/api'
-import { isEmbeddingModel, providerReadiness } from '../../lib/routing'
+import { credentialState, isEmbeddingModel, providerReadiness } from '../../lib/routing'
 import type { ReadinessReason } from '../../lib/routing'
 import type { CredentialView, Model, ModelPolicy, ModelPolicyInput, Provider } from '../../lib/queries'
+import { warningOf } from '../../lib/routingActions'
 import { useToast } from '../../lib/toast'
 import { CandidateModelField } from './CandidateModelField'
+import { TestNow } from './TestNow'
 
 /*
  * The candidate-chain editor: the ordered list of models a run tries, one after another, with what
@@ -17,6 +22,11 @@ import { CandidateModelField } from './CandidateModelField'
  * The caller says where the chain is saved (`onSave`, and `onClear` for an agent) and who may edit
  * it (`canManage`); this component owns the draft, the order, the readiness of each choice and the
  * words. Somebody who may not edit sees the chain read-only, in the same order.
+ *
+ * Nothing here refuses a chain because its providers are off or because the agent is working:
+ * the service saves it and answers with a plain `warning` sentence, which is shown above the
+ * chain until the next change. Removing a saved model from an agent's chain, or giving the agent
+ * back to the workspace default, happens at once and at any time.
  */
 
 /** The most candidates a policy may hold (ModelPolicyController.MAX_CANDIDATES). */
@@ -30,9 +40,7 @@ const READINESS_TAG: Record<ReadinessReason, { tone: TagTone; label: string }> =
   disabled: { tone: 'neutral', label: 'Off for this workspace, will be skipped' },
   platform_off: { tone: 'neutral', label: 'Not offered on this installation, will be skipped' },
   no_key: { tone: 'warning', label: 'No key stored, will be skipped' },
-  rejected: { tone: 'warning', label: 'Key refused, will be skipped' },
   expired: { tone: 'warning', label: 'Key expired, will be skipped' },
-  paused: { tone: 'warning', label: 'Paused after failures' },
 }
 
 /** The same reasons, short, after a provider's name in a list of choices. */
@@ -41,9 +49,7 @@ const READINESS_SUFFIX: Record<ReadinessReason, string> = {
   disabled: ' (off)',
   platform_off: ' (not offered)',
   no_key: ' (no key)',
-  rejected: ' (key refused)',
   expired: ' (key expired)',
-  paused: ' (paused)',
 }
 
 const EXHAUSTED_COPY: Record<string, string> = {
@@ -58,6 +64,8 @@ type DraftCandidate = {
   modelId: string
   temperature: number | null
   maxOutputTokens: number | null
+  /** The model was filled in, not chosen: the live list may swap it for one this account can use. */
+  autoPicked?: boolean
 }
 
 type MoveFocus = { key: string; direction: 'up' | 'down' }
@@ -78,9 +86,9 @@ export type PolicyEditorProps = {
   /** Saves the chain as the person arranged it. A rejection is shown to them in words. */
   onSave: (input: ModelPolicyInput) => Promise<unknown>
   /**
-   * Agent scope: gives the agent back to the workspace's policy by deleting its own chain. Offered
-   * only while the agent has one, and used when an empty chain is saved, because an agent with
-   * no models of its own is an agent that follows the workspace's.
+   * Agent scope: gives the agent back to the workspace default by deleting its own chain. Offered
+   * at any time, and used when an empty chain is saved, because an agent with no models of its
+   * own is an agent that follows the workspace's.
    */
   onClear?: () => Promise<unknown>
   /**
@@ -88,11 +96,21 @@ export type PolicyEditorProps = {
    * than only the saved ones. Needs a query client; off, the picker shows the saved models alone.
    */
   liveCatalogue?: boolean
+  /**
+   * Agent scope: removes one saved model from the agent's own chain at once (DELETE
+   * .../model-policy/candidates). Without it, Remove only takes the row out of the draft.
+   */
+  onRemoveCandidate?: ((candidate: { providerId: string; modelId: string }) => Promise<unknown>) | undefined
+  /** Workspace scope: offers "Remove from all routing" for each model in the chain. */
+  onRemoveEverywhere?: ((candidate: { providerId: string; modelId: string; name: string }) => void) | undefined
+  /** Offers "Test now" beside each model (provider:manage). */
+  testable?: boolean
 }
 
+// @find: PolicyEditor, policy editor, routing policy, model policy, candidate chain, fallback models
 /**
  * Enabling a provider and storing its key only makes it usable, not chosen - the router still
- * needs an ordered chain to try, or every run keeps resolving to the built-in sandbox default.
+ * needs an ordered chain to try, or runs without one fail and ask for a model to be added.
  */
 export function PolicyEditor({
   scope,
@@ -106,6 +124,9 @@ export function PolicyEditor({
   onSave,
   onClear,
   liveCatalogue = false,
+  onRemoveCandidate,
+  onRemoveEverywhere,
+  testable = false,
 }: PolicyEditorProps) {
   const toast = useToast()
   const agentScope = scope === 'agent'
@@ -114,6 +135,9 @@ export function PolicyEditor({
   const [confirmEmpty, setConfirmEmpty] = React.useState(false)
   const [confirmClear, setConfirmClear] = React.useState(false)
   const [dialogError, setDialogError] = React.useState<string | null>(null)
+  // The service's warning from the last change made here; until then, the one it sent on reading.
+  const [acted, setActed] = React.useState<{ warning: string | null } | null>(null)
+  const [removing, setRemoving] = React.useState<string | null>(null)
   const newRowCount = React.useRef(0)
   const pendingFocus = React.useRef<MoveFocus | null>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
@@ -133,8 +157,6 @@ export function PolicyEditor({
   )
   const candidates = draft ?? saved
   const dirty = draft !== null
-  // The router skips a policy with no candidates, so only a non-empty one is the agent's own.
-  const hasOwnChain = policy.configured && policy.candidates.length > 0
 
   const byId = React.useMemo(() => new Map(providers.map((provider) => [provider.id, provider])), [providers])
   const chatModels = React.useMemo(() => models.filter((model) => !isEmbeddingModel(model)), [models])
@@ -179,7 +201,7 @@ export function PolicyEditor({
     newRowCount.current += 1
     setDraft([
       ...candidates,
-      { key: `new-${newRowCount.current}`, providerId: pick.providerId, modelId: pick.modelId, temperature: null, maxOutputTokens: null },
+      { key: `new-${newRowCount.current}`, providerId: pick.providerId, modelId: pick.modelId, temperature: null, maxOutputTokens: null, autoPicked: true },
     ])
   }
 
@@ -211,7 +233,8 @@ export function PolicyEditor({
   const attempt = async (action: () => Promise<unknown>, done: string): Promise<string | null> => {
     setSaving(true)
     try {
-      await action()
+      const result = await action()
+      setActed({ warning: warningOf(result) })
       toast.success(done)
       setDraft(null)
       return null
@@ -236,8 +259,7 @@ export function PolicyEditor({
       agentScope ? `${subject}'s models were saved.` : 'Routing policy saved.',
     )
 
-  const clear = () =>
-    attempt(() => onClear?.() ?? Promise.resolve(), `${subject} now follows the workspace routing policy.`)
+  const clear = () => attempt(() => onClear?.() ?? Promise.resolve(), `${subject} now uses the workspace default.`)
 
   const handleSave = async () => {
     if (candidates.length === 0) {
@@ -264,37 +286,72 @@ export function PolicyEditor({
   }
 
   const providerName = (providerId: string) => byId.get(providerId)?.displayName ?? providerId
-  const modelName = (candidate: DraftCandidate) =>
+  const modelName = (candidate: { providerId: string; modelId: string }) =>
     models.find((model) => model.providerId === candidate.providerId && model.modelId === candidate.modelId)?.displayName ??
     candidate.modelId
+
+  /**
+   * Removes a saved model from the agent's chain at once. While other changes wait to be saved,
+   * Remove only takes the row out of the draft, so those changes and this one are saved together.
+   */
+  const removeRow = async (index: number, candidate: DraftCandidate) => {
+    if (!onRemoveCandidate || dirty || !candidate.key.startsWith('saved-')) {
+      removeCandidate(index)
+      return
+    }
+    const name = modelName(candidate)
+    setRemoving(candidate.key)
+    try {
+      const result = await onRemoveCandidate({ providerId: candidate.providerId, modelId: candidate.modelId })
+      setActed({ warning: warningOf(result) })
+      const back = typeof result === 'object' && result !== null && (result as { configured?: unknown }).configured === false
+      toast.success(
+        back ? `${name} was removed. ${subject} now uses the workspace default.` : `${name} was removed from ${subject}'s routing.`,
+      )
+    } catch (err) {
+      toast.error(describeApiError(err))
+    } finally {
+      setRemoving(null)
+    }
+  }
 
   const readinessTag = (providerId: string) => {
     const reason = readinessOf(providerId)
     if (reason === null) return null
     if (reason === 'unavailable') return <Tag tone="warning">Not available, will be skipped</Tag>
     const tag = READINESS_TAG[reason]
+    const provider = byId.get(providerId)
+    // A key the provider refused before is still tried on every run; this is only information.
+    const refused = reason === 'ready' && provider && credentials && credentialState(provider, credentials, now) === 'rejected'
     return (
-      <Tag tone={tag.tone} withDot title={tag.label}>
-        {tag.label}
-      </Tag>
+      <>
+        <Tag tone={tag.tone} withDot title={tag.label}>
+          {tag.label}
+        </Tag>
+        {refused && (
+          <Tag tone="neutral" title="The provider refused this key last time. It is still tried on every run.">
+            Key refused last time, still tried
+          </Tag>
+        )}
+      </>
     )
   }
+
+  const warning = acted ? acted.warning : (policy.warning ?? null)
 
   const exhausted = EXHAUSTED_COPY[(policy.exhaustedBehaviour ?? '').toUpperCase()] ?? EXHAUSTED_COPY.FAIL_CLOSED
 
   const heading = agentScope ? 'Model routing' : 'Routing policy'
   const intro = agentScope
-    ? `Which language models answer for ${subject}. Give it a chain of its own, or let it follow the workspace routing policy.`
-    : 'The order every agent tries by default, unless it has a chain of its own. With nothing set here, those agents answer on the offline sandbox model whatever is enabled above: a deliberate default, so no workspace is billed before it chooses to be.'
+    ? `Which language models answer for ${subject}. Give it a chain of its own, or let it use the workspace default.`
+    : 'The order every agent tries by default, unless it has a chain of its own. Every model listed is tried on every run, even one that failed last time.'
   const nothingSaid = dirty
     ? agentScope
-      ? `No candidates. Saving this gives ${subject} back to the workspace routing policy.`
-      : 'No candidates. Saving this sends every run of an agent without its own routing to the offline sandbox model.'
+      ? `No candidates. Saving this gives ${subject} back to the workspace default.`
+      : 'No candidates. Saving this leaves agents without routing of their own with no model, so their runs fail until one is added.'
     : agentScope
-      ? `${subject} has no models of its own, so it follows the workspace routing policy.`
-      : policy.configured
-        ? 'The saved policy has no candidates, so agents without routing of their own answer on the offline sandbox model.'
-        : 'Nothing configured. Agents without routing of their own answer on the offline sandbox model.'
+      ? `${subject} has no models of its own, so it uses the workspace default.`
+      : 'No models are set. Agents without routing of their own cannot answer until one is added here.'
   const saveLabel = agentScope ? 'Save these models' : 'Save routing policy'
 
   return (
@@ -310,6 +367,14 @@ export function PolicyEditor({
         <p className="muted" style={{ marginBottom: 'var(--space-5)' }}>
           {intro}
         </p>
+
+        {warning && (
+          <div style={{ marginBottom: 'var(--space-5)' }}>
+            <Notice tone="warning" live>
+              {warning}
+            </Notice>
+          </div>
+        )}
 
         {candidates.length === 0 && (
           <p className="muted" style={{ marginBottom: 'var(--space-4)' }}>
@@ -335,7 +400,7 @@ export function PolicyEditor({
                       onChange={(event) => {
                         const providerId = event.target.value
                         const first = chatModels.find((model) => model.providerId === providerId)
-                        updateCandidate(index, { providerId, modelId: first?.modelId ?? '', maxOutputTokens: null })
+                        updateCandidate(index, { providerId, modelId: first?.modelId ?? '', maxOutputTokens: null, autoPicked: true })
                       }}
                     >
                       {!knownProvider && <option value={candidate.providerId}>{`${candidate.providerId} (not available)`}</option>}
@@ -357,7 +422,8 @@ export function PolicyEditor({
                     value={candidate.modelId}
                     savedName={modelName(candidate)}
                     savedModels={providerModels}
-                    onChange={(modelId) => updateCandidate(index, { modelId, maxOutputTokens: null })}
+                    autoPicked={candidate.autoPicked === true}
+                    onChange={(modelId) => updateCandidate(index, { modelId, maxOutputTokens: null, autoPicked: false })}
                   />
                   <div className="row action-group" style={{ flexWrap: 'wrap', paddingBottom: '4px' }}>
                     {readinessTag(candidate.providerId)}
@@ -386,11 +452,36 @@ export function PolicyEditor({
                     <Button
                       variant="outline"
                       className="button-sm"
-                      aria-label={`Remove candidate ${number}`}
-                      onClick={() => removeCandidate(index)}
+                      aria-label={
+                        agentScope
+                          ? `Remove ${modelName(candidate)} from ${subject}'s routing`
+                          : `Remove candidate ${number}`
+                      }
+                      loading={removing === candidate.key}
+                      disabled={removing !== null && removing !== candidate.key}
+                      onClick={() => void removeRow(index, candidate)}
                     >
                       Remove
                     </Button>
+                    {testable && candidate.modelId && (
+                      <TestNow providerId={candidate.providerId} modelId={candidate.modelId} name={modelName(candidate)} />
+                    )}
+                    {onRemoveEverywhere && candidate.modelId && (
+                      <Button
+                        variant="quiet"
+                        className="button-sm"
+                        aria-label={`Remove ${modelName(candidate)} from all routing`}
+                        onClick={() =>
+                          onRemoveEverywhere({
+                            providerId: candidate.providerId,
+                            modelId: candidate.modelId,
+                            name: modelName(candidate),
+                          })
+                        }
+                      >
+                        Remove from all routing
+                      </Button>
+                    )}
                   </div>
                 </div>
               )
@@ -420,6 +511,14 @@ export function PolicyEditor({
           </p>
         )}
 
+        {!canManage && (
+          // Read-only says why, as the providers and the budget do, rather than just lacking buttons.
+          <p className="caption">
+            {agentScope
+              ? `Changing ${subject}'s models needs a role that can choose an agent's models. Owners, admins and managers can.`
+              : 'Changing the routing policy needs a role that can manage model providers. Owners and admins can.'}
+          </p>
+        )}
         {canManage && (
           <div className="row" style={{ gap: 'var(--space-3)', flexWrap: 'wrap' }}>
             <Button
@@ -437,16 +536,18 @@ export function PolicyEditor({
                 Discard changes
               </Button>
             )}
-            {agentScope && onClear && hasOwnChain && (
+            {/* Always offered, also while the agent is working and whatever the workspace has set. */}
+            {agentScope && onClear && (
               <Button
                 variant="quiet"
+                aria-label={`Use the workspace default for ${subject}`}
                 onClick={() => {
                   setDialogError(null)
                   setConfirmClear(true)
                 }}
                 disabled={saving}
               >
-                Use the workspace policy
+                Use workspace default
               </Button>
             )}
             {candidates.length >= MAX_CANDIDATES && <span className="caption">A policy holds at most 10 candidates.</span>}
@@ -460,7 +561,7 @@ export function PolicyEditor({
         onConfirm={confirmEmptySave}
         eyebrow="Routing policy"
         title="Save an empty routing policy?"
-        description="Every run of an agent without routing of its own will answer on the offline sandbox model."
+        description="Agents without routing of their own will have no model, so their runs fail until one is added."
         confirmLabel="Save empty policy"
         cancelLabel="Keep editing"
         tone="primary"
@@ -474,9 +575,9 @@ export function PolicyEditor({
           onClose={() => setConfirmClear(false)}
           onConfirm={confirmClearPolicy}
           eyebrow="Model routing"
-          title={`Use the workspace policy for ${subject}?`}
-          description={`${subject}'s own models are removed. From its next run it follows the workspace routing policy, the same as every agent without a chain of its own.`}
-          confirmLabel="Use the workspace policy"
+          title={`Use the workspace default for ${subject}?`}
+          description={`${subject}'s own models are removed. From its next run it uses the workspace default, the same as every agent without a chain of its own. Work already running keeps the models it started with.`}
+          confirmLabel="Use workspace default"
           cancelLabel="Keep its models"
           tone="primary"
           loading={saving}

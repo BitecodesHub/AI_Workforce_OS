@@ -1,3 +1,6 @@
+// @find: audit log, GET /api/audit, GET /api/audit/export, GET /api/audit/verify, search audit log, export csv, verify integrity, Audit page, who did what, accountability
+// @what: Serves the audit log to a workspace: list and filter, export as a file, and verify the chain.
+// @flow: Calls AuditSearch, AuditExport and AuditVerification; shown on the Audit page
 package os.aiworkforce.analytics.web;
 
 import java.io.IOException;
@@ -98,6 +101,7 @@ public class AuditController {
     public record VerifyView(
             boolean verified, long checked, long lastSequence, Long firstBrokenSequence, String reason) {}
 
+    // @find: GET /api/audit, list, endpoint, audit log
     @GetMapping
     @RequiresPermission(Permission.Codes.AUDIT_READ)
     @Operation(summary = "This workspace's audit entries, newest first, optionally filtered")
@@ -130,6 +134,7 @@ public class AuditController {
      * The same entries as a file, newest first and narrowed by the same filters, written as they are
      * read from the database rather than collected first, so a long log does not sit in memory.
      */
+    // @find: GET /api/audit/export, export, endpoint, audit log
     @GetMapping("/export")
     @RequiresPermission(Permission.Codes.AUDIT_READ)
     @Operation(summary = "Download the audit log as CSV or JSON Lines, newest first, optionally filtered")
@@ -204,6 +209,7 @@ public class AuditController {
         }
     }
 
+    // @find: GET /api/audit/verify, verify, endpoint, audit log
     @GetMapping("/verify")
     @RequiresPermission(Permission.Codes.AUDIT_READ)
     @Operation(summary = "Re-walk this workspace's audit chain and report the first entry that does not match")

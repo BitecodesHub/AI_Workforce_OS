@@ -1,3 +1,6 @@
+// @find: tests for conversation access, chat, the creator reads it without any audit entry, another employee is told it does not exist, a participant reads it, a workspace conversation is read by everyone, read all reads it and the read is audited, only the creator or aread all holder changes who can read, a holder of read all hides nothing, ConversationAccessTest, ConversationAccess
+// @what: Tests for ConversationAccess in the orchestrator chat package (7 test methods).
+// @flow: Exercises ConversationAccess
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +60,7 @@ class ConversationAccessTest {
         when(conversations.findByIdAndOrgId(privateThread.getId(), ORG)).thenReturn(Optional.of(privateThread));
     }
 
+    // @find: test the creator reads it without any audit entry, conversation access
     @Test
     void theCreatorReadsItWithoutAnyAuditEntry() {
         Conversation found = access.requireForRead(ORG, user(ALICE, "chat:use"), privateThread.getId());
@@ -64,6 +68,7 @@ class ConversationAccessTest {
         verify(audit, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
+    // @find: test another employee is told it does not exist, conversation access
     @Test
     void anotherEmployeeIsToldItDoesNotExist() {
         assertThatThrownBy(() -> access.require(ORG, user(BOB, "chat:use"), privateThread.getId()))
@@ -71,6 +76,7 @@ class ConversationAccessTest {
                 .hasMessageContaining("does not exist");
     }
 
+    // @find: test a participant reads it, conversation access
     @Test
     void aParticipantReadsIt() {
         when(participants.existsByConversationIdAndUserId(privateThread.getId(), BOB.toString()))
@@ -78,12 +84,14 @@ class ConversationAccessTest {
         assertThat(access.require(ORG, user(BOB, "chat:use"), privateThread.getId())).isSameAs(privateThread);
     }
 
+    // @find: test a workspace conversation is read by everyone, conversation access
     @Test
     void aWorkspaceConversationIsReadByEveryone() {
         privateThread.setVisibility("workspace");
         assertThat(access.require(ORG, user(BOB, "chat:use"), privateThread.getId())).isSameAs(privateThread);
     }
 
+    // @find: test read all reads it and the read is audited, conversation access
     @Test
     void readAllReadsItAndTheReadIsAudited() {
         access.requireForRead(ORG, user(OWNER, "chat:use", Permission.Codes.CHAT_READ_ALL), privateThread.getId());
@@ -91,6 +99,7 @@ class ConversationAccessTest {
                 .record(eq(ORG), any(Actor.class), eq("chat.read_private"), eq("conversation"), any(), eq("succeeded"), any());
     }
 
+    // @find: test only the creator or aread all holder changes who can read, conversation access
     @Test
     void onlyTheCreatorOrAReadAllHolderChangesWhoCanRead() {
         when(participants.existsByConversationIdAndUserId(privateThread.getId(), BOB.toString()))
@@ -101,6 +110,7 @@ class ConversationAccessTest {
                 .isSameAs(privateThread);
     }
 
+    // @find: test a holder of read all hides nothing, conversation access
     @Test
     void aHolderOfReadAllHidesNothing() {
         Actor owner = user(OWNER, Permission.Codes.CHAT_READ_ALL);

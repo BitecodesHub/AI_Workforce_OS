@@ -1,3 +1,6 @@
+// @find: elevenlabs client, text to speech, speech to text, transcribe audio, list voices, subscription, voice api, ElevenLabsClient, read aloud, dictation
+// @what: HTTP client for the ElevenLabs speech, transcription, voices and subscription APIs.
+// @flow: Called by VoiceService
 package os.aiworkforce.orchestrator.voice;
 
 import java.util.List;
@@ -46,6 +49,7 @@ public class ElevenLabsClient {
     }
 
     /** Synthesises {@code text} in one voice, returning the audio bytes in the configured format. */
+    // @find: text to speech call, generate audio
     public byte[] speech(String apiKey, String voiceId, String text) {
         try {
             return client.post()
@@ -65,6 +69,7 @@ public class ElevenLabsClient {
     }
 
     /** Transcribes one recording, returning the text ElevenLabs heard. */
+    // @find: transcribe audio, speech to text, dictation
     public String transcribe(String apiKey, byte[] audio, String filename, String contentType) {
         MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
         form.add("model_id", properties.sttModel());
@@ -95,6 +100,7 @@ public class ElevenLabsClient {
     }
 
     /** The voices this key can use. Empty rather than thrown when the response holds none. */
+    // @find: list voices
     public List<VoiceDto> voices(String apiKey) {
         try {
             VoicesResponse response = client.get()
@@ -111,6 +117,7 @@ public class ElevenLabsClient {
         }
     }
 
+    // @find: check ElevenLabs key or subscription
     public Subscription subscription(String apiKey) {
         try {
             Subscription response = client.get()

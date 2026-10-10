@@ -1,3 +1,5 @@
+// @find: tests for notification service, notifications, webhook, signed webhook, approval alerts, test notification
+// @what: Unit and integration tests (21 cases) for notification service, for example: sends asigned sentence and alink; signature matches aknown vector; unsigned without asecret; expiry and pause messages.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,6 @@
+// @find: tests for cited answer model, citation markers, sliceWords, wordCount, plainText, answer text
+// @what: Tests the cited-answer data helpers: word counts and citation slicing.
+// @flow: Covers citedAnswerModel.ts
 import { describe, expect, it } from 'vitest'
 import {
   ANSWER,

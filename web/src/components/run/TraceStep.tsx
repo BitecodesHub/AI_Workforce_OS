@@ -1,3 +1,6 @@
+// @find: trace step, run step, step kind, tool call, model reply, search citations, approval result, step duration, run detail trace
+// @what: One step of a run's trace in full.
+// @flow: Used by RunDetail; compact view is RunTraceCompact.
 import type { CSSProperties } from 'react'
 import { Tag, Time } from '../ui'
 import { useApproval, useMemberNamer } from '../../lib/approvalQueries'
@@ -133,6 +136,7 @@ function ApprovalDecision({ approvalId }: { approvalId: string }) {
   )
 }
 
+// @find: TraceStep, trace step, trace step, run step, step kind, tool call
 export function TraceStep({ step }: { step: RunStep }) {
   const time = (
     <p className="caption muted" style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>

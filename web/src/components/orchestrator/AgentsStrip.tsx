@@ -1,3 +1,6 @@
+// @find: agents strip, agents list, pause all, resume all, pause agent, resume agent, bulk agent actions, useAgentBulk, AgentsStrip, agent status, Orchestrator, POST /api/agents/:id/pause
+// @what: The agents list on the Orchestrator with per-agent pause or resume and the bulk pause all and resume all actions.
+// @flow: Calls useSetAgentStatus; status from FlowMap nodeStatus; rendered by the Orchestrator route
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfirmDialog, StatusTag, Tag } from '../ui'
@@ -38,6 +41,7 @@ function sortedAgents(board: Board): BoardAgent[] {
   return [...board.agents].sort((a, b) => a.name.localeCompare(b.name))
 }
 
+// @find: hook bulk pause resume all agents, pause all, resume all
 export function useAgentBulk(board: Board): AgentBulk {
   const toast = useToast()
   const setStatus = useSetAgentStatus()
@@ -133,6 +137,7 @@ export function useAgentBulk(board: Board): AgentBulk {
   return { canUpdate, changing, actions, dialogs }
 }
 
+// @find: agents strip component, list of agents with pause resume
 export function AgentsStrip({
   board,
   onOpenGoal,

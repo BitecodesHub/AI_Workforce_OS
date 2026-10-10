@@ -1,3 +1,5 @@
+// @find: tests for Qdrant client, vector store requests, batched upserts, delete by document, delete by source, collection names, search timeout, knowledge base vectors
+// @what: Checks what is actually sent to the vector store: bounded batches and deletions that stay inside their source.
 package os.aiworkforce.knowledge.service;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

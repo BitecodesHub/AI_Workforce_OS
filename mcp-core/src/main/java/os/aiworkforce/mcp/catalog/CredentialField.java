@@ -1,3 +1,6 @@
+// @find: credential field, connect dialog box, secret box, site email token, jira site, zendesk subdomain, masked input, add connector dialog, token field
+// @what: Record for one input box in the connect dialog, secret or plain.
+// @flow: Used by ConnectorCatalog entries such as Jira, Confluence, Zendesk and Zoom
 package os.aiworkforce.mcp.catalog;
 
 /**

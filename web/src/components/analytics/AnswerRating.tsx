@@ -1,3 +1,6 @@
+// @find: rate answer, thumbs up, thumbs down, answer feedback, rating reason, helpful, not helpful, chat feedback, useAnswerRating, RatingButtons, RatingReason, composeReason
+// @what: Thumbs up/down rating of an assistant answer with an optional reason, saved per conversation message.
+// @flow: Used under chat answers; calls useRateAnswer and useConversationRatings
 import { useEffect, useRef, useState } from 'react'
 import { Button, IconButton, Textarea } from '../ui'
 import { REASON_MAX, useConversationRatings, useRateAnswer } from '../../lib/insightsQueries'
@@ -15,6 +18,7 @@ import { can } from '../../lib/session'
  * useAnswerRating holds the state, RatingButtons and RatingReason draw it.
  */
 
+// @find: REASONS, rating reason presets
 export const REASONS = [
   { id: 'wrong', label: 'Wrong' },
   { id: 'incomplete', label: 'Incomplete' },
@@ -28,6 +32,7 @@ export type ReasonId = (typeof REASONS)[number]['id']
  * alone when no preset was chosen, and null when there is neither. Cut at the length the service
  * keeps, at a word where it can.
  */
+// @find: composeReason, build rating reason text
 export function composeReason(preset: ReasonId | null, words: string): string | null {
   const label = REASONS.find((reason) => reason.id === preset)?.label ?? null
   const own = words.trim().replace(/\s+/g, ' ')
@@ -60,6 +65,7 @@ function focusDown(id: string) {
   document.getElementById(id)?.focus()
 }
 
+// @find: useAnswerRating, rate an answer, save rating, feedback hook
 export function useAnswerRating(conversationId: string | null, messageId: string): AnswerRatingState {
   const enabled = can('chat:use') && conversationId !== null
   const ratings = useConversationRatings(conversationId, { enabled })
@@ -139,6 +145,7 @@ function Thumb({ up }: { up: boolean }) {
 }
 
 /** The two thumbs, for the answer's action bar. */
+// @find: RatingButtons, thumbs up thumbs down buttons
 export function RatingButtons({ state }: { state: AnswerRatingState }) {
   if (!state.enabled) return null
   return (
@@ -165,6 +172,7 @@ export function RatingButtons({ state }: { state: AnswerRatingState }) {
 }
 
 /** What follows a thumbs down: the reasons to choose from, and a word of thanks or of failure. */
+// @find: RatingReason, why was this answer rated, reason box
 export function RatingReason({ state }: { state: AnswerRatingState }) {
   if (!state.enabled) return null
 

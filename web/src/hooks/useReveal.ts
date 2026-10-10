@@ -1,3 +1,6 @@
+// @find: reveal on scroll, fade in, appear when scrolled, stagger, revealStyle, useReveal hook
+// @what: React hook that marks an element revealed the first time it scrolls into view, plus a helper for staggered delays.
+// @flow: Used by landing sections
 import type { CSSProperties, RefCallback } from 'react'
 
 /*
@@ -44,11 +47,13 @@ function attachReveal(node: HTMLElement | null): (() => void) | undefined {
 }
 
 /** A stable ref callback: the same function on every render, so React never re-attaches it. */
+// @find: useReveal hook, reveal on scroll
 export function useReveal<T extends HTMLElement>(): RefCallback<T> {
   return attachReveal
 }
 
 /** The reveal index, read by base.css for the stagger. */
+// @find: revealStyle, stagger delay by index
 export function revealStyle(index: number): CSSProperties {
   return { '--i': String(index) } as CSSProperties
 }

@@ -1,3 +1,6 @@
+# @find: memory service config, application.yml, port, database url, redis, flyway, schema, episode retention, imports platform defaults
+# @what: Runtime configuration of memory-service: port, database, Redis and migrations.
+# @flow: Imports platform-core platform-defaults.yml
 # Working, episodic and semantic shared memory.
 #
 # This file holds only what belongs to this service. Everything shared - security, resilience,

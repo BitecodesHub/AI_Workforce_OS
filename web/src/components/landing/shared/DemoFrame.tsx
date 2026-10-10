@@ -1,3 +1,6 @@
+// @find: demo frame, demo tile, Simulated tag, status live region, bento area, DemoFrame, DemoArea
+// @what: The frame every demo tile sits in, with a Simulated tag and a status line.
+// @flow: Used by all four demos
 import { useCallback } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { Eyebrow, Tag } from '../../ui'
@@ -32,6 +35,7 @@ export type DemoFrameProps = {
 
 const REVEAL_ORDER: Record<DemoArea, number> = { approval: 0, failover: 1, audit: 2, cited: 3 }
 
+// @find: DemoFrame component, demo tile frame
 export function DemoFrame({
   area,
   index,

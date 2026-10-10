@@ -1,3 +1,6 @@
+// @find: argument validator, validate tool arguments, json schema, normalise arguments, type coercion, missing field, invalid arguments, plain error message, model hallucinated field
+// @what: Checks and tidies a tool call's arguments against the tool's own schema before anything is sent to a provider.
+// @flow: Called by ToolGateway.evaluate
 package os.aiworkforce.mcp.policy;
 
 import java.util.Map;
@@ -39,6 +42,7 @@ public class ArgumentValidator {
         this.json = json;
     }
 
+    // @find: normalise arguments, convert types, tidy tool input
     /**
      * The arguments with near misses put right, where the intent is not in doubt: {@code "10"}
      * for a whole number, {@code 41} for text, one address where a list is expected, {@code "true"}
@@ -164,6 +168,7 @@ public class ArgumentValidator {
         return value;
     }
 
+    // @find: validate tool arguments, schema check, returns problem text
     /** Returns null when the arguments are acceptable, or a sentence describing what is wrong. */
     public String validate(ToolDefinition tool, String argumentsJson) {
         JsonNode arguments;

@@ -1,3 +1,6 @@
+// @find: icon, icons, svg icons, line icons, IconName, Icon
+// @what: The 16px line SVG icons used on the public page.
+// @flow: Used across landing components
 import type { ReactElement } from 'react'
 
 /*
@@ -88,6 +91,7 @@ const SHAPES: Record<IconName, ReactElement> = {
   ),
 }
 
+// @find: Icon component, svg icon
 export function Icon({ name, size = 14, className }: IconProps): ReactElement {
   return (
     <svg

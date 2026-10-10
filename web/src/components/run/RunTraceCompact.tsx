@@ -1,3 +1,6 @@
+// @find: run trace, compact trace, run steps, what the agent did, progress in chat, orchestrator drawer
+// @what: Brief trace of a run for chat threads and drawers.
+// @flow: Used by ProgressCard; shares rules with traceModel.
 import type { CSSProperties } from 'react'
 import { Tag } from '../ui'
 import { formatDuration } from '../../lib/format'
@@ -76,6 +79,7 @@ function CompactStep({ step }: { step: RunStep }) {
   )
 }
 
+// @find: RunTraceCompact, run trace compact, run trace, compact trace, run steps, what the agent did
 export function RunTraceCompact({
   runId,
   headingLevel = 'h3',

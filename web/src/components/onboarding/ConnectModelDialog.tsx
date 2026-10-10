@@ -1,7 +1,11 @@
+// @find: connect model, connect provider, add API key, model provider, OpenRouter, Groq, Bedrock, test key, enable provider, model policy, default model, credentials, ConnectModelDialog, Connect a model dialog, onboarding
+// @what: Dialog to connect an AI model provider: store and test a key, enable it and set the model policy.
+// @flow: Opened from onboarding and Settings; calls /api/providers, /api/credentials and /api/model-policy
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Button, Dialog, Input, Notice, Select } from '../ui'
-import { describeApiError } from '../../lib/api'
+import { Button, Dialog, Notice, PasswordInput, Select } from '../ui'
+import { ApiError, api, describeApiError } from '../../lib/api'
+import type { ProviderCatalogue } from '../../lib/modelCatalogue'
 import {
   useCredentials,
   useModelPolicy,
@@ -21,6 +25,16 @@ import {
   type ConnectPlan,
 } from '../../lib/routing'
 import { useTestProviderKey, type KeyTest } from '../../lib/settingsQueries'
+import {
+  BEDROCK_FIELD_LABELS,
+  EMPTY_BEDROCK_FORM,
+  bedrockCredentialValue,
+  bedrockFormComplete,
+  isBedrock,
+  type BedrockForm,
+} from '../../lib/bedrock'
+import { BedrockCredentialFields } from './BedrockCredentialFields'
+import { KEY_PAGES, cleanKey, keyMismatch } from '../../lib/keyFormats'
 
 /*
  * Connect your AI.
@@ -38,7 +52,9 @@ import { useTestProviderKey, type KeyTest } from '../../lib/settingsQueries'
  * front of a chain somebody built is not this dialog's decision to make alone. The last sentence
  * always says whether the offline sandbox model is still a fallback.
  *
- * Bedrock signs in with AWS credentials and regions, not one key, so it is left to the full page.
+ * Bedrock signs in with an AWS access key or a Bedrock API key, and a region, rather than one key:
+ * for it the form shows those fields (BedrockCredentialFields) and sends them as one JSON value,
+ * which is checked and stored the same way.
  */
 
 type Phase = 'form' | 'working' | 'ask' | 'failed' | 'done'
@@ -58,6 +74,7 @@ type Props = {
  * was pasted and then abandoned is gone. The inner dialog is keyed by how many times this one has
  * opened, so closing and reopening starts again from the form.
  */
+// @find: ConnectModelDialog, connect model dialog, test key, store credential, enable provider, set model policy
 export function ConnectModelDialog(props: Props) {
   const [openings, setOpenings] = useState(0)
   const [wasOpen, setWasOpen] = useState(props.open)
@@ -66,6 +83,30 @@ export function ConnectModelDialog(props: Props) {
     if (props.open) setOpenings((count) => count + 1)
   }
   return <ConnectModelDialogContent key={openings} {...props} />
+}
+
+/**
+ * The saved models the provider really offers to the key just stored: a seeded model its own
+ * list leaves out (Groq withdraws models, and some are not offered to every account) would make
+ * the first run fail. When the list cannot be read, the saved models are used as they are.
+ */
+async function liveCatalogue(providerId: string): Promise<ProviderCatalogue | null> {
+  try {
+    return await api<ProviderCatalogue>(`/api/providers/${encodeURIComponent(providerId)}/models?refresh=true`)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The live list is read before the saved models are, because reading it saves the models it
+ * found: Bedrock's inference profiles for a region (eu.…, apac.…) are only saved models once
+ * the list has been read with the workspace's credentials.
+ */
+function offeredTo(providerId: string, catalogue: ProviderCatalogue | null, saved: readonly Model[]): Model[] {
+  if (!catalogue || catalogue.source === 'saved') return [...saved]
+  const listed = new Set(catalogue.models.map((model) => model.id))
+  return saved.filter((model) => model.providerId !== providerId || listed.has(model.modelId))
 }
 
 function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) {
@@ -80,6 +121,8 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
 
   const [providerId, setProviderId] = useState<string | null>(null)
   const [keyValue, setKeyValue] = useState('')
+  const [bedrockForm, setBedrockForm] = useState<BedrockForm>(EMPTY_BEDROCK_FORM)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [phase, setPhase] = useState<Phase>('form')
   /** The check's own verdict when the key was not accepted, in the service's words. */
   const [verdict, setVerdict] = useState<KeyTest | null>(null)
@@ -103,20 +146,24 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
   }, [phase])
 
   const busy = phase === 'working'
-  const key = keyValue.trim()
+  const bedrock = chosen ? isBedrock(chosen) : false
+  const key = bedrock ? (bedrockFormComplete(bedrockForm) ? bedrockCredentialValue(bedrockForm) : '') : keyValue.trim()
+  const errorLabels = bedrock ? BEDROCK_FIELD_LABELS : { value: 'API key' }
 
   async function verifyAndConnect(event?: FormEvent) {
     event?.preventDefault()
     if (!chosen || !key || busy) return
     setError(null)
     setVerdict(null)
+    setFieldErrors({})
     setPhase('working')
     let result: KeyTest
     try {
       result = await testKey.mutateAsync({ providerId: chosen.id, value: key })
     } catch (failure) {
       setPhase('form')
-      setError(describeApiError(failure, { value: 'API key' }))
+      setError(describeApiError(failure, errorLabels))
+      if (failure instanceof ApiError) setFieldErrors(failure.fields)
       return
     }
     if (result.result !== 'valid') {
@@ -134,10 +181,15 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
     try {
       if (!progress.current.stored) {
         if (!provider.credentialRef) throw new Error('No credential reference for this provider.')
-        await storeCredential.mutateAsync({ ref: provider.credentialRef, kind: 'api_key', value: key })
+        await storeCredential.mutateAsync({
+          ref: provider.credentialRef,
+          kind: isBedrock(provider) ? 'aws_bedrock' : 'api_key',
+          value: key,
+        })
         progress.current.stored = true
         // Stored: the key is no longer needed here, and should not sit in the page any longer.
         setKeyValue('')
+        setBedrockForm(EMPTY_BEDROCK_FORM)
       }
       if (!provider.enabled && !progress.current.enabled) {
         await toggleProvider.mutateAsync({ id: provider.id, enable: true })
@@ -145,12 +197,13 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
       }
 
       // Read afresh: the policy and the model list may have changed since the dialog opened.
+      const catalogue = await liveCatalogue(provider.id)
       const [policy, providers, models] = await Promise.all([
         policyQuery.refetch(),
         providersQuery.refetch(),
         modelsQuery.refetch(),
       ])
-      const model = recommendModel(provider.id, models.data ?? [])
+      const model = recommendModel(provider.id, offeredTo(provider.id, catalogue, models.data ?? []))
       if (!model) {
         finish(provider, undefined, 'no_model', false)
         return
@@ -171,7 +224,7 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
         finish(provider, model, decided.kind === 'already' ? 'already' : 'unchanged', decided.fallsBackToSandbox)
       }
     } catch (failure) {
-      setError(describeApiError(failure, { value: 'API key' }))
+      setError(describeApiError(failure, errorLabels))
       setPhase('failed')
     }
   }
@@ -226,7 +279,9 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
       title={phase === 'done' ? 'Your AI is connected' : 'Connect a live AI model'}
       description={
         phase === 'form'
-          ? 'Choose a provider and paste your key. It is checked with one small request before anything is saved, so a mistyped key is refused and nothing is stored.'
+          ? bedrock
+            ? 'Choose how you sign in to AWS and the region. The credentials are checked with one small request before anything is saved, so a mistyped one is refused and nothing is stored.'
+            : 'Choose a provider and paste your key. It is checked with one small request before anything is saved, so a mistyped key is refused and nothing is stored.'
           : undefined
       }
       dismissible={!busy}
@@ -286,33 +341,62 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
                   setProviderId(event.target.value)
                   setVerdict(null)
                   setError(null)
+                  setFieldErrors({})
                 }}
                 disabled={loading || credentialsQuery.isLoading}
               >
                 {choices.map((provider) => (
                   <option key={provider.id} value={provider.id}>
                     {provider.displayName}
+                    {KEY_PAGES[provider.id]?.free ? ' (free to start)' : ''}
                   </option>
                 ))}
               </Select>
-              <Input
-                label="API key"
-                type="password"
-                value={keyValue}
-                onChange={(event) => {
-                  setKeyValue(event.target.value)
-                  setVerdict(null)
-                }}
-                autoComplete="off"
-                spellCheck={false}
-                required
-                data-autofocus
-                hint={
-                  chosen
-                    ? `From your ${chosen.displayName} account. It is stored encrypted and never shown again.`
-                    : undefined
-                }
-              />
+              {bedrock ? (
+                <BedrockCredentialFields
+                  providerId={chosen?.id ?? 'bedrock'}
+                  form={bedrockForm}
+                  onChange={(next) => {
+                    setBedrockForm(next)
+                    setVerdict(null)
+                    setFieldErrors({})
+                  }}
+                  fieldErrors={fieldErrors}
+                />
+              ) : (
+                <PasswordInput
+                  label="API key"
+                  value={keyValue}
+                  onChange={(event) => {
+                    // Whatever came with the paste (spaces, quotes, NAME=) is taken off here, so
+                    // what is checked is exactly the key.
+                    setKeyValue(cleanKey(event.target.value))
+                    setVerdict(null)
+                  }}
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                  data-autofocus
+                  error={
+                    fieldErrors.value ??
+                    (chosen && keyValue ? (keyMismatch(chosen.id, chosen.displayName, keyValue) ?? undefined) : undefined)
+                  }
+                  hint={
+                    chosen
+                      ? `From your ${chosen.displayName} account. It is stored encrypted and never shown again.`
+                      : undefined
+                  }
+                />
+              )}
+              {chosen && KEY_PAGES[chosen.id] && (
+                <p className="caption" style={{ margin: 0 }}>
+                  No key yet?{' '}
+                  <a className="link" href={KEY_PAGES[chosen.id]!.url} target="_blank" rel="noreferrer">
+                    Get a {chosen.displayName} key
+                  </a>
+                  . {KEY_PAGES[chosen.id]!.note}
+                </p>
+              )}
               {verdict && (
                 <Notice tone="warning" live>
                   {verdict.message}
@@ -326,7 +410,11 @@ function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) 
       {/* The phases that replace the form: one region that takes focus, so the change is announced. */}
       {phase !== 'form' && (
         <div ref={statusRef} tabIndex={-1} role="status" className="stack" aria-live="polite">
-          {phase === 'working' && <p className="muted">Checking the key and setting things up. This takes a few seconds.</p>}
+          {phase === 'working' && (
+            <p className="muted">
+              {bedrock ? 'Checking the credentials' : 'Checking the key'} and setting things up. This takes a few seconds.
+            </p>
+          )}
           {phase === 'ask' && <p>{askText}</p>}
           {phase === 'failed' && (
             <Notice tone="warning" live>

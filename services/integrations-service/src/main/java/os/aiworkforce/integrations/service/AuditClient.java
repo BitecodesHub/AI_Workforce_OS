@@ -1,3 +1,6 @@
+// @find: audit client, record audit event, connect disconnect audit, send audit to analytics, internal token, audit log for connectors
+// @what: Sends audit entries (connect, test, disconnect and similar) to the analytics service.
+// @flow: Called by ConnectorService, OAuthService and IntegrationController
 package os.aiworkforce.integrations.service;
 
 import java.time.Duration;
@@ -54,6 +57,7 @@ public class AuditClient {
             String outcome,
             Map<String, Object> detail) {}
 
+    // @find: record audit event, write audit log entry
     public void record(
             UUID orgId, Actor actor, String action, String resourceType, String resourceId, Map<String, Object> detail) {
         log.info("Audit {} on {} {} in workspace {} by {}", action, resourceType, resourceId, orgId, actor.id());

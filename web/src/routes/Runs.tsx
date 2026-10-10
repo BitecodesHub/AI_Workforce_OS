@@ -1,3 +1,6 @@
+// @find: runs, run history, list runs, status filter, duration, running now, failed runs, search runs, /runs, Runs page
+// @what: The Runs page: a filterable list of everything assistants have run.
+// @flow: Routed from App.tsx at /runs; rows open RunDetail.tsx
 import { useCallback, useMemo, useState } from 'react'
 import {
   Button,
@@ -65,15 +68,18 @@ function elapsedMs(run: Run, now: number): number | null {
 const ONE_LINE = { whiteSpace: 'nowrap' } as const
 
 /** A running run's clock, ticking each second. Split out so only active rows subscribe to it. */
+// @find: live duration of a running run
 function LiveDuration({ run }: { run: Run }) {
   const now = useNow(1000)
   return <>{formatRunElapsed(run, now)}</>
 }
 
+// @find: run duration
 function RunDuration({ run }: { run: Run }) {
   return <span style={ONE_LINE}>{isRunActive(run) ? <LiveDuration run={run} /> : formatRunElapsed(run)}</span>
 }
 
+// @find: Runs component, runs page, filter runs by status, /runs
 export function Runs() {
   const { search } = useRouter()
   const agents = useAgentNames()
@@ -326,7 +332,7 @@ export function Runs() {
                 getRowLabel={(run) =>
                   `Run by ${agentName(run) || 'an agent'}, ${statusLabel('run', run.status).label.toLowerCase()}, started ${formatDateTime(run.startedAt)}`
                 }
-                caption="Runs, newest first, from the orchestrator's run records. Cost is estimated at catalogue prices; a run with no price on file reads Unpriced."
+                caption="Runs, newest first, from the orchestrator's run records. Cost is estimated at catalogue prices: a run on free models reads Free, and one on a model with no price on file reads Unpriced."
               />
             </Card>
           )

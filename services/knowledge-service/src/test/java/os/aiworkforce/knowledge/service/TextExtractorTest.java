@@ -1,3 +1,5 @@
+// @find: tests for text extraction limits, long files cut at limit, notice, max characters, upload parsing, knowledge base documents
+// @what: Checks long files are read up to the limit and said to be cut when they reach it.
 package os.aiworkforce.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

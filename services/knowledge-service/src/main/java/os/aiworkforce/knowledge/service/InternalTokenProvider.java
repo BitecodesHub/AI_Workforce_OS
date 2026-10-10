@@ -1,3 +1,6 @@
+// @find: internal token, service to service token, service token cache, call other services, knowledge calls llm gateway, actor attribution, InternalTokenProvider
+// @what: Obtains and caches short-lived tokens for calling sibling services on behalf of the acting person.
+// @flow: Used by EmbeddingService (embedding calls) and AuditWiring.
 package os.aiworkforce.knowledge.service;
 
 import java.time.Duration;

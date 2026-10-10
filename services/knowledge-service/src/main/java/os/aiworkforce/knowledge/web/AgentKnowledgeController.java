@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, agent documents, agent knowledge, AI employee documents, agent-owned source, upload file to agent, add note to agent, delete agent document, GET /api/knowledge/agents/{agentId}/documents, POST /api/knowledge/agents/{agentId}/notes, AgentKnowledgeController
+// @what: REST endpoints for an AI employee's own private documents and notes, kept apart from workspace sources.
+// @flow: Called by the agent detail page; delegates to IngestionService and RetrievalService, creating the agent's own source on first use.
 package os.aiworkforce.knowledge.web;
 
 import java.nio.charset.StandardCharsets;
@@ -61,6 +64,7 @@ public class AgentKnowledgeController {
     public record NoteRequest(
             @NotBlank @Size(max = 120) String title, @NotBlank @Size(max = MAX_NOTE_CHARS) String text) {}
 
+    // @find: list agent documents, GET /api/knowledge/agents/{agentId}/documents
     @GetMapping("/documents")
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "The documents and notes this agent keeps for itself")
@@ -72,6 +76,7 @@ public class AgentKnowledgeController {
         return views;
     }
 
+    // @find: upload document to an agent, give agent a file, POST /api/knowledge/agents/{agentId}/documents
     @PostMapping(value = "/documents", consumes = "multipart/form-data")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Operation(summary = "Add a file to this agent's own documents")
@@ -91,6 +96,7 @@ public class AgentKnowledgeController {
         }
     }
 
+    // @find: add note to agent knowledge, write note, POST /api/knowledge/agents/{agentId}/notes
     @PostMapping("/notes")
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -104,6 +110,7 @@ public class AgentKnowledgeController {
                 orgId(), ownSource(agentId).getId(), title + ".txt", request.text().strip().getBytes(StandardCharsets.UTF_8));
     }
 
+    // @find: delete agent document, DELETE /api/knowledge/agents/{agentId}/documents/{documentId}
     @DeleteMapping("/documents/{documentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)

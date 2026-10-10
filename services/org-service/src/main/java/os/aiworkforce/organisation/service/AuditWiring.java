@@ -1,3 +1,6 @@
+// @find: audit wiring, audit token source, audit client configuration, analytics token, audit events from org-service
+// @what: Configures how org-service obtains a service token to send audit events to analytics-service.
+// @flow: Uses InternalTokenProvider; imports AuditClientConfiguration from platform-web.
 package os.aiworkforce.organisation.service;
 
 import org.springframework.context.annotation.Bean;
@@ -16,6 +19,7 @@ import os.aiworkforce.platform.web.audit.AuditTokenSource;
 @Import(AuditClientConfiguration.class)
 class AuditWiring {
 
+    // @find: audit token for analytics service
     @Bean
     AuditTokenSource auditTokenSource(InternalTokenProvider tokens) {
         return () -> tokens.forService("analytics");

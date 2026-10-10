@@ -1,3 +1,5 @@
+// @find: tests for embedding timeouts, query embedding, which embedding model, embedding service, knowledge base embeddings
+// @what: Checks how long embedding is allowed and which model it uses.
 package os.aiworkforce.knowledge.service;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

@@ -1,5 +1,8 @@
+// @find: candidate model field, model picker, routing candidate, tool-capable models, provider models
+// @what: Model field of one candidate in a routing policy.
+// @flow: Used by PolicyEditor; uses ModelCombobox.
 import React from 'react'
-import { mergeSaved } from '../../lib/modelCatalogue'
+import { NOT_AVAILABLE, firstAvailable, mergeSaved } from '../../lib/modelCatalogue'
 import type { CatalogueModel, ProviderCatalogue } from '../../lib/modelCatalogue'
 import type { Model } from '../../lib/queries'
 import { useProviderCatalogue } from '../../lib/queries'
@@ -25,8 +28,15 @@ export type CandidateModelFieldProps = {
   /** The provider's saved chat models. */
   savedModels: readonly Model[]
   onChange: (modelId: string) => void
+  /**
+   * True while the model was filled in for the person (a new row, or a provider just picked)
+   * rather than chosen. Once the provider's list arrives, a filled-in model it does not offer to
+   * this account is swapped for the first one it does.
+   */
+  autoPicked?: boolean
 }
 
+// @find: CandidateModelField, candidate model field, candidate model field, model picker, routing candidate, tool-capable models
 export function CandidateModelField(props: CandidateModelFieldProps) {
   return props.live ? <LiveModelField {...props} /> : <SavedModelField {...props} />
 }
@@ -45,20 +55,30 @@ function SavedModelField({ label, providerId, providerName, value, savedName, sa
   )
 }
 
-function LiveModelField({ label, providerId, providerName, value, savedName, savedModels, onChange }: CandidateModelFieldProps) {
+function LiveModelField({ label, providerId, providerName, value, savedName, savedModels, onChange, autoPicked }: CandidateModelFieldProps) {
   const catalogue = useProviderCatalogue(providerId)
   const data: ProviderCatalogue | undefined = catalogue.data
+  const fromProvider = data !== undefined && data.source !== 'saved'
   const options = React.useMemo(
-    () => mergeSaved(providerId, data?.models, savedModels),
-    [providerId, data?.models, savedModels],
+    () => mergeSaved(providerId, data?.models, savedModels, { fromProvider, keep: value }),
+    [providerId, data?.models, savedModels, fromProvider, value],
   )
+  const chosen = options.find((option) => option.id === value)
+  const replacement = autoPicked && chosen?.unavailable ? firstAvailable(options) : undefined
+
+  // A model filled in from the saved list that this account cannot use is replaced, not left to fail a run.
+  React.useEffect(() => {
+    if (replacement && replacement.id !== value) onChange(replacement.id)
+  }, [replacement, value, onChange])
 
   const refreshFailed = catalogue.refresh.isError
   const notice = refreshFailed
     ? `Couldn't refresh the list from ${providerName}; showing saved models.`
     : catalogue.isError
       ? `Couldn't load the list from ${providerName}; showing saved models.`
-      : (data?.message ?? null)
+      : chosen?.unavailable
+        ? `${NOT_AVAILABLE}: ${providerName} does not offer this model to your key, so runs skip it. Choose another.`
+        : (data?.message ?? null)
 
   const summary = data
     ? `${data.total} ${data.total === 1 ? 'model' : 'models'} that can use tools${data.freeCount > 0 ? `, ${data.freeCount} free` : ''}.`

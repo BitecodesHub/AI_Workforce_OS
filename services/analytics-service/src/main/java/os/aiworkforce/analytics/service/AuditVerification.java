@@ -1,3 +1,6 @@
+// @find: audit verification, verify audit log, check integrity, verify workspace chain, verify everything, tamper check
+// @what: Reads audit chains from the database and checks they are intact.
+// @flow: Called by AuditController.verify and AuditChainJob; uses AuditChain
 package os.aiworkforce.analytics.service;
 
 import java.util.ArrayList;
@@ -27,6 +30,7 @@ public class AuditVerification {
     }
 
     /** One workspace's chain, from its first entry to its newest. */
+    // @find: verify workspace audit log integrity
     public AuditChain.Verification verifyWorkspace(UUID orgId) {
         return verifyChain(AuditChain.chainKeyFor(orgId));
     }
@@ -55,6 +59,7 @@ public class AuditVerification {
      * Every chain on the platform: the original one first, then each workspace's and the platform's
      * own. For the nightly check, which is the only place the whole table is read.
      */
+    // @find: verify all audit chains
     public List<AuditChain.Verification> verifyEverything() {
         List<AuditChain.Verification> results = new ArrayList<>();
         results.add(verifyLegacy());

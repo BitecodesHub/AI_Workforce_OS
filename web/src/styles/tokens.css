@@ -1,4 +1,9 @@
 /*
+ * @find: design tokens, colours, spacing, radius, type scale, css variables, theme, dark mode, line colour, shadows, motion rules
+ * @what: The single source of every colour, size and radius used by the styles.
+ * @flow: Checked by design-system.test.ts; used by all other css
+ */
+/*
  * The design system, as one file.
  *
  * Every colour, size, radius and step in the product is defined here and nowhere else. A raw hex

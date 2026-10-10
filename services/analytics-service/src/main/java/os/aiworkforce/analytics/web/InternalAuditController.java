@@ -1,3 +1,6 @@
+// @find: internal audit, POST /internal/audit-events, write audit log entry, record audit event from service, service token only
+// @what: Internal endpoint where sibling services append audit entries; refuses a person's own token.
+// @flow: Called by HttpAuditSender in other services; calls AuditAppender.append
 package os.aiworkforce.analytics.web;
 
 import java.time.Instant;
@@ -71,6 +74,7 @@ public class InternalAuditController {
 
     public record AuditEventResponse(UUID id, long sequence, String entryHash) {}
 
+    // @find: POST /internal/audit-events, append, endpoint, internal audit
     @PostMapping
     @Operation(summary = "Internal: append one entry to the append-only audit projection")
     public AuditEventResponse append(@Valid @RequestBody AuditEventRequest request) {

@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, provider registry, list providers and models, model catalogue lookup, ProviderRegistry
+// @what: Interface the router uses to look up which providers and models exist.
 package os.aiworkforce.llm.spi;
 
 import java.time.Duration;

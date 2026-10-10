@@ -1,3 +1,5 @@
+// @find: tests for markdown, parseMarkdown, tables, lists, links, javascript url, safe rendering
+// @what: Unit tests for the Markdown parser.
 import { describe, expect, it } from 'vitest'
 import { parseMarkdown } from './markdown'
 import type { MdBlock, MdInline } from './markdown'

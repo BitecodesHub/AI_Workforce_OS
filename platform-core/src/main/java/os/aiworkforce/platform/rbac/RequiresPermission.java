@@ -1,3 +1,6 @@
+// @find: requires permission, annotation, endpoint authorisation, rbac check, controller guard, permission annotation
+// @what: Annotation placed on a controller method to declare the permission it needs.
+// @flow: Enforced by platform-web PermissionInterceptor
 package os.aiworkforce.platform.rbac;
 
 import java.lang.annotation.Documented;

@@ -1,3 +1,6 @@
+// @find: audit chain job, nightly verification, scheduled audit check, broken chain alert, aiwos.audit.chain.broken gauge, verify cron
+// @what: Scheduled job that re-checks every audit chain each night and publishes the result as metrics.
+// @flow: Calls AuditVerification.verifyEverything; alert in infra/prometheus/rules
 package os.aiworkforce.analytics.service;
 
 import java.time.Duration;
@@ -61,6 +64,7 @@ public class AuditChainJob {
         });
     }
 
+    // @find: scheduled job or startup listener nightly, audit chain job
     @Scheduled(cron = "${aiwos.audit.verify-cron:0 15 2 * * *}")
     public void nightly() {
         try {
@@ -73,6 +77,7 @@ public class AuditChainJob {
     }
 
     /** One full verification, also callable on demand. */
+    // @find: run audit chain verification now
     public Summary run() {
         Instant started = Instant.now();
         List<AuditChain.Verification> results = verification.verifyEverything();

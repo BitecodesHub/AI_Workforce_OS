@@ -1,3 +1,6 @@
+// @find: approvals, human gate, approve, reject, decide approval, pending approvals, approval queue, four-eyes, requester rule, send back, request changes, approval expiry, deadline, who can approve, approval counts, held actions, tool call approval
+// @what: Raises approvals for risky agent tool calls and records approve, reject or send-back decisions, enforcing the four-eyes rule and paging the queue.
+// @flow: Called by AgentRunner.drive when a call needs a person and by ApprovalController for decisions; resumes the run through RunExecutor after commit
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -204,6 +207,7 @@ public class ApprovalService {
         }
     }
 
+    // @find: raise approval, create approval, agent wants to call a tool, ask a person to approve, approval card
     /**
      * Raises an approval for a tool call the agent wants to make.
      *
@@ -251,6 +255,7 @@ public class ApprovalService {
         return approval;
     }
 
+    // @find: record approval outcome, what happened after approved call ran
     /** Puts what happened when an approved call was carried out on the approval, so it can be shown there. */
     public void recordOutcome(java.util.UUID approvalId, String outcome) {
         approvals.recordOutcome(approvalId, outcome);
@@ -274,11 +279,13 @@ public class ApprovalService {
         return goals.findById(task.getGoalId()).map(Goal::getRequestedBy).orElse(null);
     }
 
+    // @find: list pending approvals, approvals waiting, approval inbox
     @Transactional(readOnly = true)
     public List<Approval> pending(UUID orgId) {
         return approvals.findPending(orgId);
     }
 
+    // @find: list approvals, approval history, filter by status agent run, approvals page
     /**
      * One page of a workspace's approvals, in the order a person reading them wants: the queue
      * soonest-expiring first, the history newest decision first.
@@ -324,6 +331,7 @@ public class ApprovalService {
         };
     }
 
+    // @find: approval counts, pending badge, how many can I decide
     /**
      * How many approvals are waiting, and how many of them {@code actor} could decide - counted in
      * the database, so a badge costs no payloads.
@@ -346,6 +354,7 @@ public class ApprovalService {
         return new Counts(pending, decidable);
     }
 
+    // @find: get one approval by id
     /** One approval, for a caller that knows only its id. */
     @Transactional(readOnly = true)
     public Approval get(UUID orgId, UUID approvalId) {
@@ -360,6 +369,7 @@ public class ApprovalService {
         return approvals.findByIdAndOrgId(approvalId, orgId);
     }
 
+    // @find: approval context, goal title, who asked, task instruction on approval card
     /**
      * What each approval is for - its goal, who asked, and what the task was told to do - with a
      * handful of lookups however many approvals there are, never one per approval.
@@ -438,6 +448,7 @@ public class ApprovalService {
         return result;
     }
 
+    // @find: can this person decide, approval permission check, four-eyes check
     /**
      * Whether {@code actor} may decide {@code approval} now: it is still waiting, they hold the
      * permission it needs, and the workspace's four-eyes rule does not stop them as its requester.
@@ -482,6 +493,7 @@ public class ApprovalService {
         return requesterRule(orgId).name().toLowerCase();
     }
 
+    // @find: set four-eyes rule, requester cannot approve own action, off destructive all setting
     /**
      * Sets the workspace's four-eyes rule. It applies from the next decision: an approval already
      * waiting is judged by the rule in force when somebody decides it.
@@ -505,6 +517,7 @@ public class ApprovalService {
         return chosen;
     }
 
+    // @find: approve or reject approval, decide approval, record decision, approval note, reject reason
     /**
      * Records a decision.
      *

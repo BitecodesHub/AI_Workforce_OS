@@ -1,3 +1,6 @@
+// @find: invitations, invite member, create invitation, resend invitation, revoke invitation, accept invitation, accept signed in, invite link, accept-invite, token hash, invitation expiry, member invite, role grant check, join workspace
+// @what: Creates, lists, revokes and accepts workspace invitations, checking role grants and creating memberships through identity-service.
+// @flow: Called by InvitationController; calls identity-service /internal/memberships/check-grant, /bootstrap-member and /api/auth/register.
 package os.aiworkforce.organisation.service;
 
 import java.nio.charset.StandardCharsets;
@@ -72,6 +75,9 @@ public class InvitationService {
      */
     public static final String ACCOUNT_EXISTS = "account_exists";
 
+    /** Identity's check-grant reason for an address that already belongs to an active member. */
+    static final String ALREADY_MEMBER = "already_member";
+
     private final Invitations invitations;
     private final WebClient identityClient;
     private final InternalTokenProvider tokens;
@@ -106,6 +112,7 @@ public class InvitationService {
     /** What identity said about one person giving one role. */
     private record GrantCheck(boolean allowed, String reason) {}
 
+    // @find: create invitation, invite someone, send invite, resend invite, POST /api/orgs/{orgId}/invitations
     @Transactional
     public InvitationView create(UUID orgId, UUID invitedBy, String email, String roleName, String originForLink) {
         String normalisedEmail = normaliseEmail(email);
@@ -119,10 +126,16 @@ public class InvitationService {
 
         // Asked before anything is written. A role that does not exist would otherwise be found
         // out only when the person accepts - after their account had already been created.
-        GrantCheck check = checkGrant(orgId, invitedBy, role);
+        // The address goes too: an invitation to someone already in the workspace would only ever
+        // leave them as they are, at the role they hold, so it is refused rather than created.
+        GrantCheck check = checkGrant(orgId, invitedBy, role, normalisedEmail);
         if (!check.allowed()) {
             if ("unknown_role".equals(check.reason())) {
                 throw ApiException.validation("roleName", "no such role is available to this workspace");
+            }
+            if (ALREADY_MEMBER.equals(check.reason())) {
+                throw ApiException.validation(
+                        "email", "already belongs to a member of this workspace. Change their role instead");
             }
             throw new ApiException(ErrorCode.PERMISSION_DENIED, refusalSentence(check.reason()))
                     .with("reason", check.reason());
@@ -159,6 +172,7 @@ public class InvitationService {
         return toView(invitation, rawToken, acceptUrl);
     }
 
+    // @find: list pending invitations, GET /api/orgs/{orgId}/invitations
     @Transactional(readOnly = true)
     public List<InvitationView> list(UUID orgId) {
         return invitations.findByOrgIdOrderByCreatedAtDesc(orgId).stream()
@@ -166,6 +180,7 @@ public class InvitationService {
                 .toList();
     }
 
+    // @find: revoke invitation, withdraw invite, DELETE /api/orgs/{orgId}/invitations/{invitationId}
     /**
      * Withdraws an invitation, so its link stops working at once.
      *
@@ -192,6 +207,7 @@ public class InvitationService {
         return toView(invitation, null, null);
     }
 
+    // @find: accept invitation, new account from invite, set password, POST /api/invitations/accept
     /**
      * Turns an accepted invitation into a registered account with an active membership.
      *
@@ -209,7 +225,8 @@ public class InvitationService {
     public AcceptResult accept(String rawToken, String displayName, String password) {
         Invitation invitation = openInvitation(rawToken);
 
-        GrantCheck check = checkGrant(invitation.getOrgId(), invitation.getInvitedBy(), invitation.getRoleName());
+        GrantCheck check =
+                checkGrant(invitation.getOrgId(), invitation.getInvitedBy(), invitation.getRoleName(), null);
         if (!check.allowed()) {
             throw cannotBeAccepted(check.reason());
         }
@@ -226,6 +243,7 @@ public class InvitationService {
         return new AcceptResult(userId, invitation.getOrgId(), invitation.getEmail(), role);
     }
 
+    // @find: accept invitation signed in, existing account joins workspace, POST /api/invitations/accept-signed-in
     /**
      * Accepts an invitation as the person already signed in, without registering anything.
      *
@@ -328,7 +346,7 @@ public class InvitationService {
     }
 
     /** Asks identity whether {@code invitedBy} may give {@code roleName} in the workspace now. */
-    private GrantCheck checkGrant(UUID orgId, UUID invitedBy, String roleName) {
+    private GrantCheck checkGrant(UUID orgId, UUID invitedBy, String roleName, String email) {
         if (invitedBy == null) {
             // Every invitation records who sent it; one that does not cannot be checked, and a
             // role nobody can vouch for is not granted.
@@ -338,6 +356,9 @@ public class InvitationService {
         body.put("orgId", orgId);
         body.put("actorUserId", invitedBy);
         body.put("roleName", roleName);
+        if (email != null) {
+            body.put("email", email);
+        }
         try {
             Map<String, Object> answer = identityClient
                     .post()

@@ -1,3 +1,6 @@
+// @find: credentials, store credential, replace credential, delete credential, list credentials, reveal credential, API keys, provider keys, secrets vault, envelope encryption, re-wrap keys, key rotation, fingerprint, expiry
+// @what: Stores workspace secrets encrypted, lists them without revealing values, and decrypts them only for internal service calls.
+// @flow: Called by CredentialController; uses EnvelopeEncryptionService and the Credentials repository.
 package os.aiworkforce.organisation.service;
 
 import java.time.Instant;
@@ -60,6 +63,7 @@ public class CredentialService {
     public record CredentialView(
             String ref, String kind, String fingerprint, boolean present, Instant expiresAt, Instant lastUsedAt) {}
 
+    // @find: store credential, save API key, replace credential, encrypt secret, PUT /api/credentials/{ref}
     @Transactional
     public CredentialView store(UUID orgId, String ref, String kind, String plaintext, Instant expiresAt) {
         if (plaintext == null || plaintext.isBlank()) {
@@ -91,6 +95,7 @@ public class CredentialService {
         return describe(credential);
     }
 
+    // @find: reveal credential, decrypt secret for internal service, GET /internal/credentials/{ref}, expired credential
     /**
      * The decrypted value, for an internal caller only.
      *
@@ -105,8 +110,9 @@ public class CredentialService {
                 log.warn("Credential {} for workspace {} has expired", ref, orgId);
                 return Optional.empty();
             }
-            credential.markUsed();
-            credentials.save(credential);
+            // Not credential.markUsed() and a save: that goes through the version check, and
+            // concurrent runs reading the same key then conflicted (HTTP 409).
+            credentials.recordUse(credential.getId(), Instant.now());
             try {
                 return Optional.of(encryption.decrypt(orgId.toString(), credential.getEncryptedValue()));
             } catch (ApiException e) {
@@ -118,6 +124,7 @@ public class CredentialService {
         });
     }
 
+    // @find: list credentials, which keys are stored, GET /api/credentials
     @Transactional(readOnly = true)
     public List<CredentialView> list(UUID orgId) {
         return credentials.findByOrgIdOrderByRef(orgId).stream()
@@ -125,6 +132,7 @@ public class CredentialService {
                 .toList();
     }
 
+    // @find: delete credential, remove API key, DELETE /api/credentials/{ref}
     @Transactional
     public void delete(UUID orgId, String ref) {
         Credential credential =
@@ -133,6 +141,7 @@ public class CredentialService {
         log.info("Credential {} removed from workspace {}", ref, orgId);
     }
 
+    // @find: re-wrap credentials, rotate master key, key rotation job
     /**
      * Re-wraps values still encrypted under a retired master key.
      *

@@ -1,3 +1,6 @@
+// @find: voice clip entity, spoken clip, audio note, voice note, run audio, voice_clips table, VoiceClip
+// @what: JPA entity for a spoken audio clip produced by a run.
+// @flow: Stored in voice_clips; created by VoiceClipService
 package os.aiworkforce.orchestrator.voice;
 
 import java.time.Instant;

@@ -1,3 +1,5 @@
+// @find: tests for provider isolation, provider isolation, per-workspace providers, tenant separation, credentials not shared, /api/providers
+// @what: Unit and integration tests (22 cases) for provider isolation, for example: disable in one workspace leaves another unchanged; enable in one workspace does not reach another; another workspaces private provider is not found; own provider is changed directly.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -264,29 +266,23 @@ class ProviderIsolationTest {
     }
 
     @Test
-    @DisplayName("refuses with 409 to turn off the last provider the workspace's routing policy can use")
-    void refusesToStrandTheRoutingPolicy() {
+    @DisplayName("turning off the last provider the workspace routing can use is allowed, with a plain warning")
+    void turningOffTheLastProviderWarns() {
         when(policies.resolve(eq(ORG_A), isNull()))
                 .thenReturn(chain(RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, "openrouter/" + LLAMA));
 
-        assertThatThrownBy(() -> controller.disable("openrouter"))
-                .isInstanceOfSatisfying(ApiException.class, e -> {
-                    assertThat(e.status()).isEqualTo(409);
-                    assertThat(e.getMessage()).contains("OpenRouter").contains("routing policy");
-                    assertThat(e.details()).containsEntry("routing", "workspace");
-                });
-        assertThat(view(ORG_A, "openrouter").enabled()).isTrue();
+        ProviderController.ProviderView off = controller.disable("openrouter");
 
-        // The built-in policy is the sandbox alone, so the sandbox is guarded the same way.
-        when(policies.resolve(eq(ORG_A), isNull()))
-                .thenReturn(chain(RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, "sandbox/sandbox-1"));
-        assertThatThrownBy(() -> controller.disable("sandbox"))
-                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.status()).isEqualTo(409));
+        assertThat(off.enabled()).isFalse();
+        assertThat(off.warning()).contains("OpenRouter").contains("the workspace routing");
+        assertThat(view(ORG_A, "openrouter").enabled()).isFalse();
 
-        // A policy that falls back to the sandbox still has somewhere to go.
+        // A policy that falls back to the sandbox still has somewhere to go: nothing to warn about.
+        signInTo(ORG_A);
+        controller.enable("openrouter");
         when(policies.resolve(eq(ORG_A), isNull()))
                 .thenReturn(chain(RoutingPolicy.ExhaustedBehaviour.DEGRADE_TO_SANDBOX, "openrouter/" + LLAMA));
-        assertThat(controller.disable("openrouter").enabled()).isFalse();
+        assertThat(controller.disable("openrouter").warning()).isNull();
     }
 
     @Test
@@ -332,26 +328,19 @@ class ProviderIsolationTest {
     }
 
     @Test
-    @DisplayName("refuses with 409, naming the agent, to strand an agent's own routing")
-    void refusesToStrandAnAgentsRouting() {
+    @DisplayName("turning off a provider an agent's own routing depends on is allowed, naming the agent")
+    void turningOffWarnsAboutAgents() {
         Agent ava = agent(ORG_A, "Ava", "active");
         Agent old = agent(ORG_A, "Old timer", "retired");
         agentPolicy(ORG_A, ava, "FAIL_CLOSED", "openrouter/" + LLAMA);
         agentPolicy(ORG_A, old, "FAIL_CLOSED", "openrouter/" + LLAMA);
 
-        assertThatThrownBy(() -> controller.disable("openrouter"))
-                .isInstanceOfSatisfying(ApiException.class, e -> {
-                    assertThat(e.status()).isEqualTo(409);
-                    assertThat(e.getMessage()).contains("OpenRouter").contains("Ava").doesNotContain("Old timer");
-                    assertThat(e.details()).containsEntry("routing", "agent");
-                });
-        assertThat(view(ORG_A, "openrouter").enabled()).isTrue();
+        ProviderController.ProviderView off = controller.disable("openrouter");
 
-        // With another provider on in Ava's routing, the same click goes through.
-        agentPolicyRows.clear();
-        agentPolicy(ORG_A, ava, "FAIL_CLOSED", "openrouter/" + LLAMA, "sandbox/sandbox-1");
-        agentPolicy(ORG_A, old, "FAIL_CLOSED", "openrouter/" + LLAMA);
-        assertThat(controller.disable("openrouter").enabled()).isFalse();
+        assertThat(off.enabled()).isFalse();
+        assertThat(off.warning()).contains("OpenRouter").contains("Ava").doesNotContain("Old timer");
+        // The chain keeps the model, so turning the provider back on restores it.
+        assertThat(agentPolicyRows).isNotEmpty();
     }
 
     @Test
@@ -404,33 +393,29 @@ class ProviderIsolationTest {
     // ---- What a call teaches the platform --------------------------------------------------
 
     @Test
-    @DisplayName("a 402 in workspace A sets the model aside for A only")
-    void creditFailureStaysInItsWorkspace() {
+    @DisplayName("a 402 sets nothing aside: once the account has credit, the very next call uses the model")
+    void creditFailureIsNotRemembered() {
         vendorAnswers.put("key-" + ORG_A, ProviderFailure.INSUFFICIENT_CREDIT);
 
         assertThat(route(ORG_A, "openrouter/" + LLAMA, "sandbox/sandbox-1").provider()).isEqualTo("sandbox");
 
         assertThat(registry.model(ORG_A.toString(), "openrouter", LLAMA).orElseThrow().isCurrentlyUnavailable())
-                .isTrue();
-        assertThat(registry.model(ORG_B.toString(), "openrouter", LLAMA).orElseThrow().isCurrentlyUnavailable())
                 .isFalse();
-        assertThat(modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil())
-                .isNull();
-        assertThat(modelView(ORG_A, LLAMA).unavailableUntil()).isNotNull();
-        assertThat(modelView(ORG_B, LLAMA).unavailableUntil()).isNull();
+        assertThat(modelView(ORG_A, LLAMA).unavailableUntil()).isNull();
+        assertThat(availabilityRows).isEmpty();
 
-        assertThat(route(ORG_B, "openrouter/" + LLAMA).provider()).isEqualTo("openrouter");
+        vendorAnswers.remove("key-" + ORG_A);
+        assertThat(route(ORG_A, "openrouter/" + LLAMA).provider()).isEqualTo("openrouter");
     }
 
     @Test
-    @DisplayName("an exhausted quota in workspace A sets the model aside for A only, and leaves A's key alone")
-    void quotaFailureStaysInItsWorkspace() {
+    @DisplayName("an exhausted quota sets nothing aside and leaves the key alone")
+    void quotaFailureIsNotRemembered() {
         vendorAnswers.put("key-" + ORG_A, ProviderFailure.QUOTA_EXHAUSTED);
 
         assertThat(route(ORG_A, "openrouter/" + LLAMA, "sandbox/sandbox-1").provider()).isEqualTo("sandbox");
 
-        assertThat(modelView(ORG_A, LLAMA).unavailableUntil()).isNotNull();
-        assertThat(modelView(ORG_B, LLAMA).unavailableUntil()).isNull();
+        assertThat(modelView(ORG_A, LLAMA).unavailableUntil()).isNull();
         assertThat(view(ORG_A, "openrouter").credentialStatus()).isEqualTo("unknown");
         assertThat(route(ORG_B, "openrouter/" + LLAMA).provider()).isEqualTo("openrouter");
     }
@@ -463,45 +448,34 @@ class ProviderIsolationTest {
     }
 
     @Test
-    @DisplayName("one workspace's repeated 404s set the model aside for that workspace only")
-    void oneWorkspacesNotFoundStaysInItsWorkspace() {
+    @DisplayName("repeated 404s set nothing aside: every call asks the model again")
+    void notFoundIsNotRemembered() {
         vendorAnswers.put("key-" + ORG_A, ProviderFailure.MODEL_NOT_FOUND);
 
         for (int i = 0; i < 3; i++) {
-            // As if A's last note had lapsed, so A asks again and is told again.
-            availabilityRows.clear();
             route(ORG_A, "openrouter/" + LLAMA, "sandbox/sandbox-1");
         }
 
         assertThat(modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil())
                 .isNull();
-        assertThat(registry.model(ORG_A.toString(), "openrouter", LLAMA).orElseThrow().isCurrentlyUnavailable())
-                .isTrue();
-        assertThat(registry.model(ORG_B.toString(), "openrouter", LLAMA).orElseThrow().isCurrentlyUnavailable())
-                .isFalse();
-        assertThat(route(ORG_B, "openrouter/" + LLAMA).provider()).isEqualTo("openrouter");
-
-        Instant until = availabilityRows.get(new WorkspaceModelAvailability.Key(ORG_A, "openrouter", LLAMA))
-                .getUnavailableUntil();
-        assertThat(until).isBefore(Instant.now().plus(Duration.ofMinutes(16)));
+        assertThat(availabilityRows).isEmpty();
+        vendorAnswers.remove("key-" + ORG_A);
+        assertThat(route(ORG_A, "openrouter/" + LLAMA).provider()).isEqualTo("openrouter");
     }
 
     @Test
-    @DisplayName("a second workspace's 404 within the cool-down sets the model aside for everyone, briefly")
-    void twoWorkspacesNotFoundIsPlatformWideAndShort() {
+    @DisplayName("404s from two workspaces set nothing aside for anyone")
+    void twoWorkspacesNotFoundSetsNothingAside() {
         vendorAnswers.put("key-" + ORG_A, ProviderFailure.MODEL_NOT_FOUND);
         vendorAnswers.put("key-" + ORG_B, ProviderFailure.MODEL_NOT_FOUND);
 
         route(ORG_A, "openrouter/" + LLAMA, "sandbox/sandbox-1");
-        assertThat(modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil())
-                .isNull();
         route(ORG_B, "openrouter/" + LLAMA, "sandbox/sandbox-1");
 
-        Instant until = modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil();
-        assertThat(until).isNotNull();
-        assertThat(until).isBefore(Instant.now().plus(Duration.ofMinutes(16)));
+        assertThat(modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil())
+                .isNull();
         assertThat(registry.model(ORG_C.toString(), "openrouter", LLAMA).orElseThrow().isCurrentlyUnavailable())
-                .isTrue();
+                .isFalse();
     }
 
     @Test
@@ -551,22 +525,20 @@ class ProviderIsolationTest {
     }
 
     @Test
-    @DisplayName("a per-workspace note and a platform note merge to the later of the two")
-    void availabilityMergesToTheLaterNote() {
-        Instant soon = Instant.now().plus(Duration.ofMinutes(5));
+    @DisplayName("notes left from before are ignored: the model is offered and shown as available")
+    void oldNotesAreIgnored() {
         Instant later = Instant.now().plus(Duration.ofHours(2));
         ReflectionTestUtils.setField(
-                modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)), "unavailableUntil", soon);
+                modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)), "unavailableUntil", later);
         availabilityRows.put(
                 new WorkspaceModelAvailability.Key(ORG_A, "openrouter", LLAMA),
                 new WorkspaceModelAvailability(
                         ORG_A, "openrouter", LLAMA, later, "INSUFFICIENT_CREDIT", "out of credit"));
 
-        assertThat(modelView(ORG_A, LLAMA).unavailableUntil()).isEqualTo(later);
-        assertThat(modelView(ORG_A, LLAMA).unavailableReason()).isEqualTo("out of credit");
-        assertThat(modelView(ORG_B, LLAMA).unavailableUntil()).isEqualTo(soon);
-        assertThat(registry.model(ORG_A.toString(), "openrouter", LLAMA).orElseThrow().unavailableUntilEpochMs())
-                .isEqualTo(later.toEpochMilli());
+        assertThat(modelView(ORG_A, LLAMA).unavailableUntil()).isNull();
+        assertThat(registry.model(ORG_A.toString(), "openrouter", LLAMA).orElseThrow().isCurrentlyUnavailable())
+                .isFalse();
+        assertThat(route(ORG_A, "openrouter/" + LLAMA).provider()).isEqualTo("openrouter");
     }
 
     // ---- Fixtures --------------------------------------------------------------------------

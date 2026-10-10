@@ -1,3 +1,6 @@
+// @find: landing section, section header, reveal, scroll reveal, SectionHead, Reveal, LandingSection
+// @what: Section scaffolding, split header and reveal wrapper for the public page.
+// @flow: Used by every section
 import type { ReactElement, ReactNode } from 'react'
 import { Eyebrow } from '../../ui'
 import { revealStyle, useReveal } from '../../../hooks/useReveal'
@@ -25,6 +28,7 @@ export type LandingSectionProps = {
  * One band of the page. tabIndex -1 makes it a target for in-page links, so focus lands where
  * the page scrolled to; it is never in the tab order.
  */
+// @find: LandingSection component, section wrapper
 export function LandingSection({ id, labelledBy, children, className, tight }: LandingSectionProps): ReactElement {
   const classes = ['lp-section', tight ? 'lp-section-tight' : '', className ?? ''].filter(Boolean).join(' ')
   return (
@@ -48,6 +52,7 @@ export type RevealProps = {
 }
 
 /** Rises into place the first time it scrolls into view; under reduced motion it is simply there. */
+// @find: Reveal component, scroll reveal
 export function Reveal({ as, index, className, id, labelledBy, children }: RevealProps): ReactElement {
   const ref = useReveal<HTMLElement>()
   const Element = as ?? 'div'
@@ -76,6 +81,7 @@ export type SectionHeadProps = {
 }
 
 /** The split header: eyebrow and heading on the left, the lead and any aside on the right. */
+// @find: SectionHead component, section header
 export function SectionHead({ eyebrow, title, titleId, lead, aside, band }: SectionHeadProps): ReactElement {
   const hasLead = isPresent(lead)
   const hasAside = isPresent(aside)

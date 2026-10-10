@@ -1,3 +1,6 @@
+// @find: role, roles, custom role, system role, owner admin manager employee viewer, role permissions, permission version, Role entity, roles table
+// @what: JPA entity for a named set of permissions, either system-wide or per workspace.
+// @flow: Used by Roles repository, RoleController, GrantGuard, AuthService.resolveScope.
 package os.aiworkforce.identity.domain;
 
 import java.util.LinkedHashSet;
@@ -56,6 +59,7 @@ public class Role extends BaseEntity {
     @Column(name = "permission_code", nullable = false)
     private Set<String> permissions = new LinkedHashSet<>();
 
+    // @find: change role permissions, edit role, permission version bump
     public void replacePermissions(Set<String> codes) {
         if (!permissions.equals(codes)) {
             permissions = new LinkedHashSet<>(codes);
@@ -63,6 +67,7 @@ public class Role extends BaseEntity {
         }
     }
 
+    // @find: role within held permissions, grant check subset
     /** Whether every permission this role carries is in {@code held}: granting it widens nobody. */
     public boolean isWithin(Set<String> held) {
         return held.containsAll(permissions);

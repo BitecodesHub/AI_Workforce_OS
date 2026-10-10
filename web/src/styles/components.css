@@ -1,4 +1,9 @@
 /*
+ * @find: component styles, buttons, cards, forms, inputs, tables, dialogs, tags, notices, navbar, page layout, chat bubbles, console styles, shared ui css
+ * @what: The shared styles for every console component, drawn only from design tokens.
+ * @flow: Imports tokens.css; refined by polish/*.css
+ */
+/*
  * Component styles.
  *
  * Every rule below draws from tokens.css. Three things are worth stating because they are the
@@ -3193,6 +3198,15 @@ h5.md-heading {
   min-width: 0;
 }
 
+/* A one-line option (no description) sits in the middle of its row rather than at the top of it. */
+.question-option:not(:has(.question-option-description)) {
+  align-items: center;
+}
+
+.question-option:not(:has(.question-option-description)) input {
+  margin-top: 0;
+}
+
 .question-option-description {
   display: block;
   margin-top: 2px;
@@ -3683,4 +3697,36 @@ input[type='checkbox'][role='switch']:checked::before {
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-3);
+}
+
+/* ---- Workforce chat: queued messages ----
+ * A message sent while an answer is still being worked on waits here, after the thread, until it
+ * starts. It reads as not yet sent: a plain surface with a dashed edge rather than the filled
+ * bubble of a sent message.
+ */
+.chat-queue {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.chat-bubble-queued {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-style: dashed;
+  margin-left: auto;
+  color: var(--ink);
+}
+
+.chat-queued-editor {
+  width: 100%;
+  min-width: min(40ch, 70vw);
+  resize: vertical;
+}
+
+.chat-queued-status {
+  text-align: right;
 }

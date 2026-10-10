@@ -1,5 +1,9 @@
+// @find: tests for AttachmentChips, attachment chips, files being attached, upload progress, remove attachment, drop overlay, drag and drop files, composer attachments
+// @what: Automated tests for AttachmentChips.
+// @flow: Run with the web test runner; covers AttachmentChips.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { chipError } from '../../lib/attachments'
 import { AttachmentChips, AttachmentDropOverlay } from './AttachmentChips'
 import type { DraftAttachment } from './useAttachments'
 
@@ -41,5 +45,13 @@ describe('AttachmentChips', () => {
     expect(screen.queryByText('Drop files to attach them')).toBeNull()
     rerender(<AttachmentDropOverlay visible />)
     expect(screen.getByText('Drop files to attach them')).toBeInTheDocument()
+  })
+
+  it('does not repeat the file name the chip already shows in its reason', () => {
+    expect(chipError({ name: 'setup.exe', error: 'setup.exe is not a file type Chat can read.' })).toBe(
+      'This file is not a file type Chat can read.',
+    )
+    expect(chipError({ name: 'scan.pdf', error: 'This PDF has no text to read.' })).toBe('This PDF has no text to read.')
+    expect(chipError({ name: 'a.pdf' })).toBe('This file could not be attached.')
   })
 })

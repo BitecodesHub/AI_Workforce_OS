@@ -1,4 +1,9 @@
 /*
+ * @find: landing styles, approval gate demo, agent run demo, lp-run, lp-approval, home page
+ * @what: Styles for the approval-gate demo on the public home page.
+ * @flow: Imported by landing/index.css
+ */
+/*
  * Public home page: the approval-gate demo (owner: agent-run).
  *
  * Prefixes .lp-run-* and .lp-approval-*. Colours are tokens or color-mix over tokens; borders are

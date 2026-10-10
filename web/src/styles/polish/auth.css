@@ -1,4 +1,9 @@
 /*
+ * @find: polish styles, sign in, create workspace, accept invitation, auth card, auth shell, signed-out screens
+ * @what: Styles for the signed-out sign in, create workspace and accept invitation screens.
+ * @flow: Used by AuthShell and the auth routes; imported by polish/index.css
+ */
+/*
  * Signed-out screens: sign in, create a workspace, accept an invitation.
  *
  * One composition for all three. The brand is centred above the card and a short row of links is
@@ -771,8 +776,10 @@
     gap: var(--space-2);
   }
 
+  /* No side padding: on a 375px phone the five tiles are about 55px wide, and "Employee" needs
+     all of it to show in full instead of ending in an ellipsis. */
   .auth-role {
-    padding: var(--space-3) 2px;
+    padding: var(--space-3) 0;
   }
 
   .auth-role-avatar {

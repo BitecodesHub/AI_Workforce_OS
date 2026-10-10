@@ -1,3 +1,6 @@
+// @find: oauth state entity, oauth_states table, sign in state, pkce verifier ref, single use, expires, used at, csrf protection, connect with oauth
+// @what: Database entity for one pending OAuth sign-in: who started it, which connector, PKCE verifier reference and expiry.
+// @flow: Created by OAuthService.start; consumed by OAuthService.callback
 package os.aiworkforce.integrations.domain;
 
 import java.time.Instant;

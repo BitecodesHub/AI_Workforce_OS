@@ -1,3 +1,6 @@
+// @find: connector catalog, connectors list, integrations page, add connector dialog, available connectors, connector categories, setup steps, token label, credential fields, oauth connectors, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook, voice, live available, GET /api/integrations/connectors
+// @what: The data behind the Integrations page: every connector, its category, plain description, how to connect it and whether a live adapter exists.
+// @flow: Read by ConnectorService and IntegrationController; checked against registered servers by ConnectorCatalogTest
 package os.aiworkforce.mcp.catalog;
 
 import java.util.LinkedHashMap;
@@ -197,10 +200,12 @@ public class ConnectorCatalog {
                 null));
     }
 
+    // @find: list all connectors, connector catalog list
     public List<ConnectorInfo> all() {
         return List.copyOf(connectors.values());
     }
 
+    // @find: find connector by server name, look up connector
     public Optional<ConnectorInfo> find(String server) {
         return Optional.ofNullable(connectors.get(server));
     }

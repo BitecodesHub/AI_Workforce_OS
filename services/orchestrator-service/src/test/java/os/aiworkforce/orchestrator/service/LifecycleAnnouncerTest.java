@@ -1,3 +1,5 @@
+// @find: tests for lifecycle announcer, lifecycle announcer, goal cancelled, goal retried, question asked, after commit
+// @what: Unit and integration tests (8 cases) for lifecycle announcer, for example: listeners run only after commit; listeners run at once without atransaction; one listener failing does not stop the others; after commit swallows failures.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

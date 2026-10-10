@@ -1,3 +1,6 @@
+// @find: schedule history, past runs of a schedule, goals fired, run history, load older, ScheduleHistoryDialog, Schedules page
+// @what: The dialog listing every goal a schedule has fired, newest first, loaded a page at a time.
+// @flow: Opened from the Schedules route; uses useScheduleRunPages
 import { Button, Dialog, EmptyState, Notice, StatusTag, Time } from '../ui'
 import { EmptyIcon, QueryState } from '../ui/QueryState'
 import { describeApiError } from '../../lib/api'
@@ -9,6 +12,7 @@ import { flattenRunPages, useScheduleRunPages } from '../../lib/scheduleQueries'
  * it is set to do next. One page at a time, since a schedule that fires every few minutes has
  * thousands; older ones load when asked for.
  */
+// @find: schedule history dialog component, what a schedule has done
 export function ScheduleHistoryDialog({ schedule, onClose }: { schedule: Schedule | null; onClose: () => void }) {
   const runs = useScheduleRunPages(schedule?.id ?? '', { enabled: schedule !== null })
   // A failed older page keeps the runs already shown, with its own notice beneath them, rather

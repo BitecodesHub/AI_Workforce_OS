@@ -1,3 +1,6 @@
+// @find: tests for chat goal listener, chat, completed task appends answer, completed task from sandbox is marked, practice data is marked on the answer, stop notice does not repeat itself, failed task appends error, failed task with no code omits the key, goal with no conversation ignored, skipped ignored, ChatGoalListenerTest, ChatGoalListener
+// @what: Tests for ChatGoalListener in the orchestrator chat package (14 test methods).
+// @flow: Exercises ChatGoalListener
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,6 +86,7 @@ class ChatGoalListenerTest {
         return task;
     }
 
+    // @find: test completed task appends answer, chat goal listener
     @Test
     @DisplayName("a completed task appends an answer message carrying the task's result")
     void completedTaskAppendsAnswer() {
@@ -107,11 +111,13 @@ class ChatGoalListenerTest {
                 .containsEntry("taskId", task.getId().toString())
                 .containsEntry("runId", run.getId().toString())
                 .containsEntry("agentId", task.getAgentId().toString())
-                .containsEntry("sandbox", false);
+                .containsEntry("sandbox", false)
+                .doesNotContainKey("practiceData");
         assertThat(conversation.getMessageCount()).isEqualTo(1);
         assertThat(conversation.getLastMessagePreview()).isEqualTo("The email has been sent.");
     }
 
+    // @find: test completed task from sandbox is marked, chat goal listener
     @Test
     @DisplayName("the answer notes when it came from the offline sandbox provider")
     void completedTaskFromSandboxIsMarked() {
@@ -129,6 +135,34 @@ class ChatGoalListenerTest {
         assertThat(saved.getValue().getDetail()).containsEntry("sandbox", true);
     }
 
+    // @find: test practice data is marked on the answer, chat goal listener
+    @Test
+    @DisplayName("an answer whose tools ran on practice data says so, and one that did not carries no flag")
+    void practiceDataIsMarkedOnTheAnswer() {
+        Goal goal = goalFor(conversation.getId());
+        Task task = taskFor(goal, "The email has been sent.", null);
+        Run run = new Run();
+        run.setId(UUID.randomUUID());
+        when(runs.findFirstByTaskIdOrderByStartedAtDesc(task.getId())).thenReturn(Optional.of(run));
+        when(steps.usedPracticeData(run.getId())).thenReturn(true);
+
+        listener.onTaskFinished(goal, task, "completed");
+
+        ArgumentCaptor<ChatMessage> saved = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(messages).save(saved.capture());
+        assertThat(saved.getValue().getDetail()).containsEntry("practiceData", true);
+    }
+
+    // @find: test stop notice does not repeat itself, chat goal listener
+    @Test
+    @DisplayName("a stop notice says Stopped once, even when the reason already begins with it")
+    void stopNoticeDoesNotRepeatItself() {
+        assertThat(ChatGoalListener.stoppedText("Stopped from the chat.")).isEqualTo("Stopped from the chat.");
+        assertThat(ChatGoalListener.stoppedText("The budget ran out.")).isEqualTo("Stopped. The budget ran out.");
+        assertThat(ChatGoalListener.stoppedText(null)).isEqualTo("Stopped.");
+    }
+
+    // @find: test failed task appends error, chat goal listener
     @Test
     @DisplayName("a failed task appends an error message carrying the failure reason and, when known, a code")
     void failedTaskAppendsError() {
@@ -153,6 +187,7 @@ class ChatGoalListenerTest {
                 .containsEntry("code", "tool_refused");
     }
 
+    // @find: test failed task with no code omits the key, chat goal listener
     @Test
     @DisplayName("a failed task with no error step in its trace carries no code key at all")
     void failedTaskWithNoCodeOmitsTheKey() {
@@ -167,6 +202,7 @@ class ChatGoalListenerTest {
         assertThat(saved.getValue().getDetail()).doesNotContainKey("code");
     }
 
+    // @find: test goal with no conversation ignored, chat goal listener
     @Test
     @DisplayName("a goal with no conversation is ignored entirely")
     void goalWithNoConversationIgnored() {
@@ -178,6 +214,7 @@ class ChatGoalListenerTest {
         verify(messages, never()).save(any());
     }
 
+    // @find: test skipped ignored, chat goal listener
     @Test
     @DisplayName("a skipped task is not narrated - the goal's own status already shows it")
     void skippedIgnored() {
@@ -189,6 +226,7 @@ class ChatGoalListenerTest {
         verify(messages, never()).save(any());
     }
 
+    // @find: test cancelled narrated, chat goal listener
     @Test
     @DisplayName("a cancelled task appends a system notice saying the work was stopped, and why")
     void cancelledNarrated() {
@@ -206,6 +244,7 @@ class ChatGoalListenerTest {
         assertThat(message.getContent()).isEqualTo("Stopped: An approver rejected the action this run needed.");
     }
 
+    // @find: test goal cancelled appends notice, chat goal listener
     @Test
     @DisplayName("onGoalCancelled appends a stopped notice, unless the conversation is being deleted")
     void goalCancelledAppendsNotice() {
@@ -220,6 +259,7 @@ class ChatGoalListenerTest {
         assertThat(saved.getValue().getContent()).isEqualTo("Stopped. A person stopped every run in this workspace.");
     }
 
+    // @find: test no notice when the conversation is being deleted, chat goal listener
     @Test
     @DisplayName("noNoticeWhenTheConversationIsBeingDeleted")
     void noNoticeWhenTheConversationIsBeingDeleted() {
@@ -230,6 +270,7 @@ class ChatGoalListenerTest {
         verify(messages, never()).save(any());
     }
 
+    // @find: test goal retried names step and agent, chat goal listener
     @Test
     @DisplayName("onGoalRetried names the step and the agent it resumes from")
     void goalRetriedNamesStepAndAgent() {
@@ -250,6 +291,7 @@ class ChatGoalListenerTest {
                 .containsEntry("fromTaskId", fromTask.getId().toString());
     }
 
+    // @find: test question asked appends once and skips duplicate, chat goal listener
     @Test
     @DisplayName("onQuestionAsked appends a question message once, and skips a duplicate")
     void questionAskedAppendsOnceAndSkipsDuplicate() {
@@ -295,6 +337,7 @@ class ChatGoalListenerTest {
         verify(messages, org.mockito.Mockito.times(1)).save(any());
     }
 
+    // @find: test question with no conversation is ignored, chat goal listener
     @Test
     @DisplayName("a question with no conversation is never posted to chat")
     void questionWithNoConversationIsIgnored() {

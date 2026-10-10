@@ -1,3 +1,6 @@
+// @find: oauth adapter base, OAuth connectors, access token, refresh token, token renewal, reconnect required, gmail, google calendar, google drive, google sheets, outlook, teams, salesforce, bearer token, sign in again
+// @what: Base class for OAuth-backed vendor adapters: sends the bearer token, asks the connection store to renew it after a rejection, and flags connections that need reconnecting.
+// @flow: Extended by Gmail, Calendar, Drive, Sheets, Outlook, Teams and Salesforce adapters; calls TokenRefresher (implemented by integrations-service OAuthService)
 package os.aiworkforce.mcp.live;
 
 import java.time.LocalDate;

@@ -1,3 +1,5 @@
+// @find: tests for run controller, runs api, run trace, steps, cancel run, /api/runs
+// @what: Unit and integration tests (12 cases) for run controller, for example: unfiltered; carries goal and requester; manual run carries no goal; hidden work filtered in the query.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -110,6 +112,24 @@ class RunControllerTest {
 
         assertThat(view.goalId()).isNull();
         assertThat(view.requestedBy()).isNull();
+    }
+
+    @Test
+    @DisplayName("runs of private conversations the caller is not part of are left out in the query, so pages stay full")
+    void hiddenWorkFilteredInTheQuery() {
+        UUID hiddenConversation = UUID.randomUUID();
+        os.aiworkforce.orchestrator.chat.ConversationAccess access =
+                mock(os.aiworkforce.orchestrator.chat.ConversationAccess.class);
+        when(access.hiddenConversationIds(eq(ORG), any())).thenReturn(Set.of(hiddenConversation));
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "access", access);
+        when(runs.findVisible(
+                        eq(ORG), eq(false), eq("failed"), eq(true), any(), eq(Set.of(hiddenConversation)), any()))
+                .thenReturn(page(run("failed")));
+
+        assertThat(controller.list(0, 25, "failed", null))
+                .extracting(RunController.RunView::status)
+                .containsExactly("failed");
+        verify(runs, org.mockito.Mockito.never()).findByOrgIdAndStatusOrderByStartedAtDesc(any(), any(), any());
     }
 
     @Test

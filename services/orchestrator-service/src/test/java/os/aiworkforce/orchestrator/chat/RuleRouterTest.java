@@ -1,3 +1,6 @@
+// @find: tests for rule router, chat, synonym match wins, splits clauses and chains, tool server word adds score, repository requests go to engineering, tie asks rather than guesses, nothing scored offers every agent, at floor score still wins when unique, people and employment words route to hr, RuleRouterTest, RuleRouter
+// @what: Tests for RuleRouter in the orchestrator chat package (18 test methods).
+// @flow: Exercises RuleRouter
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +40,7 @@ class RuleRouterTest {
     private final List<Agent> agents = List.of(support, hr, engineering, research);
     private final Map<UUID, List<String>> noTools = Map.of();
 
+    // @find: test synonym match wins, rule router
     @Test
     @DisplayName("a synonym match sends the clause to the right agent, and names the words that matched")
     void synonymMatchWins() {
@@ -49,6 +53,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().matched()).contains("refund", "customer");
     }
 
+    // @find: test splits clauses and chains, rule router
     @Test
     @DisplayName("splits on 'then' and routes each clause to its own agent, in order")
     void splitsClausesAndChains() {
@@ -61,6 +66,7 @@ class RuleRouterTest {
         assertThat(result.steps().get(1).agent()).isEqualTo(support);
     }
 
+    // @find: test tool server word adds score, rule router
     @Test
     @DisplayName("a granted tool server's own word adds a small amount of signal")
     void toolServerWordAddsScore() {
@@ -72,6 +78,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().agent()).isEqualTo(engineering);
     }
 
+    // @find: test repository requests go to engineering, rule router
     @Test
     @DisplayName("a request about a repository goes to the Engineering Manager")
     void repositoryRequestsGoToEngineering() {
@@ -85,6 +92,7 @@ class RuleRouterTest {
         }
     }
 
+    // @find: test tie asks rather than guesses, rule router
     @Test
     @DisplayName("a tie between two equally-plausible agents asks rather than guesses")
     void tieAsksRatherThanGuesses() {
@@ -102,6 +110,7 @@ class RuleRouterTest {
                 .containsExactlyInAnyOrder(support, supportTwin);
     }
 
+    // @find: test nothing scored offers every agent, rule router
     @Test
     @DisplayName("nothing scoring at all offers every active agent as an alternative")
     void nothingScoredOffersEveryAgent() {
@@ -114,6 +123,7 @@ class RuleRouterTest {
         assertThat(result.alternatives()).allMatch(scored -> scored.score() == 0);
     }
 
+    // @find: test at floor score still wins when unique, rule router
     @Test
     @DisplayName("a score exactly at the floor still wins, as long as no other agent matches it")
     void atFloorScoreStillWinsWhenUnique() {
@@ -126,6 +136,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().matched()).containsExactly("operations");
     }
 
+    // @find: test people and employment words route to hr, rule router
     @Test
     @DisplayName("a plainly HR request routes to HR even when it never says HR")
     void peopleAndEmploymentWordsRouteToHr() {
@@ -139,6 +150,7 @@ class RuleRouterTest {
         }
     }
 
+    // @find: test paused agent excluded, rule router
     @Test
     @DisplayName("a paused agent is never offered, even when its words would otherwise win")
     void pausedAgentExcluded() {
@@ -152,6 +164,7 @@ class RuleRouterTest {
                 .doesNotContain(support);
     }
 
+    // @find: test fallback takes unmatched text, rule router
     @Test
     @DisplayName("a message nothing matches goes whole to the fallback rather than asking")
     void fallbackTakesUnmatchedText() {
@@ -168,6 +181,7 @@ class RuleRouterTest {
         assertThat(result.allFallback()).isTrue();
     }
 
+    // @find: test fallback is never scored, rule router
     @Test
     @DisplayName("the fallback is never scored, even when its own words would otherwise tie it with a specialist")
     void fallbackIsNeverScored() {
@@ -185,6 +199,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().fallback()).isFalse();
     }
 
+    // @find: test unmatched clause merges into routed step, rule router
     @Test
     @DisplayName("an unmatched clause merges into the routed step next to it rather than getting its own step")
     void unmatchedClauseMergesIntoRoutedStep() {
@@ -196,6 +211,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().instruction()).isEqualTo("think it over. email the candidate");
     }
 
+    // @find: test fully unmatched is one fallback step, rule router
     @Test
     @DisplayName("a message split into three unmatched clauses is still one fallback step, not three")
     void fullyUnmatchedIsOneFallbackStep() {
@@ -210,6 +226,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().instruction()).isEqualTo(text);
     }
 
+    // @find: test tie still asks and lists fallback last, rule router
     @Test
     @DisplayName("a tie still asks, and lists the fallback last with a score of zero")
     void tieStillAsksAndListsFallbackLast() {
@@ -228,6 +245,7 @@ class RuleRouterTest {
         assertThat(result.alternatives().get(2).score()).isZero();
     }
 
+    // @find: test paused fallback is ignored, rule router
     @Test
     @DisplayName("a paused fallback is treated as no fallback at all")
     void pausedFallbackIsIgnored() {
@@ -245,6 +263,7 @@ class RuleRouterTest {
         assertThat(result.steps()).isEmpty();
     }
 
+    // @find: test prepare does not match pr, rule router
     @Test
     @DisplayName("'prepare' does not match the engineering synonym 'pr', so it falls back rather than misrouting")
     void prepareDoesNotMatchPr() {
@@ -259,6 +278,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().fallback()).isTrue();
     }
 
+    // @find: test tickets still matches ticket, rule router
     @Test
     @DisplayName("the plural 'tickets' still matches the support synonym 'ticket'")
     void ticketsStillMatchesTicket() {
@@ -269,6 +289,7 @@ class RuleRouterTest {
         assertThat(result.steps().getFirst().matched()).contains("ticket");
     }
 
+    // @find: test doctor does not match doc, rule router
     @Test
     @DisplayName("'doctor' does not match the drive tool synonym 'doc'")
     void doctorDoesNotMatchDoc() {

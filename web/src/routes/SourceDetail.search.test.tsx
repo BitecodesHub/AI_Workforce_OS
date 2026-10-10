@@ -1,3 +1,6 @@
+// @find: tests for searching inside a knowledge source, search passages, read-only, vitest, SourceDetail component tests, Source page
+// @what: Automated tests that check the searching inside a knowledge source screen (/knowledge/:id) behaves as users expect.
+// @flow: Renders SourceDetail from SourceDetail.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -303,10 +306,12 @@ describe('who can search a source', () => {
     const box = screen.getByLabelText('Only people who manage knowledge can search this source')
     expect(box).toBeChecked()
 
-    // Letting everyone search widens access, so it asks first.
+    // Letting everyone search widens access, so it asks first, starting on the choice that keeps
+    // it restricted: Enter pressed out of habit must not share the documents.
     await act(async () => {
       fireEvent.click(box)
     })
+    expect(await screen.findByRole('button', { name: 'Keep it restricted' })).toHaveFocus()
     await act(async () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Let everyone search' }))
     })

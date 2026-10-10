@@ -1,3 +1,5 @@
+// @find: test keys helper, EC key pair, PEM, signing key store fake, test fixtures for token tests
+// @what: Test helper providing signing keys and an in-memory key table.
 package os.aiworkforce.identity.service;
 
 import static org.mockito.ArgumentMatchers.any;

@@ -1,3 +1,6 @@
+// @find: auth api, sign in, login, register, sign up, refresh, sign out, logout, password reset, /api/auth, refresh cookie, Sign in page, AuthController, authentication
+// @what: REST endpoints for register, sign-in, refresh, sign-out and password reset redemption (no token needed).
+// @flow: Calls AuthService and PasswordResetService; used by the web Sign in page.
 package os.aiworkforce.identity.web;
 
 import java.net.InetAddress;
@@ -93,6 +96,7 @@ public class AuthController {
             String email,
             String role) {}
 
+    // @find: register, sign up, POST /api/auth/register
     @PostMapping("/register")
     @Operation(summary = "Create an account")
     public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request) {
@@ -104,6 +108,7 @@ public class AuthController {
                 .build();
     }
 
+    // @find: sign in, login, POST /api/auth/sign-in
     @PostMapping("/sign-in")
     @Operation(summary = "Sign in and start a session")
     public ResponseEntity<SessionResponse> signIn(@Valid @RequestBody SignInRequest request, HttpServletRequest http) {
@@ -116,6 +121,7 @@ public class AuthController {
         return respond(result);
     }
 
+    // @find: refresh session, POST /api/auth/refresh
     @PostMapping("/refresh")
     @Operation(summary = "Exchange a refresh token for a new session")
     public ResponseEntity<SessionResponse> refresh(
@@ -130,6 +136,7 @@ public class AuthController {
         return respond(result);
     }
 
+    // @find: sign out, logout, POST /api/auth/sign-out
     @PostMapping("/sign-out")
     @Operation(summary = "End the session")
     public ResponseEntity<Void> signOut(
@@ -145,6 +152,7 @@ public class AuthController {
                 .build();
     }
 
+    // @find: redeem password reset link, POST /api/auth/password-reset
     /**
      * Sets a new password from a reset link an administrator created.
      *

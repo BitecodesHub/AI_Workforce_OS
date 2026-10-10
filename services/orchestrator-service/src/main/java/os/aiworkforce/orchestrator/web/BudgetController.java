@@ -1,3 +1,6 @@
+// @find: budget api, spending cap, monthly budget, daily budget, set budget, get budget, /api/orchestrator/budget, Budget settings page
+// @what: REST endpoints to read and update the workspace's spending caps.
+// @flow: Called by the Budget settings UI; data enforced by JpaBudgetGuard
 package os.aiworkforce.orchestrator.web;
 
 import java.math.BigDecimal;
@@ -112,6 +115,7 @@ public class BudgetController {
             @DecimalMin("0") @DecimalMax("1000000000") BigDecimal perAgentDailyCap,
             @Pattern(regexp = "stop|sandbox") String onExhausted) {}
 
+    // @find: get budget, GET /api/orchestrator/budget
     @GetMapping
     @RequiresPermission(Permission.Codes.BUDGET_READ)
     @Transactional(readOnly = true)
@@ -122,6 +126,7 @@ public class BudgetController {
         return view(budget, guard.freshMonthToDate(orgId));
     }
 
+    // @find: update budget, set spending cap, PUT /api/orchestrator/budget
     @PutMapping
     @RequiresPermission(Permission.Codes.BUDGET_MANAGE)
     @Transactional

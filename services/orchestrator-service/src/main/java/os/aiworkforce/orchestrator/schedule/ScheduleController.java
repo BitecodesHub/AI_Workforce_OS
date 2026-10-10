@@ -1,3 +1,6 @@
+// @find: schedules api, create schedule, update schedule, delete schedule, pause schedule, resume schedule, run now, change owner, preview schedule, list schedules, schedule runs, /api/schedules, Schedules page, New schedule dialog, ScheduleController
+// @what: REST endpoints behind the Schedules page.
+// @flow: Calls ScheduleService; views built by toView
 package os.aiworkforce.orchestrator.schedule;
 
 import java.time.Instant;
@@ -118,6 +121,7 @@ public class ScheduleController {
     /** One page of a schedule's history, newest first, and whether an older page follows. */
     public record ScheduleRunsPage(List<ScheduleRunView> runs, int page, int size, long total, boolean hasMore) {}
 
+    // @find: preview schedule text, check when it will run, POST /api/schedules/preview
     @PostMapping("/preview")
     @RequiresPermission(Permission.Codes.TASK_READ)
     @Operation(summary = "Read a schedule phrase back, without saving anything")
@@ -132,6 +136,7 @@ public class ScheduleController {
                 result.nextRuns());
     }
 
+    // @find: list schedules, GET /api/schedules, Schedules page
     @GetMapping
     @RequiresPermission(Permission.Codes.TASK_READ)
     @Operation(summary = "Every schedule in this workspace")
@@ -139,6 +144,7 @@ public class ScheduleController {
         return service.list(orgId()).stream().map(this::toView).toList();
     }
 
+    // @find: create schedule, new schedule, POST /api/schedules, New schedule dialog
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -149,6 +155,7 @@ public class ScheduleController {
         return toView(schedule);
     }
 
+    // @find: update schedule, edit schedule, PUT /api/schedules/{id}
     @PutMapping("/{scheduleId}")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
     @Operation(summary = "Change a schedule's name, agent, instruction or timing")
@@ -164,6 +171,7 @@ public class ScheduleController {
         return toView(schedule);
     }
 
+    // @find: change schedule owner, reassign schedule, PUT /api/schedules/{id}/owner
     @PutMapping("/{scheduleId}/owner")
     @RequiresPermission(Permission.Codes.TASK_CANCEL)
     @Operation(summary = "Hand a schedule to another person, who it then runs as")
@@ -171,6 +179,7 @@ public class ScheduleController {
         return toView(service.changeOwner(orgId(), scheduleId, request.userId(), RequestContext.requireActor()));
     }
 
+    // @find: pause schedule, stop schedule, POST /api/schedules/{id}/pause
     @PostMapping("/{scheduleId}/pause")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
     @Operation(summary = "Pause a schedule so it is skipped until resumed")
@@ -178,6 +187,7 @@ public class ScheduleController {
         return toView(service.pause(orgId(), scheduleId, RequestContext.requireActor()));
     }
 
+    // @find: resume schedule, restart schedule, POST /api/schedules/{id}/resume
     @PostMapping("/{scheduleId}/resume")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
     @Operation(summary = "Resume a paused schedule")
@@ -185,6 +195,7 @@ public class ScheduleController {
         return toView(service.resume(orgId(), scheduleId, RequestContext.requireActor()));
     }
 
+    // @find: run schedule now, run now button, POST /api/schedules/{id}/run-now
     @PostMapping("/{scheduleId}/run-now")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
     @Operation(summary = "Fire a schedule immediately, as the caller, without waiting for its next run")
@@ -192,6 +203,7 @@ public class ScheduleController {
         return toView(service.runNow(orgId(), scheduleId, RequestContext.requireActor()));
     }
 
+    // @find: delete schedule, remove schedule, DELETE /api/schedules/{id}
     @DeleteMapping("/{scheduleId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -207,6 +219,7 @@ public class ScheduleController {
      * when, and a schedule that fires every few minutes has thousands of them a month, so each
      * page is one indexed query rather than one per goal and per task.
      */
+    // @find: schedule run history, past runs of a schedule, GET /api/schedules/{id}/runs
     @GetMapping("/{scheduleId}/runs")
     @RequiresPermission(Permission.Codes.TASK_READ)
     @Operation(summary = "The goals this schedule has fired, newest first, a page at a time")

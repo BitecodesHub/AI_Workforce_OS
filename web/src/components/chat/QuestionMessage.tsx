@@ -1,6 +1,10 @@
+// @find: agent question in chat, clarifying question, answer question, pending question, question message
+// @what: A question message in the thread wrapped around QuestionCard.
+// @flow: Used by MessageItem; uses run/QuestionCard.
 import { QuestionCard } from '../run/QuestionCard'
 import type { Agent, ChatMessage, RunQuestion } from '../../lib/queries'
 
+// @find: QuestionMessage, question message, agent question in chat, clarifying question, answer question, pending question
 /**
  * A question message in the thread: WP3's `QuestionCard`, wrapped so a pending one reads the
  * "reply in your own words" affordance into the composer instead of a form of its own here (D14).

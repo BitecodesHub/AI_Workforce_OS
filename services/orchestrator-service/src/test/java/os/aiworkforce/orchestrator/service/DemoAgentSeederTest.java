@@ -1,3 +1,5 @@
+// @find: tests for demo agent seeder, demo agents, seed agents, demo workspace, startup seeding
+// @what: Unit and integration tests (6 cases) for demo agent seeder, for example: fresh seed uses new prompts; a failing upgrade does not throw or undo the seed; untouched legacy prompt is upgraded once; edited prompt is left alone.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,6 @@
+// @find: tests for model catalog service, catalog, returns only tool capable models free first and saves them, all includes models that cannot call tools, sends the workspace key as the provider expects, serves the cache for six hours and refresh asks again, caches per workspace, falls back to saved models when the provider fails, falls back when the provider cannot be reached, asks for akey before calling aprovider that needs one, ModelCatalogServiceTest, ModelCatalogService
+// @what: Tests for ModelCatalogService in the orchestrator catalog package (13 test methods).
+// @flow: Exercises ModelCatalogService
 package os.aiworkforce.orchestrator.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -122,6 +125,7 @@ class ModelCatalogServiceTest {
         when(credentials.lookup(ORG.toString(), "provider:" + provider)).thenReturn(new CredentialResolver.Found(KEY));
     }
 
+    // @find: test returns only tool capable models free first and saves them, model catalog service
     @Test
     void returnsOnlyToolCapableModelsFreeFirstAndSavesThem() throws IOException {
         serve("https://openrouter.ai/api/v1/models", "openrouter");
@@ -143,6 +147,7 @@ class ModelCatalogServiceTest {
         assertThat(headersSent.get(0)).doesNotContainKey("Authorization");
     }
 
+    // @find: test all includes models that cannot call tools, model catalog service
     @Test
     void allIncludesModelsThatCannotCallTools() throws IOException {
         serve("https://openrouter.ai/api/v1/models", "openrouter");
@@ -153,6 +158,7 @@ class ModelCatalogServiceTest {
         assertThat(view.models()).anyMatch(option -> !option.toolCalling());
     }
 
+    // @find: test sends the workspace key as the provider expects, model catalog service
     @Test
     void sendsTheWorkspaceKeyAsTheProviderExpects() throws IOException {
         serve("https://api.groq.com/openai/v1/models", "groq");
@@ -173,6 +179,7 @@ class ModelCatalogServiceTest {
         assertThat(requests).noneMatch(uri -> uri.toString().contains(KEY));
     }
 
+    // @find: test serves the cache for six hours and refresh asks again, model catalog service
     @Test
     void servesTheCacheForSixHoursAndRefreshAsksAgain() throws IOException {
         serve("https://integrate.api.nvidia.com/v1/models", "nvidia");
@@ -195,6 +202,7 @@ class ModelCatalogServiceTest {
         assertThat(requests).hasSize(3);
     }
 
+    // @find: test caches per workspace, model catalog service
     @Test
     void cachesPerWorkspace() throws IOException {
         serve("https://integrate.api.nvidia.com/v1/models", "nvidia");
@@ -208,6 +216,7 @@ class ModelCatalogServiceTest {
         assertThat(requests).hasSize(2);
     }
 
+    // @find: test falls back to saved models when the provider fails, model catalog service
     @Test
     void fallsBackToSavedModelsWhenTheProviderFails() {
         responses.put("https://openrouter.ai/api/v1/models", new ModelListHttp.Response(503, "{\"error\":\"" + KEY + "\"}"));
@@ -232,6 +241,7 @@ class ModelCatalogServiceTest {
         verify(store, never()).saveDiscovered(any(), any(), any());
     }
 
+    // @find: test falls back when the provider cannot be reached, model catalog service
     @Test
     void fallsBackWhenTheProviderCannotBeReached() {
         unreachable = true;
@@ -242,6 +252,7 @@ class ModelCatalogServiceTest {
         assertThat(view.message()).isEqualTo("Couldn't refresh the list from NVIDIA NIM; showing saved models.");
     }
 
+    // @find: test asks for akey before calling aprovider that needs one, model catalog service
     @Test
     void asksForAKeyBeforeCallingAProviderThatNeedsOne() {
         CatalogueView view = service.list(ORG, "groq", false, false);
@@ -251,6 +262,7 @@ class ModelCatalogServiceTest {
         assertThat(requests).isEmpty();
     }
 
+    // @find: test borrows seeded names and prices when the listing has none, model catalog service
     @Test
     void borrowsSeededNamesAndPricesWhenTheListingHasNone() throws IOException {
         serve("https://api.groq.com/openai/v1/models", "groq");
@@ -266,6 +278,95 @@ class ModelCatalogServiceTest {
                 .orElseThrow();
         assertThat(llama.displayName()).isEqualTo("Llama 3.3 70B");
         assertThat(llama.pricePerMTokIn()).isEqualByComparingTo(new BigDecimal("0.59"));
+    }
+
+    // ---- Amazon Bedrock ------------------------------------------------------------------------
+
+    private static final String BEDROCK_KEYS = "{\"type\":\"access_key\",\"accessKeyId\":\"AKIAIOSFODNN7EXAMPLE\","
+            + "\"secretAccessKey\":\"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY\",\"region\":\"eu-west-1\"}";
+
+    private void bedrock() {
+        provider("bedrock", "AWS Bedrock", "BEDROCK", "");
+        when(credentials.lookup(ORG.toString(), "provider:bedrock")).thenReturn(new CredentialResolver.Found(BEDROCK_KEYS));
+    }
+
+    // @find: test reads bedrocks live list for the credentials region signed, model catalog service
+    @Test
+    void readsBedrocksLiveListForTheCredentialsRegionSigned() throws IOException {
+        bedrock();
+        serve("https://bedrock.eu-west-1.amazonaws.com/foundation-models", "bedrock-foundation");
+        serve("https://bedrock.eu-west-1.amazonaws.com/inference-profiles", "bedrock-profiles");
+
+        CatalogueView view = service.list(ORG, "bedrock", false, false);
+
+        assertThat(view.source()).isEqualTo(Source.live);
+        assertThat(view.freeCount()).isZero();
+        assertThat(view.total()).isEqualTo(10);
+        assertThat(view.models()).extracting(ModelOption::id).contains("eu.anthropic.claude-sonnet-4-20250514-v1:0");
+        assertThat(requests).extracting(URI::toString).containsExactly(
+                "https://bedrock.eu-west-1.amazonaws.com/foundation-models?byOutputModality=TEXT",
+                "https://bedrock.eu-west-1.amazonaws.com/inference-profiles?maxResults=1000&typeEquals=SYSTEM_DEFINED");
+        assertThat(headersSent.get(0).get("Authorization"))
+                .startsWith("AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20261006/eu-west-1/bedrock/aws4_request");
+        assertThat(headersSent).allSatisfy(headers -> assertThat(headers.values().toString()).doesNotContain("wJalr"));
+        verify(store).saveDiscovered(eq("bedrock"), anyList(), eq(now));
+    }
+
+    // @find: test lists bedrocks on demand models when profiles cannot be read, model catalog service
+    @Test
+    void listsBedrocksOnDemandModelsWhenProfilesCannotBeRead() throws IOException {
+        bedrock();
+        serve("https://bedrock.eu-west-1.amazonaws.com/foundation-models", "bedrock-foundation");
+        responses.put("https://bedrock.eu-west-1.amazonaws.com/inference-profiles", new ModelListHttp.Response(403, "{}"));
+
+        CatalogueView view = service.list(ORG, "bedrock", false, false);
+
+        assertThat(view.source()).isEqualTo(Source.live);
+        assertThat(view.models()).extracting(ModelOption::id)
+                .contains("amazon.nova-micro-v1:0")
+                .noneMatch(id -> id.startsWith("eu."));
+    }
+
+    // @find: test falls back to saved bedrock models when aws refuses the list, model catalog service
+    @Test
+    void fallsBackToSavedBedrockModelsWhenAwsRefusesTheList() {
+        bedrock();
+        responses.put("https://bedrock.eu-west-1.amazonaws.com/foundation-models", new ModelListHttp.Response(403, "{}"));
+        when(models.findByProviderIdAndEnabledTrue("bedrock"))
+                .thenReturn(List.of(model("bedrock", "amazon.nova-micro-v1:0", "Nova Micro", "seed", false, "0.035", "0.14")));
+
+        CatalogueView view = service.list(ORG, "bedrock", true, false);
+
+        assertThat(view.source()).isEqualTo(Source.saved);
+        assertThat(view.message()).isEqualTo("Couldn't refresh the list from AWS Bedrock; showing saved models.");
+        assertThat(view.models()).extracting(ModelOption::id).containsExactly("amazon.nova-micro-v1:0");
+    }
+
+    // @find: test offers bedrock embedding models and falls back to the saved ones, model catalog service
+    @Test
+    void offersBedrockEmbeddingModelsAndFallsBackToTheSavedOnes() throws IOException {
+        bedrock();
+        LlmProviderEntity entity = registry.workspaceProvider(ORG, "bedrock").orElseThrow().entity();
+        when(registry.workspaceProviders(ORG)).thenReturn(List.of(new WorkspaceProvider(entity, true, "valid", null)));
+        serve("https://bedrock.eu-west-1.amazonaws.com/foundation-models?byOutputModality=EMBEDDING", "bedrock-embeddings");
+
+        ModelCatalogService.EmbeddingCatalogue live = service.embeddingModels(ORG, false);
+        assertThat(live.models()).extracting(ModelCatalogService.EmbeddingOption::id)
+                .containsExactlyInAnyOrder("amazon.titan-embed-text-v2:0", "cohere.embed-multilingual-v3");
+        assertThat(live.notes()).isEmpty();
+
+        // Refused (an API key or a narrow policy without bedrock:ListFoundationModels): the saved rows.
+        service.clear();
+        responses.clear();
+        LlmModelEntity titan = model("bedrock", "amazon.titan-embed-text-v2:0", "Titan Text Embeddings V2", "seed", false, "0.02", "0");
+        ReflectionTestUtils.setField(titan, "maxOutputTokens", 1);
+        ReflectionTestUtils.setField(titan, "supportsTools", false);
+        when(models.findByProviderIdAndEnabledTrue("bedrock")).thenReturn(List.of(titan));
+
+        ModelCatalogService.EmbeddingCatalogue saved = service.embeddingModels(ORG, true);
+        assertThat(saved.models()).extracting(ModelCatalogService.EmbeddingOption::id)
+                .containsExactly("amazon.titan-embed-text-v2:0");
+        assertThat(saved.notes()).containsExactly("Couldn't read the embedding models of AWS Bedrock just now.");
     }
 
     private static LlmModelEntity model(

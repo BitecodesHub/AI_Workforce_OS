@@ -1,3 +1,6 @@
+// @find: analytics, GET /api/analytics, activity last 30 days, dashboard numbers, daily activity, usage counts, Analytics page, activity overview
+// @what: Serves the workspace activity summary for the last 30 days, computed from audit entries.
+// @flow: Reads AuditEvents; shown on the Analytics page
 package os.aiworkforce.analytics.web;
 
 import java.time.Duration;
@@ -50,6 +53,7 @@ public class AnalyticsController {
             List<ActionCountView> byAction,
             List<OutcomeCountView> byOutcome) {}
 
+    // @find: GET /api/analytics, summary, endpoint, analytics
     @GetMapping
     @RequiresPermission(Permission.Codes.ANALYTICS_READ)
     @Operation(summary = "Activity for this workspace over the last 30 days, derived from the audit log")

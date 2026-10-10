@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# @find: dev backend, run services locally, without docker, start services, stop services, status, with-gateway, local postgres, DB_PORT, run dir, log dir, jar copies, health check
+# @what: Runs the seven business services (and optionally the gateway) locally from built jars without Docker.
+# @flow: Called by make dev-backend, dev-status and dev-stop
 #
 # Runs the seven business services locally, without Docker, and optionally the gateway.
 #

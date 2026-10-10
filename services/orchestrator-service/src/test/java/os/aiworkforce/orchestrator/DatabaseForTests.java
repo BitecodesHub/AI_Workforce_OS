@@ -1,3 +1,6 @@
+// @find: tests for orchestrator database, test database, testcontainers, postgres for tests, flyway in tests, DatabaseForTests, shared test fixture
+// @what: Test helper that starts the database the orchestrator persistence tests run against.
+// @flow: Used by the persistence tests
 package os.aiworkforce.orchestrator;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;

@@ -1,3 +1,9 @@
+// @find: budget, spending cap, monthly cap, per run cap, per agent daily cap, cost limit, spend limit, budget exhausted, offline model fallback, sandbox degrade, budgets table, Budget entity, Usage and budget settings
+// @what: Entity holding a workspace's spending limits (monthly, per run, per agent per day) and what to do when exhausted.
+// @flow: Stored by Budgets; spend is summed from llm_usage via Usage; enforced by the run engine before a model call.
+// @find: budget, spending cap, monthly cap, per run cap, per agent daily cap, cost limit, spend limit, budget exhausted, offline model fallback, sandbox degrade, budgets table, Budget entity, Usage and budget settings
+// @what: Entity holding a workspace's spending limits (monthly, per run, per agent per day) and what to do when exhausted.
+// @flow: Stored by Budgets; spend is summed from llm_usage via Usage; enforced by the run engine before a model call.
 package os.aiworkforce.orchestrator.domain;
 
 import java.math.BigDecimal;
@@ -80,11 +86,15 @@ public class Budget extends BaseEntity {
         this.onExhausted = onExhausted;
     }
 
+    // @find: budget degrades to sandbox, offline model when cap reached
+    // @find: budget degrades to sandbox, offline model when cap reached
     /** Whether the workspace chose the offline model over stopping when a cap is reached. */
     public boolean degradesToSandbox() {
         return ON_EXHAUSTED_SANDBOX.equals(onExhausted);
     }
 
+    // @find: has any spending cap set
+    // @find: has any spending cap set
     /** True when at least one cap is set, so there is something to enforce. */
     public boolean hasAnyCap() {
         return monthlyCap != null || perRunCap != null || perAgentDailyCap != null;

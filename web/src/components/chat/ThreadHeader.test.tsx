@@ -1,3 +1,6 @@
+// @find: tests for ThreadHeader, thread header, conversation title, rename conversation, who is in conversation, private pill, add people, details mode, chat top bar
+// @what: Automated tests for ThreadHeader.
+// @flow: Run with the web test runner; covers ThreadHeader.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { Conversation } from '../../lib/queries'

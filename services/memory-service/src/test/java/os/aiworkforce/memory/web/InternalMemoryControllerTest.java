@@ -1,3 +1,5 @@
+// @find: tests for internal memory controller, POST /internal/memory/episodes, service token only, unknown kind rejected
+// @what: Checks only services can record episodes, into their own workspace, with valid kinds.
 package os.aiworkforce.memory.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

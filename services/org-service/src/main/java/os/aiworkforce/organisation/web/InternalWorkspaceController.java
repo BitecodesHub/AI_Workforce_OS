@@ -1,3 +1,6 @@
+// @find: internal workspace lookup, GET /internal/workspaces/{workspaceId}, workspace name and timezone for services, service-only endpoint
+// @what: Internal endpoint that lets sibling services read a workspace, refusing people and API keys.
+// @flow: Reads from Organisations; reuses WorkspaceController.toView.
 package os.aiworkforce.organisation.web;
 
 import java.util.UUID;
@@ -35,6 +38,7 @@ public class InternalWorkspaceController {
         this.organisations = organisations;
     }
 
+    // @find: get workspace for service, GET /internal/workspaces/{workspaceId}
     @GetMapping("/{workspaceId}")
     @Operation(summary = "Internal: one workspace, for a sibling service")
     public WorkspaceController.WorkspaceView get(@PathVariable UUID workspaceId) {

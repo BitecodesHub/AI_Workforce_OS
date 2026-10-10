@@ -1,3 +1,5 @@
+// @find: tests for sign in transactions, failed login committed, sign out everywhere, change password, reset link closed, signing key
+// @what: Integration tests that deliberate refusals keep their database effects.
 package os.aiworkforce.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,6 +20,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -34,6 +37,7 @@ import os.aiworkforce.identity.repository.Users;
 import os.aiworkforce.platform.config.PlatformProperties;
 import os.aiworkforce.platform.crypto.EnvelopeEncryptionService;
 import os.aiworkforce.platform.error.ApiException;
+import os.aiworkforce.platform.web.audit.AuditClient;
 import os.aiworkforce.platform.web.persistence.JpaAuditingConfig;
 
 /**
@@ -72,6 +76,10 @@ class AuthTransactionTest {
     @TestConfiguration
     @EnableConfigurationProperties(PlatformProperties.class)
     static class Wiring {}
+
+    /** AuthService records sign-in events; the audit service is not what this test is about. */
+    @MockitoBean
+    private AuditClient audit;
 
     @Autowired
     private AuthService auth;

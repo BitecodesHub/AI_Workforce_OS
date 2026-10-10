@@ -1,3 +1,6 @@
+// @find: connections repository, find connection by server, list connections, connector connection lookup, database access
+// @what: Spring Data repository for connections, scoped to the workspace.
+// @flow: Used by ConnectorService and OAuthService
 package os.aiworkforce.integrations.repository;
 
 import java.time.Instant;

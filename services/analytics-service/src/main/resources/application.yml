@@ -1,3 +1,6 @@
+# @find: analytics service config, application.yml, port, database url, flyway, schema, audit settings, verify cron, imports platform defaults
+# @what: Runtime configuration of analytics-service: port, database, migrations and audit settings.
+# @flow: Imports platform-core platform-defaults.yml
 # Read models, dashboards and the audit projection.
 #
 # This file holds only what belongs to this service. Everything shared - security, resilience,

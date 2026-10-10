@@ -1,3 +1,6 @@
+// @find: append message to conversation, message position, conversation lock, version conflict, ChatAppender, add chat message, safe append, message ordering
+// @what: The single safe way to append a message to a conversation, locking the conversation row so positions never collide.
+// @flow: Called by CoordinatorService and ChatGoalListener whenever a message is stored.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.Map;
@@ -52,6 +55,7 @@ public class ChatAppender {
      * current even when this transaction had already loaded it; a stale managed copy would fail
      * its version check on save.
      */
+    // @find: lock conversation row, lock conversation for update
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<Conversation> lock(UUID orgId, UUID conversationId) {
         entityManager.flush();
@@ -61,6 +65,7 @@ public class ChatAppender {
     }
 
     /** Appends one message at the next position of a conversation already locked by {@link #lock}. */
+    // @find: append chat message, store message in conversation, new message position
     @Transactional(propagation = Propagation.MANDATORY)
     public ChatMessage append(
             Conversation locked,

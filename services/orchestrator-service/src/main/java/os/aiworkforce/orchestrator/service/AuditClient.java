@@ -1,3 +1,6 @@
+// @find: audit client, audit log, record audit event, audit trail, analytics-service audit, internal HTTP audit call, who did what, AuditClient.record
+// @what: Sends audit entries for agent and approval actions to the analytics service over a direct internal HTTP call.
+// @flow: Called by services and controllers after a change; calls analytics-service via InternalTokenProvider
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -50,6 +53,7 @@ public class AuditClient {
             String outcome,
             Map<String, Object> detail) {}
 
+    // @find: record audit event, write audit entry
     /**
      * Records one entry. Never throws: see the class-level note on why a delivery failure here
      * must not propagate to the caller.

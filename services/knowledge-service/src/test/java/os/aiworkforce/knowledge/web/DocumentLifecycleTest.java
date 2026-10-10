@@ -1,7 +1,10 @@
+// @find: tests for document lifecycle, upload, re-upload, replace document, keep both, update document, delete document, delete source, reindex, source create, knowledge base end to end, citations
+// @what: Walks a document through the API: uploaded, replaced by an edited copy, kept beside the old one, reindexed and deleted.
 package os.aiworkforce.knowledge.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -185,6 +188,18 @@ class DocumentLifecycleTest {
         return text.toString();
     }
 
+    /** A source on a real embedding model, so its passages go to the (mocked) vector store. */
+    private UUID createMeaningSource(String name) throws Exception {
+        UUID id = createSource(name);
+        sources.findById(id).ifPresent(source -> {
+            source.setEmbeddingProvider("openai");
+            source.setEmbeddingModel("text-embedding-3-small");
+            sources.save(source);
+        });
+        return id;
+    }
+
+    /** A source as one is created today: on the offline sandbox's embeddings. */
     private UUID createSource(String name) throws Exception {
         String body = mvc.perform(post("/api/sources")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -376,10 +391,24 @@ class DocumentLifecycleTest {
     }
 
     @Test
+    @DisplayName("a sandbox source never writes vectors, so a vector store that is down raises no warning")
+    void sandboxSourceSkipsTheVectorStore() throws Exception {
+        doThrow(new IllegalStateException("connection refused")).when(vectors).upsert(anyString(), anyList());
+        UUID sourceId = createSource("Handbook");
+
+        upload(sourceId, "leave.txt", paragraphs("Annual leave is 25 days", 2))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.vectorWarning").doesNotExist());
+
+        verify(vectors, never()).upsert(anyString(), anyList());
+        assertThat(sources.findById(sourceId).orElseThrow().getLastError()).isNull();
+    }
+
+    @Test
     @DisplayName("with the vector store down a file is still indexed for keyword search, and says so")
     void vectorStoreDown() throws Exception {
         doThrow(new IllegalStateException("connection refused")).when(vectors).upsert(anyString(), anyList());
-        UUID sourceId = createSource("Policies");
+        UUID sourceId = createMeaningSource("Policies");
 
         upload(sourceId, LEAVE, V2)
                 .andExpect(status().isOk())
@@ -394,9 +423,33 @@ class DocumentLifecycleTest {
     }
 
     @Test
+    @DisplayName("an embedding model that cannot be used is named as the cause, never the vector store or a URL")
+    void embeddingRefusedIsReportedPlainly() throws Exception {
+        when(embeddings.embed(any(), anyString(), anyString(), anyList()))
+                .thenThrow(new EmbeddingService.EmbeddingRefused(
+                        "gemini", "text-embedding-004", "That provider has not been configured for this workspace."));
+        UUID sourceId = createMeaningSource("Policies");
+
+        upload(sourceId, LEAVE, V2)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("indexed"))
+                .andExpect(jsonPath("$.detail").value(containsString("embedding model could not be used")));
+        source(sourceId)
+                .andExpect(jsonPath("$.lastError").value(containsString("has not been configured")))
+                .andExpect(jsonPath("$.lastError").value(not(containsString("http"))));
+
+        mvc.perform(post("/api/sources/{id}/reindex", sourceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.vectorised").value(false))
+                .andExpect(jsonPath("$.detail").value(containsString("gemini / text-embedding-004")))
+                .andExpect(jsonPath("$.detail").value(not(containsString("vector store"))));
+        assertThat(titlesFound("airship")).containsExactly(LEAVE);
+    }
+
+    @Test
     @DisplayName("a failure after the vectors are written takes the new points back out")
     void failureAfterUpsertRemovesNewPoints() throws Exception {
-        UUID sourceId = createSource("Policies");
+        UUID sourceId = createMeaningSource("Policies");
         AtomicReference<List<UUID>> written = new AtomicReference<>();
         doAnswer(call -> {
                     List<QdrantClient.Point> points = call.getArgument(1);
@@ -645,7 +698,7 @@ class DocumentLifecycleTest {
     @Test
     @DisplayName("a pending document is finished even when the vector store is still down, and says so")
     void reindexRecoversWithTheVectorStoreDown() throws Exception {
-        UUID sourceId = createSource("Policies");
+        UUID sourceId = createMeaningSource("Policies");
         UUID leave = documentId(upload(sourceId, LEAVE, V1).andExpect(status().isOk()));
         leavePending(sourceId, leave);
         doThrow(new IllegalStateException("connection refused")).when(vectors).upsert(anyString(), anyList());

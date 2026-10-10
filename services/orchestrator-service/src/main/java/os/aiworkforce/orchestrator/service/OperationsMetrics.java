@@ -1,3 +1,6 @@
+// @find: metrics, operations metrics, pending approvals gauge, sweep duration, micrometer, dashboard figures, monitoring
+// @what: Publishes service-wide metrics: approvals waiting and how long each background sweep takes.
+// @flow: Used by MaintenanceScheduler
 package os.aiworkforce.orchestrator.service;
 
 import java.util.List;
@@ -55,6 +58,7 @@ public class OperationsMetrics {
         SWEEPS.forEach(this::timer);
     }
 
+    // @find: refresh pending approvals gauge
     /**
      * Counts the approvals still pending and holds the figure for the next scrape. A count that
      * cannot be made leaves the last figure standing: a gauge that dropped to zero during a
@@ -69,6 +73,7 @@ public class OperationsMetrics {
         }
     }
 
+    // @find: time a sweep
     /** Runs a sweep and records how long it took, whether it returned or threw. */
     public void timed(String sweep, Runnable body) {
         Timer.Sample sample = Timer.start(meters);

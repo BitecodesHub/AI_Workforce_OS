@@ -1,3 +1,6 @@
+// @find: reduced motion, less motion, accessibility, prefers-reduced-motion, animation off, useReducedMotion hook
+// @what: React hook that tells whether the visitor asked their system for less motion.
+// @flow: Used by useCountUp, usePointerSpot, useSequence and landing animations
 import { useSyncExternalStore } from 'react'
 
 /*
@@ -36,6 +39,7 @@ function getServerSnapshot(): boolean {
   return true
 }
 
+// @find: useReducedMotion hook, respect reduced motion
 export function useReducedMotion(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }

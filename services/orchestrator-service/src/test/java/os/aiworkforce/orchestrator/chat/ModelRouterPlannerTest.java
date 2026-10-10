@@ -1,3 +1,6 @@
+// @find: tests for model router planner, chat, a fenced json reply is parsed, schema carries the active keys enum and forbids extra properties, prompt contains the hint when alast answer agent is given, prompt has no hint when there is no last answer agent, the active fallbacks key is valid and appears in the prompt, with no active fallback the prompt has no choose line for it, a sandbox provider reply returns empty, the prompt says each agent gets the request verbatim so astep is only ashort label, ModelRouterPlannerTest, ModelRouterPlanner
+// @what: Tests for ModelRouterPlanner in the orchestrator chat package (16 test methods).
+// @flow: Exercises ModelRouterPlanner
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -90,6 +93,7 @@ class ModelRouterPlannerTest {
         return captor;
     }
 
+    // @find: test a fenced json reply is parsed, model router planner
     @Test
     void aFencedJsonReplyIsParsed() {
         when(router.route(any(), any(), any()))
@@ -107,6 +111,7 @@ class ModelRouterPlannerTest {
         assertThat(plan.get().reason()).isEqualTo("Support fits");
     }
 
+    // @find: test schema carries the active keys enum and forbids extra properties, model router planner
     @Test
     void schemaCarriesTheActiveKeysEnumAndForbidsExtraProperties() {
         ArgumentCaptor<ChatRequest> captor = captureRequest();
@@ -118,6 +123,7 @@ class ModelRouterPlannerTest {
         assertThat(schema).contains("\"enum\":[\"support\",\"hr\"]");
     }
 
+    // @find: test prompt contains the hint when alast answer agent is given, model router planner
     @Test
     void promptContainsTheHintWhenALastAnswerAgentIsGiven() {
         ArgumentCaptor<ChatRequest> captor = captureRequest();
@@ -128,6 +134,7 @@ class ModelRouterPlannerTest {
         assertThat(prompt).contains("The last reply in this conversation came from Customer Support (key support)");
     }
 
+    // @find: test prompt has no hint when there is no last answer agent, model router planner
     @Test
     void promptHasNoHintWhenThereIsNoLastAnswerAgent() {
         ArgumentCaptor<ChatRequest> captor = captureRequest();
@@ -138,6 +145,7 @@ class ModelRouterPlannerTest {
         assertThat(prompt).doesNotContain("The last reply in this conversation came from");
     }
 
+    // @find: test the active fallbacks key is valid and appears in the prompt, model router planner
     @Test
     void theActiveFallbacksKeyIsValidAndAppearsInThePrompt() {
         Agent general = agent("general-employee", "General Employee", "operations", true);
@@ -157,6 +165,7 @@ class ModelRouterPlannerTest {
         assertThat(captor.getValue().jsonSchema()).contains("\"general-employee\"");
     }
 
+    // @find: test with no active fallback the prompt has no choose line for it, model router planner
     @Test
     void withNoActiveFallbackThePromptHasNoChooseLineForIt() {
         ArgumentCaptor<ChatRequest> captor = captureRequest();
@@ -168,6 +177,7 @@ class ModelRouterPlannerTest {
         assertThat(prompt).doesNotContain("clearly fits, choose");
     }
 
+    // @find: test a sandbox provider reply returns empty, model router planner
     @Test
     void aSandboxProviderReplyReturnsEmpty() {
         when(router.route(any(), any(), any()))
@@ -180,6 +190,7 @@ class ModelRouterPlannerTest {
         assertThat(plan).isEmpty();
     }
 
+    // @find: test the prompt says each agent gets the request verbatim so astep is only ashort label, model router planner
     @Test
     void thePromptSaysEachAgentGetsTheRequestVerbatimSoAStepIsOnlyAShortLabel() {
         ArgumentCaptor<ChatRequest> captor = captureRequest();
@@ -193,6 +204,7 @@ class ModelRouterPlannerTest {
         assertThat(prompt).doesNotContain("complete request that agent can act on alone");
     }
 
+    // @find: test the persons text reaches the planner exactly as written, model router planner
     @Test
     void thePersonsTextReachesThePlannerExactlyAsWritten() {
         ArgumentCaptor<ChatRequest> captor = captureRequest();
@@ -203,6 +215,7 @@ class ModelRouterPlannerTest {
         assertThat(captor.getValue().conversation().getLast().content()).isEqualTo(text);
     }
 
+    // @find: test a step sentence that runs on is cut to alabel, model router planner
     @Test
     void aStepSentenceThatRunsOnIsCutToALabel() {
         String runOn = "Summarise the risks in the contract for the board ".repeat(20);
@@ -218,5 +231,100 @@ class ModelRouterPlannerTest {
         assertThat(label).hasSizeLessThanOrEqualTo(300);
         assertThat(label).startsWith("Summarise the risks in the contract for the board");
         assertThat(label).doesNotEndWith(" ");
+    }
+
+    // @find: test steps the model padded with placeholder parts are dropped, model router planner
+    @Test
+    void stepsTheModelPaddedWithPlaceholderPartsAreDropped() {
+        // Seen live with openai/gpt-oss-20b on NVIDIA: a one-sentence question came back routed
+        // to three agents, two of them with the instruction "--", and was answered three times.
+        Agent general = agent("general", "General Employee", "general", true);
+        when(router.route(any(), any(), any()))
+                .thenReturn(response(
+                        "nvidia",
+                        "{\"plan\":[{\"agentKey\":\"general\",\"instruction\":\"Answer in one sentence.\"},"
+                                + "{\"agentKey\":\"support\",\"instruction\":\"--\"},"
+                                + "{\"agentKey\":\"hr\",\"instruction\":\"N/A\"}],\"reason\":\"General knowledge.\"}"));
+
+        Optional<ModelRouterPlanner.Plan> plan =
+                planner.plan(ORG, "What is the capital of Australia?", List.of(general, support, hr));
+
+        assertThat(plan).isPresent();
+        assertThat(plan.get().steps()).extracting(ModelRouterPlanner.PlannedStep::agentId)
+                .containsExactly(general.getId());
+    }
+
+    // @find: test a repeated agent is planned once, model router planner
+    @Test
+    void aRepeatedAgentIsPlannedOnce() {
+        when(router.route(any(), any(), any()))
+                .thenReturn(response(
+                        "nvidia",
+                        "{\"plan\":[{\"agentKey\":\"support\",\"instruction\":\"Reply to the customer.\"},"
+                                + "{\"agentKey\":\"support\",\"instruction\":\"Reply again.\"}],\"reason\":\"ok\"}"));
+
+        Optional<ModelRouterPlanner.Plan> plan = planner.plan(ORG, "a customer wrote in", List.of(support, hr));
+
+        assertThat(plan).isPresent();
+        assertThat(plan.get().steps()).hasSize(1);
+    }
+
+    // @find: test a plan of only placeholders falls back to the rules, model router planner
+    @Test
+    void aPlanOfOnlyPlaceholdersFallsBackToTheRules() {
+        when(router.route(any(), any(), any()))
+                .thenReturn(response("nvidia", "{\"plan\":[{\"agentKey\":\"support\",\"instruction\":\"--\"}],\"reason\":\"ok\"}"));
+
+        assertThat(planner.plan(ORG, "a customer wrote in", List.of(support, hr))).isEmpty();
+    }
+
+    // @find: test real labels are not mistaken for filler, model router planner
+    @Test
+    void realLabelsAreNotMistakenForFiller() {
+        assertThat(ModelRouterPlanner.isFiller("--")).isTrue();
+        assertThat(ModelRouterPlanner.isFiller("  ")).isTrue();
+        assertThat(ModelRouterPlanner.isFiller("N/A.")).isTrue();
+        assertThat(ModelRouterPlanner.isFiller("Reply")).isFalse();
+        assertThat(ModelRouterPlanner.isFiller("Draft the email to the customer.")).isFalse();
+        assertThat(ModelRouterPlanner.isFiller("None of the invoices are late; confirm.")).isFalse();
+    }
+
+    // @find: test planning asks each model once within45 seconds, model router planner
+    @Test
+    void planningAsksEachModelOnceWithin45Seconds() {
+        RoutingPolicy workspace = new RoutingPolicy(
+                List.of(RoutingPolicy.Candidate.of("nvidia", "a"), RoutingPolicy.Candidate.of("openrouter", "b")),
+                RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED,
+                3,
+                Duration.ofMinutes(5),
+                true);
+
+        RoutingPolicy planning = ModelRouterPlanner.forPlanning(workspace);
+
+        assertThat(planning.candidates()).isEqualTo(workspace.candidates());
+        assertThat(planning.maxAttemptsPerCandidate()).isEqualTo(1);
+        assertThat(planning.overallDeadline()).isEqualTo(Duration.ofSeconds(45));
+    }
+
+    // @find: test planning asks at most three models so the wait is bounded, model router planner
+    @Test
+    void planningAsksAtMostThreeModelsSoTheWaitIsBounded() {
+        RoutingPolicy workspace = new RoutingPolicy(
+                List.of(
+                        RoutingPolicy.Candidate.of("nvidia", "a"),
+                        RoutingPolicy.Candidate.of("openrouter", "b"),
+                        RoutingPolicy.Candidate.of("groq", "c"),
+                        RoutingPolicy.Candidate.of("gemini", "d")),
+                RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED,
+                3,
+                Duration.ofMinutes(5),
+                true);
+
+        RoutingPolicy planning = ModelRouterPlanner.forPlanning(workspace);
+
+        assertThat(planning.candidates()).extracting(RoutingPolicy.Candidate::providerId)
+                .containsExactly("nvidia", "openrouter", "groq");
+        assertThat(ModelRouterPlanner.PLANNING_ATTEMPT.multipliedBy(ModelRouterPlanner.MAX_PLANNING_CANDIDATES))
+                .isLessThanOrEqualTo(Duration.ofSeconds(45));
     }
 }

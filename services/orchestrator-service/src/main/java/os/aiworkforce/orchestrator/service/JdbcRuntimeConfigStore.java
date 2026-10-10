@@ -1,3 +1,6 @@
+// @find: runtime settings, runtime_settings table, workspace settings store, read write clear setting, config store, feature flags per workspace
+// @what: Stores this service's runtime settings in its own runtime_settings table.
+// @flow: Used by platform RuntimeConfigService
 package os.aiworkforce.orchestrator.service;
 
 import java.sql.Timestamp;
@@ -29,6 +32,7 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
         this.jdbc = jdbc;
     }
 
+    // @find: read setting
     @Override
     public Optional<String> read(String key, String orgId) {
         List<String> values = orgId == null
@@ -42,6 +46,7 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
         return values.stream().findFirst();
     }
 
+    // @find: write setting, save setting
     @Override
     public Optional<String> write(String key, String orgId, String value, String actorId) {
         Optional<String> previous = read(key, orgId);
@@ -72,6 +77,7 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
         return previous;
     }
 
+    // @find: clear setting, reset to default
     @Override
     public Optional<String> clear(String key, String orgId, String actorId) {
         Optional<String> previous = read(key, orgId);
@@ -83,6 +89,7 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
         return previous;
     }
 
+    // @find: read all settings for workspace
     @Override
     public List<StoredValue> readAll(String orgId) {
         return jdbc.query(

@@ -1,3 +1,5 @@
+// @find: tests for member roles, canGrantRole, grantableRoles, canManageMember, holdsAll, isAccountExists, signInToAcceptPath, absoluteLink, invitations, owner role, Members page
+// @what: Unit tests for the role-granting rules and invitation link helpers in memberQueries.ts.
 import { describe, expect, it } from 'vitest'
 import { ApiError } from './api'
 import {

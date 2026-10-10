@@ -1,3 +1,6 @@
+// @find: insights, analytics, what the workforce did, cost, value, hours saved, hourly rate, goals tasks runs figures, approvals, questions, failure reasons, spend per day, per agent, InsightsService, window days
+// @what: Computes grouped SQL figures for what the workforce did, cost and was worth over a window of days.
+// @flow: Called by InsightsController; reads orchestrator tables and runtime settings.
 package os.aiworkforce.orchestrator.board;
 
 import java.math.BigDecimal;
@@ -123,24 +126,42 @@ public class InsightsService {
             group by t.status
             """;
 
+    /**
+     * Whether every successful call of a run went to a model the catalogue marks free (an
+     * OpenRouter ":free" model, NVIDIA's free tier), with at least one real call. Such a run cost
+     * nothing because the model is free, which is known - unlike a model with no price on file.
+     * {@code r} is the runs alias.
+     */
+    static final String FREE_ONLY =
+            """
+            (exists (select 1 from llm_usage u where u.run_id = r.id and u.org_id = r.org_id
+                       and u.provider_id <> 'sandbox' and u.outcome = 'SUCCEEDED')
+             and not exists (select 1 from llm_usage u
+                       left join llm_models m on m.provider_id = u.provider_id and m.model_id = u.model_id
+                       where u.run_id = r.id and u.org_id = r.org_id and u.outcome = 'SUCCEEDED'
+                         and u.provider_id <> 'sandbox' and coalesce(m.free, false) = false))
+            """;
+
     private static final String RUNS_BY_AGENT_AND_STATUS =
             """
             with flagged as (
                 select r.agent_id, r.status, r.total_cost,
                        (r.total_prompt_tokens + r.total_completion_tokens) as tokens,
-                       %s as sandbox
+                       %s as sandbox,
+                       %s as free
                 from runs r
                 where r.org_id = ? and r.started_at >= ? and r.started_at < ?
             )
             select agent_id, status, count(*) as n,
                    coalesce(sum(total_cost), 0) as cost,
                    count(*) filter (where total_cost > 0) as priced,
-                   count(*) filter (where total_cost = 0 and tokens > 0 and not sandbox) as unpriced,
-                   count(*) filter (where sandbox) as sandbox_runs
+                   count(*) filter (where total_cost = 0 and tokens > 0 and not sandbox and not free) as unpriced,
+                   count(*) filter (where sandbox) as sandbox_runs,
+                   count(*) filter (where total_cost = 0 and free) as free_runs
             from flagged
             group by agent_id, status
             """
-                    .formatted(SANDBOX_ONLY);
+                    .formatted(SANDBOX_ONLY, FREE_ONLY);
 
     private static final String SPEND_BY_DAY =
             """
@@ -157,7 +178,7 @@ public class InsightsService {
             with goal_runs as (
                 select g.id as goal_id, r.total_cost,
                        (r.total_cost = 0 and r.total_prompt_tokens + r.total_completion_tokens > 0
-                        and not %1$s) as unpriced,
+                        and not %1$s and not %2$s) as unpriced,
                        %1$s as sandbox
                 from goals g
                 join tasks t on t.goal_id = g.id and t.org_id = g.org_id
@@ -169,7 +190,7 @@ public class InsightsService {
             from goal_runs
             group by goal_id
             """
-                    .formatted(SANDBOX_ONLY);
+                    .formatted(SANDBOX_ONLY, FREE_ONLY);
 
     private static final String APPROVALS_BY_AGENT_AND_STATUS =
             """
@@ -455,6 +476,7 @@ public class InsightsService {
      * @param minutesPerTask the administrator's estimate; absent when there is none
      * @param completedTasks tasks it finished in the window that count toward hours
      * @param hoursReturned those tasks at that estimate; absent with no estimate
+     * @param freeRuns runs that cost nothing because every model they used is free in the catalogue
      */
     public record AgentRow(
             UUID agentId,
@@ -479,7 +501,8 @@ public class InsightsService {
             BigDecimal satisfactionRate,
             Integer minutesPerTask,
             long completedTasks,
-            BigDecimal hoursReturned) {}
+            BigDecimal hoursReturned,
+            long freeRuns) {}
 
     public record AgentInsights(
             String window,
@@ -502,6 +525,7 @@ public class InsightsService {
 
     // ---- Reading ---------------------------------------------------------------------------
 
+    // @find: workspace insights, analytics figures for a window
     @Transactional(readOnly = true)
     public Insights insights(UUID orgId, String windowKey) {
         Window window = Window.of(Span.parse(windowKey), clock.instant());
@@ -526,6 +550,7 @@ public class InsightsService {
                 deltas(current, previous));
     }
 
+    // @find: agent insights, per-agent rows for a window
     @Transactional(readOnly = true)
     public AgentInsights agents(UUID orgId, String windowKey) {
         Window window = Window.of(Span.parse(windowKey), clock.instant());
@@ -576,6 +601,7 @@ public class InsightsService {
     }
 
     /** The administrator's inputs, read from the workspace's runtime settings; malformed ones are ignored. */
+    // @find: value inputs, hourly staff rate, minutes per task
     public ValueInputs valueInputs(UUID orgId) {
         BigDecimal rate = null;
         Map<UUID, Integer> minutes = new HashMap<>();
@@ -616,7 +642,13 @@ public class InsightsService {
             ValueFigures value) {}
 
     /** One agent's runs in one status: how many, what they cost, and how many were priced, unpriced or sandbox. */
-    record RunGroup(UUID agentId, String status, long n, BigDecimal cost, long priced, long unpriced, long sandbox) {}
+    record RunGroup(
+            UUID agentId, String status, long n, BigDecimal cost, long priced, long unpriced, long sandbox, long free) {
+
+        RunGroup(UUID agentId, String status, long n, BigDecimal cost, long priced, long unpriced, long sandbox) {
+            this(agentId, status, n, cost, priced, unpriced, sandbox, 0);
+        }
+    }
 
     private record ApprovalGroup(UUID agentId, String status, long n) {}
 
@@ -710,7 +742,8 @@ public class InsightsService {
                         rs.getBigDecimal("cost"),
                         rs.getLong("priced"),
                         rs.getLong("unpriced"),
-                        rs.getLong("sandbox_runs")),
+                        rs.getLong("sandbox_runs"),
+                        rs.getLong("free_runs")),
                 orgId,
                 from,
                 to);
@@ -917,6 +950,7 @@ public class InsightsService {
         long cancelled = 0;
         long unpriced = 0;
         long sandbox = 0;
+        long free = 0;
         long completedPriced = 0;
         BigDecimal cost = BigDecimal.ZERO;
         BigDecimal completedCost = BigDecimal.ZERO;
@@ -925,6 +959,7 @@ public class InsightsService {
             cost = cost.add(group.cost());
             unpriced += group.unpriced();
             sandbox += group.sandbox();
+            free += group.free();
             if (!TERMINAL.contains(group.status())) {
                 continue;
             }
@@ -975,7 +1010,8 @@ public class InsightsService {
                 ratio(up, up + down),
                 minutesPerTask,
                 completedTasks,
-                hours);
+                hours,
+                free);
     }
 
     private static Map<String, Delta> deltas(Figures current, Figures previous) {

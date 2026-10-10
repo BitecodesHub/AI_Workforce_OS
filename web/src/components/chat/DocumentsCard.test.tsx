@@ -1,3 +1,6 @@
+// @find: tests for DocumentsCard, documents card, sources in chat, documents an agent used, knowledge documents in thread, cited documents
+// @what: Automated tests for DocumentsCard.
+// @flow: Run with the web test runner; covers DocumentsCard.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, Passage } from '../../lib/queries'

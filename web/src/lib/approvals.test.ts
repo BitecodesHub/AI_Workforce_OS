@@ -1,3 +1,5 @@
+// @find: tests for approvals, readableSummary, parsePayload, groupIdentical, bulkSummary, decisionError, destructive
+// @what: Unit tests for approval wording and grouping helpers.
 import { describe, expect, it } from 'vitest'
 import { ApiError } from './api'
 import {

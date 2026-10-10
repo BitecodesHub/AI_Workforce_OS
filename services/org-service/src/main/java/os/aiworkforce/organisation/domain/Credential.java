@@ -1,3 +1,6 @@
+// @find: credential entity, encrypted value, fingerprint, key id, expires at, last used at, API key storage, credentials table
+// @what: JPA entity for a stored encrypted credential.
+// @flow: Mapped to the credentials table; used by CredentialService.
 package os.aiworkforce.organisation.domain;
 
 import java.time.Instant;

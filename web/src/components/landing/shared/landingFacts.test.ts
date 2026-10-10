@@ -1,3 +1,6 @@
+// @find: tests for landing facts, connector lists, ConnectorCatalog, live connectors, practice connectors
+// @what: Tests that the public connector lists match mcp-core's ConnectorCatalog.
+// @flow: Covers landingFacts.ts
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'

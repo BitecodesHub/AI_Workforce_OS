@@ -1,3 +1,8 @@
+/*
+ * @find: polish styles, admin screens, model routing, members, audit log, analytics page styling
+ * @what: Refining styles for the admin screens.
+ * @flow: Imported by polish/index.css
+ */
 /* UI/UX polish: admin screens (Model routing, Members, Audit log, Analytics).
  * Loaded after components.css, so rules here refine it by selector. Every rule below is scoped
  * under one of the four root classes the owning routes carry on their outer `.page` element, so

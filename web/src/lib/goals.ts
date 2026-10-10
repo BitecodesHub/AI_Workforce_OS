@@ -1,3 +1,6 @@
+// @find: goals, tasks, stop goal, retry goal, who can stop, who can retry, permissions, canStopGoal, canRetryGoal
+// @what: Client-side rule for who may stop or retry a goal, shared by Tasks, Chat and the Orchestrator.
+// @flow: Server enforces the same rule; used by the Tasks page buttons
 import { isGoalActive } from './queries'
 
 /*
@@ -9,12 +12,14 @@ import { isGoalActive } from './queries'
 
 export type GoalLike = { status: string; requestedBy: string | null }
 
+// @find: can stop goal, Stop button, cancel task
 /** Whether `me` requested this goal, or holds task:cancel, and the goal is still active. */
 export function canStopGoal(goal: GoalLike, me: string | null, can: (permission: string) => boolean): boolean {
   if (!isGoalActive(goal)) return false
   return (me != null && goal.requestedBy === me) || can('task:cancel')
 }
 
+// @find: can retry goal, Retry button, run again
 /** Whether `me` holds task:create, and either requested this finished goal or holds task:cancel. */
 export function canRetryGoal(goal: GoalLike, me: string | null, can: (permission: string) => boolean): boolean {
   if (isGoalActive(goal)) return false

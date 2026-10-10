@@ -1,3 +1,6 @@
+// @find: run detail, run trace, steps, what happened, answer, incomplete answer, tool calls, completed actions, cost, tokens, goal, cancel run, retry, /runs/:id, RunDetail
+// @what: The Run detail page: the step-by-step record of one run, with its answer, actions taken and facts.
+// @flow: Routed from App.tsx at /runs/:id; opened from Runs.tsx and Tasks.tsx
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Button, Card, ConfirmDialog, EmptyState, Eyebrow, Notice, PageHeader, StatusTag, Time } from '../components/ui'
@@ -47,6 +50,7 @@ import { useNow } from '../lib/useNow'
  * as an incomplete answer, apart from the answer a finished run gives, so nobody takes it for one.
  */
 
+// @find: RunDetail component, run page, run trace, /runs/:id
 export function RunDetail({ id }: { id: string }) {
   const runQuery = useRun(id)
   const run = runQuery.data
@@ -88,6 +92,7 @@ export function RunDetail({ id }: { id: string }) {
   )
 }
 
+// @find: run trace, step list, tool call details
 function RunTrace({
   run,
   agentName,
@@ -313,6 +318,7 @@ function RunTrace({
  * What a run already did that a second attempt will not take back: each tool call that succeeded
  * and changed something (anything but a read), as a line of words.
  */
+// @find: completed actions list, what was already done in a run
 export function completedActions(steps: ReadonlyArray<{ kind: string; detail: Record<string, unknown> }> | undefined): string[] {
   if (!steps) return []
   const lines: string[] = []
@@ -333,6 +339,7 @@ export function completedActions(steps: ReadonlyArray<{ kind: string; detail: Re
  * and a sentence saying it is unfinished, because a half-written report read as a whole one is
  * worse than none.
  */
+// @find: incomplete answer notice, unfinished answer
 export function IncompleteAnswer({ text, instruction }: { text: string; instruction?: string | null }) {
   return (
     <Card as="section">
@@ -354,6 +361,7 @@ export function IncompleteAnswer({ text, instruction }: { text: string; instruct
  * The facts under the title: the agent, what started the run, when, and its id. Each is labelled,
  * so they still read correctly when a narrow screen wraps them onto separate lines.
  */
+// @find: run facts, agent, goal, cost, duration, status
 function RunFacts({ run, agentName, goal }: { run: Run; agentName: string | undefined; goal: Goal | undefined }) {
   const value: CSSProperties = { color: 'var(--ink)' }
   // Named only once the agent list has it; an agent missing from the list has been removed, and a

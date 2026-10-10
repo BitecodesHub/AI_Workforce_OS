@@ -1,3 +1,6 @@
+// @find: documents prompt, answer from passages, grounded answer prompt, passage tags, knowledge passages in prompt, citations, no general knowledge, DocumentsPrompt, prompt injection guard for documents
+// @what: Builds the instruction that makes an agent answer only from the workspace's own document passages.
+// @flow: Called by CoordinatorService.answerFromDocuments; passages come from KnowledgeClient.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.List;
@@ -97,6 +100,7 @@ public final class DocumentsPrompt {
      * the attribute early or a tag that ends the passage. The text is not cut here; the caller
      * decides how much of a passage it can afford.
      */
+    // @find: wrap passage, numbered passage with source
     public static String wrap(int number, String source, String content) {
         return "<passage n=\"" + number + "\" source=\"" + attribute(source) + "\">"
                 + withoutLookAlikes(content == null ? "" : content)
@@ -104,6 +108,7 @@ public final class DocumentsPrompt {
     }
 
     /** Text with anything that looks like a passage tag taken out, for text that is placed inside one. */
+    // @find: strip look-alike passage tags, prompt injection guard
     public static String withoutLookAlikes(String text) {
         String current = text == null ? "" : text;
         // Until nothing is left to remove: taking out the middle of "<<passage passage" leaves

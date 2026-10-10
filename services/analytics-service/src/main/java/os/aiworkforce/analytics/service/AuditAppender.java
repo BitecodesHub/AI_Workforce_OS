@@ -1,3 +1,6 @@
+// @find: append audit event, add audit entry, hash chain append, advisory lock, duplicate event, idempotent audit write
+// @what: Appends one audit entry to its workspace chain under a database lock so the chain never forks.
+// @flow: Called by InternalAuditController.append; uses AuditChain for hashing
 package os.aiworkforce.analytics.service;
 
 import java.time.Duration;
@@ -75,6 +78,7 @@ public class AuditAppender {
     public record Appended(UUID id, long sequence, String entryHash, boolean duplicate) {}
 
     @Transactional
+    // @find: append audit event, write audit entry to chain
     public Appended append(Command command) {
         String chainKey = AuditChain.chainKeyFor(command.orgId());
 

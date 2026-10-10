@@ -1,3 +1,5 @@
+// @find: tests for model policy controller, model policy, model routing, fallback chain, /api/model-policy
+// @what: Unit and integration tests (10 cases) for model policy controller, for example: lock is taken first; agent save takes the lock; every provider off is saved with awarning; agent policy saved with awarning.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,8 +40,8 @@ import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
 
 /**
- * Saving a routing policy: it holds the workspace's provider lock first, and it refuses a policy
- * that would stop every run because every provider it lists is switched off.
+ * Saving a routing policy: it holds the workspace's provider lock first, and it never refuses a
+ * policy whose providers are all off - it saves it and says plainly what runs will do.
  */
 class ModelPolicyControllerTest {
 
@@ -127,33 +129,28 @@ class ModelPolicyControllerTest {
     }
 
     @Test
-    @DisplayName("a policy that stops when it fails and lists only providers that are off is refused with a 409")
-    void everyProviderOffIsRefused() {
+    @DisplayName("a policy listing only providers that are off is saved, with a plain warning")
+    void everyProviderOffIsSavedWithAWarning() {
         providers("groq", "openrouter", "anthropic");
 
-        ApiException refused = catchThrowableOfType(
-                () -> controller.setWorkspaceDefault(request("FAIL_CLOSED", "openrouter/qwen", "anthropic/claude")),
-                ApiException.class);
+        ModelPolicyController.ModelPolicyView view =
+                controller.setWorkspaceDefault(request("FAIL_CLOSED", "openrouter/qwen", "anthropic/claude"));
 
-        assertThat(refused.status()).isEqualTo(409);
-        assertThat(refused.code()).isEqualTo(ErrorCode.RESOURCE_IN_USE);
-        assertThat(refused.getMessage()).contains("switched off for this workspace").contains("every run");
-        assertThat(refused.details()).containsEntry("routing", "workspace");
-        verify(policies, never()).save(any());
+        assertThat(view.candidates()).hasSize(2);
+        assertThat(view.warning()).contains("None of the providers in the workspace routing is turned on");
+        verify(policies).save(any(ModelPolicyEntity.class));
     }
 
     @Test
-    @DisplayName("the same refusal for an agent's own policy, saying whose it is")
-    void agentPolicyRefused() {
+    @DisplayName("the same for an agent's own policy: saved, with a warning saying whose runs fail")
+    void agentPolicySavedWithAWarning() {
         providers("groq", "openrouter");
 
-        ApiException refused = catchThrowableOfType(
-                () -> controller.setForAgent(AGENT, request("FAIL_CLOSED", "openrouter/qwen")), ApiException.class);
+        ModelPolicyController.ModelPolicyView view =
+                controller.setForAgent(AGENT, request("FAIL_CLOSED", "openrouter/qwen"));
 
-        assertThat(refused.status()).isEqualTo(409);
-        assertThat(refused.getMessage()).contains("this agent's runs");
-        assertThat(refused.details()).containsEntry("routing", "agent");
-        verify(policies, never()).save(any());
+        assertThat(view.warning()).contains("this agent's routing");
+        verify(policies).save(any(ModelPolicyEntity.class));
     }
 
     @Test
@@ -203,14 +200,23 @@ class ModelPolicyControllerTest {
     }
 
     @Test
-    @DisplayName("a provider this workspace cannot see counts as off")
+    @DisplayName("a provider this workspace cannot see counts as off, for the warning")
     void invisibleProviderCountsAsOff() {
         providers("groq");
 
-        ApiException refused = catchThrowableOfType(
-                () -> controller.setWorkspaceDefault(request("FAIL_CLOSED", "someone-elses/model")),
-                ApiException.class);
+        ModelPolicyController.ModelPolicyView view =
+                controller.setWorkspaceDefault(request("FAIL_CLOSED", "someone-elses/model"));
 
-        assertThat(refused.status()).isEqualTo(409);
+        assertThat(view.warning()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("one provider that is on: no warning")
+    void noWarningWhenAProviderIsOn() {
+        providers("groq", "openrouter");
+
+        assertThat(controller.setWorkspaceDefault(request("FAIL_CLOSED", "openrouter/qwen", "groq/llama"))
+                        .warning())
+                .isNull();
     }
 }

@@ -1,3 +1,6 @@
+// @find: startup validator, refuse to start, unsafe configuration, placeholder signing key, default encryption secret, production checks, sampling check, fail fast
+// @what: Refuses to start a service in a production-like environment when its settings are unsafe.
+// @flow: Runs on ApplicationReadyEvent; reads PlatformProperties
 package os.aiworkforce.platform.config;
 
 import java.util.List;
@@ -27,6 +30,7 @@ public class PlatformStartupValidator {
         this.properties = properties;
     }
 
+    // @find: scheduled job or startup listener validate, startup validator
     @EventListener(ApplicationReadyEvent.class)
     public void validate() {
         List<String> problems = properties.validateForEnvironment();

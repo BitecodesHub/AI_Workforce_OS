@@ -1,3 +1,6 @@
+// @find: step list, goal steps, tasks of a goal, task status, run trace, cancel run, collapsible steps, result markdown, StepList, Orchestrator
+// @what: The ordered list of a goal's steps with status, result and run trace, and a cancel action.
+// @flow: Rendered inside GoalSheet; calls useCancelRun
 import { useState } from 'react'
 import { Button, ConfirmDialog, StatusTag, Tag } from '../ui'
 import { AgentAvatar } from '../ui/AgentAvatar'
@@ -168,6 +171,7 @@ function StepRow({
   )
 }
 
+// @find: step list component, goal tasks in order
 export function StepList({
   goal,
   board,

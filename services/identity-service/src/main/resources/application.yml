@@ -1,3 +1,6 @@
+# @find: identity service config, application.yml, database, datasource, flyway, jpa, hikari, identity schema, postgres, spring config
+# @what: Spring configuration for the identity service: database, Flyway and shared platform defaults.
+# @flow: Imports platform-defaults.yml.
 # Users, sessions, roles and permissions.
 #
 # This file holds only what belongs to this service. Everything shared - security, resilience,

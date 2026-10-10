@@ -1,3 +1,6 @@
+// @find: signing key, jwt key, token signing, key rotation, retire key, JWKS key, kid, SigningKey entity, signing_keys table, active retiring retired
+// @what: JPA entity for a key that signs or signed access tokens, with its active/retiring/retired lifecycle.
+// @flow: Used by SigningKeys repository and SigningKeyStore.
 package os.aiworkforce.identity.domain;
 
 import java.time.Instant;
@@ -103,6 +106,7 @@ public class SigningKey implements Persistable<String> {
         return RETIRING.equals(status) && (expiresAt == null || expiresAt.isAfter(now));
     }
 
+    // @find: retire signing key, rotate key, key overlap
     /** Stops signing with this key, keeping it published until {@code publishUntil}. */
     public void retire(Instant now, Instant publishUntil) {
         this.status = RETIRING;
@@ -110,6 +114,7 @@ public class SigningKey implements Persistable<String> {
         this.expiresAt = publishUntil;
     }
 
+    // @find: reactivate signing key, go back to earlier key
     /** Signs with this key again, as when an operator goes back to a key supplied earlier. */
     public void reactivate(Instant now) {
         this.status = ACTIVE;

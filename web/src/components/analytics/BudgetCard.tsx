@@ -1,3 +1,6 @@
+// @find: budget, spend cap, monthly cap, per run cap, per agent daily cap, set budget, limit spending, cost limit, save budget, BudgetCard, parseCap
+// @what: Analytics card to view and set monthly, per-run and per-agent daily spend caps.
+// @flow: Rendered on Analytics; uses useBudget and useSaveBudget
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Card, Eyebrow, Input, Notice, Select } from '../ui'
@@ -27,6 +30,7 @@ function capText(cap: number | null): string {
 }
 
 /** A cap typed into the form: null for empty, or a number not below zero; NaN for anything else. */
+// @find: parseCap, parse budget cap input
 export function parseCap(entered: string): number | null {
   const trimmed = entered.trim().replace(/^US?\$/i, '').replace(/,/g, '')
   if (trimmed === '') return null
@@ -35,12 +39,18 @@ export function parseCap(entered: string): number | null {
 }
 
 /** What the month looks like against its cap, in a sentence, or null when there is no cap to compare with. */
+// @find: capSummary, budget cap summary text
 export function capSummary(budget: Budget): string | null {
   const used = capUsed(budget)
   if (used === null || budget.monthlyCap === null) return null
   return `${formatMoney(budget.spentThisMonth)} of ${formatMoney(budget.monthlyCap)} used this month (${formatPercent(Math.min(used, 9.99))})`
 }
 
+/*
+ * The guard refuses a call only when its estimated cost does not fit what is left, so a model
+ * priced at zero still answers at the cap (JpaBudgetGuard; "a free call at the cap" in its test).
+ * The notice says so: "runs that need a model are stopped" was not what happened.
+ */
 function Warning({ budget }: { budget: Budget }) {
   const used = capUsed(budget)
   if (used === null || used < CAP_WARNING_AT) return null
@@ -50,8 +60,8 @@ function Warning({ budget }: { budget: Budget }) {
       <Notice tone="warning">
         {`The monthly budget of ${formatMoney(budget.monthlyCap)} has been reached. `}
         {sandbox
-          ? 'Runs that need a model now answer on the offline sandbox until the cap is raised or the month ends.'
-          : 'Runs that need a model are stopped until the cap is raised or the month ends.'}
+          ? 'Runs that need a paid model now answer on the offline sandbox until the cap is raised or the month ends. Free models still answer.'
+          : 'Runs that need a paid model are stopped until the cap is raised or the month ends. Free models still answer.'}
       </Notice>
     )
   }
@@ -59,8 +69,8 @@ function Warning({ budget }: { budget: Budget }) {
     <Notice tone="warning">
       {`${formatPercent(used)} of the monthly budget is used. `}
       {sandbox
-        ? 'At the cap, runs that need a model will answer on the offline sandbox.'
-        : 'At the cap, runs that need a model will stop.'}
+        ? 'At the cap, runs that need a paid model will answer on the offline sandbox. Free models still answer.'
+        : 'At the cap, runs that need a paid model will stop. Free models still answer.'}
     </Notice>
   )
 }
@@ -221,6 +231,7 @@ function BudgetBody({ budget }: { budget: Budget }) {
   )
 }
 
+// @find: BudgetCard, set spending budget, monthly cap, save budget
 export function BudgetCard() {
   const canRead = can('budget:read')
   const budget = useBudget({ enabled: canRead })

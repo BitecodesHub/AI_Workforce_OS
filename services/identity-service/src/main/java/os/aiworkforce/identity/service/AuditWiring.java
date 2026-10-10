@@ -1,3 +1,6 @@
+// @find: audit wiring, audit token, audit events relay, identity audit, audit outbox delivery, analytics token, AuditTokenSource
+// @what: Configures how identity signs its own service token to deliver audit events to analytics.
+// @flow: Uses TokenService.issueInternalToken; delivers to analytics-service.
 package os.aiworkforce.identity.service;
 
 import org.springframework.context.annotation.Bean;
@@ -21,6 +24,7 @@ import os.aiworkforce.platform.web.audit.AuditTokenSource;
 @Import(AuditClientConfiguration.class)
 class AuditWiring {
 
+    // @find: audit token source, token for audit relay
     @Bean
     AuditTokenSource auditTokenSource(TokenService tokens) {
         return () -> tokens.issueInternalToken("analytics", Actor.SYSTEM).token();

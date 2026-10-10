@@ -1,3 +1,6 @@
+// @find: agent avatar, initials circle, category colour, agent icon, chat avatar, orchestrator avatar, General Employee, AgentAvatar
+// @what: Circular initials avatar tinted by agent category.
+// @flow: Used by Chat, Orchestrator sheets and agent cards; chat/AgentAvatar re-exports it.
 import type { CSSProperties } from 'react'
 import { categoryTone } from '../../lib/labels'
 import { initials } from '../../lib/session'
@@ -18,6 +21,7 @@ const TONE_VAR: Record<string, string> = {
   neutral: 'var(--muted)',
 }
 
+// @find: agent avatar, initials, category tint
 export function AgentAvatar({
   name,
   category,

@@ -1,3 +1,9 @@
+// @find: goal, request, piece of work, create goal, goal status, goal source, chat goal, scheduled goal, completed goal, goals table, Goal entity, Work page
+// @what: Entity for a piece of work a person asked for, from direct creation, chat or a schedule, before it is split into tasks.
+// @flow: Stored by Goals; decomposed into Task rows; linked to Conversation or a schedule.
+// @find: goal, request, piece of work, create goal, goal status, goal source, chat goal, scheduled goal, completed goal, goals table, Goal entity, Work page
+// @what: Entity for a piece of work a person asked for, from direct creation, chat or a schedule, before it is split into tasks.
+// @flow: Stored by Goals; decomposed into Task rows; linked to Conversation or a schedule.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;
@@ -110,6 +116,8 @@ public class Goal extends OrgScopedEntity {
         this.completedAt = completedAt;
     }
 
+    // @find: is goal finished, completed, failed or cancelled
+    // @find: is goal finished, completed, failed or cancelled
     public boolean isFinished() {
         return "completed".equals(status) || "failed".equals(status) || "cancelled".equals(status);
     }

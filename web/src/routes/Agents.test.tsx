@@ -1,3 +1,6 @@
+// @find: tests for the agents list, suggested assistants, create agent, vitest, Agents component tests, Agents page
+// @what: Automated tests that check the the agents list screen (/agents) behaves as users expect.
+// @flow: Renders Agents from Agents.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -227,5 +230,53 @@ describe('the Add an agent dialog', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Back to ready-made assistants' }))
 
     expect(within(dialog).getByRole('list', { name: 'Ready-made assistants' })).toBeInTheDocument()
+  })
+})
+
+describe('agent cards', () => {
+  it('say what the agent does in its own description, not a quote of its instructions', async () => {
+    agents = [GENERAL, { ...LEGAL, description: 'Reviews contracts and flags risky clauses.' }]
+    await open()
+    expect(screen.getByText('Reviews contracts and flags risky clauses.')).toBeInTheDocument()
+    expect(screen.queryByText('From its instructions')).not.toBeInTheDocument()
+    expect(screen.queryByText(/“You help/)).not.toBeInTheDocument()
+  })
+
+  it('fall back to a line written about the agent when it has no description', async () => {
+    agents = [GENERAL]
+    await open()
+    expect(screen.getByText('Helps with whatever is asked.')).toBeInTheDocument()
+  })
+
+  it('are links with a short readable name, described by what the agent does', async () => {
+    agents = [GENERAL, { ...LEGAL, description: 'Reviews contracts.' }]
+    await open()
+    const link = screen.getByRole('link', { name: 'Open Legal, Active' })
+    expect(link).toHaveAttribute('href', '/agents/a-legal')
+    expect(link).toHaveAccessibleDescription('Reviews contracts.')
+  })
+})
+
+describe('writing an agent from scratch', () => {
+  it('sends the optional one-line description with the new agent', async () => {
+    permissions = ['agent:read', 'agent:create']
+    await open()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add an agent' })[0]!)
+    const dialog = await screen.findByRole('dialog', { name: 'Add an agent' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Start from scratch' }))
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Legal' } })
+    fireEvent.change(within(dialog).getByLabelText(/What it does/), { target: { value: '  Reviews contracts.  ' } })
+    fireEvent.change(within(dialog).getByLabelText(/Instructions/), { target: { value: 'You review contracts.' } })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add agent' }))
+    })
+    const created = calls.find((call) => call.method === 'POST' && call.url === '/api/agents')
+    expect(created?.body).toEqual({
+      key: 'legal',
+      name: 'Legal',
+      category: 'operations',
+      systemPrompt: 'You review contracts.',
+      description: 'Reviews contracts.',
+    })
   })
 })

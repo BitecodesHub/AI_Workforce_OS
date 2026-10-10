@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, compaction, shorten conversation, context window overflow, long running agents, truncate tool results, TranscriptCompactor
+// @what: Shortens a conversation that no longer fits a model's window.
+// @flow: Called by ModelRouter before retrying a too-long request.
 package os.aiworkforce.llm.router;
 
 import java.util.ArrayList;
@@ -68,6 +71,7 @@ public class TranscriptCompactor {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    // @find: compact conversation to fit context window
     /**
      * Returns a shortened request, or null when nothing more can be removed.
      *

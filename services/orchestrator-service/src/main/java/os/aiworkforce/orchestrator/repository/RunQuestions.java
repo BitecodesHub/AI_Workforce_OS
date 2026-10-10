@@ -1,3 +1,9 @@
+// @find: run questions repository, pending questions, answer question lock, expired questions, awaiting resume, withdraw pending questions, questions per conversation, RunQuestions
+// @what: Spring Data repository for RunQuestion rows including expiry, resume and conversation queries.
+// @flow: Used by the question service, expiry sweep and chat.
+// @find: run questions repository, pending questions, answer question lock, expired questions, awaiting resume, withdraw pending questions, questions per conversation, RunQuestions
+// @what: Spring Data repository for RunQuestion rows including expiry, resume and conversation queries.
+// @flow: Used by the question service, expiry sweep and chat.
 package os.aiworkforce.orchestrator.repository;
 
 import java.time.Instant;
@@ -32,36 +38,60 @@ import os.aiworkforce.orchestrator.domain.RunQuestion;
  */
 public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
 
+    // @find: get question by id
+    // @find: get question by id
     Optional<RunQuestion> findByIdAndOrgId(UUID id, UUID orgId);
 
+    // @find: lock question to answer it
+    // @find: lock question to answer it
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select q from RunQuestion q where q.id = :id and q.orgId = :orgId")
     Optional<RunQuestion> lockByIdAndOrgId(@Param("id") UUID id, @Param("orgId") UUID orgId);
 
+    // @find: lock question by id
+    // @find: lock question by id
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select q from RunQuestion q where q.id = :id")
     Optional<RunQuestion> lockById(@Param("id") UUID id);
 
+    // @find: question for a tool call
+    // @find: question for a tool call
     Optional<RunQuestion> findByRunIdAndToolCallId(UUID runId, String toolCallId);
 
+    // @find: questions of a run
+    // @find: questions of a run
     List<RunQuestion> findByRunIdOrderByCreatedAtAsc(UUID runId);
 
+    // @find: latest question of a run
+    // @find: latest question of a run
     /** The run's newest question, whatever its status. Read inside the resume claim (A2.7 step 3). */
     Optional<RunQuestion> findFirstByRunIdOrderByCreatedAtDesc(UUID runId);
 
+    // @find: count questions of a run
+    // @find: count questions of a run
     long countByRunId(UUID runId);
 
+    // @find: run has question in status
+    // @find: run has question in status
     boolean existsByRunIdAndStatus(UUID runId, String status);
 
+    // @find: questions of a run by status
+    // @find: questions of a run by status
     List<RunQuestion> findByRunIdAndStatus(UUID runId, String status);
 
+    // @find: list pending questions
+    // @find: list pending questions
     @Query(
             "select q from RunQuestion q where q.orgId = :orgId and q.status = 'pending' order by q.expiresAt, q.createdAt")
     List<RunQuestion> findPending(@Param("orgId") UUID orgId, Pageable page);
 
+    // @find: list recent questions
+    // @find: list recent questions
     @Query("select q from RunQuestion q where q.orgId = :orgId order by q.createdAt desc")
     List<RunQuestion> findRecent(@Param("orgId") UUID orgId, Pageable page);
 
+    // @find: pending questions in a conversation
+    // @find: pending questions in a conversation
     /** Every pending question of a conversation, however old. */
     @Query(
             """
@@ -71,6 +101,8 @@ public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
     List<RunQuestion> findPendingForConversation(
             @Param("orgId") UUID orgId, @Param("conversationId") UUID conversationId);
 
+    // @find: recent questions in a conversation
+    // @find: recent questions in a conversation
     /** The newest closed or open questions of a conversation, newest first. */
     @Query(
             """
@@ -81,10 +113,14 @@ public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
     List<RunQuestion> findRecentForConversation(
             @Param("orgId") UUID orgId, @Param("conversationId") UUID conversationId, Pageable page);
 
+    // @find: expired question ids, expiry sweep
+    // @find: expired question ids, expiry sweep
     /** Ids only: each is then expired in its own transaction under a row lock. */
     @Query("select q.id from RunQuestion q where q.status = 'pending' and q.expiresAt < :now order by q.expiresAt")
     List<UUID> findExpiredIds(@Param("now") Instant now, Pageable page);
 
+    // @find: stranded pending questions
+    // @find: stranded pending questions
     /** Pending questions whose run is no longer waiting for them: the work stopped by a path that could not withdraw them. */
     @Query(
             """
@@ -95,6 +131,8 @@ public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
             """)
     List<UUID> findStrandedPendingIds(Pageable page);
 
+    // @find: answered questions awaiting resume
+    // @find: answered questions awaiting resume
     /**
      * Closed questions whose run is still parked, for the resume sweep. Only the run's newest question counts:
      * an earlier answered question of a run that has since asked again must never resume it.
@@ -109,6 +147,8 @@ public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
             """)
     List<RunQuestion> findAwaitingResume(@Param("cutoff") Instant cutoff, Pageable page);
 
+    // @find: withdraw pending questions when run ends
+    // @find: withdraw pending questions when run ends
     /** Withdraws a run's pending question without loading it, so a concurrent answer never rolls this back. */
     @Modifying(flushAutomatically = true)
     @Query(
@@ -119,6 +159,8 @@ public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
             """)
     int withdrawPending(@Param("runId") UUID runId, @Param("reason") String reason, @Param("now") Instant now);
 
+    // @find: pending question counts per conversation
+    // @find: pending question counts per conversation
     /** [conversationId, requestedBy] for every pending question in these conversations. */
     @Query(
             """
@@ -127,6 +169,8 @@ public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
             """)
     List<Object[]> pendingByConversation(@Param("orgId") UUID orgId, @Param("ids") Collection<UUID> ids);
 
+    // @find: conversations needing my answer
+    // @find: conversations needing my answer
     /** Conversations holding a pending question this person asked for, for the "Needs you" group. */
     @Query(
             """
@@ -135,6 +179,8 @@ public interface RunQuestions extends JpaRepository<RunQuestion, UUID> {
             """)
     List<UUID> conversationsNeedingAnswerFrom(@Param("orgId") UUID orgId, @Param("me") UUID me);
 
+    // @find: detach questions from deleted conversation
+    // @find: detach questions from deleted conversation
     @Modifying(flushAutomatically = true)
     @Query(
             "update RunQuestion q set q.conversationId = null where q.orgId = :orgId and q.conversationId = :conversationId")

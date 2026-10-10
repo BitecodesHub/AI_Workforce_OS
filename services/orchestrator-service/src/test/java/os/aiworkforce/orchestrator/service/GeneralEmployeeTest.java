@@ -1,3 +1,5 @@
+// @find: tests for general employee, general employee, fallback agent, is_fallback, unmatched requests
+// @what: Unit and integration tests (8 cases) for general employee, for example: creates when missing; uses next key when general is taken; does nothing when already flagged; swallows race on create.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

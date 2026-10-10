@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  @find: platform web, shared servlet library, maven module, security, audit client, exception handler, persistence base classes
+  @what: Maven module definition for the shared servlet-service building blocks (security, errors, audit client, base entities).
+  @flow: Child of the root pom.xml; depended on by the seven servlet services
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

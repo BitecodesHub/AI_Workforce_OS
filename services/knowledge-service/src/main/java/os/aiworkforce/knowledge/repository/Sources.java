@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, sources repository, list sources, visible sources, restricted sources, agent-owned sources, workspace sources, Sources
+// @what: Spring Data repository for sources, with the queries that hide restricted and agent-owned sources from the wrong people.
+// @flow: Called by IngestionService, RetrievalService and KnowledgeController.
 package os.aiworkforce.knowledge.repository;
 
 import java.util.List;

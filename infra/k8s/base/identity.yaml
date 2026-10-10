@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, identity deployment, identity, sign in, login, roles, members, jwks, tokens, deployment, service, resources, probes, replicas, manifest
+# @what: Kubernetes deployment and service for the identity service (sign-in, roles, members).
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 # identity service.
 #
 # Resource requests are what the scheduler places on and what the JVM sizes its heap against, so

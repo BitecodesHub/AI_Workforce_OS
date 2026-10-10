@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, source entity, create knowledge source, where the knowledge base is stored, sources table, restricted source, agent-owned source, embedding model per source, Qdrant collection, watermark, chunk size, Source
+// @what: JPA entity for a knowledge source (a named folder of documents) with its embedding model, collection, restricted flag and optional owning agent.
+// @flow: Created by IngestionService.createSource; read by KnowledgeController, RetrievalService and Sources repository.
 package os.aiworkforce.knowledge.domain;
 
 import java.time.Instant;

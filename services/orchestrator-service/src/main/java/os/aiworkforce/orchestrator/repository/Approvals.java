@@ -1,3 +1,9 @@
+// @find: approvals repository, pending approvals, find expired approvals, approved awaiting resume, withdraw pending approvals, lock approval, record outcome, count pending by decider, Approvals
+// @what: Spring Data repository for Approval rows including lock, expiry and resume queries.
+// @flow: Used by the approval service, expiry sweep and resume worker.
+// @find: approvals repository, pending approvals, find expired approvals, approved awaiting resume, withdraw pending approvals, lock approval, record outcome, count pending by decider, Approvals
+// @what: Spring Data repository for Approval rows including lock, expiry and resume queries.
+// @flow: Used by the approval service, expiry sweep and resume worker.
 package os.aiworkforce.orchestrator.repository;
 
 import java.time.Instant;
@@ -23,6 +29,8 @@ import os.aiworkforce.orchestrator.domain.Approval;
 
 public interface Approvals extends JpaRepository<Approval, UUID> {
 
+    // @find: record outcome of approved action
+    // @find: record outcome of approved action
     /**
      * Records what happened when an approved call was carried out. A direct update, so it never
      * collides with a decision saved at the same moment and never overwrites one.
@@ -31,6 +39,8 @@ public interface Approvals extends JpaRepository<Approval, UUID> {
     @Query("update Approval a set a.outcome = :outcome where a.id = :id")
     int recordOutcome(@Param("id") UUID id, @Param("outcome") String outcome);
 
+    // @find: list pending approvals, approval inbox
+    // @find: list pending approvals, approval inbox
     @Query(
             """
             select a from Approval a
@@ -39,19 +49,27 @@ public interface Approvals extends JpaRepository<Approval, UUID> {
             """)
     List<Approval> findPending(@Param("orgId") UUID orgId);
 
+    // @find: list approvals by status, paged
+    // @find: list approvals by status, paged
     /**
      * One page of a workspace's approvals in any of {@code statuses}, in the order the page asks
      * for: the queue soonest-expiring first, the history newest decision first.
      */
     List<Approval> findByOrgIdAndStatusIn(UUID orgId, Collection<String> statuses, Pageable page);
 
+    // @find: list approvals for an agent
+    // @find: list approvals for an agent
     /** As {@link #findByOrgIdAndStatusIn}, for one agent's approvals only. */
     List<Approval> findByOrgIdAndStatusInAndAgentId(
             UUID orgId, Collection<String> statuses, UUID agentId, Pageable page);
 
+    // @find: list approvals for a run
+    // @find: list approvals for a run
     /** As {@link #findByOrgIdAndStatusIn}, for one run's approvals only: the card a run's own page shows. */
     List<Approval> findByOrgIdAndStatusInAndRunId(UUID orgId, Collection<String> statuses, UUID runId, Pageable page);
 
+    // @find: count pending approvals per decider, who can approve
+    // @find: count pending approvals per decider, who can approve
     /**
      * How many approvals are pending, counted by what decides who may answer them: the permission
      * an approver needs, who asked for the work, and what the action does. Each row is {@code
@@ -66,6 +84,8 @@ public interface Approvals extends JpaRepository<Approval, UUID> {
             """)
     List<Object[]> countPendingByDecider(@Param("orgId") UUID orgId);
 
+    // @find: count pending approvals per decider for agent
+    // @find: count pending approvals per decider for agent
     /** As {@link #countPendingByDecider}, for one agent's approvals only. */
     @Query(
             """
@@ -75,8 +95,12 @@ public interface Approvals extends JpaRepository<Approval, UUID> {
             """)
     List<Object[]> countPendingByDeciderForAgent(@Param("orgId") UUID orgId, @Param("agentId") UUID agentId);
 
+    // @find: get approval by id
+    // @find: get approval by id
     Optional<Approval> findByIdAndOrgId(UUID id, UUID orgId);
 
+    // @find: lock approval for decision, pessimistic lock, decide approval
+    // @find: lock approval for decision, pessimistic lock, decide approval
     /**
      * The approval, locked until the surrounding transaction ends, so two people deciding it at
      * once are taken one after the other: the second sees the first's decision instead of failing
@@ -86,15 +110,23 @@ public interface Approvals extends JpaRepository<Approval, UUID> {
     @Query("select a from Approval a where a.id = :id and a.orgId = :orgId")
     Optional<Approval> lockByIdAndOrgId(@Param("id") UUID id, @Param("orgId") UUID orgId);
 
+    // @find: approvals sent back with feedback for a run
+    // @find: approvals sent back with feedback for a run
     /** Approvals of one run that were sent back with feedback, oldest first. */
     List<Approval> findByRunIdAndSentBackTrueOrderByRequestedAtAsc(UUID runId);
 
+    // @find: approvals of a run by status
+    // @find: approvals of a run by status
     List<Approval> findByRunIdAndStatus(UUID runId, String status);
 
+    // @find: find expired approvals, expiry sweep
+    // @find: find expired approvals, expiry sweep
     /** Pending approvals past their deadline, for the expiry sweep. */
     @Query("select a from Approval a where a.status = 'pending' and a.expiresAt < :now")
     List<Approval> findExpired(@Param("now") Instant now, Pageable pageable);
 
+    // @find: approved approvals awaiting resume, resume run
+    // @find: approved approvals awaiting resume, resume run
     /**
      * Approved approvals whose run is still parked, for the resume sweep.
      *
@@ -114,6 +146,8 @@ public interface Approvals extends JpaRepository<Approval, UUID> {
             """)
     List<Approval> findApprovedAwaitingResume(@Param("cutoff") Instant cutoff, Pageable page);
 
+    // @find: withdraw pending approvals when run ends or is cancelled
+    // @find: withdraw pending approvals when run ends or is cancelled
     /**
      * Withdraws a run's pending approvals without loading them, so a decision committing at the
      * same moment simply wins or loses and never rolls back the stop with a version conflict.

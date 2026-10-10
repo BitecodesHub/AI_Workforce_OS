@@ -1,3 +1,5 @@
+// @find: tests for goal controller list, list goals, GET /api/goals, filters, paging
+// @what: Unit and integration tests (9 cases) for goal controller list, for example: a page costs afixed number of queries; each task carries its latest run; an empty page reads nothing else; no filter asks for everything.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

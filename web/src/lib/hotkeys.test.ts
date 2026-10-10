@@ -1,3 +1,5 @@
+// @find: tests for hotkeys, keyboard shortcuts, useHotkeys, formatHotkey
+// @what: Unit tests for keyboard shortcuts.
 import { renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { formatHotkey, isMac, modLabel, useHotkeys } from './hotkeys'

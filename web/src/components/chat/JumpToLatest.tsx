@@ -1,3 +1,7 @@
+// @find: jump to latest, scroll to bottom, new messages button, chat scroll
+// @what: Button that scrolls the thread to the newest message.
+// @flow: Used by the Chat page with useStickToBottom.
+// @find: JumpToLatest, jump to latest, jump to latest, scroll to bottom, new messages button, chat scroll
 /** The pill above the composer that returns the reader to the bottom of the thread (B1.6). */
 export function JumpToLatest({
   visible,

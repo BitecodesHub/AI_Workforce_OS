@@ -1,3 +1,9 @@
+// @find: chat messages repository, list messages in conversation, earlier messages, search messages, messages by goal, load older turns, ChatMessages
+// @what: Spring Data repository for ChatMessage rows.
+// @flow: Used by the chat service for history, paging and search.
+// @find: chat messages repository, list messages in conversation, earlier messages, search messages, messages by goal, load older turns, ChatMessages
+// @what: Spring Data repository for ChatMessage rows.
+// @flow: Used by the chat service for history, paging and search.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.Collection;
@@ -19,19 +25,31 @@ import os.aiworkforce.orchestrator.domain.ChatMessage;
  */
 public interface ChatMessages extends JpaRepository<ChatMessage, UUID> {
 
+    // @find: list all messages in a conversation in order
+    // @find: list all messages in a conversation in order
     List<ChatMessage> findByConversationIdOrderByPosition(UUID conversationId);
 
+    // @find: get one message in a conversation
+    // @find: get one message in a conversation
     Optional<ChatMessage> findByIdAndConversationId(UUID id, UUID conversationId);
 
+    // @find: messages for a goal
+    // @find: messages for a goal
     List<ChatMessage> findByGoalId(UUID goalId);
 
+    // @find: latest messages in conversation, paged
+    // @find: latest messages in conversation, paged
     /** The newest page of a conversation, for the message window (A3.6). */
     List<ChatMessage> findByConversationIdOrderByPositionDesc(UUID conversationId, Pageable page);
 
+    // @find: older messages before a position, load earlier
+    // @find: older messages before a position, load earlier
     /** An older page, for "Load earlier messages". */
     List<ChatMessage> findByConversationIdAndPositionLessThanOrderByPositionDesc(
             UUID conversationId, int before, Pageable page);
 
+    // @find: earlier turns for model context
+    // @find: earlier turns for model context
     /**
      * The turns an agent can be given as context before a given position, newest first: what
      * people wrote and what agents answered. Routing receipts, progress cards, notices and
@@ -48,9 +66,13 @@ public interface ChatMessages extends JpaRepository<ChatMessage, UUID> {
     List<ChatMessage> findEarlierTurns(
             @Param("conversationId") UUID conversationId, @Param("before") int before, Pageable page);
 
+    // @find: messages after a position, new messages
+    // @find: messages after a position, new messages
     /** Messages appended after a given position, newest-goes-last - used to detect a race on a second click. */
     List<ChatMessage> findByConversationIdAndPositionGreaterThanOrderByPosition(UUID conversationId, int after);
 
+    // @find: search message text, chat search
+    // @find: search message text, chat search
     /**
      * [conversationId, messageId, content] of matching messages, newest first, for the
      * conversations on a search results page; the first row per conversation is its snippet.

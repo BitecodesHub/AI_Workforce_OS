@@ -1,3 +1,6 @@
+// @find: chat model, group messages, message grouping, new message ids, answer announce, read aloud, goal chain, thread rules, pure functions
+// @what: Pure rules behind the thread: grouping, new-message detection and a goal's chain.
+// @flow: Used by MessageList, MessageItem, ProgressCard and the Chat page.
 import { toolLabel } from '../../lib/labels'
 import { formatElapsed, formatMoney, nameList } from '../../lib/format'
 import { canRetryGoal, canStopGoal } from '../../lib/goals'
@@ -27,6 +30,7 @@ import type {
 
 /* ---- Grouping messages into a thread ------------------------------------------------------- */
 
+// @find: isGroupedWithPrevious, is grouped with previous, chat model, group messages, message grouping, new message ids
 /**
  * Whether `message` should sit close to the one before it rather than with its own full gap: the
  * same author, one bubble kind (a person's text or an agent's answer), immediately following.
@@ -39,6 +43,7 @@ export function isGroupedWithPrevious(message: ChatMessage, previous: ChatMessag
   return message.authorKind === previous.authorKind && message.agentId === previous.agentId
 }
 
+// @find: groupMessages, group messages, chat model, group messages, message grouping, new message ids
 /** Every message paired with whether it groups with the one before it, in one pass. */
 export function groupMessages(messages: readonly ChatMessage[]): Array<{ message: ChatMessage; grouped: boolean }> {
   return messages.map((message, index) => ({ message, grouped: isGroupedWithPrevious(message, messages[index - 1]) }))
@@ -46,6 +51,7 @@ export function groupMessages(messages: readonly ChatMessage[]): Array<{ message
 
 /* ---- What is new since the last render ------------------------------------------------------ */
 
+// @find: newMessageIds, new message ids, chat model, group messages, message grouping, new message ids
 /**
  * The ids in `current` that were not in `previous`, optionally narrowed to one message kind.
  * Used both to announce new agent replies to a screen reader and to read them aloud once.
@@ -62,6 +68,7 @@ export function newMessageIds(
 /** How long a new answer waits for its agent's name before the announcement gives up and uses a generic one. */
 export const ANSWER_NAME_TIMEOUT_MS = 8_000
 
+// @find: readyAnswers, ready answers, chat model, group messages, message grouping, new message ids
 /**
  * Splits freshly-arrived answers into those ready to announce and those still waiting on their
  * agent's name.
@@ -108,6 +115,7 @@ export type TaskStepStatus =
   | 'cancelled'
   | 'skipped'
 
+// @find: taskStepStatus, task step status, chat model, group messages, message grouping, new message ids
 /** A task's place in the chain, in the words the progress card groups its tags by. */
 export function taskStepStatus(task: Task): TaskStepStatus {
   switch (task.status) {
@@ -135,6 +143,7 @@ export function taskStepStatus(task: Task): TaskStepStatus {
 
 const ACTIVE_STEP_STATUSES = new Set<TaskStepStatus>(['queued', 'working', 'waiting_approval', 'waiting_input'])
 
+// @find: currentTaskIndex, current task index, chat model, group messages, message grouping, new message ids
 /**
  * The task the chain is on right now: the first one running or parked for a person (an approval
  * or a question), else the first still queued, else null once every task has reached an end
@@ -149,6 +158,7 @@ export function currentTaskIndex(tasks: readonly Task[]): number {
   return tasks.findIndex((task) => task.status === 'pending' || task.status === 'ready')
 }
 
+// @find: goalChainActive, goal chain active, chat model, group messages, message grouping, new message ids
 /** Whether a goal's own chain still has any moving part: at least one task not at an end state. */
 export function goalChainActive(goal: Pick<Goal, 'tasks'>): boolean {
   return goal.tasks.some((task) => ACTIVE_STEP_STATUSES.has(taskStepStatus(task)))
@@ -156,6 +166,7 @@ export function goalChainActive(goal: Pick<Goal, 'tasks'>): boolean {
 
 /* ---- Reading a routing receipt ---------------------------------------------------------------- */
 
+// @find: routingModeLabel, routing mode label, chat model, group messages, message grouping, new message ids
 /** How a routing message explains itself, in the words the receipt card opens with. */
 export function routingModeLabel(mode: ChatMessageDetail['mode']): string {
   switch (mode) {
@@ -174,6 +185,7 @@ export function routingModeLabel(mode: ChatMessageDetail['mode']): string {
   }
 }
 
+// @find: routingSummary, routing summary, chat model, group messages, message grouping, new message ids
 /** The collapsed routing card's one line, naming who is on it and how they were chosen. */
 export function routingSummary(message: ChatMessage, agentNames: Record<string, { name: string }>): string {
   const base = routingLine(message, agentNames)
@@ -198,12 +210,14 @@ export function routingSummary(message: ChatMessage, agentNames: Record<string, 
  */
 export type SourcePassage = Passage & { sourceId?: string | null }
 
+// @find: routingPassages, routing passages, chat model, group messages, message grouping, new message ids
 /** The passages a routing message says its agent was given, in the order it read them; none when it records none. */
 export function routingPassages(message: ChatMessage | undefined): SourcePassage[] {
   const passages: SourcePassage[] | undefined = message?.detail.passages
   return Array.isArray(passages) ? passages : []
 }
 
+// @find: sourcesForAnswer, sources for answer, chat model, group messages, message grouping, new message ids
 /**
  * The sources to show under an answer: the passages its goal's first step was given. A later step
  * of a chain was handed the earlier work and the titles of those passages, not the passages, so
@@ -227,6 +241,7 @@ export function sourcesForAnswer(
   return (routing?.detail.agents?.length ?? 0) <= 1 ? passages : []
 }
 
+// @find: passageLink, passage link, chat model, group messages, message grouping, new message ids
 /**
  * Where a passage's link goes: its source in Knowledge when the person may open Knowledge, else
  * its own web address when it has one, else nowhere.
@@ -259,6 +274,7 @@ function routingLine(message: ChatMessage, agentNames: Record<string, { name: st
 
 /* ---- Reading a goal's progress ------------------------------------------------------------------ */
 
+// @find: progressSummary, progress summary, chat model, group messages, message grouping, new message ids
 /**
  * The progress card's collapsed summary: how a finished goal ended, or, while it is still open,
  * whether it is parked on a person (an approval or an answer) or simply running. Folding a card
@@ -285,6 +301,7 @@ export function progressSummary(goal: BoardGoal, showCost = true): string {
   return `Running ${formatElapsed(goal.createdAt, null)}`
 }
 
+// @find: choiceMadeFor, choice made for, chat model, group messages, message grouping, new message ids
 /** The name of the agent a later routing message rerouted `messageId` to, or null if none has. */
 export function choiceMadeFor(messageId: string, messages: readonly ChatMessage[]): string | null {
   const later = messages.find((message) => message.detail.rerouteOf === messageId)
@@ -292,6 +309,7 @@ export function choiceMadeFor(messageId: string, messages: readonly ChatMessage[
   return agent?.name ?? null
 }
 
+// @find: becauseText, because text, chat model, group messages, message grouping, new message ids
 /** The reason a routing message gives, as the end of "because ...": lower-cased start, no final full stop. */
 export function becauseText(reason: string): string {
   const clean = reason.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '')
@@ -299,16 +317,19 @@ export function becauseText(reason: string): string {
   return clean
 }
 
+// @find: routingMessageForGoal, routing message for goal, chat model, group messages, message grouping, new message ids
 /** The routing message that started `goalId`, for "Ask again" and the Orchestrator's deep link. */
 export function routingMessageForGoal(goalId: string, messages: readonly ChatMessage[]): ChatMessage | undefined {
   return messages.find((message) => message.kind === 'routing' && message.goalId === goalId)
 }
 
+// @find: progressMessageForGoal, progress message for goal, chat model, group messages, message grouping, new message ids
 /** The progress message that tracks `goalId` in the thread, the anchor its "Review" link scrolls to. */
 export function progressMessageForGoal(goalId: string, messages: readonly ChatMessage[]): ChatMessage | undefined {
   return messages.find((message) => message.kind === 'progress' && message.goalId === goalId)
 }
 
+// @find: goalTarget, goal target, chat model, group messages, message grouping, new message ids
 /**
  * Where a link to a goal should take the person: its progress card in the thread when that
  * message is loaded (`elementId`, the message's own `m-` anchor), otherwise the screen that shows
@@ -325,11 +346,13 @@ export function goalTarget(
   return { href: reason === 'approval' ? '/approvals' : `/orchestrator?goal=${goalId}` }
 }
 
+// @find: goalHasAnswer, goal has answer, chat model, group messages, message grouping, new message ids
 /** Whether a goal already has an answer message in the thread. */
 export function goalHasAnswer(goalId: string, messages: readonly ChatMessage[]): boolean {
   return messages.some((message) => message.kind === 'answer' && message.goalId === goalId)
 }
 
+// @find: lastAnswer, last answer, chat model, group messages, message grouping, new message ids
 /** The most recent answer message in the thread, if any. */
 export function lastAnswer(messages: readonly ChatMessage[]): ChatMessage | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -345,6 +368,7 @@ export type ThreadEntry =
   | { type: 'day'; key: string; label: string }
   | { type: 'message'; message: ChatMessage; grouped: boolean }
 
+// @find: dayLabel, day label, chat model, group messages, message grouping, new message ids
 /** 'Today', 'Yesterday', 'Monday 22 September' (this year), or '22 September 2025' (another year). */
 export function dayLabel(date: Date, now: Date): string {
   const oneDay = 24 * 60 * 60 * 1000
@@ -362,6 +386,7 @@ export function dayLabel(date: Date, now: Date): string {
   return `${day} ${month} ${date.getFullYear()}`
 }
 
+// @find: withDayDividers, with day dividers, chat model, group messages, message grouping, new message ids
 /** The thread with a day divider inserted before the first message of every calendar day. */
 export function withDayDividers(messages: readonly ChatMessage[], now: Date): ThreadEntry[] {
   const entries: ThreadEntry[] = []
@@ -382,12 +407,14 @@ export function withDayDividers(messages: readonly ChatMessage[], now: Date): Th
 
 /* ---- Questions --------------------------------------------------------------------------------- */
 
+// @find: orphanQuestions, orphan questions, chat model, group messages, message grouping, new message ids
 /** Pending questions with no `question` message of their own yet, rendered at the end of the thread. */
 export function orphanQuestions(questions: readonly RunQuestion[], messages: readonly ChatMessage[]): RunQuestion[] {
   const withMessage = new Set(messages.map((message) => message.detail.questionId).filter((id): id is string => Boolean(id)))
   return questions.filter((question) => question.status === 'pending' && !withMessage.has(question.id))
 }
 
+// @find: autoAnswerTarget, auto answer target, chat model, group messages, message grouping, new message ids
 /** The newest question the composer should answer automatically, or null (B1.7, D-14). */
 export function autoAnswerTarget(
   questions: readonly RunQuestion[],
@@ -414,6 +441,7 @@ export function autoAnswerTarget(
   return null
 }
 
+// @find: sendsAsNewRequest, sends as new request, chat model, group messages, message grouping, new message ids
 /**
  * Whether a message written while a question is targeted goes out as a new request instead of the
  * answer. Only an automatic target gives way, and only to a mention of some other agent: "@Sales
@@ -429,6 +457,7 @@ export function sendsAsNewRequest(
   return agentIds.some((id) => id !== replyTo.agentId)
 }
 
+// @find: composerAnswer, composer answer, chat model, group messages, message grouping, new message ids
 /** Maps composer text to an answer, per D-14's rules for one question versus several. */
 export function composerAnswer(q: RunQuestion, text: string): { answers: QuestionAnswerItem[]; note?: string } {
   const trimmed = text.trim()
@@ -469,11 +498,13 @@ export function composerAnswer(q: RunQuestion, text: string): { answers: Questio
 
 /* ---- The message being sent ---------------------------------------------------------------------- */
 
+// @find: newestPosition, newest position, chat model, group messages, message grouping, new message ids
 /** The newest position in the thread, or -1 for an empty one: what a send waits to see exceeded. */
 export function newestPosition(messages: readonly ChatMessage[]): number {
   return messages.reduce((highest, message) => Math.max(highest, message.position), -1)
 }
 
+// @find: pendingEchoed, pending echoed, chat model, group messages, message grouping, new message ids
 /**
  * Whether the server has already stored the message that is still being sent, so the thread
  * shows it and the pending copy of the bubble would be a duplicate. The coordinator saves the
@@ -499,6 +530,7 @@ export function pendingEchoed(
 
 /* ---- Trying a failed request again --------------------------------------------------------------- */
 
+// @find: resendText, resend text, chat model, group messages, message grouping, new message ids
 /**
  * The person's own request behind an error message, for "Try again" to put back in the box: the
  * text the error itself recorded, else the request the goal's routing message recorded, else the
@@ -527,6 +559,7 @@ export function resendText(error: ChatMessage, messages: readonly ChatMessage[])
 
 /* ---- Drafts ------------------------------------------------------------------------------------ */
 
+// @find: draftKey, draft key, chat model, group messages, message grouping, new message ids
 /**
  * Where the composer keeps an unsent draft: per person as well as per conversation, so somebody
  * signing in after someone else on the same browser never sees that person's half-written text.
@@ -535,11 +568,13 @@ export function draftKey(userId: string, conversationId: string | null): string 
   return `chat.draft.${userId}.${conversationId ?? 'new'}`
 }
 
+// @find: isLegacyDraftKey, is legacy draft key, chat model, group messages, message grouping, new message ids
 /** The draft keys written before drafts were kept per person: `chat.draft.<conversation or new>`. */
 export function isLegacyDraftKey(key: string): boolean {
   return key.startsWith('chat.draft.') && !key.slice('chat.draft.'.length).includes('.')
 }
 
+// @find: removeLegacyDrafts, remove legacy drafts, chat model, group messages, message grouping, new message ids
 /** Removes every draft kept before drafts were per person, which anyone on the browser could see. */
 export function removeLegacyDrafts(storage: Pick<Storage, 'length' | 'key' | 'removeItem'>): void {
   const stale: string[] = []
@@ -552,6 +587,7 @@ export function removeLegacyDrafts(storage: Pick<Storage, 'length' | 'key' | 're
 
 /* ---- Goals -------------------------------------------------------------------------------------- */
 
+// @find: activeGoals, active goals, chat model, group messages, message grouping, new message ids
 /** The goals whose chain can still change: planning, running or waiting. */
 export function activeGoals(goals: readonly BoardGoal[]): BoardGoal[] {
   return goals.filter(isGoalActive)
@@ -561,6 +597,7 @@ export { canRetryGoal, canStopGoal }
 
 /* ---- The work strip ------------------------------------------------------------------------------- */
 
+// @find: workStripSummary, work strip summary, chat model, group messages, message grouping, new message ids
 /**
  * The narrow work strip's one line: what waits on a person first, since that is what blocks the
  * work, else how many pieces are running. `approvals` and `answers` count goals whose current task
@@ -587,12 +624,26 @@ export function workStripSummary(goals: readonly BoardGoal[]): { text: string; a
 
 /* ---- Live step text ------------------------------------------------------------------------------ */
 
-/** One line for the step a run is on right now, for the work strip and the Work panel. */
+// @find: liveStepText, live step text, chat model, group messages, message grouping, new message ids
+/**
+ * One line for the step a run is on right now, for the work strip and the Work panel.
+ *
+ * A model call is written only once the model has replied, so while a run waits on its first reply
+ * its last step is the instruction note (or the notes and documents read before it). That is the
+ * longest wait of most runs, and it used to read "Starting" for all of it, as though the work had
+ * stalled. Only a run with no step at all is still starting.
+ */
 export function liveStepText(step: RunStep | undefined): string {
   if (!step) return 'Starting'
   switch (step.kind) {
     case 'model_call':
+    case 'note':
+    case 'error':
       return 'Working on a reply'
+    case 'memory_read':
+      return 'Last step: read its notes'
+    case 'knowledge_query':
+      return 'Last step: searched the documents'
     case 'tool_call': {
       const tool = typeof step.detail.tool === 'string' ? step.detail.tool : undefined
       return `Last step: ${toolLabel(tool)}`
@@ -606,7 +657,7 @@ export function liveStepText(step: RunStep | undefined): string {
       return `Picking up from ${from}`
     }
     default:
-      return 'Starting'
+      return 'Working on a reply'
   }
 }
 
@@ -614,6 +665,7 @@ export function liveStepText(step: RunStep | undefined): string {
 
 const NO_MODEL_CODES = new Set(['no_model_available', 'provider_credential_invalid', 'provider_not_configured'])
 
+// @find: errorHelp, error help, chat model, group messages, message grouping, new message ids
 /** A help sentence and, where one exists, a link, for an error card's failure reason code. */
 export function errorHelp(code?: string | null): { text: string; href: string | null } | null {
   if (!code) return null
@@ -634,6 +686,7 @@ export function errorHelp(code?: string | null): { text: string; href: string | 
 
 /* ---- Authorship --------------------------------------------------------------------------------- */
 
+// @find: messageAuthor, message author, chat model, group messages, message grouping, new message ids
 /** Who a message reads as coming from: "You" for the viewer, else the member's own name. */
 export function messageAuthor(
   message: ChatMessage,
@@ -646,6 +699,7 @@ export function messageAuthor(
   return { isMe: false, name }
 }
 
+// @find: conversationText, conversation text, chat model, group messages, message grouping, new message ids
 /** "Copy conversation" as plain text: "You: …", each card reduced to one line. */
 export function conversationText(messages: readonly ChatMessage[], agentNames: Record<string, { name: string }>): string {
   const lines: string[] = []
@@ -668,62 +722,44 @@ export function conversationText(messages: readonly ChatMessage[], agentNames: R
 }
 
 
-/*
- * What the welcome screen says an agent does. An agent's summary is often its own instructions,
- * written to it in the second person ("You triage support tickets..."), which reads oddly to the
- * person choosing it. A leading "You <verb>" becomes "<Verbs>"; "You are the X: you <verb>..."
- * keeps the part after the colon the same way. Anything still addressed to "you", or empty, falls
- * back to `fallback` (the agent's category).
+// What an agent does, in one line: kept in lib so dialogs outside Chat use the same words.
+export { agentDescription, describeAgent } from '../../lib/agentDescription'
+
+// @find: isRoutingLastMessage, is routing last message, chat model, group messages, message grouping, new message ids
+/**
+ * Whether the newest message is one the server is still routing: the conversation is busy, no goal
+ * has started yet, and nothing has answered the person's last message. The thread then says so,
+ * as it did before a reload, instead of showing a message that seems to have been ignored.
  */
-const IRREGULAR_VERBS: Record<string, string> = { have: 'has', do: 'does', go: 'goes', be: 'is' }
-
-function thirdPerson(verb: string): string {
-  const lower = verb.toLowerCase()
-  const irregular = IRREGULAR_VERBS[lower]
-  if (irregular) return irregular
-  if (/(s|x|z|ch|sh|o)$/.test(lower)) return `${lower}es`
-  if (/[^aeiou]y$/.test(lower)) return `${lower.slice(0, -1)}ies`
-  return `${lower}s`
+export function isRoutingLastMessage(
+  messages: readonly Pick<ChatMessage, 'authorKind' | 'kind'>[],
+  goals: readonly BoardGoal[],
+  busy: string,
+): boolean {
+  if (busy !== 'working' || goals.some(isGoalActive)) return false
+  const last = messages[messages.length - 1]
+  return last !== undefined && last.authorKind === 'user' && last.kind === 'text'
 }
 
-/* Verbs an agent's instructions commonly list after the first ("You triage tickets and draft
-   replies"): one of these straight after "and" or a comma is conjugated too. */
-const LISTED_VERBS = new Set(
-  (
-    'analyse analyze answer build check collect compile create draft escalate explain find flag gather handle keep manage ' +
-    'monitor organise organize prepare propose reply research review route schedule send suggest summarise summarize take ' +
-    'track triage update write'
-  ).split(' '),
-)
-
-function conjugateListedVerbs(text: string): string {
-  return text.replace(/(,\s*(?:and\s+)?|\s+and\s+)([a-z]+)\b/g, (match, joiner: string, word: string) =>
-    LISTED_VERBS.has(word) ? `${joiner}${thirdPerson(word)}` : match,
-  )
+// @find: titleFromFirstMessage, title from first message, chat model, group messages, message grouping, new message ids
+/**
+ * The title a new conversation takes from its first message, cut at a word to 60 characters the
+ * way the server cuts it. Given when the conversation is created, so the list shows it at once
+ * rather than "Untitled conversation" for as long as the first message is being routed.
+ */
+export function titleFromFirstMessage(text: string): string {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (clean.length <= 60) return clean
+  const cut = clean.lastIndexOf(' ', 59)
+  return (cut > 0 ? clean.slice(0, cut) : clean.slice(0, 60)).trim()
 }
 
-function capitalise(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1)
+/** Under an answer whose tools ran on practice data, so "the email has been sent" is not taken as fact. */
+export const PRACTICE_DATA_NOTE = 'Practice data: nothing was sent or changed outside this workspace.'
+
+// @find: retryLeftInBox, retry left in box, chat model, group messages, message grouping, new message ids
+/** Whether the message box still holds the words "Try again" has just sent, untouched since. */
+export function retryLeftInBox(boxText: string | undefined, sentText: string): boolean {
+  return boxText !== undefined && boxText.trim() !== '' && boxText.trim() === sentText.trim()
 }
 
-export function describeAgent(summary: string | null | undefined, fallback: string): string {
-  const clean = (summary ?? '').replace(/\s+/g, ' ').trim()
-  if (!clean) return fallback
-  let rest = clean
-  if (/^you are\b/i.test(rest)) {
-    const after = /:\s*you\s+(.+)$/i.exec(rest)
-    if (!after) return fallback
-    rest = `you ${after[1]}`
-  }
-  const lead = /^you\s+([a-z]+)\b(.*)$/i.exec(rest)
-  if (lead) {
-    const verb = lead[1]!
-    if (/^(are|were|will|can|should|must|may|might|would|could)$/i.test(verb)) return fallback
-    rest = `${thirdPerson(verb)}${conjugateListedVerbs(lead[2] ?? '')}`
-  } else if (/^you\b/i.test(rest)) {
-    return fallback
-  }
-  // The first sentence is enough for a tooltip.
-  const sentence = /^(.+?[.!?])(\s|$)/.exec(rest)
-  return capitalise((sentence ? sentence[1]! : rest).trim())
-}

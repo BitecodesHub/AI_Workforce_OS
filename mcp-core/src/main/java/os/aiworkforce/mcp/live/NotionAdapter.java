@@ -1,3 +1,6 @@
+// @find: notion, pages, workspace, search pages, get page, create page, update page, archive page, blocks, integration token, live adapter, real API, docs, wiki
+// @what: Live Notion connector: runs notion__ tools (search, get, create, update, archive pages) against the Notion API with an integration token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -69,6 +72,7 @@ public final class NotionAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Notion search pages, tool notion__search_pages, live Notion call
     private Mono<ToolResult> searchPages(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         String query = text(arguments, "query");
@@ -84,6 +88,7 @@ public final class NotionAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Notion get page, tool notion__get_page, live Notion call
     private Mono<ToolResult> getPage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = pageId(required(arguments, "id"));
         return get(token, "/pages/{id}", id)
@@ -95,6 +100,7 @@ public final class NotionAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: Notion create page, tool notion__create_page, live Notion call
     private Mono<ToolResult> createPage(ToolInvocation invocation, JsonNode arguments, String token) {
         String parent = pageId(required(arguments, "parentId"));
         String title = required(arguments, "title");
@@ -109,6 +115,7 @@ public final class NotionAdapter extends LiveServerAdapter {
                 .map(page -> done(page(page), "Created the Notion page \"" + title + "\"."));
     }
 
+    // @find: Notion update page, tool notion__update_page, live Notion call
     private Mono<ToolResult> updatePage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = pageId(required(arguments, "id"));
         ObjectNode body = json.createObjectNode();
@@ -121,6 +128,7 @@ public final class NotionAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Notion archive page, tool notion__archive_page, live Notion call
     private Mono<ToolResult> archivePage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = pageId(required(arguments, "id"));
         ObjectNode body = json.createObjectNode();

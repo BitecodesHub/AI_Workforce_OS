@@ -1,3 +1,6 @@
+// @find: grant guard, grant role, who can give a role, role escalation, owner only, subset rule, promote to owner, assert can grant, can manage member, can compose role, GrantGuard
+// @what: Single rule that nobody grants a role or permission they do not hold; only owners touch owners.
+// @flow: Called by MemberController, RoleController, InternalMembershipController, PasswordResetService.
 package os.aiworkforce.identity.service;
 
 import java.util.LinkedHashSet;
@@ -89,6 +92,7 @@ public class GrantGuard {
         }
     }
 
+    // @find: current caller as grantor, who is granting
     /**
      * The person making this request, as a grantor.
      *
@@ -112,6 +116,7 @@ public class GrantGuard {
         return new Grantor(userId, now.roleId(), held, owner);
     }
 
+    // @find: member as grantor, check invitation sender
     /**
      * A member as their current membership describes them, for a check made without their token -
      * an invitation they sent being accepted days later, after they may have been demoted.
@@ -123,6 +128,7 @@ public class GrantGuard {
                 .map(role -> new Grantor(userId, role.getId(), role.getPermissions(), isOwnerRole(role)));
     }
 
+    // @find: check grant, may give role, refuse grant reasons
     /** Whether {@code grantor} may give {@code role} to someone, themselves included. */
     public Decision check(Grantor grantor, Role role) {
         if (isOwnerRole(role) && !grantor.owner()) {
@@ -134,6 +140,7 @@ public class GrantGuard {
         return Decision.allow();
     }
 
+    // @find: assert can grant role, refuse escalation
     /** Refuses with 403 unless {@code grantor} may give {@code role}. */
     public void assertCanGrant(Grantor grantor, Role role) {
         Decision decision = check(grantor, role);
@@ -142,11 +149,13 @@ public class GrantGuard {
         }
     }
 
+    // @find: assert can grant role for actor
     /** {@link #assertCanGrant(Grantor, Role)} for the person making this request. */
     public void assertCanGrant(Actor actor, Role role) {
         assertCanGrant(caller(actor), role);
     }
 
+    // @find: assert can manage member, only owner changes owner
     /**
      * Refuses with 403 unless {@code grantor} may change or remove {@code target}.
      *
@@ -173,6 +182,7 @@ public class GrantGuard {
         }
     }
 
+    // @find: assert can compose role, role permissions subset
     /**
      * Refuses with 403 unless {@code grantor} holds every code in {@code codes}, for composing a
      * role. Without it the subset rule could be stepped around by first building a role that

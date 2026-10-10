@@ -1,3 +1,6 @@
+// @find: demo accounts, try the demo, sign in demo, demo data, GET /api/auth/demo-accounts, useDemoAccounts, hasDemoAccounts
+// @what: Finds out once per page load whether this site offers demo accounts so the Try the demo buttons are honest.
+// @flow: Used by the public pages and the sign-in page; calls identity-service demo-accounts endpoint
 import { useSyncExternalStore } from 'react'
 
 /*
@@ -48,6 +51,7 @@ function isAccount(value: unknown): value is DemoAccount {
   return typeof candidate.email === 'string' && typeof candidate.role === 'string'
 }
 
+// @find: parse demo accounts, demo account list
 /** Reads the endpoint's answer; anything unexpected is "no demo accounts", never an error. */
 export function parseDemoAccounts(body: unknown): DemoAccountsState {
   if (typeof body !== 'object' || body === null) return NONE
@@ -98,6 +102,7 @@ function serverSnapshot(): DemoAccountsState {
   return LOADING
 }
 
+// @find: use demo accounts; route: GET /api/auth/demo-accounts; used by: Sign in page, public home page
 /** The demo accounts this site offers, starting as 'loading' with none. */
 export function useDemoAccounts(): DemoAccountsState {
   return useSyncExternalStore(subscribe, snapshot, serverSnapshot)

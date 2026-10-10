@@ -1,3 +1,6 @@
+// @find: oauth setup, register oauth app, set up the app step, client id client secret, google, microsoft, salesforce, scopes, app steps, tenant, login domain, gmail, calendar, drive, sheets, outlook, teams
+// @what: Record telling an administrator how to register an OAuth app with a provider before anyone connects.
+// @flow: Built from OAuthProviders by ConnectorCatalog.oauth
 package os.aiworkforce.mcp.catalog;
 
 import java.util.List;

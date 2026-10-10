@@ -1,3 +1,6 @@
+// @find: count up number, animated number, counter animation, figures, reduced motion, useCountUp hook
+// @what: React hook that counts a number up to its target once active, skipping the animation when motion is reduced.
+// @flow: Used by landing and dashboard figures; calls useReducedMotion
 import { useEffect, useRef, useState } from 'react'
 import { useReducedMotion } from './useReducedMotion'
 
@@ -33,6 +36,7 @@ function easeOutCubic(progress: number): number {
   return 1 - Math.pow(1 - progress, 3)
 }
 
+// @find: useCountUp hook, animate number
 export function useCountUp(target: number, active: boolean, durationMs = 600): number {
   const reduced = useReducedMotion()
   const [shown, setShown] = useState(0)

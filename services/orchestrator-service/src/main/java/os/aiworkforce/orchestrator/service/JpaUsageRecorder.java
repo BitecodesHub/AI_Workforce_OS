@@ -1,3 +1,6 @@
+// @find: usage recorder, record model attempt, usage rows, skipped providers, cost per run, token usage, why answer came from model, attempt log
+// @what: Writes one usage row for every model attempt the router made, including skips.
+// @flow: Called by ModelRouter; read by UsageController
 package os.aiworkforce.orchestrator.service;
 
 import java.math.BigDecimal;
@@ -46,6 +49,7 @@ public class JpaUsageRecorder implements UsageRecorder {
         this.settings = settings;
     }
 
+    // @find: record model attempt usage and cost
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String orgId, String agentId, String runId, AttemptRecord attempt, BigDecimal cost) {

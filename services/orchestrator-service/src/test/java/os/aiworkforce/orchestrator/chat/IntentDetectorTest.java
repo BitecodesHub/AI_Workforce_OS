@@ -1,3 +1,6 @@
+// @find: tests for intent detector, chat, schedule when parser agrees, not aschedule when parser refuses, no marker never schedule, question is documents, search phrasing is documents, question with action verb is work, help request is work, policy question is documents, IntentDetectorTest, IntentDetector
+// @what: Tests for IntentDetector in the orchestrator chat package (15 test methods).
+// @flow: Exercises IntentDetector
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +25,7 @@ class IntentDetectorTest {
 
     private static final SchedulePreviewer NEVER_PARSES = (text, zone, now) -> Optional.empty();
 
+    // @find: test schedule when parser agrees, intent detector
     @Test
     @DisplayName("a timing phrase the parser accepts is a schedule")
     void scheduleWhenParserAgrees() {
@@ -31,6 +35,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.SCHEDULE);
     }
 
+    // @find: test not aschedule when parser refuses, intent detector
     @Test
     @DisplayName("a timing marker the parser refuses is not a schedule")
     void notAScheduleWhenParserRefuses() {
@@ -38,6 +43,7 @@ class IntentDetectorTest {
                 .isNotEqualTo(IntentDetector.Intent.SCHEDULE);
     }
 
+    // @find: test no marker never schedule, intent detector
     @Test
     @DisplayName("text with no timing marker is never read as a schedule, even if the parser would take it")
     void noMarkerNeverSchedule() {
@@ -45,6 +51,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.WORK);
     }
 
+    // @find: test question is documents, intent detector
     @Test
     @DisplayName("a question with no action verb is a documents search")
     void questionIsDocuments() {
@@ -54,6 +61,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.DOCUMENTS);
     }
 
+    // @find: test search phrasing is documents, intent detector
     @Test
     @DisplayName("search and find-in phrasing is a documents search even without a question mark")
     void searchPhrasingIsDocuments() {
@@ -63,6 +71,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.DOCUMENTS);
     }
 
+    // @find: test question with action verb is work, intent detector
     @Test
     @DisplayName("a question that also asks for an action is work, not a documents search")
     void questionWithActionVerbIsWork() {
@@ -70,6 +79,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.WORK);
     }
 
+    // @find: test help request is work, intent detector
     @Test
     @DisplayName("a help request with no document in it is work, not a documents search")
     void helpRequestIsWork() {
@@ -77,6 +87,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.WORK);
     }
 
+    // @find: test policy question is documents, intent detector
     @Test
     @DisplayName("a plain policy question is a documents search")
     void policyQuestionIsDocuments() {
@@ -84,6 +95,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.DOCUMENTS);
     }
 
+    // @find: test ordinary instruction is work, intent detector
     @Test
     @DisplayName("an ordinary instruction is work")
     void ordinaryInstructionIsWork() {
@@ -91,6 +103,7 @@ class IntentDetectorTest {
                 .isEqualTo(IntentDetector.Intent.WORK);
     }
 
+    // @find: test without timing phrase strips the marker, intent detector
     @Test
     @DisplayName("the timing phrase is lifted out of the instruction, leaving the action")
     void withoutTimingPhraseStripsTheMarker() {
@@ -100,6 +113,7 @@ class IntentDetectorTest {
                 .isEqualTo("send the report");
     }
 
+    // @find: test without timing phrase leaves ordinary text alone, intent detector
     @Test
     @DisplayName("text with no recognisable timing phrase is returned whole, just stripped")
     void withoutTimingPhraseLeavesOrdinaryTextAlone() {
@@ -107,6 +121,7 @@ class IntentDetectorTest {
                 .isEqualTo("draft a welcome email");
     }
 
+    // @find: test without timing phrase keeps the rest verbatim, intent detector
     @Test
     @DisplayName("everything but the timing phrase stays exactly as written: line breaks, indents and lists")
     void withoutTimingPhraseKeepsTheRestVerbatim() {
@@ -116,6 +131,7 @@ class IntentDetectorTest {
                 .isEqualTo("summarise the weekly report:\n\n  1. revenue\n  2. churn");
     }
 
+    // @find: test without timing phrase mid sentence, intent detector
     @Test
     @DisplayName("a phrase in the middle is lifted out without joining the two halves into one run-on")
     void withoutTimingPhraseMidSentence() {
@@ -123,12 +139,14 @@ class IntentDetectorTest {
                 .isEqualTo("Send the roster to the team");
     }
 
+    // @find: test without timing phrase never returns nothing, intent detector
     @Test
     @DisplayName("a message that is only a timing phrase is returned whole rather than as nothing")
     void withoutTimingPhraseNeverReturnsNothing() {
         assertThat(IntentDetector.withoutTimingPhrase("every weekday at 9am")).isEqualTo("every weekday at 9am");
     }
 
+    // @find: test refers to documents, intent detector
     @Test
     @DisplayName("words that name the workspace's own documents are recognised, whatever else the request asks")
     void refersToDocuments() {

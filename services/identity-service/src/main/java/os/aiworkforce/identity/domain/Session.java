@@ -1,3 +1,6 @@
+// @find: session, refresh token, token family, sign in session, device session, revoked session, reuse detection, Session entity, sessions table
+// @what: JPA entity for one link in a refresh-token family (one device sign-in).
+// @flow: Used by Sessions repository and AuthService.
 package os.aiworkforce.identity.domain;
 
 import java.time.Instant;
@@ -78,10 +81,12 @@ public class Session extends BaseEntity {
         return usedAt != null;
     }
 
+    // @find: refresh token used, retire refresh token
     public void markUsed() {
         this.usedAt = Instant.now();
     }
 
+    // @find: revoke session, sign out
     public void revoke(String reason) {
         if (revokedAt == null) {
             revokedAt = Instant.now();

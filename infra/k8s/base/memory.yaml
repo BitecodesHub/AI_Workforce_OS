@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, memory deployment, agent memory, memories, episodes, remember, recall, deployment, service, resources, probes, replicas, manifest
+# @what: Kubernetes deployment and service for the memory service (agent memory and episodes).
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 # memory service.
 #
 # Resource requests are what the scheduler places on and what the JVM sizes its heap against, so

@@ -1,3 +1,6 @@
+// @find: password hashing, argon2id, hash password, check password, rehash, constant time, PasswordService
+// @what: Hashes and verifies passwords with Argon2id.
+// @flow: Called by AuthService, PasswordResetService, DemoDataSeeder.
 package os.aiworkforce.identity.service;
 
 import java.util.regex.Pattern;
@@ -49,11 +52,13 @@ public class PasswordService {
         this.timingHash = encoder.encode(java.util.UUID.randomUUID().toString());
     }
 
+    // @find: hash password, argon2
     public String hash(String rawPassword) {
         validate(rawPassword);
         return encoder.encode(rawPassword);
     }
 
+    // @find: verify password, match password
     /**
      * Checks a password against a stored hash.
      *
@@ -68,6 +73,7 @@ public class PasswordService {
         return encoder.matches(rawPassword, storedHash);
     }
 
+    // @find: needs rehash, upgrade hash cost
     /** Whether a hash was made with weaker parameters than the current configuration. */
     public boolean needsRehash(String storedHash) {
         return storedHash != null && encoder.upgradeEncoding(storedHash);
@@ -87,6 +93,7 @@ public class PasswordService {
         }
     }
 
+    // @find: waste time, constant time unknown address
     /**
      * Spends the time one password check takes, without checking anything.
      *

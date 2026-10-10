@@ -1,3 +1,6 @@
+// @find: team members, invite member, invitations, revoke invitation, resend invitation, accept invitation, password reset link, grant role, who can assign roles, owner role, Members page, Accept invite page, canGrantRole, grantableRoles, canManageMember, GrantGuard, DELETE /api/orgs/{id}/invitations/{invitationId}, POST /api/orgs/{id}/invitations, POST /api/users/{id}/password-reset-link, POST /api/invitations/accept-signed-in
+// @what: Rules for who may hand out which role, plus the invitation and password-reset actions of the Members page.
+// @flow: Used by routes/Members.tsx and routes/AcceptInvite.tsx; mirrors the identity service rule (GrantGuard).
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiError, api } from './api'
 import { enterWorkspace } from './accountQueries'
@@ -35,17 +38,20 @@ export function holdsAll(codes: readonly string[], grantor: Grantor): boolean {
   return codes.every((code) => held.has(code))
 }
 
+// @find: can grant role, may assign role, role permission check, owner only gives owner, Members page role picker
 /** Whether `grantor` may give `role` to someone, themselves included. */
 export function canGrantRole(role: Pick<Role, 'name' | 'system' | 'permissions'>, grantor: Grantor): boolean {
   if (isOwnerRole(role) && grantor.role !== OWNER_ROLE) return false
   return holdsAll(role.permissions, grantor)
 }
 
+// @find: roles to offer, grantable roles, role dropdown choices, Members page invite dialog
 /** The roles `grantor` may give, in the order given. */
 export function grantableRoles<R extends Pick<Role, 'name' | 'system' | 'permissions'>>(roles: readonly R[], grantor: Grantor): R[] {
   return roles.filter((role) => canGrantRole(role, grantor))
 }
 
+// @find: can change or remove member, manage member rule, owner protection, Members page
 /**
  * Whether `grantor` may change or remove `member`.
  *
@@ -62,6 +68,7 @@ export function canManageMember(
   return role ? holdsAll(role.permissions, grantor) : true
 }
 
+// @find: account already exists, accept invitation error, sign in to accept, Accept invite page
 /**
  * Whether accepting failed because the invited address already has an account. The person then
  * signs in and accepts as themselves instead of registering.
@@ -80,6 +87,7 @@ export function absoluteLink(url: string, origin: string = window.location.origi
   return url.startsWith('/') ? `${origin}${url}` : url
 }
 
+// @find: revoke invitation, cancel invite, withdraw invitation, delete invitation; route: DELETE /api/orgs/{orgId}/invitations/{invitationId}; used by: Members page
 /** Withdraws an invitation, so its link stops working at once. */
 export function useRevokeInvitation(orgId: string) {
   const client = useQueryClient()
@@ -90,6 +98,7 @@ export function useRevokeInvitation(orgId: string) {
   })
 }
 
+// @find: resend invitation, send invite again, new invite link; route: POST /api/orgs/{orgId}/invitations; used by: Members page
 /**
  * Sends an invitation again: a new one to the same address and role, which replaces any that is
  * still open. The response carries the new link, shown once.
@@ -106,6 +115,7 @@ export function useResendInvitation(orgId: string) {
   })
 }
 
+// @find: password reset link, reset member password, one-time link; route: POST /api/users/{id}/password-reset-link; used by: Members page
 /** Creates a one-time link a member can use to choose a new password. Only the newest link works. */
 export function usePasswordResetLink() {
   return useMutation({
@@ -114,6 +124,7 @@ export function usePasswordResetLink() {
   })
 }
 
+// @find: accept invitation signed in, join workspace, accept invite; route: POST /api/invitations/accept-signed-in; used by: Accept invite page (AcceptInvite.tsx)
 /**
  * Accepts an invitation as the account already signed in, then opens the workspace it joined.
  *

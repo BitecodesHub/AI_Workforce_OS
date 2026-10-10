@@ -1,3 +1,5 @@
+// @find: tests for goal controller, goals api, create goal, /api/goals
+// @what: Unit and integration tests (2 cases) for goal controller, for example: retry passes the actor and returns the goal; retry of another persons goal is403.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

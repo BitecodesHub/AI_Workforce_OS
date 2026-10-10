@@ -1,3 +1,6 @@
+// @find: invitation entity, invitation status, pending accepted revoked expired, token hash, invited by, expires at, invitations table
+// @what: JPA entity for a workspace invitation and its lifecycle states.
+// @flow: Mapped to the invitations table; used by InvitationService.
 package os.aiworkforce.organisation.domain;
 
 import java.time.Instant;

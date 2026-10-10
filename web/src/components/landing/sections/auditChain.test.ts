@@ -1,3 +1,6 @@
+// @find: tests for audit chain, hash chain, tamper, verify, AuditChainDemo, other sections render
+// @what: Tests the audit chain model, demo and render checks for other sections.
+// @flow: Covers auditChain.ts and sections
 import { createElement } from 'react'
 import type { ComponentType } from 'react'
 import axe from 'axe-core'

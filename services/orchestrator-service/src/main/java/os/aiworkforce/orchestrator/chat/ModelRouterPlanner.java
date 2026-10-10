@@ -1,3 +1,6 @@
+// @find: model router planner, ask a model to plan agents, chain of agents, plan steps, route with LLM, ModelRouterPlanner, which agent handles this, multi-agent plan
+// @what: Asks a configured live model to choose and order agents for a piece of work.
+// @flow: Called by CoordinatorService; falls back to RuleRouter when no model answers.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
@@ -52,6 +55,14 @@ public class ModelRouterPlanner {
 
     private static final Logger log = LoggerFactory.getLogger(ModelRouterPlanner.class);
     private static final int MAX_STEPS = 3;
+    private static final Duration PLANNING_DEADLINE = Duration.ofSeconds(45);
+    /** How long one model is given to answer the routing question. */
+    static final Duration PLANNING_ATTEMPT = Duration.ofSeconds(15);
+    /**
+     * The most models asked to plan. The router asks every candidate it is given at least once, so
+     * this, times {@link #PLANNING_ATTEMPT}, is what bounds the wait: three models, 45 seconds.
+     */
+    static final int MAX_PLANNING_CANDIDATES = 3;
     /**
      * A step's sentence is only a label - the prompt asks for 25 words - so a model that writes
      * more, or copies the request into it, is cut here rather than clutter a title and a card.
@@ -97,11 +108,13 @@ public class ModelRouterPlanner {
     }
 
     /** Empty when no live provider answered with a plan this coordinator can act on. */
+    // @find: plan agents for message
     public Optional<Plan> plan(UUID orgId, String text, List<Agent> agents) {
         return plan(orgId, text, agents, PlanHints.NONE);
     }
 
     /** Empty when no live provider answered with a plan this coordinator can act on. */
+    // @find: plan agents for message with hints from last answer
     public Optional<Plan> plan(UUID orgId, String text, List<Agent> agents, PlanHints hints) {
         List<Agent> active = agents.stream()
                 .filter(agent -> "active".equals(agent.getStatus()))
@@ -158,10 +171,10 @@ public class ModelRouterPlanner {
                 .messages(List.of(ChatMessage.system(system), ChatMessage.user(text)))
                 .jsonSchema(schemaFor(byKey.keySet()))
                 .maxOutputTokens(800)
-                .timeout(Duration.ofSeconds(20))
+                .timeout(PLANNING_ATTEMPT)
                 .build();
 
-        RoutingPolicy policy = policies.resolve(orgId, null);
+        RoutingPolicy policy = forPlanning(policies.resolve(orgId, null));
         ModelRouter.CallContext context = new ModelRouter.CallContext(orgId.toString(), null, null);
 
         ChatResponse response;
@@ -179,6 +192,23 @@ public class ModelRouterPlanner {
         }
 
         return parse(response.content(), byKey);
+    }
+
+    /**
+     * The workspace's first models, asked once each and within 45 seconds in all. The person is
+     * watching "Finding the right agent" while this runs, and a model that has not answered a short
+     * routing question in 15 seconds will not do better on a second try; the next model is asked
+     * instead, and if none answers the rules route the message. Only planning is cut short like
+     * this: the agent's own steps still ask every candidate in the list.
+     */
+    static RoutingPolicy forPlanning(RoutingPolicy workspace) {
+        Duration deadline = workspace.overallDeadline() == null || workspace.overallDeadline().compareTo(PLANNING_DEADLINE) > 0
+                ? PLANNING_DEADLINE
+                : workspace.overallDeadline();
+        List<RoutingPolicy.Candidate> first = workspace.candidates().stream()
+                .limit(MAX_PLANNING_CANDIDATES)
+                .toList();
+        return new RoutingPolicy(first, workspace.exhausted(), 1, deadline, workspace.compactOnOverflow());
     }
 
     /** The plan schema, built per call so the model can only name a key that actually exists. */
@@ -206,18 +236,28 @@ public class ModelRouterPlanner {
                 return Optional.empty();
             }
             List<PlannedStep> steps = new ArrayList<>();
+            Set<UUID> planned = new java.util.HashSet<>();
             for (JsonNode stepNode : planNode) {
                 String agentKey = stepNode.path("agentKey").asText(null);
                 String instruction = stepNode.path("instruction").asText(null);
-                if (agentKey == null || instruction == null || instruction.isBlank()) {
+                if (agentKey == null || instruction == null) {
                     return Optional.empty();
                 }
                 Agent agent = byKey.get(agentKey);
                 if (agent == null) {
                     return Optional.empty();
                 }
+                if (isFiller(instruction) || !planned.add(agent.getId())) {
+                    // A model held to a schema sometimes pads the array with steps it gave no
+                    // part to ("--", "", "N/A") or repeats an agent; those are not work, and
+                    // running them would answer one question three times.
+                    continue;
+                }
                 String part = CoordinatorService.truncateAtWord(instruction, MAX_PART_CHARS);
                 steps.add(new PlannedStep(agent.getId(), part));
+            }
+            if (steps.isEmpty()) {
+                return Optional.empty();
             }
             String reason = root.path("reason").asText("").strip();
             return Optional.of(new Plan(steps, reason.isBlank() ? "The model chose this routing." : reason));
@@ -225,6 +265,14 @@ public class ModelRouterPlanner {
             log.debug("The model's routing reply was not the JSON it was asked for: {}", malformed.getMessage());
             return Optional.empty();
         }
+    }
+
+    private static final Pattern FILLER =
+            Pattern.compile("(?i)^[\\s\\p{Punct}]*(?:n/?a|none|null|nothing|skip|tbd|no action|not needed)?[\\s\\p{Punct}]*$");
+
+    /** A step the model left without a real part: blank, only punctuation, or a "none" placeholder. */
+    static boolean isFiller(String instruction) {
+        return FILLER.matcher(instruction.strip()).matches();
     }
 
     /**

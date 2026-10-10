@@ -1,3 +1,6 @@
+// @find: attachment prompt, files given to a run, attached file text in prompt, attachment tags, prompt injection guard for files, images sent to model, AttachmentPrompt, attachment character limit, cite file name
+// @what: Builds the text and pictures a run is given from the files attached to the message that started it, treating file contents as material and not instructions.
+// @flow: Called by CoordinatorService when starting work for a message with attachments.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.ArrayList;
@@ -66,6 +69,7 @@ public final class AttachmentPrompt {
      * @param files the files, with their text
      * @param content the bytes of a picture, asked for only for pictures that will be sent
      */
+    // @find: build attachment prompt material, files for the agent, attachment text and images
     public static Material build(List<ChatAttachments.Row> files, Function<UUID, byte[]> content) {
         if (files.isEmpty()) {
             return new Material("", List.of(), List.of(), "");

@@ -1,3 +1,5 @@
+// @find: tests for task progress, task progress, goal progress, run finished, parked, resumed, goal closing, retries
+// @what: Unit and integration tests (43 cases) for task progress, for example: completed; failed with retry; failed without retry; abandoned.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

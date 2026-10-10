@@ -1,3 +1,5 @@
+// @find: tests for lifecycle announcer approval, lifecycle announcer, approval raised, approval expired, notifications after commit
+// @what: Unit and integration tests (6 cases) for lifecycle announcer approval, for example: raised with the work behind it; raised for adirect run; expired; schedule paused.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThatCode;

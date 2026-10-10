@@ -1,3 +1,5 @@
+// @find: tests for episodic memory, record episode, recall, compaction, purge expired, episodes for run
+// @what: Checks recording, recalling, compacting and purging episodes.
 package os.aiworkforce.memory.service;
 
 import static org.mockito.ArgumentMatchers.any;

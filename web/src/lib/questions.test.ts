@@ -1,3 +1,5 @@
+// @find: tests for questions, answer draft, validateDraft, draftToInput, closesIn, questionError
+// @what: Unit tests for agent question answers.
 import { describe, expect, it } from 'vitest'
 import { ApiError } from './api'
 import {

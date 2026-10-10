@@ -1,3 +1,6 @@
+// @find: needs you, inbox, questions waiting, approvals to decide, failed goals today, held work paused agent, buildNeedsYou, NeedsYouItem, for me, everyone, Orchestrator
+// @what: Builds the list of items that need a person: open questions, approvals, failed work and work held on paused agents.
+// @flow: Called by NeedsYouInbox.tsx with the live board
 import { readableSummary } from '../../lib/approvals'
 import type { Board, BoardGoal, BoardTask } from '../../lib/queries'
 
@@ -96,6 +99,7 @@ function sortNeedsYou(items: NeedsYouItem[]): NeedsYouItem[] {
   })
 }
 
+// @find: build needs you list, what needs my attention, pending approvals and questions
 export function buildNeedsYou(board: Board, opts: { me: string | null; scope: 'forMe' | 'everyone' }): NeedsYouItem[] {
   const items: NeedsYouItem[] = []
 

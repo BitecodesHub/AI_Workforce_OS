@@ -1,3 +1,6 @@
+// @find: working memory, scratchpad, redis, short term memory, ttl, put get all clear scope, task state
+// @what: Redis-backed short-lived scratchpad an agent uses while working; degrades if Redis is down.
+// @flow: Used for in-progress task state
 package os.aiworkforce.memory.service;
 
 import java.time.Duration;
@@ -42,6 +45,7 @@ public class WorkingMemory {
     /** @param degraded true when the store was unreachable and the value was not written */
     public record WriteResult(boolean degraded) {}
 
+    // @find: write working memory, scratchpad set
     public WriteResult put(String orgId, String scope, String key, String value) {
         if (value != null && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_VALUE_BYTES) {
             // A scratchpad entry this large is a transcript that belongs in the run trace, where
@@ -57,6 +61,7 @@ public class WorkingMemory {
         }
     }
 
+    // @find: read working memory value
     public Optional<String> get(String orgId, String scope, String key) {
         try {
             return Optional.ofNullable(redis.opsForValue().get(redisKey(orgId, scope, key)));
@@ -66,6 +71,7 @@ public class WorkingMemory {
         }
     }
 
+    // @find: read all working memory
     public Map<String, String> all(String orgId, String scope) {
         try {
             String pattern = PREFIX + orgId + ":" + scope + ":*";
@@ -97,6 +103,7 @@ public class WorkingMemory {
         }
     }
 
+    // @find: clear working memory scope
     public void clearScope(String orgId, String scope) {
         try {
             String pattern = PREFIX + orgId + ":" + scope + ":*";

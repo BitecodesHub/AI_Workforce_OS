@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, sources, documents, create source, update source, delete source, delete document, upload file, upload document, ingest, keep both, replace, name clash, try search, search documents, passages, chunks, restricted source, embeddings, POST /api/sources, Knowledge page
+// @what: Hooks and helpers that change a knowledge source: create, update, delete, upload documents with a clash choice, try a search, and read a document's passages.
+// @flow: Called by Knowledge, SourceDetail, QuickUpload, KnowledgeSearch and DocumentPassagesSheet; calls api() against /api/sources and /api/knowledge/search; reading sources stays in queries.ts.
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import type { IngestResult, Passage, Source, SourceDocument } from './queries'
@@ -51,6 +54,7 @@ export function sourceAccessNotice(restricted: boolean): string {
 /** Said beside a search whose meaning-based half could not run, so fewer passages may have come back. */
 export const KEYWORD_ONLY_NOW = 'Keyword search only right now'
 
+// @find: create knowledge source, new source; route: POST /api/sources; used by: Knowledge page, setup QuickUpload
 /** Creates a source, choosing at once who may search it, so it is never open to the workspace first. */
 export function useCreateKnowledgeSource() {
   const client = useQueryClient()
@@ -61,6 +65,7 @@ export function useCreateKnowledgeSource() {
   })
 }
 
+// @find: update source, rename source, restrict source, who may search; route: PATCH /api/sources/{id}; used by: Source detail page
 /**
  * Renames a source, or changes who may search it (knowledge:source_manage). Either field may be
  * left out. Restricting takes effect on the very next search, for everyone.
@@ -94,6 +99,7 @@ export type SearchOutcome = {
 /** How many passages a person trying a search is shown. */
 export const TRY_SEARCH_LIMIT = 8
 
+// @find: try search, search documents without an agent; route: POST /api/knowledge/search; used by: Knowledge page (KnowledgeSearch)
 /**
  * Searches the documents directly (knowledge:query). No agent runs and no model is paid for, so a
  * person can see what a question finds, and whether the document they expect is findable at all.
@@ -148,6 +154,7 @@ export type DocumentPassagesPage = {
   passages: DocumentPassage[]
 }
 
+// @find: document passages, chunks of a document; route: GET /api/sources/{id}/documents/{docId}/chunks; used by: Source detail page (DocumentPassagesSheet)
 /**
  * A document's passages, a page at a time, in reading order (knowledge:read). Nothing is fetched
  * until a document is chosen. The pages sit under the source's key, so an upload or a deletion
@@ -263,6 +270,7 @@ export function planUploads<F extends { name: string }>(
   return { uploads, skipped }
 }
 
+// @find: upload document, add file to source, replace or keep both; route: POST /api/sources/{id}/documents; used by: Source detail page, setup QuickUpload
 export function useUploadKnowledgeDocument(sourceId: string) {
   const client = useQueryClient()
   return useMutation({
@@ -279,6 +287,7 @@ export function useUploadKnowledgeDocument(sourceId: string) {
   })
 }
 
+// @find: delete document from source; route: DELETE /api/sources/{id}/documents/{docId}; used by: Source detail page
 /** Erases one document: its passages, its vectors and the record of it (knowledge:source_manage). */
 export function useDeleteDocument(sourceId: string) {
   const client = useQueryClient()
@@ -292,6 +301,7 @@ export function useDeleteDocument(sourceId: string) {
   })
 }
 
+// @find: delete knowledge source; route: DELETE /api/sources/{id}; used by: Source detail page
 /**
  * Erases a source and every document in it (knowledge:source_manage). The deleted source's own
  * queries are dropped rather than refetched, so the page it was on does not flash "not found"

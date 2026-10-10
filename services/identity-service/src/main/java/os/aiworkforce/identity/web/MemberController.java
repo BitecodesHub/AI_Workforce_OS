@@ -1,3 +1,6 @@
+// @find: members, team members, people in workspace, change member role, remove member, current user, me, my workspaces, /api/users, Members page, MemberController
+// @what: REST endpoints to list members, show the signed-in user, change a role and remove a member.
+// @flow: Uses GrantGuard, Memberships, Roles, OrchestratorClient; backs the Members page.
 package os.aiworkforce.identity.web;
 
 import java.time.Duration;
@@ -133,6 +136,7 @@ public class MemberController {
 
     public record UpdateRoleRequest(@NotBlank String roleName) {}
 
+    // @find: list members, team members, GET /api/users
     @GetMapping
     @RequiresPermission(Permission.Codes.MEMBER_READ)
     @Operation(summary = "Members of this workspace and the role each holds")
@@ -165,6 +169,7 @@ public class MemberController {
     }
 
     /*
+    // @find: current user, who am I, GET /api/users/me
      * Any signed-in person, not WORKSPACE_READ: an account with no workspace yet - just
      * registered, or removed from its only one - carries no permissions at all, and is exactly the
      * account that most needs to know who it is signed in as. It reveals only the caller's own
@@ -194,6 +199,7 @@ public class MemberController {
                         .toList());
     }
 
+    // @find: my workspaces, switch workspace, GET /api/users/me/workspaces
     /**
      * The workspaces the signed-in person belongs to, for choosing which one to open.
      *
@@ -230,6 +236,7 @@ public class MemberController {
                 .toList();
     }
 
+    // @find: change member role, update role, PUT /api/users/{userId}/role
     @PutMapping("/{userId}/role")
     @RequiresPermission(Permission.Codes.MEMBER_UPDATE)
     @Transactional
@@ -286,6 +293,7 @@ public class MemberController {
                 user.getLastLoginAt());
     }
 
+    // @find: remove member, DELETE /api/users/{userId}
     @DeleteMapping("/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.MEMBER_REMOVE)

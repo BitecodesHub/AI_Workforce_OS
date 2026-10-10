@@ -1,3 +1,6 @@
+// @find: document passages, chunks, what a document was cut into, view chunks, chunking, search passages, document sheet, Knowledge page
+// @what: Side panel showing the passages a document was cut into.
+// @flow: Used by the Knowledge page.
 import { Button, LoadingState, Notice } from '../ui'
 import { Sheet } from '../ui/Sheet'
 import { describeApiError } from '../../lib/api'
@@ -73,6 +76,7 @@ function Passages({ sourceId, document }: { sourceId: string; document: SourceDo
   )
 }
 
+// @find: DocumentPassagesSheet, document passages sheet, document passages, chunks, what a document was cut into, view chunks
 /** A panel beside the document list, open for one document at a time. */
 export function DocumentPassagesSheet({
   sourceId,

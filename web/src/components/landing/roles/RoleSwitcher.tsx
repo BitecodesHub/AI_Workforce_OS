@@ -1,3 +1,6 @@
+// @find: role switcher, roles explorer, role permissions, owner admin manager employee viewer, compare roles, permission codes, console screens, who can do what, RoleSwitcher, #roles
+// @what: Interactive explorer of the five roles, their permissions and console screens, with comparison.
+// @flow: Used by Trust page; data from roleData
 import { useId, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent, ReactElement } from 'react'
 import { Tag } from '../../ui'
@@ -76,6 +79,7 @@ function meterStyle(held: number): CSSProperties {
   return { '--lp-roles-fill': String(held / TOTAL_CODES) } as CSSProperties
 }
 
+// @find: RoleSwitcher component, roles explorer
 export function RoleSwitcher(): ReactElement {
   const [selected, setSelected] = useState<RoleId>('manager')
   const [compareWith, setCompareWith] = useState<CompareTarget>('none')

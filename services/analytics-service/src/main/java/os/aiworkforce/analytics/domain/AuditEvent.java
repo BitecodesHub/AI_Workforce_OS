@@ -1,3 +1,6 @@
+// @find: audit event, audit_events table, audit log row, entry hash, previous hash, chain key, sequence, actor, on behalf of, action, resource, outcome, detail json, tamper evident
+// @what: Database entity for one append-only audit log entry with its hash chain fields.
+// @flow: Written by AuditAppender; read by AuditSearch and AuditVerification
 package os.aiworkforce.analytics.domain;
 
 import java.time.Instant;
@@ -38,6 +41,13 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  * Data, so {@code save} merged it and handed back a different, managed copy: the sequence the
  * database assigned was set on the copy and never on the object the caller held, which is why
  * every response reported sequence 0.
+ *
+ * <p>Every column is {@code updatable = false}, because the table is append-only and a trigger
+ * refuses any UPDATE. Without it, the re-select that reads {@code sequence} back loads
+ * {@code detail} as the database stores it - a {@code Long} 1 comes back as an {@code Integer} 1 -
+ * so dirty checking saw a change and flushed an UPDATE, which the trigger refused and which rolled
+ * the whole append back. ({@code @Immutable} would say the same, but refuses the pessimistic lock
+ * the chain reads take.)
  */
 @Entity
 @Table(name = "audit_events")
@@ -47,7 +57,7 @@ public class AuditEvent implements Persistable<UUID> {
     @Column(nullable = false, updatable = false)
     private UUID id = UuidV7.generate();
 
-    @Column(name = "org_id")
+    @Column(name = "org_id", updatable = false)
     private UUID orgId;
 
     /**
@@ -62,53 +72,53 @@ public class AuditEvent implements Persistable<UUID> {
     @Column(name = "sequence", nullable = false, updatable = false, insertable = false)
     private long sequence;
 
-    @Column(name = "actor_id", nullable = false)
+    @Column(name = "actor_id", nullable = false, updatable = false)
     private String actorId;
 
-    @Column(name = "actor_kind", nullable = false)
+    @Column(name = "actor_kind", nullable = false, updatable = false)
     private String actorKind;
 
-    @Column(name = "on_behalf_of")
+    @Column(name = "on_behalf_of", updatable = false)
     private String onBehalfOf;
 
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
     private String action;
 
-    @Column(name = "resource_type", nullable = false)
+    @Column(name = "resource_type", nullable = false, updatable = false)
     private String resourceType;
 
-    @Column(name = "resource_id")
+    @Column(name = "resource_id", updatable = false)
     private String resourceId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
     private String outcome;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
     private Map<String, Object> detail = Map.of();
 
-    @Column(name = "request_id")
+    @Column(name = "request_id", updatable = false)
     private String requestId;
 
-    @Column(name = "occurred_at", nullable = false)
+    @Column(name = "occurred_at", nullable = false, updatable = false)
     private Instant occurredAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
-    @Column(name = "previous_hash")
+    @Column(name = "previous_hash", updatable = false)
     private String previousHash;
 
-    @Column(name = "entry_hash", nullable = false)
+    @Column(name = "entry_hash", nullable = false, updatable = false)
     private String entryHash;
 
     /** Which formula {@link #entryHash} was computed with: 1 for the original, 2 since this chain. */
-    @Column(name = "hash_version", nullable = false)
+    @Column(name = "hash_version", nullable = false, updatable = false)
     private short hashVersion = 2;
 
     /** The workspace id, or {@code platform}: the chain this entry belongs to. */
-    @Column(name = "chain_key")
+    @Column(name = "chain_key", updatable = false)
     private String chainKey;
 
     /** Set by the sender before its first attempt, so a retried delivery is recognised. */
-    @Column(name = "event_uuid")
+    @Column(name = "event_uuid", updatable = false)
     private UUID eventUuid;
 
     @Transient

@@ -1,3 +1,6 @@
+// @find: tests for the incomplete answer notice, IncompleteAnswer, vitest, RunDetail component tests, Run page
+// @what: Automated tests that check the the incomplete answer notice screen (/runs/:id) behaves as users expect.
+// @flow: Renders RunDetail from RunDetail.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { IncompleteAnswer } from './RunDetail'

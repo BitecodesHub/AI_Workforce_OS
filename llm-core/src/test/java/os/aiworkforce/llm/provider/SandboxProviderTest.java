@@ -1,3 +1,5 @@
+// @find: tests for sandbox provider, offline model, asks a person once per run, approval prompt, deterministic answers
+// @what: Checks the sandbox asks a person something only when the prompt says so, and only once per run.
 package os.aiworkforce.llm.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;

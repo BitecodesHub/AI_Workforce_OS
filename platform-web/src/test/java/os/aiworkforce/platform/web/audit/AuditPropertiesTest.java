@@ -1,3 +1,5 @@
+// @find: tests for audit properties, relay interval default, audit enabled flag
+// @what: Checks the audit delivery settings and their defaults.
 package os.aiworkforce.platform.web.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;

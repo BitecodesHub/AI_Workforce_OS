@@ -1,3 +1,5 @@
+// @find: tests for clipboard, copyText, useCopyText, copy failed
+// @what: Unit tests for clipboard copying and its toasts.
 import { createElement } from 'react'
 import type { ReactNode } from 'react'
 import { act, renderHook, screen } from '@testing-library/react'
@@ -33,6 +35,23 @@ describe('copyText', () => {
     await expect(copyText('hello')).resolves.toBe(false)
     stubClipboard(undefined)
     await expect(copyText('hello')).resolves.toBe(false)
+  })
+})
+
+describe('copyText fallback', () => {
+  it('copies the older way when the Clipboard API refuses, as an embedded browser view does', async () => {
+    stubClipboard(async () => {
+      throw new Error('Not allowed')
+    })
+    const exec = vi.fn(() => true)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
+    try {
+      await expect(copyText('https://example.org/chat?c=1')).resolves.toBe(true)
+      expect(exec).toHaveBeenCalledWith('copy')
+      expect(document.querySelector('textarea')).toBeNull()
+    } finally {
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: undefined })
+    }
   })
 })
 

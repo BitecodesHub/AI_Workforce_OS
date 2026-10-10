@@ -1,3 +1,6 @@
+// @find: tests for members and roles, invite, roles, permissions, vitest, Members component tests, Members page
+// @what: Automated tests that check the members and roles screen (/members) behaves as users expect.
+// @flow: Renders Members from Members.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -200,5 +203,25 @@ describe('Members as an administrator', () => {
     expect(link).toHaveValue(`${window.location.origin}/sign-in?reset=reset-token`)
     expect(screen.getByText(/expires in 30 minutes/)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Copy link' }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('Members as the only owner', () => {
+  it('offers no role change or removal on the last owner, and says why', async () => {
+    saveSession('owner-token', {
+      userId: 'u-olivia',
+      workspaceId: ORG,
+      permissions: EVERYTHING,
+      displayName: 'Olivia Owner',
+      email: 'olivia@example.test',
+      role: 'owner',
+    })
+    await renderMembers()
+
+    expect(screen.queryByRole('button', { name: 'Change role for Olivia Owner' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove yourself' })).not.toBeInTheDocument()
+    expect(screen.getByText('The last owner cannot be demoted or removed.')).toBeInTheDocument()
+    // Everyone else can still be managed.
+    expect(screen.getByRole('button', { name: 'Remove Arjun Admin' })).toBeInTheDocument()
   })
 })

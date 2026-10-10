@@ -1,3 +1,5 @@
+// @find: tests for tool credential resolver, tool credential, connector token, integrations service, credential lookup
+// @what: Unit and integration tests (12 cases) for tool credential resolver, for example: stored token is connected; reconnect required; unreadable is unavailable; no value is not connected.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

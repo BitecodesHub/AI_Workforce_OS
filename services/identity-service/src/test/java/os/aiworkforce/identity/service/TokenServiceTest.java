@@ -1,3 +1,5 @@
+// @find: tests for TokenService, jwt signing, jwks, key thumbprint, key rotation, persisted key, PEM key, retiring key overlap
+// @what: Tests of token signing, key persistence and rotation.
 package os.aiworkforce.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

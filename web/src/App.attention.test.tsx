@@ -1,3 +1,6 @@
+// @find: tests for tab title waiting count, approvals waiting in the title, workspace settings link, attention badge, App tests, vitest
+// @what: Tests that the browser tab title shows how many approvals are waiting and that the Workspace settings entry appears for the right people.
+// @flow: Renders App from App.tsx with mocked approvals
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

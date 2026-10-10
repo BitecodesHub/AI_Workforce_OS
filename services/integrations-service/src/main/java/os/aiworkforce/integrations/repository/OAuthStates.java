@@ -1,3 +1,6 @@
+// @find: oauth states repository, find pending sign in state, expire old states, database access
+// @what: Spring Data repository for pending OAuth sign-ins.
+// @flow: Used by OAuthService
 package os.aiworkforce.integrations.repository;
 
 import java.time.Instant;

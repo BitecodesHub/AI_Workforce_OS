@@ -1,3 +1,6 @@
+// @find: internal agent memory, POST /internal/memory/agents/{agentId}/remember, POST /internal/memory/agents/{agentId}/recall, orchestrator remember recall, service token only
+// @what: Internal endpoints the orchestrator uses to save and recall an agent's notes while it works.
+// @flow: Calls AgentMemoryService; service token only, not routed by the gateway
 package os.aiworkforce.memory.web;
 
 import java.util.List;
@@ -52,6 +55,7 @@ public class InternalAgentMemoryController {
 
     public record Recalled(List<AgentMemoryController.MemoryView> memories) {}
 
+    // @find: POST /internal/memory/agents/{agentId}/remember, remember, endpoint, internal agent memory
     @PostMapping("/remember")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Internal: keep a note for an agent")
@@ -62,6 +66,7 @@ public class InternalAgentMemoryController {
         return new Remembered(AgentMemoryController.MemoryView.of(saved.memory()), saved.created());
     }
 
+    // @find: POST /internal/memory/agents/{agentId}/recall, recall, endpoint, internal agent memory
     @PostMapping("/recall")
     @Operation(summary = "Internal: the notes that bear on a query, for one agent")
     public Recalled recall(@PathVariable UUID agentId, @Valid @RequestBody RecallRequest request) {

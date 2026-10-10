@@ -1,3 +1,6 @@
+// @find: chat, conversation, talk to assistant, send message, queued message, new conversation, delete conversation, sidebar, composer, voice, stream answer, polling, citations, answer announcer, jump to latest, /chat, Chat page
+// @what: The Chat page: lets a person talk to an assistant, see answers arrive, queue follow-up messages and manage past conversations.
+// @flow: Routed from App.tsx at /chat; uses ChatSidebar and Composer components and the conversation queries in lib/queries
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
@@ -5,6 +8,7 @@ import { Composer } from '../components/chat/Composer'
 import { ThreadSkeleton } from '../components/chat/ChatSkeletons'
 import { JumpToLatest } from '../components/chat/JumpToLatest'
 import { MessageList } from '../components/chat/MessageList'
+import { QueuedMessages } from '../components/chat/QueuedBubble'
 import { AddPeopleDialog } from '../components/chat/AddPeopleDialog'
 import { ThreadHeader } from '../components/chat/ThreadHeader'
 import { WelcomeScreen } from '../components/chat/WelcomeScreen'
@@ -17,12 +21,15 @@ import {
   conversationText,
   draftKey,
   goalTarget,
+  isRoutingLastMessage,
+  retryLeftInBox,
   newestPosition,
   newMessageIds,
   pendingEchoed,
   readyAnswers,
   routingMessageForGoal,
   sendsAsNewRequest,
+  titleFromFirstMessage,
 } from '../components/chat/chatModel'
 import { DetailsContext } from '../components/chat/detailsContext'
 import type { DetailsMode, RevealGoal } from '../components/chat/detailsContext'
@@ -33,6 +40,7 @@ import { Sheet } from '../components/ui/Sheet'
 import { ShortcutsDialog } from '../components/ui/ShortcutsDialog'
 import { ApiError, api, describeApiError } from '../lib/api'
 import { useEarlierPages, useSetConversationVisibility } from '../lib/chatQueries'
+import { describeChatActionError, useCancelQueued, useEditQueued, useStartQueuedNow } from '../lib/chatQueueQueries'
 import { useCopyText } from '../lib/clipboard'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import {
@@ -53,7 +61,7 @@ import {
   useSendMessage,
   useStopChatGoal,
 } from '../lib/queries'
-import type { Agent, BoardGoal, ChatMessage, ConversationPage, MessagesPage, RunQuestion } from '../lib/queries'
+import type { Agent, BoardGoal, ChatMessage, ConversationPage, MessagesPage, QueuedMessage, RunQuestion } from '../lib/queries'
 import { usePersistentState } from '../lib/persist'
 import { useRouter } from '../lib/router'
 import { can, profile } from '../lib/session'
@@ -131,6 +139,7 @@ const isSidebarMode = (value: unknown): value is 'open' | 'rail' => value === 'o
 const isPanelMode = (value: unknown): value is 'open' | 'closed' => value === 'open' || value === 'closed'
 const isDetailsMode = (value: unknown): value is DetailsMode => value === 'auto' || value === 'expanded' || value === 'collapsed'
 
+// @find: Chat component, chat page, send message, new conversation, queue message, poll for answer, /chat
 export function Chat() {
   const { search, hash, navigate } = useRouter()
   const toast = useToast()
@@ -164,10 +173,25 @@ export function Chat() {
   const [addPeopleOpen, setAddPeopleOpen] = useState(false)
   const [focusSection, setFocusSection] = useState<'search' | 'needs-you' | null>(null)
 
-  const [sending, setSending] = useState(false)
+  // Sends still travelling. Only one that is creating its conversation holds the message box: a
+  // message in an existing conversation can be sent while an earlier one is still being routed
+  // (the planner can take twenty seconds), and the server queues it, rather than the box refusing
+  // Enter without a word while the words sit in it.
+  const [creating, setCreating] = useState(false)
+  const inFlight = useRef(0)
+  const sendToken = useRef(0)
   // `afterPosition`: the newest position in the thread when the send started, so the stored copy
-  // of the message can be told apart from an earlier one with the same words.
-  const [pending, setPending] = useState<{ text: string; mentioned: string[]; afterPosition: number } | null>(null)
+  // of the message can be told apart from an earlier one with the same words. `queued`: an answer
+  // was still being worked on when the send started, so the message will most likely wait in the
+  // queue and must not look like an ordinary sent message while it travels.
+  const [pending, setPending] = useState<{
+    token: number
+    text: string
+    mentioned: string[]
+    afterPosition: number
+    queued: boolean
+    queuedBefore: string[]
+  } | null>(null)
   // A message that could not be sent stays on screen with the reason and a way to send it again,
   // rather than vanishing into a toast.
   const [failedSend, setFailedSend] = useState<{
@@ -214,6 +238,9 @@ export function Chat() {
   const retryGoal = useRetryChatGoal(selectedId ?? '')
   const answerFromDocuments = useAnswerFromDocuments(selectedId ?? '')
   const markRead = useMarkConversationRead(selectedId ?? '')
+  const editQueued = useEditQueued(selectedId ?? '')
+  const cancelQueued = useCancelQueued(selectedId ?? '')
+  const startQueuedNow = useStartQueuedNow(selectedId ?? '')
 
   const detail = conversationQuery.data
   const conversation = detail?.conversation ?? null
@@ -222,6 +249,9 @@ export function Chat() {
   const earlier = useEarlierPages(selectedId, liveMessages, detail?.hasEarlier ?? false)
   const messages = earlier.messages
   const goals = useMemo(() => detail?.goals ?? [], [detail])
+  // The queue as the server last reported it (replaced, never merged, on every read).
+  const queued = useMemo(() => detail?.queued ?? [], [detail])
+  const busy = detail?.busy ?? 'idle'
 
   /* ---- A conversation that cannot be opened ------------------------------------------------- */
   const loadError = conversationQuery.error
@@ -457,12 +487,21 @@ export function Chat() {
       }
     }
 
-    setSending(true)
+    const token = ++sendToken.current
+    const earlierStillTravelling = inFlight.current > 0
+    inFlight.current += 1
+    if (!selectedId) setCreating(true)
     setFailedSend(null)
     setPending({
+      token,
       text: text || (attachmentIds.length === 1 ? 'Sending 1 file' : `Sending ${attachmentIds.length} files`),
       mentioned: agentIds.map((id) => agentNames[id]?.name).filter((n): n is string => Boolean(n)),
       afterPosition: selectedId ? newestPosition(messages) : -1,
+      // An earlier message still being routed holds the conversation too, so this one will wait.
+      queued:
+        Boolean(selectedId) &&
+        (earlierStillTravelling || busy !== 'idle' || queued.some((item) => item.status !== 'expired')),
+      queuedBefore: queued.map((item) => item.id),
     })
     try {
       const agentIdsField = {
@@ -471,15 +510,18 @@ export function Chat() {
       }
       let conversationId = selectedId
       if (conversationId) {
-        await sendMessage.mutateAsync({ text, ...agentIdsField })
+        const result = await sendMessage.mutateAsync({ text, ...agentIdsField })
+        if (result.queued) setAnnouncement('Message queued. It will start when the current answer finishes.')
       } else {
         // A conversation is created the moment the first message needs one, and opened before the
         // message is sent, so the thread (and the pending message in it) shows at once. The
         // conversationId-bound useSendMessage mutation above is still bound to the old (empty) id
         // at this point in the render, so the very first message goes straight to the platform.
-        const created = await createConversation.mutateAsync({})
+        const created = await createConversation.mutateAsync(text.trim() ? { title: titleFromFirstMessage(text) } : {})
         conversationId = created.id
         navigate(`/chat?c=${created.id}`)
+        // The conversation exists now: a follow-up typed while this first message is routed goes to it.
+        setCreating(false)
         await api<{ messages: ChatMessage[] }>(`/api/conversations/${created.id}/messages`, {
           method: 'POST',
           body: { text, ...agentIdsField },
@@ -494,8 +536,10 @@ export function Chat() {
       setAnnouncement('Your message could not be sent.')
       return false
     } finally {
-      setPending(null)
-      setSending(false)
+      // A later send's own pending line stays until that send is done.
+      setPending((current) => (current?.token === token ? null : current))
+      inFlight.current -= 1
+      if (!selectedId) setCreating(false)
     }
   }
 
@@ -504,7 +548,7 @@ export function Chat() {
     try {
       await reroute.mutateAsync({ messageId, agentId })
     } catch (error) {
-      toast.error(describeApiError(error))
+      toast.error(describeChatActionError(error))
     } finally {
       setReroutingId(null)
     }
@@ -563,7 +607,7 @@ export function Chat() {
       await retryGoal.mutateAsync({ goalId })
       setAnnouncement('Trying again.')
     } catch (error) {
-      toast.error(describeApiError(error))
+      toast.error(describeChatActionError(error))
     }
   }
 
@@ -572,10 +616,53 @@ export function Chat() {
     try {
       await answerFromDocuments.mutateAsync({ messageId })
     } catch (error) {
-      toast.error(describeApiError(error))
+      toast.error(describeChatActionError(error))
     } finally {
       setAnsweringMessageId(null)
     }
+  }
+
+  /* ---- The queue: messages waiting for the answer in progress -------------------------------- */
+  async function handleCancelQueued(item: QueuedMessage): Promise<boolean> {
+    try {
+      await cancelQueued.mutateAsync({ queuedId: item.id })
+      setAnnouncement('Queued message removed.')
+      return true
+    } catch (error) {
+      toast.error(describeChatActionError(error))
+      return false
+    }
+  }
+
+  async function handleEditQueued(item: QueuedMessage, text: string): Promise<boolean> {
+    try {
+      await editQueued.mutateAsync({ queuedId: item.id, text })
+      setAnnouncement('Queued message changed.')
+      return true
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError && error.status === 409
+          ? 'This message has already started, so it can no longer be changed.'
+          : describeChatActionError(error),
+      )
+      return false
+    }
+  }
+
+  async function handleStartQueuedNow(item: QueuedMessage): Promise<boolean> {
+    try {
+      await startQueuedNow.mutateAsync({ queuedId: item.id })
+      setAnnouncement('The work above was stopped. Your message is starting now.')
+      return true
+    } catch (error) {
+      toast.error(describeChatActionError(error))
+      return false
+    }
+  }
+
+  function handleSendQueuedAgain(item: QueuedMessage) {
+    handleEditAndResend(item.text)
+    void cancelQueued.mutateAsync({ queuedId: item.id }).catch(() => undefined)
   }
 
   function handleGoTo(elementId: string) {
@@ -704,12 +791,20 @@ export function Chat() {
   const onStop = useStableCallback((goalId: string) => void handleStop(goalId))
   const onRetry = useStableCallback((goalId: string) => void handleRetry(goalId))
   const onAnswerFromDocuments = useStableCallback((messageId: string) => void handleAnswerFromDocuments(messageId))
+  const onCancelQueued = useStableCallback((item: QueuedMessage) => handleCancelQueued(item))
+  const onEditQueued = useStableCallback((item: QueuedMessage, text: string) => handleEditQueued(item, text))
+  const onStartQueuedNow = useStableCallback((item: QueuedMessage) => handleStartQueuedNow(item))
+  const onSendQueuedAgain = useStableCallback((item: QueuedMessage) => handleSendQueuedAgain(item))
 
   const workGoals = activeGoals(goals)
   const showWorkPanel = isWide && panelMode === 'open'
 
   const detailsValue = useMemo(() => ({ mode: detailsMode, version: detailsVersion, revealGoal }), [detailsMode, detailsVersion, revealGoal])
-  const pendingBubbleShown = pending ? !pendingEchoed(messages, pending, me) : false
+  // A poll can bring the queued copy back before the send itself has finished; then that copy shows.
+  const pendingQueuedEchoed = pending
+    ? queued.some((item) => !pending.queuedBefore.includes(item.id) && item.authorId === me && item.text.trim() === pending.text.trim())
+    : false
+  const pendingBubbleShown = pending ? !pendingEchoed(messages, pending, me) && !pendingQueuedEchoed : false
 
   const sidebarVariant: 'panel' | 'rail' | 'overlay' = !isTablet ? 'panel' : !isDesktop ? (overlayOpen ? 'overlay' : 'rail') : sidebarMode === 'open' ? 'panel' : 'rail'
 
@@ -804,7 +899,7 @@ export function Chat() {
           <div className="chat-scroll" role="region" aria-label="Messages" tabIndex={0} ref={scrollRef} data-jump-visible={(!stick.nearBottom && stick.newCount > 0) || undefined}>
             <div className="chat-column">
               {!selectedId && pending ? (
-                <PendingMessage text={pending.text} mentioned={pending.mentioned} showBubble={pendingBubbleShown} />
+                <PendingMessage text={pending.text} mentioned={pending.mentioned} showBubble={pendingBubbleShown} queued={false} />
               ) : !selectedId ? (
                 <WelcomeScreen agents={agentsQuery.data} {...(canCreateWork ? { onMention: handleWelcomeMention } : {})} />
               ) : unavailable && notFound ? (
@@ -822,7 +917,7 @@ export function Chat() {
                 />
               ) : conversationQuery.isLoading ? (
                 <ThreadSkeleton />
-              ) : messages.length === 0 && !pending ? (
+              ) : messages.length === 0 && !pending && queued.length === 0 ? (
                 <WelcomeScreen agents={agentsQuery.data} {...(canCreateWork ? { onMention: handleWelcomeMention } : {})} />
               ) : (
                 <>
@@ -856,7 +951,20 @@ export function Chat() {
                     composerTargetQuestionId={replyTo?.questionId ?? null}
                     now={now}
                   />
-                  {pending && <PendingMessage text={pending.text} mentioned={pending.mentioned} showBubble={pendingBubbleShown} />}
+                  <QueuedMessages
+                    items={queued}
+                    busy={busy}
+                    onCancel={onCancelQueued}
+                    onEdit={onEditQueued}
+                    onStartNow={onStartQueuedNow}
+                    onSendAgain={onSendQueuedAgain}
+                  />
+                  {pending && !(pending.queued && pendingQueuedEchoed) && (
+                    <PendingMessage text={pending.text} mentioned={pending.mentioned} showBubble={pendingBubbleShown} queued={pending.queued} />
+                  )}
+                  {!pending && isRoutingLastMessage(messages, goals, busy) && (
+                    <PendingMessage text="" mentioned={[]} showBubble={false} queued={false} />
+                  )}
                 </>
               )}
               {failedSend && !pending && (
@@ -868,7 +976,11 @@ export function Chat() {
                     variant="outline"
                     onClick={() => {
                       const again = failedSend
-                      void handleSend(again.text, again.agentIds, again.attachmentIds ?? [])
+                      void handleSend(again.text, again.agentIds, again.attachmentIds ?? []).then((sent) => {
+                        // The failed words were also put back in the message box; once they have
+                        // gone this way, leaving them there would invite sending them twice.
+                        if (sent && retryLeftInBox(inputRef.current?.value, again.text)) setPrefill({ token: Date.now(), text: '' })
+                      })
                     }}
                   >
                     Try again
@@ -900,7 +1012,7 @@ export function Chat() {
               conversationId={selectedId}
               agents={activeAgents}
               onSend={handleSend}
-              sending={sending}
+              sending={creating}
               replyTo={replyTo}
               onClearReply={handleClearReply}
               lastUserText={lastUserText}
@@ -957,6 +1069,7 @@ export function Chat() {
  * role. `key={selectedId}` on its call site remounts this for every conversation, so its refs
  * always start blank for a freshly opened thread rather than replaying its whole history as new.
  */
+// @find: answer announcer, screen reader announcement of new answer
 function AnswerAnnouncer({
   messages,
   questions,
@@ -1025,6 +1138,7 @@ function AnswerAnnouncer({
   return null
 }
 
+// @find: conversation unavailable icon
 function UnavailableIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
@@ -1039,7 +1153,33 @@ function UnavailableIcon() {
  * bubble itself goes as soon as the thread shows the stored copy (`showBubble` false); the status
  * line stays until the send has finished.
  */
-function PendingMessage({ text, mentioned, showBubble }: { text: string; mentioned: string[]; showBubble: boolean }) {
+// @find: pending message, queued message, cancel queued message, thinking indicator
+function PendingMessage({
+  text,
+  mentioned,
+  showBubble,
+  queued,
+}: {
+  text: string
+  mentioned: string[]
+  showBubble: boolean
+  /** Sent while an answer is in progress: it will wait in the queue, so it is drawn as queued. */
+  queued: boolean
+}) {
+  if (queued) {
+    return (
+      <div className="chat-bubble-row chat-bubble-row-user chat-bubble-sending" data-testid="pending-queued">
+        <div className="stack" style={{ gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+          <div className="chat-bubble chat-bubble-queued">
+            <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0 }}>{text}</p>
+          </div>
+          <p className="caption muted chat-queued-status" style={{ margin: 0 }} role="status">
+            Adding this to the queue…
+          </p>
+        </div>
+      </div>
+    )
+  }
   return (
     <>
       {showBubble && (

@@ -1,3 +1,5 @@
+// @find: tests for audit client, record audit event, outbox write, audit detail redaction
+// @what: Checks the audit client writes the expected entries to the outbox.
 package os.aiworkforce.platform.web.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;

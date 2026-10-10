@@ -1,3 +1,5 @@
+// @find: tests for goal service handoff, goals, hand-off between agents, chain of tasks, predecessor results, request verbatim
+// @what: Unit and integration tests (12 cases) for goal service handoff, for example: cut with marker says what it left out; cut with marker breaks at whitespace; cut with marker keeps surrogate pairs whole; a single predecessor gets five thousand.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,5 @@
+// @find: tests for memory controller, GET /api/memory/episodes, workspace from token, permission memory:read
+// @what: Checks reading memory is scoped to the caller's workspace and needs memory:read.
 package os.aiworkforce.memory.web;
 
 import static org.mockito.ArgumentMatchers.any;

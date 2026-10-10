@@ -1,3 +1,8 @@
+/*
+ * @find: polish styles, searchable model picker, model combobox, routing policy dropdown
+ * @what: Styles for the searchable model picker list.
+ * @flow: Used by the routing policy editor; imported by polish/index.css
+ */
 /* ---- Searchable model picker (routing policy) -------------------------------------------------
  * The list is drawn in a portal on <body> (or inside the dialog that holds the field), fixed beside
  * its field, so these rules cannot be scoped under a screen's root class. Everything is prefixed
@@ -116,6 +121,19 @@
 
 .model-combobox-tag-chosen {
   color: var(--blue);
+}
+
+/* What "Find my region" found in a region (components/onboarding/RegionCombobox.tsx). */
+.region-note-good {
+  color: var(--green);
+}
+
+.region-note-warn {
+  color: var(--warning-ink);
+}
+
+.region-note-bad {
+  color: var(--muted);
 }
 
 .model-combobox-status {

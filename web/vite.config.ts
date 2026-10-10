@@ -1,3 +1,6 @@
+// @find: vite config, build config, dev server, proxy, api proxy, plugins, aliases, bundle chunks, tailwind, react plugin, port
+// @what: Build and dev-server settings: plugins, path aliases and the proxy to the backend gateway.
+// @flow: Read by vite and pnpm dev/build
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'

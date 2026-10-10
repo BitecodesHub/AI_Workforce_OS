@@ -1,3 +1,5 @@
+// @find: tests for persist, readStored, writeStored, usePersistentState, blocked storage
+// @what: Unit tests for persistent state helpers.
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readStored, usePersistentState, writeStored } from './persist'

@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, embeddings, embed text, embed query, vector, embedding provider, OpenAI Bedrock Gemini embeddings, embedding refused, probe dimension, embedding cost attribution, llm gateway embeddings, EmbeddingService
+// @what: Calls the model gateway to turn passages and questions into embedding vectors, and explains refusals in plain words.
+// @flow: Called by IngestionService (passages), RetrievalService (query) and EmbeddingModelChange (probe); calls the orchestrator /embeddings endpoint.
 package os.aiworkforce.knowledge.service;
 
 import java.time.Duration;
@@ -11,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import os.aiworkforce.platform.config.PlatformProperties;
 import os.aiworkforce.platform.context.Actor;
@@ -69,10 +73,12 @@ public class EmbeddingService {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record EmbedRequest(String providerId, String modelId, List<String> texts, UUID agentId, UUID runId) {}
+    private record EmbedRequest(
+            String providerId, String modelId, List<String> texts, UUID agentId, UUID runId, String purpose) {}
 
     private record EmbedResponse(List<float[]> vectors, int dimension) {}
 
+    // @find: embed a search question, query embedding
     /**
      * Embeds one search query with the provider and model a collection was built with.
      *
@@ -85,13 +91,37 @@ public class EmbeddingService {
 
     /** As {@link #embedQuery(UUID, String, String, String)}, booked to the agent and run named; either may be null. */
     public float[] embedQuery(UUID orgId, String providerId, String modelId, String text, UUID agentId, UUID runId) {
-        List<float[]> vectors = embedBatch(orgId, providerId, modelId, List.of(text), QUERY_TIMEOUT, agentId, runId);
+        List<float[]> vectors =
+                embedBatch(orgId, providerId, modelId, List.of(text), QUERY_TIMEOUT, agentId, runId, "query");
         if (vectors.isEmpty()) {
             throw new ApiException(ErrorCode.UPSTREAM_ERROR, "The text could not be embedded.");
         }
         return vectors.get(0);
     }
 
+    // @find: check embedding model dimension, test embedding model works
+    /**
+     * Proves a model works for this workspace and says how wide its vectors are, by embedding one
+     * short passage. Used before a workspace switches its knowledge base to the model, so a model
+     * that cannot be used is refused with its reason rather than leaving every source unsearchable.
+     */
+    public int probeDimension(UUID orgId, String providerId, String modelId) {
+        List<float[]> vectors = embedBatch(
+                orgId,
+                providerId,
+                modelId,
+                List.of("A short passage used to check that this embedding model works."),
+                BATCH_TIMEOUT,
+                null,
+                null,
+                "passage");
+        if (vectors.isEmpty() || vectors.get(0) == null || vectors.get(0).length == 0) {
+            throw new EmbeddingRefused(providerId, modelId, "it returned an empty vector.");
+        }
+        return vectors.get(0).length;
+    }
+
+    // @find: embed passages in batch, document embedding
     /**
      * Embeds a list of passages, in batches.
      *
@@ -112,7 +142,7 @@ public class EmbeddingService {
         List<float[]> all = new ArrayList<>(texts.size());
         for (int start = 0; start < texts.size(); start += BATCH_SIZE) {
             List<String> batch = texts.subList(start, Math.min(texts.size(), start + BATCH_SIZE));
-            all.addAll(embedBatch(orgId, providerId, modelId, batch, BATCH_TIMEOUT, agentId, runId));
+            all.addAll(embedBatch(orgId, providerId, modelId, batch, BATCH_TIMEOUT, agentId, runId, "passage"));
         }
         log.debug("Embedded {} passage(s) with {}/{}", all.size(), providerId, modelId);
         return all;
@@ -125,22 +155,65 @@ public class EmbeddingService {
             List<String> batch,
             Duration timeout,
             UUID agentId,
-            UUID runId) {
-        EmbedResponse response = client.post()
-                .uri("/internal/embeddings")
-                .header("X-Workspace-Id", orgId.toString())
-                .header("Authorization", "Bearer " + tokens.forService("orchestrator"))
-                .bodyValue(new EmbedRequest(providerId, modelId, batch, agentId, runId))
-                .retrieve()
-                .bodyToMono(EmbedResponse.class)
-                .timeout(timeout)
-                .block();
+            UUID runId,
+            String purpose) {
+        EmbedResponse response;
+        try {
+            response = client.post()
+                    .uri("/internal/embeddings")
+                    .header("X-Workspace-Id", orgId.toString())
+                    .header("Authorization", "Bearer " + tokens.forService("orchestrator"))
+                    .bodyValue(new EmbedRequest(providerId, modelId, batch, agentId, runId, purpose))
+                    .retrieve()
+                    .bodyToMono(EmbedResponse.class)
+                    .timeout(timeout)
+                    .block();
+        } catch (WebClientResponseException refused) {
+            // The orchestrator answered and said why; that reason, not "409 Conflict from POST
+            // http://...", is what the person reading the source's notice needs.
+            throw new EmbeddingRefused(providerId, modelId, reasonOf(refused));
+        }
 
         if (response == null || response.vectors() == null || response.vectors().size() != batch.size()) {
             throw new ApiException(
                     ErrorCode.UPSTREAM_ERROR, "The embedding service returned an unexpected number of vectors.");
         }
         return response.vectors();
+    }
+
+    /**
+     * The orchestrator refused to embed: the provider is not set up or has no key, the model is
+     * unknown, or the budget is spent. Not a vector-store failure, and never reported as one.
+     */
+    public static final class EmbeddingRefused extends RuntimeException {
+        private final String reason;
+
+        public EmbeddingRefused(String providerId, String modelId, String reason) {
+            super("The embedding model " + providerId + " / " + modelId + " could not be used: " + reason);
+            this.reason = reason;
+        }
+
+        /** What the orchestrator said, on its own, for a sentence that already names the model. */
+        public String reason() {
+            return reason;
+        }
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper PROBLEMS =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** The error's own sentence from a problem body, or a plain fallback; never the URL. */
+    static String reasonOf(WebClientResponseException refused) {
+        String reason = "";
+        try {
+            reason = PROBLEMS.readTree(refused.getResponseBodyAsString()).path("detail").asText("");
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | RuntimeException unreadable) {
+            // Not a problem body; the status says enough.
+        }
+        if (reason.isBlank()) {
+            reason = "the model service answered with status " + refused.getStatusCode().value() + ".";
+        }
+        return reason;
     }
 
     /** The agent the current request is acting as, or null when it is a person's or the system's. */
@@ -168,6 +241,7 @@ public class EmbeddingService {
         }
     }
 
+    // @find: explain embedding failure, embedding error message
     /** Diagnostic detail for the ingestion screen when embedding is unavailable. */
     public Map<String, String> describeFailure(Throwable error) {
         return Map.of("reason", error.getClass().getSimpleName(), "service", "orchestrator");

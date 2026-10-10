@@ -1,3 +1,6 @@
+// @find: work strip, active goals, running goals, review link, current step, dock, goal status line
+// @what: One line per active goal in the dock or Work panel.
+// @flow: Used by WorkPanel and the Chat page; Review reveals ProgressCard.
 import { useState } from 'react'
 import { Button, ConfirmDialog } from '../ui'
 import { formatElapsed } from '../../lib/format'
@@ -115,6 +118,7 @@ function WorkStripLine({
   )
 }
 
+// @find: WorkStrip, work strip, work strip, active goals, running goals, review link
 export function WorkStrip({
   goals,
   questions,

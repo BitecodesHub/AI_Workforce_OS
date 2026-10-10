@@ -1,3 +1,6 @@
+// @find: board keyboard, j k keys, arrow keys, move focus between cards, keyboard navigation, useBoardKeyboard, accessibility
+// @what: Hook that moves focus between board cards with j, k and the arrow keys.
+// @flow: Used by Board.tsx on the board container
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
 
@@ -7,6 +10,7 @@ import type { RefObject } from 'react'
  * `[data-card-id]` button reachable by Tab, never a page-wide listener that would steal j and k
  * from a search box or a textarea elsewhere on the page (WCAG 2.1.4).
  */
+// @find: hook board keyboard navigation j/k
 export function useBoardKeyboard(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const container = containerRef.current

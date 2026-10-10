@@ -1,3 +1,6 @@
+// @find: needs you inbox, needs you, answer questions, decide approvals, retry failed goal, resume paused agent, dismiss, for me or everyone, NeedsYouInbox, Orchestrator
+// @what: The Needs you inbox on the Orchestrator listing items that wait on a person, with retry and resume actions.
+// @flow: Data from needsYou.buildNeedsYou; calls useRetryGoal and useSetAgentStatus
 import { useState } from 'react'
 import { Button, ConfirmDialog, Tag } from '../ui'
 import { describeApiError } from '../../lib/api'
@@ -202,6 +205,7 @@ function kindTag(item: NeedsYouItem) {
   }
 }
 
+// @find: needs you inbox component, items waiting on me
 export function NeedsYouInbox({
   board,
   onOpenGoal,

@@ -1,3 +1,6 @@
+// @find: try search, search documents, knowledge search, test search, passages found, RAG, search sources, Knowledge page
+// @what: Box to try a search on documents without an agent, showing passages found.
+// @flow: Used by the Knowledge page.
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Card, Eyebrow, Input, Notice, Select } from '../ui'
@@ -13,6 +16,7 @@ import type { Source } from '../../lib/queries'
  * show, because a question there may start a paid run and the passages stay behind the answer.
  */
 
+// @find: PassageList, passage list, try search, search documents, knowledge search, test search
 /** The passages a search found, each with the document, page and section it came from. */
 export function PassageList({
   passages,
@@ -57,6 +61,7 @@ export function PassageList({
 
 const ALL_SOURCES = ''
 
+// @find: KnowledgeSearch, knowledge search, try search, search documents, knowledge search, test search
 /**
  * A box to try a search in. Searches every source the person may read, or the one chosen, or
  * - with `onlySourceId` - just the source whose page this is.

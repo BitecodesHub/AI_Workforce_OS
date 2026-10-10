@@ -1,3 +1,6 @@
+// @find: agents section, AI team, example agents, HR engineering research support agents, tool servers, grants, AgentsSection, #agents
+// @what: Section showing the four example AI assistants and what each may do in each tool.
+// @flow: Uses landingFacts AGENTS and agentGrants
 import { useCallback, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactElement } from 'react'
 import { Tag } from '../../ui'
@@ -20,6 +23,7 @@ import { AGENT_GRANTS, defaultGrant } from './agentGrants'
  * region, re-keyed per server so it fades in and is announced as a whole.
  */
 
+// @find: AgentsSection component, AI team section
 export function AgentsSection(): ReactElement {
   return (
     <LandingSection id="team" labelledBy="team-title">

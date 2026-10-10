@@ -1,6 +1,10 @@
+// @find: connect connector, add connector, connect account, token, api key, sign in, oauth, credentials, Connect dialog, Integrations page, live account
+// @what: Dialog to connect a connector to a live account by token or sign-in.
+// @flow: Used by the Connectors page; uses CapabilityList.
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Input, Notice, PasswordInput } from '../ui'
+import { cleanKey, keyMismatch } from '../../lib/keyFormats'
 import { CopyButton } from '../ui/CopyButton'
 import { ApiError, describeApiError } from '../../lib/api'
 import { isHttpsUrl, placeFieldProblems, safeDocsUrl, secretNoun, usesSignIn, webAddressProblem } from '../../lib/connectors'
@@ -70,6 +74,7 @@ function useFieldProblems(formRef: React.RefObject<HTMLFormElement | null>) {
   }
 }
 
+// @find: ConnectDialog, connect dialog, connect connector, add connector, connect account, token
 export function ConnectDialog({
   open,
   integration,
@@ -145,7 +150,10 @@ function TokenDialog({ open, integration, onClose }: { open: boolean; integratio
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!filled || connect.isPending) return
-    const trimmed = Object.fromEntries(fields.map((field) => [field.key, (values[field.key] ?? '').trim()]))
+    // A pasted secret loses what came with it (quotes, "Bearer ", NAME=); other fields are only trimmed.
+    const trimmed = Object.fromEntries(
+      fields.map((field) => [field.key, field.secret ? cleanKey(values[field.key] ?? '') : (values[field.key] ?? '').trim()]),
+    )
     if (integration.authType === 'url') {
       const found = Object.fromEntries(
         fields.flatMap((field) => {
@@ -222,7 +230,9 @@ function TokenDialog({ open, integration, onClose }: { open: boolean; integratio
             required: true,
             placeholder: field.placeholder ?? undefined,
             hint: hintFor(field, index === 0),
-            error: problems.inline[field.key] ?? null,
+            error:
+              problems.inline[field.key] ??
+              (field.secret && values[field.key] ? keyMismatch(integration.server, name, values[field.key] ?? '') : null),
             ...(index === 0 ? { 'data-autofocus': true } : {}),
           }
           return field.secret ? (
@@ -287,6 +297,11 @@ function SignInDialog({
     event.preventDefault()
     if (!canSave || busy) return
     problems.clear()
+    if (/\s/.test(clientId.trim())) {
+      // A client ID is one unbroken string; a space means part of the page was copied with it.
+      problems.local({ clientId: `A client ID has no spaces. Copy it again from ${provider}.` })
+      return
+    }
     try {
       const settings = Object.fromEntries(
         oauth.appFields.map((field) => [field.key, settingValue(field.key).trim()]).filter(([, value]) => value),

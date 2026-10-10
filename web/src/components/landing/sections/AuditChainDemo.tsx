@@ -1,3 +1,6 @@
+// @find: audit chain demo, audit log, tamper evident, hash chain, tamper toggle, verify chain, record of every decision, AuditChainDemo, #audit
+// @what: The demo where the visitor edits one audit entry and watches the hash chain expose it.
+// @flow: Used by DemoStage; model in auditChain.ts
 import { useMemo, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { Button, Tag } from '../../ui'
@@ -80,6 +83,7 @@ function EntryText({ stored, entry, altered }: { stored: AuditEntry; entry: Audi
   return <p className="lp-audit-text">{altered ? diffText(stored.text, entry.text) : entry.text}</p>
 }
 
+// @find: AuditChainDemo component, audit chain demo
 export function AuditChainDemo(): ReactElement {
   const [altered, setAltered] = useState(false)
   const [touched, setTouched] = useState(false)

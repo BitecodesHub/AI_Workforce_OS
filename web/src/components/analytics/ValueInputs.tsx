@@ -1,3 +1,6 @@
+// @find: value settings, hourly rate, minutes saved per run, time saved, value estimate, ROI inputs, save value settings, ValueInputs, parseRate, parseMinutes
+// @what: Form for the hourly rate and minutes-saved assumptions behind the value estimate.
+// @flow: Rendered on Analytics; uses useValueSettings and useSaveValueSettings
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Card, Eyebrow, Input, Notice } from '../ui'
@@ -21,10 +24,12 @@ import { NOT_ESTIMATED, formatHours } from './figures'
  * no minutes shows as not estimated and adds nothing, never a zero.
  */
 
+// @find: MAX_MINUTES, limit for minutes saved
 export const MAX_MINUTES = 2_400
 export const MAX_HOURLY_RATE = 10_000
 
 /** An hourly cost typed in: null for empty, a number in range, or NaN for anything else. */
+// @find: parseRate, parse hourly rate input
 export function parseRate(entered: string): number | null {
   const trimmed = entered.trim().replace(/^US?\$/i, '').replace(/,/g, '')
   if (trimmed === '') return null
@@ -33,6 +38,7 @@ export function parseRate(entered: string): number | null {
 }
 
 /** Minutes typed in: null for empty, a whole number from 1 to a working day, or NaN for anything else. */
+// @find: parseMinutes, parse minutes saved input
 export function parseMinutes(entered: string): number | null {
   const trimmed = entered.trim()
   if (trimmed === '') return null
@@ -174,6 +180,7 @@ function ReadOnlyInputs({ settings }: { settings: ValueSettings }) {
   )
 }
 
+// @find: ValueInputs, edit hourly rate and minutes saved, save value settings
 export function ValueInputs({ value }: { value: Insights['value'] }) {
   const settings = useValueSettings()
   const canManage = can('budget:manage')

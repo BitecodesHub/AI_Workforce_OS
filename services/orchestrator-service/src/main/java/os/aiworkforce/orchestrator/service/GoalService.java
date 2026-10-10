@@ -1,3 +1,6 @@
+// @find: goals, goal service, create goal, tasks, task graph, dependencies, hand-off between agents, chain of agents, retry goal, cancel goal, stop goal, run next task, claim task, concurrency cap, multi-agent plan, workspace tasks, requester actor
+// @what: Turns a goal into a dependency graph of tasks and drives it to completion, handing each step's results to the next agent and capping concurrent work per workspace.
+// @flow: Called by GoalController and chat; hands claimed tasks to RunExecutor, which calls AgentRunner
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Instant;
@@ -206,6 +209,7 @@ public class GoalService {
             UUID scheduleId,
             List<NewTask> tasks) {}
 
+    // @find: create goal simple, record a goal with tasks
     /**
      * The old shape, kept for callers that only record a goal: it is not dispatched here, so its
      * first task starts on the goal sweep's next tick. Use {@link #createGoal} to start it at once.
@@ -221,6 +225,7 @@ public class GoalService {
         return createGoal(orgId, new NewGoal(title, description, null, "manual", null, null, newTasks), false);
     }
 
+    // @find: validate goal, dry run check, dependency cycle check
     /**
      * Checks a goal can be created, without writing anything.
      *
@@ -249,6 +254,7 @@ public class GoalService {
         validateNoCycles(taskSpecs);
     }
 
+    // @find: create goal and tasks, start goal, POST /api/goals, run async
     /**
      * Turns a request into a goal and its tasks, and optionally starts it without waiting.
      *
@@ -407,6 +413,7 @@ public class GoalService {
         done.add(index);
     }
 
+    // @find: run next task, process ready task, synchronous task run
     /**
      * Runs the next task that is ready, if there is one, on the calling thread.
      *
@@ -435,6 +442,7 @@ public class GoalService {
      */
     public record TaskStart(Task task, List<Task> predecessors) {}
 
+    // @find: claim next ready task, mark running, task queue, concurrency cap
     /**
      * Claims the workspace's next ready task and marks it running, or finds none - nothing ready,
      * or the workspace already at its cap of running tasks.
@@ -450,6 +458,7 @@ public class GoalService {
         return start == null ? Optional.empty() : start;
     }
 
+    // @find: start run for claimed task, run as requester
     /**
      * Starts the run for a claimed task, as the person who asked for its goal.
      *
@@ -497,6 +506,7 @@ public class GoalService {
         }
     }
 
+    // @find: who a goal runs as, requester or platform actor
     /**
      * The person a goal's work runs as: its requester, or the platform when nobody is on record.
      * The one rule for every path that runs or resumes a goal's task, so they cannot disagree.
@@ -747,6 +757,7 @@ public class GoalService {
         return text == null ? 0 : text.length();
     }
 
+    // @find: truncate hand-off text, omitted marker, predecessor result cap
     /**
      * The start of a text, kept exactly as written - line breaks, lists and tables included - and
      * cut, when it is longer than {@code max} characters, at the last line break or space in the

@@ -1,3 +1,6 @@
+// @find: tests for voice clip service, voice, without key produces no clip, key stored delegates, missing text produces no clip, with key and voice saves aclip, synthesis failure produces no clip rather than throwing, VoiceClipServiceTest, VoiceClipService
+// @what: Tests for VoiceClipService in the orchestrator voice package (5 test methods).
+// @flow: Exercises VoiceClipService
 package os.aiworkforce.orchestrator.voice;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +45,7 @@ class VoiceClipServiceTest {
         agent.setId(UUID.randomUUID());
     }
 
+    // @find: test without key produces no clip, voice clip service
     @Test
     @DisplayName("without a stored key, nothing is synthesised and nothing is asked of ElevenLabs")
     void withoutKeyProducesNoClip() {
@@ -55,6 +59,7 @@ class VoiceClipServiceTest {
         verifyNoInteractions(clips);
     }
 
+    // @find: test key stored delegates, voice clip service
     @Test
     @DisplayName("keyStored is a straight read-through to the voice service")
     void keyStoredDelegates() {
@@ -63,6 +68,7 @@ class VoiceClipServiceTest {
         assertThat(service.keyStored(ORG)).isTrue();
     }
 
+    // @find: test missing text produces no clip, voice clip service
     @Test
     @DisplayName("arguments without a text field produce no clip either")
     void missingTextProducesNoClip() {
@@ -74,6 +80,7 @@ class VoiceClipServiceTest {
         verify(voice, never()).resolveVoiceId(any(), any());
     }
 
+    // @find: test with key and voice saves aclip, voice clip service
     @Test
     @DisplayName("a stored key and a voice let a clip be synthesised and saved")
     void withKeyAndVoiceSavesAClip() {
@@ -87,6 +94,7 @@ class VoiceClipServiceTest {
         verify(clips).save(any(VoiceClip.class));
     }
 
+    // @find: test synthesis failure produces no clip rather than throwing, voice clip service
     @Test
     @DisplayName("a synthesis failure is swallowed: the run keeps its result, only the clip is missing")
     void synthesisFailureProducesNoClipRatherThanThrowing() {

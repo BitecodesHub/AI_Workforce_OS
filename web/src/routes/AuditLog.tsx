@@ -1,3 +1,6 @@
+// @find: audit log, audit trail, who did what, events, verify chain, tamper evident, integrity, filters, export, outcome, actor, resource, auditor tools, /audit, AuditLog page
+// @what: The Audit log page: a searchable, filterable list of everything done in the workspace, with a check that the record is intact.
+// @flow: Routed from App.tsx at /audit; reads audit events from the analytics service via lib/queries
 import { useCallback, useMemo, useState } from 'react'
 import { Button, Card, DataTable, EmptyState, Eyebrow, Input, Notice, PageHeader, Select, Tag, Time } from '../components/ui'
 import type { Column } from '../components/ui'
@@ -98,6 +101,7 @@ function resourceWords(row: AuditEvent): string {
   return sentenceCase(row.resourceType) || 'Unknown'
 }
 
+// @find: audit who cell, actor name
 function WhoCell({ row, directory }: { row: AuditEvent; directory: Directory }) {
   const actor = actorName(row, directory)
   const behalf = row.onBehalfOf ? personName(row.onBehalfOf, directory) : null
@@ -117,6 +121,7 @@ function WhoCell({ row, directory }: { row: AuditEvent; directory: Directory }) 
   )
 }
 
+// @find: audit action cell, what happened
 function ActionCell({ row }: { row: AuditEvent }) {
   const tool = detailText(row.detail.tool)
   const failure = detailText(row.detail.failureReason)
@@ -133,6 +138,7 @@ function ActionCell({ row }: { row: AuditEvent }) {
   )
 }
 
+// @find: audit resource cell, link to run
 function ResourceCell({ row, canReadRuns }: { row: AuditEvent; canReadRuns: boolean }) {
   const runId = runOf(row)
   if (runId && canReadRuns) {
@@ -151,6 +157,7 @@ function ResourceCell({ row, canReadRuns }: { row: AuditEvent; canReadRuns: bool
 }
 
 /** The filters the server applies, the export buttons and the integrity check: an auditor's tools. */
+// @find: auditor tools, verify audit chain, check integrity, export audit log
 function AuditorTools({
   filters,
   onChange,
@@ -243,7 +250,9 @@ function AuditorTools({
       {result && (
         <Notice tone={result.verified ? 'success' : 'warning'} live>
           {result.verified
-            ? `Chain verified up to entry ${formatCount(result.lastSequence)}. ${formatCount(result.checked)} entries checked.`
+            ? // Entry numbers are shared by every workspace, so this one's run is not 1, 2, 3: saying
+              // "up to entry 1,599, 1,585 checked" read as if 14 had been skipped.
+              `Chain verified: all ${formatCount(result.checked)} entries in this workspace are intact, the newest being entry ${formatCount(result.lastSequence)}.`
             : `The chain is broken at entry ${result.firstBrokenSequence ?? 'unknown'}. ${result.reason ?? 'That entry does not match the one before it.'}`}
         </Notice>
       )}
@@ -251,6 +260,7 @@ function AuditorTools({
   )
 }
 
+// @find: AuditLog component, audit log page, search audit events, filter by outcome, /audit
 export function AuditLog() {
   const [serverFilters, setServerFilters] = useState<AuditFilters>({})
   const auditQuery = useAuditPages(serverFilters)
@@ -276,6 +286,7 @@ export function AuditLog() {
   )
 
   const entries = useMemo(() => auditQuery.data?.pages.flat(), [auditQuery.data])
+  const filtering = Object.values(serverFilters).some(Boolean)
 
   // Everything a person might type to find an entry: what happened in words (both the specific
   // and the general wording, so a search for "Decided an approval" from Analytics finds approvals
@@ -343,6 +354,9 @@ export function AuditLog() {
       <section style={{ marginTop: 'var(--space-6)' }}>
         <Card as="section">
           <Eyebrow as="h2">Entries, newest first</Eyebrow>
+          {/* Outside the query's states: a date range or action that matches nothing must not take
+              away the very controls needed to change it. */}
+          <AuditorTools filters={serverFilters} onChange={setServerFilters} />
           <QueryState
             // A failure to load an older page keeps the entries already on screen; it is reported
             // beside the button that asked for them instead.
@@ -357,16 +371,28 @@ export function AuditLog() {
             rows={6}
             isEmpty={(data) => data.length === 0}
             empty={
-              <EmptyState
-                icon={<EmptyIcon kind="document" />}
-                title="No audit entries yet"
-                body="Approval decisions and finished runs will appear here as they happen."
-              />
+              filtering ? (
+                <EmptyState
+                  icon={<EmptyIcon kind="document" />}
+                  title="No entries match these filters"
+                  body="Try another date range or another kind of event."
+                  action={
+                    <Button variant="outline" onClick={() => setServerFilters({})}>
+                      Clear filters
+                    </Button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  icon={<EmptyIcon kind="document" />}
+                  title="No audit entries yet"
+                  body="Approval decisions and finished runs will appear here as they happen."
+                />
+              )
             }
           >
             {() => (
               <>
-                <AuditorTools filters={serverFilters} onChange={setServerFilters} />
                 <FilterBar
                   searchLabel="Search the audit log"
                   placeholder="Action, person, agent or run id"

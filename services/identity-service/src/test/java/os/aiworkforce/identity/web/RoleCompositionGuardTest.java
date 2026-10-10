@@ -1,3 +1,5 @@
+// @find: tests for role composition, create role, update role, permissions subset, owner-only permissions, RoleController
+// @what: Tests that roles cannot carry permissions their author lacks.
 package os.aiworkforce.identity.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -183,6 +185,17 @@ class RoleCompositionGuardTest {
         verify(audit).record(eq("role.create"), eq("role"), any(), eq("succeeded"), detail.capture());
         assertThat(detail.getValue()).containsEntry("name", "readers");
         assertThat(detail.getValue().get("permissions")).isEqualTo(List.of("agent:read", "workspace:read"));
+    }
+
+    @Test
+    @DisplayName("a role named like a built-in one in another case, or like a custom one, is refused")
+    void nameClashIgnoresCase() throws Exception {
+        RequestContext.setActor(workspace.tokenOf(workspace.member("Olivia Owner", workspace.owner, "active")));
+
+        create("Owner", Permission.Codes.WORKSPACE_READ).andExpect(status().isConflict());
+        create(" ADMIN ", Permission.Codes.WORKSPACE_READ).andExpect(status().isConflict());
+        create("Readers", Permission.Codes.WORKSPACE_READ).andExpect(status().isCreated());
+        create("readers", Permission.Codes.WORKSPACE_READ).andExpect(status().isConflict());
     }
 
     @Test

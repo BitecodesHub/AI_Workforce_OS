@@ -1,3 +1,6 @@
+# @find: grafana, dashboards provisioning, dashboard folder, monitoring, load dashboards, observability
+# @what: Tells Grafana where to load the AI Workforce OS dashboards from.
+# @flow: Read by Grafana at startup; pairs with infra/grafana/provisioning/datasources/prometheus.yml
 apiVersion: 1
 providers:
   - name: aiwos

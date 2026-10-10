@@ -1,3 +1,6 @@
+// @find: grant connector to agent, give agent access, agent capabilities, change what agent may do, tool permissions, Grant dialog, connector grant, agent page
+// @what: Dialog to give an agent a connector or change what it may do there.
+// @flow: Used by the agent detail page.
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Input, Tag } from '../ui'
@@ -42,6 +45,7 @@ function connectorName(integration: Pick<Integration, 'server' | 'displayName'>)
   return serverLabel(integration.server, integration.displayName)
 }
 
+// @find: GrantDialog, grant dialog, grant connector to agent, give agent access, agent capabilities, change what agent may do
 export function GrantDialog({
   open,
   onClose,
@@ -268,6 +272,7 @@ function ConnectorPicker({
 
 /* ---- Step 2: what it may do ------------------------------------------------------------------- */
 
+// @find: GrantCapabilitiesForm, grant capabilities form, grant connector to agent, give agent access, agent capabilities, change what agent may do
 export function GrantCapabilitiesForm({
   connectorName: name,
   tools,

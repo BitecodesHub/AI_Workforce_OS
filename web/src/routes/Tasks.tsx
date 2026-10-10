@@ -1,3 +1,6 @@
+// @find: tasks, goals, give a task, goal list, status filter, failed goals, goal detail, task outcome, waiting task, plan steps, /tasks, Tasks page
+// @what: The Tasks page: give assistants a goal, see the list of goals and follow each one to its outcome.
+// @flow: Routed from App.tsx at /tasks; goal rows lead to RunDetail.tsx
 import { useCallback, useMemo, useState } from 'react'
 import {
   Button,
@@ -108,6 +111,7 @@ const GOAL_COLUMNS: Column<Goal>[] = [
   },
 ]
 
+// @find: Tasks component, tasks page, goals, /tasks
 export function Tasks() {
   const { search } = useRouter()
   const goalId = search.get('goal')
@@ -116,6 +120,7 @@ export function Tasks() {
 
 /* ---- The list of goals ------------------------------------------------------------------------ */
 
+// @find: goal list, filter by status, give a task, create goal, POST /api/goals
 function GoalList() {
   const { search } = useRouter()
   // The server filters, read from the URL. A status the server would refuse (a mistyped link) is
@@ -246,6 +251,7 @@ function GoalList() {
 
 /* ---- One goal --------------------------------------------------------------------------------- */
 
+// @find: goal detail wrapper
 function GoalDetail({ id }: { id: string }) {
   const query = useGoal(id)
   useDocumentTitle(query.data ? truncateWords(query.data.title, 60) : null)
@@ -281,6 +287,7 @@ function isWaitingTask(task: Task): task is Task & { runId: string } {
 }
 
 /** The run a paused task is waiting on, shown the same way RunDetail shows a run waiting for a decision. */
+// @find: task waiting for approval or answer
 function TaskWaiting({ task }: { task: Task & { runId: string } }) {
   const { navigate } = useRouter()
   const runQuery = useRun(task.runId)
@@ -291,6 +298,7 @@ function TaskWaiting({ task }: { task: Task & { runId: string } }) {
   return <WaitingForAnswer run={run} mode="notice" onGoToQuestion={() => navigate(`/runs/${run.id}`)} />
 }
 
+// @find: goal view, plan, tasks, outcomes, cancel goal, retry
 function GoalView({ goal }: { goal: Goal }) {
   const toast = useToast()
   const me = profile()?.userId ?? null
@@ -487,6 +495,7 @@ function failureLeadFor(status: string): string {
   }
 }
 
+// @find: task outcome, result of a step
 function TaskOutcome({ task }: { task: Task }) {
   const failureLead = failureLeadFor(task.status.toLowerCase())
   const result = task.result ?? ''

@@ -1,3 +1,6 @@
+// @find: details mode, automatic expanded collapsed, reveal goal, thread details choice, context
+// @what: React context for the thread-wide Details mode and goal reveal.
+// @flow: Provided by the Chat page; read by RoutingCard and ProgressCard.
 import { createContext } from 'react'
 
 /*
@@ -15,6 +18,7 @@ export type DetailsMode = 'auto' | 'expanded' | 'collapsed'
 
 export type RevealGoal = { goalId: string; nonce: number }
 
+// @find: DetailsContext, details context, details mode, automatic expanded collapsed, reveal goal, thread details choice
 export const DetailsContext = createContext<{ mode: DetailsMode; version: number; revealGoal?: RevealGoal | null }>({
   mode: 'auto',
   version: 0,

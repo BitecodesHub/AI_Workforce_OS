@@ -1,3 +1,6 @@
+// @find: tests for shared landing components, reduced motion, LandingRoot, DemoFrame, SegmentedControl, hooks
+// @what: Tests the shared landing foundation in a jsdom environment.
+// @flow: Covers files in shared/
 import { useState } from 'react'
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

@@ -1,3 +1,6 @@
+// @find: board toolbar, search goals, status filter, filters menu, source filter, agent filter, requester filter, board or list toggle, group by, BoardToolbar
+// @what: The row of search, filter and view controls above the Orchestrator goals.
+// @flow: Rendered by Board.tsx; filter values live in the URL via useListFilter
 import { formatCount } from '../../lib/format'
 import { MenuButton } from '../ui/Menu'
 import type { MenuEntry } from '../ui/Menu'
@@ -35,6 +38,7 @@ function SearchIcon() {
   )
 }
 
+// @find: board toolbar component, search and filters
 export function BoardToolbar({
   query,
   onQueryChange,

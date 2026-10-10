@@ -1,3 +1,5 @@
+// @find: Spring Data repository for refresh-token sessions and bulk revocation.
+// @what: sessions, refresh token lookup, revoke family, revoke all sessions, sign out everywhere, live sessions, delete expired sessions, Sessions repository
 package os.aiworkforce.identity.repository;
 
 import java.time.Instant;

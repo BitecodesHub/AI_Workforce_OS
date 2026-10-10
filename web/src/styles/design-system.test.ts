@@ -1,3 +1,6 @@
+// @find: tests for design system, tokens only, no raw hex colours, border rules, radius rules, font weights, landing styles rules, polish styles rules, chat layout at phone width
+// @what: Tests that enforce the design rules across all stylesheets.
+// @flow: Reads the css files under src/styles
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -266,3 +269,11 @@ describe('polish styles', () => {
   })
 })
 
+
+describe('chat layout at phone width', () => {
+  it('keeps the chat panel to one column no wider than the screen, so a long code line scrolls in its own box', () => {
+    const chat = readFileSync(join(SRC, 'styles/polish/chat.css'), 'utf8')
+    const rule = /\.chat-main \{[^}]*display: grid;[^}]*\}/.exec(chat)?.[0] ?? ''
+    expect(rule).toContain('grid-template-columns: minmax(0, 1fr);')
+  })
+})

@@ -1,3 +1,6 @@
+// @find: attachments extraction, extract text from attachment, chat attachment text, read uploaded file in chat, POST /internal/knowledge/extract, PDF docx text, TextExtractor, InternalExtractController, knowledge, documents
+// @what: Internal endpoint that returns the plain text of a file without storing it, used for chat attachments.
+// @flow: Called by orchestrator-service; delegates to TextExtractor.
 package os.aiworkforce.knowledge.web;
 
 import java.io.IOException;
@@ -64,6 +67,7 @@ public class InternalExtractController {
         this.extractor = extractor;
     }
 
+    // @find: extract text from attachment, POST /internal/knowledge/extract
     @PostMapping(value = "/extract", consumes = "multipart/form-data")
     @Operation(summary = "Internal: detect what a file is and read its text, without indexing it")
     public Extracted extract(

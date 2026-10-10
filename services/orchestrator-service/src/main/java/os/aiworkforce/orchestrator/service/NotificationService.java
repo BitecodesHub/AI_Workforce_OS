@@ -1,3 +1,6 @@
+// @find: notifications, webhook, outbound notification, approval raised alert, approval expired alert, schedule paused alert, signed webhook, send test notification, notification settings, HMAC signature
+// @what: Posts signed webhook messages to the workspace's chosen address when an approval waits, expires or a schedule pauses, and stores those settings.
+// @flow: Called by lifecycle listeners and NotificationSettingsController
 package os.aiworkforce.orchestrator.service;
 
 import java.io.IOException;
@@ -212,6 +215,7 @@ public class NotificationService implements GoalLifecycleListener {
 
     // ---- Settings -----------------------------------------------------------------------------
 
+    // @find: get notification settings
     /** What this workspace has set up. */
     public Settings settings(UUID orgId) {
         String org = orgId.toString();
@@ -228,6 +232,7 @@ public class NotificationService implements GoalLifecycleListener {
         REMOVED
     }
 
+    // @find: update notification webhook and events
     /**
      * Saves a workspace's webhook.
      *
@@ -294,6 +299,7 @@ public class NotificationService implements GoalLifecycleListener {
 
     // ---- Sending ------------------------------------------------------------------------------
 
+    // @find: send test notification, Test webhook button
     /**
      * Sends one test message now and says how it went, so a person setting this up learns at once
      * whether it works. One attempt, no retries: the person is waiting for the answer.
@@ -431,6 +437,7 @@ public class NotificationService implements GoalLifecycleListener {
 
     // ---- What the engine announces --------------------------------------------------------------
 
+    // @find: notify approval raised
     @Override
     public void onApprovalRaised(Goal goal, Task task, Approval approval) {
         publish(
@@ -440,6 +447,7 @@ public class NotificationService implements GoalLifecycleListener {
                 "/approvals#approval-" + approval.getId());
     }
 
+    // @find: notify approval expired
     @Override
     public void onApprovalExpired(Goal goal, Task task, Approval approval) {
         publish(
@@ -449,6 +457,7 @@ public class NotificationService implements GoalLifecycleListener {
                 "/approvals?tab=decided#approval-" + approval.getId());
     }
 
+    // @find: notify schedule paused
     @Override
     public void onSchedulePaused(SchedulePause pause) {
         publish(

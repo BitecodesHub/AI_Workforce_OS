@@ -1,3 +1,5 @@
+// @find: tests for GrantGuard, grant role rules, owner only, subset rule, demotion, removed member, compose role
+// @what: Unit tests of the rule that nobody grants more than they hold.
 package os.aiworkforce.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, provider descriptor, add provider, OpenRouter, NVIDIA, Groq, OpenAI, Bedrock, self-hosted endpoint, base url, provider kind, ProviderDescriptor
+// @what: A configured provider (kind, base URL, region) as stored in the database.
+// @flow: Used by every ChatProvider and ProviderRegistry.
 package os.aiworkforce.llm.model;
 
 import java.util.List;
@@ -59,8 +62,14 @@ public record ProviderDescriptor(
         regions = regions == null ? List.of() : List.copyOf(regions);
     }
 
+    /**
+     * False for the sandbox, and for a provider row with no credential reference at all: a local,
+     * keyless endpoint such as Ollama on the same host. A row that names a reference needs a key
+     * stored under it (or an adapter with an ambient credential, see
+     * {@code ChatProvider#hasAmbientCredential}).
+     */
     public boolean requiresCredential() {
-        return kind != Kind.SANDBOX;
+        return kind != Kind.SANDBOX && credentialRef != null && !credentialRef.isBlank();
     }
 
     public boolean isRegional() {

@@ -1,3 +1,6 @@
+// @find: pointer parallax, mouse parallax, hero glass layers, --px --py, usePointerParallax, hero animation
+// @what: Hook that eases the hero layers toward the pointer using CSS variables.
+// @flow: Used by HeroConsole
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import type { RefCallback } from 'react'
 
@@ -48,6 +51,7 @@ function clampUnit(value: number): number {
   return Math.max(-1, Math.min(1, value))
 }
 
+// @find: usePointerParallax hook, hero parallax
 export function usePointerParallax(enabled: boolean): {
   hostRef: RefCallback<HTMLElement>
   stageRef: RefCallback<HTMLElement>

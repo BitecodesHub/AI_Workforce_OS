@@ -1,3 +1,6 @@
+// @find: chat attachments, attach file to message, upload attachment, download attachment, delete attachment, save attachment to knowledge, AttachmentController, POST /api/conversations/attachments, GET /api/conversations/attachments/{id}/content, composer paperclip, file chip
+// @what: REST endpoints for uploading, viewing, downloading, deleting and saving to the knowledge base the files attached to chat messages.
+// @flow: Called by the Chat page composer; delegates to AttachmentService.
 package os.aiworkforce.orchestrator.chat;
 
 import java.io.IOException;
@@ -48,6 +51,7 @@ public class AttachmentController {
         this.attachments = attachments;
     }
 
+    // @find: upload attachment, attach file before chat exists, POST /api/conversations/attachments, composer paperclip
     @PostMapping(value = "/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -58,6 +62,7 @@ public class AttachmentController {
         return attachments.upload(orgId(), RequestContext.requireActor(), conversationId, file.getOriginalFilename(), bytes(file));
     }
 
+    // @find: upload attachment to a conversation, attach file, POST /api/conversations/{id}/attachments
     @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -66,6 +71,7 @@ public class AttachmentController {
         return attachments.upload(orgId(), RequestContext.requireActor(), id, file.getOriginalFilename(), bytes(file));
     }
 
+    // @find: get attachment details, attachment chip, GET /api/conversations/attachments/{id}
     @GetMapping("/attachments/{attachmentId}")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "An attached file's details")
@@ -77,6 +83,7 @@ public class AttachmentController {
      * The file itself. Served with its detected type, never sniffed again by the browser, and with
      * a sandbox policy, so an HTML file opened from here cannot run script as the console.
      */
+    // @find: download attachment, view attachment content, open file, GET /api/conversations/attachments/{id}/content
     @GetMapping("/attachments/{attachmentId}/content")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Download or preview an attached file")
@@ -97,6 +104,7 @@ public class AttachmentController {
                 .body(file.content());
     }
 
+    // @find: delete attachment, remove attached file, DELETE /api/conversations/attachments/{id}
     @DeleteMapping("/attachments/{attachmentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -105,6 +113,7 @@ public class AttachmentController {
         attachments.delete(orgId(), RequestContext.requireActor(), attachmentId);
     }
 
+    // @find: save attachment to knowledge base, add chat file to documents, POST /api/conversations/attachments/{id}/knowledge
     @PostMapping("/attachments/{attachmentId}/knowledge")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Add an attached file to the workspace's knowledge base, as the person asking")

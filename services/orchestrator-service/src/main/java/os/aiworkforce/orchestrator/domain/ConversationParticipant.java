@@ -1,3 +1,9 @@
+// @find: conversation participant, share private chat, add person to conversation, who can read private chat, conversation_participants, ConversationParticipant entity, Share chat dialog
+// @what: Entity for a person added to a private conversation so they may read it.
+// @flow: Stored by ConversationParticipants; checked by chat access rules.
+// @find: conversation participant, share private chat, add person to conversation, who can read private chat, conversation_participants, ConversationParticipant entity, Share chat dialog
+// @what: Entity for a person added to a private conversation so they may read it.
+// @flow: Stored by ConversationParticipants; checked by chat access rules.
 package os.aiworkforce.orchestrator.domain;
 
 import java.io.Serializable;

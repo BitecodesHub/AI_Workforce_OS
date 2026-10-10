@@ -1,3 +1,6 @@
+// @find: waiting for answer, run held for answer, question pending, answer needed
+// @what: Shows a run held for a person's answer.
+// @flow: Used by RunDetail; renders QuestionCard.
 import { Notice } from '../ui'
 import { QuestionCard } from './QuestionCard'
 import { shortId } from '../../lib/format'
@@ -5,6 +8,7 @@ import { useAgentNames, useMemberNames, useRunQuestions } from '../../lib/querie
 import type { Run } from '../../lib/queries'
 import { can, profile } from '../../lib/session'
 
+// @find: WaitingForAnswer, waiting for answer, waiting for answer, run held for answer, question pending, answer needed
 /**
  * A run held for a person's answer: the question itself, or, wherever a form would duplicate one
  * already on screen, a short notice pointing at it.

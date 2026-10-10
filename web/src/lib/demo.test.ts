@@ -1,3 +1,5 @@
+// @find: tests for demo accounts, parseDemoAccounts, hasDemoAccounts
+// @what: Unit tests for demo account detection.
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {

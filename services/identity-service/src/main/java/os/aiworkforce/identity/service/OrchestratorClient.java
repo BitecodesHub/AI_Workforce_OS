@@ -1,3 +1,6 @@
+// @find: orchestrator client, member left, member removed, pause schedules, owner removed, workspace leave, after commit call, OrchestratorClient
+// @what: Tells the orchestrator after commit that a member left so their schedules pause.
+// @flow: Called by MemberController.remove; posts to orchestrator owner-removed with a service token.
 package os.aiworkforce.identity.service;
 
 import java.time.Duration;
@@ -44,6 +47,7 @@ public class OrchestratorClient {
         this.tokens = tokens;
     }
 
+    // @find: member left workspace, notify orchestrator, pause schedules of removed member
     /**
      * Pauses the departed member's schedules once the surrounding transaction commits, or at once
      * when there is no transaction. A rolled-back removal tells the orchestrator nothing.

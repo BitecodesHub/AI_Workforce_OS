@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# @find: start app mac, launcher, one-click start, double-click, docker desktop, run the app, first launch, demo data, --demo, --no-demo, --new-keys, AIWOS_WEB_PORT, AIWOS_EXPOSE_LAN, open browser, memory check
+# @what: macOS and Linux one-click launcher that prepares private settings, builds and starts every service with Docker, then opens the app in the browser.
+# @flow: Calls infra/launcher/prepare-env.sh then docker compose with infra/launcher/docker-compose.yml
 #
 # Double-click to start AI Workforce OS on macOS (or run it from a terminal on Linux).
 # Needs only Docker Desktop. Builds and starts every service, then opens the app in the browser.

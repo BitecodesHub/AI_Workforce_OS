@@ -1,3 +1,6 @@
+// @find: flow map, workforce map, agents ring, hub, agent nodes, who is busy, node status, running asking waiting paused retired idle, workforce summary, tooltip, FlowMap, Orchestrator
+// @what: The flow map: agents drawn around a hub with their live status and the goals flowing between them.
+// @flow: Uses layout.ts geometry and shared.ts; nodeStatus used by AgentsStrip
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Tag } from '../ui'
@@ -21,6 +24,7 @@ export type NodeStatus = 'running' | 'asking' | 'waiting' | 'paused' | 'retired'
 
 /** The same status precedence and wording AgentsStrip's rows use, so a name reads the same way in
     both places: paused, then retired, then running, then asking, then waiting for approval. */
+// @find: node status of agent, running asking waiting paused idle
 export function nodeStatus(agent: BoardAgent): NodeStatus {
   if (agent.status === 'paused') return 'paused'
   if (agent.status === 'retired') return 'retired'
@@ -30,6 +34,26 @@ export function nodeStatus(agent: BoardAgent): NodeStatus {
   return 'idle'
 }
 
+/**
+ * One line about the workforce for a folded section: "5 agents · 2 busy · 1 paused". Retired
+ * agents take no work and are not counted; "all idle" is said only when nobody is paused either.
+ */
+// @find: workforce summary line, 3 agents busy paused
+export function workforceSummary(agents: readonly BoardAgent[]): string {
+  const statuses = agents.map(nodeStatus).filter((status) => status !== 'retired')
+  const busy = statuses.filter((status) => status === 'running' || status === 'asking' || status === 'waiting').length
+  const paused = statuses.filter((status) => status === 'paused').length
+  const count = (n: number) => n.toLocaleString('en-AU')
+  const head = `${count(statuses.length)} ${statuses.length === 1 ? 'agent' : 'agents'}`
+  if (statuses.length > 0 && paused === statuses.length) return `${head} · all paused`
+  const parts = [head]
+  if (busy > 0) parts.push(`${count(busy)} busy`)
+  if (paused > 0) parts.push(`${count(paused)} paused`)
+  if (busy === 0 && paused === 0) parts.push('all idle')
+  return parts.join(' · ')
+}
+
+// @find: node status label text
 export function nodeStatusLabel(status: NodeStatus): string {
   switch (status) {
     case 'running':
@@ -49,6 +73,7 @@ export function nodeStatusLabel(status: NodeStatus): string {
 
 const MOVE_KEYS = new Set(['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'])
 
+// @find: flow map component, agents ring hub
 export function FlowMap({
   board,
   selectedAgentId,

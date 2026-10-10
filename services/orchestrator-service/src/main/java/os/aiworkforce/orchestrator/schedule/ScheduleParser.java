@@ -1,3 +1,6 @@
+// @find: schedule parser, parse schedule text, natural language schedule, every day at, every monday, every n hours, cron, once at date, next runs, ScheduleParser, human readable schedule
+// @what: Turns plain-words schedule text into a cron expression or a one-off time and computes the next runs.
+// @flow: Called by ScheduleService.preview/create/update
 package os.aiworkforce.orchestrator.schedule;
 
 import java.time.DateTimeException;
@@ -158,6 +161,7 @@ public final class ScheduleParser {
      * <p>Used where an ordinary sentence might arrive alongside a genuine schedule phrase - the
      * chat coordinator's intent detection - and a false positive would be worse than a miss.
      */
+    // @find: try parse schedule text, detect schedule phrase
     public static Optional<ParsedSchedule> tryParse(String text, ZoneId zone, Instant now) {
         try {
             return Optional.of(parse(text, zone, now));
@@ -172,6 +176,7 @@ public final class ScheduleParser {
      * @throws ApiException a validation failure ({@code field} {@code "text"}) carrying examples
      *     of phrases that do work
      */
+    // @find: parse schedule text into cron or once, invalid schedule error
     public static ParsedSchedule parse(String text, ZoneId zone, Instant now) {
         if (text == null || text.isBlank()) {
             throw invalid();
@@ -206,6 +211,7 @@ public final class ScheduleParser {
      *     be read - a stored row from before a parser rule tightened, say - rather than the cron
      *     library's own {@link IllegalArgumentException}, which every caller would answer with a 500
      */
+    // @find: next run times, preview upcoming runs
     public static List<Instant> nextRuns(ParsedSchedule schedule, ZoneId zone, Instant from, int count) {
         if ("once".equals(schedule.kind())) {
             return schedule.runAt() != null && schedule.runAt().isAfter(from) ? List.of(schedule.runAt()) : List.of();

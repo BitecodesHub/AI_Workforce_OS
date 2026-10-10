@@ -1,3 +1,5 @@
+// @find: tests for upload naming, keep both, Contract (2).pdf, replace mode, upload mode, re-upload same file name, knowledge base documents
+// @what: Checks how a kept-beside upload is named and which upload modes are accepted.
 package os.aiworkforce.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

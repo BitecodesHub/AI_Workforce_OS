@@ -1,3 +1,5 @@
+// @find: tests for audit chain persistence, real schema, advisory lock, append only trigger, flyway, concurrent appends
+// @what: Checks the audit chain against a real PostgreSQL schema, including locks and triggers.
 package os.aiworkforce.analytics.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,9 @@
+// @find: approval, approve, reject, deny, decide approval, human in the loop, pending approvals, approval inbox, Approvals page, expiry, escalate, send back, decision note, payload preview, approvals table, Approval entity
+// @what: Entity for an action an agent wants to take that waits for a person to approve, reject or let it expire.
+// @flow: Stored by Approvals repository; decided through approval controller/service; resumes its Run.
+// @find: approval, approve, reject, deny, decide approval, human in the loop, pending approvals, approval inbox, Approvals page, expiry, escalate, send back, decision note, payload preview, approvals table, Approval entity
+// @what: Entity for an action an agent wants to take that waits for a person to approve, reject or let it expire.
+// @flow: Stored by Approvals repository; decided through approval controller/service; resumes its Run.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;
@@ -284,14 +290,20 @@ public class Approval extends OrgScopedEntity {
         this.reason = reason;
     }
 
+    // @find: is approval pending, awaiting decision
+    // @find: is approval pending, awaiting decision
     public boolean isPending() {
         return "pending".equals(status);
     }
 
+    // @find: approval expired, past expiry time, timeout
+    // @find: approval expired, past expiry time, timeout
     public boolean hasExpired() {
         return isPending() && expiresAt.isBefore(Instant.now());
     }
 
+    // @find: decide approval, approve or reject, record decision, decidedBy, decision note
+    // @find: decide approval, approve or reject, record decision, decidedBy, decision note
     /**
      * Records a decision, refusing a second one.
      *

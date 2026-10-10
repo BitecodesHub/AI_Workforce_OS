@@ -1,3 +1,6 @@
+// @find: internal memory, POST /internal/memory/episodes, record episode, write episode, service token only, episode kind validation
+// @what: Internal endpoint where services record an episode; refuses a person's own token.
+// @flow: Calls EpisodicMemory.record
 package os.aiworkforce.memory.web;
 
 import java.nio.charset.StandardCharsets;
@@ -75,6 +78,7 @@ public class InternalMemoryController {
             Integer importance,
             Map<String, Object> detail) {}
 
+    // @find: POST /internal/memory/episodes, record, endpoint, internal memory
     @PostMapping("/episodes")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Internal: record what an agent observed, decided or did")

@@ -1,4 +1,7 @@
 @echo off
+REM @find: start app windows, launcher, one-click start, double-click, docker desktop, run the app, first launch, demo data, --demo, --no-demo, --new-keys, AIWOS_WEB_PORT, AIWOS_EXPOSE_LAN, open browser
+REM @what: Windows one-click launcher that prepares private settings, builds and starts every service with Docker, then opens the app in the browser.
+REM @flow: Calls infra\launcher\prepare-env.ps1 then docker compose with infra\launcher\docker-compose.yml
 rem Double-click to start AI Workforce OS on Windows.
 rem Needs only Docker Desktop. Builds and starts every service, then opens the app in the browser.
 rem The first launch builds everything and takes several minutes; later launches take about one.

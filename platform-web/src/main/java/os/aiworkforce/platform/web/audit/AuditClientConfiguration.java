@@ -1,3 +1,6 @@
+// @find: audit client configuration, enable audit, import audit client, aiwos.audit.enabled, audit wiring
+// @what: Spring configuration a service imports to get the audit client, outbox and relay.
+// @flow: Imported with @Import by services that record audit events
 package os.aiworkforce.platform.web.audit;
 
 import java.util.concurrent.atomic.AtomicLong;

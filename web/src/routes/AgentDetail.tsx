@@ -1,3 +1,6 @@
+// @find: agent detail, edit agent, agent page, edit description, edit instructions, system prompt, temperature, pause agent, resume agent, agent connectors, grant connector, agent routing, model for agent, revisions, restore revision, voice, agent runs, give task, /agents/:id, AgentDetail
+// @what: The single agent page: its description, instructions, connected tools, model routing, revision history, voice and recent runs, with pause, resume and edit actions.
+// @flow: Routed from App.tsx at /agents/:id; opened from the cards on Agents.tsx
 import { useMemo, useRef, useState } from 'react'
 import {
   Button,
@@ -26,6 +29,7 @@ import { TaskDialog } from '../components/ui/TaskDialog'
 import { AgentStatusButton } from '../components/agents/AgentStatusButton'
 import { AgentDocumentsCard } from '../components/agents/AgentDocumentsCard'
 import { AgentMemoryCard } from '../components/agents/AgentMemoryCard'
+import { RetireAgentCard } from '../components/agents/RetireAgentCard'
 import { PolicyEditor } from '../components/routing/PolicyEditor'
 import { CapabilityList } from '../components/connectors/CapabilityList'
 import { GrantDialog } from '../components/connectors/GrantDialog'
@@ -40,8 +44,9 @@ import {
   useSetAgentModelPolicy,
   type AgentRevision,
 } from '../lib/agentQueries'
+import { agentDescription } from '../lib/agentDescription'
 import { ApiError, describeApiError } from '../lib/api'
-import { formatCount, formatDateTime, formatRelative, formatRunElapsed, sentenceCase } from '../lib/format'
+import { formatCount, formatDateTime, formatRelativeTicked, formatRunElapsed, sentenceCase } from '../lib/format'
 import { connectorState, grantedToolNames } from '../lib/connectors'
 import { connectorStateLabel, serverLabel, startedByLabel, statusLabel } from '../lib/labels'
 import {
@@ -54,6 +59,7 @@ import {
   useProviders,
   useRemoveAgentGrant,
   useRunList,
+  useSetAgentDescription,
   useSetAgentVoice,
   useTaskIndex,
   useUpdateAgent,
@@ -69,6 +75,7 @@ import { useToast } from '../lib/toast'
 import { can } from '../lib/session'
 import { useNow } from '../lib/useNow'
 import { useSpeaker } from '../lib/voice'
+import { useRemoveAgentCandidate, warningOf } from '../lib/routingActions'
 
 /** How many of the agent's runs the page lists before pointing at the full list. */
 const RECENT_RUNS = 10
@@ -79,19 +86,106 @@ const GOALS_MAX = 4_000
 const MIN_STEPS = 1
 const MAX_STEPS = 50
 const DEFAULT_STEPS = 12
+const MIN_TEMPERATURE = 0
+const MAX_TEMPERATURE = 2
+/* From AgentController.DescriptionRequest. */
+const DESCRIPTION_MAX = 200
 
 const FIELD_LABELS: Record<string, string> = {
   systemPrompt: 'Instructions',
   goals: 'Goals',
   maxSteps: 'Step limit per run',
+  temperature: 'Temperature',
+  description: 'What it does',
 }
 
 function categoryLabel(category: string): string {
   return CATEGORY_LABEL[category] ?? sentenceCase(category)
 }
 
+/* ---- Edit description ---------------------------------------------------------------------------- */
+
+/**
+ * The one line that says what the agent does, written about it. It is not part of a configuration
+ * revision: it describes the agent to people and is never sent to the model.
+ */
+// @find: edit agent description dialog, rename agent, change description, PATCH /api/agents/:id
+function EditDescriptionDialog({ open, onClose, agent }: { open: boolean; onClose: () => void; agent: AgentDetailData }) {
+  const save = useSetAgentDescription(agent.id)
+  const toast = useToast()
+  const [value, setValue] = useState(agent.description ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const [fieldError, setFieldError] = useState<string | undefined>(undefined)
+
+  const close = () => {
+    setError(null)
+    setFieldError(undefined)
+    setValue(agent.description ?? '')
+    save.reset()
+    onClose()
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (save.isPending) return
+    setError(null)
+    setFieldError(undefined)
+    try {
+      await save.mutateAsync(value.trim())
+      toast.success(value.trim() ? 'Description saved' : 'Description cleared')
+      onClose()
+    } catch (thrown) {
+      const fields = thrown instanceof ApiError ? thrown.fields : {}
+      if (fields.description) setFieldError(fields.description)
+      else setError(describeApiError(thrown, FIELD_LABELS))
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={close}
+      eyebrow="Edit description"
+      title={`What ${agent.name} does`}
+      description="One line about the agent, shown on its card, on this page and in Chat. It is not sent to the agent."
+      dismissible={!save.isPending}
+      error={error}
+    >
+      {open && (
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 'var(--space-6)' }}>
+            <Input
+              label="What it does"
+              optional
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value)
+                setFieldError(undefined)
+              }}
+              placeholder={agentDescription({ summary: agent.summary ?? null }) || 'e.g. Screens job applications and drafts replies to candidates.'}
+              maxLength={DESCRIPTION_MAX}
+              hint="Leave it empty to use a line taken from its instructions."
+              error={fieldError}
+              data-autofocus
+            />
+          </div>
+          <div className="dialog-footer" style={{ justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+            <Button variant="outline" type="button" onClick={close} disabled={save.isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={save.isPending}>
+              Save description
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
+  )
+}
+
 /* ---- Edit instructions ------------------------------------------------------------------------- */
 
+// @find: edit agent instructions dialog, change system prompt, agent instructions
 function EditInstructionsDialog({
   open,
   onClose,
@@ -136,6 +230,17 @@ function parseSteps(value: string): number | null | false {
   return steps >= MIN_STEPS && steps <= MAX_STEPS ? steps : false
 }
 
+/** The temperature as typed: null for empty (the model's default), a number, or false when it is out of range. */
+// @find: parse temperature, agent temperature field validation
+export function parseTemperature(value: string): number | null | false {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  if (!/^\d+(\.\d+)?$/.test(trimmed) && !/^\.\d+$/.test(trimmed)) return false
+  const temperature = Number(trimmed)
+  return temperature >= MIN_TEMPERATURE && temperature <= MAX_TEMPERATURE ? temperature : false
+}
+
+// @find: edit instructions form, instructions, temperature, save new revision, update agent
 function EditInstructionsForm({
   agent,
   update,
@@ -151,6 +256,7 @@ function EditInstructionsForm({
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt ?? '')
   const [goals, setGoals] = useState(agent.goals ?? '')
   const [maxSteps, setMaxSteps] = useState(agent.maxSteps == null ? '' : String(agent.maxSteps))
+  const [temperature, setTemperature] = useState(agent.temperature == null ? '' : String(agent.temperature))
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   /** A server's complaint about a field goes once the field is changed. */
@@ -165,16 +271,26 @@ function EditInstructionsForm({
   const saving = update.isPending
   const steps = parseSteps(maxSteps)
   const stepsProblem = steps === false ? `Enter a whole number from ${MIN_STEPS} to ${MAX_STEPS}, or leave it empty.` : null
+  const heat = parseTemperature(temperature)
+  const heatProblem = heat === false ? `Enter a number from ${MIN_TEMPERATURE} to ${MAX_TEMPERATURE}, such as 0.3, or leave it empty.` : null
+  const invalid = steps === false || heat === false || systemPrompt.trim() === ''
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (saving || steps === false || systemPrompt.trim() === '') return
+    if (saving || invalid) return
     setFieldErrors({})
     onError(null)
     try {
       // An empty limit is sent as null, which the server saves as the default. Sending 0 once
       // saved a limit that failed every later run before its first step.
-      const saved = await update.mutateAsync({ systemPrompt, goals, maxSteps: steps })
+      // The output limit has no field here; it is sent as saved so a new revision keeps it.
+      const saved = await update.mutateAsync({
+        systemPrompt,
+        goals,
+        maxSteps: steps,
+        temperature: heat,
+        maxOutputTokens: agent.maxOutputTokens ?? null,
+      })
       toast.success(saved.revision == null ? 'Instructions saved' : `Saved as revision ${saved.revision}`)
       onDone()
     } catch (error) {
@@ -201,7 +317,7 @@ function EditInstructionsForm({
           required
           maxLength={PROMPT_MAX}
           rows={8}
-          hint="Written to the agent. The first sentence appears on its card."
+          hint="Written to the agent: what it should do and how."
           error={fieldErrors.systemPrompt}
         />
         <Textarea
@@ -235,12 +351,25 @@ function EditInstructionsForm({
           hint={`From ${MIN_STEPS} to ${MAX_STEPS}. Leave it empty to use the default of ${DEFAULT_STEPS}. A run stops when it reaches the limit.`}
           error={fieldErrors.maxSteps ?? stepsProblem}
         />
+        <Input
+          label="Temperature"
+          optional
+          inputMode="decimal"
+          value={temperature}
+          onChange={(e) => {
+            setTemperature(e.target.value)
+            clearError('temperature')
+          }}
+          placeholder="Model default"
+          hint={`From ${MIN_TEMPERATURE} to ${MAX_TEMPERATURE}. Lower keeps answers steady and literal, higher makes them more varied. Leave it empty for the model's default.`}
+          error={fieldErrors.temperature ?? heatProblem}
+        />
       </div>
       <div className="dialog-footer" style={{ justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
         <Button variant="outline" type="button" onClick={onDone} disabled={saving}>
           Cancel
         </Button>
-        <Button type="submit" loading={saving} disabled={steps === false || systemPrompt.trim() === ''}>
+        <Button type="submit" loading={saving} disabled={invalid}>
           Save instructions
         </Button>
       </div>
@@ -250,6 +379,7 @@ function EditInstructionsForm({
 
 /* ---- Recent runs ---------------------------------------------------------------------------------- */
 
+// @find: agent runs list, recent runs of this agent, give task button
 function AgentRuns({ agentId, onGiveTask }: { agentId: string; onGiveTask?: (() => void) | undefined }) {
   // Filtered by the server, so these are this agent's runs however busy the workspace is.
   const runs = useRunList({ agentId })
@@ -403,6 +533,7 @@ function GrantRow({
   )
 }
 
+// @find: agent connectors, grant connector to agent, revoke access, tools an agent may use, allowed actions, approval required
 function AgentConnectors({ agent }: { agent: AgentDetailData }) {
   const toast = useToast()
   const canEdit = can('agent:grant_tools')
@@ -569,6 +700,7 @@ const SEEDED_PROVIDERS: Record<string, string> = {
   bedrock: 'AWS Bedrock',
 }
 
+// @find: agent model routing, choose model for an agent, agent routing policy, override workspace models, fallback chain
 function AgentRouting({ agent }: { agent: AgentDetailData }) {
   const policy = useAgentModelPolicy(agent.id)
   // The provider list and model catalogue need provider:read. Without it, providers are named
@@ -581,7 +713,13 @@ function AgentRouting({ agent }: { agent: AgentDetailData }) {
   const credentials = useCredentials({ enabled: canSeeRouting })
   const setPolicy = useSetAgentModelPolicy(agent.id)
   const clearPolicy = useClearAgentModelPolicy(agent.id)
+  const removeCandidate = useRemoveAgentCandidate(agent.id)
+  const toast = useToast()
   const now = useNow()
+  // For the read-only list: the warning from the last removal here, else the one sent on reading.
+  const [acted, setActed] = useState<{ warning: string | null } | null>(null)
+  const [confirmDefault, setConfirmDefault] = useState(false)
+  const [defaultError, setDefaultError] = useState<string | null>(null)
   const providerName = (id: string) =>
     providers.data?.find((provider) => provider.id === id)?.displayName ?? SEEDED_PROVIDERS[id] ?? sentenceCase(id)
   const modelName = (providerId: string, modelId: string) =>
@@ -603,9 +741,41 @@ function AgentRouting({ agent }: { agent: AgentDetailData }) {
         onSave={(input) => setPolicy.mutateAsync(input)}
         liveCatalogue
         onClear={() => clearPolicy.mutateAsync()}
+        onRemoveCandidate={(candidate) => removeCandidate.mutateAsync(candidate)}
+        testable={can('provider:manage')}
       />
     )
   }
+
+  // Somebody who may set the agent's models but cannot read the provider lists can still take
+  // models out, or give the agent back to the workspace default, from the list below.
+  const removeOne = async (candidate: { providerId: string; modelId: string }, name: string) => {
+    try {
+      const result = await removeCandidate.mutateAsync(candidate)
+      setActed({ warning: warningOf(result) })
+      toast.success(
+        result.configured === false
+          ? `${name} was removed. ${agent.name} now uses the workspace default.`
+          : `${name} was removed from ${agent.name}'s routing.`,
+      )
+    } catch (err) {
+      toast.error(describeApiError(err))
+    }
+  }
+
+  const applyDefault = async () => {
+    setDefaultError(null)
+    try {
+      const result = await clearPolicy.mutateAsync()
+      setActed({ warning: warningOf(result) })
+      setConfirmDefault(false)
+      toast.success(`${agent.name} now uses the workspace default.`)
+    } catch (err) {
+      setDefaultError(describeApiError(err))
+    }
+  }
+
+  const warning = acted ? acted.warning : (policy.data?.warning ?? null)
 
   let body
   if (policy.isLoading || (editable && (providers.isLoading || models.isLoading))) {
@@ -628,12 +798,33 @@ function AgentRouting({ agent }: { agent: AgentDetailData }) {
         <ol className="stack" style={{ gap: 'var(--space-3)', margin: 0, paddingLeft: 'var(--space-6)' }}>
           {candidates.map((candidate) => {
             const name = modelName(candidate.providerId, candidate.modelId)
+            const removing =
+              removeCandidate.isPending &&
+              removeCandidate.variables?.providerId === candidate.providerId &&
+              removeCandidate.variables?.modelId === candidate.modelId
             return (
               // Model ids run long ("meta-llama/llama-3.3-70b-instruct:free"); they wrap rather
               // than push a phone screen sideways.
               <li key={`${candidate.position}-${candidate.providerId}-${candidate.modelId}`} style={{ overflowWrap: 'anywhere' }}>
                 {name ? <span title={candidate.modelId}>{name}</span> : <span className="mono">{candidate.modelId}</span>}{' '}
                 <span className="caption">from {providerName(candidate.providerId)}</span>
+                {canSetPolicy && (
+                  <>
+                    {' '}
+                    <Button
+                      variant="outline"
+                      className="button-sm"
+                      aria-label={`Remove ${name ?? candidate.modelId} from ${agent.name}'s routing`}
+                      loading={removing}
+                      disabled={removeCandidate.isPending && !removing}
+                      onClick={() =>
+                        void removeOne({ providerId: candidate.providerId, modelId: candidate.modelId }, name ?? candidate.modelId)
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </>
+                )}
               </li>
             )
           })}
@@ -648,7 +839,7 @@ function AgentRouting({ agent }: { agent: AgentDetailData }) {
   } else {
     body = (
       <p>
-        It follows the workspace routing policy.{' '}
+        It uses the workspace default.{' '}
         {canSeeRouting && (
           <a className="link" href="/routing">
             See model routing
@@ -671,7 +862,41 @@ function AgentRouting({ agent }: { agent: AgentDetailData }) {
           </Notice>
         </div>
       )}
+      {warning && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Notice tone="warning" live>
+            {warning}
+          </Notice>
+        </div>
+      )}
       {body}
+      {canSetPolicy && policy.data && (
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <Button
+            variant="quiet"
+            aria-label={`Use the workspace default for ${agent.name}`}
+            onClick={() => {
+              setDefaultError(null)
+              setConfirmDefault(true)
+            }}
+          >
+            Use workspace default
+          </Button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={confirmDefault}
+        onClose={() => setConfirmDefault(false)}
+        onConfirm={applyDefault}
+        eyebrow="Model routing"
+        title={`Use the workspace default for ${agent.name}?`}
+        description={`${agent.name}'s own models are removed. From its next run it uses the workspace default. Work already running keeps the models it started with.`}
+        confirmLabel="Use workspace default"
+        cancelLabel="Keep its models"
+        tone="primary"
+        loading={clearPolicy.isPending}
+        error={defaultError}
+      />
     </Card>
   )
 }
@@ -706,6 +931,7 @@ function revisionLimits(revision: AgentRevision): string {
  * whether a run has used it, which seals it so those traces stay accurate. Putting one back saves
  * its words and limits as a new revision on top, so the history only grows.
  */
+// @find: agent revisions, version history, restore earlier version, roll back instructions
 function AgentRevisions({ agent }: { agent: AgentDetailData }) {
   const toast = useToast()
   const canRestore = can('agent:update')
@@ -866,6 +1092,7 @@ function AgentRevisions({ agent }: { agent: AgentDetailData }) {
 /** The words a preview says, naming the agent so two agents previewed back to back are told apart. */
 const previewLine = (agentName: string) => `Hello, I am ${agentName}. This is how I will sound.`
 
+// @find: agent voice card, choose voice, text to speech, spoken answers
 function AgentVoiceCard({ agent }: { agent: AgentDetailData }) {
   const toast = useToast()
   const canSetVoice = can('agent:update')
@@ -966,7 +1193,8 @@ function AgentVoiceCard({ agent }: { agent: AgentDetailData }) {
         <div className="stack" style={{ gap: 'var(--space-4)' }}>
           <Notice tone="info">
             No ElevenLabs key is stored for this workspace, so every agent speaks with your browser's built-in
-            voice instead. A key can be added from Connectors.
+            voice instead.{' '}
+            {can('integration:connect') ? 'A key can be added from Connectors.' : 'An owner or admin can add one in Connectors.'}
           </Notice>
           <div className="row" style={{ gap: 'var(--space-2)', alignItems: 'center' }}>
             <Button variant="outline" onClick={handlePreview} loading={speaker.speaking} disabled={speaker.provider === 'none'}>
@@ -999,9 +1227,11 @@ function outcomeTile(
   return { value: '—', note: outcomes.error ? 'Its outcomes could not be loaded.' : 'Loading its outcomes.' }
 }
 
+// @find: AgentDetail component, agent page, pause agent, resume agent, delete agent, /agents/:id
 export function AgentDetail({ id }: { id: string }) {
   const query = useAgent(id)
   const [editOpen, setEditOpen] = useState(false)
+  const [descriptionOpen, setDescriptionOpen] = useState(false)
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const canEdit = can('agent:update')
   const canRun = can('agent:run')
@@ -1038,7 +1268,23 @@ export function AgentDetail({ id }: { id: string }) {
               <PageHeader
                 eyebrow={categoryLabel(agent.category)}
                 title={agent.name}
-                description={agent.summary ? <>From its instructions: “{agent.summary}”</> : undefined}
+                description={
+                  agentDescription(agent) || canEdit ? (
+                    <>
+                      {agentDescription(agent) || 'No description yet.'}{' '}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          className="link"
+                          aria-label={`Edit what ${agent.name} does`}
+                          onClick={() => setDescriptionOpen(true)}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </>
+                  ) : undefined
+                }
                 meta={
                   <>
                     <StatusTag kind="agent" status={agent.status} withDot />
@@ -1098,7 +1344,7 @@ export function AgentDetail({ id }: { id: string }) {
                   {canReadRuns && (
                     <StatTile
                       label="Last run"
-                      value={lastRun ? formatRelative(lastRun.startedAt, now) : runs.data ? 'Never' : '—'}
+                      value={lastRun ? formatRelativeTicked(lastRun.startedAt, now, 60_000) : runs.data ? 'Never' : '—'}
                       note={
                         lastRun
                           ? statusLabel('run', lastRun.status).label
@@ -1175,11 +1421,29 @@ export function AgentDetail({ id }: { id: string }) {
                 <AgentRouting key={agent.id} agent={agent} />
               </div>
 
-              <div style={{ marginTop: 'var(--space-6)' }}>
-                <AgentVoiceCard agent={agent} />
-              </div>
+              {/* An agent speaks only in Chat, and its voice settings are read with chat:use; a role
+                  without Chat (a viewer) would only get an error here. */}
+              {can('chat:use') && (
+                <div style={{ marginTop: 'var(--space-6)' }}>
+                  <AgentVoiceCard agent={agent} />
+                </div>
+              )}
+
+              {(can('agent:update') || can('agent:delete')) && (
+                <div style={{ marginTop: 'var(--space-6)' }}>
+                  <RetireAgentCard agent={agent} />
+                </div>
+              )}
 
               {canEdit && <EditInstructionsDialog open={editOpen} onClose={() => setEditOpen(false)} agent={agent} />}
+              {canEdit && (
+                <EditDescriptionDialog
+                  key={`description-${agent.id}-${agent.description ?? ''}`}
+                  open={descriptionOpen}
+                  onClose={() => setDescriptionOpen(false)}
+                  agent={agent}
+                />
+              )}
 
               {canGiveTask && (
                 <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} agentId={agent.id} />

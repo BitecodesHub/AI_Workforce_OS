@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, budget, spending limit, cost cap, budget guard, deny to sandbox, token cost check, record cost, BudgetGuard
+// @what: Interface that decides whether a model call may be made and records what it cost.
+// @flow: Called by ModelRouter before every attempt.
 package os.aiworkforce.llm.budget;
 
 import java.math.BigDecimal;
@@ -65,11 +68,13 @@ public interface BudgetGuard {
 
     /** Used where no budget is configured; every call is allowed and nothing is recorded. */
     BudgetGuard UNLIMITED = new BudgetGuard() {
+        // @find: check budget before a model call, is spending allowed
         @Override
         public Decision check(CallContext context, BigDecimal estimatedCost) {
             return Decision.allow(null);
         }
 
+        // @find: record the actual cost of a call
         @Override
         public void record(CallContext context, BigDecimal actualCost) {
             /* Nothing to record without a budget. */

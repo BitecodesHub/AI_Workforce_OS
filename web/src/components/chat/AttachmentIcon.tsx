@@ -1,3 +1,6 @@
+// @find: attachment icon, file type icon, pdf icon, image icon, document icon
+// @what: Small icon for an attachment's kind.
+// @flow: Used by AttachmentChips and AttachmentCards.
 import type { AttachmentKind } from '../../lib/attachments'
 
 const LABEL: Record<AttachmentKind, string> = {
@@ -9,6 +12,7 @@ const LABEL: Record<AttachmentKind, string> = {
   image: 'IMG',
 }
 
+// @find: AttachmentIcon, attachment icon, attachment icon, file type icon, pdf icon, image icon
 /** A small page glyph with the kind of file written on it, coloured by kind in attachments.css. */
 export function AttachmentIcon({ kind }: { kind: AttachmentKind | null }) {
   return (

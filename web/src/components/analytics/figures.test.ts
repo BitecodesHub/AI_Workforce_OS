@@ -1,3 +1,5 @@
+// @find: tests for analytics figures, formatting tests, describeChange tests, chart scale tests, agent success and cost text, run cost in Runs list
+// @what: Tests the number formatting and wording helpers in figures.ts.
 import { describe, expect, it } from 'vitest'
 import type { Delta } from '../../lib/insightsQueries'
 import {
@@ -140,6 +142,7 @@ describe('one agent', () => {
     expect(satisfactionText({ ratings: 2, thumbsDown: 0, satisfactionRate: 1 })).toBe(
       '100% of 2 ratings, no thumbs down',
     )
+    expect(satisfactionText({ ratings: 1, thumbsDown: 0, satisfactionRate: 1 })).toBe('100% of 1 rating, no thumbs down')
     expect(satisfactionText({ ratings: 0, thumbsDown: 0, satisfactionRate: null })).toBe('No ratings yet')
   })
 
@@ -165,6 +168,13 @@ describe('what a run cost, in the Runs list', () => {
     const cost = runCost({ cost: 0, promptTokens: 0, completionTokens: 0 })
     expect(cost.text).toBe('—')
     expect(cost.value).toBeNull()
+  })
+
+  it('says Free for a run on free catalogue models or the sandbox, and Unpriced for one with no price on file', () => {
+    expect(runCost({ cost: 0, promptTokens: 100, completionTokens: 5, pricing: 'free' }).text).toBe('Free')
+    expect(runCost({ cost: 0, promptTokens: 100, completionTokens: 5, pricing: 'sandbox' }).text).toBe('Free')
+    expect(runCost({ cost: 0, promptTokens: 100, completionTokens: 5, pricing: 'unpriced' }).text).toBe(UNPRICED)
+    expect(runCost({ cost: 0, promptTokens: 0, completionTokens: 0, pricing: 'none' }).text).toBe('—')
   })
 
   it('reads a cost that arrives as text', () => {

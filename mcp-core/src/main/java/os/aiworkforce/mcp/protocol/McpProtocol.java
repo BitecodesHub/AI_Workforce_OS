@@ -1,3 +1,6 @@
+// @find: mcp protocol types, model context protocol, tool call, resource, initialize request, capabilities, protocol records
+// @what: Plain records for the Model Context Protocol messages.
+// @flow: Reference types; not on the main tool call path
 package os.aiworkforce.mcp.protocol;
 
 import java.util.List;

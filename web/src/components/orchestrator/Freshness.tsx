@@ -1,3 +1,6 @@
+// @find: freshness, updated ago, updates paused, resume live updates, pending changes, live or paused board, Freshness
+// @what: Shows how fresh the board is and offers a way back to live updates when paused.
+// @flow: Rendered by the Orchestrator toolbar; counts come from boardChanges.countChanged
 import { formatAgo, plural } from '../../lib/format'
 import { useNow } from '../../lib/useNow'
 
@@ -6,6 +9,7 @@ import { useNow } from '../../lib/useNow'
  * nothing else on the page has to re-render just to keep this line current, and "Updates paused"
  * with a way back to the freshest board once it is.
  */
+// @find: freshness component, updated 4 s ago, updates paused
 export function Freshness({
   live,
   generatedAt,

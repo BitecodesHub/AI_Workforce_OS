@@ -1,3 +1,6 @@
+// @find: secret guard, refuse secrets in memory, detect password, api key, card number, looks secret, sensitive text
+// @what: Detects text that looks like a password, key or card number so it is never stored as a memory.
+// @flow: Used by AgentMemoryService
 package os.aiworkforce.memory.service;
 
 import java.util.List;

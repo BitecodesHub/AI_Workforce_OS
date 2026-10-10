@@ -1,3 +1,6 @@
+// @find: jdbc audit outbox, audit_outbox table, claim due events, mark delivered, mark failed, pending count
+// @what: Stores queued audit events in each service's audit_outbox table using JDBC.
+// @flow: Implements AuditOutbox; used by AuditClient and AuditOutboxRelay
 package os.aiworkforce.platform.web.audit;
 
 import java.sql.PreparedStatement;
@@ -42,6 +45,7 @@ public class JdbcAuditOutbox implements AuditOutbox {
     }
 
     @Override
+    // @find: queue audit event in outbox
     public void add(Event event) {
         jdbc.update(
                 """
@@ -66,6 +70,7 @@ public class JdbcAuditOutbox implements AuditOutbox {
     }
 
     @Override
+    // @find: claim audit events for delivery
     public List<Event> claimDue(int limit, Duration lease) {
         // One statement claims and returns, so two instances cannot both take a row: SKIP LOCKED
         // passes over rows another instance is claiming, and the pushed-out next_attempt_at hides
@@ -98,11 +103,13 @@ public class JdbcAuditOutbox implements AuditOutbox {
     }
 
     @Override
+    // @find: mark audit event delivered
     public void delivered(UUID id) {
         jdbc.update("DELETE FROM audit_outbox WHERE id = ?", id);
     }
 
     @Override
+    // @find: mark audit event delivery failed
     public void failed(UUID id, Duration retryAfter, String error) {
         jdbc.update(
                 """

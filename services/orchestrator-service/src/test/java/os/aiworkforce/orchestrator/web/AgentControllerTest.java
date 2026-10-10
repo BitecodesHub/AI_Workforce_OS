@@ -1,8 +1,11 @@
+// @find: tests for agent controller, agents api, create agent, update agent, pause, resume, retire, restore, /api/agents
+// @what: Unit and integration tests (17 cases) for agent controller, for example: first sentence; full stop inside word; long sentence cut; list carries summary and tools.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -133,6 +136,24 @@ class AgentControllerTest {
         }
     }
 
+    @Test
+    @DisplayName("a temperature must be between 0 and 2, and may be left out")
+    void temperatureBounds() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertThat(validator.validate(withTemperature("-0.1"))).isNotEmpty();
+            assertThat(validator.validate(withTemperature("2.1"))).isNotEmpty();
+            assertThat(validator.validate(withTemperature("0"))).isEmpty();
+            assertThat(validator.validate(withTemperature("2"))).isEmpty();
+            assertThat(validator.validate(withTemperature(null))).isEmpty();
+        }
+    }
+
+    private static AgentController.UpdateConfigurationRequest withTemperature(String temperature) {
+        return new AgentController.UpdateConfigurationRequest(
+                "You answer questions.", "", temperature == null ? null : new java.math.BigDecimal(temperature), null, null);
+    }
+
     private static AgentController.UpdateConfigurationRequest configuration(Integer maxSteps) {
         return new AgentController.UpdateConfigurationRequest("You answer questions.", "", null, null, maxSteps);
     }
@@ -206,6 +227,75 @@ class AgentControllerTest {
         assertThat(agent.getStatus()).isEqualTo("retired");
     }
 
+    private AgentController controllerFor(Agents agents) {
+        RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
+        return new AgentController(
+                agents,
+                mock(AgentVersions.class),
+                mock(AgentRunner.class),
+                mock(ToolGrants.class),
+                mock(GeneralEmployee.class));
+    }
+
+    @Test
+    @DisplayName("retiring an agent archives it and pauses its enabled schedules, keeping everything else")
+    void retireArchivesAndPausesSchedules() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = controllerFor(agents);
+        os.aiworkforce.orchestrator.schedule.ScheduleService scheduleService =
+                mock(os.aiworkforce.orchestrator.schedule.ScheduleService.class);
+        os.aiworkforce.orchestrator.schedule.Schedules schedules =
+                mock(os.aiworkforce.orchestrator.schedule.Schedules.class);
+        controller.setSchedules(scheduleService, schedules);
+        Agent agent = activeAgent();
+        when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
+        var mine = new os.aiworkforce.orchestrator.schedule.Schedule();
+        mine.setId(UUID.randomUUID());
+        mine.setAgentId(agent.getId());
+        mine.setEnabled(true);
+        var other = new os.aiworkforce.orchestrator.schedule.Schedule();
+        other.setId(UUID.randomUUID());
+        other.setAgentId(UUID.randomUUID());
+        other.setEnabled(true);
+        when(schedules.findByOrgIdOrderByNameAsc(ORG)).thenReturn(List.of(mine, other));
+
+        AgentController.AgentView view = controller.retire(agent.getId());
+
+        assertThat(view.status()).isEqualTo("retired");
+        verify(scheduleService).pauseInternal(ORG, mine.getId(), AgentController.RETIRED_SCHEDULE_REASON);
+        verify(scheduleService, org.mockito.Mockito.never()).pauseInternal(eq(ORG), eq(other.getId()), any());
+    }
+
+    @Test
+    @DisplayName("the General Employee cannot be retired")
+    void fallbackCannotBeRetired() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = controllerFor(agents);
+        Agent agent = activeAgent();
+        agent.setFallback(true);
+        when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
+
+        assertThatThrownBy(() -> controller.retire(agent.getId()))
+                .isInstanceOfSatisfying(
+                        ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
+        assertThat(agent.getStatus()).isEqualTo("active");
+    }
+
+    @Test
+    @DisplayName("restoring a retired agent brings it back paused; restoring any other is refused")
+    void restoreComesBackPaused() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = controllerFor(agents);
+        Agent agent = activeAgent();
+        agent.setStatus("retired");
+        when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
+
+        assertThat(controller.restore(agent.getId()).status()).isEqualTo("paused");
+        assertThatThrownBy(() -> controller.restore(agent.getId()))
+                .isInstanceOfSatisfying(
+                        ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
+    }
+
     @Test
     @DisplayName("listing agents ensures the workspace has a General Employee before reading them")
     void listEnsuresGeneralEmployee() {
@@ -240,6 +330,54 @@ class AgentControllerTest {
         AgentController.AgentView view = controller.list().getFirst();
 
         assertThat(view.fallback()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a description is kept to one line, and a blank one is cleared")
+    void descriptionCleaned() {
+        assertThat(AgentController.cleanDescription("  Screens applications\n and   books interviews. "))
+                .isEqualTo("Screens applications and books interviews.");
+        assertThat(AgentController.cleanDescription("   ")).isNull();
+        assertThat(AgentController.cleanDescription(null)).isNull();
+    }
+
+    @Test
+    @DisplayName("setting a description saves it on the agent and the view carries it; blank clears it")
+    void setDescription() {
+        Agents agents = mock(Agents.class);
+        AgentController controller = new AgentController(
+                agents,
+                mock(AgentVersions.class),
+                mock(AgentRunner.class),
+                mock(ToolGrants.class),
+                mock(GeneralEmployee.class));
+        Agent agent = activeAgent();
+        when(agents.findByIdAndOrgId(agent.getId(), ORG)).thenReturn(Optional.of(agent));
+        RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(), 0L));
+
+        AgentController.AgentView view = controller.setDescription(
+                agent.getId(), new AgentController.DescriptionRequest("Sorts the support queue."));
+
+        assertThat(view.description()).isEqualTo("Sorts the support queue.");
+        assertThat(agent.getDescription()).isEqualTo("Sorts the support queue.");
+        verify(agents).save(agent);
+
+        assertThat(controller
+                        .setDescription(agent.getId(), new AgentController.DescriptionRequest(" "))
+                        .description())
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("a description longer than 200 characters is refused")
+    void descriptionLimit() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertThat(validator.validate(new AgentController.DescriptionRequest("a".repeat(201))))
+                    .isNotEmpty();
+            assertThat(validator.validate(new AgentController.DescriptionRequest("a".repeat(200))))
+                    .isEmpty();
+        }
     }
 
     private static Agent activeAgent() {

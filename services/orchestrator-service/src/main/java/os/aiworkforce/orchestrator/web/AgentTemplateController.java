@@ -1,3 +1,6 @@
+// @find: agent templates, ready-made assistants, create from template, template gallery, GET /api/agent-templates, POST /api/agents/from-template/{key}, Add from template button
+// @what: Lists ready-made agent templates and creates a workspace copy of one on request.
+// @flow: Uses AgentTemplates catalogue
 package os.aiworkforce.orchestrator.web;
 
 import java.util.LinkedHashMap;
@@ -74,6 +77,7 @@ public class AgentTemplateController {
      */
     public record FromTemplateResult(AgentController.AgentView agent, List<String> suggestedConnectors) {}
 
+    // @find: list agent templates, GET /api/agent-templates
     @GetMapping({"/api/agent-templates", "/api/agents/templates"})
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "The ready-made assistants a workspace can start from")
@@ -81,6 +85,7 @@ public class AgentTemplateController {
         return AgentTemplates.all().stream().map(AgentTemplateController::toView).toList();
     }
 
+    // @find: create agent from template, POST /api/agents/from-template/{key}
     @PostMapping("/api/agents/from-template/{key}")
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.AGENT_CREATE)
@@ -95,7 +100,7 @@ public class AgentTemplateController {
         for (int attempt = 1; created == null; attempt++) {
             try {
                 created = agentController.create(new AgentController.CreateAgentRequest(
-                        chosen, template.name(), template.category(), template.prompt(), null));
+                        chosen, template.name(), template.category(), template.prompt(), null, template.description()));
             } catch (ApiException taken) {
                 // Somebody took the key between looking and creating; try the next one.
                 if (taken.code() != ErrorCode.ALREADY_EXISTS || attempt >= MAX_KEY_ATTEMPTS) {

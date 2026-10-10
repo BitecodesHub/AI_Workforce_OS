@@ -1,3 +1,5 @@
+// @find: tests for settings, time zones, validateWorkspaceForm, validateNotifications, timeZoneChoices, workspace name, webhook, Settings page
+// @what: Unit tests for the time zone helpers and the settings form validation.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   SECRET_MAX,

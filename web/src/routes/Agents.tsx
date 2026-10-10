@@ -1,3 +1,6 @@
+// @find: agents list, create agent, new agent, add assistant, ready-made assistants, templates, suggested assistants, from template, agent cards, success rate, 30-day cost, outcomes, General Employee, /agents, Agents page
+// @what: The Agents page: lists the workspace's AI assistants with their results, and lets people create one from scratch or from a ready-made template.
+// @flow: Routed from App.tsx at /agents; each card links to AgentDetail.tsx
 import { useState } from 'react'
 import {
   Button,
@@ -18,12 +21,14 @@ import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 // the barrel is also part of the main bundle, so going through it created a circular chunk
 // dependency (Rollup warned of a "broken execution order").
 import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
+import { Collapsible } from '../components/ui/Collapsible'
 import { AgentStatusButton } from '../components/agents/AgentStatusButton'
 import { costFigure, successRateFigure, useAgentOutcomes } from '../lib/agentQueries'
 import type { AgentOutcome } from '../lib/agentQueries'
+import { agentDescription } from '../lib/agentDescription'
 import { ApiError, describeApiError } from '../lib/api'
 import { nameList, sentenceCase } from '../lib/format'
-import { serverLabel } from '../lib/labels'
+import { serverLabel, statusLabel } from '../lib/labels'
 import { useAgents, useCreateAgent, type Agent } from '../lib/queries'
 import { useToast } from '../lib/toast'
 import { useRouter } from '../lib/router'
@@ -39,6 +44,7 @@ const SEARCH_THRESHOLD = 8
 const KEY_MAX = 60
 const NAME_MAX = 120
 const PROMPT_MAX = 20_000
+const DESCRIPTION_MAX = 200
 
 /** Lowercase words joined by single hyphens: 'people-ops', 'research-2'. */
 const KEY_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
@@ -56,6 +62,7 @@ function keyFromName(name: string): string {
 /** The labels on the form, so a validation message names the field the person can see. */
 const FIELD_LABELS: Record<string, string> = {
   name: 'Name',
+  description: 'What it does',
   key: 'Key',
   category: 'Category',
   systemPrompt: 'Instructions',
@@ -70,6 +77,7 @@ function agentSearchText(agent: Agent): string {
     agent.name,
     agent.key,
     categoryLabel(agent.category),
+    agentDescription(agent),
     agent.summary ?? '',
     ...(agent.tools ?? []).map((server) => serverLabel(server)),
   ].join(' ')
@@ -83,6 +91,7 @@ type Outcomes = { state: 'loading' } | { state: 'ready'; byAgent: Record<string,
  * its finished runs complete, and what the last 30 days cost. Below five finished runs the first
  * says so instead of showing a percentage that means nothing.
  */
+// @find: agent outcome figures, success rate, 30-day cost, not enough runs yet
 function OutcomeFigures({ agent, outcomes }: { agent: Agent; outcomes: Exclude<Outcomes, null> }) {
   const outcome = outcomes.state === 'ready' ? outcomes.byAgent[agent.id] : undefined
   const loading = outcomes.state === 'loading'
@@ -107,14 +116,24 @@ function OutcomeFigures({ agent, outcomes }: { agent: Agent; outcomes: Exclude<O
   )
 }
 
+// @find: agent card, open agent, status, pause state
 function AgentCard({ agent, outcomes }: { agent: Agent; outcomes: Outcomes }) {
   const tools = agent.tools
   // Pause or Resume sits on the card's corner, beside the card rather than inside its link: a
   // button inside a link is not valid, and pressing it must not open the agent.
   const toggle = can('agent:update') && agent.status !== 'retired'
+  const description = agentDescription(agent)
+  const descriptionId = `agent-card-desc-${agent.id}`
   return (
     <div style={{ position: 'relative', display: 'grid' }}>
-      <Card href={`/agents/${agent.id}`}>
+      {/* The whole card is one link. Its name is the agent's name and status, and what it does is
+          its description, so a screen reader announces "Open HR, Active" rather than every line on
+          the card run together. */}
+      <Card
+        href={`/agents/${agent.id}`}
+        aria-label={`Open ${agent.name}, ${statusLabel('agent', agent.status).label}`}
+        aria-describedby={description ? descriptionId : undefined}
+      >
         <Eyebrow>{categoryLabel(agent.category)}</Eyebrow>
         <div
           className="row"
@@ -131,14 +150,12 @@ function AgentCard({ agent, outcomes }: { agent: Agent; outcomes: Outcomes }) {
           </h2>
           <StatusTag kind="agent" status={agent.status} />
         </div>
-        {/* The summary is the first sentence of the agent's own instructions, usually written to the
-            agent ("You handle..."), so it is labelled and quoted as an excerpt rather than passed off
-            as a description of the agent. */}
-        {agent.summary ? (
-          <div style={{ marginBottom: 'var(--space-4)' }}>
-            <p className="caption">From its instructions</p>
-            <p className="muted">“{agent.summary}”</p>
-          </div>
+        {/* What it does, written about it: its own description, else a line derived from its
+            instructions, never the second-person instructions quoted back. */}
+        {description ? (
+          <p id={descriptionId} className="muted" style={{ marginBottom: 'var(--space-4)' }}>
+            {description}
+          </p>
         ) : (
           // Only an agent with no saved revision has no instructions. A missing summary on one that
           // has a revision says nothing about its instructions, so nothing is claimed.
@@ -188,6 +205,7 @@ function connectorsLine(template: TemplateView): string {
  * One ready-made assistant: what it does, what it works with, and a button to add it. The button
  * names the assistant, so a list of four "Add" buttons is not four identical controls.
  */
+// @find: template card, ready-made assistant, add from template
 function TemplateCard({
   template,
   pending,
@@ -229,6 +247,7 @@ function TemplateCard({
  * The same assistant as a compact row, for the dialog, where four cards one under another would
  * push "Start from scratch" below the fold. The button names the assistant for the same reason.
  */
+// @find: template row, ready-made assistant list item, add assistant
 function TemplateRow({
   template,
   pending,
@@ -292,6 +311,7 @@ function useAddAssistant(onAdded: (result: FromTemplate) => void, onFailed: (mes
   }
 }
 
+// @find: create agent dialog, new agent, Create agent button
 function CreateAgentDialog({
   open,
   onClose,
@@ -386,6 +406,7 @@ function CreateAgentDialog({
  * starts with no connectors, so each one it works with is a prompt to connect, never a claim that
  * it can already act there.
  */
+// @find: added assistant confirmation, assistant added, what to do next
 function AddedAssistantDialog({ added, onClose }: { added: FromTemplate | null; onClose: () => void }) {
   const { navigate } = useRouter()
   const agent = added?.agent
@@ -441,6 +462,7 @@ function AddedAssistantDialog({ added, onClose }: { added: FromTemplate | null; 
   )
 }
 
+// @find: create agent form, name, description, instructions, POST /api/agents, create agent from scratch
 function CreateAgentForm({
   createAgent,
   onError,
@@ -458,6 +480,7 @@ function CreateAgentForm({
   // Until somebody types a key of their own, it follows the name.
   const [typedKey, setTypedKey] = useState<string | null>(null)
   const [category, setCategory] = useState('operations')
+  const [description, setDescription] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -490,7 +513,13 @@ function CreateAgentForm({
     setFieldErrors({})
     onError(null)
     try {
-      const agent = await createAgent.mutateAsync({ key, name: name.trim(), category, systemPrompt })
+      const agent = await createAgent.mutateAsync({
+        key,
+        name: name.trim(),
+        category,
+        systemPrompt,
+        ...(description.trim() ? { description: description.trim() } : {}),
+      })
       toast.success(`${agent.name} was added`)
       onDone()
       navigate(`/agents/${agent.id}`)
@@ -543,6 +572,19 @@ function CreateAgentForm({
             </option>
           ))}
         </Select>
+        <Input
+          label="What it does"
+          optional
+          value={description}
+          onChange={(e) => {
+            setDescription(e.target.value)
+            clearError('description')
+          }}
+          placeholder="e.g. Screens job applications and drafts replies to candidates."
+          maxLength={DESCRIPTION_MAX}
+          hint="One line about the agent, shown on its card and in Chat. Leave it empty to use its instructions."
+          error={fieldErrors.description}
+        />
         <Textarea
           label="Instructions"
           value={systemPrompt}
@@ -554,7 +596,7 @@ function CreateAgentForm({
           required
           maxLength={PROMPT_MAX}
           rows={8}
-          hint="Written to the agent. The first sentence appears on its card."
+          hint="Written to the agent: what it should do and how."
           error={fieldErrors.systemPrompt}
         />
         {/* The key is made from the name and rarely needs a look, so it sits behind Advanced. */}
@@ -602,6 +644,7 @@ function CreateAgentForm({
  * the ready-made assistants are one click away instead of behind the Add dialog, because a blank
  * instructions box is the slowest way to a first useful agent.
  */
+// @find: suggested assistants, ready-made assistants, POST /api/agents/from-template, starter agents
 function SuggestedAssistants({ onAdded }: { onAdded: (result: FromTemplate) => void }) {
   const templates = useAgentTemplates()
   const [error, setError] = useState<string | null>(null)
@@ -649,6 +692,7 @@ function SuggestedAssistants({ onAdded }: { onAdded: (result: FromTemplate) => v
   )
 }
 
+// @find: Agents component, agents page, list agents, create agent, /agents
 export function Agents() {
   const query = useAgents()
   // The figures need run:read. If they cannot be had the cards say nothing rather than guess.
@@ -661,6 +705,7 @@ export function Agents() {
   const [createOpen, setCreateOpen] = useState(false)
   // The assistant just added from a ready-made brief, until its "what is still to do" is closed.
   const [added, setAdded] = useState<FromTemplate | null>(null)
+  const [retiredOpen, setRetiredOpen] = useState(false)
   const canCreate = can('agent:create')
 
   const filter = useListFilter({ rows: query.data, text: agentSearchText })
@@ -704,7 +749,10 @@ export function Agents() {
         rows={5}
       >
         {(agents) => {
-          const shown = searchable ? filter.filtered : agents
+          // A retired agent takes no work, so it sits in its own folded section, out of the way.
+          const working = (searchable ? filter.filtered : agents).filter((agent) => agent.status !== 'retired')
+          const retired = (searchable ? filter.filtered : agents).filter((agent) => agent.status === 'retired')
+          const shown = working
           // Only the General Employee, which every workspace has from its first visit.
           const onlyFallback = agents.length === 1 && agents[0]?.fallback === true
           return (
@@ -726,7 +774,7 @@ export function Agents() {
                   onClear={filter.clear}
                 />
               )}
-              {shown.length === 0 ? (
+              {shown.length === 0 && retired.length === 0 ? (
                 <Card>
                   <FilterEmpty onClear={filter.clear} what="agents" />
                 </Card>
@@ -743,6 +791,28 @@ export function Agents() {
                   {shown.map((agent) => (
                     <AgentCard key={agent.id} agent={agent} outcomes={outcomes} />
                   ))}
+                </div>
+              )}
+              {retired.length > 0 && (
+                <div style={{ marginTop: 'var(--space-6)' }}>
+                  <Collapsible
+                    title={`Retired (${retired.length})`}
+                    summary="Kept for their history. Open one to restore it."
+                    open={retiredOpen}
+                    onToggle={setRetiredOpen}
+                  >
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))',
+                        gap: 'var(--space-5)',
+                      }}
+                    >
+                      {retired.map((agent) => (
+                        <AgentCard key={agent.id} agent={agent} outcomes={outcomes} />
+                      ))}
+                    </div>
+                  </Collapsible>
                 </div>
               )}
             </div>

@@ -1,3 +1,6 @@
+// @find: tests for AttachmentCards, sent attachments, attached files in message, image thumbnail, file card, keep in knowledge, save to knowledge, download attachment, chat message files
+// @what: Automated tests for AttachmentCards.
+// @flow: Run with the web test runner; covers AttachmentCards.
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SentAttachment } from '../../lib/attachments'

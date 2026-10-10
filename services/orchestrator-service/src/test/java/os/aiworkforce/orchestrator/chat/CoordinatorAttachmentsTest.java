@@ -1,3 +1,6 @@
+// @find: tests for coordinator attachments, chat, only afile, question with file is work, nothing to send, CoordinatorAttachmentsTest, CoordinatorAttachments
+// @what: Tests for CoordinatorAttachments in the orchestrator chat package (3 test methods).
+// @flow: Exercises CoordinatorAttachments
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -136,6 +139,7 @@ class CoordinatorAttachmentsTest {
         RequestContext.clear();
     }
 
+    // @find: test only afile, coordinator attachments
     @Test
     @DisplayName("a message with only a file is recorded with the file, routed as work naming it, and its goal is given the file")
     void onlyAFile() {
@@ -163,6 +167,7 @@ class CoordinatorAttachmentsTest {
         verify(attachments).linkGoal(ORG, sent.getId(), goal.getId());
     }
 
+    // @find: test question with file is work, coordinator attachments
     @Test
     @DisplayName("a question with a file is work for an agent, never a search of the workspace's documents, and the planner sees the name")
     void questionWithFileIsWork() {
@@ -177,6 +182,7 @@ class CoordinatorAttachmentsTest {
         assertThat(planned.getValue()).contains("What does this say about revenue?").contains("q3-report.pdf");
     }
 
+    // @find: test nothing to send, coordinator attachments
     @Test
     @DisplayName("a message with neither text nor files is refused before anything is written")
     void nothingToSend() {

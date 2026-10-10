@@ -1,3 +1,5 @@
+// @find: tests for jpa budget guard, budget guard, spending cap, monthly budget, daily budget, over budget, 402, cost check
+// @what: Unit and integration tests (20 cases) for jpa budget guard, for example: no budget row; no cap set; monthly spend comes from usage; monthly cap refuses.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

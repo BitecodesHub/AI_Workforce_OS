@@ -1,3 +1,5 @@
+// @find: tests for password reset, reset link, single use, expiry, cross workspace refusal, owner reset
+// @what: Unit tests of creating and redeeming password reset links.
 package os.aiworkforce.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

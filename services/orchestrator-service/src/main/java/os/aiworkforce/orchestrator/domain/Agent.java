@@ -1,3 +1,9 @@
+// @find: agent, AI employee, digital worker, workforce member, create agent, rename agent, archive agent, restore agent, agent status, fallback agent, voice, voiceId, agents table, Agents page, Agent entity
+// @what: Database entity for one AI employee (agent) in a workspace: key, name, category, status, current version, owner, voice.
+// @flow: Stored by Agents repository; configured by AgentVersion; used by Run and AgentToolGrant.
+// @find: agent, AI employee, digital worker, workforce member, create agent, rename agent, archive agent, restore agent, agent status, fallback agent, voice, voiceId, agents table, Agents page, Agent entity
+// @what: Database entity for one AI employee (agent) in a workspace: key, name, category, status, current version, owner, voice.
+// @flow: Stored by Agents repository; configured by AgentVersion; used by Run and AgentToolGrant.
 package os.aiworkforce.orchestrator.domain;
 
 import java.util.UUID;
@@ -22,6 +28,14 @@ public class Agent extends OrgScopedEntity {
 
     @Column(nullable = false)
     private String category = "operations";
+
+    /**
+     * What the agent does, in one line written about it rather than to it ("Screens applications
+     * and books interviews"). Null when nobody has written one; the console then derives a line
+     * from the instructions (V20).
+     */
+    @Column
+    private String description;
 
     @Column(nullable = false)
     private String status = "active";
@@ -54,6 +68,11 @@ public class Agent extends OrgScopedEntity {
         return "active".equals(status);
     }
 
+    /** Archived: takes no work, keeps its history, can be restored. */
+    public boolean isRetired() {
+        return "retired".equals(status);
+    }
+
     public boolean isFallback() {
         return fallback;
     }
@@ -84,6 +103,14 @@ public class Agent extends OrgScopedEntity {
 
     public void setCategory(String category) {
         this.category = category;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public String getStatus() {

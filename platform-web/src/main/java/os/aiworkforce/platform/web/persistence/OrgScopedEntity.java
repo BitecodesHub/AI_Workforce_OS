@@ -1,3 +1,6 @@
+// @find: org scoped entity, tenant isolation, workspace id on every row, hibernate filter, row level security, multi tenant
+// @what: Base class for rows that belong to exactly one workspace, with tenant filtering.
+// @flow: Extended by workspace-owned entities in the services
 package os.aiworkforce.platform.web.persistence;
 
 import java.util.UUID;

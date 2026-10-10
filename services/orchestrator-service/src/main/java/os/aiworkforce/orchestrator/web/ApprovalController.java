@@ -1,3 +1,6 @@
+// @find: approvals api, approve, reject, decide approval, bulk decision, approval queue, approval settings, four-eyes setting, pending count, /api/approvals, Approvals page, Approve button, Reject button
+// @what: REST endpoints for listing and deciding approvals, bulk decisions, counts and the four-eyes setting.
+// @flow: Called by the Approvals page; delegates to ApprovalService and resumes runs via RunExecutor
 package os.aiworkforce.orchestrator.web;
 
 import java.time.Instant;
@@ -158,6 +161,7 @@ public class ApprovalController {
             description =
                     "status is pending (soonest to expire first), decided (newest decision first) or all."
                             + " runId narrows to one run's approvals.")
+    // @find: list approvals, GET /api/approvals, approvals inbox, history
     public List<ApprovalView> list(
             @RequestParam(defaultValue = "pending") String status,
             @RequestParam(required = false) UUID agentId,
@@ -168,6 +172,7 @@ public class ApprovalController {
         return views(found);
     }
 
+    // @find: approval count, pending badge, GET /api/approvals/count
     @GetMapping("/count")
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
     @Operation(summary = "How many approvals are waiting, and how many of them the caller could decide")
@@ -176,6 +181,7 @@ public class ApprovalController {
         return new CountView(counts.pending(), counts.canDecide());
     }
 
+    // @find: get approval settings, GET /api/approvals/settings
     @GetMapping("/settings")
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
     @Operation(summary = "Whether the person who asked for work may approve what its agent then does")
@@ -183,6 +189,7 @@ public class ApprovalController {
         return new SettingsView(approvals.requesterRuleName(orgId()));
     }
 
+    // @find: update approval settings, four-eyes rule, PUT /api/approvals/settings
     @PutMapping("/settings")
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
     @Operation(summary = "Ask for a second pair of eyes: off, destructive actions only, or every action")
@@ -191,6 +198,7 @@ public class ApprovalController {
                 approvals.setRequesterRule(orgId(), request.requesterCannotApprove(), RequestContext.requireActor()));
     }
 
+    // @find: get approval, GET /api/approvals/{approvalId}
     @GetMapping("/{approvalId}")
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
     @Operation(summary = "One approval, waiting or decided")
@@ -198,6 +206,7 @@ public class ApprovalController {
         return views(List.of(approvals.get(orgId(), approvalId))).get(0);
     }
 
+    // @find: approve or reject, send back, POST /api/approvals/{approvalId}/decision
     @PostMapping("/{approvalId}/decision")
     @RequiresPermission(Permission.Codes.APPROVAL_DECIDE)
     @Operation(summary = "Approve or reject an action")
@@ -238,6 +247,7 @@ public class ApprovalController {
                 approval.getId(), approval.getStatus(), "waiting_approval".equals(runStatus) ? "running" : runStatus);
     }
 
+    // @find: approve all, bulk decision, POST /api/approvals/decisions
     /**
      * Decides several approvals the same way, each in a transaction of its own and with the same
      * checks as a single decision, so one that cannot be decided - already decided by someone

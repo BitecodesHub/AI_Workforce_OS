@@ -1,3 +1,6 @@
+// @find: keyboard shortcuts, shortcuts dialog, hotkeys, help keys, ShortcutsDialog
+// @what: Dialog listing a screen keyboard shortcuts in groups.
+// @flow: Opened from screens that define hotkeys; uses Dialog and Kbd.
 import { Dialog, Kbd } from './index'
 
 /*
@@ -5,6 +8,7 @@ import { Dialog, Kbd } from './index'
  * the separate keys `formatHotkey` (lib/hotkeys.ts) already split out.
  */
 
+// @find: keyboard shortcuts dialog
 export function ShortcutsDialog({
   open,
   onClose,

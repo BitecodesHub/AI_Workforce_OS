@@ -1,3 +1,5 @@
+// @find: tests for agent template controller, agent templates, from-template, /api/agent-templates, /api/agents/from-template/{key}
+// @what: Unit and integration tests (7 cases) for agent template controller, for example: lists the catalogue; creates the agent as the caller; creates no grants; a key clash gets asuffix.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -98,7 +100,7 @@ class AgentTemplateControllerTest {
         assertThat(templates).extracting(AgentTemplateController.TemplateView::key)
                 .containsExactly("hr", "engineering-manager", "research", "support");
         assertThat(templates).allSatisfy(template -> {
-            assertThat(template.description()).isNotBlank();
+            assertThat(template.description()).isNotBlank().hasSizeLessThanOrEqualTo(AgentController.DESCRIPTION_LIMIT);
             assertThat(template.suggestedConnectors()).isNotEmpty();
         });
         assertThat(templates.getFirst().suggestedConnectors()).containsExactly("gmail", "calendar");
@@ -114,6 +116,9 @@ class AgentTemplateControllerTest {
         assertThat(result.agent().name()).isEqualTo("HR");
         assertThat(result.agent().category()).isEqualTo("operations");
         assertThat(result.agent().revision()).isEqualTo(1);
+        // Its description is the template's one line about it, not a quote from its instructions.
+        assertThat(result.agent().description())
+                .isEqualTo(AgentTemplates.find("hr").orElseThrow().description());
         assertThat(result.suggestedConnectors()).containsExactly("gmail", "calendar");
 
         assertThat(savedVersions).hasSize(1);

@@ -1,3 +1,6 @@
+// @find: tests for gateway token verification, jwt decoder, JWKS refetch, new signing key, identity restart, unknown key, token rejected, ES256, key rotation, GatewaySecurityConfigTest
+// @what: Checks the edge accepts tokens signed by a newly published key without a restart and rejects tokens from an unpublished key.
+// @flow: Exercises GatewaySecurityConfig.decoder against a local stub serving the key set.
 package os.aiworkforce.gateway.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,6 +74,7 @@ class GatewaySecurityConfigTest {
         identity.stop(0);
     }
 
+    // @find: test token under a new key accepted after refetch
     @Test
     @DisplayName("a token under a new key is accepted once the published set carries it")
     void refetchesOnUnknownKey() throws Exception {

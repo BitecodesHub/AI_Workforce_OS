@@ -1,3 +1,6 @@
+// @find: tests for workspace provider state persistence, repository, migration, upsert enabled, credential rejection, credential status is checked, workspace lock, model availability, WorkspaceProviderStatePersistenceTest, WorkspaceProviderStatePersistence
+// @what: Tests for WorkspaceProviderStatePersistence in the orchestrator repository package (6 test methods).
+// @flow: Exercises WorkspaceProviderStatePersistence
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,6 +79,7 @@ class WorkspaceProviderStatePersistenceTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    // @find: test migration, workspace provider state persistence
     @Test
     @DisplayName("V10 offers every seeded provider and keeps what a workspace starts with as before")
     void migration() {
@@ -94,6 +98,7 @@ class WorkspaceProviderStatePersistenceTest {
         assertThat(providers.findById("groq").orElseThrow().isWorkspaceDefaultEnabled()).isFalse();
     }
 
+    // @find: test upsert enabled, workspace provider state persistence
     @Test
     @DisplayName("turning a provider on and off twice upserts one row, and leaves the key state alone")
     void upsertEnabled() {
@@ -113,6 +118,7 @@ class WorkspaceProviderStatePersistenceTest {
         assertThat(settings.findByOrgId(ORG_B)).isEmpty();
     }
 
+    // @find: test credential rejection, workspace provider state persistence
     @Test
     @DisplayName("a rejection is recorded twice without conflict, and cleared only for its own workspace")
     void credentialRejection() {
@@ -142,6 +148,7 @@ class WorkspaceProviderStatePersistenceTest {
                 .isEqualTo(WorkspaceProviderSetting.VALID);
     }
 
+    // @find: test credential status is checked, workspace provider state persistence
     @Test
     @DisplayName("the CHECK constraint refuses a credential status the code never writes")
     void credentialStatusIsChecked() {
@@ -152,6 +159,7 @@ class WorkspaceProviderStatePersistenceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // @find: test workspace lock, workspace provider state persistence
     @Test
     @DisplayName("the workspace lock can be taken, and taken again in the same transaction")
     void workspaceLock() {
@@ -160,6 +168,7 @@ class WorkspaceProviderStatePersistenceTest {
         assertThat(settings.holdWorkspaceLock(ORG_B)).isEqualTo(1);
     }
 
+    // @find: test model availability, workspace provider state persistence
     @Test
     @DisplayName("a model note is upserted, never shortened while in force, and lapsed notes do not count")
     void modelAvailability() {

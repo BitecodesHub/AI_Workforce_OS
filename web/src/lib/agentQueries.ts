@@ -1,3 +1,6 @@
+// @find: agents, AI employees, agent outcomes, success rate, cost, pause all, resume all, bulk pause, revisions, configuration history, restore revision, model policy, model routing, set model, Agents page, Agent detail page
+// @what: Agent page reads and actions beyond the basics: outcomes, configuration revisions and restore, bulk pause and resume, and per-agent model policy.
+// @flow: Called by Agents and AgentDetail routes; calls api() against /api/agents and /api/orchestrator/insights/agents.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { formatCount, formatMoney, plural } from './format'
@@ -74,6 +77,8 @@ export type AgentOutcome = {
   unpricedRuns?: number | undefined
   /** Runs only the offline sandbox answered. */
   sandboxRuns?: number | undefined
+  /** Runs that cost nothing because every model they used is free in the catalogue. */
+  freeRuns?: number | undefined
   rejectedApprovals?: number | undefined
   lastActive?: string | null | undefined
 }
@@ -104,10 +109,12 @@ function outcomeRow(row: AgentOutcome): AgentOutcome {
     avgCostPerCompleted: figure(row.avgCostPerCompleted),
     unpricedRuns: figure(row.unpricedRuns) ?? undefined,
     sandboxRuns: figure(row.sandboxRuns) ?? undefined,
+    freeRuns: figure(row.freeRuns) ?? undefined,
     rejectedApprovals: figure(row.rejectedApprovals) ?? undefined,
   }
 }
 
+// @find: agent outcomes, success rate, cost per agent; route: GET /api/orchestrator/insights/agents; used by: Agents page, Agent detail page
 /**
  * How every agent has done over the last 30 days, by agent id (run:read). Pass
  * `enabled: can('run:read')`. An agent missing from the answer has had no run in the window.
@@ -171,6 +178,12 @@ export function costFigure(outcome: AgentOutcome | undefined): { value: string; 
     return { value: formatMoney(outcome.totalCost), note: `Leaves out ${plural(unpriced, 'run', 'runs')} with no catalogue price.` }
   }
   const onlySandbox = (outcome.sandboxRuns ?? 0) > 0 && outcome.sandboxRuns === outcome.runs
+  const free = outcome.freeRuns ?? 0
+  // Nothing spent, and the runs were on free models (or the sandbox): free is known, not a priced zero.
+  if (outcome.totalCost === 0 && free > 0) {
+    return { value: 'Free', note: `${plural(free, 'run', 'runs')} on models that are free in the catalogue.` }
+  }
+  if (outcome.totalCost === 0 && onlySandbox) return { value: 'Free', note: 'Offline sandbox runs cost nothing.' }
   return {
     value: formatMoney(outcome.totalCost),
     note: onlySandbox ? 'Offline sandbox runs cost nothing.' : 'At catalogue prices.',
@@ -224,6 +237,7 @@ export function changeSummary(revision: Pick<AgentRevision, 'initial' | 'changed
   return `${text} changed`
 }
 
+// @find: agent revisions, configuration history; route: GET /api/agents/{id}/revisions; used by: Agent detail page
 /** An agent's revisions, newest first (agent:read). */
 export const useAgentRevisions = (id: string, options: QueryOptions = {}) =>
   useQuery({
@@ -232,6 +246,7 @@ export const useAgentRevisions = (id: string, options: QueryOptions = {}) =>
     enabled: Boolean(id) && (options.enabled ?? true),
   })
 
+// @find: restore revision, put back old configuration; route: PUT /api/agents/{id}/configuration; used by: Agent detail page
 /**
  * Puts an old revision back by saving its instructions, goals and limits as a new revision
  * (agent:update). Nothing is rewritten: the history gains revision N+1, and every run keeps the
@@ -257,6 +272,7 @@ export function useRestoreRevision(id: string) {
 
 /* ---- Routing ------------------------------------------------------------------------------------------- */
 
+// @find: set agent model policy, choose model for agent; route: PUT /api/agents/{id}/model-policy; used by: Agent detail page
 /** Saves an agent's own chain of models (agent:set_model_policy), replacing the one it had. */
 export function useSetAgentModelPolicy(id: string) {
   const client = useQueryClient()
@@ -271,6 +287,7 @@ export function useSetAgentModelPolicy(id: string) {
   })
 }
 
+// @find: clear agent model policy, use default model; route: DELETE /api/agents/{id}/model-policy; used by: Agent detail page
 /** Gives the agent back to the workspace routing policy by deleting its own (agent:set_model_policy). */
 export function useClearAgentModelPolicy(id: string) {
   const client = useQueryClient()

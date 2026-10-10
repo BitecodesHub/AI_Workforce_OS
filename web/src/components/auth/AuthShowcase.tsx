@@ -1,3 +1,6 @@
+// @find: sign in showcase, what is this product, login side panel, product glimpse, approval preview, evaluator points, AuthShowcase
+// @what: Explains the product beside the sign-in form with a drawn glimpse of a parked agent action.
+// @flow: Rendered next to the form on the sign in page
 import { Eyebrow, Tag } from '../ui'
 import { Icon } from '../landing/shared/Icon'
 import type { IconName } from '../landing/shared/Icon'
@@ -30,6 +33,7 @@ const POINTS: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [
   { icon: 'route', title: 'Seven providers, in a chain', body: 'A failing model is skipped, and the trace says why.' },
 ]
 
+// @find: AuthShowcase, sign in side panel, product explainer
 export function AuthShowcase() {
   return (
     <aside className="auth-showcase" aria-labelledby="auth-showcase-title">

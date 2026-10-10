@@ -1,3 +1,6 @@
+// @find: tests for schedule zone lookup, schedule, internal endpoint then cache, ScheduleZoneLookupTest, ScheduleZoneLookup
+// @what: Tests for ScheduleZoneLookup in the orchestrator schedule package (1 test methods).
+// @flow: Exercises ScheduleZoneLookup
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +52,7 @@ class ScheduleZoneLookupTest {
         lookup = new ScheduleZoneLookup(builder, properties, tokens);
     }
 
+    // @find: test internal endpoint then cache, schedule zone lookup
     @Test
     @DisplayName("the zone comes from the internal workspace endpoint and is then served from cache")
     void internalEndpointThenCache() {

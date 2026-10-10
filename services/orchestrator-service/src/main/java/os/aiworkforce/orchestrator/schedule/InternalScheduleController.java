@@ -1,3 +1,6 @@
+// @find: internal schedules api, owner removed, pause schedules when owner leaves, POST /internal/schedules/owner-removed, identity service callback, InternalScheduleController, member removed
+// @what: Internal endpoint that pauses a removed member's schedules.
+// @flow: Called by identity-service when a member is removed; calls ScheduleService.pauseForRemovedOwner
 package os.aiworkforce.orchestrator.schedule;
 
 import java.util.UUID;
@@ -45,6 +48,7 @@ public class InternalScheduleController {
     /** @param paused how many enabled schedules this paused */
     public record OwnerRemovedResponse(int paused) {}
 
+    // @find: pause schedules for removed owner, member removed, POST /internal/schedules/owner-removed
     @PostMapping("/owner-removed")
     @Operation(summary = "Internal: pause every schedule that runs as a person who has left the workspace")
     public OwnerRemovedResponse ownerRemoved(@Valid @RequestBody OwnerRemovedRequest request) {

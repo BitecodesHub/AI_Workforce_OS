@@ -1,3 +1,5 @@
+// @find: tests for internal memberships, bootstrap member, reactivate removed member, invitation grant, owner granted only by owner
+// @what: Tests of memberships granted for accepted invitations.
 package os.aiworkforce.identity.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -201,6 +203,30 @@ class InternalMembershipGrantTest {
         checkGrant(owner, "owner").andExpect(jsonPath("$.allowed").value(true));
         checkGrant(admin, "owner").andExpect(jsonPath("$.reason").value("owner_only"));
         checkGrant(workspace.stranger("Out Sider"), "employee").andExpect(jsonPath("$.reason").value("not_a_member"));
+    }
+
+    @Test
+    @DisplayName("check-grant for an invitation says already_member for an active member's address, not a removed one's")
+    void checkGrantRefusesActiveMembersAddress() throws Exception {
+        UUID present = workspace.member("Pat Present", workspace.employee, "active");
+        UUID gone = workspace.member("Rob Removed", workspace.employee, "removed");
+        String presentEmail = workspace.user(present).getEmail().toUpperCase(java.util.Locale.ROOT);
+        String goneEmail = workspace.user(gone).getEmail();
+
+        checkGrantFor(admin, "employee", presentEmail)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(false))
+                .andExpect(jsonPath("$.reason").value("already_member"));
+        checkGrantFor(admin, "employee", goneEmail).andExpect(jsonPath("$.allowed").value(true));
+        checkGrantFor(admin, "employee", "nobody-yet@example.test").andExpect(jsonPath("$.allowed").value(true));
+    }
+
+    private ResultActions checkGrantFor(UUID actorUserId, String roleName, String email) throws Exception {
+        String body = "{\"orgId\":\"" + GrantFixture.ORG + "\",\"actorUserId\":\"" + actorUserId
+                + "\",\"roleName\":\"" + roleName + "\",\"email\":\"" + email + "\"}";
+        return mvc.perform(post("/internal/memberships/check-grant")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
     }
 
     @Test

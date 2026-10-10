@@ -1,3 +1,6 @@
+// @find: password reset, reset password, forgot password, reset link, admin creates reset link, redeem link, POST /api/auth/password-reset, PasswordResetService
+// @what: Creates and redeems single-use password reset links issued by workspace administrators.
+// @flow: Called by PasswordController.createResetLink and AuthController.resetPassword.
 package os.aiworkforce.identity.service;
 
 import java.nio.charset.StandardCharsets;
@@ -97,6 +100,7 @@ public class PasswordResetService {
      */
     public record ResetLink(String url, Instant expiresAt) {}
 
+    // @find: create reset link, admin reset password, POST /api/users/{userId}/password-reset-link
     /**
      * Creates a reset link for a member of the caller's workspace.
      *
@@ -154,6 +158,7 @@ public class PasswordResetService {
         return new ResetLink("/sign-in?reset=" + raw, token.getExpiresAt());
     }
 
+    // @find: redeem reset link, set new password from link, POST /api/auth/password-reset
     /**
      * Sets a new password from a reset link.
      *

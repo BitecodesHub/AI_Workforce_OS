@@ -1,3 +1,5 @@
+// @find: tests for sandbox seeds, practice data, seeded records, first list returns data, sandbox verbs, create read back, update delete, every connector, demo data
+// @what: Checks the practice data each workspace starts with and the verbs that change it.
 package os.aiworkforce.mcp.sandbox;
 
 import static org.assertj.core.api.Assertions.assertThat;

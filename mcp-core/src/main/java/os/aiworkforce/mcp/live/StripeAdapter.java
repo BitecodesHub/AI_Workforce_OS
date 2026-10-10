@@ -1,3 +1,6 @@
+// @find: stripe, payments, customers, invoices, refund, refunds, search customers, list payments, get payment, list invoices, secret key, live adapter, real API, finance, billing
+// @what: Live Stripe connector: runs stripe__ tools (customers, payments, invoices, refunds) against the Stripe API with a restricted key; refunds always need approval.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.math.BigDecimal;
@@ -56,6 +59,7 @@ public final class StripeAdapter extends LiveServerAdapter {
                 balance.path("livemode").asBoolean(false) ? "Stripe account (live mode)" : "Stripe account (test mode)");
     }
 
+    // @find: Stripe search customers, tool stripe__search_customers, live Stripe call
     private Mono<ToolResult> searchCustomers(ToolInvocation invocation, JsonNode arguments, String key) {
         String query = required(arguments, "query");
         String quoted = "\"" + query.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
@@ -75,6 +79,7 @@ public final class StripeAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: Stripe list payments, tool stripe__list_payments, live Stripe call
     private Mono<ToolResult> listPayments(ToolInvocation invocation, JsonNode arguments, String key) {
         String customer = text(arguments, "customer");
         String status = text(arguments, "status");
@@ -98,12 +103,14 @@ public final class StripeAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Stripe get payment, tool stripe__get_payment, live Stripe call
     private Mono<ToolResult> getPayment(ToolInvocation invocation, JsonNode arguments, String key) {
         String id = required(arguments, "id");
         return get(key, "/v1/payment_intents/{id}", id)
                 .map(payment -> done(payment(payment), "Read payment " + id + " from Stripe."));
     }
 
+    // @find: Stripe list invoices, tool stripe__list_invoices, live Stripe call
     private Mono<ToolResult> listInvoices(ToolInvocation invocation, JsonNode arguments, String key) {
         String customer = text(arguments, "customer");
         String status = text(arguments, "status");
@@ -136,6 +143,7 @@ public final class StripeAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Stripe refund, tool stripe__refund, live Stripe call
     private Mono<ToolResult> refund(ToolInvocation invocation, JsonNode arguments, String key) {
         String payment = required(arguments, "id");
         String reason = text(arguments, "reason");

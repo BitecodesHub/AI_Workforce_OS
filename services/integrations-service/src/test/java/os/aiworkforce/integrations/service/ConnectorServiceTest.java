@@ -1,3 +1,5 @@
+// @find: tests for connector service, connect, test, disconnect, refused when not live, webhook url, encrypted storage, check before save
+// @what: Checks connecting is refused when a connector cannot go live, the credential is checked first and stored encrypted.
 package os.aiworkforce.integrations.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

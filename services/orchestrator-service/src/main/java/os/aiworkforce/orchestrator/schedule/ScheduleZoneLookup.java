@@ -1,3 +1,6 @@
+// @find: schedule time zone, workspace timezone lookup, ScheduleZoneLookup, which timezone for schedule
+// @what: Looks up the workspace time zone used to read schedule text.
+// @flow: Used by ScheduleService.resolveZone
 package os.aiworkforce.orchestrator.schedule;
 
 import org.springframework.stereotype.Component;

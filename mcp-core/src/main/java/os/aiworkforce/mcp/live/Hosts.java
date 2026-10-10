@@ -1,3 +1,6 @@
+// @find: host validation, allowed hosts, SSRF guard, atlassian site, jira site, confluence site, zendesk subdomain, salesforce instance url, salesforce login domain, microsoft tenant, connect dialog settings, private network, https only
+// @what: Checks and normalises user-supplied hostnames and subdomains so a connector can only call its vendor's own domain.
+// @flow: Used by Jira, Confluence, Zendesk and Salesforce adapters and OAuthProvider.validatedSettings
 package os.aiworkforce.mcp.live;
 
 import java.util.Locale;

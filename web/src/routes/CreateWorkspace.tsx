@@ -1,3 +1,6 @@
+// @find: create workspace, sign up, register, new company, first admin, owner account, time zone, steps, ready-made assistants, password, /create-workspace, CreateWorkspace
+// @what: The signed-out page where a new company creates its workspace and owner account in a few steps.
+// @flow: Routed from App.tsx at /create-workspace; uses AuthShell; calls the identity service signup API via lib/queries
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Eyebrow, Input, Notice, PasswordInput } from '../components/ui'
@@ -107,6 +110,7 @@ function startingMode(search: URLSearchParams): Mode {
   return search.get('signedIn') === '1' || isSignedIn() ? 'signed-in' : 'register'
 }
 
+// @find: CreateWorkspace component, create workspace, sign up, register company, /create-workspace
 export function CreateWorkspace() {
   const { search } = useRouter()
   const [mode, setMode] = useState<Mode>(() => startingMode(search))
@@ -505,6 +509,8 @@ export function CreateWorkspace() {
                     onChange={(event) => {
                       setEmail(event.target.value)
                       clearFieldError('email')
+                      // "This address is taken" is about the old address, not the one now typed.
+                      setTakenEmail(null)
                     }}
                     placeholder="priya@example.com"
                     error={fieldErrors.email}
@@ -606,6 +612,7 @@ export function CreateWorkspace() {
 }
 
 /** What happened to the assistants that were ticked, as one or two lines of the final card. */
+// @find: assistants added result, starter assistants created after signup
 function AssistantsResult({ added }: { added: AssistantsAdded | null }) {
   if (!added || (added.created.length === 0 && added.failed.length === 0)) return null
   const names = (keys: readonly string[]) => nameList(keys.map((key) => templateFor(key)?.name ?? key), 6)

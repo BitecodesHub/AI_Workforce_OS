@@ -1,3 +1,6 @@
+// @find: redactor, redact secrets, mask api keys, remove personal data, logging safety, sensitive keys, tokens, passwords, emails, card numbers
+// @what: Removes secrets and personal data from text, JSON and maps before they are logged or stored.
+// @flow: Used by logging, audit and run traces
 package os.aiworkforce.platform.observability;
 
 import java.util.List;
@@ -66,6 +69,7 @@ public class Redactor {
     }
 
     /** Redacts free text, leaving everything that is not a recognised secret intact. */
+    // @find: redact text, mask secrets in logs
     public String text(String value) {
         if (value == null || value.isEmpty()) {
             return value;
@@ -92,6 +96,7 @@ public class Redactor {
     }
 
     /** Redacts a structured payload by key and by value, to any reasonable depth. */
+    // @find: redact json, mask secrets in payload
     public JsonNode json(JsonNode node) {
         return redactNode(node, 0);
     }

@@ -1,3 +1,5 @@
+// @find: tests for analytics, test database, testcontainers, postgres for tests, AIWOS_DATABASE_TESTS, AIWOS_TEST_DATABASE_URL
+// @what: Provides the opt-in disposable PostgreSQL the analytics persistence tests run against.
 package os.aiworkforce.analytics;
 
 import org.springframework.test.context.DynamicPropertyRegistry;

@@ -1,3 +1,6 @@
+// @find: jira, atlassian, issues, tickets, search issues, create issue, update issue, JQL, site email api token, live adapter, real API, project management
+// @what: Live Jira connector: runs jira__ tools (search, create, update issues) against an Atlassian Cloud site using site, email and API token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -87,6 +90,7 @@ public final class JiraAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Jira search issues, tool jira__search_issues, live Jira call
     private Mono<ToolResult> searchIssues(ToolInvocation invocation, JsonNode arguments, String credential) {
         String jql = jql(text(arguments, "jql"));
         int limit = limit(arguments, 20, 50);
@@ -112,6 +116,7 @@ public final class JiraAdapter extends LiveServerAdapter {
         return query ? input : "text ~ \"" + escape(input) + "\" ORDER BY updated DESC";
     }
 
+    // @find: Jira create issue, tool jira__create_issue, live Jira call
     private Mono<ToolResult> createIssue(ToolInvocation invocation, JsonNode arguments, String credential) {
         String project = required(arguments, "project");
         String summary = required(arguments, "summary");
@@ -136,6 +141,7 @@ public final class JiraAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Jira update issue, tool jira__update_issue, live Jira call
     private Mono<ToolResult> updateIssue(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         String status = text(arguments, "status");

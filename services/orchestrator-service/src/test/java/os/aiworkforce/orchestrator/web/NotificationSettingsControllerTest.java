@@ -1,3 +1,5 @@
+// @find: tests for notification settings controller, notification settings, webhook, /api/orchestrator/notification-settings
+// @what: Unit and integration tests (3 cases) for notification settings controller, for example: reads the settings; saving is audited; test button.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,5 @@
+// @find: tests for resilience presets, circuit breaker config, per-workspace provider names, timeouts
+// @what: Checks how breakers and waits are configured for named dependencies.
 package os.aiworkforce.platform.resilience;
 
 import static org.assertj.core.api.Assertions.assertThat;

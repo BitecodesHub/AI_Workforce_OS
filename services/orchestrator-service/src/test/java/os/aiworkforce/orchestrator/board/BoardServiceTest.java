@@ -1,3 +1,6 @@
+// @find: tests for board service, board, ready task reason, waiting on earlier task reason, agent paused reason, held task reads agent paused, queue looks up missing goals in one batch, an old waiting goal is not pushed off the board by newer finished ones, active goals are filtered to the workspace, task cost adds up every run, BoardServiceTest, BoardService
+// @what: Tests for BoardService in the orchestrator board package (23 test methods).
+// @flow: Exercises BoardService
 package os.aiworkforce.orchestrator.board;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -159,6 +162,7 @@ class BoardServiceTest {
 
     // ---- Reading the board -------------------------------------------------------------------
 
+    // @find: test ready task reason, board service
     @Test
     @DisplayName("a pending task with a completed predecessor is ready")
     void readyTaskReason() {
@@ -176,6 +180,7 @@ class BoardServiceTest {
         assertThat(result.stats().held()).isZero();
     }
 
+    // @find: test waiting on earlier task reason, board service
     @Test
     @DisplayName("a task depending on an unfinished task waits on it")
     void waitingOnEarlierTaskReason() {
@@ -194,6 +199,7 @@ class BoardServiceTest {
                         () -> org.junit.jupiter.api.Assertions.fail("expected task in queue"));
     }
 
+    // @find: test agent paused reason, board service
     @Test
     @DisplayName("a task whose agent is paused is held, whatever its dependencies")
     void agentPausedReason() {
@@ -212,6 +218,7 @@ class BoardServiceTest {
         assertThat(result.stats().queued()).isEqualTo(1);
     }
 
+    // @find: test held task reads agent paused, board service
     @Test
     @DisplayName("only the task behind a paused agent is held, among several queued tasks")
     void heldTaskReadsAgentPaused() {
@@ -234,6 +241,7 @@ class BoardServiceTest {
         assertThat(queueEntryFor(result, ready.getId()).orElseThrow().reason()).isEqualTo("ready");
     }
 
+    // @find: test queue looks up missing goals in one batch, board service
     @Test
     @DisplayName("queued tasks whose goals were not read with the board are looked up in one batch, not one by one")
     void queueLooksUpMissingGoalsInOneBatch() {
@@ -260,6 +268,7 @@ class BoardServiceTest {
         verify(tasks, never()).findByGoalIdOrderByPosition(any());
     }
 
+    // @find: test an old waiting goal is not pushed off the board by newer finished ones, board service
     @Test
     @DisplayName("a goal waiting for approval stays on the board however many newer goals have finished")
     void anOldWaitingGoalIsNotPushedOffTheBoardByNewerFinishedOnes() {
@@ -319,6 +328,7 @@ class BoardServiceTest {
         verify(goals, never()).findById(any());
     }
 
+    // @find: test active goals are filtered to the workspace, board service
     @Test
     @DisplayName("a goal from another workspace is never added to the board as an active goal")
     void activeGoalsAreFilteredToTheWorkspace() {
@@ -332,6 +342,7 @@ class BoardServiceTest {
         assertThat(result.goals()).isEmpty();
     }
 
+    // @find: test task cost adds up every run, board service
     @Test
     @DisplayName("a task's cost is what every one of its runs cost, and its attempts are the runs it has had")
     void taskCostAddsUpEveryRun() {
@@ -365,6 +376,7 @@ class BoardServiceTest {
         assertThat(view.stepCount()).isEqualTo(2);
     }
 
+    // @find: test board reads lists rather than pages, board service
     @Test
     @DisplayName("the board's goal and timeline reads are plain lists, which never add a count query")
     void boardReadsListsRatherThanPages() {
@@ -375,6 +387,7 @@ class BoardServiceTest {
         verify(runs, never()).findByOrgIdOrderByStartedAtDesc(any(), any());
     }
 
+    // @find: test direct runs count and light their agent, board service
     @Test
     @DisplayName("a direct run with no task counts toward its agent and toward stats.directRuns")
     void directRunsCountAndLightTheirAgent() {
@@ -400,6 +413,7 @@ class BoardServiceTest {
         assertThat(summary.fallback()).isFalse();
     }
 
+    // @find: test waiting input counts and asks, board service
     @Test
     @DisplayName("a task waiting for an answer counts toward stats.waitingInput and the agent's askingRunIds")
     void waitingInputCountsAndAsks() {
@@ -426,6 +440,7 @@ class BoardServiceTest {
         assertThat(summary.askingRunIds()).containsExactly(run.getId());
     }
 
+    // @find: test questions and approvals included, board service
     @Test
     @DisplayName("the board carries pending questions and approvals for the caller")
     void questionsAndApprovalsIncluded() {
@@ -471,6 +486,7 @@ class BoardServiceTest {
         assertThat(result.approvals().getFirst().id()).isEqualTo(approval.getId());
     }
 
+    // @find: test approvals carry requester and can decide, board service
     @Test
     @DisplayName("an approval carries its goal's requester, and whether the caller can decide it")
     void approvalsCarryRequesterAndCanDecide() {
@@ -526,6 +542,7 @@ class BoardServiceTest {
         assertThat(undecidedSummary.canDecide()).isFalse();
     }
 
+    // @find: test window widens goals and timeline, board service
     @Test
     @DisplayName("a wider window fetches more goals and reaches further back for the timeline")
     void windowWidensGoalsAndTimeline() {
@@ -548,6 +565,7 @@ class BoardServiceTest {
                 .containsExactly(300, 1000);
     }
 
+    // @find: test today window starts at local midnight, board service
     @Test
     @DisplayName("the today window starts at local midnight in the workspace's own timezone")
     void todayWindowStartsAtLocalMidnight() {
@@ -566,6 +584,7 @@ class BoardServiceTest {
         assertThat(result.windowMinutes()).isGreaterThanOrEqualTo(1);
     }
 
+    // @find: test failed today ignores the window, board service
     @Test
     @DisplayName("a goal that failed today shows even when it falls outside the window")
     void failedTodayIgnoresTheWindow() {
@@ -580,6 +599,7 @@ class BoardServiceTest {
         assertThat(result.goals()).isEmpty();
     }
 
+    // @find: test goal counts for today come from goals, board service
     @Test
     @DisplayName("the today tiles count goals, read straight from the repository")
     void goalCountsForTodayComeFromGoals() {
@@ -596,6 +616,7 @@ class BoardServiceTest {
 
     // ---- Stopping everything -------------------------------------------------------------------
 
+    // @find: test stop all cancels goals and orphan runs, board service
     @Test
     @DisplayName("stopping everything cancels every active goal and any run left over with no goal")
     void stopAllCancelsGoalsAndOrphanRuns() {
@@ -624,6 +645,7 @@ class BoardServiceTest {
         assertThat(result.runsSkipped()).isZero();
     }
 
+    // @find: test stop all reads every active goal, board service
     @Test
     @DisplayName("stopping everything reads every active goal, not only the first page")
     void stopAllReadsEveryActiveGoal() {
@@ -637,6 +659,7 @@ class BoardServiceTest {
         verify(goalService, times(250)).cancelIfActive(eq(ORG), any(), anyString());
     }
 
+    // @find: test stop all skips agoal that finished meanwhile, board service
     @Test
     @DisplayName("a goal that finished on its own is skipped, not treated as an error")
     void stopAllSkipsAGoalThatFinishedMeanwhile() {
@@ -650,6 +673,7 @@ class BoardServiceTest {
         assertThat(result.runsCancelled()).isZero();
     }
 
+    // @find: test stop all counts questions, board service
     @Test
     @DisplayName("stopping everything totals the questions withdrawn alongside approvals")
     void stopAllCountsQuestions() {
@@ -664,6 +688,7 @@ class BoardServiceTest {
         assertThat(result.approvalsWithdrawn()).isEqualTo(1);
     }
 
+    // @find: test stop all pauses schedules first, board service
     @Test
     @DisplayName("stopping everything pauses schedules before it cancels any goal")
     void stopAllPausesSchedulesFirst() {
@@ -687,6 +712,7 @@ class BoardServiceTest {
         order.verify(goalService).cancelIfActive(eq(ORG), eq(goalId), anyString());
     }
 
+    // @find: test stop all pause schedules needs task create, board service
     @Test
     @DisplayName("pausing schedules needs permission to create work, and refusing it stops nothing")
     void stopAllPauseSchedulesNeedsTaskCreate() {

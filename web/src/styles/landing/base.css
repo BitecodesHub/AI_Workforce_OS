@@ -1,4 +1,9 @@
 /*
+ * @find: landing styles base, shared foundation, public page motion, reveal animation, lp- classes, home page
+ * @what: Shared foundation styles and motion rules for the public home page.
+ * @flow: Imported by landing/index.css; built on by the other landing files
+ */
+/*
  * Public home page: the shared foundation.
  *
  * Motion. tokens.css sets the console's rule, "Nothing moves, nothing bounces", and the console

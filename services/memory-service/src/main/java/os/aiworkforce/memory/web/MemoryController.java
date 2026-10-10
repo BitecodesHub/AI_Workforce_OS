@@ -1,3 +1,6 @@
+// @find: memory, GET /api/memory/episodes, GET /api/memory/episodes/run/{runId}, search episodes, episodes for a run, run history memory, permission memory:read
+// @what: REST endpoints to read recorded episodes, searched or for one run, in the caller's workspace.
+// @flow: Calls EpisodicMemory; permission memory:read
 package os.aiworkforce.memory.web;
 
 import java.time.Instant;
@@ -69,6 +72,7 @@ public class MemoryController {
         }
     }
 
+    // @find: GET /api/memory/episodes, getEpisodes, endpoint, memory
     @GetMapping("/episodes")
     @RequiresPermission(Permission.Codes.MEMORY_READ)
     @Operation(summary = "What one agent remembers, most important first, or matching a search")
@@ -81,6 +85,7 @@ public class MemoryController {
                 .toList();
     }
 
+    // @find: GET /api/memory/episodes/run/{runId}, getEpisodesForRun, endpoint, memory
     @GetMapping("/episodes/run/{runId}")
     @RequiresPermission(Permission.Codes.MEMORY_READ)
     @Operation(summary = "What was remembered during one run, in order")

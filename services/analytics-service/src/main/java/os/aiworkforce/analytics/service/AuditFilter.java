@@ -1,3 +1,6 @@
+// @find: audit filter, filter audit log, actors, actions, date range, resource, outcome, search criteria
+// @what: Holds the optional filters an auditor narrows the audit log by.
+// @flow: Built by AuditController; used by AuditSearch
 package os.aiworkforce.analytics.service;
 
 import java.time.Instant;

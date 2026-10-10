@@ -1,3 +1,6 @@
+// @find: orchestrator, board, swimlanes, timeline, map, live updates, goals in flight, multi-step work, approvals on board, collapse, /orchestrator, Orchestrator page
+// @what: The Orchestrator page: a live board, map and timeline of the goals and steps assistants are working on.
+// @flow: Routed from App.tsx at /orchestrator; polls the board query and uses Swimlanes and map components
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { ComponentProps } from 'react'
 import { Button, PageHeader } from '../components/ui'
@@ -10,7 +13,7 @@ import { TaskDialog } from '../components/ui/TaskDialog'
 import { AgentsStrip, useAgentBulk } from '../components/orchestrator/AgentsStrip'
 import { OrchestratorBoard } from '../components/orchestrator/Board'
 import { diffCards, countChanged } from '../components/orchestrator/boardChanges'
-import { FlowMap, nodeStatus } from '../components/orchestrator/FlowMap'
+import { FlowMap, workforceSummary } from '../components/orchestrator/FlowMap'
 import { Freshness } from '../components/orchestrator/Freshness'
 import { GoalSheet } from '../components/orchestrator/GoalSheet'
 import { buildBoardCards, columnTitle } from '../components/orchestrator/layout'
@@ -22,7 +25,6 @@ import { withoutFinalStop } from '../components/run/traceModel'
 import { StopEverythingDialog } from '../components/orchestrator/StopEverythingDialog'
 import { SummaryStrip } from '../components/orchestrator/SummaryStrip'
 import { Swimlanes } from '../components/orchestrator/Swimlanes'
-import { formatCount } from '../lib/format'
 import { formatHotkey, useHotkeys } from '../lib/hotkeys'
 import { readStored, writeStored } from '../lib/persist'
 import { useBoard } from '../lib/queries'
@@ -43,8 +45,6 @@ const WINDOW_TO_API: Record<string, BoardWindow> = { '1h': 'PT1H', '2h': 'PT2H',
 
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 
-const BUSY_NODE = new Set(['running', 'asking', 'waiting'])
-
 function readParam(search: URLSearchParams, key: string): string | null {
   return search.get(key)
 }
@@ -60,6 +60,7 @@ function withParams(base: URLSearchParams, changes: Record<string, string | null
   return `${window.location.pathname}${qs ? `?${qs}` : ''}`
 }
 
+// @find: Orchestrator component, orchestrator page, live updates toggle, /orchestrator
 export function Orchestrator() {
   const { search } = useRouter()
   const windowToken = readParam(search, 'window') ?? '2h'
@@ -102,6 +103,7 @@ export function Orchestrator() {
   )
 }
 
+// @find: orchestrator body, board, swimlanes, timeline, approvals sheet
 function OrchestratorBody({
   board,
   live,
@@ -259,8 +261,7 @@ function OrchestratorBody({
   const [workforceOpen, setWorkforceOpen] = useCollapsed('orc.sections.workforce', false)
   const [timelineOpen, setTimelineOpen] = useCollapsed('orc.sections.timeline', false)
   const agentBulk = useAgentBulk(board)
-  const busyAgents = board.agents.filter((agent) => BUSY_NODE.has(nodeStatus(agent))).length
-  const workforceSummary = `${formatCount(board.agents.length)} agents · ${busyAgents > 0 ? `${formatCount(busyAgents)} busy` : 'all idle'}`
+  const workforceLine = workforceSummary(board.agents)
 
   const nothingActive = board.stats.running + board.stats.queued + board.stats.waitingApproval + board.stats.waitingInput === 0
 
@@ -350,7 +351,7 @@ function OrchestratorBody({
 
         <Collapsible
           title="Workforce"
-          summary={workforceSummary}
+          summary={workforceLine}
           open={workforceOpen}
           onToggle={setWorkforceOpen}
           className="orc-collapsible orc-workforce-section"
@@ -427,11 +428,13 @@ function OrchestratorBody({
  * here rather than in the page, so each tick redraws only the lanes, not the board, the map and
  * the inbox beside them.
  */
+// @find: timeline lanes
 function TimelineLanes(props: Omit<ComponentProps<typeof Swimlanes>, 'now'>) {
   const now = useNow(1_000)
   return <Swimlanes {...props} now={now} />
 }
 
+// @find: more icon
 function MoreIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">

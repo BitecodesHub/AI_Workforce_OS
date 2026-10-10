@@ -1,3 +1,6 @@
+// @find: signing key store, token signing key, create key, rotate key, adopt external key, published keys, key overlap, encrypted private key, SigningKeyStore
+// @what: Creates, stores, rotates and publishes the token signing key so all replicas share one.
+// @flow: Used by TokenService; encrypts keys with EnvelopeEncryptionService.
 package os.aiworkforce.identity.service;
 
 import java.text.ParseException;
@@ -68,6 +71,7 @@ public class SigningKeyStore {
                 .plus(security.jwksCacheTtl());
     }
 
+    // @find: active signing key, create first key, load key
     /**
      * The stored active key, creating it on first use.
      *
@@ -120,6 +124,7 @@ public class SigningKeyStore {
                 .orElseThrow(() -> new IllegalStateException("The signing key just stored could not be read back"));
     }
 
+    // @find: adopt configured key, use PEM signing key, retire stored key
     /**
      * Records a key supplied from configuration as the active one.
      *
@@ -159,6 +164,7 @@ public class SigningKeyStore {
         log.info("Configured token signing key {} recorded as the active key", key.getKeyID());
     }
 
+    // @find: published keys, jwks keys, verification keys
     /**
      * The public keys verifiers should accept now: the active key and every retiring key still
      * inside its overlap. A row that cannot be parsed is skipped rather than breaking the set.
@@ -173,6 +179,7 @@ public class SigningKeyStore {
                 .toList();
     }
 
+    // @find: key publish overlap, retiring key lifetime
     /** How long a retired key stays published. */
     public Duration publishOverlap() {
         return publishOverlap;

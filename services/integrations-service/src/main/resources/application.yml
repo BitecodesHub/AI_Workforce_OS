@@ -1,3 +1,5 @@
+# @find: integrations service config, application.yml, datasource, flyway, integrations schema, oauth settings, internal secret, port, connectors config
+# @what: Spring configuration for the integrations service: database, Flyway, OAuth and service settings.
 # Scoped tool access through MCP servers.
 #
 # This file holds only what belongs to this service. Everything shared - security, resilience,

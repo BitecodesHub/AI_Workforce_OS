@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, credentials, API key lookup, decrypt provider key, CredentialResolver
+// @what: Interface that fetches and decrypts a provider credential so llm-core never touches the credential store.
 package os.aiworkforce.llm.spi;
 
 import java.util.Objects;

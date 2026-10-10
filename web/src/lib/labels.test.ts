@@ -1,3 +1,5 @@
+// @find: tests for labels, statusLabel, auditActionLabel, roleLabel, toolLabel, providerKindLabel
+// @what: Unit tests for status, audit and role wording.
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -89,6 +91,8 @@ const NOT_SHOWN: Record<string, string> = {
   workspace_credential_status_valid: 'read through credentialState in routing.ts',
   // A chat attachment is either readable or shown with its own plain reason (AttachmentChips).
   chat_attachments_status_valid: 'shown as the file chip itself, or the reason it could not be read',
+  // A queued chat message is shown by QueuedBubble with its own plain sentence per status.
+  chat_queued_status_valid: 'shown by the queued bubble in Chat, in its own words',
 }
 
 describe('status labels cover the database', () => {
@@ -170,10 +174,7 @@ describe('statusLabel', () => {
   })
 
   it('ignores case and hyphens', () => {
-    expect(statusLabel('circuit', 'CLOSED')).toEqual({ tone: 'success', label: 'Healthy' })
-    expect(statusLabel('circuit', 'half-open').label).toBe('Recovering')
-    expect(statusLabel('circuit', 'HALF_OPEN').label).toBe('Recovering')
-    expect(statusLabel('circuit', 'FORCED_OPEN').label).toBe('Paused')
+    expect(statusLabel('run', 'WAITING-APPROVAL').label).toBe('Waiting for approval')
     expect(statusLabel('toolCall', 'INDETERMINATE').label).toBe('Outcome unknown')
   })
 
@@ -226,6 +227,11 @@ describe('other labels', () => {
     expect(mediaTypeLabel('text/markdown')).toBe('Markdown')
     expect(mediaTypeLabel('text/html')).toBe('HTML')
     expect(mediaTypeLabel('text/csv', 'rota.csv')).toBe('CSV')
+    // Office formats read by the name people know them by, not as a bare extension.
+    expect(mediaTypeLabel('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'stock.xlsx')).toBe(
+      'Excel spreadsheet',
+    )
+    expect(mediaTypeLabel('application/octet-stream', 'plan.pptx')).toBe('PowerPoint')
     expect(mediaTypeLabel('application/octet-stream', 'notes.md')).toBe('Markdown')
     expect(mediaTypeLabel(undefined, 'README')).toBe('File')
     expect(mediaTypeLabel(null)).toBe('File')

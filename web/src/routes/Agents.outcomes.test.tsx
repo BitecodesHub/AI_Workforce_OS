@@ -1,3 +1,6 @@
+// @find: tests for agent outcome figures, success rate, 30-day cost, vitest, Agents component tests, Agents page
+// @what: Automated tests that check the agent outcome figures screen (/agents) behaves as users expect.
+// @flow: Renders Agents from Agents.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -121,6 +124,9 @@ describe('outcome figures', () => {
 
     const legal = cardOf('Legal')
     expect(await within(legal).findByText('Not enough runs yet')).toBeInTheDocument()
+    // A retired agent is folded away until its section is opened.
+    expect(screen.queryByRole('heading', { name: 'Old agent' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Retired \(1\)/ }))
     // An agent with no run at all is the same, with a real zero for its cost.
     const old = cardOf('Old agent')
     expect(within(old).getByText('Not enough runs yet')).toBeInTheDocument()

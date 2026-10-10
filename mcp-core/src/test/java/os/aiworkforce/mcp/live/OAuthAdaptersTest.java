@@ -1,3 +1,5 @@
+// @find: tests for oauth adapters, gmail, google calendar, google drive, google sheets, outlook, microsoft teams, salesforce, bearer token, request shapes, plain failures, instance url
+// @what: Checks the OAuth-backed adapters send the right requests and fail plainly against a stand-in provider.
 package os.aiworkforce.mcp.live;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

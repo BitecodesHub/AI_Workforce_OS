@@ -1,3 +1,6 @@
+// @find: work panel, context panel, wide screen panel, active goals, work in progress, chat side panel
+// @what: Wide-screen side panel showing the work in progress.
+// @flow: Used by the Chat page; renders WorkStrip.
 import { Eyebrow, IconButton, Tag } from '../ui'
 import { Collapsible, useCollapsed } from '../ui/Collapsible'
 import { AgentAvatar } from '../ui/AgentAvatar'
@@ -19,6 +22,7 @@ function CloseIcon() {
   )
 }
 
+// @find: WorkPanel, work panel, work panel, context panel, wide screen panel, active goals
 export function WorkPanel({
   goals,
   questions,

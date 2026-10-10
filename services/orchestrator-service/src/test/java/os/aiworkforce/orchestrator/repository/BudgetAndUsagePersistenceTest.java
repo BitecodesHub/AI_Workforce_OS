@@ -1,3 +1,6 @@
+// @find: tests for budget and usage persistence, repository, insert if absent, caps round trip, spend queries, report by day, report groupings, export paging, policies by org, BudgetAndUsagePersistenceTest, BudgetAndUsagePersistence
+// @what: Tests for BudgetAndUsagePersistence in the orchestrator repository package (7 test methods).
+// @flow: Exercises BudgetAndUsagePersistence
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -104,6 +107,7 @@ class BudgetAndUsagePersistenceTest {
         attempt(ORG_B, AGENT_1, UUID.randomUUID(), "groq", "llama", "SUCCEEDED", "9.00", day2);
     }
 
+    // @find: test insert if absent, budget and usage persistence
     @Test
     @DisplayName("the budget row is created once however often it is asked for, with no caps and stop at a cap")
     void insertIfAbsent() {
@@ -119,6 +123,7 @@ class BudgetAndUsagePersistenceTest {
         assertThat(budgets.findForOrg(ORG_B)).isEmpty();
     }
 
+    // @find: test caps round trip, budget and usage persistence
     @Test
     @DisplayName("caps are saved and read back, and the CHECK on onExhausted is met by the two values the API takes")
     void capsRoundTrip() {
@@ -138,6 +143,7 @@ class BudgetAndUsagePersistenceTest {
         assertThat(reloaded.degradesToSandbox()).isTrue();
     }
 
+    // @find: test spend queries, budget and usage persistence
     @Test
     @DisplayName("spend is summed per workspace, per agent and per run, and another workspace's rows never count")
     void spendQueries() {
@@ -155,6 +161,7 @@ class BudgetAndUsagePersistenceTest {
         assertThat(usage.spendSince(UUID.randomUUID(), monthStart)).isEqualByComparingTo("0");
     }
 
+    // @find: test report by day, budget and usage persistence
     @Test
     @DisplayName("the report by day cuts the day in UTC, and the window is half open")
     void reportByDay() {
@@ -179,6 +186,7 @@ class BudgetAndUsagePersistenceTest {
                 .isEmpty();
     }
 
+    // @find: test report groupings, budget and usage persistence
     @Test
     @DisplayName("each grouping sums tokens and cost, with failed-attempt cost and skipped counts")
     void reportGroupings() {
@@ -207,6 +215,7 @@ class BudgetAndUsagePersistenceTest {
         assertThat(byOutcome).extracting(row -> row[0]).containsExactlyInAnyOrder("SUCCEEDED", "FAILED", "SKIPPED");
     }
 
+    // @find: test export paging, budget and usage persistence
     @Test
     @DisplayName("the export walks a window a page at a time, in order, without skipping or repeating a row")
     void exportPaging() {
@@ -235,6 +244,7 @@ class BudgetAndUsagePersistenceTest {
         assertThat(seen).hasSize(5).doesNotHaveDuplicates();
     }
 
+    // @find: test policies by org, budget and usage persistence
     @Test
     @DisplayName("every policy in a workspace comes back in one query, with its candidates, and no other workspace's")
     void policiesByOrg() {

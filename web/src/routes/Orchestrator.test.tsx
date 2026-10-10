@@ -1,3 +1,6 @@
+// @find: tests for the orchestrator board, live updates off, paused board, vitest, Orchestrator component tests, Orchestrator page
+// @what: Automated tests that check the the orchestrator board screen (/orchestrator) behaves as users expect.
+// @flow: Renders Orchestrator from Orchestrator.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

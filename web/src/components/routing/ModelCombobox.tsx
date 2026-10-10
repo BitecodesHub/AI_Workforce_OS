@@ -1,6 +1,9 @@
+// @find: model picker, model combobox, searchable model list, choose model, provider models, Bedrock models, listbox
+// @what: Searchable model picker that filters a provider's models as you type.
+// @flow: Used by CandidateModelField.
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { capGroups, filterModels, formatContext, groupModels, optionSummary, shortPrice } from '../../lib/modelCatalogue'
+import { NOT_AVAILABLE, capGroups, filterModels, formatContext, groupModels, optionSummary, shortPrice } from '../../lib/modelCatalogue'
 import type { CatalogueModel } from '../../lib/modelCatalogue'
 
 /*
@@ -34,12 +37,13 @@ export type ModelComboboxProps = {
   describedBy?: string | undefined
 }
 
-type Placement = { top?: number; bottom?: number; left: number; width: number; maxHeight: number }
+export type Placement = { top?: number; bottom?: number; left: number; width: number; maxHeight: number }
 
 const GAP = 4
 const EDGE = 8
 
-function place(anchor: HTMLElement): Placement {
+// @find: place, place, model picker, model combobox, searchable model list, choose model
+export function place(anchor: HTMLElement): Placement {
   const rect = anchor.getBoundingClientRect()
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight
@@ -53,6 +57,7 @@ function place(anchor: HTMLElement): Placement {
   return { top: rect.bottom + GAP, left, width, maxHeight: Math.max(160, Math.min(420, below)) }
 }
 
+// @find: ModelCombobox, model combobox, model picker, model combobox, searchable model list, choose model
 export function ModelCombobox({
   label,
   value,
@@ -253,6 +258,7 @@ export function ModelCombobox({
                           {context && <span className="model-combobox-tag">{context}</span>}
                           {option.vision && <span className="model-combobox-tag">Vision</span>}
                           {price && <span className="model-combobox-tag">{price}</span>}
+                          {option.unavailable && <span className="model-combobox-tag">{NOT_AVAILABLE}</span>}
                           {option.id === value && <span className="model-combobox-tag model-combobox-tag-chosen">Chosen</span>}
                         </span>
                       </div>

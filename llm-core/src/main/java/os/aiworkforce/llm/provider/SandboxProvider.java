@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, sandbox, offline model, demo mode, deterministic answers, no API key, free, keyword-only embeddings, asks a person once, SandboxProvider
+// @what: Offline model that answers the same way every time, so the platform runs with no external provider.
+// @flow: Used by ModelRouter as the fallback and by tests.
 package os.aiworkforce.llm.provider;
 
 import java.nio.charset.StandardCharsets;
@@ -73,6 +76,7 @@ public class SandboxProvider implements ChatProvider {
         return ProviderDescriptor.Kind.SANDBOX;
     }
 
+    // @find: sandbox answer
     @Override
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -85,6 +89,7 @@ public class SandboxProvider implements ChatProvider {
                 .delayElement(Duration.ofMillis(120));
     }
 
+    // @find: sandbox streamed answer
     @Override
     public Flux<ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -107,6 +112,7 @@ public class SandboxProvider implements ChatProvider {
                 });
     }
 
+    // @find: sandbox embeddings, keyword only
     @Override
     public Mono<List<float[]>> embed(
             ProviderDescriptor provider, ModelSpec model, List<String> inputs, String credential) {
@@ -117,6 +123,7 @@ public class SandboxProvider implements ChatProvider {
                 () -> inputs.stream().map(this::pseudoEmbedding).toList());
     }
 
+    // @find: sandbox always healthy
     @Override
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         return Mono.just(true);

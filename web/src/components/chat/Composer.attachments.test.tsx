@@ -1,3 +1,6 @@
+// @find: tests for Composer.attachments, attachments, message box, composer, write message, send message, mention agent, @mention, draft, attach files, paste image, answer question, Send button, chat input, POST message
+// @what: Automated tests for Composer.attachments.
+// @flow: Run with the web test runner; covers Composer.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'

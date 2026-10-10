@@ -1,3 +1,6 @@
+// @find: hotkeys, keyboard shortcuts, key bindings, Cmd Ctrl, useHotkeys, chat shortcuts, orchestrator shortcuts
+// @what: Keyboard shortcut binding shared by Chat and the Orchestrator.
+// @flow: Used by the Chat and Orchestrator pages
 import { useEffect } from 'react'
 
 /*
@@ -41,6 +44,7 @@ function matches(hotkey: Hotkey, e: KeyboardEvent): boolean {
   return true
 }
 
+// @find: use hotkeys, bind keyboard shortcuts, shortcut listener
 /** Binds every hotkey to `keydown` while `enabled`, skipping typing targets unless allowed. */
 export function useHotkeys(bindings: Hotkey[], enabled = true): void {
   useEffect(() => {
@@ -62,6 +66,7 @@ export function useHotkeys(bindings: Hotkey[], enabled = true): void {
   }, [bindings, enabled])
 }
 
+// @find: format hotkey, show shortcut keys
 /** The keys a hotkey is shown with, in reading order: for example ['Cmd', 'Shift', 'K']. */
 export function formatHotkey(hotkey: Hotkey): string[] {
   const keys: string[] = []

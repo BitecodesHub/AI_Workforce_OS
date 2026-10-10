@@ -1,3 +1,6 @@
+// @find: agent grants, tool access, connector grant, allow agent to use tool, revoke grant, approval mode per tool, PUT /api/agents/{agentId}/grants/{server}, DELETE grant, permissions tab
+// @what: REST endpoints that grant an agent a connector with an approval mode or revoke it.
+// @flow: Called by the Agent detail Tools and permissions UI
 package os.aiworkforce.orchestrator.web;
 
 import java.util.LinkedHashMap;
@@ -76,6 +79,7 @@ public class AgentGrantController {
             Boolean requireApproval,
             @Min(1) @Max(MAX_CALLS_PER_RUN) Integer maxCallsPerRun) {}
 
+    // @find: grant tool access to agent, PUT /api/agents/{agentId}/grants/{server}, require approval, allowed tools
     @PutMapping("/{server}")
     @RequiresPermission(Permission.Codes.AGENT_GRANT_TOOLS)
     @Transactional
@@ -132,6 +136,7 @@ public class AgentGrantController {
         return details.get(agentId);
     }
 
+    // @find: revoke tool access, DELETE /api/agents/{agentId}/grants/{server}
     @DeleteMapping("/{server}")
     @RequiresPermission(Permission.Codes.AGENT_GRANT_TOOLS)
     @Transactional

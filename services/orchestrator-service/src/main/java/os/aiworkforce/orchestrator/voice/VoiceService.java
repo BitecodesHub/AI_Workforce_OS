@@ -1,3 +1,6 @@
+// @find: voice service, text to speech, transcribe, voices, resolve voice id, validate voice, key check, voice status, ElevenLabs key, VoiceService, agent voice
+// @what: Voice logic: reads the workspace key, lists voices, makes speech and transcribes audio.
+// @flow: Called by VoiceController and VoiceClipService; calls ElevenLabsClient
 package os.aiworkforce.orchestrator.voice;
 
 import java.time.Duration;
@@ -57,10 +60,34 @@ public class VoiceService {
         }
     }
 
+    /** @param verified false when ElevenLabs could not say either way; the key is then stored on trust */
+    public record KeyCheck(boolean verified, String message) {}
+
+    /**
+     * Whether ElevenLabs takes a key. Only a refusal of the key itself stops it being stored: a
+     * key limited to speech may not read the subscription, and ElevenLabs being briefly down says
+     * nothing about the key, so both are let through with a note.
+     */
+    // @find: check ElevenLabs key
+    public KeyCheck checkKey(String key) {
+        try {
+            client.subscription(key);
+            return new KeyCheck(true, null);
+        } catch (ApiException e) {
+            if (e.code() == ErrorCode.PROVIDER_CREDENTIAL_INVALID) {
+                throw ApiException.validation(
+                        "value", "ElevenLabs did not accept this key. Check that it was copied in full and is still active.");
+            }
+            log.debug("ElevenLabs could not check a key: {}", e.getMessage());
+            return new KeyCheck(false, "ElevenLabs could not confirm the key just now, so it was stored as it is.");
+        }
+    }
+
     public boolean keyStored(UUID orgId) {
         return credentials.resolve(orgId.toString(), properties.credentialRef()).isPresent();
     }
 
+    // @find: voice status
     public StatusView status(UUID orgId) {
         Optional<String> key = credentials.resolve(orgId.toString(), properties.credentialRef());
         if (key.isEmpty()) {
@@ -82,6 +109,7 @@ public class VoiceService {
         }
     }
 
+    // @find: list voices
     public List<VoiceView> voices(UUID orgId) {
         Optional<String> key = credentials.resolve(orgId.toString(), properties.credentialRef());
         if (key.isEmpty()) {
@@ -106,6 +134,7 @@ public class VoiceService {
      * <p>Null when no key is stored, or the key's voice list is empty - callers treat that as
      * "no audio to make", not as a failure.
      */
+    // @find: which voice for an agent
     public String resolveVoiceId(UUID orgId, Agent agent) {
         if (agent != null && agent.getVoiceId() != null && !agent.getVoiceId().isBlank()) {
             return agent.getVoiceId();
@@ -121,6 +150,7 @@ public class VoiceService {
     }
 
     /** Refuses a voice id the stored key does not offer. Skipped entirely when no key is stored. */
+    // @find: validate agent voice id
     public void validateVoiceId(UUID orgId, String voiceId) {
         if (!keyStored(orgId)) {
             return;
@@ -140,6 +170,7 @@ public class VoiceService {
      * storing a key, the other by choosing a voice in the ElevenLabs account - so only the second
      * is reported as a voiceId validation failure; the first keeps the contract's own code.
      */
+    // @find: text to speech for agent
     public byte[] speech(UUID orgId, String text, Agent agent) {
         if (!keyStored(orgId)) {
             throw new ApiException(ErrorCode.VOICE_NOT_CONFIGURED);
@@ -152,6 +183,7 @@ public class VoiceService {
     }
 
     /** Speaks {@code text} in an already-chosen voice. */
+    // @find: text to speech with voice
     public byte[] speechWithVoice(UUID orgId, String text, String voiceId) {
         if (text == null || text.isBlank()) {
             throw ApiException.validation("text", "Text must not be blank.");
@@ -162,6 +194,7 @@ public class VoiceService {
         return client.speech(requireKey(orgId), voiceId, text);
     }
 
+    // @find: transcribe audio
     public String transcribe(UUID orgId, byte[] audio, String filename, String contentType) {
         return client.transcribe(requireKey(orgId), audio, filename, contentType);
     }

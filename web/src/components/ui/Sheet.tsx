@@ -1,3 +1,6 @@
+// @find: sheet, side panel, drawer, slide over, detail panel, goal sheet, run sheet, modal non-modal, Sheet
+// @what: Edge-anchored panel built on native dialog for records kept open beside a list.
+// @flow: Used by Orchestrator and Tasks; sibling of Dialog in ui/index.
 import type { ReactNode } from 'react'
 import { useEffect, useId, useRef } from 'react'
 import { Eyebrow, IconButton } from './index'
@@ -12,6 +15,7 @@ import { Eyebrow, IconButton } from './index'
  * modal dialog always owns the whole page until it closes.
  */
 
+// @find: side sheet panel, drawer
 export function Sheet({
   open,
   onClose,

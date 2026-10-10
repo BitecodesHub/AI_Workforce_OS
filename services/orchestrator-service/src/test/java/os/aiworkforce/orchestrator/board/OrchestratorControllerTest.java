@@ -1,3 +1,6 @@
+// @find: tests for orchestrator controller, board, invalid window is422, today window is accepted, board ensures general employee and passes the actor, stop all with no body does not pause schedules, OrchestratorControllerTest, OrchestratorController
+// @what: Tests for OrchestratorController in the orchestrator board package (4 test methods).
+// @flow: Exercises OrchestratorController
 package os.aiworkforce.orchestrator.board;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +69,7 @@ class OrchestratorControllerTest {
                 List.of());
     }
 
+    // @find: test invalid window is422, orchestrator controller
     @Test
     @DisplayName("a window outside the allowed set is a validation error")
     void invalidWindowIs422() {
@@ -75,6 +79,7 @@ class OrchestratorControllerTest {
         verify(board, never()).board(any(), any(), any());
     }
 
+    // @find: test today window is accepted, orchestrator controller
     @Test
     @DisplayName("the TODAY window is accepted")
     void todayWindowIsAccepted() {
@@ -85,6 +90,7 @@ class OrchestratorControllerTest {
         assertThat(result.window()).isEqualTo("TODAY");
     }
 
+    // @find: test board ensures general employee and passes the actor, orchestrator controller
     @Test
     @DisplayName("reading the board ensures General Employee exists and passes the acting person through")
     void boardEnsuresGeneralEmployeeAndPassesTheActor() {
@@ -96,6 +102,7 @@ class OrchestratorControllerTest {
         verify(board).board(ORG, BoardService.Window.H2, actor);
     }
 
+    // @find: test stop all with no body does not pause schedules, orchestrator controller
     @Test
     @DisplayName("a stop-all with no request body does not pause schedules")
     void stopAllWithNoBodyDoesNotPauseSchedules() {

@@ -1,3 +1,6 @@
+// @find: board, orchestrator board, command board, what is running, queue, waiting on a person, approvals, questions, timeline, stats, stop all, pause schedules, BoardService, cost today, failed today
+// @what: Builds the orchestrator board of running, queued and waiting work with costs, and stops everything when asked.
+// @flow: Called by OrchestratorController; uses GoalViews and the goal, task, run and approval repositories.
 package os.aiworkforce.orchestrator.board;
 
 import java.math.BigDecimal;
@@ -277,6 +280,7 @@ public class BoardService {
 
     // ---- Reading the board -------------------------------------------------------------------
 
+    // @find: build board, orchestrator board data, running and queued goals, GET /api/orchestrator/board
     @Transactional(readOnly = true)
     public Board board(UUID orgId, Window window, Actor actor) {
         ZoneId zone = zones.zoneFor(orgId);
@@ -770,6 +774,7 @@ public class BoardService {
      * pause, so a caller with {@code run:cancel} reaches every schedule whoever owns it. The whole
      * call is recorded once in the audit trail, as {@code orchestrator.stop_all} with its counts.
      */
+    // @find: stop all work, emergency stop, pause schedules, POST /api/orchestrator/stop-all
     public StopAllResult stopAll(UUID orgId, boolean pauseSchedules, Actor actor) {
         int schedulesPaused = 0;
         if (pauseSchedules) {

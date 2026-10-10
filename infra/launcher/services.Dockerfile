@@ -1,3 +1,6 @@
+# @find: launcher dockerfile, backend images, build all services once, maven build, jre runtime, SERVICE build arg, pinned versions, non-root user
+# @what: Dockerfile that compiles the whole backend once and produces one runtime image per service for the one-click launcher.
+# @flow: Used by infra/launcher/docker-compose.yml
 # Images for the one-click launcher (Start AI Workforce OS.command / .bat).
 #
 # Unlike infra/Dockerfile, the whole reactor is compiled once in a stage that does not depend on

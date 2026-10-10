@@ -1,3 +1,5 @@
+// @find: session sweep, delete expired sessions, cleanup sessions, scheduled job, nightly cleanup, SessionSweep
+// @what: Scheduled nightly job that deletes long-expired sessions.
 package os.aiworkforce.identity.service;
 
 import java.time.Duration;
@@ -28,6 +30,7 @@ public class SessionSweep {
         this.sessions = sessions;
     }
 
+    // @find: sweep expired sessions, scheduled cleanup, cron 3:17
     @Scheduled(cron = "0 17 3 * * *")
     @Transactional
     public void sweep() {

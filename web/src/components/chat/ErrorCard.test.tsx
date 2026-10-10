@@ -1,3 +1,6 @@
+// @find: tests for ErrorCard, chat error, agent failed, try again, retry, incomplete answer, step limit, output limit, error message, run failed
+// @what: Automated tests for ErrorCard.
+// @flow: Run with the web test runner; covers ErrorCard.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '../../lib/queries'

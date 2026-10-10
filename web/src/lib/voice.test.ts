@@ -1,9 +1,11 @@
+// @find: tests for voice, useVoiceInput, useSpeaker, pickRecorderType, recognitionErrorText
+// @what: Unit tests for voice input and output.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { hash, pickBrowserVoice, pickRecorderType, useSpeaker } from './voice'
+import { hash, pickBrowserVoice, pickRecorderType, recognitionErrorText, useSpeaker } from './voice'
 
 /*
  * Only the pure helpers are tested here. useVoiceInput and useSpeaker depend on MediaRecorder,
@@ -159,3 +161,18 @@ describe('useSpeaker forced speak (D1)', () => {
     expect(speakSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('recognitionErrorText', () => {
+  it('says the microphone is not allowed, rather than that speech was not understood', () => {
+    expect(recognitionErrorText('not-allowed')).toMatch(/not allowed to use the microphone/)
+    expect(recognitionErrorText('service-not-allowed')).toMatch(/not allowed to use the microphone/)
+  })
+
+  it('names a missing microphone and silence, and says nothing when the person stopped it', () => {
+    expect(recognitionErrorText('audio-capture')).toMatch(/No microphone/)
+    expect(recognitionErrorText('no-speech')).toMatch(/Nothing was heard/)
+    expect(recognitionErrorText('aborted')).toBeNull()
+    expect(recognitionErrorText(undefined)).toBe('Speech recognition could not understand that. Try again.')
+  })
+})
+

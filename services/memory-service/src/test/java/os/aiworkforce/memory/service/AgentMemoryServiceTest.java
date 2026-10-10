@@ -1,3 +1,5 @@
+// @find: tests for agent memory service, add note, duplicate note, cap per agent, refuse secrets, update, delete, pin, recall
+// @what: Checks adding, editing, pinning, deleting and recalling agent memory notes.
 package os.aiworkforce.memory.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,6 +113,51 @@ class AgentMemoryServiceTest {
         assertThatThrownBy(() -> service.update(ORG, AGENT, UUID.randomUUID(), "fact", "x y z", "u"))
                 .isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> service.delete(ORG, AGENT, UUID.randomUUID())).isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void pinnedNotesAreRecalledFirstWhateverTheRequestIsAbout() {
+        AgentMemory pinned = AgentMemory.of(ORG, AGENT, "instruction", "Always sign off as the Support team.", "person", "u");
+        pinned.pin(true);
+        AgentMemory hit = AgentMemory.of(ORG, AGENT, "fact", "Refunds take 5 business days.", "agent", "svc");
+        when(repo.findByOrgIdAndAgentIdAndPinnedTrueOrderByPinnedAtDesc(any(), any(), any(Pageable.class)))
+                .thenReturn(List.of(pinned));
+        when(repo.search(ORG, AGENT, "refund | policy", 8)).thenReturn(List.of(hit, pinned));
+
+        assertThat(service.recall(ORG, AGENT, "refund policy", 8)).containsExactly(pinned, hit);
+    }
+
+    @Test
+    void aPinnedNoteDoesNotStopTheFallbackToTheNewest() {
+        AgentMemory pinned = AgentMemory.of(ORG, AGENT, "instruction", "Sign off as Support.", "person", "u");
+        pinned.pin(true);
+        AgentMemory recent = AgentMemory.of(ORG, AGENT, "note", "Prefers short replies.", "person", "u");
+        when(repo.findByOrgIdAndAgentIdAndPinnedTrueOrderByPinnedAtDesc(any(), any(), any(Pageable.class)))
+                .thenReturn(List.of(pinned));
+        when(repo.search(any(), any(), anyString(), anyInt())).thenReturn(List.of());
+        when(repo.findByOrgIdAndAgentIdOrderByUpdatedAtDesc(any(), any(), any(Pageable.class)))
+                .thenReturn(List.of(recent, pinned));
+
+        assertThat(service.recall(ORG, AGENT, "something unrelated", 5)).containsExactly(pinned, recent);
+    }
+
+    @Test
+    void pinningAndUnpinningOnlyMovesThePin() {
+        AgentMemory note = AgentMemory.of(ORG, AGENT, "fact", "Rates are 38.50.", "person", "u");
+        when(repo.findByIdAndOrgIdAndAgentId(note.getId(), ORG, AGENT)).thenReturn(Optional.of(note));
+
+        assertThat(service.pin(ORG, AGENT, note.getId(), true).isPinned()).isTrue();
+        assertThat(note.getPinnedAt()).isNotNull();
+        assertThat(service.pin(ORG, AGENT, note.getId(), false).isPinned()).isFalse();
+        assertThat(note.getPinnedAt()).isNull();
+        assertThat(note.getContent()).isEqualTo("Rates are 38.50.");
+    }
+
+    @Test
+    void forgettingEverythingRemovesOnlyThisAgentsNotes() {
+        when(repo.deleteAllOfAgent(ORG, AGENT)).thenReturn(3);
+        assertThat(service.forgetAll(ORG, AGENT)).isEqualTo(3);
+        verify(repo).deleteAllOfAgent(ORG, AGENT);
     }
 
     @Test

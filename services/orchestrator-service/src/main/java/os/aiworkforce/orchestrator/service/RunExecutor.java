@@ -1,3 +1,6 @@
+// @find: run executor, background run, virtual thread, async run, submit drive, submit resume, dispatch next tasks, task settled, start work without waiting
+// @what: Hands goal, run and resume work to virtual threads so requests answer immediately.
+// @flow: Called by controllers, GoalService, ApprovalService; calls AgentRunner and GoalService
 package os.aiworkforce.orchestrator.service;
 
 import java.util.Optional;
@@ -100,6 +103,7 @@ public class RunExecutor {
         this.runs = runs;
     }
 
+    // @find: dispatch next tasks for workspace
     /**
      * Starts as many of this workspace's ready tasks as it may, each run on a thread of its own,
      * and returns without waiting for any of them.
@@ -125,6 +129,7 @@ public class RunExecutor {
         }
     }
 
+    // @find: on task settled, dispatch next ready tasks
     /** A task settled, so another may be ready, or may now fit under the workspace's cap. */
     @EventListener
     public void onTaskSettled(TaskSettledEvent event) {
@@ -184,6 +189,7 @@ public class RunExecutor {
         }
     }
 
+    // @find: start run in background, drive run
     /**
      * Drives a run that was just prepared, as the person who started it, without making their
      * request wait for it.
@@ -211,6 +217,7 @@ public class RunExecutor {
         }
     }
 
+    // @find: resume run after approval or answer
     /**
      * Resumes a run that was just approved or answered, without making that person's request wait
      * for it.
@@ -223,6 +230,7 @@ public class RunExecutor {
         submitResume(orgId, runId, Actor.SYSTEM);
     }
 
+    // @find: resume run without goal as actor
     /**
      * As {@link #submitResume(UUID, UUID)}, with whom a run that belongs to no goal resumes as -
      * the approver who let it continue, say. A goal's run always resumes as the goal's requester.

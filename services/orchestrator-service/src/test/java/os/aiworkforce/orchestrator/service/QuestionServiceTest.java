@@ -1,3 +1,5 @@
+// @find: tests for question service, questions, answer question, extend question, expiry, resume after answer
+// @what: Unit and integration tests (39 cases) for question service, for example: takes conversation and requester from goal; idempotent on tool call id; refuses schedule goal; refuses fourth ask.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

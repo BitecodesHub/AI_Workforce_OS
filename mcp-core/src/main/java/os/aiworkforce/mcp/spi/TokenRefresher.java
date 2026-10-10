@@ -1,3 +1,6 @@
+// @find: token refresher, renew access token, refresh oauth token, reconnect required, expired sign in, connection store, rejected token
+// @what: Interface an OAuth adapter uses to ask the connection store for a new access token or flag a reconnect.
+// @flow: Implemented in integrations-service OAuthService; called by OAuthAdapter
 package os.aiworkforce.mcp.spi;
 
 import reactor.core.publisher.Mono;

@@ -1,3 +1,5 @@
+// @find: tests for page title, tab title, setPageTitle, setAttentionCount
+// @what: Unit tests for the browser tab title.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAttentionCount, setPageTitle } from './router'
 

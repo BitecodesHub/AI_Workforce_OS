@@ -1,3 +1,5 @@
+// @find: tests for tool labels, plain tool names, create an issue in GitHub, send a message in Gmail, humanise tool names, no internal names shown
+// @what: Checks tool names read as plain actions and internal server__tool names never reach a person.
 package os.aiworkforce.mcp.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;

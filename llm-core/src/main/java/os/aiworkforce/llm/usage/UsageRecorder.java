@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, usage recording, record every attempt, cost tracking, failed attempts, UsageRecorder
+// @what: Interface that writes down every model attempt, successful or not.
+// @flow: Called by ModelRouter.
 package os.aiworkforce.llm.usage;
 
 import java.math.BigDecimal;

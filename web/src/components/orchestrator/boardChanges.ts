@@ -1,3 +1,6 @@
+// @find: board changes, what changed, live update, highlight changed cards, pending changes, updates paused, diffCards, countChanged, Orchestrator board, Freshness
+// @what: Works out which board cards moved between one poll and the next so only they are highlighted.
+// @flow: Used by Board.tsx and Freshness; reads cards from layout.ts buildBoardCards
 import type { Board } from '../../lib/queries'
 import { buildBoardCards } from './layout'
 import type { BoardCard } from './layout'
@@ -18,6 +21,7 @@ function signatureOf(card: BoardCard): string {
  * one of the two (a goal that just appeared, or aged off the window) is not "changed" - it is new
  * or gone, and the inbox and the board's own empty states already say so.
  */
+// @find: diff cards, changed card ids, highlight changed cards on live update
 export function diffCards(previous: Board | null, next: Board): Set<string> {
   if (!previous) return new Set()
   const before = new Map(buildBoardCards(previous).map((card) => [card.id, signatureOf(card)]))
@@ -30,6 +34,7 @@ export function diffCards(previous: Board | null, next: Board): Set<string> {
 }
 
 /** How many cards changed - what Freshness reports as "N changes since" while updates are paused. */
+// @find: count changed cards, pending changes behind paused view
 export function countChanged(previous: Board | null, next: Board): number {
   return diffCards(previous, next).size
 }

@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, where the knowledge base is created, create source, upload file, ingest, ingestion, how the knowledge base is updated, re-upload, replace document, keep both, reindex, re-index, delete document, delete source, rename source, restricted source, agent-owned source, chunking, embeddings, Qdrant, IngestionService
+// @what: Core of the knowledge base: creates sources, ingests uploaded files (extract, chunk, embed, store), replaces re-uploads, reindexes, renames and deletes.
+// @flow: Called by KnowledgeController, AgentKnowledgeController and EmbeddingModelChange; uses TextExtractor, Chunker, EmbeddingService, QdrantClient and the repositories.
 package os.aiworkforce.knowledge.service;
 
 import java.time.Instant;
@@ -68,6 +71,10 @@ public class IngestionService {
     static final String VECTORS_UNAVAILABLE = "Indexed for keyword search. The vector store was unavailable, so "
             + "meaning-based search will be less accurate until it is reindexed.";
 
+    /** The same, when it was the embedding model rather than the vector store that failed. */
+    static final String EMBEDDING_UNAVAILABLE = "Indexed for keyword search. The embedding model could not be used, so "
+            + "meaning-based search will be less accurate until it is reindexed.";
+
     static final String SOURCE_VECTOR_ERROR = "Vector indexing is unavailable: ";
 
     /** A transaction that lost a race on the source's counts is run again, this many times in all. */
@@ -104,6 +111,52 @@ public class IngestionService {
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
+    /** The workspace's embedding model choice; absent in tests that build this by hand. */
+    private EmbeddingSettings settings;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setEmbeddingSettings(EmbeddingSettings settings) {
+        this.settings = settings;
+    }
+
+    /** The embedding model new sources in a workspace start on. */
+    private EmbeddingSettings.Choice choiceFor(UUID orgId) {
+        return settings == null ? EmbeddingSettings.Choice.KEYWORD_ONLY : settings.current(orgId);
+    }
+
+    /** Where a source's vectors were before a change of embedding model. */
+    public record PreviousEmbedding(String collection, boolean searchedByMeaning) {}
+
+    // @find: switch source to a new embedding model, move source to new vector collection
+    /**
+     * Moves one source onto another embedding model: the new model, its width and its own
+     * collection. The passages are untouched; their vectors are written again by {@link #reindex}.
+     */
+    public PreviousEmbedding switchEmbedding(UUID orgId, UUID sourceId, EmbeddingSettings.Choice choice) {
+        return transactionally(() -> {
+            Source source = requireSource(orgId, sourceId);
+            PreviousEmbedding previous =
+                    new PreviousEmbedding(source.getCollection(), source.isSearchableByMeaning());
+            source.setEmbeddingProvider(choice.provider());
+            source.setEmbeddingModel(choice.model());
+            source.setEmbeddingDimension(choice.dimension());
+            source.setCollection(collectionOf(orgId, choice));
+            if (!choice.searchesByMeaning()) {
+                // Keyword search only, by choice: an old vector failure no longer describes it.
+                source.setLastError(null);
+            }
+            sources.save(source);
+            return previous;
+        });
+    }
+
+    static String collectionOf(UUID orgId, EmbeddingSettings.Choice choice) {
+        return choice.searchesByMeaning()
+                ? QdrantClient.collectionFor("aiwos", orgId, choice.provider(), choice.model(), choice.dimension())
+                : QdrantClient.collectionFor("aiwos", orgId, choice.dimension());
+    }
+
+    // @find: upload mode, replace existing file, keep both versions, re-upload same name
     /**
      * What an upload does with a file whose name is already in the source.
      *
@@ -154,6 +207,7 @@ public class IngestionService {
             String vectorWarning,
             Instant replacedIndexedAt) {}
 
+    // @find: create knowledge source, new source, where the knowledge base is created, add source
     /**
      * Creates a source to upload into, so a workspace has somewhere to put its first file.
      *
@@ -166,6 +220,7 @@ public class IngestionService {
         return createSource(orgId, null, name, kind, restricted);
     }
 
+    // @find: create agent-owned source, agent documents source, create knowledge base for an AI employee
     /**
      * As {@link #createSource(UUID, String, String, boolean)}; with an {@code agentId} the source
      * belongs to that one agent, which alone searches it.
@@ -187,12 +242,17 @@ public class IngestionService {
         source.setStatus("idle");
         source.setRestricted(restricted);
         source.setAgentId(agentId);
-        // The collection name carries the embedding width, so changing model cannot write
-        // vectors of one size into an index built for another.
-        source.setCollection(QdrantClient.collectionFor("aiwos", orgId, source.getEmbeddingDimension()));
+        // On the workspace's chosen embedding model, in that model's own collection, so changing
+        // model cannot write vectors of one model into an index built for another.
+        EmbeddingSettings.Choice choice = choiceFor(orgId);
+        source.setEmbeddingProvider(choice.provider());
+        source.setEmbeddingModel(choice.model());
+        source.setEmbeddingDimension(choice.dimension());
+        source.setCollection(collectionOf(orgId, choice));
         return sources.save(source);
     }
 
+    // @find: update source, rename source, restrict source, make source restricted, change who can search
     /**
      * Renames a source, or changes who may search it.
      *
@@ -229,11 +289,13 @@ public class IngestionService {
         });
     }
 
+    // @find: upload document, ingest file, re-upload replaces old version
     /** Ingests one uploaded file, replacing any document of the same name. */
     public IngestResult ingest(UUID orgId, UUID sourceId, String filename, byte[] content) {
         return ingest(orgId, sourceId, filename, content, UploadMode.REPLACE);
     }
 
+    // @find: ingest uploaded file, update document by re-upload, replace or keep both, extract chunk embed store, unchanged file skipped
     /**
      * Ingests one uploaded file.
      *
@@ -264,7 +326,7 @@ public class IngestionService {
         } catch (RuntimeException e) {
             // Not a failed upload. The passages are in Postgres, so keyword search finds the
             // document; what is missing is the meaning-based half, and the person is told so.
-            vectorWarning = VECTORS_UNAVAILABLE;
+            vectorWarning = e instanceof EmbeddingService.EmbeddingRefused ? EMBEDDING_UNAVAILABLE : VECTORS_UNAVAILABLE;
             sourceError = SOURCE_VECTOR_ERROR + e.getMessage();
             log.warn("Vector indexing failed for {}; keyword search still works", filename);
         }
@@ -564,6 +626,9 @@ public class IngestionService {
      * about; failing the whole upload would throw away work that mostly succeeded.
      */
     private void writeVectors(Source source, UUID documentId, List<Chunk> stored) {
+        if (!writesVectors(source)) {
+            return;
+        }
         vectors.ensureCollection(source.getCollection(), source.getEmbeddingDimension());
 
         List<float[]> embedded = embeddings.embed(
@@ -590,6 +655,16 @@ public class IngestionService {
     }
 
     /**
+     * Whether a source's passages are written to the vector store at all. Not for a source on the
+     * offline sandbox's embeddings: search never reads those vectors (they carry no meaning), so
+     * writing them only cost a call, and with the store down it told people that search by meaning
+     * had failed for a source that never had it (seen 8 Oct 2026).
+     */
+    static boolean writesVectors(Source source) {
+        return source.isSearchableByMeaning();
+    }
+
+    /**
      * Places a passage on a page, for the citation.
      *
      * <p>An estimate from the character offset, because the extractor flattens a PDF into one
@@ -613,6 +688,7 @@ public class IngestionService {
      */
     public record ReindexResult(int documentCount, int chunkCount, boolean vectorised, String detail, int recovered) {}
 
+    // @find: reindex source, rebuild search index, re-embed documents, recover pending documents
     /**
      * Re-writes vectors for every indexed document in a source, from its already-stored chunks,
      * and finishes any document whose indexing stopped part way.
@@ -634,6 +710,15 @@ public class IngestionService {
      * connection for the whole run nor loads every passage at once.
      */
     public ReindexResult reindex(UUID orgId, UUID sourceId) {
+        return reindex(orgId, sourceId, passages -> {});
+    }
+
+    // @find: reindex source with progress, re-index documents, progress bar
+    /**
+     * As {@link #reindex(UUID, UUID)}, saying after each document how many of its passages were
+     * attempted, for a progress bar.
+     */
+    public ReindexResult reindex(UUID orgId, UUID sourceId, java.util.function.IntConsumer progress) {
         Source source = requireSource(orgId, sourceId);
 
         List<Document> candidates = documents.findBySourceIdOrderByTitle(sourceId).stream()
@@ -645,6 +730,7 @@ public class IngestionService {
         int recovered = 0;
         boolean anyVectorised = false;
         String failure = null;
+        boolean embeddingRefused = false;
         for (Document document : candidates) {
             UUID documentId = document.getId();
             List<Chunk> stored = chunks.findByDocumentIdOrderByPosition(documentId);
@@ -655,6 +741,12 @@ public class IngestionService {
             totalChunks += stored.size();
             List<UUID> written = stored.stream().map(Chunk::getId).toList();
             try {
+                if (embeddingRefused) {
+                    // The model refused an earlier document and will refuse this one the same
+                    // way; asking again is a call, and on a metered provider a charge, for nothing.
+                    throw new EmbeddingService.EmbeddingRefused(
+                            source.getEmbeddingProvider(), source.getEmbeddingModel(), "it refused an earlier document.");
+                }
                 writeVectors(source, documentId, stored);
                 anyVectorised = true;
                 // A document replaced or erased while its vectors were being written leaves points
@@ -664,7 +756,10 @@ public class IngestionService {
                         source.getCollection(),
                         written.stream().filter(id -> !current.contains(id)).toList());
             } catch (RuntimeException e) {
-                failure = e.getMessage();
+                if (!embeddingRefused) {
+                    failure = e.getMessage();
+                }
+                embeddingRefused = embeddingRefused || e instanceof EmbeddingService.EmbeddingRefused;
                 log.warn("Vector indexing failed for document {}; keyword search still works", documentId);
             }
             // Finished whether or not the vectors could be written: its passages are in Postgres,
@@ -672,6 +767,7 @@ public class IngestionService {
             if (isUnfinished(document) && Boolean.TRUE.equals(transactionally(() -> settle(orgId, documentId, written)))) {
                 recovered++;
             }
+            progress.accept(stored.size());
         }
 
         boolean recordOutcome = attempted > 0;
@@ -688,7 +784,9 @@ public class IngestionService {
 
         String detail = anyVectorised || candidates.isEmpty()
                 ? null
-                : "The vector store is still unavailable. Keyword search is unaffected.";
+                : embeddingRefused
+                        ? failure + " Keyword search is unaffected."
+                        : "The vector store is still unavailable. Keyword search is unaffected.";
         log.info(
                 "Reindexed {} document(s), {} passage(s), {} recovered from an unfinished indexing, for source {}",
                 candidates.size(),
@@ -721,6 +819,7 @@ public class IngestionService {
         return true;
     }
 
+    // @find: delete document, remove file from knowledge base, erase passages and vectors
     /**
      * Erases one document: its passages, its record and its vectors.
      *
@@ -750,6 +849,7 @@ public class IngestionService {
                 actor());
     }
 
+    // @find: delete source, remove knowledge source, erase all documents in source
     /**
      * Erases a source with every document and passage in it.
      *

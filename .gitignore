@@ -41,3 +41,6 @@ infra/compose/data/
 .settings/
 .classpath
 .project
+
+# The AWS compose file's local config directory (on the server it is /opt/aiwos/config).
+infra/aws/config/

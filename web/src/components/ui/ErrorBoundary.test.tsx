@@ -1,3 +1,6 @@
+// @find: tests for error boundary, chunk load error, reload once, render error, error screen, ErrorBoundary
+// @what: Tests the error screen, the single reload on a stale chunk and the way out.
+// @flow: Covers ErrorBoundary.tsx.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'

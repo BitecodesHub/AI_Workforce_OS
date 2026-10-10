@@ -1,3 +1,6 @@
+// @find: oauth providers, google, microsoft, salesforce, scopes per connector, gmail scopes, calendar scopes, drive scopes, sheets scopes, outlook scopes, teams scopes, consent screen permissions, offline access refresh token
+// @what: Defines the three OAuth providers and exactly which permissions each connector asks for.
+// @flow: Read by ConnectorCatalog and OAuthService
 package os.aiworkforce.mcp.oauth;
 
 import java.util.LinkedHashMap;
@@ -127,6 +130,7 @@ public final class OAuthProviders {
         return Optional.ofNullable(PROVIDERS.get(id));
     }
 
+    // @find: provider for a connector, which oauth provider does gmail use
     /** The provider a connector signs in through, or empty when it does not use OAuth. */
     public static Optional<OAuthProvider> forServer(String server) {
         return Optional.ofNullable(PROVIDER_OF_SERVER.get(server)).map(PROVIDERS::get);

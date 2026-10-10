@@ -1,3 +1,6 @@
+// @find: chat, conversation, earlier messages, show earlier messages, long conversation, message history paging, conversation visibility, private, workspace, add people, participants, share conversation, Chat page
+// @what: Keeps earlier pages of a long conversation on screen and changes who can see or join a conversation.
+// @flow: Called by Chat route and AddPeopleDialog; calls api() against /api/conversations.
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
@@ -77,6 +80,7 @@ type Loaded = { id: string | null; live: readonly ChatMessage[]; older: ChatMess
 
 const applyNow = (update: () => void) => update()
 
+// @find: show earlier messages, load older messages; route: GET /api/conversations/{id}/messages?before=; used by: Chat page
 /**
  * The whole loaded thread of `conversationId`, given its live window (`live`, which must keep its
  * identity between renders until it changes) and whether the platform said there is more before
@@ -158,6 +162,7 @@ export function useEarlierPages(
 
 /* ---- Who can read a conversation ------------------------------------------------------------------ */
 
+// @find: make conversation private or workspace; route: PUT /api/conversations/{id}/visibility; used by: Chat page
 /** Opens a conversation to the whole workspace, or makes it private again. */
 export function useSetConversationVisibility() {
   const client = useQueryClient()
@@ -168,6 +173,7 @@ export function useSetConversationVisibility() {
   })
 }
 
+// @find: who is in a conversation; route: GET /api/conversations/{id}/participants; used by: Chat page (AddPeopleDialog)
 /** The people added to a conversation besides the person who started it. */
 export function useConversationPeople(id: string | null, enabled = true) {
   return useQuery({
@@ -178,6 +184,7 @@ export function useConversationPeople(id: string | null, enabled = true) {
   })
 }
 
+// @find: add people to conversation; route: POST /api/conversations/{id}/participants; used by: Chat page (AddPeopleDialog)
 export function useAddConversationPeople() {
   const client = useQueryClient()
   return useMutation({
@@ -187,6 +194,7 @@ export function useAddConversationPeople() {
   })
 }
 
+// @find: remove person from conversation; route: DELETE /api/conversations/{id}/participants/{userId}; used by: Chat page (AddPeopleDialog)
 export function useRemoveConversationPerson() {
   const client = useQueryClient()
   return useMutation({

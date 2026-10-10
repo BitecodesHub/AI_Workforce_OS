@@ -1,3 +1,6 @@
+// @find: permissions, permission codes, role builder checkboxes, rbac, agent:read, audit:read, memory:read, workspace:update, planned permissions, permission registry
+// @what: Registry of every permission code the platform knows, which the console shows and endpoints require.
+// @flow: Seeded by identity-service PermissionSeeder; enforced via @RequiresPermission
 package os.aiworkforce.platform.rbac;
 
 import java.util.List;

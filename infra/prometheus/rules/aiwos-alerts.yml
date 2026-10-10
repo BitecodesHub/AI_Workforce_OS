@@ -1,3 +1,6 @@
+# @find: prometheus alerts, alert rules, runs abandoned, model provider failure rate, audit chain broken, high error rate, on-call, monitoring, severity
+# @what: Prometheus alert rules for agent runs, model providers, audit chain integrity and service health.
+# @flow: Loaded by infra/prometheus/prometheus.yml
 groups:
   - name: aiwos
     rules:

@@ -1,3 +1,6 @@
+// @find: schedule goals repository, goals started by a schedule, schedule run history query, last goal of schedule, ScheduleGoals
+// @what: Repository finding the goals a schedule has started.
+// @flow: Used by ScheduleController runs and ScheduleService
 package os.aiworkforce.orchestrator.schedule;
 
 import java.util.List;

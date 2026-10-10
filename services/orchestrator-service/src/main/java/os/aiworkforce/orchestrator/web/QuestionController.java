@@ -1,3 +1,6 @@
+// @find: questions api, answer question, extend question, pending questions, agent asked me, /api/orchestrator/questions, Questions inbox, Answer button
+// @what: REST endpoints to list, answer or extend questions a run is waiting on.
+// @flow: Delegates to QuestionService and resumes the run via RunExecutor
 package os.aiworkforce.orchestrator.web;
 
 import java.util.List;
@@ -75,6 +78,7 @@ public class QuestionController {
     /** @param runStatus the run's status as the answer is accepted, usually still waiting_input */
     public record AnswerResult(QuestionService.QuestionView question, String runStatus) {}
 
+    // @find: list questions, GET /api/orchestrator/questions
     /**
      * Pending questions, the soonest to close first, or every question newest first.
      *
@@ -112,6 +116,7 @@ public class QuestionController {
         return questions.views(rows, actor);
     }
 
+    // @find: get question, GET /api/orchestrator/questions/{id}
     @GetMapping("/{id}")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "One question")
@@ -126,6 +131,7 @@ public class QuestionController {
     @RequiresPermission(
             value = {Permission.Codes.TASK_CREATE, Permission.Codes.AGENT_RUN},
             mode = RequiresPermission.Mode.ANY)
+    // @find: answer question, skip, POST /api/orchestrator/questions/{id}/answer
     @Operation(summary = "Answer a question, and let the run that asked it continue")
     public AnswerResult answer(@PathVariable UUID id, @Valid @RequestBody AnswerRequest request) {
         // Commits on return, so the resume below reads the answer from the database.
@@ -149,6 +155,7 @@ public class QuestionController {
     @RequiresPermission(
             value = {Permission.Codes.TASK_CREATE, Permission.Codes.AGENT_RUN},
             mode = RequiresPermission.Mode.ANY)
+    // @find: extend question deadline, POST .../extend
     @Operation(summary = "Keep a question open for longer, up to seven days from when it was asked")
     public QuestionService.QuestionView extend(@PathVariable UUID id) {
         questions.find(orgId(), id).ifPresent(this::requireVisible);

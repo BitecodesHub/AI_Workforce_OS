@@ -1,3 +1,6 @@
+// @find: attachments, chat attachments, upload file, attach file to message, delete attachment, download attachment, open attachment, save to knowledge, file size limit, pdf, image, spreadsheet, chip error
+// @what: Upload, validate, fetch, download and save-to-knowledge helpers for files attached to a chat message.
+// @flow: Used by the chat composer and message bubbles; calls api.ts, saves into the knowledge base via the attachments route
 import { ApiError, NETWORK_FAILURE, api, normaliseFields, refreshAccessToken } from './api'
 import type { ChatMessage } from './queries'
 import { accessToken, clearSession } from './session'
@@ -120,6 +123,7 @@ export function isViewableImage(attachment: { name: string; mimeType: string }):
   return ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extensionOf(attachment.name)) && !mime.startsWith('image/hei')
 }
 
+// @find: check file, validate attachment, size and type limit, 25 MB, 10 files
 /** The plain reason a file cannot be attached, or null when it can be uploaded. */
 export function checkFile(file: { name: string; type: string; size: number }): string | null {
   if (kindOf(file.name, file.type) === null) {
@@ -128,6 +132,16 @@ export function checkFile(file: { name: string; type: string; size: number }): s
   if (file.size > MAX_ATTACHMENT_BYTES) return `${file.name} is larger than 25 MB.`
   if (file.size === 0) return `${file.name} is empty.`
   return null
+}
+
+/**
+ * The reason on the chip itself. The chip already shows the name above it, so a reason that
+ * starts with the name ("report.exe is not a file type…", written that way for the spoken status
+ * line) says "This file" instead of repeating a long name across three wrapped lines.
+ */
+export function chipError(item: { name: string; error?: string | null }): string {
+  const error = item.error ?? 'This file could not be attached.'
+  return error.startsWith(`${item.name} `) ? `This file ${error.slice(item.name.length + 1)}` : error
 }
 
 /** "820 bytes", "14 KB", "3.2 MB". */
@@ -232,6 +246,7 @@ function sendUpload(
   })
 }
 
+// @find: upload attachment, attach file, POST /api/chat/attachments, chat composer
 /**
  * Uploads one file, reporting progress from 0 to 1. Without a conversation id the upload is a
  * draft for a chat not created yet. A cancelled upload rejects with an AbortError; every other
@@ -260,11 +275,13 @@ export async function uploadAttachment(
   return body as AttachmentView
 }
 
+// @find: delete attachment, remove attached file, DELETE attachment
 /** Removes an attachment that was uploaded but not sent. */
 export function deleteAttachment(id: string): Promise<void> {
   return api<void>(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+// @find: fetch attachment, download file bytes, view image
 /** The file's bytes, with the bearer token and one refresh on 401, as fetchAudio does. */
 export async function fetchAttachmentBlob(id: string, signal?: AbortSignal): Promise<Blob> {
   const send = async (token: string | null) => {
@@ -327,6 +344,7 @@ function viewableBlob(blob: Blob, attachment: Openable): Blob | null {
   return null
 }
 
+// @find: open attachment, view attached file in new tab
 /**
  * Opens a PDF, image or text file in a new tab, and downloads anything else (Office files, HEIC).
  * The tab is opened before the bytes arrive, while the click still counts as the person's, so a
@@ -353,11 +371,13 @@ export async function openAttachment(attachment: Openable): Promise<void> {
   }
 }
 
+// @find: download attachment, save file to disk
 /** Saves the file to the person's computer under its own name. */
 export async function downloadAttachment(attachment: { id: string; name: string }): Promise<void> {
   saveBlob(await fetchAttachmentBlob(attachment.id), attachment.name)
 }
 
+// @find: save attachment to knowledge, add chat file to knowledge base, Save to Knowledge button
 /** Adds the file to the workspace's knowledge, so agents can find it in later chats. */
 export function saveAttachmentToKnowledge(id: string): Promise<{ documentId: string; sourceName: string }> {
   return api<{ documentId: string; sourceName: string }>(`${BASE}/${encodeURIComponent(id)}/knowledge`, { method: 'POST' })
@@ -365,6 +385,7 @@ export function saveAttachmentToKnowledge(id: string): Promise<{ documentId: str
 
 const KINDS = new Set<AttachmentKind>(['pdf', 'document', 'presentation', 'spreadsheet', 'text', 'image'])
 
+// @find: sent attachments, files on a message, message detail
 /** The attachments a sent message carries, skipping any entry too damaged to show. */
 export function sentAttachmentsOf(message: Pick<ChatMessage, 'detail'>): SentAttachment[] {
   const detail: unknown = message.detail

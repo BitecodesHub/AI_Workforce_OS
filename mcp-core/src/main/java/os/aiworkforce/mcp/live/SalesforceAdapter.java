@@ -1,3 +1,6 @@
+// @find: salesforce, crm, accounts, opportunities, leads, search accounts, list opportunities, get opportunity, create lead, update opportunity, SOQL, instance url, OAuth, live adapter, real API, sales
+// @what: Live Salesforce connector: runs salesforce__ tools (accounts, opportunities, leads) against the connected org's instance URL with an OAuth access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.time.LocalDate;
@@ -74,6 +77,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Salesforce search accounts, tool salesforce__search_accounts, live Salesforce call
     private Mono<ToolResult> searchAccounts(ToolInvocation invocation, JsonNode arguments, String token) {
         String term = required(arguments, "query");
         String soql = "SELECT Id,Name,Industry,BillingCity FROM Account WHERE Name LIKE '%" + likeTerm(term)
@@ -91,6 +95,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Salesforce list opportunities, tool salesforce__list_opportunities, live Salesforce call
     private Mono<ToolResult> listOpportunities(ToolInvocation invocation, JsonNode arguments, String token) {
         String stage = text(arguments, "stage");
         String soql = "SELECT Id,Name,Account.Name,StageName,Amount,CloseDate FROM Opportunity"
@@ -103,6 +108,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Salesforce get opportunity, tool salesforce__get_opportunity, live Salesforce call
     private Mono<ToolResult> getOpportunity(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = recordId(required(arguments, "id"));
         return get(token, DATA + "/sobjects/Opportunity/{id}", id).map(opportunity -> {
@@ -114,6 +120,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Salesforce create lead, tool salesforce__create_lead, live Salesforce call
     private Mono<ToolResult> createLead(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         String first = text(arguments, "firstName");
@@ -133,6 +140,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Salesforce update opportunity, tool salesforce__update_opportunity, live Salesforce call
     private Mono<ToolResult> updateOpportunity(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = recordId(required(arguments, "id"));
         ObjectNode body = json.createObjectNode();

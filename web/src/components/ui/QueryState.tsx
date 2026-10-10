@@ -1,3 +1,6 @@
+// @find: query state, loading, error, empty, permission denied, not found, stale data banner, retry, back link, empty icon, QueryState, BackLink, EmptyIcon
+// @what: Shared rendering of loading, error, empty, missing and no-permission states for any data screen.
+// @flow: Used by almost every screen with a TanStack query.
 import type { ReactNode } from 'react'
 import { ApiError, describeApiError } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
@@ -29,6 +32,7 @@ function isMissingRecord(error: unknown): boolean {
   return error.status === 404 || (error.status === 400 && error.code === 'malformed_request')
 }
 
+// @find: loading error empty state wrapper, retry, permission denied
 export function QueryState<T>({
   query,
   permission,
@@ -92,6 +96,9 @@ export function QueryState<T>({
           title="This item does not exist"
           body="It may have been removed, or the link is incomplete."
           action={notFound}
+          // A screen given a way out (notFound) is a detail page whose own h1 never arrives, so
+          // this is its heading: focus and screen readers land on it rather than on nothing.
+          titleAs={notFound ? 'h1' : 'h2'}
         />
       )
     }
@@ -106,6 +113,7 @@ export function QueryState<T>({
   return <>{children(query.data)}</>
 }
 
+// @find: back link
 /** Back to the list a detail screen belongs to. */
 export function BackLink({ href, label }: { href: string; label: string }) {
   return (
@@ -118,6 +126,7 @@ export function BackLink({ href, label }: { href: string; label: string }) {
   )
 }
 
+// @find: empty state icon
 /** The empty-state icon used across lists, kept in one place. */
 export function EmptyIcon({ kind }: { kind: 'agent' | 'inbox' | 'document' | 'task' | 'search' }) {
   const paths: Record<string, ReactNode> = {
@@ -154,4 +163,5 @@ export function EmptyIcon({ kind }: { kind: 'agent' | 'inbox' | 'document' | 'ta
   )
 }
 
+// @find: re-export EmptyState PermissionState
 export { EmptyState, PermissionState }

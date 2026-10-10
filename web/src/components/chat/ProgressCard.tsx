@@ -1,3 +1,6 @@
+// @find: goal progress, live goal, chain of agents, task steps, who is up next, review, approval in chat, orchestrator progress, work in progress, run trace
+// @what: Live card for a goal's chain of agent tasks and what each is doing now.
+// @flow: Used by MessageItem and WorkStrip; uses RunTraceCompact and InlineApproval.
 import { useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { InlineApproval } from '../run/InlineApproval'
@@ -151,6 +154,7 @@ function LiveHeader({
   )
 }
 
+// @find: ProgressCard, progress card, goal progress, live goal, chain of agents, task steps
 export function ProgressCard({
   goal,
   agentNames,

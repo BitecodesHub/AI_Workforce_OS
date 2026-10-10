@@ -1,3 +1,6 @@
+// @find: tests for schedule sweep, schedule, processes due schedules, failure is swallowed, ScheduleSweepTest, ScheduleSweep
+// @what: Tests for ScheduleSweep in the orchestrator schedule package (2 test methods).
+// @flow: Exercises ScheduleSweep
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.mockito.Mockito.mock;
@@ -20,6 +23,7 @@ class ScheduleSweepTest {
         sweep = new ScheduleSweep(service);
     }
 
+    // @find: test processes due schedules, schedule sweep
     @Test
     @DisplayName("processes due schedules through the service, in one bounded batch")
     void processesDueSchedules() {
@@ -30,6 +34,7 @@ class ScheduleSweepTest {
         verify(service).sweepDue(50);
     }
 
+    // @find: test failure is swallowed, schedule sweep
     @Test
     @DisplayName("a failing sweep does not escape the tick")
     void failureIsSwallowed() {

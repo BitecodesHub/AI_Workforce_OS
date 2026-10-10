@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, token estimate, count tokens, context window check, pessimistic estimate, TokenEstimate
+// @what: Cheap, deliberately pessimistic token estimate used before a call.
 package os.aiworkforce.llm.model;
 
 /**

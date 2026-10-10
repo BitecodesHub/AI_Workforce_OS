@@ -1,3 +1,5 @@
+// @find: tests for agent knowledge search, internal search, search as a person, restricted sources, person permissions, POST /internal/knowledge/search, knowledge base
+// @what: Checks who an agent's document search is made for and what that person may read.
 package os.aiworkforce.knowledge.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

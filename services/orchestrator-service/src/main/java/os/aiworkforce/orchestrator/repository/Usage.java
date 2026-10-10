@@ -1,3 +1,9 @@
+// @find: usage repository, spend since, spend by agent, cost for a run, usage report by day, by provider, by model, by agent, by outcome, usage export, Usage page, Usage
+// @what: Spring Data repository for LlmUsageRecord rows: spend sums for budgets and aggregated usage reports and export.
+// @flow: Used by budget checks, the Usage page and CSV export.
+// @find: usage repository, spend since, spend by agent, cost for a run, usage report by day, by provider, by model, by agent, by outcome, usage export, Usage page, Usage
+// @what: Spring Data repository for LlmUsageRecord rows: spend sums for budgets and aggregated usage reports and export.
+// @flow: Used by budget checks, the Usage page and CSV export.
 package os.aiworkforce.orchestrator.repository;
 
 import java.math.BigDecimal;
@@ -21,6 +27,8 @@ import os.aiworkforce.orchestrator.domain.LlmUsageRecord;
 
 public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
 
+    // @find: spend since a time, monthly spend, budget check
+    // @find: spend since a time, monthly spend, budget check
     @Query(
             """
             select coalesce(sum(u.cost), 0) from LlmUsageRecord u
@@ -28,6 +36,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
             """)
     BigDecimal spendSince(@Param("orgId") UUID orgId, @Param("since") Instant since);
 
+    // @find: spend by agent since a time, daily agent cap
+    // @find: spend by agent since a time, daily agent cap
     /**
      * What one agent has cost its workspace since {@code since}, across every run it made, for the
      * per-agent daily cap. Served by the index on workspace, agent and time.
@@ -40,6 +50,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
     BigDecimal spendSinceByAgent(
             @Param("orgId") UUID orgId, @Param("agentId") UUID agentId, @Param("since") Instant since);
 
+    // @find: cost of a run, per run cap
+    // @find: cost of a run, per run cap
     /**
      * What one run has cost so far, across every attempt the router made for it, counting only the
      * rows of {@code orgId}.
@@ -65,6 +77,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
      * index. The window is half open so consecutive reports never count a boundary row twice.
      */
 
+    // @find: usage report by day
+    // @find: usage report by day
     /**
      * The day is the UTC day, spelled {@code YYYY-MM-DD}. Native, because the day is cut in the
      * database in an explicit time zone: a cast in a query language would cut it in whatever zone
@@ -87,6 +101,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
             nativeQuery = true)
     List<Object[]> reportByDay(@Param("orgId") UUID orgId, @Param("from") Instant from, @Param("to") Instant to);
 
+    // @find: usage report by provider
+    // @find: usage report by provider
     @Query(
             """
             select u.providerId,
@@ -102,6 +118,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
             """)
     List<Object[]> reportByProvider(@Param("orgId") UUID orgId, @Param("from") Instant from, @Param("to") Instant to);
 
+    // @find: usage report by model
+    // @find: usage report by model
     @Query(
             """
             select concat(u.providerId, '/', u.modelId),
@@ -117,6 +135,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
             """)
     List<Object[]> reportByModel(@Param("orgId") UUID orgId, @Param("from") Instant from, @Param("to") Instant to);
 
+    // @find: usage report by agent
+    // @find: usage report by agent
     /** The key is the agent's id, or null for spend that belongs to no agent (chat, knowledge). */
     @Query(
             """
@@ -133,6 +153,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
             """)
     List<Object[]> reportByAgent(@Param("orgId") UUID orgId, @Param("from") Instant from, @Param("to") Instant to);
 
+    // @find: usage report by outcome, failed skipped succeeded
+    // @find: usage report by outcome, failed skipped succeeded
     @Query(
             """
             select u.outcome,
@@ -148,6 +170,8 @@ public interface Usage extends JpaRepository<LlmUsageRecord, UUID> {
             """)
     List<Object[]> reportByOutcome(@Param("orgId") UUID orgId, @Param("from") Instant from, @Param("to") Instant to);
 
+    // @find: export usage rows, CSV download
+    // @find: export usage rows, CSV download
     /**
      * One page of the attempts in a window, oldest first, for the CSV export, as [occurredAt,
      * agentId, runId, providerId, modelId, outcome, failure, skipReason, promptTokens,

@@ -1,3 +1,6 @@
+// @find: tests for insights controller, board, permissions, passes the window on, analytics reader sees the rate, run reader does not see the rate, InsightsControllerTest, InsightsController
+// @what: Tests for InsightsController in the orchestrator board package (4 test methods).
+// @flow: Exercises InsightsController
 package os.aiworkforce.orchestrator.board;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,6 +47,7 @@ class InsightsControllerTest {
         RequestContext.setActor(Actor.user(UUID.randomUUID().toString(), ORG.toString(), "role", Set.of(permissions), 0L));
     }
 
+    // @find: test permissions, insights controller
     @Test
     @DisplayName("the workspace's figures need analytics:read and the per-agent rows need run:read")
     void permissions() throws Exception {
@@ -59,6 +63,7 @@ class InsightsControllerTest {
                 .containsExactly(Permission.Codes.RUN_READ);
     }
 
+    // @find: test passes the window on, insights controller
     @Test
     @DisplayName("the window the client asked for is passed on, for the caller's own workspace")
     void passesTheWindowOn() {
@@ -80,6 +85,7 @@ class InsightsControllerTest {
                 List.of());
     }
 
+    // @find: test analytics reader sees the rate, insights controller
     @Test
     @DisplayName("someone who can open Analytics sees the hourly cost beside the estimates it produces")
     void analyticsReaderSeesTheRate() {
@@ -89,6 +95,7 @@ class InsightsControllerTest {
         assertThat(controller.agents("30d").hourlyRate()).isEqualByComparingTo("60");
     }
 
+    // @find: test run reader does not see the rate, insights controller
     @Test
     @DisplayName("someone who can only read runs gets the agents' rows without the hourly cost")
     void runReaderDoesNotSeeTheRate() {

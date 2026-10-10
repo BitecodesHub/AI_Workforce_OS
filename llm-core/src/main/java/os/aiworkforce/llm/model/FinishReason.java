@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, finish reason, stop, length, truncated answer, tool calls, content filter, FinishReason
+// @what: Why generation stopped, such as finished, cut by length or content filter.
 package os.aiworkforce.llm.model;
 
 /**

@@ -1,3 +1,6 @@
+// @find: identity service, startup, main class, spring boot application, IdentityApplication, scheduling, sign in service, users, roles, permissions
+// @what: Spring Boot entry point of the identity service.
+// @flow: Scans platform-core and platform-web so shared security and audit beans load here.
 package os.aiworkforce.identity;
 
 import org.springframework.boot.SpringApplication;
@@ -20,6 +23,7 @@ import os.aiworkforce.platform.web.PlatformWeb;
 @EnableScheduling
 public class IdentityApplication {
 
+    // @find: identity service start, run identity application, main
     public static void main(String[] args) {
         SpringApplication.run(IdentityApplication.class, args);
     }

@@ -1,3 +1,6 @@
+// @find: credentials endpoints, GET /api/credentials, PUT /api/credentials/{ref}, DELETE /api/credentials/{ref}, GET /internal/credentials/{ref}, store API key, provider keys, secrets, Settings keys page, reveal credential
+// @what: REST endpoints for storing, listing and removing credentials, plus the internal endpoint that reveals a secret to sibling services.
+// @flow: Calls CredentialService; reveal is called by llm and mcp services with a service token.
 package os.aiworkforce.organisation.web;
 
 import java.time.Instant;
@@ -56,6 +59,7 @@ public class CredentialController {
 
     public record InternalCredential(String value) {}
 
+    // @find: list credentials, which keys are stored, GET /api/credentials
     @GetMapping("/api/credentials")
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
     @Operation(summary = "Which credentials are stored, without revealing any of them")
@@ -63,6 +67,7 @@ public class CredentialController {
         return credentials.list(orgId());
     }
 
+    // @find: store or replace credential, save API key, PUT /api/credentials/{ref}
     @PutMapping("/api/credentials/{ref}")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
     @Operation(summary = "Store or replace a credential")
@@ -75,6 +80,7 @@ public class CredentialController {
         return stored;
     }
 
+    // @find: delete credential, remove API key, DELETE /api/credentials/{ref}
     @DeleteMapping("/api/credentials/{ref}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
@@ -90,6 +96,7 @@ public class CredentialController {
         }
     }
 
+    // @find: reveal credential to sibling service, internal secret lookup, GET /internal/credentials/{ref}
     /**
      * The decrypted value, for a sibling service.
      *

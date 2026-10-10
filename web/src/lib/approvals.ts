@@ -1,3 +1,6 @@
+// @find: approvals, approval request, pending approval, approve, reject, decide, payload, destructive action, preview, bulk approve, group identical, run outcome, decision error, approval summary
+// @what: Reads an approval request in plain words (summary, payload fields, destructive warnings, bulk results) so every screen describes it the same way.
+// @flow: Used by the Approvals page, chat approval cards, run traces and the Orchestrator Needs you list; labels from labels.ts
 import { ApiError, describeApiError } from './api'
 import { plural, truncateWords } from './format'
 import { statusLabel, toolLabel } from './labels'
@@ -20,6 +23,7 @@ function toolNameForms(tool: string): string[] {
   return [tool]
 }
 
+// @find: approval summary, readable request, what the agent wants to do
 /**
  * The request's summary in words. The gateway writes it as "Send something outside the workspace
  * using gmail.send_message", so the raw tool name, in either form, is swapped for its label.
@@ -114,6 +118,7 @@ function fieldValue(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value)
 }
 
+// @find: approval payload, parse payload, fields to be sent, preview what will happen
 export function parsePayload(payload: string): ParsedPayload {
   let parsed: unknown
   try {
@@ -180,6 +185,7 @@ export function contextLine(
 /** Requests that say the same thing, from the same agent, through the same tool. */
 export type ApprovalGroup<T> = { key: string; items: T[] }
 
+// @find: group identical approvals, bulk approve, same request many times
 /**
  * Identical requests, together: a schedule that posts the same standup summary every morning
  * leaves a queue of them. Only groups of at least `min` are returned, in the order they first
@@ -204,6 +210,7 @@ export function groupIdentical<T extends { agentId: string; tool: string | null;
 /** What the server says happened to each approval in a bulk decision. */
 export type BulkResult = 'decided' | 'already_decided' | 'expired' | 'forbidden' | 'not_found'
 
+// @find: bulk approve result, approve all, decided already expired
 /** One sentence for a bulk decision: what was decided, then what could not be. */
 export function bulkSummary(results: ReadonlyArray<{ result: string }>, approved: boolean): string {
   const count = (kind: BulkResult) => results.filter((item) => item.result === kind).length
@@ -227,6 +234,7 @@ export function bulkSummary(results: ReadonlyArray<{ result: string }>, approved
 
 /* ---- After a decision ---------------------------------------------------------------------------- */
 
+// @find: run outcome after approval, what happened next
 /** What happened to the run once the decision was made, from DecisionResult.runStatus. */
 export function runOutcome(runStatus: string | null | undefined): string {
   switch (runStatus?.toLowerCase()) {
@@ -252,6 +260,7 @@ export function runOutcome(runStatus: string | null | undefined): string {
   }
 }
 
+// @find: approval decision error, could not approve, already decided
 /** Why a decision did not go through, in words. The queue refreshes after any failure. */
 export function decisionError(error: unknown): string {
   if (error instanceof ApiError) {

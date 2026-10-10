@@ -1,3 +1,9 @@
+// @find: router, navigate, route params, page title, tab title, attention count, redirects, old address, useRouter, RouterProvider, setPageTitle, useDocumentTitle, redirectFor, match, links, history, scroll to hash
+// @what: The small in-house router: current path, navigation without reload, route parameters, tab title and old-address redirects.
+// @flow: Used by App.tsx, main.tsx and nearly every screen through useRouter.
+// @find: router, routes, navigation, page title, history, search params, useRouter, link, attention count in tab title, Back button, URL
+// @what: The console own small router: current path and query, navigation, page title and tab count.
+// @flow: Used by every page and by useListFilter and attention
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
@@ -61,6 +67,8 @@ function scrollToTarget(hash: string, fromTop = true) {
   window.requestAnimationFrame(look)
 }
 
+// @find: router provider, app routing, history listener
+// @find: router provider, navigation, history, link interception; wraps the whole app (main.tsx)
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(readLocation)
 
@@ -111,6 +119,8 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
 }
 
+// @find: use router, navigate, current path, query string
+// @find: use router, current path, navigate, search params; used by: every page
 export function useRouter(): RouterValue {
   const value = useContext(RouterContext)
   if (!value) throw new Error('useRouter must be used inside RouterProvider')
@@ -136,12 +146,15 @@ function writeTitle() {
   document.title = waitingCount > 0 ? `(${waitingCount}) ${pageTitle}` : pageTitle
 }
 
+// @find: set page title, browser tab title
+// @find: set tab title, page title
 /** Sets the screen's part of the tab title, as the shell does on every route. */
 export function setPageTitle(title: string): void {
   pageTitle = title.replace(LEADING_COUNT, '')
   writeTitle()
 }
 
+// @find: tab title count, things waiting on this person; used by: attention.ts
 /** Sets how many things are waiting on this person; 0 shows none. Every route shows it. */
 export function setAttentionCount(count: number): void {
   const next = Math.max(0, Math.floor(count))
@@ -150,6 +163,8 @@ export function setAttentionCount(count: number): void {
   writeTitle()
 }
 
+// @find: use document title, page title per screen
+// @find: name the browser tab after the screen; used by: Agent detail page, Orchestrator page
 /**
  * Names the browser tab after what the screen shows ("Maya · AI Workforce OS"), so tabs and
  * history entries can be told apart. Does nothing until the title is known; the shell's
@@ -169,12 +184,15 @@ const REDIRECTS: Readonly<Record<string, string>> = {
   '/integrations': '/connectors',
 }
 
+// @find: redirect for, old path redirects
+// @find: old address redirect, integrations to connectors; used by: App.tsx
 /** Where an old address now lives, or null for an address that has not moved. A trailing slash is ignored. */
 export function redirectFor(path: string): string | null {
   const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
   return REDIRECTS[trimmed] ?? null
 }
 
+// @find: match route pattern, route parameters like /agents/:id; used by: App.tsx
 /** Matches "/agents/:id" against a path, returning the parameters or null. */
 export function match(pattern: string, path: string): Record<string, string> | null {
   const patternParts = pattern.split('/').filter(Boolean)

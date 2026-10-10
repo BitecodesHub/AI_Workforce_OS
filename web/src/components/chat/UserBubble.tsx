@@ -1,3 +1,6 @@
+// @find: user message, my message, sent message bubble, person bubble, chat bubble
+// @what: A person's own message in the thread.
+// @flow: Used by MessageItem; shows AttachmentCards.
 import { useState } from 'react'
 import { CopyButton } from '../ui/CopyButton'
 import { sentAttachmentsOf } from '../../lib/attachments'
@@ -6,6 +9,7 @@ import { AttachmentCards } from './AttachmentCards'
 
 const CLAMP_LINES = 12
 
+// @find: UserBubble, user bubble, user message, my message, sent message bubble, person bubble
 /** What a person typed, right-aligned, the way the composer sent it. */
 export function UserBubble({
   message,

@@ -1,3 +1,5 @@
+// @find: tests for oauth service, consent url, state protection, PKCE, token exchange, refresh, reconnect, google, microsoft, salesforce, gmail, outlook, stand-in provider
+// @what: Checks the OAuth sign-in flow end to end against a stand-in provider.
 package os.aiworkforce.integrations.oauth;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

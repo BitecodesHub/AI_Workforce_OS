@@ -1,3 +1,6 @@
+// @find: tests for chat appender, chat, positions increase with no gaps, preview cut at word boundary, record message called once per append, lock flushes then refreshes, lock returns empty for another org, ChatAppenderTest, ChatAppender
+// @what: Tests for ChatAppender in the orchestrator chat package (5 test methods).
+// @flow: Exercises ChatAppender
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,6 +56,7 @@ class ChatAppenderTest {
         when(messages.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
+    // @find: test positions increase with no gaps, chat appender
     @Test
     @DisplayName("positions increase with no gaps across several appends")
     void positionsIncreaseWithNoGaps() {
@@ -68,6 +72,7 @@ class ChatAppenderTest {
         assertThat(conversation.getMessageCount()).isEqualTo(3);
     }
 
+    // @find: test preview cut at word boundary, chat appender
     @Test
     @DisplayName("the preview is cut at 120 characters, at a word boundary")
     void previewCutAtWordBoundary() {
@@ -79,6 +84,7 @@ class ChatAppenderTest {
         assertThat(longContent).startsWith(conversation.getLastMessagePreview());
     }
 
+    // @find: test record message called once per append, chat appender
     @Test
     @DisplayName("recordMessage is called exactly once per append")
     void recordMessageCalledOncePerAppend() {
@@ -89,6 +95,7 @@ class ChatAppenderTest {
         verify(spyConversation, times(1)).recordMessage(any());
     }
 
+    // @find: test lock flushes then refreshes, chat appender
     @Test
     @DisplayName("lock flushes, then refreshes with a pessimistic write lock, in that order")
     void lockFlushesThenRefreshes() {
@@ -103,6 +110,7 @@ class ChatAppenderTest {
         order.verify(entityManager).refresh(conversation, LockModeType.PESSIMISTIC_WRITE);
     }
 
+    // @find: test lock returns empty for another org, chat appender
     @Test
     @DisplayName("lock returns empty for a conversation belonging to another org")
     void lockReturnsEmptyForAnotherOrg() {

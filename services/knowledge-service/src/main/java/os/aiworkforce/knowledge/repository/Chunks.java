@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, chunks repository, passage search, keyword search, full text search, delete chunks, citable chunks, restricted sources filter, agent-owned sources filter, Chunks
+// @what: Spring Data repository for chunks, including keyword (full-text) search over the passages a person may see.
+// @flow: Called by RetrievalService.retrieve and IngestionService (replace, reindex, delete).
 package os.aiworkforce.knowledge.repository;
 
 import java.util.Collection;

@@ -1,3 +1,6 @@
+// @find: tests for goal views, board, goal view keeps task order and attaches each tasks latest run, task view with no run gives null status zero steps zero cost and no attempts, runs by task keeps the first run per task from the ordered query, runs by task skips the query when there are no task ids, a tasks cost is the sum of every run not just the latest, the step count and status are the latest attempts own, a run with no recorded cost counts as nothing, plain view builds the goals list shape from the same batched maps, GoalViewsTest, GoalViews
+// @what: Tests for GoalViews in the orchestrator board package (8 test methods).
+// @flow: Exercises GoalViews
 package os.aiworkforce.orchestrator.board;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,6 +64,7 @@ class GoalViewsTest {
         return run;
     }
 
+    // @find: test goal view keeps task order and attaches each tasks latest run, goal views
     @Test
     void goalViewKeepsTaskOrderAndAttachesEachTasksLatestRun() {
         Goal goal = goal();
@@ -79,6 +83,7 @@ class GoalViewsTest {
         assertThat(view.tasks().get(1).runId()).isNull();
     }
 
+    // @find: test task view with no run gives null status zero steps zero cost and no attempts, goal views
     @Test
     void taskViewWithNoRunGivesNullStatusZeroStepsZeroCostAndNoAttempts() {
         Task task = task(goal(), 0);
@@ -92,6 +97,7 @@ class GoalViewsTest {
         assertThat(view.attempts()).isZero();
     }
 
+    // @find: test runs by task keeps the first run per task from the ordered query, goal views
     @Test
     void runsByTaskKeepsTheFirstRunPerTaskFromTheOrderedQuery() {
         Runs runs = mock(Runs.class);
@@ -108,6 +114,7 @@ class GoalViewsTest {
         assertThat(GoalViews.latestRuns(byTask).get(taskId)).isSameAs(newer);
     }
 
+    // @find: test runs by task skips the query when there are no task ids, goal views
     @Test
     void runsByTaskSkipsTheQueryWhenThereAreNoTaskIds() {
         Runs runs = mock(Runs.class);
@@ -118,6 +125,7 @@ class GoalViewsTest {
         verifyNoInteractions(runs);
     }
 
+    // @find: test a tasks cost is the sum of every run not just the latest, goal views
     @Test
     void aTasksCostIsTheSumOfEveryRunNotJustTheLatest() {
         Runs runs = mock(Runs.class);
@@ -133,6 +141,7 @@ class GoalViewsTest {
         assertThat(view.attempts()).isEqualTo(2);
     }
 
+    // @find: test the step count and status are the latest attempts own, goal views
     @Test
     void theStepCountAndStatusAreTheLatestAttemptsOwn() {
         Runs runs = mock(Runs.class);
@@ -148,6 +157,7 @@ class GoalViewsTest {
         assertThat(view.runId()).isEqualTo(retry.getId());
     }
 
+    // @find: test a run with no recorded cost counts as nothing, goal views
     @Test
     void aRunWithNoRecordedCostCountsAsNothing() {
         Runs runs = mock(Runs.class);
@@ -161,6 +171,7 @@ class GoalViewsTest {
         assertThat(view.cost()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
+    // @find: test plain view builds the goals list shape from the same batched maps, goal views
     @Test
     void plainViewBuildsTheGoalsListShapeFromTheSameBatchedMaps() {
         Goal goal = goal();

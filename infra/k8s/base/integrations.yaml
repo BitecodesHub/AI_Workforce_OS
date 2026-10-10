@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, integrations deployment, integrations, connectors, mcp servers, credentials, deployment, service, resources, probes, replicas, manifest
+# @what: Kubernetes deployment and service for the integrations service (connectors).
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 # integrations service.
 #
 # Resource requests are what the scheduler places on and what the JVM sizes its heap against, so

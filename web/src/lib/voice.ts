@@ -1,3 +1,6 @@
+// @find: voice, speech to text, text to speech, microphone, listen, speak, read aloud, dictation, ElevenLabs, browser speech, voice input, voice output, recorder, useVoiceInput, useSpeaker
+// @what: Voice in the console: dictation and read-aloud through ElevenLabs when a key is stored, otherwise the browser own speech, otherwise nothing.
+// @flow: Used by the chat composer and message actions; calls voice routes via api.ts and voice status from queries.ts
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api, describeApiError, normaliseFields, refreshAccessToken } from './api'
 import { accessToken, clearSession } from './session'
@@ -31,6 +34,7 @@ async function voiceError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, code, detail, response.status >= 500, normaliseFields(record.errors))
 }
 
+// @find: fetch audio, text to speech request
 /**
  * A binary response from the platform (audio bytes), with the same bearer token and one-time
  * refresh-on-401 behaviour as api() - sharing api.ts's own refreshAccessToken(), so the two never
@@ -80,7 +84,7 @@ type RecognitionLike = {
   continuous: boolean
   interimResults: boolean
   onresult: ((event: RecognitionEventLike) => void) | null
-  onerror: (() => void) | null
+  onerror: ((event: { error?: string }) => void) | null
   onend: (() => void) | null
   start: () => void
   stop: () => void
@@ -109,6 +113,7 @@ export function pickRecorderType(candidates: readonly string[]): string | null {
 
 const RECORDER_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg'] as const
 
+// @find: use voice input, microphone dictation, speech to text; used by: chat composer mic button
 /**
  * Turns speech into text in the composer: ElevenLabs' own transcription when a key is stored and
  * the microphone is available, otherwise the browser's built-in recognition, otherwise neither.
@@ -197,7 +202,10 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
           setInterim(interimTranscript)
         }
       }
-      recognition.onerror = () => setError('Speech recognition could not understand that. Try again.')
+      recognition.onerror = (event) => {
+        const text = recognitionErrorText(event?.error)
+        if (text) setError(text)
+      }
       recognition.onend = () => {
         setListening(false)
         setInterim('')
@@ -233,6 +241,31 @@ export function useVoiceInput({ onText }: { onText: (text: string) => void }) {
   )
 
   return { supported, provider, listening, start, stop, error, interim }
+}
+
+// @find: speech recognition error text, microphone denied
+/**
+ * What a person is told when the browser's speech recognition stops with an error, by its code.
+ * A refused microphone used to read "could not understand that", which sent people to speak
+ * again into a microphone the page was never allowed to use. Null when there is nothing to say
+ * (the person stopped it).
+ */
+export function recognitionErrorText(code: string | undefined): string | null {
+  switch (code) {
+    case 'aborted':
+      return null
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return 'This page is not allowed to use the microphone. Allow it in the browser, or type instead.'
+    case 'audio-capture':
+      return 'No microphone was found. Connect one, or type instead.'
+    case 'no-speech':
+      return 'Nothing was heard. Try again, closer to the microphone.'
+    case 'network':
+      return 'Speech recognition needs an internet connection. Try again, or type instead.'
+    default:
+      return 'Speech recognition could not understand that. Try again.'
+  }
 }
 
 /* ---- Speaking: ElevenLabs audio or the browser's own voices --------------------------------------- */
@@ -275,6 +308,7 @@ export function hash(value: string): number {
   return h >>> 0
 }
 
+// @find: pick browser voice, fallback voice
 /**
  * A stable browser voice for an agent: filtered to voices matching the viewer's own language when
  * any do, otherwise any voice at all, then picked by a hash of the agent id so the same agent
@@ -297,6 +331,7 @@ function pickPitch(agentId: string): number {
   return 0.9 + (hash(agentId || 'agent') % 21) / 100
 }
 
+// @find: use speaker, read aloud, text to speech; used by: chat message speaker button
 /**
  * Reads a reply aloud: ElevenLabs' own voice for the agent when a key is stored, otherwise the
  * browser's speechSynthesis with a voice and pitch chosen once per agent, otherwise nothing.

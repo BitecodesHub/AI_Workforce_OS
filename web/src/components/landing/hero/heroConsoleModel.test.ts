@@ -1,3 +1,6 @@
+// @find: tests for hero console model, heroFrame, hero loop, cycle, frames at elapsed time
+// @what: Tests every frame of the hero console as a pure function of time.
+// @flow: Covers heroConsoleModel.ts
 import { describe, expect, it } from 'vitest'
 import { COMPOSED_ELAPSED_MS, CYCLE_MS, heroFrame } from './heroConsoleModel'
 

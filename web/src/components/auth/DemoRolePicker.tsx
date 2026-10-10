@@ -1,3 +1,6 @@
+// @find: demo accounts, demo role picker, sign in as demo user, choose role, viewer, admin, demo password, initials avatar, DemoRolePicker, GET /api/auth/demo-accounts
+// @what: Lets an evaluator pick a demo account by role on the sign-in screen.
+// @flow: Fed by /api/auth/demo-accounts; calls onPick to sign in
 import { useState, type CSSProperties } from 'react'
 import { Spinner } from '../ui'
 import { roleLabel } from '../../lib/labels'
@@ -50,6 +53,7 @@ const SUGGESTED_ROLE = 'manager'
  * often double a letter (Arjun Admin, Maya Manager, Eli Employee, Vik Viewer all do), which reads
  * as a typo, not as a badge - so this takes the given name on its own instead.
  */
+// @find: initialsOf, avatar initials from name
 export function initialsOf(name: string): string {
   const first = name.trim().split(/\s+/).find(Boolean) ?? ''
   return first.slice(0, 2).toUpperCase()
@@ -65,6 +69,7 @@ export type DemoRolePickerProps = {
   onPick: (account: DemoAccount) => void
 }
 
+// @find: DemoRolePicker, pick demo account, sign in as role
 export function DemoRolePicker({ accounts, password, pending, busy, onPick }: DemoRolePickerProps) {
   const [preview, setPreview] = useState<DemoAccount | null>(null)
   const pendingAccount = accounts.find((account) => account.email === pending) ?? null

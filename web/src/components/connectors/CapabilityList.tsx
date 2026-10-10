@@ -1,3 +1,6 @@
+// @find: connector capabilities, what a connector can do, reads, creates and edits, sends, tool list, permissions list, read-only capability list
+// @what: Read-only list of what a connector can do, in groups.
+// @flow: Used by ConnectDialog and GrantDialog.
 import { useId } from 'react'
 import { Tag } from '../ui'
 import { asksFirst, capabilityLabel, groupCapabilities, type CapabilityTool } from '../../lib/connectors'
@@ -10,6 +13,7 @@ import { asksFirst, capabilityLabel, groupCapabilities, type CapabilityTool } fr
  * heading carries whether a person is asked first, so the list itself stays short.
  */
 
+// @find: CapabilityList, capability list, connector capabilities, what a connector can do, reads, creates and edits
 export function CapabilityList({
   tools,
   emptyText = 'It offers nothing an agent can use yet.',

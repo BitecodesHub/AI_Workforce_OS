@@ -1,3 +1,6 @@
+// @find: agents api, create agent, list agents, agent detail, update agent configuration, pause agent, resume agent, retire agent, restore agent, run agent, start a run, agent versions, /api/agents, Agents page, New agent dialog, Run now button
+// @what: REST endpoints to create, configure, pause, retire and run agents and list their versions.
+// @flow: Called by the web app Agents page; calls AgentRunner, RunExecutor and the Agents repository
 package os.aiworkforce.orchestrator.web;
 
 import java.math.BigDecimal;
@@ -7,6 +10,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -74,6 +79,8 @@ public class AgentController {
      * @param summary the first sentence of the current configuration's system prompt, at most
      *     {@value #SUMMARY_LIMIT} characters; an excerpt of the agent's own instructions, usually
      *     written in the second person. Null when the agent has no configuration.
+     * @param description what the agent does, in one line written about it; null when nobody has
+     *     written one, and the console then derives a line from {@code summary}
      * @param tools the distinct tool servers the agent is granted, sorted; empty when it has none
      * @param fallback whether this is the workspace's General Employee, found by its flag
      */
@@ -85,22 +92,51 @@ public class AgentController {
             String status,
             Integer revision,
             String summary,
+            String description,
             List<String> tools,
             String voiceId,
-            boolean fallback) {}
+            boolean fallback) {
+
+        /** The view of an agent at {@code version} (null when it has none), granted {@code tools}. */
+        static AgentView of(Agent agent, AgentVersion version, List<String> tools) {
+            return new AgentView(
+                    agent.getId(),
+                    agent.getKey(),
+                    agent.getName(),
+                    agent.getCategory(),
+                    agent.getStatus(),
+                    version == null ? null : version.getRevision(),
+                    version == null ? null : summarise(version.getSystemPrompt()),
+                    agent.getDescription(),
+                    tools,
+                    agent.getVoiceId(),
+                    GeneralEmployee.isFallback(agent));
+        }
+    }
+
+    /** The longest description, so it stays one line on a card. */
+    static final int DESCRIPTION_LIMIT = 200;
+
+    /** The categories an agent may have; the database holds the same list as a check constraint. */
+    static final List<String> CATEGORIES = List.of("operations", "engineering", "growth", "support");
 
     public record CreateAgentRequest(
             @NotBlank @Size(max = 60) String key,
             @NotBlank @Size(max = 120) String name,
             @NotBlank String category,
             @NotBlank @Size(max = 20_000) String systemPrompt,
-            @Size(max = 4_000) String goals) {}
+            @Size(max = 4_000) String goals,
+            @Size(max = DESCRIPTION_LIMIT) String description) {}
+
+    /** A description of null or blank clears it, so the console derives one from the instructions again. */
+    public record DescriptionRequest(@Size(max = DESCRIPTION_LIMIT) String description) {}
 
     public record UpdateConfigurationRequest(
             @NotBlank @Size(max = 20_000) String systemPrompt,
             @Size(max = 4_000) String goals,
-            BigDecimal temperature,
-            Integer maxOutputTokens,
+            // 0 to 2, the range every supported provider accepts; null means the model's default.
+            @DecimalMin("0") @DecimalMax("2") BigDecimal temperature,
+            @Min(1) Integer maxOutputTokens,
             // 1 to 50; null means the default. A limit below 1 would fail every run before its first step.
             @Min(1) @Max(50) Integer maxSteps) {}
 
@@ -121,15 +157,19 @@ public class AgentController {
             String systemPrompt,
             String goals,
             Integer maxSteps,
+            BigDecimal temperature,
+            Integer maxOutputTokens,
             boolean sealed,
             List<GrantView> grants,
             String summary,
+            String description,
             List<String> tools,
             String voiceId,
             boolean fallback) {}
 
     public record RunStarted(UUID runId, String status, String answer) {}
 
+    // @find: list agents, GET /api/agents, Agents page
     @GetMapping
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "List the agents in this workspace")
@@ -141,6 +181,7 @@ public class AgentController {
                 .toList();
     }
 
+    // @find: get agent detail, GET /api/agents/{agentId}
     @GetMapping("/{agentId}")
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "One agent, with its current configuration and tool grants")
@@ -167,14 +208,18 @@ public class AgentController {
                 version == null ? null : version.getSystemPrompt(),
                 version == null ? null : version.getGoals(),
                 version == null ? null : version.getMaxSteps(),
+                version == null ? null : version.getTemperature(),
+                version == null ? null : version.getMaxOutputTokens(),
                 version != null && version.isSealed(),
                 grantViews,
                 version == null ? null : summarise(version.getSystemPrompt()),
+                agent.getDescription(),
                 serverNames(granted),
                 agent.getVoiceId(),
                 GeneralEmployee.isFallback(agent));
     }
 
+    // @find: create agent, new agent, POST /api/agents, New agent dialog
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.AGENT_CREATE)
@@ -182,6 +227,9 @@ public class AgentController {
     @Operation(summary = "Add an agent")
     public AgentView create(@Valid @RequestBody CreateAgentRequest request) {
         UUID orgId = orgId();
+        if (!CATEGORIES.contains(request.category())) {
+            throw ApiException.validation("category", "must be one of " + String.join(", ", CATEGORIES));
+        }
         if (agents.findByOrgIdAndKey(orgId, request.key()).isPresent()) {
             throw new ApiException(
                     os.aiworkforce.platform.error.ErrorCode.ALREADY_EXISTS,
@@ -194,6 +242,7 @@ public class AgentController {
         agent.setKey(request.key());
         agent.setName(request.name());
         agent.setCategory(request.category());
+        agent.setDescription(cleanDescription(request.description()));
         agents.save(agent);
 
         AgentVersion version =
@@ -204,6 +253,7 @@ public class AgentController {
         return toView(agent, version);
     }
 
+    // @find: update agent configuration, edit agent instructions model tools, PUT /api/agents/{agentId}/configuration
     /**
      * Saves a new configuration.
      *
@@ -232,6 +282,33 @@ public class AgentController {
         return toView(agent, version);
     }
 
+    // @find: set agent description, PUT /api/agents/{agentId}/description
+    /**
+     * Sets or clears the one line that says what the agent does. It is about the agent, not
+     * something the agent is told, so it is not part of a configuration revision.
+     */
+    @PutMapping("/{agentId}/description")
+    @RequiresPermission(Permission.Codes.AGENT_UPDATE)
+    @Transactional
+    @Operation(summary = "Set or clear the one line that says what an agent does")
+    public AgentView setDescription(@PathVariable UUID agentId, @Valid @RequestBody DescriptionRequest request) {
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId()).orElseThrow(() -> ApiException.notFound("agent", agentId));
+        agent.setDescription(cleanDescription(request.description()));
+        agents.save(agent);
+        return toView(agent, currentVersionOf(agent));
+    }
+
+    /** One line, whitespace collapsed; null for blank. */
+    static String cleanDescription(String description) {
+        if (description == null) {
+            return null;
+        }
+        String clean = description.strip().replaceAll("\\s+", " ");
+        return clean.isEmpty() ? null : clean;
+    }
+
+    // @find: agent versions, version history, GET /api/agents/{agentId}/versions
     @GetMapping("/{agentId}/versions")
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "Every revision of this agent's configuration")
@@ -240,6 +317,7 @@ public class AgentController {
         return versions.findByAgentIdOrderByRevisionDesc(agentId);
     }
 
+    // @find: pause agent, POST /api/agents/{agentId}/pause
     /**
      * Pauses an agent so its queued tasks wait rather than run.
      *
@@ -255,12 +333,80 @@ public class AgentController {
         return setStatus(agentId, "paused");
     }
 
+    // @find: resume agent, unpause, POST /api/agents/{agentId}/resume
     @PostMapping("/{agentId}/resume")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Transactional
     @Operation(summary = "Resume a paused agent")
     public AgentView resume(@PathVariable UUID agentId) {
         return setStatus(agentId, "active");
+    }
+
+    /** Why a schedule was paused when its agent was retired, shown beside the schedule. */
+    public static final String RETIRED_SCHEDULE_REASON = "Paused because its agent was retired.";
+
+    /** Pauses the schedules of a retired agent; set by Spring, absent where a test builds this by hand. */
+    private os.aiworkforce.orchestrator.schedule.ScheduleService scheduleService;
+
+    private os.aiworkforce.orchestrator.schedule.Schedules schedules;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSchedules(
+            os.aiworkforce.orchestrator.schedule.ScheduleService scheduleService,
+            os.aiworkforce.orchestrator.schedule.Schedules schedules) {
+        this.scheduleService = scheduleService;
+        this.schedules = schedules;
+    }
+
+    // @find: retire agent, archive, delete agent, POST /api/agents/{agentId}/retire
+    /**
+     * Retires an agent: it is archived, not deleted. Chat, routing and schedules stop reaching it,
+     * its runs, traces, memory and revisions are kept, and it can be restored. The General
+     * Employee cannot be retired - it answers whatever no other agent takes.
+     */
+    @PostMapping("/{agentId}/retire")
+    @RequiresPermission(Permission.Codes.AGENT_DELETE)
+    @Transactional
+    @Operation(summary = "Retire an agent: hide it from chat, routing and schedules, keeping its history")
+    public AgentView retire(@PathVariable UUID agentId) {
+        UUID orgId = orgId();
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId).orElseThrow(() -> ApiException.notFound("agent", agentId));
+        if (GeneralEmployee.isFallback(agent)) {
+            throw new ApiException(
+                    os.aiworkforce.platform.error.ErrorCode.CONFLICT,
+                    "The General Employee cannot be retired: it answers anything no other agent takes. Pause it instead.");
+        }
+        if (!"retired".equals(agent.getStatus())) {
+            agent.setStatus("retired");
+            agents.save(agent);
+            if (scheduleService != null && schedules != null) {
+                for (var schedule : schedules.findByOrgIdOrderByNameAsc(orgId)) {
+                    if (agentId.equals(schedule.getAgentId()) && schedule.isEnabled()) {
+                        scheduleService.pauseInternal(orgId, schedule.getId(), RETIRED_SCHEDULE_REASON);
+                    }
+                }
+            }
+        }
+        return toView(agent, currentVersionOf(agent));
+    }
+
+    // @find: restore agent, unarchive, POST /api/agents/{agentId}/restore
+    /** Brings a retired agent back, paused, so nobody's queued work starts before someone resumes it. */
+    @PostMapping("/{agentId}/restore")
+    @RequiresPermission(Permission.Codes.AGENT_DELETE)
+    @Transactional
+    @Operation(summary = "Restore a retired agent; it comes back paused")
+    public AgentView restore(@PathVariable UUID agentId) {
+        Agent agent =
+                agents.findByIdAndOrgId(agentId, orgId()).orElseThrow(() -> ApiException.notFound("agent", agentId));
+        if (!"retired".equals(agent.getStatus())) {
+            throw new ApiException(
+                    os.aiworkforce.platform.error.ErrorCode.CONFLICT, "Only a retired agent can be restored.");
+        }
+        agent.setStatus("paused");
+        agents.save(agent);
+        return toView(agent, currentVersionOf(agent));
     }
 
     private AgentView setStatus(UUID agentId, String status) {
@@ -283,6 +429,7 @@ public class AgentController {
         this.runExecutor = runExecutor;
     }
 
+    // @find: run agent, give agent a task, start agent run, POST /api/agents/{agentId}/runs
     /**
      * Starts a run and answers at once, with the run's id; the agent works in the background and
      * the run's page shows each step as it happens.
@@ -320,17 +467,7 @@ public class AgentController {
     }
 
     private AgentView toView(Agent agent, AgentVersion version) {
-        return new AgentView(
-                agent.getId(),
-                agent.getKey(),
-                agent.getName(),
-                agent.getCategory(),
-                agent.getStatus(),
-                version == null ? null : version.getRevision(),
-                version == null ? null : summarise(version.getSystemPrompt()),
-                serverNames(grants.findByAgentIdAndEnabledTrue(agent.getId())),
-                agent.getVoiceId(),
-                GeneralEmployee.isFallback(agent));
+        return AgentView.of(agent, version, serverNames(grants.findByAgentIdAndEnabledTrue(agent.getId())));
     }
 
     private AgentVersion currentVersionOf(Agent agent) {

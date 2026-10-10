@@ -1,3 +1,6 @@
+// @find: voice clips repository, find clip by id, VoiceClips, audio clip lookup
+// @what: Spring Data repository for VoiceClip rows.
+// @flow: Used by VoiceController.clip
 package os.aiworkforce.orchestrator.voice;
 
 import java.util.Optional;

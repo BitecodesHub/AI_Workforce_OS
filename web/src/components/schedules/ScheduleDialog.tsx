@@ -1,7 +1,11 @@
+// @find: schedule dialog, create schedule, edit schedule, new schedule, recurring task, one-off, cron, when to run, schedule preview, take ownership, choose agent, POST /api/schedules, PUT /api/schedules, Schedules page, ScheduleDialog
+// @what: The dialog for creating or editing a schedule, with a preview of the next runs.
+// @flow: Opened from the Schedules route; uses useCreateSchedule, useUpdateSchedule, useSchedulePreview, useAgents
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Input, Notice, Select, Textarea } from '../ui'
 import { describeApiError } from '../../lib/api'
+import { agentDescription } from '../../lib/agentDescription'
 import { formatDateTimeIn, sentenceCase } from '../../lib/format'
 import { CATEGORY_LABEL } from '../../lib/labels'
 import { useAgents, useCreateSchedule, useSchedulePreview, useUpdateSchedule } from '../../lib/queries'
@@ -38,6 +42,7 @@ function agentOptionLabel(agent: { name: string; category: string; status: strin
  * owner (the server decides; this only says so before saving), and a one-off that already ran
  * comes back on when it is given a new time still ahead.
  */
+// @find: schedule dialog component, create or edit schedule
 export function ScheduleDialog({ open, onClose, schedule }: { open: boolean; onClose: () => void; schedule?: Schedule | null }) {
   const editing = schedule ?? null
 
@@ -190,11 +195,8 @@ export function ScheduleDialog({ open, onClose, schedule }: { open: boolean; onC
             required
             disabled={agentsQuery.isLoading}
             hint={
-              selectedAgent?.summary ? (
-                <>
-                  From its instructions: <q>{selectedAgent.summary}</q>
-                </>
-              ) : undefined
+              // What the agent does, written about it, never a quote of its second-person instructions.
+              (selectedAgent && agentDescription(selectedAgent)) || undefined
             }
           >
             {agentsQuery.isLoading && <option value="">Loading agents…</option>}

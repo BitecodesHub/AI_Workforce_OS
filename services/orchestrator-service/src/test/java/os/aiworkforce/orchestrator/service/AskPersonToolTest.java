@@ -1,3 +1,5 @@
+// @find: tests for ask person tool, ask person tool, person.ask_question, questions, multiple choice, parse arguments
+// @what: Unit and integration tests (12 cases) for ask person tool, for example: parses valid single question; wraps top level question; rejects zero or five questions; rejects one or five options.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

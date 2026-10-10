@@ -1,3 +1,6 @@
+// @find: schedule card, scheduled task in chat, recurring task, created schedule, open schedules, Schedules page link
+// @what: Card in the thread for a schedule made from chat.
+// @flow: Used by MessageItem; links to /schedules.
 import { formatDateTimeIn } from '../../lib/format'
 import { useState } from 'react'
 import { Button, Card, Eyebrow, Notice, Tag } from '../ui'
@@ -9,6 +12,7 @@ import type { ChatMessage } from '../../lib/queries'
 import { scheduleState } from '../../lib/schedules'
 import { can } from '../../lib/session'
 
+// @find: ScheduleCard, schedule card, schedule card, scheduled task in chat, recurring task, created schedule
 /** A schedule read back in plain words, with next runs and a one-click way to save it (D10). */
 export function ScheduleCard({ message }: { message: ChatMessage }) {
   const detail = message.detail

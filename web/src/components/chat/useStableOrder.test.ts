@@ -1,3 +1,6 @@
+// @find: tests for useStableOrder, stable order, list order frozen, avoid reorder while polling, sidebar order, hover freeze
+// @what: Automated tests for useStableOrder.
+// @flow: Run with the web test runner; covers useStableOrder.
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { useStableOrder } from './useStableOrder'

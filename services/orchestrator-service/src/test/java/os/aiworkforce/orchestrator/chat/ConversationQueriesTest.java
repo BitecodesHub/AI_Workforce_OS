@@ -1,3 +1,6 @@
+// @find: tests for conversation queries, chat, pinned rows come first on page zero only, archived rows excluded from all and listed alone in archived, has more detection, needs answer activity, managers see others questions as waiting not needs answer, needs approval only for approvers, working and idle activity, needs you ignores scope and archive, ConversationQueriesTest, ConversationQueries
+// @what: Tests for ConversationQueries in the orchestrator chat package (11 test methods).
+// @flow: Exercises ConversationQueries
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,6 +100,7 @@ class ConversationQueriesTest {
         return mark;
     }
 
+    // @find: test pinned rows come first on page zero only, conversation queries
     @Test
     @DisplayName("a pinned conversation shows in the pinned group on page 0 only")
     void pinnedRowsComeFirstOnPageZeroOnly() {
@@ -114,6 +118,7 @@ class ConversationQueriesTest {
         assertThat(secondPage.pinned()).isEmpty();
     }
 
+    // @find: test archived rows excluded from all and listed alone in archived, conversation queries
     @Test
     @DisplayName("an archived conversation is excluded from 'all' and listed alone under 'archived'")
     void archivedRowsExcludedFromAllAndListedAloneInArchived() {
@@ -136,6 +141,7 @@ class ConversationQueriesTest {
         assertThat(archivedPage.needsYou()).isEmpty();
     }
 
+    // @find: test has more detection, conversation queries
     @Test
     @DisplayName("hasMore is true only when one row more than the page size came back")
     void hasMoreDetection() {
@@ -149,6 +155,7 @@ class ConversationQueriesTest {
         assertThat(page.conversations()).hasSize(2);
     }
 
+    // @find: test needs answer activity, conversation queries
     @Test
     @DisplayName("activity: a pending question the caller asked for is 'needs_answer'")
     void needsAnswerActivity() {
@@ -160,6 +167,7 @@ class ConversationQueriesTest {
         assertActivityOf(c.getId(), "needs_answer");
     }
 
+    // @find: test managers see others questions as waiting not needs answer, conversation queries
     @Test
     @DisplayName("managers see someone else's open question as waiting, not as their own to answer")
     void managersSeeOthersQuestionsAsWaitingNotNeedsAnswer() {
@@ -173,6 +181,7 @@ class ConversationQueriesTest {
         assertThat(activityOf(page, c.getId())).isEqualTo("waiting_answer");
     }
 
+    // @find: test needs approval only for approvers, conversation queries
     @Test
     @DisplayName("a task waiting for approval is 'needs_approval' only for someone who can decide it")
     void needsApprovalOnlyForApprovers() {
@@ -188,6 +197,7 @@ class ConversationQueriesTest {
         assertThat(activityOf(page, c.getId())).isEqualTo("needs_approval");
     }
 
+    // @find: test working and idle activity, conversation queries
     @Test
     @DisplayName("an active goal with nothing waiting is 'working'; otherwise a conversation is 'idle'")
     void workingAndIdleActivity() {
@@ -203,6 +213,7 @@ class ConversationQueriesTest {
         assertThat(activityOf(page, idle.getId())).isEqualTo("idle");
     }
 
+    // @find: test needs you ignores scope and archive, conversation queries
     @Test
     @DisplayName("needs-you is not limited by scope or by the caller's own archive")
     void needsYouIgnoresScopeAndArchive() {
@@ -219,6 +230,7 @@ class ConversationQueriesTest {
                 .containsExactly(needsYou.getId());
     }
 
+    // @find: test unread needs amarker, conversation queries
     @Test
     @DisplayName("unread is false with no read marker, and true when the marker sits behind the newest message")
     void unreadNeedsAMarker() {
@@ -238,6 +250,7 @@ class ConversationQueriesTest {
         assertThat(behind.conversations().getFirst().unread()).isTrue();
     }
 
+    // @find: test snippet shows the matching message, conversation queries
     @Test
     @DisplayName("the search snippet shows the message that actually matched")
     void snippetShowsTheMatchingMessage() {
@@ -255,6 +268,7 @@ class ConversationQueriesTest {
         assertThat(match.snippet()).contains("refund policy");
     }
 
+    // @find: test like escaping, conversation queries
     @Test
     @DisplayName("a search term with LIKE metacharacters is escaped and matched literally")
     void likeEscaping() {

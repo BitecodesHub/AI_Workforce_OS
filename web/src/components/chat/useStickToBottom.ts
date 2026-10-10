@@ -1,3 +1,6 @@
+// @find: stick to bottom, auto scroll, scroll to latest, thread scroll, jump to latest, new message scroll
+// @what: Keeps the thread pinned to the bottom while the reader is at the bottom.
+// @flow: Used by the Chat page with JumpToLatest.
 import type { RefObject } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -25,6 +28,7 @@ export type StickToBottom = {
   keepPosition: (fn: () => void) => void
 }
 
+// @find: useStickToBottom, use stick to bottom, stick to bottom, auto scroll, scroll to latest, thread scroll
 export function useStickToBottom(
   ref: RefObject<HTMLElement | null>,
   opts: { newestPosition: number; resetKey: string | null; reducedMotion: boolean },

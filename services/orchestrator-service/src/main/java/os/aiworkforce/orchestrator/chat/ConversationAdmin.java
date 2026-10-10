@@ -1,3 +1,6 @@
+// @find: conversation admin, rename conversation, pin, archive, mark read, delete conversation, set visibility, add participants, remove participant, ConversationAdmin, conversation_marks, default visibility
+// @what: Changes a conversation: rename, pin, archive, mark read, share, set visibility and delete.
+// @flow: Called by ChatController; uses ConversationAccess for permission checks.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.LinkedHashMap;
@@ -78,6 +81,7 @@ public class ConversationAdmin {
         this.audit = audit;
     }
 
+    // @find: rename conversation, change chat title
     @Transactional
     public ConversationQueries.ConversationView rename(UUID orgId, Actor actor, UUID id, String title) {
         Conversation conversation =
@@ -89,21 +93,25 @@ public class ConversationAdmin {
         return queries.view(orgId, actor, locked);
     }
 
+    // @find: pin conversation
     @Transactional
     public void pin(UUID orgId, Actor actor, UUID id) {
         upsertFlags(orgId, actor, id, true, false, "pin");
     }
 
+    // @find: unpin conversation
     @Transactional
     public void unpin(UUID orgId, Actor actor, UUID id) {
         upsertFlags(orgId, actor, id, false, null, "unpin");
     }
 
+    // @find: archive conversation
     @Transactional
     public void archive(UUID orgId, Actor actor, UUID id) {
         upsertFlags(orgId, actor, id, false, true, "archive");
     }
 
+    // @find: unarchive conversation
     @Transactional
     public void unarchive(UUID orgId, Actor actor, UUID id) {
         upsertFlags(orgId, actor, id, null, false, "unarchive");
@@ -138,6 +146,7 @@ public class ConversationAdmin {
     private os.aiworkforce.orchestrator.repository.ConversationParticipants participants;
 
     /** What a new conversation starts as. Private when the setting cannot be read: the safer of the two. */
+    // @find: default conversation visibility for workspace
     public String defaultVisibility(UUID orgId) {
         if (runtimeConfig == null) {
             return "private";
@@ -153,6 +162,7 @@ public class ConversationAdmin {
     }
 
     /** Opens a conversation to the workspace, or makes it private again. */
+    // @find: set conversation visibility, private or workspace
     @Transactional
     public ConversationQueries.ConversationView setVisibility(UUID orgId, Actor actor, UUID id, String visibility) {
         if (!"private".equals(visibility) && !"workspace".equals(visibility)) {
@@ -186,6 +196,7 @@ public class ConversationAdmin {
     }
 
     /** Adds people to a conversation. Already-present people are left alone. */
+    // @find: add participants, share chat with people
     @Transactional
     public List<String> addParticipants(UUID orgId, Actor actor, UUID id, List<String> userIds) {
         access.requireOwner(orgId, actor, id);
@@ -213,6 +224,7 @@ public class ConversationAdmin {
         return participantIds(orgId, actor, id);
     }
 
+    // @find: remove participant from conversation
     @Transactional
     public void removeParticipant(UUID orgId, Actor actor, UUID id, String userId) {
         access.requireOwner(orgId, actor, id);
@@ -222,6 +234,7 @@ public class ConversationAdmin {
 
 
     /** A caller with no person behind them gets a quiet no-op, not an error - nothing to mark read for them. */
+    // @find: mark conversation read, unread marker
     @Transactional
     public void markRead(UUID orgId, Actor actor, UUID id, int position) {
         Conversation conversation =
@@ -239,6 +252,7 @@ public class ConversationAdmin {
      * every bit of it. Nothing is stopped or deleted when somebody else's work is still running and
      * the caller cannot cancel work in general (D-9).
      */
+    // @find: delete conversation, stop active work, remove chat
     @Transactional
     public void delete(UUID orgId, Actor actor, UUID id) {
         Conversation conversation =

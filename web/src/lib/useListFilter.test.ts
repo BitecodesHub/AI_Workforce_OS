@@ -1,3 +1,5 @@
+// @find: tests for list filter, useListFilter, search, facets, query string
+// @what: Unit tests for list filtering.
 import { createElement } from 'react'
 import type { ReactNode } from 'react'
 import { act, renderHook } from '@testing-library/react'

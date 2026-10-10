@@ -1,3 +1,6 @@
+// @find: insights controller, analytics endpoint, workforce insights, agent insights, hourly staff cost, GET /api/orchestrator/insights, GET /api/orchestrator/insights/agents, Analytics page, Command Map
+// @what: REST endpoints for the workspace-wide and per-agent insight figures.
+// @flow: Called by the Analytics page, agent list and Command Map; delegates to InsightsService.
 package os.aiworkforce.orchestrator.board;
 
 import java.util.UUID;
@@ -37,6 +40,7 @@ public class InsightsController {
         this.insights = insights;
     }
 
+    // @find: workspace insights, analytics figures, GET /api/orchestrator/insights
     @GetMapping
     @RequiresPermission(Permission.Codes.ANALYTICS_READ)
     @Operation(summary = "Work done, success, spend, approvals, questions and estimated value over 7, 30 or 90 days")
@@ -44,6 +48,7 @@ public class InsightsController {
         return insights.insights(orgId(), window);
     }
 
+    // @find: agent insights, per-agent figures, GET /api/orchestrator/insights/agents
     @GetMapping("/agents")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "Each agent's runs, success rate, cost, rejected approvals, satisfaction and hours returned")

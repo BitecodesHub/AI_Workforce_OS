@@ -1,3 +1,6 @@
+// @find: message box, composer, write message, send message, mention agent, @mention, draft, attach files, paste image, answer question, Send button, chat input, POST message
+// @what: Where a chat message is written: text box, @mention popover, attachments, saved draft and send.
+// @flow: Used by the Chat page; uses useAttachments, useDropAndPaste, AttachButton.
 import { useEffect, useId, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, KeyboardEvent, RefObject } from 'react'
 import { createPortal } from 'react-dom'
@@ -78,6 +81,7 @@ type Popover = { query: string; start: number; caret: number; activeIndex: numbe
 /** The question the composer answers: `agentId` is the agent that asked it. */
 type ReplyTarget = { questionId: string; agentName: string; agentId: string | null; auto: boolean }
 
+// @find: Composer, composer, message box, composer, write message, send message
 export function Composer({
   userId,
   conversationId,

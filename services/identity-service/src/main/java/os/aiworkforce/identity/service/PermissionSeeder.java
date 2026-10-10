@@ -1,3 +1,6 @@
+// @find: permission seeder, seed permissions, system roles, owner admin manager employee viewer roles, startup seed, role definitions, PermissionSeeder
+// @what: Mirrors the build permission registry into the database and creates the system roles once at startup.
+// @flow: Runs on ApplicationReady before DemoDataSeeder.
 package os.aiworkforce.identity.service;
 
 import java.util.LinkedHashSet;
@@ -49,6 +52,7 @@ public class PermissionSeeder {
         this.roles = roles;
     }
 
+    // @find: seed permissions and system roles at startup
     @EventListener(ApplicationReadyEvent.class)
     @org.springframework.core.annotation.Order(10)
     @Transactional

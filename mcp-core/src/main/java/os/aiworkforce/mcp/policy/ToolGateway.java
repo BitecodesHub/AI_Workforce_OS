@@ -1,3 +1,6 @@
+// @find: tool gateway, approvals policy, approval gate, grants, scopes, rate limit, circuit breaker, per run call limit, audit, evaluate tool call, invoke tool, available tools for agent, connected servers, indeterminate, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: The single path every tool call takes: checks grant, scope, arguments, approval, rate limit and circuit breaker, then runs the adapter.
+// @flow: Called by the orchestrator and ConnectorService; calls McpServerAdapter.invoke and ArgumentValidator
 package os.aiworkforce.mcp.policy;
 
 import java.time.Duration;
@@ -76,6 +79,7 @@ public class ToolGateway {
         log.info("Tool gateway ready with {} server(s): {}", adapters.size(), adapters.keySet());
     }
 
+    // @find: tools an agent may see, grants filter, which tools can the agent use
     /** What the model is allowed to see, which is only what the agent may actually call. */
     public List<ToolDefinition> availableTools(List<ToolGrant> grants) {
         return grants.stream()
@@ -88,6 +92,7 @@ public class ToolGateway {
                 .toList();
     }
 
+    // @find: decide approval, does this call need approval, grant scope check, always approve send and delete, refuse or proceed
     /**
      * Decides what should happen to a call, without making it.
      *
@@ -145,6 +150,7 @@ public class ToolGateway {
         return ApprovalDecision.PROCEED;
     }
 
+    // @find: run tool call, execute approved call, call connector, timeout indeterminate, rate limit
     /**
      * Runs a tool that has already been evaluated and, where needed, approved.
      *
@@ -286,17 +292,20 @@ public class ToolGateway {
                 .incrementAndGet();
     }
 
+    // @find: release run, clear per run call counts
     /** Called when a run ends, so the counters do not accumulate for the life of the process. */
     public void releaseRun(String runId) {
         runCallCounts.remove(runId);
     }
 
+    // @find: which connectors are connected, server status map
     public Map<String, Boolean> connectedServers() {
         Map<String, Boolean> servers = new HashMap<>();
         adapters.forEach((name, adapter) -> servers.put(name, adapter.isSandbox()));
         return servers;
     }
 
+    // @find: get adapter for connector, find server adapter
     public Optional<McpServerAdapter> adapter(String server) {
         return Optional.ofNullable(adapters.get(server));
     }

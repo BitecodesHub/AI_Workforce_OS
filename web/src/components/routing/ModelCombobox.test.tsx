@@ -1,3 +1,6 @@
+// @find: tests for ModelCombobox, model picker, model combobox, searchable model list, choose model, provider models, Bedrock models, listbox
+// @what: Automated tests for ModelCombobox.
+// @flow: Run with the web test runner; covers ModelCombobox.
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -168,5 +171,32 @@ describe('the model picker', () => {
     expect(screen.getByText(`Showing ${OPTION_LIMIT} of 320. Type to narrow the list.`)).toBeInTheDocument()
     fireEvent.change(field(), { target: { value: 'model 319' } })
     expect(screen.getAllByRole('option').map((node) => node.getAttribute('data-model-id'))).toEqual(['vendor/model-319'])
+  })
+})
+
+describe('Bedrock models in the picker', () => {
+  it('lists inference profiles beside on-demand models, with no free group, and finds one by its profile id', () => {
+    const bedrock = [
+      option('amazon.nova-micro-v1:0', 'Nova Micro', { pricePerMTokIn: 0.035, pricePerMTokOut: 0.14 }),
+      option('eu.anthropic.claude-sonnet-4-20250514-v1:0', 'Claude Sonnet 4 (EU cross-region)', {
+        vision: true,
+        contextLength: 200_000,
+        pricePerMTokIn: 3,
+        pricePerMTokOut: 15,
+      }),
+    ]
+    render(
+      <ModelCombobox label="Candidate 1 model" value="amazon.nova-micro-v1:0" options={bedrock} providerName="AWS Bedrock" onChange={vi.fn()} />,
+    )
+
+    fireEvent.click(field())
+    const list = screen.getByRole('listbox')
+    const groups = within(list).getAllByRole('group')
+    expect(groups.map((group) => document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent)).toEqual(['Paid'])
+
+    fireEvent.change(field(), { target: { value: 'eu.anthropic' } })
+    expect(within(screen.getByRole('listbox')).getAllByRole('option').map((node) => node.getAttribute('data-model-id'))).toEqual([
+      'eu.anthropic.claude-sonnet-4-20250514-v1:0',
+    ])
   })
 })

@@ -1,9 +1,13 @@
+// @find: loading skeleton, chat loading, sidebar skeleton, thread skeleton, placeholder
+// @what: Placeholder rows and bubbles drawn while the sidebar and thread load.
+// @flow: Used by the Chat page.
 /*
  * What the sidebar and the thread draw while they load: the same rows and bubbles the content will
  * have, at about the same height, so nothing jumps when the real thing arrives. The shimmer comes
  * from .skeleton, which stops for people who ask for less motion.
  */
 
+// @find: SidebarSkeleton, sidebar skeleton, loading skeleton, chat loading, sidebar skeleton, thread skeleton
 export function SidebarSkeleton() {
   return (
     <div className="chat-skel-rows" role="status" aria-busy="true">
@@ -19,6 +23,7 @@ export function SidebarSkeleton() {
   )
 }
 
+// @find: ThreadSkeleton, thread skeleton, loading skeleton, chat loading, sidebar skeleton, thread skeleton
 export function ThreadSkeleton() {
   return (
     <div className="chat-skel-thread" role="status" aria-busy="true">

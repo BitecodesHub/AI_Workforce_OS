@@ -1,3 +1,5 @@
+// @find: tests for knowledge access control, who can see which source, restricted sources, agent-owned sources, search limited before ranking, knowledge base permissions, source visibility
+// @what: Checks restricted and agent-owned sources stay hidden from people who may not read them, in list, count and search.
 package os.aiworkforce.knowledge.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -213,6 +215,21 @@ class KnowledgeAccessTest {
             source.setEmbeddingProvider(provider);
             source.setEmbeddingModel(provider + "-embed");
         });
+    }
+
+    @Test
+    @DisplayName("a source says which agent's own documents it holds, and a workspace source says none")
+    void sourceNamesItsAgent() throws Exception {
+        UUID policies = createSource("Policies", false);
+        UUID agentDocs = createSource("Agent documents", false);
+        UUID agent = UUID.randomUUID();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            sources.findById(agentDocs).orElseThrow().setAgentId(agent);
+        });
+        signedIn(org, MANAGER);
+
+        mvc.perform(get("/api/sources/{id}", agentDocs)).andExpect(jsonPath("$.agentId").value(agent.toString()));
+        mvc.perform(get("/api/sources/{id}", policies)).andExpect(jsonPath("$.agentId").doesNotExist());
     }
 
     /* ---- Restricted sources ------------------------------------------------------------------ */

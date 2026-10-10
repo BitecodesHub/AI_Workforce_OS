@@ -1,3 +1,5 @@
+// @find: tests for internal embedding controller, internal embeddings, /internal/embeddings, embed text, embedding provider
+// @what: Unit and integration tests (16 cases) for internal embedding controller, for example: other workspace refused; api key refused; budget checked with the estimate; other workspaces run refused.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -161,7 +163,7 @@ class InternalEmbeddingControllerTest {
     @Test
     @DisplayName("the budget is asked first, with characters over four times the model's price per million")
     void budgetCheckedWithTheEstimate() {
-        when(adapter.embed(any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f, 2f})));
+        when(adapter.embed(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f, 2f})));
         UUID agentId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         ownRun(runId, agentId);
@@ -196,7 +198,7 @@ class InternalEmbeddingControllerTest {
         assertThat(refused.code()).isEqualTo(ErrorCode.NOT_FOUND);
         verify(runs).findByIdAndOrgId(foreignRun, ORG_A);
         verifyNoInteractions(credentials, budget, usage);
-        verify(adapter, never()).embed(any(), any(), any(), any());
+        verify(adapter, never()).embed(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -236,7 +238,7 @@ class InternalEmbeddingControllerTest {
     @Test
     @DisplayName("naming only the run still counts the spend toward the run's own agent")
     void runImpliesItsAgent() {
-        when(adapter.embed(any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f})));
+        when(adapter.embed(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f})));
         UUID agentId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         ownRun(runId, agentId);
@@ -251,7 +253,7 @@ class InternalEmbeddingControllerTest {
     @Test
     @DisplayName("an agent of this workspace is accepted and the spend is counted toward it")
     void ownAgentAccepted() {
-        when(adapter.embed(any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f})));
+        when(adapter.embed(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f})));
         UUID agentId = UUID.randomUUID();
         when(agents.findByIdAndOrgId(agentId, ORG_A)).thenReturn(Optional.of(mock(Agent.class)));
 
@@ -273,7 +275,7 @@ class InternalEmbeddingControllerTest {
 
         assertThat(refused.code()).isEqualTo(ErrorCode.BUDGET_EXCEEDED);
         assertThat(refused.getMessage()).contains("monthly model budget");
-        verify(adapter, never()).embed(any(), any(), any(), any());
+        verify(adapter, never()).embed(any(), any(), any(), any(), any());
         verifyNoInteractions(usage);
     }
 
@@ -286,13 +288,13 @@ class InternalEmbeddingControllerTest {
         ApiException refused = catchThrowableOfType(() -> controller.embed(request, ORG_A), ApiException.class);
 
         assertThat(refused.code()).isEqualTo(ErrorCode.BUDGET_EXCEEDED);
-        verify(adapter, never()).embed(any(), any(), any(), any());
+        verify(adapter, never()).embed(any(), any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("a successful embedding is recorded with its estimated cost and counted against the budget")
     void successIsRecorded() {
-        when(adapter.embed(any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f, 2f})));
+        when(adapter.embed(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f, 2f})));
 
         InternalEmbeddingController.EmbedResponse response =
                 controller.embed(
@@ -314,12 +316,16 @@ class InternalEmbeddingControllerTest {
     @Test
     @DisplayName("a failed embedding is recorded as a failed attempt, and the failure still reaches the caller")
     void failureIsRecorded() {
-        when(adapter.embed(any(), any(), any(), any()))
+        when(adapter.embed(any(), any(), any(), any(), any()))
                 .thenReturn(Mono.error(
                         ProviderException.of(ProviderFailure.RATE_LIMITED, "openrouter", "embed-1", "slow down")));
 
-        assertThat(catchThrowableOfType(() -> controller.embed(request, ORG_A), ProviderException.class))
-                .isNotNull();
+        ApiException failed = catchThrowableOfType(() -> controller.embed(request, ORG_A), ApiException.class);
+        // In words the knowledge service can show, not "Something went wrong".
+        assertThat(failed).isNotNull();
+        assertThat(failed.code()).isEqualTo(os.aiworkforce.platform.error.ErrorCode.RATE_LIMITED);
+        assertThat(failed.getMessage()).contains("limiting how fast");
+        assertThat(failed.getCause()).isInstanceOf(ProviderException.class);
 
         ArgumentCaptor<AttemptRecord> attempt = ArgumentCaptor.forClass(AttemptRecord.class);
         verify(usage).record(eq(ORG_A.toString()), eq(null), eq(null), attempt.capture(), any());
@@ -331,7 +337,7 @@ class InternalEmbeddingControllerTest {
     @Test
     @DisplayName("a usage row that cannot be written never costs the caller its vectors")
     void accountingNeverFailsTheCall() {
-        when(adapter.embed(any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f})));
+        when(adapter.embed(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(new float[] {1f})));
         doThrow(new IllegalStateException("database is down"))
                 .when(usage)
                 .record(any(), any(), any(), any(), any());

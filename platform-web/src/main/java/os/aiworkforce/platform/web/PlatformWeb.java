@@ -1,3 +1,5 @@
+// @find: platform web marker, component scanning, servlet services, shared web beans
+// @what: Marker type that makes the seven servlet services scan the shared web package.
 package os.aiworkforce.platform.web;
 
 /**

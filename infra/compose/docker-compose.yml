@@ -1,3 +1,6 @@
+# @find: docker compose, development stack, local stack, make up, postgres, redis, kafka, qdrant, services, gateway, prometheus, grafana, ports, healthchecks, environment variables
+# @what: Docker Compose stack for development: databases, Redis, Kafka, Qdrant, the eight services and monitoring.
+# @flow: Started by make up / make down in the Makefile
 # The whole platform, locally, with no credentials configured.
 #
 # Every service starts with sandbox providers and sandbox tool drivers, so `make up` gives a

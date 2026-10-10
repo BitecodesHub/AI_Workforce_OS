@@ -1,3 +1,6 @@
+// @find: lifecycle announcer, notify after commit, question asked, approval raised, approval expired, schedule paused, goal cancelled, goal retried, listeners
+// @what: Tells GoalLifecycleListeners about goal, approval, question and schedule changes after the write commits.
+// @flow: Called by GoalService, ApprovalService, QuestionService, TaskProgress
 package os.aiworkforce.orchestrator.service;
 
 import java.util.List;
@@ -65,6 +68,7 @@ public class LifecycleAnnouncer {
         }
     }
 
+    // @find: announce question asked
     /**
      * A run parked on a question. Listeners hear it with the question's task and goal, or with
      * both null for a run started directly on an agent.
@@ -87,6 +91,7 @@ public class LifecycleAnnouncer {
         dispatch(listener -> listener.onQuestionAsked(goal, task, question), "question " + questionId);
     }
 
+    // @find: announce approval raised
     /**
      * A run parked on {@code approval}. Listeners hear it with the approval's task and goal, or
      * with both null for a run started directly on an agent.
@@ -100,6 +105,7 @@ public class LifecycleAnnouncer {
         dispatch(listener -> listener.onApprovalRaised(goal, task, approval), "approval " + approval.getId() + " raised");
     }
 
+    // @find: announce approval expired
     /** {@code approval} expired undecided, and its run was stopped. */
     public void approvalExpired(Approval approval) {
         if (listeners.isEmpty() || approval == null) {
@@ -112,6 +118,7 @@ public class LifecycleAnnouncer {
                 "approval " + approval.getId() + " expiring");
     }
 
+    // @find: announce schedule paused
     /** A schedule paused itself. */
     public void schedulePaused(GoalLifecycleListener.SchedulePause pause) {
         if (listeners.isEmpty() || pause == null) {
@@ -130,6 +137,7 @@ public class LifecycleAnnouncer {
                 : goals.findById(task.getGoalId()).orElse(null);
     }
 
+    // @find: announce goal cancelled
     /** A goal was cancelled, for {@code reason}. */
     public void goalCancelled(UUID goalId, String reason) {
         if (listeners.isEmpty()) {
@@ -142,6 +150,7 @@ public class LifecycleAnnouncer {
         dispatch(listener -> listener.onGoalCancelled(goal, reason), "goal " + goalId + " being cancelled");
     }
 
+    // @find: announce goal retried
     /** A goal was tried again, starting from {@code fromTaskId}. */
     public void goalRetried(UUID goalId, UUID fromTaskId) {
         if (listeners.isEmpty()) {

@@ -1,3 +1,6 @@
+// @find: confluence, atlassian, wiki, pages, search pages, get page, create page, update page, site email api token, live adapter, real API, documentation
+// @what: Live Confluence connector: runs confluence__ tools (search, get, create, update pages) against an Atlassian Cloud site using site, email and API token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -86,6 +89,7 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Confluence search pages, tool confluence__search_pages, live Confluence call
     private Mono<ToolResult> searchPages(ToolInvocation invocation, JsonNode arguments, String credential) {
         StringBuilder cql = new StringBuilder("type = page");
         String query = text(arguments, "query");
@@ -118,6 +122,7 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: Confluence get page, tool confluence__get_page, live Confluence call
     private Mono<ToolResult> getPage(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         Account account = account(credential);
@@ -142,6 +147,7 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Confluence create page, tool confluence__create_page, live Confluence call
     private Mono<ToolResult> createPage(ToolInvocation invocation, JsonNode arguments, String credential) {
         String space = required(arguments, "space");
         String title = required(arguments, "title");
@@ -174,6 +180,7 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Confluence update page, tool confluence__update_page, live Confluence call
     private Mono<ToolResult> updatePage(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         String title = text(arguments, "title");

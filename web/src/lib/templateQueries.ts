@@ -1,3 +1,6 @@
+// @find: agent templates, ready-made assistants, add assistant, create agent from template, suggested connectors, createAssistants, GET /api/agents/templates, POST /api/agents/from-template/{key}, Agents page, Create workspace page
+// @what: Lists the ready-made assistants and adds them to a workspace.
+// @flow: Used by routes/Agents.tsx and routes/CreateWorkspace.tsx; served by orchestrator-service AgentTemplateController.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import type { Agent } from './queries'
@@ -31,11 +34,13 @@ export type FromTemplate = { agent: Agent; suggestedConnectors: string[] }
 const TEMPLATES_PATH = '/api/agents/templates'
 const fromTemplatePath = (key: string) => `/api/agents/from-template/${encodeURIComponent(key)}`
 
+// @find: template card view, assistant template summary
 /** The catalogue's own list, as cards need it. */
 export function viewOf(template: AgentTemplate): TemplateView {
   return { ...template, suggestedConnectors: [...template.suggestedConnectors] }
 }
 
+// @find: list assistant templates, ready-made assistants catalogue; route: GET /api/agents/templates; used by: Agents page
 /**
  * The assistants to offer, from the platform when it has answered and from this build's copy until
  * then (and if it never does), so the cards are there on first paint and never an error.
@@ -51,6 +56,7 @@ export function useAgentTemplates(options: { enabled?: boolean } = {}): Template
   return query.data && query.data.length > 0 ? query.data : TEMPLATES.map(viewOf)
 }
 
+// @find: add assistant from template, create agent from template; route: POST /api/agents/from-template/{key}; used by: Agents page
 /** Adds one assistant to the workspace (agent:create). Adding the same one twice makes a second, keyed -2. */
 export function useCreateFromTemplate() {
   const client = useQueryClient()
@@ -63,6 +69,7 @@ export function useCreateFromTemplate() {
 /** What adding several came to: the keys that were added and the keys that were not. */
 export type AssistantsAdded = { created: string[]; failed: string[] }
 
+// @find: add several assistants at signup, create assistants after workspace; route: POST /api/agents/from-template/{key}; used by: Create workspace page
 /**
  * Adds assistants one after another, for the signup flow, which has no query client to lean on.
  * One that cannot be added never stops the rest, and nothing here throws: the workspace already

@@ -1,3 +1,5 @@
+// @find: tests for agent grant controller, agent grants, tool access, revoke, /api/agents/{agentId}/grants
+// @what: Unit and integration tests (8 cases) for agent grant controller, for example: unknown server; unknown tool; scopes filled from tools; empty means everything.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -211,7 +213,7 @@ class AgentGrantControllerTest {
 
     private static AgentController.AgentDetail detail() {
         return new AgentController.AgentDetail(
-                AGENT, "support", "Support", "support", "active", 1, "You help.", "", 12, false, List.of(), "You help.",
-                List.of(), null, false);
+                AGENT, "support", "Support", "support", "active", 1, "You help.", "", 12, null, null, false, List.of(),
+                "You help.", null, List.of(), null, false);
     }
 }

@@ -1,3 +1,6 @@
+// @find: budget guard, spending cap, budget check, monthly budget, daily budget, cost limit, over budget, 402, stop run when budget exceeded, estimated cost, record cost, month to date
+// @what: Checks a workspace's spending caps before every model attempt and records actual cost afterwards.
+// @flow: Called by ModelRouter before each attempt; reads Budgets and Usage
 package os.aiworkforce.orchestrator.service;
 
 import java.math.BigDecimal;
@@ -96,6 +99,7 @@ public class JpaBudgetGuard implements BudgetGuard {
         return now.truncatedTo(ChronoUnit.DAYS);
     }
 
+    // @find: check budget before model call, allow or deny spend
     @Override
     @Transactional(readOnly = true)
     public Decision check(CallContext context, BigDecimal estimatedCost) {
@@ -158,6 +162,7 @@ public class JpaBudgetGuard implements BudgetGuard {
         return Decision.allow(remaining);
     }
 
+    // @find: record actual cost against budget
     /**
      * Notes what an attempt actually cost, in the cached month-to-date figure.
      *
@@ -180,6 +185,7 @@ public class JpaBudgetGuard implements BudgetGuard {
                 orgId, (key, cached) -> new CachedSpend(cached.spent().add(actualCost), cached.loadedAt()));
     }
 
+    // @find: month-to-date spend
     /**
      * What the workspace has spent since the start of the month, as of now: always read from the
      * usage table, never from the cache, for what an administrator is shown.

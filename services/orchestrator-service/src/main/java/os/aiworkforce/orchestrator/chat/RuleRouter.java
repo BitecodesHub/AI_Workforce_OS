@@ -1,3 +1,6 @@
+// @find: rule router, route without a model, score agents, keyword routing, ask user to choose agent, tie between agents, clauses, RuleRouter, fallback routing, needs choice
+// @what: Chooses an agent for each part of a message by scoring its words against active agents, or asks the person to choose when unsure.
+// @flow: Called by CoordinatorService when no mention is given and the model router has no answer.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.ArrayList;
@@ -155,6 +158,7 @@ public final class RuleRouter {
         }
     }
 
+    // @find: split message into clauses
     public static List<String> clausesOf(String text) {
         List<String> clauses = new ArrayList<>(List.of(text));
         for (String separator : CLAUSE_SEPARATORS) {
@@ -173,6 +177,7 @@ public final class RuleRouter {
                 .toList();
     }
 
+    // @find: route message to agents by rules
     public static Result route(String text, List<Agent> agents, Map<UUID, List<String>> agentToolServers) {
         return route(text, agents, agentToolServers, null);
     }
@@ -182,6 +187,7 @@ public final class RuleRouter {
      *     fallback that is not active is treated the same as null - a paused or retired General
      *     never takes work, however this is called.
      */
+    // @find: route message to agents by rules with tool servers
     public static Result route(
             String text, List<Agent> agents, Map<UUID, List<String>> agentToolServers, Agent fallback) {
         Agent activeFallback = fallback != null && fallback.isActive() ? fallback : null;

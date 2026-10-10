@@ -1,3 +1,6 @@
+// @find: task settled event, next task ready, event after commit, dispatch
+// @what: Event published after a task settles so RunExecutor can start the next ready tasks.
+// @flow: Published by TaskProgress; heard by RunExecutor
 package os.aiworkforce.orchestrator.service;
 
 import java.util.UUID;

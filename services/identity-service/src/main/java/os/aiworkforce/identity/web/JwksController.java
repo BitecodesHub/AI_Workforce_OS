@@ -1,3 +1,6 @@
+// @find: jwks, public keys, well-known jwks.json, verify tokens, key set, JwksController, GET /.well-known/jwks.json
+// @what: Publishes the public keys other services use to verify access tokens.
+// @flow: Reads TokenService.jwks; fetched and cached by every other service.
 package os.aiworkforce.identity.web;
 
 import java.util.Map;
@@ -36,6 +39,7 @@ public class JwksController {
         this.tokens = tokens;
     }
 
+    // @find: jwks, public keys, GET /.well-known/jwks.json
     @GetMapping("/.well-known/jwks.json")
     @Operation(summary = "Public keys used to verify access tokens")
     public ResponseEntity<Map<String, Object>> jwks() {

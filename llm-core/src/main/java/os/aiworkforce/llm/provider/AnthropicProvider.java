@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, Anthropic, Claude, Messages API, system prompt, tool use, streaming, AnthropicProvider
+// @what: Adapter for Anthropic's Messages API.
+// @flow: Registered as a ChatProvider; called by ModelRouter.
 package os.aiworkforce.llm.provider;
 
 import java.time.Duration;
@@ -59,6 +62,7 @@ public class AnthropicProvider implements ChatProvider {
         return ProviderDescriptor.Kind.ANTHROPIC;
     }
 
+    // @find: call Claude, chat completion
     @Override
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -74,6 +78,7 @@ public class AnthropicProvider implements ChatProvider {
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    // @find: stream Claude answer
     @Override
     public Flux<ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -90,6 +95,7 @@ public class AnthropicProvider implements ChatProvider {
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    // @find: check Anthropic key works
     @Override
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         // Anthropic offers no free probe endpoint, so the cheapest real call is used: one token.

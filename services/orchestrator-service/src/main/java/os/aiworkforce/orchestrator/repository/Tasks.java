@@ -1,3 +1,9 @@
+// @find: tasks repository, tasks of a goal, claimable tasks, claim task, stranded tasks, queued tasks, waiting approval by conversation, Tasks
+// @what: Spring Data repository for Task rows including claim and stranded-task queries.
+// @flow: Used by the dispatcher, goal service and chat status.
+// @find: tasks repository, tasks of a goal, claimable tasks, claim task, stranded tasks, queued tasks, waiting approval by conversation, Tasks
+// @what: Spring Data repository for Task rows including claim and stranded-task queries.
+// @flow: Used by the dispatcher, goal service and chat status.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.List;
@@ -25,8 +31,12 @@ import os.aiworkforce.orchestrator.domain.Task;
 
 public interface Tasks extends JpaRepository<Task, UUID> {
 
+    // @find: list tasks of a goal
+    // @find: list tasks of a goal
     List<Task> findByGoalIdOrderByPosition(UUID goalId);
 
+    // @find: tasks of several goals
+    // @find: tasks of several goals
     /**
      * The same tasks {@link #findByGoalIdOrderByPosition} would return for each goal, fetched in
      * one query for every goal a caller already has in hand - a board refresh or a claim sweep
@@ -35,8 +45,12 @@ public interface Tasks extends JpaRepository<Task, UUID> {
      */
     List<Task> findByGoalIdInOrderByPositionAsc(java.util.Collection<UUID> goalIds);
 
+    // @find: get task by id
+    // @find: get task by id
     Optional<Task> findByIdAndOrgId(UUID id, UUID orgId);
 
+    // @find: find claimable tasks, ready to run
+    // @find: find claimable tasks, ready to run
     /**
      * Candidates for the next run, oldest first. Read without a lock; {@link #claim} takes one.
      *
@@ -56,6 +70,8 @@ public interface Tasks extends JpaRepository<Task, UUID> {
             """)
     List<Task> findClaimable(@Param("orgId") UUID orgId, Pageable pageable);
 
+    // @find: claim task, skip locked, dispatcher
+    // @find: claim task, skip locked, dispatcher
     /**
      * Locks one task for the caller, or returns nothing when it has already been taken.
      *
@@ -70,13 +86,19 @@ public interface Tasks extends JpaRepository<Task, UUID> {
     @Query("select t from Task t where t.id = :id and t.status in ('pending', 'ready')")
     Optional<Task> claim(@Param("id") UUID id);
 
+    // @find: count tasks by status
+    // @find: count tasks by status
     /** How many of a workspace's tasks are in one status, for the per-workspace cap on running work. */
     long countByOrgIdAndStatus(UUID orgId, String status);
 
+    // @find: workspaces with claimable tasks
+    // @find: workspaces with claimable tasks
     /** Workspaces with a task waiting to start, for the goal sweep. */
     @Query("select distinct t.orgId from Task t where t.status in ('pending', 'ready')")
     List<UUID> findOrgIdsWithClaimableTasks();
 
+    // @find: find stranded tasks
+    // @find: find stranded tasks
     /**
      * Tasks still shown as in progress although their run has ended.
      *
@@ -101,10 +123,14 @@ public interface Tasks extends JpaRepository<Task, UUID> {
             """)
     List<Task> findStranded(Pageable pageable);
 
+    // @find: list queued tasks
+    // @find: list queued tasks
     /** Pending or ready tasks, including those held behind a paused agent, for the board's queue. */
     @Query("select t from Task t where t.orgId = :orgId and t.status in ('pending', 'ready') order by t.createdAt")
     List<Task> findQueued(@Param("orgId") UUID orgId, Pageable page);
 
+    // @find: tasks waiting for approval per conversation
+    // @find: tasks waiting for approval per conversation
     /** [conversationId, count] of tasks waiting for approval, per chat conversation. */
     @Query(
             """
@@ -115,6 +141,8 @@ public interface Tasks extends JpaRepository<Task, UUID> {
     List<Object[]> waitingApprovalByConversation(
             @Param("orgId") UUID orgId, @Param("ids") java.util.Collection<UUID> ids);
 
+    // @find: conversations waiting for approval
+    // @find: conversations waiting for approval
     /** Conversations with a task waiting for approval, for the Chat "Needs you" group of an approver. */
     @Query(
             """

@@ -1,3 +1,6 @@
+// @find: schedules, scheduled tasks, recurring task, run every day, cron, create schedule, pause schedule, run now, delete schedule, transfer owner, time zone, /schedules, Schedules page
+// @what: The Schedules page: create and manage tasks that run automatically on a timetable.
+// @flow: Routed from App.tsx at /schedules; uses the schedule queries in lib/queries
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import {
@@ -25,6 +28,7 @@ import {
   useMembers,
   usePauseSchedule,
   useResumeSchedule,
+  useRoles,
   useRunScheduleNow,
   useSchedules,
 } from '../lib/queries'
@@ -35,6 +39,7 @@ import {
   canTransferSchedule,
   isScheduleDone,
   scheduleOwnerLabel,
+  rolesThatCanOwnSchedules,
   transferCandidates,
 } from '../lib/schedules'
 import { can, profile } from '../lib/session'
@@ -53,6 +58,7 @@ import { useToast } from '../lib/toast'
  * may run, pause, edit and delete it; only someone who can cancel work may hand it to somebody
  * else. A one-off that has already run offers no Pause or Resume - resuming it would only fire it
  * again at once - but can still be run now or given a new time. */
+// @find: schedule row actions, pause, resume, run now, delete schedule, edit schedule
 function ScheduleRowActions({
   schedule,
   canManage,
@@ -182,6 +188,7 @@ function currentOwnerSentence(ownerName: string): string {
   }
 }
 
+// @find: transfer schedule owner dialog, change who owns a schedule
 function TransferOwnerDialog({
   schedule,
   ownerName,
@@ -205,7 +212,9 @@ function TransferOwnerDialog({
     setError(null)
   }
 
-  const candidates = transferCandidates(members.data ?? [], schedule?.createdBy ?? null)
+  const roles = useRoles({ enabled: schedule !== null && can('role:read') })
+  const ownerRoles = rolesThatCanOwnSchedules(roles.data)
+  const candidates = transferCandidates(members.data ?? [], schedule?.createdBy ?? null, ownerRoles)
   const chosen = candidates.find((member) => member.userId === userId)
 
   const close = () => {
@@ -251,16 +260,16 @@ function TransferOwnerDialog({
           value={userId}
           onChange={(event) => setUserId(event.target.value)}
           required
-          disabled={members.isLoading}
+          disabled={members.isLoading || roles.isLoading}
           data-autofocus
           hint={
             schedule && !schedule.enabled
               ? 'It stays paused until someone resumes it.'
-              : 'Only current members of the workspace are listed.'
+              : 'Only current members who can start work are listed, so viewers are not offered.'
           }
         >
-          {members.isLoading && <option value="">Loading members…</option>}
-          {!members.isLoading && (
+          {(members.isLoading || roles.isLoading) && <option value="">Loading members…</option>}
+          {!members.isLoading && !roles.isLoading && (
             <option value="" disabled>
               {candidates.length > 0 ? 'Choose a member' : 'No other members to choose from'}
             </option>
@@ -276,6 +285,7 @@ function TransferOwnerDialog({
   )
 }
 
+// @find: empty schedules state, create first schedule
 function EmptySchedules({ canCreate, onCreate }: { canCreate: boolean; onCreate: () => void }) {
   return (
     <Card as="section">
@@ -304,6 +314,7 @@ function EmptySchedules({ canCreate, onCreate }: { canCreate: boolean; onCreate:
   )
 }
 
+// @find: Schedules component, schedules page, create schedule, POST /api/schedules, /schedules
 export function Schedules() {
   const canCreate = can('task:create')
   const canTransfer = canTransferSchedule(can)
@@ -356,7 +367,18 @@ export function Schedules() {
     },
     { key: 'agent', header: 'Agent', sortValue: (row) => row.agentName, render: (row) => <Tag>{row.agentName}</Tag> },
     { key: 'owner', header: 'Owner', sortValue: ownerOf, render: (row) => <span>{ownerOf(row)}</span> },
-    { key: 'when', header: 'When', render: (row) => <span className="muted">{row.description}</span> },
+    {
+      key: 'when',
+      header: 'When',
+      // The zone is the schedule's own, saved with it, so a later change to the workspace's zone
+      // is not mistaken for when this one fires.
+      render: (row) => (
+        <span className="muted">
+          {row.description}
+          {row.timezone && <span className="caption"> ({row.timezone.replace(/_/g, ' ')})</span>}
+        </span>
+      ),
+    },
     {
       key: 'nextRun',
       header: 'Next run',
@@ -465,6 +487,7 @@ export function Schedules() {
 
 /** Split out only so the data hook sits beside the table it feeds, rather than at the top of the
  * whole page component. */
+// @find: schedule list card, next run, last run
 function ScheduleListCard({
   canManage,
   onCreate,

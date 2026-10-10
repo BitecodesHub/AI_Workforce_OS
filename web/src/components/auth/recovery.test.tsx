@@ -1,3 +1,5 @@
+// @find: tests for password recovery, reset link, sign in without demo accounts, choose workspace after sign in, network failure sign in, POST /api/auth/password-reset, POST /api/auth/sign-in
+// @what: Tests sign-in failure handling, password reset links and workspace choice after sign-in.
 import axe from 'axe-core'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -112,7 +114,17 @@ describe('Reset link', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save the new password' }))
     })
     expect(screen.getByText('Use at least 12 characters.')).toBeInTheDocument()
+    expect(screen.getByLabelText('New password')).toHaveFocus()
     expect(calls.some((call) => call.url === '/api/auth/password-reset')).toBe(false)
+
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'a long new passphrase' } })
+    expect(screen.queryByText('Use at least 12 characters.')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Type the new password again'), { target: { value: 'a different one' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save the new password' }))
+    })
+    expect(screen.getByText('The two passwords do not match.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Type the new password again')).toHaveFocus()
 
     fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'a long new passphrase' } })
     fireEvent.change(screen.getByLabelText('Type the new password again'), { target: { value: 'a long new passphrase' } })

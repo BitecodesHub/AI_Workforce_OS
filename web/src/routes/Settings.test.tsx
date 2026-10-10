@@ -1,3 +1,6 @@
+// @find: tests for workspace settings, name, time zone, notifications, retention, vitest, Settings component tests, Settings page
+// @what: Automated tests that check the workspace settings screen (/settings) behaves as users expect.
+// @flow: Renders Settings from Settings.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -251,6 +254,8 @@ describe('notifications', () => {
   it('has no test to send while no address is saved', async () => {
     await open()
     expect(screen.getByRole('button', { name: 'Send test message' })).toBeDisabled()
+    // Disabled, and says why.
+    expect(screen.getByText(/Save a webhook address first/)).toBeInTheDocument()
   })
 })
 
@@ -310,5 +315,25 @@ describe('budget', () => {
       'href',
       '/analytics#budget',
     )
+  })
+})
+
+describe('a second pair of eyes', () => {
+  it('shows the rule as it is and saves a new one with PUT /api/approvals/settings', async () => {
+    answers['GET /api/approvals/settings'] = () => json(200, { requesterCannotApprove: 'off' })
+    answers['PUT /api/approvals/settings'] = () => json(200, { requesterCannotApprove: 'all' })
+    await open()
+
+    const field = await screen.findByLabelText('Someone else must approve')
+    expect(field).toHaveValue('off')
+    const card = field.closest('section') as HTMLElement
+    expect(within(card).getByRole('button', { name: 'Save' })).toBeDisabled()
+    fireEvent.change(field, { target: { value: 'all' } })
+    await act(async () => {
+      fireEvent.click(within(card).getByRole('button', { name: 'Save' }))
+    })
+
+    expect(sent('PUT', '/api/approvals/settings')?.body).toEqual({ requesterCannotApprove: 'all' })
+    expect(await screen.findByText('Saved. Someone other than the person who asked now decides these requests.')).toBeInTheDocument()
   })
 })

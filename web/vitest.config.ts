@@ -1,3 +1,6 @@
+// @find: vitest config, test config, unit test settings, jsdom, test environment, aliases
+// @what: Test runner settings kept separate from the build config.
+// @flow: Read by pnpm test; loads src/test-setup.ts
 import { defineConfig } from 'vitest/config'
 import path from 'node:path'
 

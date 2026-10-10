@@ -1,5 +1,8 @@
+// @find: tests for accepting an invitation, accept invite, join workspace, vitest, AcceptInvite component tests, Join the workspace page
+// @what: Automated tests that check the accepting an invitation screen (/accept-invite) behaves as users expect.
+// @flow: Renders AcceptInvite from AcceptInvite.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RouterProvider } from '../lib/router'
 import { accessToken, clearSession, profile, saveSession } from '../lib/session'
@@ -88,6 +91,16 @@ describe('AcceptInvite', () => {
       'href',
       `/sign-in?next=${encodeURIComponent('/accept-invite?token=tok-123&accept=1')}`,
     )
+  })
+
+  it('says the person is in and moves focus to that heading once joined', async () => {
+    answers['POST /api/invitations/accept'] = () => json(200, { email: 'new@example.test' })
+    await open('/accept-invite?token=tok-123')
+    fillAndJoin()
+    await act(async () => {})
+    const heading = screen.getByRole('heading', { level: 1, name: 'You are in' })
+    expect(heading).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Continue to sign in' })).toBeInTheDocument()
   })
 
   it('sends an address that already has an account to sign in, and back here to finish', async () => {
@@ -190,5 +203,43 @@ describe('AcceptInvite', () => {
     await act(async () => {})
 
     expect(screen.getByText(/This invitation was withdrawn/)).toBeInTheDocument()
+    // A dead link is not offered again: no form, no "sign in to accept".
+    expect(screen.getByRole('heading', { level: 1, name: 'This link cannot be used' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Your name')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Sign in to accept' })).toBeNull()
+  })
+
+  it('replaces the form for an expired invitation and for an unknown link', async () => {
+    answers['POST /api/invitations/accept'] = () =>
+      json(409, { code: 'conflict', detail: 'This invitation has expired. Ask for a new one.', errors: { reason: 'expired' } })
+    await open('/accept-invite?token=tok-old')
+    fillAndJoin()
+    await act(async () => {})
+    expect(screen.getByText('This invitation has expired. Ask for a new one.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Join the workspace' })).toBeNull()
+  })
+
+  it('offers sign-in for an invitation already used', async () => {
+    answers['POST /api/invitations/accept'] = () =>
+      json(409, {
+        code: 'conflict',
+        detail: 'This invitation has already been used. Sign in to open the workspace.',
+        errors: { reason: 'accepted' },
+      })
+    await open('/accept-invite?token=tok-used')
+    fillAndJoin()
+    await act(async () => {})
+    expect(screen.getByText('This invitation has already been used. Sign in to open the workspace.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+  })
+
+  it('keeps the form and moves focus to the reason for a failure that can be retried', async () => {
+    answers['POST /api/invitations/accept'] = () => json(503, { code: 'unavailable', detail: 'Try again in a minute.' })
+    await open('/accept-invite?token=tok-123')
+    fillAndJoin()
+    // The failure arrives, then focus moves on the next frame; under a loaded full run that can
+    // take longer than one frame after the click, so wait for it rather than for a single frame.
+    await waitFor(() => expect(document.getElementById('invite-error')).toHaveFocus())
+    expect(screen.getByLabelText('Your name')).toBeInTheDocument()
   })
 })

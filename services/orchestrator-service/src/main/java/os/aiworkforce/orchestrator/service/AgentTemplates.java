@@ -1,3 +1,6 @@
+// @find: agent templates, ready-made assistants, starter agents, template catalogue, create agent from template, demo agents, assistant catalogue, AgentTemplates.all
+// @what: The catalogue of four ready-made assistants shared by the demo seeder and the template controller.
+// @flow: Read by DemoAgentSeeder and AgentTemplateController
 package os.aiworkforce.orchestrator.service;
 
 import java.util.List;
@@ -134,11 +137,13 @@ public final class AgentTemplates {
                                     List.of("channels:history", "chat:write")),
                             new Grant("voice", List.of("create_voice_note"), List.of()))));
 
+    // @find: list templates, all starter assistants
     /** Every template, in the order the console offers them. */
     public static List<Template> all() {
         return ALL;
     }
 
+    // @find: find template by key
     public static Optional<Template> find(String key) {
         if (key == null) {
             return Optional.empty();

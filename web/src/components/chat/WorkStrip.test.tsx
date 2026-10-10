@@ -1,3 +1,6 @@
+// @find: tests for WorkStrip, work strip, active goals, running goals, review link, current step, dock, goal status line
+// @what: Automated tests for WorkStrip.
+// @flow: Run with the web test runner; covers WorkStrip.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

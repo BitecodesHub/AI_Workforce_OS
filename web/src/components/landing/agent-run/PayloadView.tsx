@@ -1,3 +1,6 @@
+// @find: payload view, exact payload, what will be sent, pretty printed JSON, email payload, approval card payload, PayloadView
+// @what: Prints the exact payload an approval would release as JSON.
+// @flow: Used by ApprovalDemo
 import { Fragment } from 'react'
 import type { ReactElement } from 'react'
 
@@ -10,6 +13,7 @@ import type { ReactElement } from 'react'
 
 export type PayloadViewProps = { payload: Readonly<Record<string, string>>; label: string }
 
+// @find: PayloadView component, payload JSON
 export function PayloadView({ payload, label }: PayloadViewProps): ReactElement {
   const entries = Object.entries(payload)
   const last = entries.length - 1

@@ -1,3 +1,6 @@
+// @find: workspace picker, choose workspace, switch workspace, select organisation, after sign in, multiple workspaces, GET /api/users/me/workspaces, WorkspacePicker
+// @what: Lets a signed-in person choose which workspace to enter when they belong to several.
+// @flow: Shown by sign in after POST /api/auth/sign-in
 import { useEffect, useRef } from 'react'
 import { Button, Eyebrow, Notice } from '../ui'
 import { roleLabel } from '../../lib/labels'
@@ -15,6 +18,7 @@ import type { WorkspaceChoice } from '../../lib/accountQueries'
  * heading takes focus when the step appears, so a screen reader hears that the screen changed.
  */
 
+// @find: WorkspacePicker, choose workspace after sign in
 export function WorkspacePicker({
   workspaces,
   pending,

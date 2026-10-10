@@ -1,3 +1,6 @@
+// @find: chat, conversations, messages, send message, create conversation, rename, pin, archive, delete conversation, participants, visibility, queue, reroute, stop goal, retry goal, ChatController, /api/conversations, Chat page
+// @what: REST API for conversations and their messages: list, create, read, rename, pin, archive, share, send, queue, reroute, stop and retry.
+// @flow: Called by the Chat page; delegates to ConversationQueries, ConversationAdmin and CoordinatorService.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;
@@ -57,6 +60,10 @@ public class ChatController {
     private final ConversationAdmin admin;
     private final CoordinatorService coordinator;
 
+    /** One answer at a time per conversation; absent only where a test builds this by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ChatQueue chatQueue;
+
     public ChatController(
             Conversations conversations,
             ConversationQueries queries,
@@ -97,8 +104,20 @@ public class ChatController {
 
     public record AnswerFromDocumentsRequest(UUID agentId) {}
 
-    public record MessagesResult(List<ConversationQueries.ChatMessageView> messages) {}
+    /**
+     * @param queued the message as it waits its turn, when the conversation already had work in
+     *     progress and nothing was added to the thread yet; null otherwise
+     */
+    public record MessagesResult(List<ConversationQueries.ChatMessageView> messages, ChatQueue.QueuedMessageView queued) {
 
+        public MessagesResult(List<ConversationQueries.ChatMessageView> messages) {
+            this(messages, null);
+        }
+    }
+
+    public record EditQueuedRequest(@Size(max = 10_000) String text) {}
+
+    // @find: list conversations, search chats, GET /api/conversations, chat sidebar
     @GetMapping
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(
@@ -111,6 +130,7 @@ public class ChatController {
         return queries.list(orgId(), RequestContext.requireActor(), q, scope, page, size);
     }
 
+    // @find: create conversation, new chat, POST /api/conversations
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -134,6 +154,7 @@ public class ChatController {
      * @param after the position of the newest message the reader already holds
      * @param since the {@code generatedAt} of the response the reader last merged
      */
+    // @find: open conversation, get conversation detail with messages, GET /api/conversations/{id}
     @GetMapping("/{id}")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(
@@ -153,6 +174,7 @@ public class ChatController {
         return get(id, limit, null, null);
     }
 
+    // @find: earlier messages, load older messages, GET /api/conversations/{id}/messages
     @GetMapping("/{id}/messages")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "An older page of a conversation's messages")
@@ -163,6 +185,7 @@ public class ChatController {
         return queries.messagesPage(orgId(), RequestContext.requireActor(), id, before, limit);
     }
 
+    // @find: rename conversation, change chat title, PATCH /api/conversations/{id}
     @PatchMapping("/{id}")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Rename a conversation")
@@ -171,6 +194,7 @@ public class ChatController {
         return admin.rename(orgId(), RequestContext.requireActor(), id, request.title());
     }
 
+    // @find: set conversation visibility, private or workspace chat, PUT /api/conversations/{id}/visibility
     @PutMapping("/{id}/visibility")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Share a conversation with the whole workspace, or make it private again")
@@ -179,6 +203,7 @@ public class ChatController {
         return admin.setVisibility(orgId(), RequestContext.requireActor(), id, request.visibility());
     }
 
+    // @find: list conversation participants, who is in this chat, GET /api/conversations/{id}/participants
     @GetMapping("/{id}/participants")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "The people added to a conversation, besides the person who started it")
@@ -186,6 +211,7 @@ public class ChatController {
         return new ParticipantsResult(admin.participantIds(orgId(), RequestContext.requireActor(), id));
     }
 
+    // @find: add participants to conversation, share chat with people, POST /api/conversations/{id}/participants
     @PostMapping("/{id}/participants")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Add people to a conversation so they can read it")
@@ -195,6 +221,7 @@ public class ChatController {
                 admin.addParticipants(orgId(), RequestContext.requireActor(), id, request.userIds()));
     }
 
+    // @find: remove participant from conversation, DELETE /api/conversations/{id}/participants/{userId}
     @DeleteMapping("/{id}/participants/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -203,6 +230,7 @@ public class ChatController {
         admin.removeParticipant(orgId(), RequestContext.requireActor(), id, userId);
     }
 
+    // @find: pin conversation, PUT /api/conversations/{id}/pin
     @PutMapping("/{id}/pin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -211,6 +239,7 @@ public class ChatController {
         admin.pin(orgId(), RequestContext.requireActor(), id);
     }
 
+    // @find: unpin conversation, DELETE /api/conversations/{id}/pin
     @DeleteMapping("/{id}/pin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -219,6 +248,7 @@ public class ChatController {
         admin.unpin(orgId(), RequestContext.requireActor(), id);
     }
 
+    // @find: archive conversation, PUT /api/conversations/{id}/archive
     @PutMapping("/{id}/archive")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -227,6 +257,7 @@ public class ChatController {
         admin.archive(orgId(), RequestContext.requireActor(), id);
     }
 
+    // @find: unarchive conversation, DELETE /api/conversations/{id}/archive
     @DeleteMapping("/{id}/archive")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -235,6 +266,7 @@ public class ChatController {
         admin.unarchive(orgId(), RequestContext.requireActor(), id);
     }
 
+    // @find: mark conversation read, unread marker, PUT /api/conversations/{id}/read
     @PutMapping("/{id}/read")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -243,6 +275,7 @@ public class ChatController {
         admin.markRead(orgId(), RequestContext.requireActor(), id, request.position());
     }
 
+    // @find: delete conversation, remove chat, DELETE /api/conversations/{id}
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -251,6 +284,7 @@ public class ChatController {
         admin.delete(orgId(), RequestContext.requireActor(), id);
     }
 
+    // @find: send message, post chat message, ask the workforce, POST /api/conversations/{id}/messages
     @PostMapping("/{id}/messages")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -261,11 +295,54 @@ public class ChatController {
         if ((request.text() == null || request.text().isBlank()) && attachmentIds.isEmpty()) {
             throw os.aiworkforce.platform.error.ApiException.validation("text", "must not be blank");
         }
-        List<ChatMessage> created = coordinator.handleMessage(
+        CoordinatorService.SendOutcome outcome = coordinator.send(
                 orgId(), id, request.text(), request.agentIds(), attachmentIds, httpRequest.getHeader("Authorization"));
-        return toResult(created);
+        if (outcome.queued() != null && chatQueue != null) {
+            return new MessagesResult(
+                    List.of(),
+                    chatQueue.view(
+                            outcome.queued(),
+                            conversations.findByIdAndOrgId(id, orgId()).orElse(null),
+                            RequestContext.requireActor()));
+        }
+        return toResult(outcome.messages());
     }
 
+    // @find: edit queued message, change waiting message, PATCH /api/conversations/{id}/queue/{queuedId}
+    @PatchMapping("/{id}/queue/{queuedId}")
+    @RequiresPermission(Permission.Codes.CHAT_USE)
+    @Operation(summary = "Change the text of a message waiting its turn")
+    public ChatQueue.QueuedMessageView editQueued(
+            @PathVariable UUID id, @PathVariable UUID queuedId, @Valid @RequestBody EditQueuedRequest request) {
+        return requireQueue().edit(orgId(), id, queuedId, request.text(), RequestContext.requireActor());
+    }
+
+    // @find: cancel queued message, remove waiting message, DELETE /api/conversations/{id}/queue/{queuedId}
+    @DeleteMapping("/{id}/queue/{queuedId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequiresPermission(Permission.Codes.CHAT_USE)
+    @Operation(summary = "Cancel a message waiting its turn")
+    public void cancelQueued(@PathVariable UUID id, @PathVariable UUID queuedId) {
+        requireQueue().cancel(orgId(), id, queuedId, RequestContext.requireActor());
+    }
+
+    // @find: start queued message now, Start now anyway, POST /api/conversations/{id}/queue/{queuedId}/start-now
+    @PostMapping("/{id}/queue/{queuedId}/start-now")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @RequiresPermission(Permission.Codes.CHAT_USE)
+    @Operation(summary = "Stop the work in progress and start this waiting message now")
+    public MessagesResult startQueuedNow(@PathVariable UUID id, @PathVariable UUID queuedId) {
+        return toResult(coordinator.startQueuedNow(orgId(), id, queuedId).messages());
+    }
+
+    private ChatQueue requireQueue() {
+        if (chatQueue == null) {
+            throw os.aiworkforce.platform.error.ApiException.notFound("queue", "chat");
+        }
+        return chatQueue;
+    }
+
+    // @find: reroute message to another agent, choose agent, POST /api/conversations/{id}/messages/{messageId}/reroute
     @PostMapping("/{id}/messages/{messageId}/reroute")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Send a routing message's work to a different agent instead")
@@ -274,6 +351,7 @@ public class ChatController {
         return toResult(coordinator.reroute(orgId(), id, messageId, request.agentId()));
     }
 
+    // @find: answer from documents, Answer from these passages, POST /api/conversations/{id}/messages/{messageId}/answer-from-documents
     @PostMapping("/{id}/messages/{messageId}/answer-from-documents")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @RequiresPermission(
@@ -288,6 +366,7 @@ public class ChatController {
         return toResult(coordinator.answerFromDocuments(orgId(), id, messageId, agentId));
     }
 
+    // @find: stop goal from chat, cancel running work, POST /api/conversations/{id}/goals/{goalId}/stop
     @PostMapping("/{id}/goals/{goalId}/stop")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Operation(summary = "Stop the work a chat message started")
@@ -295,6 +374,7 @@ public class ChatController {
         return coordinator.stopGoal(orgId(), id, goalId);
     }
 
+    // @find: retry goal from chat, run again, POST /api/conversations/{id}/goals/{goalId}/retry
     @PostMapping("/{id}/goals/{goalId}/retry")
     @RequiresPermission(
             value = {Permission.Codes.CHAT_USE, Permission.Codes.TASK_CREATE},

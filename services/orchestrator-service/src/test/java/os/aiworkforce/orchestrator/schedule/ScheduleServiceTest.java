@@ -1,3 +1,6 @@
+// @find: tests for schedule service, schedule, creates from recurring phrase, creates from once phrase, refuses unknown agent, refuses paused agent, refuses unreadable phrase, updates name without touching timing, reparses on new text, missing schedule, ScheduleServiceTest, ScheduleService
+// @what: Tests for ScheduleService in the orchestrator schedule package (45 test methods).
+// @flow: Exercises ScheduleService
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -176,6 +179,7 @@ class ScheduleServiceTest {
     @DisplayName("creating a schedule")
     class Create {
 
+        // @find: test creates from recurring phrase, schedule service
         @Test
         @DisplayName("parses the phrase, computes the next run and records who asked for it")
         void createsFromRecurringPhrase() {
@@ -193,6 +197,7 @@ class ScheduleServiceTest {
             assertThat(created.getRequestedBy()).isEqualTo(personId);
         }
 
+        // @find: test creates from once phrase, schedule service
         @Test
         @DisplayName("a once schedule's next run is its run-at instant")
         void createsFromOncePhrase() {
@@ -202,6 +207,7 @@ class ScheduleServiceTest {
             assertThat(created.getRunAt()).isEqualTo(created.getNextRunAt());
         }
 
+        // @find: test refuses unknown agent, schedule service
         @Test
         @DisplayName("refuses an agent from another workspace")
         void refusesUnknownAgent() {
@@ -213,6 +219,7 @@ class ScheduleServiceTest {
                             ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
         }
 
+        // @find: test refuses paused agent, schedule service
         @Test
         @DisplayName("refuses a paused agent")
         void refusesPausedAgent() {
@@ -223,6 +230,7 @@ class ScheduleServiceTest {
                             ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
         }
 
+        // @find: test refuses unreadable phrase, schedule service
         @Test
         @DisplayName("an unreadable phrase fails before anything is saved")
         void refusesUnreadablePhrase() {
@@ -236,6 +244,7 @@ class ScheduleServiceTest {
     @DisplayName("updating a schedule")
     class Update {
 
+        // @find: test updates name without touching timing, schedule service
         @Test
         @DisplayName("re-parses only when a new phrase is given")
         void updatesNameWithoutTouchingTiming() {
@@ -251,6 +260,7 @@ class ScheduleServiceTest {
             assertThat(updated.getNextRunAt()).isEqualTo(Instant.parse("2026-09-29T00:00:00Z"));
         }
 
+        // @find: test reparses on new text, schedule service
         @Test
         @DisplayName("a new phrase recomputes cron, description and the next run")
         void reparsesOnNewText() {
@@ -264,6 +274,7 @@ class ScheduleServiceTest {
             assertThat(updated.getDescription()).isEqualTo("Every hour");
         }
 
+        // @find: test missing schedule, schedule service
         @Test
         @DisplayName("not found raises a 404")
         void missingSchedule() {
@@ -273,6 +284,7 @@ class ScheduleServiceTest {
                             ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND));
         }
 
+        // @find: test audits changed fields, schedule service
         @Test
         @DisplayName("the audit entry names what changed, the previous agent and a fingerprint of the instruction")
         void auditsChangedFields() {
@@ -303,6 +315,7 @@ class ScheduleServiceTest {
             assertThat(audited()).noneMatch(e -> e.action().equals("schedule.owner_change"));
         }
 
+        // @find: test no change no audit, schedule service
         @Test
         @DisplayName("an edit that changes nothing writes no audit entry")
         void noChangeNoAudit() {
@@ -319,6 +332,7 @@ class ScheduleServiceTest {
     @DisplayName("who may change a schedule")
     class WhoMayChange {
 
+        // @find: test employee cannot pause or delete anothers schedule, schedule service
         @Test
         @DisplayName("an employee gets 403 pausing or deleting another person's schedule, and nothing changes")
         void employeeCannotPauseOrDeleteAnothersSchedule() {
@@ -335,6 +349,7 @@ class ScheduleServiceTest {
             assertThat(audited()).isEmpty();
         }
 
+        // @find: test employee cannot edit resume or run anothers schedule, schedule service
         @Test
         @DisplayName("an employee gets 403 editing, resuming or running another person's schedule")
         void employeeCannotEditResumeOrRunAnothersSchedule() {
@@ -352,6 +367,7 @@ class ScheduleServiceTest {
             verify(goalService, never()).createGoal(any(), any(), anyBoolean());
         }
 
+        // @find: test owner manages own schedule, schedule service
         @Test
         @DisplayName("the owner can pause, resume, edit, run and delete their own schedule")
         void ownerManagesOwnSchedule() {
@@ -373,6 +389,7 @@ class ScheduleServiceTest {
             assertThat(mine.getRequestedBy()).isEqualTo(ownerId);
         }
 
+        // @find: test manager takes over by editing instruction, schedule service
         @Test
         @DisplayName("a manager can manage anyone's schedule, and becomes its owner by editing the instruction")
         void managerTakesOverByEditingInstruction() {
@@ -399,6 +416,7 @@ class ScheduleServiceTest {
                     .containsEntry("via", "edit");
         }
 
+        // @find: test manager rename keeps owner, schedule service
         @Test
         @DisplayName("a manager renaming or re-timing someone's schedule leaves the owner as they were")
         void managerRenameKeepsOwner() {
@@ -412,6 +430,7 @@ class ScheduleServiceTest {
             assertThat(audited()).noneMatch(e -> e.action().equals("schedule.owner_change"));
         }
 
+        // @find: test legacy schedule needs task cancel, schedule service
         @Test
         @DisplayName("a schedule with no owner on record needs task:cancel")
         void legacyScheduleNeedsTaskCancel() {
@@ -426,6 +445,7 @@ class ScheduleServiceTest {
             assertThat(legacy.isEnabled()).isFalse();
         }
 
+        // @find: test no actor refused, schedule service
         @Test
         @DisplayName("no actor at all is refused")
         void noActorRefused() {
@@ -433,6 +453,7 @@ class ScheduleServiceTest {
             assertDenied(() -> service.requireCanManage(mine, null));
         }
 
+        // @find: test change owner, schedule service
         @Test
         @DisplayName("handing a schedule to someone else needs task:cancel, and is audited as an owner change")
         void changeOwner() {
@@ -460,6 +481,7 @@ class ScheduleServiceTest {
     @DisplayName("pause and resume")
     class PauseResume {
 
+        // @find: test pause clears reason, schedule service
         @Test
         @DisplayName("pause disables the schedule and clears any stale auto-pause note")
         void pauseClearsReason() {
@@ -473,6 +495,7 @@ class ScheduleServiceTest {
             assertThat(paused.getPausedReason()).isNull();
         }
 
+        // @find: test pause reads request context, schedule service
         @Test
         @DisplayName("pause without an explicit actor uses the one in the request context")
         void pauseReadsRequestContext() {
@@ -486,6 +509,7 @@ class ScheduleServiceTest {
             assertThat(service.pause(ORG, existing.getId()).isEnabled()).isFalse();
         }
 
+        // @find: test resume resets, schedule service
         @Test
         @DisplayName("resume re-enables, clears failures and the pause note, and recomputes the next run")
         void resumeResets() {
@@ -504,6 +528,7 @@ class ScheduleServiceTest {
             assertThat(resumed.getNextRunAt()).isNotNull();
         }
 
+        // @find: test internal pause ignores ownership, schedule service
         @Test
         @DisplayName("Stop everything's pause reaches a schedule whoever owns it, and says why")
         void internalPauseIgnoresOwnership() {
@@ -521,6 +546,7 @@ class ScheduleServiceTest {
             assertThat(entry.detail()).containsEntry("reason", ScheduleService.STOPPED_EVERYTHING_REASON);
         }
 
+        // @find: test records stop all, schedule service
         @Test
         @DisplayName("Stop everything itself is recorded once, with what it stopped")
         void recordsStopAll() {
@@ -548,6 +574,7 @@ class ScheduleServiceTest {
             return done;
         }
 
+        // @find: test completed is derived, schedule service
         @Test
         @DisplayName("a one-off the sweep already fired reads as completed; a paused one does not")
         void completedIsDerived() {
@@ -564,6 +591,7 @@ class ScheduleServiceTest {
             assertThat(ScheduleService.isCompleted(recurring)).isFalse();
         }
 
+        // @find: test resuming past one off is refused, schedule service
         @Test
         @DisplayName("resuming a one-off whose time has passed is a validation error, and fires nothing")
         void resumingPastOneOffIsRefused() {
@@ -580,6 +608,7 @@ class ScheduleServiceTest {
             assertThat(done.getNextRunAt()).isNull();
         }
 
+        // @find: test resuming stale paused one off is refused, schedule service
         @Test
         @DisplayName("a one-off paused before it fired is refused too, once its time has gone by")
         void resumingStalePausedOneOffIsRefused() {
@@ -596,6 +625,7 @@ class ScheduleServiceTest {
             assertThat(stale.isEnabled()).isFalse();
         }
 
+        // @find: test editing done one off to future enables it, schedule service
         @Test
         @DisplayName("editing a done one-off to a time still ahead turns it back on")
         void editingDoneOneOffToFutureEnablesIt() {
@@ -611,6 +641,7 @@ class ScheduleServiceTest {
             assertThat(onlyEntry("schedule.update").detail()).containsEntry("reactivated", true);
         }
 
+        // @find: test editing deliberately paused schedule keeps it paused, schedule service
         @Test
         @DisplayName("a schedule paused on purpose stays paused whatever is edited")
         void editingDeliberatelyPausedScheduleKeepsItPaused() {
@@ -643,6 +674,7 @@ class ScheduleServiceTest {
                 null,
                 Map.of());
 
+        // @find: test pauses their schedules, schedule service
         @Test
         @DisplayName("pauses every enabled schedule they own with a note, counts them, and audits each as the system")
         void pausesTheirSchedules() {
@@ -672,6 +704,7 @@ class ScheduleServiceTest {
             assertThat(entry.detail()).containsEntry("reason", ScheduleService.OWNER_REMOVED_REASON);
         }
 
+        // @find: test reads only that person, schedule service
         @Test
         @DisplayName("only reads the departed person's schedules")
         void readsOnlyThatPerson() {
@@ -684,6 +717,7 @@ class ScheduleServiceTest {
             verify(schedules, never()).save(any());
         }
 
+        // @find: test resume needs transfer first, schedule service
         @Test
         @DisplayName("somebody else cannot resume it in the former member's name until it is transferred")
         void resumeNeedsTransferFirst() {
@@ -710,6 +744,7 @@ class ScheduleServiceTest {
     @DisplayName("run now")
     class RunNow {
 
+        // @find: test fires regardless of enabled, schedule service
         @Test
         @DisplayName("fires even when disabled, and does not move the next scheduled run")
         void firesRegardlessOfEnabled() {
@@ -728,6 +763,7 @@ class ScheduleServiceTest {
             assertThat(result.isEnabled()).isFalse();
         }
 
+        // @find: test fires as caller, schedule service
         @Test
         @DisplayName("fires as the person who pressed it, not as the schedule's owner")
         void firesAsCaller() {
@@ -761,6 +797,7 @@ class ScheduleServiceTest {
     @DisplayName("the audit trail")
     class AuditTrail {
 
+        // @find: test every change is audited, schedule service
         @Test
         @DisplayName("every change writes an entry, as whoever made it, after it commits")
         void everyChangeIsAudited() {
@@ -799,6 +836,7 @@ class ScheduleServiceTest {
             assertThat(onlyEntry("schedule.delete").actor()).isEqualTo(manager);
         }
 
+        // @find: test refused change is not audited, schedule service
         @Test
         @DisplayName("a refused change writes nothing")
         void refusedChangeIsNotAudited() {
@@ -815,6 +853,7 @@ class ScheduleServiceTest {
     @DisplayName("history")
     class History {
 
+        // @find: test reads one page, schedule service
         @Test
         @DisplayName("reads one page of a schedule's goals, after checking it is in this workspace")
         void readsOnePage() {
@@ -837,6 +876,7 @@ class ScheduleServiceTest {
     @DisplayName("the sweep")
     class Sweep {
 
+        // @find: test fires due recurring, schedule service
         @Test
         @DisplayName("fires a due schedule and advances a recurring one to its next occurrence")
         void firesDueRecurring() {
@@ -857,6 +897,7 @@ class ScheduleServiceTest {
             assertThat(due.isEnabled()).isTrue();
         }
 
+        // @find: test fires as owner, schedule service
         @Test
         @DisplayName("fires as the schedule's owner, or the platform when it has none")
         void firesAsOwner() {
@@ -885,6 +926,7 @@ class ScheduleServiceTest {
             assertThat(requesters).containsExactly(ownerId, null);
         }
 
+        // @find: test once disables after firing, schedule service
         @Test
         @DisplayName("a fired once schedule disables itself and clears its next run")
         void onceDisablesAfterFiring() {
@@ -904,6 +946,7 @@ class ScheduleServiceTest {
             assertThat(due.getNextRunAt()).isNull();
         }
 
+        // @find: test skips overlap, schedule service
         @Test
         @DisplayName("skips this occurrence when overlap policy is skip and the last goal is still running")
         void skipsOverlap() {
@@ -925,6 +968,7 @@ class ScheduleServiceTest {
             assertThat(due.getNextRunAt()).isAfter(Instant.now().minusSeconds(10));
         }
 
+        // @find: test queue policy fires despite overlap, schedule service
         @Test
         @DisplayName("fires anyway when the overlap policy is queue")
         void queuePolicyFiresDespiteOverlap() {
@@ -949,6 +993,7 @@ class ScheduleServiceTest {
             verify(goalService, times(1)).createGoal(any(), any(), anyBoolean());
         }
 
+        // @find: test one failure does not stop the rest, schedule service
         @Test
         @DisplayName("one schedule's failure does not stop the rest of the sweep")
         void oneFailureDoesNotStopTheRest() {
@@ -978,6 +1023,7 @@ class ScheduleServiceTest {
     @DisplayName("previewing a phrase")
     class Preview {
 
+        // @find: test uses workspace zone, schedule service
         @Test
         @DisplayName("uses the workspace timezone when none is given, and echoes five next runs")
         void usesWorkspaceZone() {
@@ -988,6 +1034,7 @@ class ScheduleServiceTest {
             assertThat(result.nextRuns()).hasSize(5);
         }
 
+        // @find: test uses override zone, schedule service
         @Test
         @DisplayName("an override timezone is used instead of the workspace's own")
         void usesOverrideZone() {
@@ -996,6 +1043,7 @@ class ScheduleServiceTest {
             assertThat(result.timezone()).isEqualTo("UTC");
         }
 
+        // @find: test surfaces parser error, schedule service
         @Test
         @DisplayName("an unreadable phrase surfaces the parser's own validation error")
         void surfacesParserError() {

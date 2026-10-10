@@ -1,3 +1,6 @@
+// @find: audit events repository, query audit log, newest entry of chain, chain pages, audit search queries, jpa repository
+// @what: Spring Data repository for audit_events, including chain and search queries.
+// @flow: Used by AuditAppender, AuditSearch, AuditVerification and AnalyticsController
 package os.aiworkforce.analytics.repository;
 
 import java.time.Instant;

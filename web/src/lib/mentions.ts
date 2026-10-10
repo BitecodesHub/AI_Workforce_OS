@@ -1,3 +1,6 @@
+// @find: mentions, @mention, chat composer, mention agent, find mention query, match agents, insert mention, extract mentions
+// @what: Pure text helpers for @mentions of agents in the chat composer.
+// @flow: Used by the chat composer; mirrors backend MentionParser
 /*
  * @mentions in the chat composer.
  *
@@ -22,6 +25,7 @@ function foldedKey(text: string): string {
   return normalise(text).replace(/[\s-]+/g, '')
 }
 
+// @find: find mention query, @ typed at caret
 /**
  * The @query being typed at the caret, or null when the caret is not inside one.
  *
@@ -49,6 +53,7 @@ function matchScore(agent: MentionCandidate, q: string): number | null {
   return null
 }
 
+// @find: match agents, mention suggestions
 /**
  * Agents whose name or key could complete `query`, best match first: an exact match, then a
  * prefix match, then anywhere in the name, ties broken alphabetically. An empty query returns
@@ -67,6 +72,7 @@ export function matchAgents<T extends MentionCandidate>(query: string, agents: r
     .map((entry) => entry.agent)
 }
 
+// @find: insert mention, complete @agent
 /**
  * Replaces the '@query' the caret sits in with a mention of `agent`, by its key (one word, so it
  * round-trips through the backend's own parser unambiguously), followed by a space. Returns the
@@ -87,6 +93,7 @@ export function insertMention(
 /** Up to three words after an '@', the shape a mention can take (a name written as several words). */
 const MENTION_TOKEN = /@([^\s@]+(?:\s+[^\s@]+){0,2})/g
 
+// @find: extract mentions, which agents were mentioned
 /**
  * Every agent mentioned in `text`, in the order their mention first appears, each id once. Tries
  * the longest run of words after each '@' first, so "@Research Analyst, go" matches a two-word

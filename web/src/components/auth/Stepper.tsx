@@ -1,3 +1,6 @@
+// @find: stepper, progress steps, wizard steps, step indicator, create workspace steps, Stepper
+// @what: Small numbered step indicator for multi-step signed-out flows.
+// @flow: Used by sign up / workspace creation screens
 /*
  * Where a person is in a short, fixed sequence of steps.
  *
@@ -11,6 +14,7 @@ export type StepperProps = {
   current: number
 }
 
+// @find: Stepper, step indicator, progress steps
 export function Stepper({ steps, current }: StepperProps) {
   return (
     <ol className="auth-steps" aria-label="Progress">

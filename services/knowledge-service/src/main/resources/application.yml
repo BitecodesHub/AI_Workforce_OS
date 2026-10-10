@@ -1,3 +1,5 @@
+# @find: knowledge service config, application.yml, knowledge settings, qdrant url, extraction max chars, embedding config, upload size limit, datasource, flyway, port, knowledge base configuration
+# @what: Spring configuration for knowledge-service: database, upload limits, Qdrant address, extraction limits and test profile.
 # Ingestion, embedding and cited retrieval.
 #
 # This file holds only what belongs to this service. Everything shared - security, resilience,

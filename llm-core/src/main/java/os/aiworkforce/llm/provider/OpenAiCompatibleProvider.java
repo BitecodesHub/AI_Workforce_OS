@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, OpenAI compatible, OpenRouter, NVIDIA NIM, Groq, OpenAI, self-hosted, chat completions, embeddings, failure classification, 429 rate limit, tool calls, images, OpenAiCompatibleProvider
+// @what: One adapter for every provider speaking the OpenAI chat completions API, with failure classification and embeddings.
+// @flow: Registered as a ChatProvider; called by ModelRouter and knowledge-service embeddings.
 package os.aiworkforce.llm.provider;
 
 import java.time.Duration;
@@ -80,6 +83,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         return true;
     }
 
+    // @find: call OpenRouter NVIDIA Groq OpenAI, chat completion
     @Override
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -97,6 +101,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    // @find: stream answer
     @Override
     public Flux<os.aiworkforce.llm.spi.ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -116,6 +121,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    // @find: check provider key works
     @Override
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         // Listing models is the cheapest call that still proves the credential is accepted.
@@ -127,6 +133,108 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 .timeout(Duration.ofSeconds(10))
                 .map(node -> true)
                 .onErrorResume(error -> Mono.just(false));
+    }
+
+    // @find: OpenAI-compatible embeddings, knowledge base embeddings
+    @Override
+    public Mono<List<float[]>> embed(
+            ProviderDescriptor provider, ModelSpec model, List<String> inputs, String credential) {
+        return embed(provider, model, inputs, credential, os.aiworkforce.llm.model.EmbeddingPurpose.PASSAGE);
+    }
+
+    // @find: embeddings with purpose, query vs passage
+    /**
+     * {@code POST /embeddings}, which OpenAI, OpenRouter and NVIDIA NIM all serve.
+     *
+     * <p>NVIDIA's retrieval models need {@code input_type} ({@code query} or {@code passage}) and
+     * refuse a call without it; they also refuse an over-long input unless told to truncate, so both
+     * are sent to NVIDIA and to nobody else, since OpenAI rejects fields it does not know. Vectors are
+     * put back in input order by their {@code index}, never assumed to arrive in it.
+     */
+    @Override
+    public Mono<List<float[]>> embed(
+            ProviderDescriptor provider,
+            ModelSpec model,
+            List<String> inputs,
+            String credential,
+            os.aiworkforce.llm.model.EmbeddingPurpose purpose) {
+        ObjectNode body = json.createObjectNode();
+        body.put("model", model.modelId());
+        ArrayNode input = body.putArray("input");
+        inputs.forEach(text -> input.add(text == null || text.isBlank() ? " " : text));
+        body.put("encoding_format", "float");
+        if (isNvidia(provider)) {
+            body.put("input_type", (purpose == null ? os.aiworkforce.llm.model.EmbeddingPurpose.PASSAGE : purpose).wire());
+            body.put("truncate", "END");
+        }
+        return client(provider, credential)
+                .post()
+                .uri("/embeddings")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(90))
+                .map(node -> parseEmbeddings(provider, model, node, inputs.size()))
+                .onErrorMap(error -> translate(provider, model, error));
+    }
+
+    static boolean isNvidia(ProviderDescriptor provider) {
+        String base = provider.baseUrl() == null ? "" : provider.baseUrl().toLowerCase(java.util.Locale.ROOT);
+        return "nvidia".equalsIgnoreCase(provider.id()) || base.contains("api.nvidia.com");
+    }
+
+    private List<float[]> parseEmbeddings(ProviderDescriptor provider, ModelSpec model, JsonNode node, int expected) {
+        if (node == null) {
+            throw ProviderException.of(
+                    ProviderFailure.MALFORMED_RESPONSE, provider.id(), model.modelId(), "The provider returned no body.");
+        }
+        // OpenRouter answers some upstream failures with 200 and an error envelope.
+        if (node.has("error") && !node.path("error").isNull()) {
+            JsonNode error = node.path("error");
+            String message = error.path("message").asText("The provider returned an error.");
+            Integer status = error.path("code").isInt() ? error.path("code").asInt() : null;
+            throw classifyBody(provider, model, message, error.path("code").asText(null), status);
+        }
+        JsonNode data = node.path("data");
+        if (!data.isArray() || data.size() != expected) {
+            throw ProviderException.of(
+                    ProviderFailure.MALFORMED_RESPONSE,
+                    provider.id(),
+                    model.modelId(),
+                    "The provider returned " + (data.isArray() ? data.size() : 0) + " vectors for " + expected
+                            + " texts.");
+        }
+        float[][] ordered = new float[expected][];
+        int fallback = 0;
+        for (JsonNode item : data) {
+            int index = item.has("index") ? item.path("index").asInt(fallback) : fallback;
+            fallback++;
+            JsonNode values = item.path("embedding");
+            if (index < 0 || index >= expected || !values.isArray() || values.isEmpty()) {
+                throw ProviderException.of(
+                        ProviderFailure.MALFORMED_RESPONSE,
+                        provider.id(),
+                        model.modelId(),
+                        "The provider returned an embedding that could not be read.");
+            }
+            float[] vector = new float[values.size()];
+            for (int i = 0; i < values.size(); i++) {
+                vector[i] = (float) values.get(i).asDouble();
+            }
+            ordered[index] = vector;
+        }
+        List<float[]> vectors = new ArrayList<>(expected);
+        for (float[] vector : ordered) {
+            if (vector == null) {
+                throw ProviderException.of(
+                        ProviderFailure.MALFORMED_RESPONSE,
+                        provider.id(),
+                        model.modelId(),
+                        "The provider returned two embeddings for one text.");
+            }
+            vectors.add(vector);
+        }
+        return vectors;
     }
 
     // ---- Request building ----------------------------------------------------------------
@@ -613,6 +721,13 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             return ProviderFailure.RATE_LIMITED;
         }
         String lower = body.toLowerCase(java.util.Locale.ROOT);
+        // Groq's per-minute and per-day limits say "rate_limit_exceeded" and then point at its
+        // billing page to upgrade; that link made a throttle that heals in seconds read as an
+        // account out of credit, which is not retried and tells the person to fix their billing.
+        if (!lower.contains("insufficient_quota")
+                && (lower.contains("rate_limit_exceeded") || lower.contains("rate limit reached"))) {
+            return ProviderFailure.RATE_LIMITED;
+        }
         if (lower.contains("quota")
                 || lower.contains("insufficient_quota")
                 || lower.contains("credit")

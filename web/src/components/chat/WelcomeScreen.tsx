@@ -1,8 +1,11 @@
+// @find: welcome screen, empty chat, greeting, agent chips, start conversation, mention agent
+// @what: What an empty thread shows: a greeting and active agents.
+// @flow: Used by the Chat page.
 import { CATEGORY_LABEL } from '../../lib/labels'
 import { truncateWords } from '../../lib/format'
 import type { Agent } from '../../lib/queries'
 import { AgentAvatar } from './AgentAvatar'
-import { describeAgent } from './chatModel'
+import { agentDescription } from './chatModel'
 
 /*
  * What an empty thread shows: a greeting, and the active agents as small chips. Choosing a chip
@@ -22,7 +25,7 @@ export function WelcomeScreen({ agents, onMention }: { agents: Agent[] | undefin
         <ul className="chat-welcome-agents" aria-label="Agents you can ask">
           {active.map((agent) => {
             const category = CATEGORY_LABEL[agent.category] ?? agent.category
-            const description = truncateWords(describeAgent(agent.summary, category), 120)
+            const description = truncateWords(agentDescription(agent, category), 120)
             return (
               <li key={agent.id}>
                 <button

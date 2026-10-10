@@ -1,3 +1,6 @@
+// @find: tests for thread context, chat, empty when no turns, skips cards, skips blank messages, last answer keeps its shape, last answer is capped with amarker, short reply has no marker, older turns are capped, older answers are lines, ThreadContextTest, ThreadContext
+// @what: Tests for ThreadContext in the orchestrator chat package (15 test methods).
+// @flow: Exercises ThreadContext
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +44,7 @@ class ThreadContextTest {
         return history(turns).render(AGENT);
     }
 
+    // @find: test empty when no turns, thread context
     @Test
     @DisplayName("no earlier turns produces an empty thread and an empty preamble")
     void emptyWhenNoTurns() {
@@ -52,6 +56,7 @@ class ThreadContextTest {
                 .isTrue();
     }
 
+    // @find: test skips cards, thread context
     @Test
     @DisplayName("only user text and agent answers are kept - routing and other cards are skipped")
     void skipsCards() {
@@ -65,6 +70,7 @@ class ThreadContextTest {
         assertThat(preamble).doesNotContain("ignored");
     }
 
+    // @find: test skips blank messages, thread context
     @Test
     @DisplayName("a message that says nothing is not a turn")
     void skipsBlankMessages() {
@@ -77,6 +83,7 @@ class ThreadContextTest {
         assertThat(history(turns).turns()).hasSize(1);
     }
 
+    // @find: test last answer keeps its shape, thread context
     @Test
     @DisplayName("the most recent answer is a block of its own, with its line breaks, list and table kept")
     void lastAnswerKeepsItsShape() {
@@ -90,6 +97,7 @@ class ThreadContextTest {
         assertThat(preamble).endsWith("\nRequest:\n");
     }
 
+    // @find: test last answer is capped with amarker, thread context
     @Test
     @DisplayName("the last answer is cut at 6,000 characters with a marker saying how much was left out")
     void lastAnswerIsCappedWithAMarker() {
@@ -107,6 +115,7 @@ class ThreadContextTest {
         assertThat(head.length() + omitted).isEqualTo(reply.strip().length());
     }
 
+    // @find: test short reply has no marker, thread context
     @Test
     @DisplayName("a reply that fits is never marked as cut")
     void shortReplyHasNoMarker() {
@@ -114,6 +123,7 @@ class ThreadContextTest {
         assertThat(render(List.of(userText(0, "go"), answer(1, reply)))).doesNotContain("more characters not shown");
     }
 
+    // @find: test older turns are capped, thread context
     @Test
     @DisplayName("older turns are one line of at most 600 characters, at a word boundary")
     void olderTurnsAreCapped() {
@@ -131,6 +141,7 @@ class ThreadContextTest {
         assertThat(line).doesNotContain("\n");
     }
 
+    // @find: test older answers are lines, thread context
     @Test
     @DisplayName("an older answer is one flattened line too; only the newest one is a block of its own")
     void olderAnswersAreLines() {
@@ -142,6 +153,7 @@ class ThreadContextTest {
         assertThat(preamble).contains("Your last reply (verbatim):\nsecond\n");
     }
 
+    // @find: test keeps six turns, thread context
     @Test
     @DisplayName("at most six turns are kept, the last reply among them")
     void keepsSixTurns() {
@@ -161,6 +173,7 @@ class ThreadContextTest {
         assertThat(withAnswer).contains("the answer");
     }
 
+    // @find: test last reply survives later messages, thread context
     @Test
     @DisplayName("the last reply is kept however many messages came after it")
     void lastReplySurvivesLaterMessages() {
@@ -178,6 +191,7 @@ class ThreadContextTest {
         assertThat(history(turns).turns().getFirst().lastReply()).isTrue();
     }
 
+    // @find: test older turns are capped together, thread context
     @Test
     @DisplayName("the older turns together stay within 3,000 characters, the oldest dropped first")
     void olderTurnsAreCappedTogether() {
@@ -193,6 +207,7 @@ class ThreadContextTest {
         assertThat(preamble).contains("turn-5 ");
     }
 
+    // @find: test header survives trimming, thread context
     @Test
     @DisplayName("trimming drops the oldest turns first and never the header, the last reply or the Request line")
     void headerSurvivesTrimming() {
@@ -216,6 +231,7 @@ class ThreadContextTest {
         assertThat(history.droppable()).isEqualTo(4);
     }
 
+    // @find: test newest turn always kept, thread context
     @Test
     @DisplayName("a thread with no answer in it keeps its newest turn however far it is trimmed")
     void newestTurnAlwaysKept() {
@@ -228,6 +244,7 @@ class ThreadContextTest {
         assertThat(trimmed).endsWith("\nRequest:\n");
     }
 
+    // @find: test another agents reply is named, thread context
     @Test
     @DisplayName("another agent's last reply is named, not claimed as the reader's own")
     void anotherAgentsReplyIsNamed() {
@@ -238,6 +255,7 @@ class ThreadContextTest {
         assertThat(history.render(AGENT)).contains("Your last reply (verbatim):\nthe draft");
     }
 
+    // @find: test authors are labelled, thread context
     @Test
     @DisplayName("a person's turn reads as their name when known, else as the requester or another person")
     void authorsAreLabelled() {

@@ -1,3 +1,6 @@
+// @find: tests for insights service, board, free runs are not unpriced, spans, window bounds, window across month end, success rate needs five finished runs, cancelled and abandoned, unpriced is not free, partly priced, InsightsServiceTest, InsightsService
+// @what: Tests for InsightsService in the orchestrator board package (21 test methods).
+// @flow: Exercises InsightsService
 package os.aiworkforce.orchestrator.board;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,8 +48,21 @@ class InsightsServiceTest {
         return InsightsService.agentRow(AGENT, "Alpha", "operations", "active", groups, 0, null, ratings, minutes, tasks);
     }
 
+    // @find: test free runs are not unpriced, insights service
+    @Test
+    @DisplayName("runs on models the catalogue marks free are counted as free, not unpriced, and cost a known zero")
+    void freeRunsAreNotUnpriced() {
+        AgentRow row = row(
+                List.of(new RunGroup(AGENT, "completed", 6, BigDecimal.ZERO, 0, 0, 0, 6)), null, null, 0);
+
+        assertThat(row.freeRuns()).isEqualTo(6);
+        assertThat(row.unpricedRuns()).isZero();
+        assertThat(row.totalCost()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
     // ---- Windows ---------------------------------------------------------------------------
 
+    // @find: test spans, insights service
     @Test
     @DisplayName("a window is 7, 30 or 90 days, defaulting to 30, and anything else is refused")
     void spans() {
@@ -60,6 +76,7 @@ class InsightsServiceTest {
         assertThat(refused.code()).isEqualTo(ErrorCode.VALIDATION_FAILED);
     }
 
+    // @find: test window bounds, insights service
     @Test
     @DisplayName("a window starts at midnight UTC and the previous one is as long and ends at the same time of day")
     void windowBounds() {
@@ -74,6 +91,7 @@ class InsightsServiceTest {
         assertThat(week.dayKeys()).hasSize(7).startsWith("2026-10-09").endsWith("2026-10-15");
     }
 
+    // @find: test window across month end, insights service
     @Test
     @DisplayName("a window across a month end still lists every day once")
     void windowAcrossMonthEnd() {
@@ -86,6 +104,7 @@ class InsightsServiceTest {
 
     // ---- Rates and small samples -----------------------------------------------------------
 
+    // @find: test success rate needs five finished runs, insights service
     @Test
     @DisplayName("four finished runs give no success rate, and five give one over finished runs only")
     void successRateNeedsFiveFinishedRuns() {
@@ -110,6 +129,7 @@ class InsightsServiceTest {
         assertThat(enough.successRate()).isEqualByComparingTo("0.6");
     }
 
+    // @find: test cancelled and abandoned, insights service
     @Test
     @DisplayName("cancelled work is neither success nor failure but still finished, and abandoned runs count as failed")
     void cancelledAndAbandoned() {
@@ -131,6 +151,7 @@ class InsightsServiceTest {
 
     // ---- Unpriced work ---------------------------------------------------------------------
 
+    // @find: test unpriced is not free, insights service
     @Test
     @DisplayName("an agent whose every run was unpriced has no total cost, not a total of zero")
     void unpricedIsNotFree() {
@@ -141,6 +162,7 @@ class InsightsServiceTest {
         assertThat(agent.unpricedRuns()).isEqualTo(4);
     }
 
+    // @find: test partly priced, insights service
     @Test
     @DisplayName("an agent with some priced runs shows what they cost, and how many were unpriced")
     void partlyPriced() {
@@ -152,6 +174,7 @@ class InsightsServiceTest {
         assertThat(agent.unpricedRuns()).isEqualTo(1);
     }
 
+    // @find: test no runs is zero, insights service
     @Test
     @DisplayName("an agent with no runs at all has spent nothing, which is true and is not unpriced")
     void noRunsIsZero() {
@@ -162,6 +185,7 @@ class InsightsServiceTest {
         assertThat(agent.runs()).isZero();
     }
 
+    // @find: test sandbox runs, insights service
     @Test
     @DisplayName("an agent the offline sandbox alone answered counts its runs as sandbox and costs nothing")
     void sandboxRuns() {
@@ -174,6 +198,7 @@ class InsightsServiceTest {
 
     // ---- Satisfaction ----------------------------------------------------------------------
 
+    // @find: test satisfaction, insights service
     @Test
     @DisplayName("satisfaction is thumbs up over all ratings, and absent with none")
     void satisfaction() {
@@ -189,6 +214,7 @@ class InsightsServiceTest {
 
     // ---- Estimated value -------------------------------------------------------------------
 
+    // @find: test value omitted without inputs, insights service
     @Test
     @DisplayName("no estimate of value is made until some agent has minutes per task")
     void valueOmittedWithoutInputs() {
@@ -201,6 +227,7 @@ class InsightsServiceTest {
         assertThat(InsightsService.valueFigures(new ValueInputs(new BigDecimal("60"), Map.of()), tasks, cost)).isNull();
     }
 
+    // @find: test value arithmetic, insights service
     @Test
     @DisplayName("hours are tasks times minutes over sixty, what a person would cost is hours times the rate, net is that less spend")
     void valueArithmetic() {
@@ -219,6 +246,7 @@ class InsightsServiceTest {
         assertThat(value.label()).isEqualTo("Estimate from your inputs (current values)");
     }
 
+    // @find: test value without rate, insights service
     @Test
     @DisplayName("minutes without a rate give hours only, and the worth and the net stay absent")
     void valueWithoutRate() {
@@ -230,6 +258,7 @@ class InsightsServiceTest {
         assertThat(value.netValue()).isNull();
     }
 
+    // @find: test not estimated agents add nothing, insights service
     @Test
     @DisplayName("an agent with finished tasks and no estimate is counted as not estimated and adds nothing")
     void notEstimatedAgentsAddNothing() {
@@ -248,6 +277,7 @@ class InsightsServiceTest {
         assertThat(value.netValue()).isEqualByComparingTo("119.00");
     }
 
+    // @find: test agent hours, insights service
     @Test
     @DisplayName("an agent's hours are absent without its estimate and tasks times minutes with one")
     void agentHours() {
@@ -255,6 +285,7 @@ class InsightsServiceTest {
         assertThat(row(List.of(), null, 20, 6).hoursReturned()).isEqualByComparingTo("2.00");
     }
 
+    // @find: test inputs from settings, insights service
     @Test
     @DisplayName("inputs are read from the workspace's settings, and a stored value that is not valid is left out")
     void inputsFromSettings() {
@@ -277,6 +308,7 @@ class InsightsServiceTest {
         assertThat(inputs.minutesPerTask()).containsOnlyKeys(AGENT).containsEntry(AGENT, 30);
     }
 
+    // @find: test zero rate is no rate, insights service
     @Test
     @DisplayName("an hourly rate of zero or less is no rate")
     void zeroRateIsNoRate() {
@@ -293,6 +325,7 @@ class InsightsServiceTest {
 
     // ---- Changes ---------------------------------------------------------------------------
 
+    // @find: test delta, insights service
     @Test
     @DisplayName("a change is the difference and a percentage of the previous figure")
     void delta() {
@@ -306,6 +339,7 @@ class InsightsServiceTest {
         assertThat(fall.changePercent()).isEqualByComparingTo("-25.0");
     }
 
+    // @find: test delta needs both sides, insights service
     @Test
     @DisplayName("a change from nothing has no percentage, and a figure missing on either side has no change")
     void deltaNeedsBothSides() {
@@ -322,6 +356,7 @@ class InsightsServiceTest {
         assertThat(noCurrent.change()).isNull();
     }
 
+    // @find: test ratio, insights service
     @Test
     @DisplayName("a ratio is to four places and absent with no whole to be a part of")
     void ratio() {

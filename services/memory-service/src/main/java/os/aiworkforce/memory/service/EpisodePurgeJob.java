@@ -1,3 +1,6 @@
+// @find: episode purge job, delete expired episodes, retention, scheduled cleanup, nightly purge
+// @what: Scheduled job that removes episodes past their expiry each night.
+// @flow: Calls EpisodicMemory.purgeExpired
 package os.aiworkforce.memory.service;
 
 import org.slf4j.Logger;
@@ -19,6 +22,7 @@ public class EpisodePurgeJob {
         this.memory = memory;
     }
 
+    // @find: scheduled job or startup listener purge, episode purge job
     @Scheduled(cron = "0 41 3 * * *")
     public void purge() {
         int total = 0;

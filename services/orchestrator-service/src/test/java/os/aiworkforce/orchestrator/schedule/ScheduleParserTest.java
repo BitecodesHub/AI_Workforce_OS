@@ -1,3 +1,6 @@
+// @find: tests for schedule parser, schedule, every day, daily twenty four hour, every day no time, every weekday, weekdays bare form, every weekend, every monday, monday and thursday, ScheduleParserTest, ScheduleParser
+// @what: Tests for ScheduleParser in the orchestrator schedule package (55 test methods).
+// @flow: Exercises ScheduleParser
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +35,7 @@ class ScheduleParserTest {
     @DisplayName("recurring phrases")
     class Recurring {
 
+        // @find: test every day, schedule parser
         @Test
         @DisplayName("every day at 9am")
         void everyDay() {
@@ -41,6 +45,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every day at 9:00 am");
         }
 
+        // @find: test daily twenty four hour, schedule parser
         @Test
         @DisplayName("daily at 17:30, 24-hour time")
         void dailyTwentyFourHour() {
@@ -49,6 +54,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every day at 5:30 pm");
         }
 
+        // @find: test every day no time, schedule parser
         @Test
         @DisplayName("every day with no time at all defaults to 9:00 am")
         void everyDayNoTime() {
@@ -57,6 +63,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every day at 9:00 am");
         }
 
+        // @find: test every weekday, schedule parser
         @Test
         @DisplayName("every weekday at 9")
         void everyWeekday() {
@@ -65,6 +72,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every weekday at 9:00 am");
         }
 
+        // @find: test weekdays bare form, schedule parser
         @Test
         @DisplayName("weekdays at 8:45am, without the word every")
         void weekdaysBareForm() {
@@ -73,6 +81,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every weekday at 8:45 am");
         }
 
+        // @find: test every weekend, schedule parser
         @Test
         @DisplayName("every weekend at 10am")
         void everyWeekend() {
@@ -81,6 +90,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every weekend at 10:00 am");
         }
 
+        // @find: test every monday, schedule parser
         @Test
         @DisplayName("every monday at 9")
         void everyMonday() {
@@ -89,6 +99,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every Monday at 9:00 am");
         }
 
+        // @find: test monday and thursday, schedule parser
         @Test
         @DisplayName("every monday and thursday at 2pm")
         void mondayAndThursday() {
@@ -97,6 +108,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every Monday and Thursday at 2:00 pm");
         }
 
+        // @find: test comma separated abbreviations, schedule parser
         @Test
         @DisplayName("every mon, wed, fri at 9:30, comma-separated abbreviations")
         void commaSeparatedAbbreviations() {
@@ -105,6 +117,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every Monday, Wednesday, and Friday at 9:30 am");
         }
 
+        // @find: test every week on friday, schedule parser
         @Test
         @DisplayName("every week on friday at 4pm")
         void everyWeekOnFriday() {
@@ -113,12 +126,14 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every Friday at 4:00 pm");
         }
 
+        // @find: test every hour, schedule parser
         @Test
         @DisplayName("every hour")
         void everyHour() {
             assertThat(ScheduleParser.parse("every hour", ZONE, NOW).cron()).isEqualTo("0 0 * * * *");
         }
 
+        // @find: test hourly, schedule parser
         @Test
         @DisplayName("hourly")
         void hourly() {
@@ -127,6 +142,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every hour");
         }
 
+        // @find: test every15 minutes, schedule parser
         @Test
         @DisplayName("every 15 minutes")
         void every15Minutes() {
@@ -135,6 +151,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every 15 minutes");
         }
 
+        // @find: test every2 hours, schedule parser
         @Test
         @DisplayName("every 2 hours")
         void every2Hours() {
@@ -143,6 +160,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every 2 hours");
         }
 
+        // @find: test month on first, schedule parser
         @Test
         @DisplayName("every month on the 1st at 9am")
         void monthOnFirst() {
@@ -151,6 +169,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("On the 1st of every month at 9:00 am");
         }
 
+        // @find: test nth of month, schedule parser
         @Test
         @DisplayName("on the 15th of every month at noon")
         void nthOfMonth() {
@@ -159,6 +178,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("On the 15th of every month at 12:00 pm");
         }
 
+        // @find: test last day of month, schedule parser
         @Test
         @DisplayName("on the last day of every month at 5pm, using cron's L")
         void lastDayOfMonth() {
@@ -167,6 +187,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("On the last day of every month at 5:00 pm");
         }
 
+        // @find: test case insensitive, schedule parser
         @Test
         @DisplayName("case is ignored")
         void caseInsensitive() {
@@ -174,6 +195,7 @@ class ScheduleParserTest {
             assertThat(parsed.cron()).isEqualTo("0 0 9 * * *");
         }
 
+        // @find: test midnight and minutes, schedule parser
         @Test
         @DisplayName("midnight and explicit minutes")
         void midnightAndMinutes() {
@@ -188,6 +210,7 @@ class ScheduleParserTest {
     @DisplayName("one-off phrases")
     class Once {
 
+        // @find: test tomorrow, schedule parser
         @Test
         @DisplayName("tomorrow at 3pm, matching the plan's own worked example")
         void tomorrow() {
@@ -198,6 +221,7 @@ class ScheduleParserTest {
                     .isEqualTo(ZonedDateTime.of(2026, 9, 29, 15, 0, 0, 0, ZONE).toInstant());
         }
 
+        // @find: test today still ahead, schedule parser
         @Test
         @DisplayName("today at a time still ahead of now")
         void todayStillAhead() {
@@ -206,6 +230,7 @@ class ScheduleParserTest {
                     .isEqualTo(ZonedDateTime.of(2026, 9, 28, 17, 0, 0, 0, ZONE).toInstant());
         }
 
+        // @find: test today already passed, schedule parser
         @Test
         @DisplayName("today at a time already passed is refused")
         void todayAlreadyPassed() {
@@ -214,6 +239,7 @@ class ScheduleParserTest {
                             ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
         }
 
+        // @find: test in minutes, schedule parser
         @Test
         @DisplayName("in 20 minutes")
         void inMinutes() {
@@ -221,6 +247,7 @@ class ScheduleParserTest {
             assertThat(parsed.runAt()).isEqualTo(NOW.plusSeconds(20 * 60));
         }
 
+        // @find: test in hours, schedule parser
         @Test
         @DisplayName("in 2 hours")
         void inHours() {
@@ -228,6 +255,7 @@ class ScheduleParserTest {
             assertThat(parsed.runAt()).isEqualTo(NOW.plusSeconds(2 * 3600));
         }
 
+        // @find: test in days, schedule parser
         @Test
         @DisplayName("in 3 days")
         void inDays() {
@@ -235,6 +263,7 @@ class ScheduleParserTest {
             assertThat(parsed.runAt()).isEqualTo(NOW.plusSeconds(3 * 86400));
         }
 
+        // @find: test on day month no year, schedule parser
         @Test
         @DisplayName("on 1 October at 9am, no year, rolls to the next occurrence ahead of now")
         void onDayMonthNoYear() {
@@ -243,6 +272,7 @@ class ScheduleParserTest {
                     .isEqualTo(ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant());
         }
 
+        // @find: test on iso date and time, schedule parser
         @Test
         @DisplayName("on 2026-10-01 09:00, an explicit date and time")
         void onIsoDateAndTime() {
@@ -251,6 +281,7 @@ class ScheduleParserTest {
                     .isEqualTo(ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, ZONE).toInstant());
         }
 
+        // @find: test iso instant, schedule parser
         @Test
         @DisplayName("an ISO instant, parsed directly")
         void isoInstant() {
@@ -259,6 +290,7 @@ class ScheduleParserTest {
             assertThat(parsed.runAt()).isEqualTo(Instant.parse("2026-10-01T09:00:00Z"));
         }
 
+        // @find: test past iso instant, schedule parser
         @Test
         @DisplayName("a past ISO instant is refused")
         void pastIsoInstant() {
@@ -271,6 +303,7 @@ class ScheduleParserTest {
     @DisplayName("raw cron, passed through")
     class RawCron {
 
+        // @find: test six field, schedule parser
         @Test
         @DisplayName("a six-field Spring cron expression")
         void sixField() {
@@ -279,6 +312,7 @@ class ScheduleParserTest {
             assertThat(parsed.cron()).isEqualTo("0 0 9 * * MON-FRI");
         }
 
+        // @find: test five field prefixed, schedule parser
         @Test
         @DisplayName("a five-field cron is prefixed with a seconds field of 0")
         void fiveFieldPrefixed() {
@@ -291,12 +325,14 @@ class ScheduleParserTest {
     @DisplayName("errors")
     class Errors {
 
+        // @find: test blank, schedule parser
         @Test
         @DisplayName("blank text is refused")
         void blank() {
             assertThatThrownBy(() -> ScheduleParser.parse("   ", ZONE, NOW)).isInstanceOf(ApiException.class);
         }
 
+        // @find: test nonsense, schedule parser
         @Test
         @DisplayName("nonsense is refused with examples that work")
         void nonsense() {
@@ -310,6 +346,7 @@ class ScheduleParserTest {
                     });
         }
 
+        // @find: test too frequent, schedule parser
         @Test
         @DisplayName("every 3 minutes is refused: five-minute floor")
         void tooFrequent() {
@@ -317,6 +354,7 @@ class ScheduleParserTest {
                     .isInstanceOf(ApiException.class);
         }
 
+        // @find: test monthly day too high, schedule parser
         @Test
         @DisplayName("every month on the 30th is refused: not every month has one")
         void monthlyDayTooHigh() {
@@ -324,6 +362,7 @@ class ScheduleParserTest {
                     .isInstanceOf(ApiException.class);
         }
 
+        // @find: test unknown day, schedule parser
         @Test
         @DisplayName("an unknown day name is refused")
         void unknownDay() {
@@ -331,6 +370,7 @@ class ScheduleParserTest {
                     .isInstanceOf(ApiException.class);
         }
 
+        // @find: test try parse is empty on failure, schedule parser
         @Test
         @DisplayName("tryParse answers empty rather than throwing")
         void tryParseIsEmptyOnFailure() {
@@ -360,6 +400,7 @@ class ScheduleParserTest {
             return (List<String>) refused.details().get("suggestions");
         }
 
+        // @find: test forty five minutes, schedule parser
         @Test
         @DisplayName("every 45 minutes is refused, naming every 30 minutes and every hour")
         void fortyFiveMinutes() {
@@ -368,12 +409,14 @@ class ScheduleParserTest {
             assertThat((String) refused.details().get("problem")).contains("every 30 minutes or every hour");
         }
 
+        // @find: test ninety minutes, schedule parser
         @Test
         @DisplayName("every 90 minutes is refused, naming every hour and every 2 hours")
         void ninetyMinutes() {
             assertThat(suggestionsOf(refusalOf("every 90 minutes"))).containsExactly("every hour", "every 2 hours");
         }
 
+        // @find: test hundred twenty minutes, schedule parser
         @Test
         @DisplayName("every 120 minutes becomes every 2 hours")
         void hundredTwentyMinutes() {
@@ -382,6 +425,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every 2 hours");
         }
 
+        // @find: test one hour, schedule parser
         @Test
         @DisplayName("every 60 minutes and every 1 hour both read as every hour")
         void oneHour() {
@@ -391,6 +435,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every hour");
         }
 
+        // @find: test even minutes, schedule parser
         @Test
         @DisplayName("every divisor of the hour is accepted as a cron step")
         void evenMinutes() {
@@ -400,18 +445,21 @@ class ScheduleParserTest {
             }
         }
 
+        // @find: test zero hours, schedule parser
         @Test
         @DisplayName("every 0 hours is a readable refusal, not a cron crash")
         void zeroHours() {
             refusalOf("every 0 hours");
         }
 
+        // @find: test seven hours, schedule parser
         @Test
         @DisplayName("every 7 hours is refused, naming every 6 hours and every 8 hours")
         void sevenHours() {
             assertThat(suggestionsOf(refusalOf("every 7 hours"))).containsExactly("every 6 hours", "every 8 hours");
         }
 
+        // @find: test twenty four hours, schedule parser
         @Test
         @DisplayName("every 24 hours becomes the daily default")
         void twentyFourHours() {
@@ -420,6 +468,7 @@ class ScheduleParserTest {
             assertThat(parsed.description()).isEqualTo("Every day at 9:00 am");
         }
 
+        // @find: test twenty five hours, schedule parser
         @Test
         @DisplayName("every 25 hours is refused as longer than a day, suggesting every day")
         void twentyFiveHours() {
@@ -428,6 +477,7 @@ class ScheduleParserTest {
             assertThat((String) refused.details().get("problem")).contains("longer than a day");
         }
 
+        // @find: test very large number, schedule parser
         @Test
         @DisplayName("a very large number is a readable refusal, never a number-format crash")
         void veryLargeNumber() {
@@ -437,12 +487,14 @@ class ScheduleParserTest {
             refusalOf("every 9999 minutes");
         }
 
+        // @find: test try parse uneven, schedule parser
         @Test
         @DisplayName("tryParse answers empty for an uneven interval rather than throwing")
         void tryParseUneven() {
             assertThat(ScheduleParser.tryParse("every 45 minutes", ZONE, NOW)).isEmpty();
         }
 
+        // @find: test unreadable stored cron, schedule parser
         @Test
         @DisplayName("a stored cron the library cannot read surfaces as a validation error from nextRuns")
         void unreadableStoredCron() {
@@ -457,6 +509,7 @@ class ScheduleParserTest {
     @DisplayName("nextRuns")
     class NextRuns {
 
+        // @find: test weekday skips weekend, schedule parser
         @Test
         @DisplayName("a weekday schedule skips the weekend")
         void weekdaySkipsWeekend() {
@@ -470,6 +523,7 @@ class ScheduleParserTest {
             assertThat(days).containsExactly("TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "MONDAY");
         }
 
+        // @find: test monthly, schedule parser
         @Test
         @DisplayName("a monthly schedule advances a full month at a time")
         void monthly() {
@@ -482,6 +536,7 @@ class ScheduleParserTest {
                             ZonedDateTime.of(2026, 12, 1, 9, 0, 0, 0, ZONE).toInstant());
         }
 
+        // @find: test last day of short month, schedule parser
         @Test
         @DisplayName("the last day of the month lands on the 30th in a 30-day month")
         void lastDayOfShortMonth() {
@@ -492,6 +547,7 @@ class ScheduleParserTest {
                             ZonedDateTime.of(2026, 9, 30, 17, 0, 0, 0, ZONE).toInstant());
         }
 
+        // @find: test once in future, schedule parser
         @Test
         @DisplayName("a once schedule in the future answers itself, once")
         void onceInFuture() {
@@ -499,6 +555,7 @@ class ScheduleParserTest {
             assertThat(ScheduleParser.nextRuns(parsed, ZONE, NOW, 5)).containsExactly(parsed.runAt());
         }
 
+        // @find: test once past, schedule parser
         @Test
         @DisplayName("a once schedule already in the past answers nothing")
         void oncePast() {
@@ -506,6 +563,7 @@ class ScheduleParserTest {
             assertThat(ScheduleParser.nextRuns(already, ZONE, NOW, 5)).isEmpty();
         }
 
+        // @find: test daylight saving boundary, schedule parser
         @Test
         @DisplayName("across the daylight-saving change, a daily 9am schedule keeps firing at 9am local time")
         void daylightSavingBoundary() {

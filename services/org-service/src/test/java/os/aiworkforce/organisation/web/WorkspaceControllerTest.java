@@ -1,3 +1,6 @@
+// @find: tests for workspaces, create workspace, update settings, timezone validation, cross-workspace refusal, workspace:update permission, rename
+// @what: Tests workspace creation and settings changes, including permission and tenant-isolation checks.
+// @flow: Exercises WorkspaceController.
 package os.aiworkforce.organisation.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

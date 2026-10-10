@@ -1,0 +1,1377 @@
+{
+ "description": "Labelled questions against the demo documents (SIH Quantminds.pptx, Leave guide.txt), with the passages live retrieval offered for each on 8 Oct 2026: the keyword hits the knowledge service returned with search by meaning off (keyword=true), and the six nearest passages by meaning with their real cosine similarity (null when not among them). Similarities measured with NVIDIA NIM nvidia/nemotron-3-embed-1b (2048 dimensions, input_type query/passage).",
+ "embeddingModel": "nvidia/nemotron-3-embed-1b",
+ "meaningFloor": 0.19,
+ "items": [
+  {
+   "query": "How does CyberArtha price security findings?",
+   "expect": "ground",
+   "kind": "document",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "CORE INNOVATION",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine",
+     "similarity": 0.6417,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK QUANTIFICATION ENGINE",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine Attack-path Cyber Twin Monte Carlo EAL · VaR AI DECISION SUPPORT & OPTIMISATION Shapley ₹ Drivers ₹1 Cr Budget Optimiser What-if Copilot DASHBOARDS, COMPLIANCE & EVIDENCE Enterprise Risk Score Exec view + drill-down Framework Mapping ISO · NIST · CIS RBI · SEBI Blockchain Ledger Fabric-anchored proof Live Connectors OpenVAS · Wazuh Prowler Confidence Bands P10 · P50 · P90 ranges Risk VS Solution Low / Medium / High labels ₹ EAL and VaR per asset Stal",
+     "similarity": 0.5211,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.4387,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": 0.3399,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "WITH CYBERARTHA",
+     "content": "breach. From Alert Noise to Rupee Decisions → TODAY: SEVERITY-RANKED Hundreds of “critical” alerts Patch order set by CVSS Spend not tied to ₹ loss Fixes ranked by ₹ loss removed Optimal ₹1 Cr control basket ROSI and ledger proof for the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9",
+     "similarity": 0.2862,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.2717,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "What technologies does the team use for the frontend?",
+   "expect": "ground",
+   "kind": "document",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNOLOGIES USED",
+     "content": "verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score Frontend React, TypeScript and D3 dashboards Backend FastAPI services, Python collectors, Redis cache AI & Quant NumPy / SciPy Monte Carlo, Bayesian models, SHAP, OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3",
+     "similarity": 0.3202,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BLOCKCHAIN EVIDENCE FLOW",
+     "content": "engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot",
+     "similarity": 0.22,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.2005,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.1827,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.1625,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.159,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RESEARCH AND REFERENCES",
+     "content": "the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9 6 @SIH Idea submission- Template Your Team Name Standard for ₹ risk quantification Open FAIR Risk Analysis LINK Exploit-likelihood signal FIRST EPSS Model LINK Known exploited vulnerabilities CISA KEV Catalog LINK Attack paths and techniques MITRE ATT&CK LINK India loss baseline IBM Cost of a Data Breach 2026 LINK Regulatory mapping SEBI CSCRF · RBI CSF · DPDP Act LINK Tamper-evident evidence Hyperledger Fabric LINK Also referenced: NIST CSF 2.0 · ",
+     "similarity": null,
+     "keyword": true
+    }
+   ]
+  },
+  {
+   "query": "What is the 12-week execution plan?",
+   "expect": "ground",
+   "kind": "document",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.3162,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "evidenced cyber-risk reporting. Fit for AICTE institutions Campuses hold student data under DPDP; a containerised deployment needs no SOC. Measurable value Indian organisations with extensive security AI paid ₹10.3 Cr less per breach (IBM 2026). 12-WEEK EXECUTION PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4",
+     "similarity": 0.2923,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.1163,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SYSTEM ARCHITECTURE",
+     "content": "reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update. Vuln scanner SIEM / EDR IAM CSPM CMDB + BIA Threat intel Python collectors → OCSF-based schema Neo4j cyber twin PostgreSQL + Redis Risk engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards",
+     "similarity": 0.085,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPORTANT INSTRUCTIONS",
+     "content": " or any other format will be supported. Note - You can delete this slide (Important Pointers) when you upload the details of your idea on SIH portal. Please ensure below pointers are met while submitting the Idea PPT: 7 image1.png image2.png image9.png image10.png image11.png image12.png image13.png image14.png image15.png image16.png image17.png image18.png image19.png image3.png image4.png image5.png image6.png image7.png image8.png image25.png image26.png image27.png image28.png image29.png image30.png image31.png image32.png image33.png image34.png image20.png image21.png image22.png image",
+     "similarity": 0.0632,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK QUANTIFICATION ENGINE",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine Attack-path Cyber Twin Monte Carlo EAL · VaR AI DECISION SUPPORT & OPTIMISATION Shapley ₹ Drivers ₹1 Cr Budget Optimiser What-if Copilot DASHBOARDS, COMPLIANCE & EVIDENCE Enterprise Risk Score Exec view + drill-down Framework Mapping ISO · NIST · CIS RBI · SEBI Blockchain Ledger Fabric-anchored proof Live Connectors OpenVAS · Wazuh Prowler Confidence Bands P10 · P50 · P90 ranges Risk VS Solution Low / Medium / High labels ₹ EAL and VaR per asset Stal",
+     "similarity": 0.0613,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "Which databases store the findings and the attack graph?",
+   "expect": "ground",
+   "kind": "document",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.4289,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.3912,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": 0.3284,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNOLOGIES USED",
+     "content": "verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score Frontend React, TypeScript and D3 dashboards Backend FastAPI services, Python collectors, Redis cache AI & Quant NumPy / SciPy Monte Carlo, Bayesian models, SHAP, OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3",
+     "similarity": 0.3199,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SYSTEM ARCHITECTURE",
+     "content": "reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update. Vuln scanner SIEM / EDR IAM CSPM CMDB + BIA Threat intel Python collectors → OCSF-based schema Neo4j cyber twin PostgreSQL + Redis Risk engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards",
+     "similarity": 0.263,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.2148,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "Tell me about our SIH project",
+   "expect": "ground",
+   "kind": "document",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNICAL APPROACH",
+     "content": "+ ROSI Real-world Issue: Cyber risk is still rated Low, Medium or High. Boards cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION",
+     "similarity": 0.2446,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.243,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPORTANT INSTRUCTIONS",
+     "content": " or any other format will be supported. Note - You can delete this slide (Important Pointers) when you upload the details of your idea on SIH portal. Please ensure below pointers are met while submitting the Idea PPT: 7 image1.png image2.png image9.png image10.png image11.png image12.png image13.png image14.png image15.png image16.png image17.png image18.png image19.png image3.png image4.png image5.png image6.png image7.png image8.png image25.png image26.png image27.png image28.png image29.png image30.png image31.png image32.png image33.png image34.png image20.png image21.png image22.png image",
+     "similarity": 0.2386,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.2297,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.2179,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.2087,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": null,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": null,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": null,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BENEFITS",
+     "content": "impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name 1 CISO & Security Teams Fix queue ranked by expected ₹ loss, not CVSS alone. 1 Economic The same ₹1 Cr buys more expected-loss reduction. 2 CFO, CEO & Board Cyber risk in financial terms: EAL, VaR and ROSI. 2 Governance Every snapshot carries model version and input hash. 3 Regulators & Auditors Tamper-evident evidence mapped to RBI, SEBI and DPDP. 3 Social Faster protection of citizen and student records. 4 AICTE Campuses & MSMEs Consulting-grade r",
+     "similarity": null,
+     "keyword": true
+    }
+   ]
+  },
+  {
+   "query": "What does the Monte Carlo simulation compute?",
+   "expect": "ground",
+   "kind": "document",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SYSTEM ARCHITECTURE",
+     "content": "reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update. Vuln scanner SIEM / EDR IAM CSPM CMDB + BIA Threat intel Python collectors → OCSF-based schema Neo4j cyber twin PostgreSQL + Redis Risk engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards",
+     "similarity": 0.3708,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.2946,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.2286,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BLOCKCHAIN EVIDENCE FLOW",
+     "content": "engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot",
+     "similarity": 0.2268,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1841,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.1489,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BENEFITS",
+     "content": "impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name 1 CISO & Security Teams Fix queue ranked by expected ₹ loss, not CVSS alone. 1 Economic The same ₹1 Cr buys more expected-loss reduction. 2 CFO, CEO & Board Cyber risk in financial terms: EAL, VaR and ROSI. 2 Governance Every snapshot carries model version and input hash. 3 Regulators & Auditors Tamper-evident evidence mapped to RBI, SEBI and DPDP. 3 Social Faster protection of citizen and student records. 4 AICTE Campuses & MSMEs Consulting-grade r",
+     "similarity": null,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK QUANTIFICATION ENGINE",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine Attack-path Cyber Twin Monte Carlo EAL · VaR AI DECISION SUPPORT & OPTIMISATION Shapley ₹ Drivers ₹1 Cr Budget Optimiser What-if Copilot DASHBOARDS, COMPLIANCE & EVIDENCE Enterprise Risk Score Exec view + drill-down Framework Mapping ISO · NIST · CIS RBI · SEBI Blockchain Ledger Fabric-anchored proof Live Connectors OpenVAS · Wazuh Prowler Confidence Bands P10 · P50 · P90 ranges Risk VS Solution Low / Medium / High labels ₹ EAL and VaR per asset Stal",
+     "similarity": null,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "evidenced cyber-risk reporting. Fit for AICTE institutions Campuses hold student data under DPDP; a containerised deployment needs no SOC. Measurable value Indian organisations with extensive security AI paid ₹10.3 Cr less per breach (IBM 2026). 12-WEEK EXECUTION PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4",
+     "similarity": null,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNOLOGIES USED",
+     "content": "verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score Frontend React, TypeScript and D3 dashboards Backend FastAPI services, Python collectors, Redis cache AI & Quant NumPy / SciPy Monte Carlo, Bayesian models, SHAP, OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3",
+     "similarity": null,
+     "keyword": true
+    }
+   ]
+  },
+  {
+   "query": "How much notice do annual leave requests need?",
+   "expect": "ground",
+   "kind": "document",
+   "document": "Leave guide.txt",
+   "passages": [
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.6737,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": 0.0564,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0477,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "WITH CYBERARTHA",
+     "content": "breach. From Alert Noise to Rupee Decisions → TODAY: SEVERITY-RANKED Hundreds of “critical” alerts Patch order set by CVSS Spend not tied to ₹ loss Fixes ranked by ₹ loss removed Optimal ₹1 Cr control basket ROSI and ledger proof for the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9",
+     "similarity": 0.031,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BENEFITS",
+     "content": "impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name 1 CISO & Security Teams Fix queue ranked by expected ₹ loss, not CVSS alone. 1 Economic The same ₹1 Cr buys more expected-loss reduction. 2 CFO, CEO & Board Cyber risk in financial terms: EAL, VaR and ROSI. 2 Governance Every snapshot carries model version and input hash. 3 Regulators & Auditors Tamper-evident evidence mapped to RBI, SEBI and DPDP. 3 Social Faster protection of citizen and student records. 4 AICTE Campuses & MSMEs Consulting-grade r",
+     "similarity": 0.0275,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RESEARCH AND REFERENCES",
+     "content": "the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9 6 @SIH Idea submission- Template Your Team Name Standard for ₹ risk quantification Open FAIR Risk Analysis LINK Exploit-likelihood signal FIRST EPSS Model LINK Known exploited vulnerabilities CISA KEV Catalog LINK Attack paths and techniques MITRE ATT&CK LINK India loss baseline IBM Cost of a Data Breach 2026 LINK Regulatory mapping SEBI CSCRF · RBI CSF · DPDP Act LINK Tamper-evident evidence Hyperledger Fabric LINK Also referenced: NIST CSF 2.0 · ",
+     "similarity": 0.0241,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "How long would it take to build, phase by phase?",
+   "expect": "ground",
+   "kind": "paraphrase",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1978,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "evidenced cyber-risk reporting. Fit for AICTE institutions Campuses hold student data under DPDP; a containerised deployment needs no SOC. Measurable value Indian organisations with extensive security AI paid ₹10.3 Cr less per breach (IBM 2026). 12-WEEK EXECUTION PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4",
+     "similarity": 0.1604,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.1064,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.0951,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": 0.0817,
+     "keyword": false
+    },
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.0801,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "How do auditors confirm the figures were not tampered with?",
+   "expect": "ground",
+   "kind": "paraphrase",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "OUTPUTS COMPUTED",
+     "content": "snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score",
+     "similarity": 0.2356,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.175,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNOLOGIES USED",
+     "content": "verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score Frontend React, TypeScript and D3 dashboards Backend FastAPI services, Python collectors, Redis cache AI & Quant NumPy / SciPy Monte Carlo, Bayesian models, SHAP, OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3",
+     "similarity": 0.1452,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.0824,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "WITH CYBERARTHA",
+     "content": "breach. From Alert Noise to Rupee Decisions → TODAY: SEVERITY-RANKED Hundreds of “critical” alerts Patch order set by CVSS Spend not tied to ₹ loss Fixes ranked by ₹ loss removed Optimal ₹1 Cr control basket ROSI and ledger proof for the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9",
+     "similarity": 0.0739,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPORTANT INSTRUCTIONS",
+     "content": " or any other format will be supported. Note - You can delete this slide (Important Pointers) when you upload the details of your idea on SIH portal. Please ensure below pointers are met while submitting the Idea PPT: 7 image1.png image2.png image9.png image10.png image11.png image12.png image13.png image14.png image15.png image16.png image17.png image18.png image19.png image3.png image4.png image5.png image6.png image7.png image8.png image25.png image26.png image27.png image28.png image29.png image30.png image31.png image32.png image33.png image34.png image20.png image21.png image22.png image",
+     "similarity": 0.0714,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BENEFITS",
+     "content": "impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name 1 CISO & Security Teams Fix queue ranked by expected ₹ loss, not CVSS alone. 1 Economic The same ₹1 Cr buys more expected-loss reduction. 2 CFO, CEO & Board Cyber risk in financial terms: EAL, VaR and ROSI. 2 Governance Every snapshot carries model version and input hash. 3 Regulators & Auditors Tamper-evident evidence mapped to RBI, SEBI and DPDP. 3 Social Faster protection of citizen and student records. 4 AICTE Campuses & MSMEs Consulting-grade r",
+     "similarity": null,
+     "keyword": true
+    }
+   ]
+  },
+  {
+   "query": "What does a hacking incident typically cost an Indian company?",
+   "expect": "ground",
+   "kind": "paraphrase",
+   "document": "SIH Quantminds.pptx",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.4748,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BENEFITS",
+     "content": "impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name 1 CISO & Security Teams Fix queue ranked by expected ₹ loss, not CVSS alone. 1 Economic The same ₹1 Cr buys more expected-loss reduction. 2 CFO, CEO & Board Cyber risk in financial terms: EAL, VaR and ROSI. 2 Governance Every snapshot carries model version and input hash. 3 Regulators & Auditors Tamper-evident evidence mapped to RBI, SEBI and DPDP. 3 Social Faster protection of citizen and student records. 4 AICTE Campuses & MSMEs Consulting-grade r",
+     "similarity": 0.4615,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "WITH CYBERARTHA",
+     "content": "breach. From Alert Noise to Rupee Decisions → TODAY: SEVERITY-RANKED Hundreds of “critical” alerts Patch order set by CVSS Spend not tied to ₹ loss Fixes ranked by ₹ loss removed Optimal ₹1 Cr control basket ROSI and ledger proof for the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9",
+     "similarity": 0.4021,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RESEARCH AND REFERENCES",
+     "content": "the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9 6 @SIH Idea submission- Template Your Team Name Standard for ₹ risk quantification Open FAIR Risk Analysis LINK Exploit-likelihood signal FIRST EPSS Model LINK Known exploited vulnerabilities CISA KEV Catalog LINK Attack paths and techniques MITRE ATT&CK LINK India loss baseline IBM Cost of a Data Breach 2026 LINK Regulatory mapping SEBI CSCRF · RBI CSF · DPDP Act LINK Tamper-evident evidence Hyperledger Fabric LINK Also referenced: NIST CSF 2.0 · ",
+     "similarity": 0.3932,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "evidenced cyber-risk reporting. Fit for AICTE institutions Campuses hold student data under DPDP; a containerised deployment needs no SOC. Measurable value Indian organisations with extensive security AI paid ₹10.3 Cr less per breach (IBM 2026). 12-WEEK EXECUTION PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4",
+     "similarity": 0.352,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "CORE INNOVATION",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine",
+     "similarity": 0.3467,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": null,
+     "keyword": true
+    }
+   ]
+  },
+  {
+   "query": "How far ahead must I tell my manager before going on holiday?",
+   "expect": "ground",
+   "kind": "paraphrase",
+   "document": "Leave guide.txt",
+   "passages": [
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.4368,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0898,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.0302,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "OUTPUTS COMPUTED",
+     "content": "snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score",
+     "similarity": 0.0283,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.0252,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BLOCKCHAIN EVIDENCE FLOW",
+     "content": "engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot",
+     "similarity": 0.0248,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "When do I need a doctor's note if I am unwell?",
+   "expect": "ground",
+   "kind": "paraphrase",
+   "document": "Leave guide.txt",
+   "passages": [
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.2984,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPORTANT INSTRUCTIONS",
+     "content": " or any other format will be supported. Note - You can delete this slide (Important Pointers) when you upload the details of your idea on SIH portal. Please ensure below pointers are met while submitting the Idea PPT: 7 image1.png image2.png image9.png image10.png image11.png image12.png image13.png image14.png image15.png image16.png image17.png image18.png image19.png image3.png image4.png image5.png image6.png image7.png image8.png image25.png image26.png image27.png image28.png image29.png image30.png image31.png image32.png image33.png image34.png image20.png image21.png image22.png image",
+     "similarity": 0.0562,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0449,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.0218,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": 0.014,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0071,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "hi there",
+   "expect": "none",
+   "kind": "small_talk",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0918,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": 0.0875,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPORTANT INSTRUCTIONS",
+     "content": " or any other format will be supported. Note - You can delete this slide (Important Pointers) when you upload the details of your idea on SIH portal. Please ensure below pointers are met while submitting the Idea PPT: 7 image1.png image2.png image9.png image10.png image11.png image12.png image13.png image14.png image15.png image16.png image17.png image18.png image19.png image3.png image4.png image5.png image6.png image7.png image8.png image25.png image26.png image27.png image28.png image29.png image30.png image31.png image32.png image33.png image34.png image20.png image21.png image22.png image",
+     "similarity": 0.0719,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.0649,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0617,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNICAL APPROACH",
+     "content": "+ ROSI Real-world Issue: Cyber risk is still rated Low, Medium or High. Boards cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION",
+     "similarity": 0.0543,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "thanks a lot!",
+   "expect": "none",
+   "kind": "small_talk",
+   "passages": [
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.1,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "CORE INNOVATION",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine",
+     "similarity": 0.0773,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.068,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.0629,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0577,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": 0.0511,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "good morning, how are you today?",
+   "expect": "none",
+   "kind": "small_talk",
+   "passages": [
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.1036,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.0551,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": 0.0423,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "WITH CYBERARTHA",
+     "content": "breach. From Alert Noise to Rupee Decisions → TODAY: SEVERITY-RANKED Hundreds of “critical” alerts Patch order set by CVSS Spend not tied to ₹ loss Fixes ranked by ₹ loss removed Optimal ₹1 Cr control basket ROSI and ledger proof for the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9",
+     "similarity": 0.0387,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RESEARCH AND REFERENCES",
+     "content": "the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9 6 @SIH Idea submission- Template Your Team Name Standard for ₹ risk quantification Open FAIR Risk Analysis LINK Exploit-likelihood signal FIRST EPSS Model LINK Known exploited vulnerabilities CISA KEV Catalog LINK Attack paths and techniques MITRE ATT&CK LINK India loss baseline IBM Cost of a Data Breach 2026 LINK Regulatory mapping SEBI CSCRF · RBI CSF · DPDP Act LINK Tamper-evident evidence Hyperledger Fabric LINK Also referenced: NIST CSF 2.0 · ",
+     "similarity": 0.0381,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNICAL APPROACH",
+     "content": "+ ROSI Real-world Issue: Cyber risk is still rated Low, Medium or High. Boards cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION",
+     "similarity": 0.0372,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "who are you?",
+   "expect": "none",
+   "kind": "meta",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0621,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.0517,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0485,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.0467,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK QUANTIFICATION ENGINE",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine Attack-path Cyber Twin Monte Carlo EAL · VaR AI DECISION SUPPORT & OPTIMISATION Shapley ₹ Drivers ₹1 Cr Budget Optimiser What-if Copilot DASHBOARDS, COMPLIANCE & EVIDENCE Enterprise Risk Score Exec view + drill-down Framework Mapping ISO · NIST · CIS RBI · SEBI Blockchain Ledger Fabric-anchored proof Live Connectors OpenVAS · Wazuh Prowler Confidence Bands P10 · P50 · P90 ranges Risk VS Solution Low / Medium / High labels ₹ EAL and VaR per asset Stal",
+     "similarity": 0.0445,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": 0.043,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "what can you do for me?",
+   "expect": "none",
+   "kind": "meta",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "CORE INNOVATION",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine",
+     "similarity": 0.0855,
+     "keyword": false
+    },
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.083,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0632,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.0604,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNICAL APPROACH",
+     "content": "+ ROSI Real-world Issue: Cyber risk is still rated Low, Medium or High. Boards cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION",
+     "similarity": 0.0489,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": 0.0483,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "which tools do you have access to?",
+   "expect": "none",
+   "kind": "meta",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BLOCKCHAIN EVIDENCE FLOW",
+     "content": "engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot",
+     "similarity": 0.1852,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1626,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.1412,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SYSTEM ARCHITECTURE",
+     "content": "reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update. Vuln scanner SIEM / EDR IAM CSPM CMDB + BIA Threat intel Python collectors → OCSF-based schema Neo4j cyber twin PostgreSQL + Redis Risk engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards",
+     "similarity": 0.1388,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNOLOGIES USED",
+     "content": "verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score Frontend React, TypeScript and D3 dashboards Backend FastAPI services, Python collectors, Redis cache AI & Quant NumPy / SciPy Monte Carlo, Bayesian models, SHAP, OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3",
+     "similarity": 0.1193,
+     "keyword": true
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1111,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": null,
+     "keyword": true
+    }
+   ]
+  },
+  {
+   "query": "what is the capital of Australia?",
+   "expect": "none",
+   "kind": "off_topic",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RESEARCH AND REFERENCES",
+     "content": "the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9 6 @SIH Idea submission- Template Your Team Name Standard for ₹ risk quantification Open FAIR Risk Analysis LINK Exploit-likelihood signal FIRST EPSS Model LINK Known exploited vulnerabilities CISA KEV Catalog LINK Attack paths and techniques MITRE ATT&CK LINK India loss baseline IBM Cost of a Data Breach 2026 LINK Regulatory mapping SEBI CSCRF · RBI CSF · DPDP Act LINK Tamper-evident evidence Hyperledger Fabric LINK Also referenced: NIST CSF 2.0 · ",
+     "similarity": 0.0443,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.0324,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPORTANT INSTRUCTIONS",
+     "content": " or any other format will be supported. Note - You can delete this slide (Important Pointers) when you upload the details of your idea on SIH portal. Please ensure below pointers are met while submitting the Idea PPT: 7 image1.png image2.png image9.png image10.png image11.png image12.png image13.png image14.png image15.png image16.png image17.png image18.png image19.png image3.png image4.png image5.png image6.png image7.png image8.png image25.png image26.png image27.png image28.png image29.png image30.png image31.png image32.png image33.png image34.png image20.png image21.png image22.png image",
+     "similarity": 0.0238,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0189,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.0162,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BLOCKCHAIN EVIDENCE FLOW",
+     "content": "engine: Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot",
+     "similarity": 0.0159,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "write a haiku about autumn leaves",
+   "expect": "none",
+   "kind": "off_topic",
+   "passages": [
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.1617,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "OUTPUTS COMPUTED",
+     "content": "snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable. EAL VaR₉₅ CVaR P10 · P50 · P90 ROSI Risk Score",
+     "similarity": 0.0755,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "CORE INNOVATION",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine",
+     "similarity": 0.0659,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0491,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.0459,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": 0.0458,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "what is 17 times 23?",
+   "expect": "none",
+   "kind": "off_topic",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0572,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "evidenced cyber-risk reporting. Fit for AICTE institutions Campuses hold student data under DPDP; a containerised deployment needs no SOC. Measurable value Indian organisations with extensive security AI paid ₹10.3 Cr less per breach (IBM 2026). 12-WEEK EXECUTION PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4",
+     "similarity": 0.0569,
+     "keyword": false
+    },
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.0487,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.0399,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.0385,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0339,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "recommend a good pasta recipe for dinner",
+   "expect": "none",
+   "kind": "off_topic",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "CORE INNOVATION",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine",
+     "similarity": 0.1031,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0787,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK QUANTIFICATION ENGINE",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine Attack-path Cyber Twin Monte Carlo EAL · VaR AI DECISION SUPPORT & OPTIMISATION Shapley ₹ Drivers ₹1 Cr Budget Optimiser What-if Copilot DASHBOARDS, COMPLIANCE & EVIDENCE Enterprise Risk Score Exec view + drill-down Framework Mapping ISO · NIST · CIS RBI · SEBI Blockchain Ledger Fabric-anchored proof Live Connectors OpenVAS · Wazuh Prowler Confidence Bands P10 · P50 · P90 ranges Risk VS Solution Low / Medium / High labels ₹ EAL and VaR per asset Stal",
+     "similarity": 0.0666,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0503,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNICAL APPROACH",
+     "content": "+ ROSI Real-world Issue: Cyber risk is still rated Low, Medium or High. Boards cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION",
+     "similarity": 0.0496,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FALL SHORT",
+     "content": "Rev. 1 · CERT-In Directions 2022 · SHAP, NeurIPS 2017 · VERIS VCDB · Hubbard and Seiersen, How to Measure Anything in Cybersecurity Risk (2023) Consulting FAIR / GRC: periodic workshops, no live telemetry CVSS / EPSS ranking: severity only, no asset value or ₹ loss Cyber-insurance pricing: insurer view, no remediation or ROSI CyberArtha · Executive View illustrative values Enterprise Risk Score 72 / 100 Expected Annual Loss ₹4.8 Cr VaR₉₅ ₹11.2 Cr Top ₹ risk contributors (Shapley) Exposed VPN gateway ₹1.6 Cr Unpatched ERP server ₹1.1 Cr Over-privileged admins ₹0.7 Cr 6 7 @SIH Idea submission- T",
+     "similarity": 0.0493,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "create a new repo named test repo",
+   "expect": "none",
+   "kind": "action",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1114,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1108,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.1019,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": 0.076,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.0751,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SUSTAINABLE VALUE",
+     "content": "cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION The data already exists Connects to existing scanners, SIEM and asset inventories; no new hardware or agents. Proven, open methods Open FAIR, Monte Carlo and MILP optimisation are established; CyberArtha automates them. Open-source stack Python, FastAPI, Neo4j, OR-Tools and Hyperledger Fabric carry no licence cost. Buildable prototype 500-node synthetic twin, three live connectors and Docker Compose on one laptop. 1 Incomplete or outdated data → Per-",
+     "similarity": 0.0717,
+     "keyword": true
+    }
+   ]
+  },
+  {
+   "query": "open an issue on github about the login bug",
+   "expect": "none",
+   "kind": "action",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.181,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.1719,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "CORE INNOVATION",
+     "content": "Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget. ₹ Risk Engine",
+     "similarity": 0.1381,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "TECHNICAL APPROACH",
+     "content": "+ ROSI Real-world Issue: Cyber risk is still rated Low, Medium or High. Boards cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION",
+     "similarity": 0.1242,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "RISK LOOP",
+     "content": " cannot see what it may cost, or which fix saves the most. 2 3 @SIH Idea submission- Template Your Team Name METHODOLOGY & PROCESS OF IMPLEMENTATION 1 · Ingest Scanner, SIEM, IAM, CSPM feeds 2 · Twin Neo4j attack graph 3 · Likelihood EPSS, KEV and exposure 4 · Impact Downtime, breach, penalty, reputation 5 · Simulate Monte Carlo EAL and VaR 6 · Decide Optimise and explain Recomputes on every new finding, asset change or control update.",
+     "similarity": 0.1009,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "WITH CYBERARTHA",
+     "content": "breach. From Alert Noise to Rupee Decisions → TODAY: SEVERITY-RANKED Hundreds of “critical” alerts Patch order set by CVSS Spend not tied to ₹ loss Fixes ranked by ₹ loss removed Optimal ₹1 Cr control basket ROSI and ledger proof for the board 5 ₹ crore  Extensive security AI India average No security AI Technology sector Financial services 21.3 25.5 31.6 35.700000000000003 40.9",
+     "similarity": 0.0963,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "send a slack message to the team saying standup moved to 10",
+   "expect": "none",
+   "kind": "action",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1556,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.1273,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1124,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SHA-256",
+     "content": "Bayesian likelihood × ₹ impact → Monte Carlo Shapley drivers OR-Tools optimiser RAG copilot FastAPI → React + D3 executive dashboards Risk snapshot hash Merkle root Fabric channel Auditor verifies Only hashes go on-chain: findings stay private, yet every ₹ figure stays provable.",
+     "similarity": 0.1059,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPORTANT INSTRUCTIONS",
+     "content": " or any other format will be supported. Note - You can delete this slide (Important Pointers) when you upload the details of your idea on SIH portal. Please ensure below pointers are met while submitting the Idea PPT: 7 image1.png image2.png image9.png image10.png image11.png image12.png image13.png image14.png image15.png image16.png image17.png image18.png image19.png image3.png image4.png image5.png image6.png image7.png image8.png image25.png image26.png image27.png image28.png image29.png image30.png image31.png image32.png image33.png image34.png image20.png image21.png image22.png image",
+     "similarity": 0.1047,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "PRACTICAL TO IMPLEMENT",
+     "content": "Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name CHALLENGES & STRATEGIES POTENTIAL RISKS → HOW WE OVERCOME THEM VIABILITY & ADOPTION",
+     "similarity": 0.0955,
+     "keyword": false
+    }
+   ]
+  },
+  {
+   "query": "schedule a meeting with the design team tomorrow at 3pm",
+   "expect": "none",
+   "kind": "action",
+   "passages": [
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "SMART INDIA HACKATHON 2026",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal)",
+     "similarity": 0.1254,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IMPACT AND BENEFITS",
+     "content": "PLAN W1–3 Twin and connectors W4–6 Likelihood, impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.1171,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "IDEA TITLE",
+     "content": "Problem Statement ID – Problem Statement Title- Theme- PS Category- Software/Hardware Team ID- Team Name (Registered on portal) 2 @SIH Idea submission- Template Your Team Name Know what to fix first — in rupees Why It Matters: An Indian breach now averages ₹25.5 Cr, yet 68% of organisations lack extensive security AI (IBM 2026). DPDP penalties reach ₹250 Cr. Proposed Solution: CyberArtha prices every security finding as a ₹ loss range and recommends the fixes that cut the most risk within budget.",
+     "similarity": 0.0676,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "FEASIBILITY AND VIABILITY",
+     "content": "OR-Tools Data & Graph PostgreSQL findings store, Neo4j attack graph Blockchain & Deploy Hyperledger Fabric; Docker to Kubernetes, cloud-ready 3 4 @SIH Idea submission- Template Your Team Name",
+     "similarity": 0.0648,
+     "keyword": false
+    },
+    {
+     "title": "Leave guide.txt",
+     "heading": null,
+     "content": "Annual leave requests need two weeks notice. Sick leave needs a certificate after two days.",
+     "similarity": 0.058,
+     "keyword": false
+    },
+    {
+     "title": "SIH Quantminds.pptx",
+     "heading": "BENEFITS",
+     "content": "impact, Monte Carlo W7–9 Optimiser, Shapley, dashboards W10–12 Fabric ledger, copilot, back-test 4 5 @SIH Idea submission- Template Your Team Name 1 CISO & Security Teams Fix queue ranked by expected ₹ loss, not CVSS alone. 1 Economic The same ₹1 Cr buys more expected-loss reduction. 2 CFO, CEO & Board Cyber risk in financial terms: EAL, VaR and ROSI. 2 Governance Every snapshot carries model version and input hash. 3 Regulators & Auditors Tamper-evident evidence mapped to RBI, SEBI and DPDP. 3 Social Faster protection of citizen and student records. 4 AICTE Campuses & MSMEs Consulting-grade r",
+     "similarity": 0.0545,
+     "keyword": false
+    }
+   ]
+  }
+ ]
+}

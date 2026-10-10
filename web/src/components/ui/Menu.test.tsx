@@ -1,3 +1,6 @@
+// @find: tests for dropdown menu, menu keyboard, arrow keys, Escape, checkbox radio items, accessibility, MenuButton
+// @what: Tests menu keyboard behaviour and floating position.
+// @flow: Covers Menu.tsx.
 import axe from 'axe-core'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'

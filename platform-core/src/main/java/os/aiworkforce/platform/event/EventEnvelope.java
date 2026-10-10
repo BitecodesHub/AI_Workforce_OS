@@ -1,3 +1,6 @@
+// @find: event envelope, kafka event wrapper, event id, idempotency, correlation, who caused it, event payload
+// @what: Wrapper every event travels in, carrying actor, request id and an idempotency key.
+// @flow: Published and consumed through topics named in EventTopics
 package os.aiworkforce.platform.event;
 
 import java.time.Instant;

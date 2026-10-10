@@ -1,3 +1,9 @@
+// @find: llm provider, model provider, add provider, OpenRouter, Bedrock, OpenAI compatible, base url, credential ref, API key pointer, enable provider, provider regions, llm_providers, LlmProviderEntity, Providers page
+// @what: Entity for a configured model provider (kind, base URL, credential pointer, regions), platform-wide or workspace-owned.
+// @flow: Stored by Providers; adapters chosen by kind; per-workspace state in WorkspaceProviderSetting.
+// @find: llm provider, model provider, add provider, OpenRouter, Bedrock, OpenAI compatible, base url, credential ref, API key pointer, enable provider, provider regions, llm_providers, LlmProviderEntity, Providers page
+// @what: Entity for a configured model provider (kind, base URL, credential pointer, regions), platform-wide or workspace-owned.
+// @flow: Stored by Providers; adapters chosen by kind; per-workspace state in WorkspaceProviderSetting.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;

@@ -1,3 +1,6 @@
+// @find: demo cta, try the demo button, see it work, demo accounts, /sign-in, useDemoCta
+// @what: Hook choosing the demo button label and link depending on whether demo accounts exist.
+// @flow: Used by Hero, LandingBar, FinalCta
 import { hasDemoAccounts, useDemoAccounts } from '../../../lib/demo'
 import { CTA } from './landingFacts'
 
@@ -17,6 +20,7 @@ export type DemoCta = {
   accounts: boolean
 }
 
+// @find: useDemoCta hook, demo button, demo accounts
 export function useDemoCta(): DemoCta {
   const demo = useDemoAccounts()
   return hasDemoAccounts(demo) ? { ...CTA.demo, accounts: true } : { ...CTA.seeItWork, accounts: false }

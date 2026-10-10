@@ -1,3 +1,6 @@
+// @find: github, repositories, repos, issues, pull requests, pulls, branches, comments, create issue, update issue, create repo, create branch, add comment, personal access token, live adapter, real API, git
+// @what: Live GitHub connector: runs github__ tools (issues, pull requests, repos, branches, comments) against the GitHub REST API with a pasted personal access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.nio.charset.StandardCharsets;
@@ -65,6 +68,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return get(token, "/user").map(user -> user.path("login").asText("GitHub user"));
     }
 
+    // @find: GitHub list issues, tool github__list_issues, live GitHub call
     private Mono<ToolResult> listIssues(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String state = text(arguments, "state");
@@ -85,6 +89,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: GitHub get pulls, tool github__get_pulls, live GitHub call
     private Mono<ToolResult> getPulls(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         return get(token, "/repos/{owner}/{repo}/pulls?state=open&per_page=30", repo[0], repo[1])
@@ -109,6 +114,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: GitHub create issue, tool github__create_issue, live GitHub call
     private Mono<ToolResult> createIssue(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         ObjectNode body = json.createObjectNode();
@@ -123,6 +129,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
                         "Opened issue #" + issue.path("number").asText() + " in " + name(repo) + " on GitHub."));
     }
 
+    // @find: GitHub update issue, tool github__update_issue, live GitHub call
     private Mono<ToolResult> updateIssue(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = required(arguments, "id").replaceFirst("^#", "");
@@ -153,6 +160,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
 
     // ---- Repositories and branches -------------------------------------------------------------
 
+    // @find: GitHub list repos, tool github__list_repos, live GitHub call
     private Mono<ToolResult> listRepos(ToolInvocation invocation, JsonNode arguments, String token) {
         int limit = limit(arguments, 30, 100);
         String owner = text(arguments, "owner");
@@ -166,6 +174,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: GitHub create repo, tool github__create_repo, live GitHub call
     private Mono<ToolResult> createRepo(ToolInvocation invocation, JsonNode arguments, String token) {
         // "test repo" becomes test-repo, the way GitHub's own form suggests it.
         String name = required(arguments, "name").replaceAll("\\s+", "-");
@@ -193,6 +202,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
                         + repo.path("full_name").asText(name) + " on GitHub."));
     }
 
+    // @find: GitHub list branches, tool github__list_branches, live GitHub call
     private Mono<ToolResult> listBranches(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         return get(token, "/repos/{owner}/{repo}/branches?per_page=100", repo[0], repo[1]).map(body -> {
@@ -209,6 +219,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: GitHub create branch, tool github__create_branch, live GitHub call
     private Mono<ToolResult> createBranch(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String branch = ref(required(arguments, "branch"), "branch");
@@ -234,6 +245,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
 
     // ---- Comments -------------------------------------------------------------------------------
 
+    // @find: GitHub list comments, tool github__list_comments, live GitHub call
     private Mono<ToolResult> listComments(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "issue");
@@ -247,6 +259,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: GitHub add comment, tool github__add_comment, live GitHub call
     private Mono<ToolResult> addComment(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "issue");
@@ -258,6 +271,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
 
     // ---- Pull requests --------------------------------------------------------------------------
 
+    // @find: GitHub get pull, tool github__get_pull, live GitHub call
     private Mono<ToolResult> getPull(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "id");
@@ -265,6 +279,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
                 .map(pull -> done(pull(pull), "Read pull request #" + number + " in " + name(repo) + " on GitHub."));
     }
 
+    // @find: GitHub create pull, tool github__create_pull, live GitHub call
     private Mono<ToolResult> createPull(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String title = required(arguments, "title");
@@ -290,6 +305,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
                         "Opened pull request #" + pull.path("number").asText() + " in " + name(repo) + " on GitHub."));
     }
 
+    // @find: GitHub merge pull, tool github__merge_pull, live GitHub call
     private Mono<ToolResult> mergePull(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "id");
@@ -312,6 +328,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
 
     // ---- Files ----------------------------------------------------------------------------------
 
+    // @find: GitHub get file, tool github__get_file, live GitHub call
     private Mono<ToolResult> getFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String path = path(arguments);
@@ -331,6 +348,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: GitHub save file, tool github__save_file, live GitHub call
     private Mono<ToolResult> saveFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String path = path(arguments);

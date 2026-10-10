@@ -1,3 +1,6 @@
+// @find: internal service token, service-to-service auth, token for identity service, internal tokens cache, mint internal token, POST /internal/tokens, on behalf of
+// @what: Fetches and caches short-lived internal service tokens from identity-service for calls to sibling services.
+// @flow: Calls identity-service POST /internal/tokens; used by InvitationService, WorkspaceController and AuditWiring.
 package os.aiworkforce.organisation.service;
 
 import java.time.Duration;
@@ -43,6 +46,7 @@ public class InternalTokenProvider {
         this.internalSecret = properties.security().internalServiceSecret();
     }
 
+    // @find: get internal token for a service, service token, cached token
     public String forService(String service) {
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
         CacheKey key = new CacheKey(service, actor.id(), actor.orgId());

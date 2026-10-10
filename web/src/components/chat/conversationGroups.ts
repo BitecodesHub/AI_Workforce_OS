@@ -1,3 +1,6 @@
+// @find: conversation groups, sidebar grouping, pinned, needs you, today, yesterday, older, search highlight, status text, archive restore
+// @what: Pure rules for grouping and searching the sidebar's conversations.
+// @flow: Used by ChatSidebar.
 import type { Conversation } from '../../lib/queries'
 
 /*
@@ -32,6 +35,7 @@ const DATE_GROUPS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'older', label: 'Older' },
 ]
 
+// @find: groupConversations, group conversations, conversation groups, sidebar grouping, pinned, needs you
 /**
  * Every conversation grouped for the sidebar, in order: Pinned, Needs you, Today, Yesterday,
  * Previous 7 days, then Older. A conversation appears once only - pinned wins over needing the
@@ -73,6 +77,7 @@ export function groupConversations(
   return groups
 }
 
+// @find: conversationStatusText, conversation status text, conversation groups, sidebar grouping, pinned, needs you
 /** The status dot's caption, from a conversation's own activity summary. */
 export function conversationStatusText(activity: Conversation['activity']): string {
   switch (activity) {
@@ -94,6 +99,7 @@ export function conversationStatusText(activity: Conversation['activity']): stri
 
 export type HighlightPart = { text: string; match: boolean }
 
+// @find: highlightParts, highlight parts, conversation groups, sidebar grouping, pinned, needs you
 /** Splits `text` around the first case-insensitive occurrence of `q`, for `<mark>`-style highlighting. */
 export function highlightParts(text: string, q: string): HighlightPart[] {
   const query = q.trim()
@@ -107,6 +113,7 @@ export function highlightParts(text: string, q: string): HighlightPart[] {
   return parts
 }
 
+// @find: nextAfterRemoval, next after removal, conversation groups, sidebar grouping, pinned, needs you
 /** The row to select after removing `removedId`: the one after it in `order`, or else the one before. */
 export function nextAfterRemoval(order: readonly string[], removedId: string): string | null {
   const index = order.indexOf(removedId)
@@ -115,3 +122,18 @@ export function nextAfterRemoval(order: readonly string[], removedId: string): s
   if (index > 0) return order[index - 1]!
   return null
 }
+
+// @find: undoArchive, undo archive, conversation groups, sidebar grouping, pinned, needs you
+/**
+ * Puts an archived conversation back as it was. Archiving also unpins it (the server keeps the
+ * Pinned group to what is in use), so a conversation that was pinned is pinned again; without
+ * this, "Undo" brought it back into the list but quietly out of Pinned.
+ */
+export async function undoArchive(
+  conversation: { id: string; pinned: boolean },
+  actions: { unarchive: (id: string) => Promise<unknown>; pin: (id: string) => Promise<unknown> },
+): Promise<void> {
+  await actions.unarchive(conversation.id)
+  if (conversation.pinned) await actions.pin(conversation.id)
+}
+

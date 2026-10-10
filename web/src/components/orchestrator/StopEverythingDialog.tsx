@@ -1,3 +1,6 @@
+// @find: stop everything, stop all work, emergency stop, kill switch, cancel all running queued tasks, pause schedules, confirm dialog, useStopAll, StopEverythingDialog
+// @what: The confirmation dialog that stops all running and queued work and optionally every schedule.
+// @flow: Opened from the Orchestrator header; calls useStopAll
 import { useState } from 'react'
 import { ConfirmDialog } from '../ui'
 import { describeApiError } from '../../lib/api'
@@ -13,6 +16,7 @@ import { useToast } from '../../lib/toast'
  * quietly starts new work right after. The preview counts come from the board already on screen;
  * the toast afterwards reports what the server actually did, which can differ from that preview.
  */
+// @find: stop everything dialog, stop all work
 export function StopEverythingDialog({ open, onClose, board }: { open: boolean; onClose: () => void; board: Board }) {
   const toast = useToast()
   const stopAll = useStopAll()

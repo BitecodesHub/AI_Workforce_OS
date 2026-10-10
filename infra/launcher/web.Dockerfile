@@ -1,3 +1,6 @@
+# @find: launcher web image, web client build, vite build, nginx image, pnpm install, production bundle, pinned node and nginx
+# @what: Dockerfile that builds the web client and serves it with nginx for the one-click launcher.
+# @flow: Used by infra/launcher/docker-compose.yml; copies infra/launcher/nginx.conf
 # The web client for the one-click launcher: a production build served by nginx, which also
 # proxies each API prefix to the service that owns it (see nginx.conf).
 

@@ -1,3 +1,6 @@
+// @find: agent memories repository, list notes for agent, search notes, count notes, delete notes, jpa repository
+// @what: Spring Data repository for an agent's memory notes.
+// @flow: Used by AgentMemoryService
 package os.aiworkforce.memory.repository;
 
 import java.util.List;
@@ -21,6 +24,17 @@ public interface AgentMemories extends JpaRepository<AgentMemory, UUID> {
 
     /** Newest change first, for the agent's page. */
     List<AgentMemory> findByOrgIdAndAgentIdOrderByUpdatedAtDesc(UUID orgId, UUID agentId, Pageable page);
+
+    /** Pinned notes first, then newest change first: the agent's page. */
+    List<AgentMemory> findByOrgIdAndAgentIdOrderByPinnedDescUpdatedAtDesc(UUID orgId, UUID agentId, Pageable page);
+
+    /** The pinned notes, most recently pinned first; always recalled. */
+    List<AgentMemory> findByOrgIdAndAgentIdAndPinnedTrueOrderByPinnedAtDesc(UUID orgId, UUID agentId, Pageable page);
+
+    /** Forgets every note of one agent; returns how many there were. */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("delete from AgentMemory m where m.orgId = :orgId and m.agentId = :agentId")
+    int deleteAllOfAgent(@Param("orgId") UUID orgId, @Param("agentId") UUID agentId);
 
     long countByOrgIdAndAgentId(UUID orgId, UUID agentId);
 

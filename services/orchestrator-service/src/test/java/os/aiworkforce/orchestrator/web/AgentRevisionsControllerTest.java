@@ -1,3 +1,5 @@
+// @find: tests for agent revisions controller, agent revisions, history, /api/agents/{agentId}/revisions
+// @what: Unit and integration tests (9 cases) for agent revisions controller, for example: lists revisions with what changed; marks current and used by runs; carries the settings of the revision; equal values are not changes.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

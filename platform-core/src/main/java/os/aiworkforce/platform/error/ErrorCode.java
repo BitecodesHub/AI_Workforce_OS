@@ -1,3 +1,6 @@
+// @find: error codes, error code list, http status per code, retryable, not found, forbidden, validation failed, rate limited, default message
+// @what: Catalogue of every deliberate failure code with its HTTP status, retry flag and safe message.
+// @flow: Used by ApiException, ProblemResponse and the web client
 package os.aiworkforce.platform.error;
 
 import java.util.Arrays;

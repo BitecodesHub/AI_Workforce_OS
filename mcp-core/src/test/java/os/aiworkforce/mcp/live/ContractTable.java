@@ -1,3 +1,6 @@
+// @find: test data for live adapter contracts, every tool of every live adapter, provider requests and answers, wiremock stand-in, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: Table of one row per live tool: arguments, expected provider request, provider answer and expected result.
+// @flow: Used by LiveToolContractTest
 package os.aiworkforce.mcp.live;
 
 import java.net.URLDecoder;

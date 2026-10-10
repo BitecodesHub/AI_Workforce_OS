@@ -1,3 +1,9 @@
+// @find: llm model, model catalogue, model pricing, context window, model unavailable, retire model, discovered model, seed model, free model, llm_models, LlmModelEntity, Models page
+// @what: Entity for one model offered by one provider, with limits, pricing and availability the router uses to filter candidates.
+// @flow: Stored by Models; used by the model router and policy candidates.
+// @find: llm model, model catalogue, model pricing, context window, model unavailable, retire model, discovered model, seed model, free model, llm_models, LlmModelEntity, Models page
+// @what: Entity for one model offered by one provider, with limits, pricing and availability the router uses to filter candidates.
+// @flow: Stored by Models; used by the model router and policy candidates.
 package os.aiworkforce.orchestrator.domain;
 
 import java.io.Serializable;
@@ -117,6 +123,8 @@ public class LlmModelEntity {
     @Column(name = "discovered_at")
     private Instant discoveredAt;
 
+    // @find: mark model unavailable for a while, rate limited, cooldown, retire model
+    // @find: mark model unavailable for a while, rate limited, cooldown, retire model
     public void markUnavailable(Duration duration, String reason) {
         this.unavailableUntil = Instant.now().plus(duration);
         this.unavailableReason = reason;

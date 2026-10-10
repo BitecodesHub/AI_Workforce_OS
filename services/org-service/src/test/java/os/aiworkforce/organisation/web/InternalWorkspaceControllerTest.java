@@ -1,3 +1,6 @@
+// @find: tests for internal workspace endpoint, GET /internal/workspaces/{id}, service token reads, person refused, API key refused, 404
+// @what: Tests who may read a workspace through the internal endpoint.
+// @flow: Exercises InternalWorkspaceController.
 package os.aiworkforce.organisation.web;
 
 import static org.mockito.Mockito.mock;

@@ -1,3 +1,6 @@
+// @find: tests for connect your AI on model routing, ?connect=1, dialog, vitest, ModelRouting component tests, Model routing page
+// @what: Automated tests that check the connect your AI on model routing screen (/routing) behaves as users expect.
+// @flow: Renders ModelRouting from ModelRouting.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

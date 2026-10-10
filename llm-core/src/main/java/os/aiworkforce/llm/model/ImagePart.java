@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, image attachment, send picture to model, vision, ImagePart
+// @what: A picture a person attached, sent to a model that can read images.
 package os.aiworkforce.llm.model;
 
 import java.util.Objects;

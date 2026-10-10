@@ -1,3 +1,6 @@
+// @find: collapsible card, expand collapse, accordion, show hide section, remember collapsed, useCollapsed, find in page, Collapsible
+// @what: Card that collapses to a summary line while keeping its body in the page, with a hook that remembers the state.
+// @flow: Used by detail screens; persists via lib/persist.
 import type { ReactNode } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { readStored, writeStored } from '../../lib/persist'
@@ -12,6 +15,7 @@ import { readStored, writeStored } from '../../lib/persist'
 
 type HeadingLevel = 'h2' | 'h3' | 'h4' | 'p'
 
+// @find: collapsible card, expand collapse section
 export function Collapsible({
   title,
   summary,
@@ -97,6 +101,7 @@ export function Collapsible({
 
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 
+// @find: remember collapsed state, useCollapsed hook
 /**
  * The open/closed state a caller hands to `Collapsible`, remembered across a reload when
  * `storageKey` is given, and overridable in bulk (a Details mode switching every card at once)

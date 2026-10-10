@@ -1,3 +1,5 @@
+// @find: tests for permission registry, permission codes, Permission.ALL, Permission.Codes consistency
+// @what: Checks the permission registry lists and constants never disagree.
 package os.aiworkforce.platform.rbac;
 
 import static org.assertj.core.api.Assertions.assertThat;

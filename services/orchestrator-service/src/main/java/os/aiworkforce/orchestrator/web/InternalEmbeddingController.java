@@ -1,3 +1,6 @@
+// @find: internal embeddings, embed text, embedding endpoint, vectors for knowledge service, /internal/embeddings, embedding provider routing, service-to-service
+// @what: Internal endpoint that turns text into embeddings through the workspace's configured provider for the knowledge service.
+// @flow: Called by knowledge-service EmbeddingService; uses the provider registry
 package os.aiworkforce.orchestrator.web;
 
 import java.math.BigDecimal;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import os.aiworkforce.llm.budget.BudgetGuard;
 import os.aiworkforce.llm.model.AttemptRecord;
+import os.aiworkforce.llm.model.EmbeddingPurpose;
 import os.aiworkforce.llm.model.ModelSpec;
 import os.aiworkforce.llm.model.ProviderDescriptor;
 import os.aiworkforce.llm.model.ProviderException;
@@ -111,16 +115,23 @@ public class InternalEmbeddingController {
      * @param agentId the agent this embedding is made for, when it is made during a run; absent for
      *     ingesting a document
      * @param runId the run it is made for, with the same meaning
+     * @param purpose {@code query} for a search question, {@code passage} (the default) for stored
+     *     text; retrieval models such as NVIDIA's embed the two differently
      */
     public record EmbedRequest(
             @NotBlank String providerId,
             @NotBlank String modelId,
             @NotEmpty @Size(max = MAX_BATCH) List<String> texts,
             UUID agentId,
-            UUID runId) {
+            UUID runId,
+            String purpose) {
 
         public EmbedRequest(String providerId, String modelId, List<String> texts) {
-            this(providerId, modelId, texts, null, null);
+            this(providerId, modelId, texts, null, null, null);
+        }
+
+        public EmbedRequest(String providerId, String modelId, List<String> texts, UUID agentId, UUID runId) {
+            this(providerId, modelId, texts, agentId, runId, null);
         }
     }
 
@@ -130,6 +141,7 @@ public class InternalEmbeddingController {
      */
     public record EmbedResponse(List<float[]> vectors, int dimension) {}
 
+    // @find: embed text, POST /internal/embeddings, create embeddings
     @PostMapping
     @Operation(summary = "Internal: embed text through the workspace's configured provider")
     public EmbedResponse embed(
@@ -172,12 +184,14 @@ public class InternalEmbeddingController {
                                         + " minute.")
                         .with("provider", request.providerId());
             }
-            if (!(lookup instanceof CredentialResolver.Found found)) {
+            if (lookup instanceof CredentialResolver.Found found) {
+                credential = found.value();
+            } else if (!adapter.hasAmbientCredential(provider)) {
                 throw new ApiException(ErrorCode.PROVIDER_NOT_CONFIGURED)
                         .with("provider", request.providerId())
                         .with("hint", "Store a credential for this provider before ingesting.");
             }
-            credential = found.value();
+            // Otherwise the server's own identity (an instance role) is used, with no stored key.
         }
 
         int estimatedTokens = estimateTokens(request.texts());
@@ -192,9 +206,8 @@ public class InternalEmbeddingController {
         Instant startedAt = Instant.now();
         List<float[]> vectors;
         try {
-            vectors = adapter.embed(provider, model, request.texts(), credential)
-                    .timeout(Duration.ofSeconds(60))
-                    .block();
+            vectors = embedInSlices(adapter, provider, model, request.texts(), credential,
+                    EmbeddingPurpose.fromWire(request.purpose()));
         } catch (RuntimeException e) {
             record(
                     context,
@@ -208,7 +221,7 @@ public class InternalEmbeddingController {
                             e instanceof ProviderException provided ? provided.httpStatus() : null,
                             TokenUsage.NONE),
                     BigDecimal.ZERO);
-            throw e;
+            throw plainly(provider, model, e);
         }
 
         if (vectors == null || vectors.size() != request.texts().size()) {
@@ -266,6 +279,36 @@ public class InternalEmbeddingController {
                 runId == null ? null : runId.toString());
     }
 
+    /**
+     * NVIDIA's hosted retrieval models take at most a few dozen inputs a call and refuse a larger
+     * batch whole, so a batch for NVIDIA is sent in slices of this many; others take it in one call.
+     */
+    static final int NVIDIA_SLICE = 32;
+
+    private static List<float[]> embedInSlices(
+            ChatProvider adapter,
+            ProviderDescriptor provider,
+            ModelSpec model,
+            List<String> texts,
+            String credential,
+            EmbeddingPurpose purpose) {
+        boolean nvidia = "nvidia".equalsIgnoreCase(provider.id())
+                || (provider.baseUrl() != null && provider.baseUrl().contains("api.nvidia.com"));
+        int slice = nvidia ? NVIDIA_SLICE : texts.size();
+        List<float[]> all = new java.util.ArrayList<>(texts.size());
+        for (int start = 0; start < texts.size(); start += slice) {
+            List<float[]> part = adapter.embed(
+                            provider, model, texts.subList(start, Math.min(texts.size(), start + slice)), credential, purpose)
+                    .timeout(Duration.ofSeconds(60))
+                    .block();
+            if (part == null) {
+                return null;
+            }
+            all.addAll(part);
+        }
+        return all;
+    }
+
     /** About one token per four characters across every text in the batch. */
     static int estimateTokens(List<String> texts) {
         long characters = 0;
@@ -273,6 +316,36 @@ public class InternalEmbeddingController {
             characters += text == null ? 0 : text.length();
         }
         return (int) Math.min(Integer.MAX_VALUE, characters / CHARS_PER_TOKEN);
+    }
+
+    /**
+     * A provider's refusal as an error whose sentence says what happened, which the knowledge
+     * service shows on a source and on the embedding setting. Left as it was, it reached the caller
+     * as "Something went wrong", whatever the provider had said.
+     */
+    static RuntimeException plainly(ProviderDescriptor provider, ModelSpec model, RuntimeException error) {
+        if (error instanceof ApiException) {
+            return error;
+        }
+        ProviderFailure failure = failureOf(error);
+        String name = provider.displayName() == null ? provider.id() : provider.displayName();
+        String sentence = switch (failure) {
+            case MODEL_NOT_FOUND -> name + " does not serve " + model.modelId()
+                    + " for this workspace's key. Choose another embedding model.";
+            case AUTHENTICATION_FAILED, AUTHORISATION_FAILED -> name
+                    + " refused the stored key. Check the key in Model routing.";
+            case RATE_LIMITED -> name + " is limiting how fast it can be asked. Try again in a minute.";
+            case QUOTA_EXHAUSTED, INSUFFICIENT_CREDIT -> name
+                    + " says the account is out of credit or quota for " + model.modelId() + ".";
+            case TIMEOUT -> name + " did not answer in time. Try again.";
+            case NETWORK_ERROR -> name + " could not be reached. Try again.";
+            case INVALID_REQUEST -> name + " refused the request to embed with " + model.modelId()
+                    + "; it may not be an embedding model.";
+            default -> name + " could not embed the text with " + model.modelId() + " just now.";
+        };
+        return new ApiException(failure.toErrorCode(), sentence, error)
+                .with("provider", provider.id())
+                .with("model", model.modelId());
     }
 
     private static ProviderFailure failureOf(RuntimeException error) {

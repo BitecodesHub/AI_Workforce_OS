@@ -1,3 +1,6 @@
+// @find: invitations repository, find invitation by token hash, pending invitations, list invitations, invitation lookup, Invitations JPA repository
+// @what: Spring Data repository for workspace invitations.
+// @flow: Used by InvitationService.
 package os.aiworkforce.organisation.repository;
 
 import java.util.List;

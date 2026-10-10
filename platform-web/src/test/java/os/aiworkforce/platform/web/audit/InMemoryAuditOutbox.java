@@ -1,3 +1,5 @@
+// @find: tests for audit, in-memory audit outbox, test double, fake outbox
+// @what: Test double that keeps the audit outbox in memory for the relay and client tests.
 package os.aiworkforce.platform.web.audit;
 
 import java.time.Duration;

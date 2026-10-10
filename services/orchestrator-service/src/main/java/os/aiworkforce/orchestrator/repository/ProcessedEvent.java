@@ -1,3 +1,9 @@
+// @find: processed event, idempotent event handling, dedupe event, event id, topic, processed_events, ProcessedEvent entity
+// @what: Entity recording an event id already handled, so redelivered events are ignored.
+// @flow: Stored by ProcessedEvents; checked by event listeners.
+// @find: processed event, idempotent event handling, dedupe event, event id, topic, processed_events, ProcessedEvent entity
+// @what: Entity recording an event id already handled, so redelivered events are ignored.
+// @flow: Stored by ProcessedEvents; checked by event listeners.
 package os.aiworkforce.orchestrator.repository;
 
 import java.time.Instant;

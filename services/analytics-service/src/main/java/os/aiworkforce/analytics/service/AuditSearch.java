@@ -1,3 +1,6 @@
+// @find: audit search, list audit events, filter audit log, cursor paging, newest first, search audit log by actor action date
+// @what: Reads one workspace's audit entries, newest first, narrowed by filters and paged by cursor.
+// @flow: Called by AuditController.list and export; uses AuditEvents
 package os.aiworkforce.analytics.service;
 
 import java.util.ArrayList;
@@ -37,6 +40,7 @@ public class AuditSearch {
      * @param offset entries to skip after that, for the offset paging the list endpoint still allows
      */
     @Transactional(readOnly = true)
+    // @find: search audit log, list audit events, filter audit
     public List<AuditEvent> find(UUID orgId, AuditFilter filter, Long before, int offset, int limit) {
         CriteriaBuilder cb = entityManager.getCriteriaBuilder();
         CriteriaQuery<AuditEvent> query = cb.createQuery(AuditEvent.class);

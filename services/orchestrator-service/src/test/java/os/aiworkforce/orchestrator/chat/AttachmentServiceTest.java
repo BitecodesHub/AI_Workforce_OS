@@ -1,3 +1,6 @@
+// @find: tests for attachment service, chat, stores readable file, refuses by content type, size limit, refuses test virus, unreadable and images, private conversation upload, sent file follows conversation, drafts and workspaces, AttachmentServiceTest, AttachmentService
+// @what: Tests for AttachmentService in the orchestrator chat package (12 test methods).
+// @flow: Exercises AttachmentService
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -109,6 +112,7 @@ class AttachmentServiceTest {
 
     // ---- Upload --------------------------------------------------------------------------------
 
+    // @find: test stores readable file, attachment service
     @Test
     @DisplayName("a readable PDF is stored with its text, for its conversation, by the person who sent it")
     void storesReadableFile() {
@@ -127,6 +131,7 @@ class AttachmentServiceTest {
         assertThat(saved.text()).isEqualTo("Revenue rose eleven percent.");
     }
 
+    // @find: test refuses by content type, attachment service
     @Test
     @DisplayName("the type comes from the content: a program named invoice.pdf is refused and nothing is stored")
     void refusesByContentType() {
@@ -141,6 +146,7 @@ class AttachmentServiceTest {
         verify(repo, never()).insert(any());
     }
 
+    // @find: test size limit, attachment service
     @Test
     @DisplayName("a file over 25 MB is refused before it is read; an empty one is refused too")
     void sizeLimit() {
@@ -158,6 +164,7 @@ class AttachmentServiceTest {
         verify(reader, never()).read(any(), any(), any());
     }
 
+    // @find: test refuses test virus, attachment service
     @Test
     @DisplayName("the anti-virus test file is refused")
     void refusesTestVirus() {
@@ -167,6 +174,7 @@ class AttachmentServiceTest {
                 .hasMessageContaining("virus test signature");
     }
 
+    // @find: test unreadable and images, attachment service
     @Test
     @DisplayName("a scan with no text is kept as unreadable with a plain reason; a picture is ready")
     void unreadableAndImages() {
@@ -186,6 +194,7 @@ class AttachmentServiceTest {
         assertThat(service.upload(ORG, user(ALICE), null, "photo.heic", bytes("HEIC")).imageReadable()).isFalse();
     }
 
+    // @find: test private conversation upload, attachment service
     @Test
     @DisplayName("nobody outside a private conversation can attach to it; it is reported as not found")
     void privateConversationUpload() {
@@ -198,6 +207,7 @@ class AttachmentServiceTest {
 
     // ---- Reading -------------------------------------------------------------------------------
 
+    // @find: test sent file follows conversation, attachment service
     @Test
     @DisplayName("a sent file in a private thread is read by its members and hidden from everyone else")
     void sentFileFollowsConversation() {
@@ -216,6 +226,7 @@ class AttachmentServiceTest {
         assertThat(service.view(ORG, user(BOB), id).name()).isEqualTo("q3.pdf");
     }
 
+    // @find: test drafts and workspaces, attachment service
     @Test
     @DisplayName("an unsent file is the uploader's alone, and a file from another workspace is never found")
     void draftsAndWorkspaces() {
@@ -233,6 +244,7 @@ class AttachmentServiceTest {
                 .isEqualTo(ErrorCode.NOT_FOUND);
     }
 
+    // @find: test delete rules, attachment service
     @Test
     @DisplayName("only the uploader takes back an unsent file; a sent one stays with its conversation")
     void deleteRules() {
@@ -253,6 +265,7 @@ class AttachmentServiceTest {
 
     // ---- Sending -------------------------------------------------------------------------------
 
+    // @find: test check for send, attachment service
     @Test
     @DisplayName("a message carries only its sender's unsent, readable files, at most ten")
     void checkForSend() {
@@ -280,6 +293,7 @@ class AttachmentServiceTest {
         verify(repo, never()).findAll(eq(ORG), eq(eleven));
     }
 
+    // @find: test request with names, attachment service
     @Test
     @DisplayName("the coordinator reads the files' names; a message with only files asks plainly about them")
     void requestWithNames() {
@@ -291,6 +305,7 @@ class AttachmentServiceTest {
         assertThat(AttachmentService.requestWithNames("Hi", List.of())).isEqualTo("Hi");
     }
 
+    // @find: test sweep, attachment service
     @Test
     @DisplayName("unsent drafts are swept after a day")
     void sweep() {

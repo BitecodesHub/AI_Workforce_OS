@@ -1,3 +1,6 @@
+// @find: maintenance sweeps, scheduled jobs, reap abandoned runs, expire approvals, expire questions, resume decided runs, purge processed events, retention purge, stuck runs, cron
+// @what: Scheduled sweeps that fix stuck runs, expire old approvals and questions, resume decided runs and purge old data.
+// @flow: Spring @Scheduled; calls AgentRunner, ApprovalService, QuestionService, RetentionService
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -87,6 +90,7 @@ public class MaintenanceScheduler {
         this.retention = retention;
     }
 
+    // @find: reap abandoned runs, dead worker, run stuck running
     /**
      * Picks up runs whose worker stopped renewing its lease: a worker that crashed or was
      * restarted. A live worker's heartbeat keeps renewing however long its model or tool calls
@@ -107,6 +111,7 @@ public class MaintenanceScheduler {
         });
     }
 
+    // @find: expire approvals, approval deadline
     /** Closes approvals that passed their deadline, rejecting by default. */
     @Scheduled(fixedDelayString = "${aiwos.scheduling.expiry-interval:PT120S}")
     public void expireApprovals() {
@@ -119,6 +124,7 @@ public class MaintenanceScheduler {
         });
     }
 
+    // @find: expire questions
     /**
      * Closes questions nobody answered in time, and resumes each run so it finishes with what it
      * has. Then closes pending questions whose run stopped by a path that could not withdraw them.
@@ -154,6 +160,7 @@ public class MaintenanceScheduler {
         });
     }
 
+    // @find: resume approved or answered runs after restart
     /**
      * Resumes runs whose question was answered or expired, or whose approval was granted, but
      * which are still parked - most often because the service restarted before the resume ran.
@@ -184,6 +191,7 @@ public class MaintenanceScheduler {
         }
     }
 
+    // @find: purge processed events, nightly
     /**
      * Forgets the ids of events handled more than a week ago, once a day, so the idempotency table
      * does not grow for ever. An event old enough to be redelivered has long since been handled.
@@ -208,6 +216,7 @@ public class MaintenanceScheduler {
         });
     }
 
+    // @find: purge old run detail, retention nightly
     /**
      * Removes the text of old run steps and old usage rows, once a night.
      *

@@ -1,3 +1,6 @@
+// @find: tests for conversation delta, chat, returns only messages after the position, asks for asmall number of messages, nothing new is empty, a reader holding nothing gets the whole short thread, too many new messages fall back to the whole window, without since it is the whole window, every response carries the servers clock, open goals are sent every time, ConversationDeltaTest, ConversationDelta
+// @what: Tests for ConversationDelta in the orchestrator chat package (16 test methods).
+// @flow: Exercises ConversationDelta
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -161,6 +164,7 @@ class ConversationDeltaTest {
         return question;
     }
 
+    // @find: test returns only messages after the position, conversation delta
     @Test
     @DisplayName("an incremental read returns only the messages after the position the reader holds")
     void returnsOnlyMessagesAfterThePosition() {
@@ -175,6 +179,7 @@ class ConversationDeltaTest {
         assertThat(delta.hasEarlier()).isFalse();
     }
 
+    // @find: test asks for asmall number of messages, conversation delta
     @Test
     @DisplayName("an incremental read asks for at most a small fixed number of messages, never the whole window")
     void asksForASmallNumberOfMessages() {
@@ -188,6 +193,7 @@ class ConversationDeltaTest {
         verify(messages, never()).findByConversationIdAndPositionGreaterThanOrderByPosition(any(), anyInt());
     }
 
+    // @find: test nothing new is empty, conversation delta
     @Test
     @DisplayName("nothing new comes back as no messages, not as an error")
     void nothingNewIsEmpty() {
@@ -200,6 +206,7 @@ class ConversationDeltaTest {
         assertThat(delta.conversation().id()).isEqualTo(conversation.getId());
     }
 
+    // @find: test a reader holding nothing gets the whole short thread, conversation delta
     @Test
     @DisplayName("a reader holding nothing yet (position -1) gets the whole short thread")
     void aReaderHoldingNothingGetsTheWholeShortThread() {
@@ -213,6 +220,7 @@ class ConversationDeltaTest {
                 .containsExactly(0, 1, 2);
     }
 
+    // @find: test too many new messages fall back to the whole window, conversation delta
     @Test
     @DisplayName("more new messages than fit in a small answer return the whole window instead, with its own hasEarlier")
     void tooManyNewMessagesFallBackToTheWholeWindow() {
@@ -232,6 +240,7 @@ class ConversationDeltaTest {
         assertThat(result.hasEarlier()).isTrue();
     }
 
+    // @find: test without since it is the whole window, conversation delta
     @Test
     @DisplayName("without a since time there is nothing to compare goals and questions against, so it is the whole window")
     void withoutSinceItIsTheWholeWindow() {
@@ -245,6 +254,7 @@ class ConversationDeltaTest {
         verify(goals, never()).findByOrgIdAndConversationIdAndUpdatedAtGreaterThanEqual(any(), any(), any());
     }
 
+    // @find: test every response carries the servers clock, conversation delta
     @Test
     @DisplayName("every response says what time the server read it, for the reader to ask about next")
     void everyResponseCarriesTheServersClock() {
@@ -259,6 +269,7 @@ class ConversationDeltaTest {
         assertThat(whole.generatedAt()).isBetween(before, Instant.now());
     }
 
+    // @find: test open goals are sent every time, conversation delta
     @Test
     @DisplayName("open goals are sent every time, with their tasks and what their runs cost")
     void openGoalsAreSentEveryTime() {
@@ -293,6 +304,7 @@ class ConversationDeltaTest {
         assertThat(delta.goals().getFirst().tasks().getFirst().attempts()).isEqualTo(2);
     }
 
+    // @find: test finished goals are sent only once they change, conversation delta
     @Test
     @DisplayName("a goal that finished and has not changed since is not sent again, but one that changed is")
     void finishedGoalsAreSentOnlyOnceTheyChange() {
@@ -325,6 +337,7 @@ class ConversationDeltaTest {
         assertThat(cut.getValue()).isAfter(SINCE.minus(1, ChronoUnit.MINUTES));
     }
 
+    // @find: test a new messages goal is sent, conversation delta
     @Test
     @DisplayName("the goal a new message refers to is sent even if it has not changed")
     void aNewMessagesGoalIsSent() {
@@ -340,6 +353,7 @@ class ConversationDeltaTest {
         assertThat(delta.goals()).extracting(g -> g.id()).containsExactly(referred.getId());
     }
 
+    // @find: test goals are kept to the workspace, conversation delta
     @Test
     @DisplayName("a goal from another workspace is never sent")
     void goalsAreKeptToTheWorkspace() {
@@ -355,6 +369,7 @@ class ConversationDeltaTest {
         assertThat(delta.goals()).isEmpty();
     }
 
+    // @find: test questions are filtered to what changed, conversation delta
     @Test
     @DisplayName("questions still open, changed since, or belonging to a goal that is sent come back; a settled old one does not")
     void questionsAreFilteredToWhatChanged() {
@@ -378,6 +393,7 @@ class ConversationDeltaTest {
         assertThat(sent.getValue()).containsExactlyInAnyOrder(pending, changed, ofSentGoal);
     }
 
+    // @find: test another workspaces conversation is not found, conversation delta
     @Test
     @DisplayName("a conversation that is not in this workspace is a 404, whole or incremental")
     void anotherWorkspacesConversationIsNotFound() {
@@ -392,6 +408,7 @@ class ConversationDeltaTest {
         }
     }
 
+    // @find: test the endpoint passes after and since, conversation delta
     @Test
     @DisplayName("the endpoint passes after and since through, and a position below -1 reads as -1")
     void theEndpointPassesAfterAndSince() {
@@ -404,6 +421,7 @@ class ConversationDeltaTest {
         assertThat(delta.hasEarlier()).isFalse();
     }
 
+    // @find: test the endpoint without parameters is the whole window, conversation delta
     @Test
     @DisplayName("the endpoint without after and since is the whole window, as before")
     void theEndpointWithoutParametersIsTheWholeWindow() {
@@ -415,6 +433,7 @@ class ConversationDeltaTest {
         verify(goals, never()).findByOrgIdAndConversationIdAndUpdatedAtGreaterThanEqual(any(), any(), any());
     }
 
+    // @find: test since binds from the time the server sent, conversation delta
     @Test
     @DisplayName("since is read from the ISO time the server itself sent as generatedAt, to the microsecond")
     void sinceBindsFromTheTimeTheServerSent() {

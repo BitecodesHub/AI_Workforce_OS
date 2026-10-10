@@ -1,3 +1,6 @@
+// @find: encrypted value, ciphertext, wrapped data key, key id, iv, serialised secret, stored credential format
+// @what: Value object for a stored secret together with the key id and parameters needed to decrypt it.
+// @flow: Produced by EnvelopeEncryptionService.encrypt
 package os.aiworkforce.platform.crypto;
 
 import java.util.Base64;

@@ -1,3 +1,6 @@
+// @find: sequence, timed steps, scripted demo, play steps, timeline animation, landing demo, useSequence hook
+// @what: React hook that plays a list of timed steps, used by the scripted landing demos.
+// @flow: Used by landing demos; calls useReducedMotion
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useReducedMotion } from './useReducedMotion'
 
@@ -16,6 +19,7 @@ export type Sequence = {
   cancel: () => void
 }
 
+// @find: useSequence hook, play timed demo steps
 export function useSequence(): Sequence {
   const reduced = useReducedMotion()
   const reducedRef = useRef(reduced)

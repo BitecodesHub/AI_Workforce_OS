@@ -1,3 +1,6 @@
+// @find: mcp server adapter, connector adapter interface, server, tools, invoke, health check, check credential, all scopes, is sandbox, vendor adapter contract, add a new connector
+// @what: Interface every connector adapter implements: name, tools, run a tool, check a credential.
+// @flow: Implemented by SandboxServerAdapter and LiveServerAdapter; used by ToolGateway
 package os.aiworkforce.mcp.spi;
 
 import java.util.List;

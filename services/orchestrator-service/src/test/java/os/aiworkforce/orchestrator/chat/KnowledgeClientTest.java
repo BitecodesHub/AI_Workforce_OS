@@ -1,3 +1,6 @@
+// @find: tests for knowledge client, chat, reads source and degraded, older response still reads, ungrounded reads, sends the persons own authority, no authorization no search, failures are empty, KnowledgeClientTest, KnowledgeClient
+// @what: Tests for KnowledgeClient in the orchestrator chat package (6 test methods).
+// @flow: Exercises KnowledgeClient
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,6 +70,7 @@ class KnowledgeClientTest {
                 + "\"heading\":\"Timing\",\"content\":\"Refunds are issued within five business days.\",\"score\":0.83}";
     }
 
+    // @find: test reads source and degraded, knowledge client
     @Test
     @DisplayName("reads each passage's source, and whether the search was keyword-only")
     void readsSourceAndDegraded() {
@@ -89,6 +93,7 @@ class KnowledgeClientTest {
         assertThat(passage.score()).isEqualTo(0.83);
     }
 
+    // @find: test older response still reads, knowledge client
     @Test
     @DisplayName("a response from a knowledge service that does not send them yet has no source and is not degraded")
     void olderResponseStillReads() {
@@ -102,6 +107,7 @@ class KnowledgeClientTest {
         assertThat(result.passages().getFirst().documentTitle()).isEqualTo("Refund policy");
     }
 
+    // @find: test ungrounded reads, knowledge client
     @Test
     @DisplayName("an ungrounded search with nothing found reads as exactly that")
     void ungroundedReads() {
@@ -113,6 +119,7 @@ class KnowledgeClientTest {
         assertThat(result.passages()).isEmpty();
     }
 
+    // @find: test sends the persons own authority, knowledge client
     @Test
     @DisplayName("asks on the person's own behalf, in their workspace, with the query cut to what the service accepts")
     void sendsThePersonsOwnAuthority() throws Exception {
@@ -149,6 +156,7 @@ class KnowledgeClientTest {
         assertThat(body.get("limit").asInt()).isEqualTo(5);
     }
 
+    // @find: test no authorization no search, knowledge client
     @Test
     @DisplayName("with no authorization to forward it does not ask at all")
     void noAuthorizationNoSearch() {
@@ -159,6 +167,7 @@ class KnowledgeClientTest {
         assertThat(requests).isEmpty();
     }
 
+    // @find: test failures are empty, knowledge client
     @Test
     @DisplayName("a refusal or a failure is reported as no result, never thrown")
     void failuresAreEmpty() {

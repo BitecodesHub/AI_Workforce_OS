@@ -1,3 +1,6 @@
+// @find: media query, screen size, responsive, breakpoint, phone width, useMediaQuery hook
+// @what: React hook that tells whether a CSS media query matches.
+// @flow: Used by components that change layout by screen size
 import { useSyncExternalStore } from 'react'
 
 /*
@@ -8,6 +11,7 @@ import { useSyncExternalStore } from 'react'
  * jsdom has no matchMedia, so both the subscription and the snapshot read false there instead of
  * throwing.
  */
+// @find: useMediaQuery hook, breakpoint match
 export function useMediaQuery(query: string): boolean {
   const subscribe = (onStoreChange: () => void) => {
     if (typeof matchMedia !== 'function') return () => {}

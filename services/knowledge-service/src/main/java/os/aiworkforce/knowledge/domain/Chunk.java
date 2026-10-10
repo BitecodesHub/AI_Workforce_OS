@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, chunk entity, passage, chunks table, text chunks, citation passage, heading, page number, keyword search index, full text, embedding point id, Chunk
+// @what: JPA entity for one passage of a document: its text, position, heading, page and the vector point that mirrors it.
+// @flow: Written by IngestionService after Chunker splits text; searched by Chunks and RetrievalService.
 package os.aiworkforce.knowledge.domain;
 
 import java.time.Instant;

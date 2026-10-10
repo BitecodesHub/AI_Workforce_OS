@@ -1,3 +1,5 @@
+// @find: tests for agent-owned sources visibility, agent documents hidden from workspace list, restricted sources, knowledge base sources
+// @what: Checks an agent's own sources are read by that agent only and never listed with the workspace's.
 package os.aiworkforce.knowledge.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,5 @@
+// @find: tests for format, dates, relative time, duration, money, tokens, plural, sentence case
+// @what: Unit tests for date, time, count and money formatting.
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -11,6 +13,7 @@ import {
   formatElapsed,
   formatMoney,
   formatRelative,
+  formatRelativeTicked,
   formatRunElapsed,
   formatTimeIn,
   nameList,
@@ -314,5 +317,20 @@ describe('formatShortTime', () => {
     expect(formatShortTime(at(2026, 9, 3, 9, 0), now)).toBe('3 Oct')
     expect(formatShortTime(at(2025, 9, 3, 9, 0), now)).toBe('3 Oct 2025')
     expect(formatShortTime(null, now)).toBe('—')
+  })
+})
+
+describe('formatRelativeTicked', () => {
+  it('never reads a moment just past as the future when the shared clock lagged, as in a hidden tab', () => {
+    const real = Date.parse('2026-10-08T07:51:30Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(real)
+    try {
+      // The clock last ticked five minutes ago; the server wrote the time ten seconds ago.
+      const staleClock = real - 5 * 60_000
+      expect(formatRelativeTicked(new Date(real - 10_000).toISOString(), staleClock, 30_000)).toBe('just now')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -1,3 +1,6 @@
+// @find: connectors, integrations, connect app, add connector, disconnect, OAuth, connect Gmail, Slack, Google, tools, API key, voice card, search connectors, filter connectors, /connectors, Connectors page
+// @what: The Connectors page: shows the apps assistants can use, lets people connect or disconnect them, and shows voice status.
+// @flow: Routed from App.tsx at /connectors; talks to the integrations service through lib/queries; reads ?connected and ?error after OAuth redirect
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -22,7 +25,7 @@ import { CapabilityList } from '../components/connectors/CapabilityList'
 import { ConnectDialog } from '../components/connectors/ConnectDialog'
 import { CategoryGlyph, ConnectorToolbar, StatusDot } from '../components/connectors/ConnectorToolbar'
 import type { ActiveChip } from '../components/connectors/ConnectorToolbar'
-import { describeApiError } from '../lib/api'
+import { ApiError, api, describeApiError } from '../lib/api'
 import {
   agentsUsing,
   capabilityLabel,
@@ -75,17 +78,26 @@ const GRID_STYLE = {
   gap: 'var(--space-5)',
 } as const
 
-/** The voice card's state for the status filter: it is either connected or using the browser's voice. */
-type VoiceState = 'connected' | 'browser'
+/**
+ * The voice card's state for the status filter: connected with a key, or not connected (the
+ * browser's own voice is used). It has no practice version, so it is never counted as Sandbox.
+ */
+type VoiceState = 'connected' | 'disconnected'
 
 type Row =
   | { kind: 'voice'; state: VoiceState }
   | { kind: 'connector'; integration: Integration; state: ConnectorState; category: string }
 
-const STATUS_OPTIONS: ReadonlyArray<{ value: ConnectorState; label: string }> = [
-  { value: 'connected', label: 'Connected' },
-  { value: 'sandbox', label: 'Sandbox' },
-  { value: 'attention', label: 'Needs attention' },
+/**
+ * Every state a card can be in, so the options always add up to "All statuses". Not connected is
+ * only the voice card without a key, and is listed only while something is in it.
+ */
+const STATUS_OPTIONS: ReadonlyArray<{ value: ConnectorState | 'disconnected'; label: string; always: boolean }> = [
+  { value: 'connected', label: 'Connected', always: true },
+  { value: 'sandbox', label: 'Sandbox', always: true },
+  { value: 'attention', label: 'Needs attention', always: true },
+  { value: 'builtin', label: 'Built in', always: false },
+  { value: 'disconnected', label: 'Not connected', always: false },
 ]
 
 const withFullStop = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`)
@@ -113,13 +125,14 @@ function rowText(row: Row, agents: Agent[] | undefined): string {
 
 /* ---- Page ------------------------------------------------------------------------------------- */
 
+// @find: Connectors component, connectors page, connect app, add connector dialog, OAuth redirect, /connectors
 export function Connectors() {
   const query = useIntegrations()
   const canSeeAgents = can('agent:read')
   const agents = useAgents({ enabled: canSeeAgents })
   // Voice status is a chat:use read (VoiceController); a role without it is not asked, so it gets no 403.
   const voice = useVoiceStatus({ enabled: can('chat:use') })
-  const voiceState: VoiceState = voice.data?.keyStored ? 'connected' : 'browser'
+  const voiceState: VoiceState = voice.data?.keyStored ? 'connected' : 'disconnected'
 
   // A new ConnectDialog per opening (the key), so each starts with an empty field; the same one
   // closes, so focus goes back to the button that opened it.
@@ -259,7 +272,9 @@ export function Connectors() {
                 status={{
                   value: statusValue,
                   allCount: sumOf(filter.counts.status),
-                  options: STATUS_OPTIONS.map((option) => ({
+                  options: STATUS_OPTIONS.filter(
+                    (option) => option.always || (filter.counts.status?.[option.value] ?? 0) > 0,
+                  ).map((option) => ({
                     value: option.value,
                     label: option.label,
                     count: filter.counts.status?.[option.value] ?? 0,
@@ -327,6 +342,7 @@ export function Connectors() {
 
 /* ---- One connector ------------------------------------------------------------------------------ */
 
+// @find: connector card, connect, disconnect, status, credentials form, POST /api/integrations/connect
 function ConnectorCard({
   integration,
   state,
@@ -531,6 +547,7 @@ function ConnectorCard({
 
 /* ---- Disconnect --------------------------------------------------------------------------------- */
 
+// @find: disconnect connector dialog, remove connection, DELETE /api/integrations
 function DisconnectDialog({
   integration,
   onClose,
@@ -593,6 +610,7 @@ function quotaNote(charactersUsed?: number | null, characterLimit?: number | nul
   return `${formatCount(charactersUsed)} of ${formatCount(characterLimit)} characters used this period.`
 }
 
+// @find: voice card, voice status, text to speech, speech to text, chat:use
 function VoiceCard() {
   const canReadStatus = can('chat:use')
   const status = useVoiceStatus({ enabled: canReadStatus })
@@ -600,8 +618,11 @@ function VoiceCard() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [keyValue, setKeyValue] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [keyError, setKeyError] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
   const toast = useToast()
   const storeCredential = useStoreCredential()
+  const busy = checking || storeCredential.isPending
   const client = useQueryClient()
 
   const keyStored = status.data?.keyStored ?? false
@@ -610,27 +631,45 @@ function VoiceCard() {
   const open = () => {
     setKeyValue('')
     setError(null)
+    setKeyError(null)
     setDialogOpen(true)
   }
   const close = () => {
-    if (storeCredential.isPending) return
+    if (busy) return
     setDialogOpen(false)
     storeCredential.reset()
   }
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!keyValue.trim() || storeCredential.isPending) return
+    if (!keyValue.trim() || busy) return
     setError(null)
+    setKeyError(null)
     try {
-      await storeCredential.mutateAsync({ ref: 'elevenlabs', kind: 'api_key', value: keyValue })
+      // Asked of ElevenLabs first: a mistyped key used to be stored and the card said Connected
+      // while every clip failed.
+      setChecking(true)
+      let note: string | null
+      try {
+        const check = await api<{ verified: boolean; message: string | null }>('/api/voice/key/check', {
+          method: 'POST',
+          body: { key: keyValue.trim() },
+        })
+        note = check.verified ? null : check.message
+      } finally {
+        setChecking(false)
+      }
+      await storeCredential.mutateAsync({ ref: 'elevenlabs', kind: 'api_key', value: keyValue.trim() })
       // Store credential refreshes its own queries; voice status and the voice list read this
       // same key and are not among them.
       client.invalidateQueries({ queryKey: ['voice'] })
-      toast.success(replacing ? 'The ElevenLabs key was replaced.' : 'The ElevenLabs key was stored.')
+      const done = replacing ? 'The ElevenLabs key was replaced.' : 'The ElevenLabs key was stored.'
+      toast.success(note ? `${done} ${note}` : done)
       setDialogOpen(false)
     } catch (err) {
-      setError(describeApiError(err, { value: 'API key', kind: 'Key type' }))
+      const fieldProblem = err instanceof ApiError ? (err.fields.value ?? err.fields.key) : undefined
+      if (fieldProblem) setKeyError(fieldProblem)
+      else setError(describeApiError(err, { value: 'API key', kind: 'Key type' }))
     }
   }
 
@@ -685,18 +724,18 @@ function VoiceCard() {
         eyebrow={replacing ? 'Replace a key' : 'Store a key'}
         title={`${replacing ? 'Replace' : 'Add'} the ElevenLabs key`}
         description="The key is encrypted at rest and never shown again."
-        dismissible={!storeCredential.isPending}
+        dismissible={!busy}
         error={error}
         footer={
           <>
-            <Button variant="outline" onClick={close} disabled={storeCredential.isPending}>
+            <Button variant="outline" onClick={close} disabled={busy}>
               Cancel
             </Button>
             <Button
               variant="primary"
               type="submit"
               form="elevenlabs-key-form"
-              loading={storeCredential.isPending}
+              loading={busy}
               disabled={!keyValue.trim()}
             >
               Store key
@@ -709,11 +748,15 @@ function VoiceCard() {
             label="API key"
             type="password"
             value={keyValue}
-            onChange={(event) => setKeyValue(event.target.value)}
+            onChange={(event) => {
+              setKeyValue(event.target.value)
+              setKeyError(null)
+            }}
             autoComplete="off"
             spellCheck={false}
             required
             data-autofocus
+            error={keyError}
             hint={replacing ? 'The new key replaces the stored one as soon as you store it.' : undefined}
           />
         </form>

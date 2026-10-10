@@ -1,3 +1,8 @@
+/*
+ * @find: polish styles, approvals payload, tool call JSON, approve reject buttons
+ * @what: Styles for readable approval payloads.
+ * @flow: Used by Approvals.tsx; imported by polish/index.css
+ */
 /* UI/UX polish: work screens. Loaded after components.css, so rules here refine it. */
 
 /* ---- Approvals: payload readability ----------------------------------------------------------

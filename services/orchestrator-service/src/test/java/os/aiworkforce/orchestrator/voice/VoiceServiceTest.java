@@ -1,3 +1,6 @@
+// @find: tests for voice service, voice, refused key is avalidation error, key check outcomes, status without key is browser fallback, voices without key is empty, speech without key and no agent is409, transcribe without key is409, agents own voice wins, default voice choice is stable for one agent, VoiceServiceTest, VoiceService
+// @what: Tests for VoiceService in the orchestrator voice package (9 test methods).
+// @flow: Exercises VoiceService
 package os.aiworkforce.orchestrator.voice;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +49,36 @@ class VoiceServiceTest {
         service = new VoiceService(client, credentials, PROPERTIES);
     }
 
+    // @find: test refused key is avalidation error, voice service
+    @Test
+    @DisplayName("a key ElevenLabs refuses is turned away under the field, before it can be stored")
+    void refusedKeyIsAValidationError() {
+        when(client.subscription("short"))
+                .thenThrow(new ApiException(ErrorCode.PROVIDER_CREDENTIAL_INVALID, "ElevenLabs refused the stored key."));
+
+        // Seen on 8 Oct 2026: "short" was stored and the card said Connected.
+        assertThatThrownBy(() -> service.checkKey("short"))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+                    assertThat(String.valueOf(e.details().get("problem"))).contains("did not accept this key");
+                });
+    }
+
+    // @find: test key check outcomes, voice service
+    @Test
+    @DisplayName("a key ElevenLabs takes is verified; one it cannot judge right now is let through with a note")
+    void keyCheckOutcomes() {
+        when(client.subscription("good")).thenReturn(new ElevenLabsClient.Subscription("starter", 10, 100));
+        when(client.subscription("scoped"))
+                .thenThrow(new ApiException(ErrorCode.UPSTREAM_ERROR, "ElevenLabs returned an unexpected response."));
+
+        assertThat(service.checkKey("good").verified()).isTrue();
+        VoiceService.KeyCheck scoped = service.checkKey("scoped");
+        assertThat(scoped.verified()).isFalse();
+        assertThat(scoped.message()).contains("stored as it is");
+    }
+
+    // @find: test status without key is browser fallback, voice service
     @Test
     @DisplayName("without a stored key, status reports the browser fallback")
     void statusWithoutKeyIsBrowserFallback() {
@@ -58,6 +91,7 @@ class VoiceServiceTest {
         assertThat(status.tier()).isNull();
     }
 
+    // @find: test voices without key is empty, voice service
     @Test
     @DisplayName("without a stored key, the voice list is empty rather than an error")
     void voicesWithoutKeyIsEmpty() {
@@ -67,6 +101,7 @@ class VoiceServiceTest {
         verify(client, never()).voices(any());
     }
 
+    // @find: test speech without key is409, voice service
     @Test
     @DisplayName(
             "speech without a stored key is refused with the voice-not-configured code, even with an agent voice chosen")
@@ -85,6 +120,7 @@ class VoiceServiceTest {
                 .isEqualTo(409);
     }
 
+    // @find: test speech without key and no agent is409, voice service
     @Test
     @DisplayName("speech without a stored key is refused the same way with no agent at all - the common Chat case")
     void speechWithoutKeyAndNoAgentIs409() {
@@ -103,6 +139,7 @@ class VoiceServiceTest {
                 .isEqualTo(409);
     }
 
+    // @find: test transcribe without key is409, voice service
     @Test
     @DisplayName("transcribing without a stored key is refused the same way")
     void transcribeWithoutKeyIs409() {
@@ -114,6 +151,7 @@ class VoiceServiceTest {
                 .isEqualTo(ErrorCode.VOICE_NOT_CONFIGURED);
     }
 
+    // @find: test agents own voice wins, voice service
     @Test
     @DisplayName("an agent's own voice is used whenever it has one, without consulting the voice list")
     void agentsOwnVoiceWins() {
@@ -125,6 +163,7 @@ class VoiceServiceTest {
         verify(credentials, never()).resolve(any(), any());
     }
 
+    // @find: test default voice choice is stable for one agent, voice service
     @Test
     @DisplayName("without an agent voice, the same agent always lands on the same voice from the list")
     void defaultVoiceChoiceIsStableForOneAgent() {
@@ -144,6 +183,7 @@ class VoiceServiceTest {
         assertThat(List.of("v1", "v2", "v3")).contains(first);
     }
 
+    // @find: test different agents can get different voices, voice service
     @Test
     @DisplayName("two different agents can land on different voices from the same list")
     void differentAgentsCanGetDifferentVoices() {

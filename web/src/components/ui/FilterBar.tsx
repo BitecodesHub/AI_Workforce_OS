@@ -1,3 +1,6 @@
+// @find: filter bar, search list, filter chips, facets, filter select, no matches, clear filters, FilterBar, FilterEmpty, list search, result count
+// @what: Search box and filter controls above a long list, with a live result count and an empty state.
+// @flow: Used by list screens; state lives in lib/useListFilter (URL).
 import { useId } from 'react'
 import { formatCount } from '../../lib/format'
 import { Button, EmptyState, Input, Select } from './index'
@@ -12,6 +15,7 @@ import { EmptyIcon } from './QueryState'
  * are left without having to go looking for the table.
  */
 
+// @find: filter option type
 export type FilterOption = {
   value: string
   label: string
@@ -19,6 +23,7 @@ export type FilterOption = {
   count?: number | undefined
 }
 
+// @find: filter facet type, toggle chips
 /** A set of toggle chips. Several may be pressed at once; a row matching any of them is shown. */
 export type FilterFacet = {
   param: string
@@ -28,6 +33,7 @@ export type FilterFacet = {
   onToggle: (value: string) => void
 }
 
+// @find: filter select type
 /** A single choice from a list, such as one agent. */
 export type FilterSelect = {
   label: string
@@ -36,6 +42,7 @@ export type FilterSelect = {
   onChange: (value: string) => void
 }
 
+// @find: filter bar, search and filter a list
 export function FilterBar({
   searchLabel,
   query,
@@ -136,6 +143,7 @@ export function FilterBar({
   )
 }
 
+// @find: no results for filter, clear filters empty state
 /** What a filtered list shows when nothing is left, with the way back. */
 export function FilterEmpty({ onClear, what }: { onClear: () => void; what: string }) {
   return (

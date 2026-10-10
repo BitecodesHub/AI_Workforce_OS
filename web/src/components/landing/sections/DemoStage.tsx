@@ -1,3 +1,6 @@
+// @find: demo stage, demo tabs, demos, try the demos, approval failover audit cited, plain voice, technical voice, DemoStage, #demos
+// @what: One row of tabs over a single stage that shows one working demo at a time.
+// @flow: Used by Landing and Trust; renders the four demos; listens for lp:reveal
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, ReactElement } from 'react'
 import { flushSync } from 'react-dom'
@@ -59,6 +62,7 @@ function demoFromHash(items: readonly StageItem[]): DemoArea | null {
   return items.find((item) => item.id === id)?.id ?? null
 }
 
+// @find: DemoStage component, demo tabs
 export function DemoStage({ items = TECHNICAL_ITEMS, voice = 'technical' }: DemoStageProps): ReactElement {
   const [selected, setSelected] = useState<DemoArea>(() => demoFromHash(items) ?? items[0]!.id)
   const tabRefs = useRef<Partial<Record<DemoArea, HTMLButtonElement | null>>>({})

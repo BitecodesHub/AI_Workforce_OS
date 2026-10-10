@@ -1,3 +1,6 @@
+// @find: sent attachments, attached files in message, image thumbnail, file card, keep in knowledge, save to knowledge, download attachment, chat message files
+// @what: Shows the files a sent message carried, with a way to keep one in Knowledge.
+// @flow: Used by UserBubble.
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ApiError } from '../../lib/api'
@@ -241,6 +244,7 @@ function AttachmentCard({ attachment, canSave }: { attachment: SentAttachment; c
   )
 }
 
+// @find: AttachmentCards, attachment cards, sent attachments, attached files in message, image thumbnail, file card
 export function AttachmentCards({ attachments, align = 'end' }: { attachments: SentAttachment[]; align?: 'end' | 'start' }) {
   if (attachments.length === 0) return null
   const canSave = can('knowledge:source_manage')

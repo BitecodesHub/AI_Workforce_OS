@@ -1,3 +1,6 @@
+// @find: goals api, create goal, list goals, retry goal, cancel goal, stop goal, multi-agent task plan, /api/goals, Goals page, New goal dialog, Stop button, Retry button
+// @what: REST endpoints to create, list, get, retry and cancel goals and their tasks.
+// @flow: Called by the Goals page; delegates to GoalService and RunExecutor
 package os.aiworkforce.orchestrator.web;
 
 import java.time.Instant;
@@ -120,6 +123,7 @@ public class GoalController {
             @Size(max = 4_000) String description,
             @Valid @NotNull @Size(min = 1, max = 50) List<TaskInput> tasks) {}
 
+    // @find: list goals, GET /api/goals
     /**
      * Goals, newest first, a page at a time, optionally narrowed by status, source or schedule.
      *
@@ -158,6 +162,7 @@ public class GoalController {
         return views(found);
     }
 
+    // @find: get goal, GET /api/goals/{goalId}
     @GetMapping("/{goalId}")
     @RequiresPermission(Permission.Codes.TASK_READ)
     @Operation(summary = "One goal and its tasks")
@@ -165,6 +170,7 @@ public class GoalController {
         return toView(visibleGoal(goalId));
     }
 
+    // @find: create goal, start goal, POST /api/goals
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -190,6 +196,7 @@ public class GoalController {
         return toView(goals.findById(goal.getId()).orElse(goal));
     }
 
+    // @find: retry goal, POST /api/goals/{goalId}/retry
     @PostMapping("/{goalId}/retry")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
     @Operation(summary = "Try a failed or stopped goal again, from the step that did not finish")
@@ -203,6 +210,7 @@ public class GoalController {
         return toView(goals.findByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId)));
     }
 
+    // @find: cancel goal, stop goal, POST /api/goals/{goalId}/cancel
     /**
      * Stops a goal. Open to the person who asked for it as well as to anyone who can cancel work,
      * the same rule chat and Try again follow: whoever can start work can stop their own.

@@ -1,3 +1,5 @@
+// @find: tests for provider key classify, provider key classify, API key test result classification, bad key, rate limited, /api/providers/{id}/test
+// @what: Unit and integration tests (10 cases) for provider key classify, for example: valid only when the key was accepted; gemini bad key answers four hundred; xai bad key answers four hundred; other wordings of arefused key.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,5 @@
+// @find: tests for observability defaults, logging settings, tracing sampling, platform-defaults.yml
+// @what: Checks the logging, tracing and sampling defaults every service imports.
 package os.aiworkforce.platform.config;
 
 import static org.assertj.core.api.Assertions.assertThat;

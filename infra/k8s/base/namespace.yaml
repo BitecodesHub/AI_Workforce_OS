@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, namespace, aiwos namespace, cluster isolation
+# @what: Kubernetes namespace that holds every AI Workforce OS resource.
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 apiVersion: v1
 kind: Namespace
 metadata:

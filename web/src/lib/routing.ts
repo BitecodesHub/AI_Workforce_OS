@@ -1,9 +1,13 @@
+// @find: model routing, routing policy, live model, provider readiness, credential state, API key stored expired, turn provider on off, connect provider plan, planConnect, recommendModel, routingSummary, liveRouting, Model Routing page, Command Map notice, Connect your AI dialog
+// @what: Pure rules for whether runs reach a live model, provider readiness and how connecting a provider changes the routing policy.
+// @flow: Used by routes/ModelRouting.tsx, CommandMap.tsx, setupQueries.ts and components/onboarding/ConnectModelDialog.tsx; mirrors llm-core ModelRouter.
 /*
  * Whether the workspace's runs reach a live model, worked out from the same facts the router uses.
  *
- * The router (llm-core ModelRouter) skips a candidate whose provider is turned off, whose circuit
- * breaker is open, or whose credential cannot be resolved; an unset workspace policy resolves to
- * a built-in chain of the offline sandbox alone (RoutingPolicyResolver). These functions mirror
+ * The router (llm-core ModelRouter) skips a candidate whose provider is turned off or which has no
+ * usable key. Nothing is ever set aside after a failure: every run tries every listed model again.
+ * A key the provider once refused is still tried, so it is information, not a reason to skip. With
+ * no chain for the agent or the workspace, runs fail and ask for a model to be added. These mirror
  * those rules so a screen can say which model runs will try first, or why none is usable, instead
  * of a fixed warning that is wrong as soon as a real provider is connected.
  *
@@ -34,6 +38,7 @@ export type RoutingProvider = {
   credentialStatus?: string | null
   /** When the service last marked this workspace's credential rejected (or valid). */
   credentialCheckedAt?: string | null
+  /** No longer used: providers are never paused after failures. */
   circuitState?: string | null
 }
 
@@ -57,7 +62,7 @@ export type CredentialState = 'not_needed' | 'stored' | 'expired' | 'rejected' |
  * 'disabled' is off in this workspace, which an owner or admin can change here; 'platform_off' is
  * not offered on this installation at all, which nobody in the workspace can change.
  */
-export type ReadinessReason = 'ready' | 'disabled' | 'platform_off' | 'no_key' | 'rejected' | 'expired' | 'paused'
+export type ReadinessReason = 'ready' | 'disabled' | 'platform_off' | 'no_key' | 'expired'
 
 export type ProviderReadiness = { ready: boolean; reason: ReadinessReason }
 
@@ -75,13 +80,14 @@ export type LiveRouting = {
   blocked: Array<{ providerName: string; reason: string }>
   /**
    * True when runs end on the offline sandbox model rather than failing if nothing live answers:
-   * no policy, DEGRADE_TO_SANDBOX, or a ready sandbox candidate in the chain.
+   * DEGRADE_TO_SANDBOX, or a ready sandbox candidate in the chain. Never without a chain.
    */
   fallsBackToSandbox: boolean
 }
 
 export type RoutingSummary = { tone: 'info' | 'warning' | 'success'; text: string; linkToRouting: boolean }
 
+// @find: embedding model check, hide embedding models from chat choices
 /** Embedding models are catalogued with an output limit of one token; they cannot answer a run. */
 export function isEmbeddingModel(model: RoutingModel): boolean {
   return model.maxOutputTokens <= 1
@@ -103,6 +109,7 @@ function usedSinceRejection(provider: RoutingProvider, stored: RoutingCredential
   return !Number.isNaN(rejectedAt) && !Number.isNaN(usedAt) && usedAt > rejectedAt
 }
 
+// @find: credential state, key stored expired rejected; used by: Model Routing page, policy editor
 /**
  * The state of this workspace's key for a provider. `creds` is the loaded credentials list (GET
  * /api/credentials); call this only once it has loaded, because an unloaded list would read as
@@ -127,10 +134,11 @@ export function credentialState(
   return 'stored'
 }
 
+// @find: provider ready, why a provider is not usable, no key, platform off; used by: Model Routing page, policy editor, setup
 /**
- * Whether the router would try this provider, and if not, the first reason it would skip it.
- * A key problem is reported before a paused circuit, because repeated failures from a bad key
- * are what pause it.
+ * Whether the router would try this provider, and if not, the reason it would skip it. A key the
+ * provider refused before is still tried on every run, so it does not make a provider unready;
+ * credentialState says so separately, as information.
  */
 export function providerReadiness(
   provider: RoutingProvider,
@@ -141,14 +149,12 @@ export function providerReadiness(
   if (!isSandbox(provider)) {
     const state = credentialState(provider, creds, now)
     if (state === 'not_stored') return { ready: false, reason: 'no_key' }
-    if (state === 'rejected') return { ready: false, reason: 'rejected' }
     if (state === 'expired') return { ready: false, reason: 'expired' }
   }
-  const circuit = (provider.circuitState ?? '').toUpperCase()
-  if (circuit === 'OPEN' || circuit === 'FORCED_OPEN') return { ready: false, reason: 'paused' }
   return { ready: true, reason: 'ready' }
 }
 
+// @find: is the workspace routed to a live model, first model that runs; used by: Command Map, Getting started, Setup page
 /**
  * What the workspace routing policy does with a run: the first candidate the router would use,
  * and the live candidates it would skip on the way. An agent with its own policy is not covered.
@@ -159,9 +165,9 @@ export function liveRouting(
   creds: readonly RoutingCredential[],
   now: number = Date.now(),
 ): LiveRouting {
-  // An unset policy, or one with no candidates, resolves to the built-in sandbox chain.
+  // An unset policy, or one with no candidates: runs without a chain of their own fail.
   if (!policy || !policy.configured || policy.candidates.length === 0) {
-    return { live: false, reason: 'no_policy', blocked: [], fallsBackToSandbox: true }
+    return { live: false, reason: 'no_policy', blocked: [], fallsBackToSandbox: false }
   }
 
   const degrades = (policy.exhaustedBehaviour ?? '').toUpperCase() === 'DEGRADE_TO_SANDBOX'
@@ -215,9 +221,7 @@ const BLOCKED_PHRASE: Record<string, string> = {
   disabled: 'turned off',
   platform_off: 'not offered on this installation',
   no_key: 'missing a key',
-  rejected: 'refusing its key',
   expired: 'holding an expired key',
-  paused: 'paused after failures',
   unavailable: 'not available in this workspace',
 }
 
@@ -226,6 +230,7 @@ function joinPhrases(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
 
+// @find: routing notice sentence, no live model warning; used by: Command Map, Model Routing page, chat routing card
 /** One honest sentence about the workspace routing, for a notice on the Command Map or Model Routing. */
 export function routingSummary(result: LiveRouting, options: { canManage: boolean }): RoutingSummary {
   const askAdmin = options.canManage ? '' : ' An owner or admin can connect a live model.'
@@ -235,13 +240,13 @@ export function routingSummary(result: LiveRouting, options: { canManage: boolea
     case 'live':
       return {
         tone: 'success',
-        text: `Runs try ${result.first?.providerName ?? 'a live model'}${result.first ? ` (${result.first.modelId})` : ''} first, from the workspace routing policy. An agent with its own routing may use a different chain.`,
+        text: `Agents answer with a live AI model. ${result.first?.providerName ?? 'The first live model'}${result.first ? ` (${result.first.modelId})` : ''} is asked first, and the next one in Model routing takes over if it cannot answer. An agent with its own model choice may use a different one.`,
         linkToRouting,
       }
     case 'no_policy':
       return {
         tone: 'info',
-        text: `No workspace routing policy is set, so agents without their own routing answer on the offline sandbox model.${askAdmin}`,
+        text: `No AI model is set for the workspace, so agents without routing of their own cannot answer until one is added in Model routing.${askAdmin}`,
         linkToRouting,
       }
     case 'sandbox_only':
@@ -275,6 +280,7 @@ export function routingSummary(result: LiveRouting, options: { canManage: boolea
 
 /* ---- Turning a provider on or off for this workspace ----------------------------------------- */
 
+// @find: provider off for platform, not offered by this installation; used by: Model Routing page
 /**
  * True when this installation does not offer the provider at all; nobody in the workspace can
  * turn it on. Every provider is offered on a standard installation, so this is rare.
@@ -283,12 +289,14 @@ export function offForPlatform(provider: RoutingProvider): boolean {
   return provider.platformEnabled === false
 }
 
+// @find: turn provider on or off button wording; used by: Model Routing page
 /** The on/off button: a short label, and a full one that says the change stays in this workspace. */
 export function toggleCopy(provider: RoutingProvider): { label: string; ariaLabel: string } {
   const label = provider.enabled ? 'Turn off' : 'Turn on'
   return { label, ariaLabel: `${label} ${provider.displayName} for this workspace` }
 }
 
+// @find: provider turned on or off confirmation; used by: Model Routing page
 /** The confirmation after a provider was turned on or off here. */
 export function toggledMessage(
   provider: RoutingProvider,
@@ -312,6 +320,7 @@ export type ToggleRefusal = {
   fixIn: 'routing-policy' | null
 }
 
+// @find: why a provider cannot be turned on or off; used by: Model Routing page
 /**
  * A 409 from turning a provider on or off is a refusal to act on, not a failure to report: off
  * would leave the routing policy (the workspace's, or an agent's own) with nothing to use, or on
@@ -340,18 +349,15 @@ export function toggleRefusal(error: unknown, enabling: boolean): ToggleRefusal 
 /** The most candidates a policy may hold (ModelPolicyController.MAX_CANDIDATES). */
 export const MAX_POLICY_CANDIDATES = 10
 
+// @find: providers offered when connecting AI; used by: Connect your AI dialog
 /**
- * The providers the dialog offers. The offline sandbox needs no key. Bedrock signs in with AWS
- * credentials and regions rather than one pasted key, so it stays on the full Model routing page.
- * One this installation does not offer cannot be turned on, so there is no point connecting it.
+ * The providers the dialog offers. The offline sandbox needs no key. Bedrock is offered with its
+ * own fields (an AWS access key or a Bedrock API key, and a region). One this installation does
+ * not offer cannot be turned on, so there is no point connecting it.
  */
 export function connectableProviders<T extends RoutingProvider>(providers: readonly T[]): T[] {
   return providers.filter(
-    (provider) =>
-      !isSandbox(provider) &&
-      provider.kind.toUpperCase() !== 'BEDROCK' &&
-      Boolean(provider.credentialRef) &&
-      !offForPlatform(provider),
+    (provider) => !isSandbox(provider) && Boolean(provider.credentialRef) && !offForPlatform(provider),
   )
 }
 
@@ -366,24 +372,20 @@ export type ConnectModel = RoutingModel & {
   unavailableUntil?: string | null
 }
 
+// @find: recommended model for a provider, default model choice; used by: Connect your AI dialog, model order picker
 /**
  * The model to put in the policy for a provider: one that can use tools (agents cannot work
- * without them), is not an embedding model, is on, and is not set aside right now. Of those the
+ * without them), is not an embedding model and is on. Of those the
  * cheapest to run, because a workspace connecting its first key is more likely to be spending its
  * own money than choosing for quality; the person can change it on Model routing. Undefined when
  * the provider has no such model.
  */
-export function recommendModel<T extends ConnectModel>(
-  providerId: string,
-  models: readonly T[],
-  now: number = Date.now(),
-): T | undefined {
+export function recommendModel<T extends ConnectModel>(providerId: string, models: readonly T[]): T | undefined {
   const price = (model: T) => (model.inputCostPerMillion ?? 0) + (model.outputCostPerMillion ?? 0)
-  const eligible = models.filter((model) => {
-    if (model.providerId !== providerId || !model.enabled || !model.supportsTools || isEmbeddingModel(model)) return false
-    const until = time(model.unavailableUntil)
-    return Number.isNaN(until) || until <= now
-  })
+  // A model that failed recently is not passed over: every model is tried again on every run.
+  const eligible = models.filter(
+    (model) => model.providerId === providerId && model.enabled && model.supportsTools && !isEmbeddingModel(model),
+  )
   return [...eligible].sort((a, b) => price(a) - price(b) || a.modelId.localeCompare(b.modelId))[0]
 }
 
@@ -433,6 +435,7 @@ const behaviourOf = (value?: string | null): PolicyInput['exhaustedBehaviour'] =
   return upper === 'FAIL_CLOSED' || upper === 'DEGRADE_TO_SANDBOX' ? upper : undefined
 }
 
+// @find: plan routing change after connecting a provider, create ask already full; used by: Connect your AI dialog
 export function planConnect(args: {
   policy: ConnectPolicy | undefined
   providers: readonly RoutingProvider[]
@@ -483,6 +486,7 @@ export function planConnect(args: {
 /** How connecting ended, for the sentence the dialog shows. */
 export type ConnectOutcome = 'created' | 'added' | 'already' | 'unchanged' | 'no_model'
 
+// @find: sentence shown after connecting a provider; used by: Connect your AI dialog
 /**
  * The one sentence after a provider is connected. It always says whether the offline sandbox model
  * remains a fallback, because that decides whether a later failure shows an error or placeholder

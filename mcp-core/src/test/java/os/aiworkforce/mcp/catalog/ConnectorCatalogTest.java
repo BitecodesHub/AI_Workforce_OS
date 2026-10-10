@@ -1,3 +1,5 @@
+// @find: tests for connector catalog, catalog matches registered servers, every connector has info, live available flag, oauth connectors setup, credential fields, gmail, slack, github, jira, all connectors
+// @what: Checks the connector catalog, the registered servers and the live adapters all describe the same connectors.
 package os.aiworkforce.mcp.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;

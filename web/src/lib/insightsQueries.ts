@@ -1,3 +1,6 @@
+// @find: analytics, insights, command map, workforce results, success rate, cost per goal, estimated value, value settings, budget, spending cap, usage report, usage csv, download spend, rate answer, thumbs up, feedback, window 7d 30d 90d, GET /api/orchestrator/insights, useInsights, Analytics page
+// @what: Reads and saves the figures behind Analytics and the Command Map: insights over a window, per-agent outcomes, value inputs, budget caps, the usage report and CSV, and answer ratings.
+// @flow: Called by Analytics and Command Map routes and the analytics components (BudgetCard, ValueInputs, SpendBreakdown, AnswerRating, RunRatings); calls api() against /api/orchestrator and /api/conversations feedback.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, api, refreshAccessToken } from './api'
 import type { QueryOptions } from './queries'
@@ -250,6 +253,7 @@ export function normaliseInsights(raw: unknown): Insights | null {
   }
 }
 
+// @find: insights, workforce results, analytics figures; route: GET /api/orchestrator/insights; used by: Analytics page, Command Map page
 /** The workspace's figures over a window (analytics:read). Pass `enabled: can('analytics:read')`. */
 export function useInsights(window: InsightsWindow, options: QueryOptions = {}) {
   return useQuery({
@@ -336,6 +340,7 @@ export function normaliseAgentInsights(raw: unknown): AgentInsights | null {
   }
 }
 
+// @find: per-agent insights, agent results table; route: GET /api/orchestrator/insights/agents; used by: Analytics page, Command Map page
 /** How each agent has done over a window (run:read). Pass `enabled: can('run:read')`. */
 export function useAgentInsights(window: InsightsWindow, options: QueryOptions = {}) {
   return useQuery({
@@ -378,6 +383,7 @@ export function normaliseValueSettings(raw: unknown): ValueSettings | null {
   }
 }
 
+// @find: value inputs, hourly rate, minutes saved, estimated value; route: GET /api/orchestrator/value-settings; used by: Analytics page (ValueInputs)
 /** The hourly staff cost and the minutes per task (analytics:read). */
 export function useValueSettings(options: QueryOptions = {}) {
   return useQuery({
@@ -388,6 +394,7 @@ export function useValueSettings(options: QueryOptions = {}) {
   })
 }
 
+// @find: save value inputs, update hourly rate and minutes; route: PUT /api/orchestrator/value-settings; used by: Analytics page (ValueInputs)
 /** Replaces the inputs (budget:manage), then refreshes every figure that was worked out from them. */
 export function useSaveValueSettings() {
   const client = useQueryClient()
@@ -441,6 +448,7 @@ export function normaliseBudget(raw: unknown): Budget | null {
   }
 }
 
+// @find: budget, monthly cap, spend so far; route: GET /api/orchestrator/budget; used by: Analytics page (BudgetCard), setup checklist
 /** The caps and what has been spent against them this month (budget:read). */
 export function useBudget(options: QueryOptions = {}) {
   return useQuery({
@@ -451,6 +459,7 @@ export function useBudget(options: QueryOptions = {}) {
   })
 }
 
+// @find: save budget, set spending cap, stop at cap; route: PUT /api/orchestrator/budget; used by: Analytics page (BudgetCard)
 /** Replaces the caps (budget:manage). A cap left out is removed. */
 export function useSaveBudget() {
   const client = useQueryClient()
@@ -511,6 +520,7 @@ export function normaliseUsageReport(raw: unknown): UsageReport | null {
   return { grouping: text(raw.groupBy) ?? '', totals: usageLine(raw.totals), groups: raw.groups.map(usageLine) }
 }
 
+// @find: usage report, spend breakdown, group by agent or model; route: GET /api/orchestrator/usage; used by: Analytics page (SpendBreakdown)
 /** What the workspace spent over a range of days, grouped (budget:read). */
 export function useUsageReport(
   grouping: UsageGrouping,
@@ -590,6 +600,7 @@ export async function downloadAuthorised(
   return name
 }
 
+// @find: download usage csv, export spend; route: GET /api/orchestrator/usage.csv; used by: Analytics page (SpendBreakdown)
 /** Downloads every attempt in a range as the CSV the usage report writes. */
 export function downloadUsageCsv(range: { from: string; to: string }): Promise<string> {
   return downloadAuthorised(
@@ -622,6 +633,7 @@ export function normaliseConversationRatings(raw: unknown): ConversationRatings 
 
 const ratingsKey = (conversationId: string | null) => ['conversation-ratings', conversationId] as const
 
+// @find: answer ratings in a conversation, thumbs; route: GET /api/conversations/{id}/feedback; used by: Chat page (AnswerRating)
 /** The ratings the signed-in person has given in one conversation, by message id (chat:use). */
 export function useConversationRatings(conversationId: string | null, options: QueryOptions = {}) {
   return useQuery({
@@ -636,6 +648,7 @@ export function useConversationRatings(conversationId: string | null, options: Q
 /** The longest reason the service keeps. */
 export const REASON_MAX = 500
 
+// @find: rate answer, thumbs up, thumbs down, clear rating; route: POST/DELETE /api/conversations/{id}/messages/{messageId}/feedback; used by: Chat page (AnswerRating)
 /**
  * Rates an answer, or changes the rating already given (a second vote replaces the first), or
  * withdraws it when `rating` is null. The thread shows the new state at once and goes back to the
@@ -692,6 +705,7 @@ export function normaliseRunRatings(raw: unknown): RunRating[] {
   return ratings
 }
 
+// @find: run ratings, feedback on a run; route: GET /api/runs/{id}/feedback; used by: Run detail page (RunRatings)
 /** Every rating the answers of one run have, newest change first, with the reasons (run:read). */
 export function useRunRatings(runId: string, options: QueryOptions = {}) {
   return useQuery({

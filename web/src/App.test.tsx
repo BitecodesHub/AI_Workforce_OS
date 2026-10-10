@@ -1,3 +1,6 @@
+// @find: tests for the app shell, private link without token, root address redirect, signed-in tab, App routing tests, vitest
+// @what: Tests that App redirects signed-out visitors correctly and shows the right screen when signed in.
+// @flow: Renders App from App.tsx with mocked sessions
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  @find: knowledge service pom, knowledge-service maven build, knowledge base dependencies, Tika PDFBox POI text extraction, Qdrant, JPA, Flyway, Testcontainers
+  @what: Maven build file for knowledge-service, the module that owns the knowledge base.
+  @flow: Depends on platform-web and llm-core.
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

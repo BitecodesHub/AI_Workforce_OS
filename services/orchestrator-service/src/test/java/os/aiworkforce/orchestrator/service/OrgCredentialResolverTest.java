@@ -1,3 +1,5 @@
+// @find: tests for org credential resolver, provider credential, API key lookup, organisation service, credential resolver
+// @what: Unit and integration tests (12 cases) for org credential resolver, for example: mints for requested workspace; malformed workspace; blank reference; not found.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

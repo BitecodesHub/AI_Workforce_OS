@@ -1,3 +1,6 @@
+// @find: tests for documents prompt, chat, numbers passages in order, cuts long passage content, caps whole prompt, no passages, DocumentsPromptTest, DocumentsPrompt
+// @what: Tests for DocumentsPrompt in the orchestrator chat package (4 test methods).
+// @flow: Exercises DocumentsPrompt
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,6 +23,7 @@ class DocumentsPromptTest {
         return p;
     }
 
+    // @find: test numbers passages in order, documents prompt
     @Test
     @DisplayName("passages are numbered in order, each labelled with its document title, page and heading")
     void numbersPassagesInOrder() {
@@ -37,6 +41,7 @@ class DocumentsPromptTest {
         assertThat(prompt.indexOf("[1] Leave policy")).isLessThan(prompt.indexOf("[2] Handbook"));
     }
 
+    // @find: test cuts long passage content, documents prompt
     @Test
     @DisplayName("a passage's content is cut at 1,200 characters, with an ellipsis")
     void cutsLongPassageContent() {
@@ -49,6 +54,7 @@ class DocumentsPromptTest {
         assertThat(prompt).doesNotContain("x".repeat(1_201));
     }
 
+    // @find: test caps whole prompt, documents prompt
     @Test
     @DisplayName("the whole prompt is capped at 9,000 characters")
     void capsWholePrompt() {
@@ -62,6 +68,7 @@ class DocumentsPromptTest {
         assertThat(prompt.length()).isLessThanOrEqualTo(9_000);
     }
 
+    // @find: test no passages, documents prompt
     @Test
     @DisplayName("no passages still produces a well formed prompt with the question")
     void noPassages() {

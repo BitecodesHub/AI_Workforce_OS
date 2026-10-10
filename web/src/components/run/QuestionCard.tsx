@@ -1,3 +1,6 @@
+// @find: agent question, clarifying question, answer question, choose option, Other answer, answered count, question closed, run waiting for answer, Approvals page questions
+// @what: Form for an agent's clarifying question, answered in Chat, Orchestrator or Approvals.
+// @flow: Used by QuestionMessage and WaitingForAnswer.
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button, Eyebrow, Input, Notice, Tag } from '../ui'
@@ -349,6 +352,7 @@ function ClosedBody({
   )
 }
 
+// @find: QuestionCard, question card, agent question, clarifying question, answer question, choose option
 export function QuestionCard({
   question,
   agentName,

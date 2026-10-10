@@ -1,3 +1,5 @@
+// @find: Spring Data repository for roles and name resolution.
+// @what: roles, find role, system role, role by name, role name clash, role holders count, Roles repository
 package os.aiworkforce.identity.repository;
 
 import java.util.List;
@@ -28,6 +30,14 @@ public interface Roles extends JpaRepository<Role, UUID> {
 
     @Query("select r from Role r where r.orgId = :orgId and r.name = :name")
     Optional<Role> findByOrgAndName(@Param("orgId") UUID orgId, @Param("name") String name);
+
+    /**
+     * Every role this workspace can see whose name matches {@code name} ignoring case: its own and
+     * the system ones. A custom role called "Owner" would otherwise show in the console exactly
+     * like the built-in owner role while carrying something else entirely.
+     */
+    @Query("select r from Role r where (r.orgId = :orgId or r.orgId is null) and lower(r.name) = lower(:name)")
+    java.util.List<Role> findNameClashes(@Param("orgId") UUID orgId, @Param("name") String name);
 
     /**
      * The role a workspace means by a name: its own role first, then the system role.

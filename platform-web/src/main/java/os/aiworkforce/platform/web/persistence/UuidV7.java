@@ -1,3 +1,6 @@
+// @find: uuid v7, time ordered id, generate id, identifier generator
+// @what: Generates time-ordered UUIDv7 identifiers.
+// @flow: Used by BaseEntity
 package os.aiworkforce.platform.web.persistence;
 
 import java.security.SecureRandom;

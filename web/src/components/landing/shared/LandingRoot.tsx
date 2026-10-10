@@ -1,3 +1,6 @@
+// @find: landing root, motion, reduced motion, pause motion, data-motion, data-ambient, useLandingMotion, LandingRoot
+// @what: Root of the public page that owns the motion and ambient switches.
+// @flow: Used by routes/Landing and Trust; read via useLandingMotion
 import { createContext, useContext, useMemo, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { useReducedMotion } from '../../../hooks/useReducedMotion'
@@ -22,6 +25,7 @@ function ignorePause(): void {
   // Outside a LandingRoot there is no ambient motion to pause.
 }
 
+// @find: LandingRoot component, motion root
 export function LandingRoot({ children }: { children: ReactNode }): ReactElement {
   const reduced = useReducedMotion()
   const [ambientPaused, setAmbientPaused] = useState(false)
@@ -53,6 +57,7 @@ export function LandingRoot({ children }: { children: ReactNode }): ReactElement
  * setting, with ambient motion running and a pause that does nothing, so every landing component
  * renders standalone in a test.
  */
+// @find: useLandingMotion hook, reduced motion, pause motion
 export function useLandingMotion(): LandingMotion {
   const context = useContext(LandingMotionContext)
   const reduced = useReducedMotion()

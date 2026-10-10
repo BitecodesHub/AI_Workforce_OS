@@ -1,3 +1,6 @@
+// @find: ask person tool, person.ask_question, ask a question, run asks the person, clarifying question, multiple choice options, question parser, person__ask_question, agent asks human
+// @what: Defines the tool an agent uses to stop and ask the person a question with up to four multiple-choice questions, and validates the model's arguments.
+// @flow: Called by AgentRunner when the model calls the ask tool; the parsed Ask goes to QuestionService.raise
 package os.aiworkforce.orchestrator.service;
 
 import java.util.ArrayList;
@@ -91,6 +94,7 @@ public class AskPersonTool {
         this.json = json;
     }
 
+    // @find: parse ask question arguments, validate questions and options, normalise model input
     /** Parses and normalises the model's arguments, or throws Invalid with a sentence the model can act on. */
     public Ask parse(String argumentsJson) throws Invalid {
         JsonNode root;

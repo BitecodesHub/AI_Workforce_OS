@@ -1,3 +1,5 @@
+// @find: tests for provider key test, provider key test, test API key, POST /api/providers/{id}/test, check provider
+// @what: Unit and integration tests (22 cases) for provider key test, for example: test now uses the stored key and clears state; test now plain results; a key that works is valid; a refused key is rejected and saves nothing.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +36,8 @@ import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import os.aiworkforce.llm.model.ChatRequest;
+import os.aiworkforce.llm.model.ChatResponse;
+import os.aiworkforce.llm.provider.BedrockProvider;
 import os.aiworkforce.llm.model.ModelSpec;
 import os.aiworkforce.llm.model.ProviderDescriptor;
 import os.aiworkforce.llm.model.ProviderException;
@@ -79,6 +83,8 @@ class ProviderKeyTestTest {
     private AuditClient audit;
     private ProviderController controller;
     private final AtomicLong now = new AtomicLong(1_000_000L);
+    private ModelRouter router;
+    private WorkspaceModelAvailabilities availability;
 
     @BeforeEach
     void setUp() {
@@ -111,16 +117,17 @@ class ProviderKeyTestTest {
         settings = mock(WorkspaceProviderSettings.class);
         when(settings.findByOrgId(any())).thenReturn(List.of());
         when(settings.findById(any())).thenReturn(Optional.empty());
-        WorkspaceModelAvailabilities availability = mock(WorkspaceModelAvailabilities.class);
+        availability = mock(WorkspaceModelAvailabilities.class);
         when(availability.findByOrgId(any())).thenReturn(List.of());
         when(availability.findById(any())).thenReturn(Optional.empty());
 
+        router = mock(ModelRouter.class);
         JpaProviderRegistry registry = new JpaProviderRegistry(providers, models, settings, availability);
         audit = mock(AuditClient.class);
         controller = new ProviderController(
                 providers,
                 models,
-                mock(ModelRouter.class),
+                router,
                 registry,
                 settings,
                 mock(RoutingPolicyResolver.class),
@@ -142,6 +149,43 @@ class ProviderKeyTestTest {
     @AfterEach
     void clear() {
         RequestContext.clear();
+    }
+
+    // ---- Test now -----------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Test now makes a real call with the stored key and clears anything a past failure left")
+    void testNowUsesTheStoredKeyAndClearsState() {
+        controller.setCredentials((orgId, ref) -> Optional.of("stored-" + orgId));
+
+        ProviderController.CheckResult result =
+                controller.check("openrouter", new ProviderController.CheckRequest("pricey-chat"));
+
+        assertThat(result.result()).isEqualTo("ok");
+        assertThat(result.modelId()).isEqualTo("pricey-chat");
+        assertThat(result.message()).contains("answered in");
+        assertThat(result.latencyMs()).isNotNull();
+        ArgumentCaptor<String> key = ArgumentCaptor.forClass(String.class);
+        verify(adapter).complete(any(), any(), any(), key.capture());
+        assertThat(key.getValue()).isEqualTo("stored-" + ORG_A);
+        verify(router).forgetCoolOff(ORG_A.toString(), "openrouter", "pricey-chat");
+        verify(availability).forget(ORG_A, "openrouter", "pricey-chat");
+    }
+
+    @Test
+    @DisplayName("Test now says plainly when there is no key, or the account is out of credit")
+    void testNowPlainResults() {
+        controller.setCredentials((orgId, ref) -> Optional.empty());
+        assertThat(controller.check("openrouter", null).result()).isEqualTo("no_key");
+
+        controller.setCredentials((orgId, ref) -> Optional.of("stored"));
+        failWith(ProviderFailure.INSUFFICIENT_CREDIT, "{}");
+        ProviderController.CheckResult credit = controller.check("openrouter", null);
+        assertThat(credit.result()).isEqualTo("no_credit");
+        assertThat(credit.modelId()).isEqualTo("cheap-chat");
+        assertThat(ProviderController.checkResult(
+                        ProviderException.of(ProviderFailure.TIMEOUT, "p", "m", "slow")))
+                .isEqualTo("timeout");
     }
 
     // ---- What each answer is called ----------------------------------------------------------
@@ -297,10 +341,8 @@ class ProviderKeyTestTest {
     // ---- Which providers can be checked -------------------------------------------------------
 
     @Test
-    @DisplayName("Bedrock and the offline sandbox are not checked with one key")
-    void bedrockAndTheSandboxAreRefused() {
-        assertThatThrownBy(() -> controller.test("bedrock", request(KEY)))
-                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+    @DisplayName("the offline sandbox is not checked with a key")
+    void theSandboxIsRefused() {
         assertThatThrownBy(() -> controller.test("sandbox", request(KEY)))
                 .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
         verify(adapter, never()).complete(any(), any(), any(), any());
@@ -380,9 +422,88 @@ class ProviderKeyTestTest {
     @DisplayName("a refused request does not use up a check")
     void aRefusedRequestIsNotCounted() {
         for (int i = 0; i < ProviderController.TEST_LIMIT + 2; i++) {
-            assertThatThrownBy(() -> controller.test("bedrock", request(KEY))).isInstanceOf(ApiException.class);
+            assertThatThrownBy(() -> controller.test("sandbox", request(KEY))).isInstanceOf(ApiException.class);
         }
         assertThat(controller.test("openrouter", request(KEY)).result()).isEqualTo(ProviderController.KeyCheck.VALID);
+    }
+
+    // ---- Amazon Bedrock ------------------------------------------------------------------------
+
+    private static final String BEDROCK_KEYS = "{\"type\":\"access_key\",\"accessKeyId\":\"AKIAIOSFODNN7EXAMPLE\","
+            + "\"secretAccessKey\":\"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY\",\"region\":\"eu-west-1\"}";
+
+    private ChatProvider bedrockAdapter(Mono<ChatResponse> answer) {
+        ChatProvider bedrock = mock(ChatProvider.class);
+        when(bedrock.kind()).thenReturn(ProviderDescriptor.Kind.BEDROCK);
+        when(bedrock.complete(any(), any(), any(), any())).thenReturn(answer);
+        PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+        when(transactions.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        controller.setKeyTesting(List.of(adapter, bedrock), transactions);
+        return bedrock;
+    }
+
+    private static Mono<ChatResponse> bedrockFails(ProviderFailure failure, int status, String sentence) {
+        return Mono.error(new ProviderException(
+                failure, "bedrock", "bedrock-chat", sentence, status, null, "AccessDeniedException: ...", null));
+    }
+
+    @Test
+    @DisplayName("Bedrock credentials are checked field by field before any call, in plain words")
+    void bedrockFieldsAreChecked() {
+        ChatProvider bedrock = bedrockAdapter(Mono.empty());
+
+        assertThatThrownBy(() -> controller.test(
+                        "bedrock", request("{\"type\":\"access_key\",\"accessKeyId\":\"AKIAIOSFODNN7EXAMPLE\"}")))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+                    assertThat(e.details()).containsEntry("field", "secretAccessKey");
+                    assertThat(String.valueOf(e.details().get("problem"))).contains("secret access key");
+                });
+        assertThatThrownBy(() -> controller.test(
+                        "bedrock", request("{\"type\":\"api_key\",\"apiKey\":\"ABSKexampleexampleexample\",\"region\":\"nowhere\"}")))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.details()).containsEntry("field", "region"));
+        verify(bedrock, never()).complete(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("working Bedrock credentials are checked with one real call, sent as the stored JSON")
+    void bedrockValid() {
+        ChatProvider bedrock = bedrockAdapter(Mono.empty());
+
+        ProviderController.KeyTestResult result = controller.test("bedrock", request(BEDROCK_KEYS));
+
+        assertThat(result.result()).isEqualTo(ProviderController.KeyCheck.VALID);
+        assertThat(result.message()).contains("accepted the credentials");
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(bedrock).complete(any(), any(), any(), sent.capture());
+        assertThat(sent.getValue()).contains("\"region\":\"eu-west-1\"").contains("\"type\":\"access_key\"");
+        assertThat(result.message()).doesNotContain("wJalr");
+    }
+
+    @Test
+    @DisplayName("model access not turned on means the credentials worked, and says what to turn on")
+    void bedrockModelAccessNotEnabled() {
+        bedrockAdapter(bedrockFails(ProviderFailure.MODEL_NOT_FOUND, 403, BedrockProvider.ACCESS_NOT_ENABLED));
+
+        ProviderController.KeyTestResult result = controller.test("bedrock", request(BEDROCK_KEYS));
+
+        assertThat(result.result()).isEqualTo(ProviderController.KeyCheck.VALID);
+        assertThat(result.message()).contains("accepted the credentials").contains("Model access is not turned on")
+                .contains("Bedrock console");
+    }
+
+    @Test
+    @DisplayName("refused or under-privileged Bedrock credentials are refused, saying which")
+    void bedrockRefused() {
+        bedrockAdapter(bedrockFails(ProviderFailure.AUTHENTICATION_FAILED, 403, BedrockProvider.KEY_REFUSED));
+        ProviderController.KeyTestResult refused = controller.test("bedrock", request(BEDROCK_KEYS));
+        assertThat(refused.result()).isEqualTo(ProviderController.KeyCheck.REJECTED);
+        assertThat(refused.message()).startsWith("Credentials refused.");
+
+        bedrockAdapter(bedrockFails(ProviderFailure.AUTHORISATION_FAILED, 403, BedrockProvider.IAM_DENIED));
+        ProviderController.KeyTestResult iam = controller.test("bedrock", request(BEDROCK_KEYS));
+        assertThat(iam.result()).isEqualTo(ProviderController.KeyCheck.REJECTED);
+        assertThat(iam.message()).contains("bedrock:InvokeModel");
     }
 
     // ---- Fixtures ------------------------------------------------------------------------------

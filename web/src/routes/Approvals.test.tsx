@@ -1,3 +1,6 @@
+// @find: tests for the approvals page, approve, reject, queue, history, accessibility axe, vitest, Approvals component tests, Approvals page
+// @what: Automated tests that check the the approvals page screen (/approvals) behaves as users expect.
+// @flow: Renders Approvals from Approvals.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import axe from 'axe-core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -201,6 +204,21 @@ describe('Approvals, the queue', () => {
     )
     // It leaves the queue at once.
     await waitFor(() => expect(document.getElementById('approval-a-1')).toBeNull())
+  })
+
+  it('says at the field when Send back has no feedback, and sends nothing', async () => {
+    on(pendingUrl, () => [item('a-1')])
+
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Send back with feedback' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send back' }))
+
+    const field = within(dialog).getByLabelText('What should change')
+    expect(field).toHaveAccessibleDescription(expect.stringContaining('Say what should change'))
+    expect(requests.some((request) => request.url === '/api/approvals/a-1/decision')).toBe(false)
+    fireEvent.change(field, { target: { value: 'Softer tone.' } })
+    expect(field).not.toHaveAccessibleDescription(expect.stringContaining('Say what should change'))
   })
 
   it('moves focus to the next request once one is decided, and to the tabs when none is left', async () => {

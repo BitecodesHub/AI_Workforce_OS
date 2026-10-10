@@ -1,3 +1,6 @@
+// @find: attachments hook, upload attachment, attach files, upload progress, cancel upload, remove attachment, draft attachments, composer files
+// @what: Hook holding the files attached to the message being written and uploading them.
+// @flow: Used by Composer.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../lib/api'
 import {
@@ -59,6 +62,7 @@ function canPreview(file: File): boolean {
   return typeof URL.createObjectURL === 'function' && isViewableImage({ name: file.name, mimeType: file.type })
 }
 
+// @find: useAttachments, use attachments, attachments hook, upload attachment, attach files, upload progress
 export function useAttachments(conversationId: string | null) {
   const [items, setItems] = useState<DraftAttachment[]>([])
   const [statusMessage, setStatusMessage] = useState('')

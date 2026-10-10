@@ -1,3 +1,9 @@
+// @find: workspace provider settings repository, enable or disable provider for workspace, credential rejected, clear rejected key, workspace lock, WorkspaceProviderSettings
+// @what: Spring Data repository for per-workspace provider settings, written by native upserts.
+// @flow: Used by the provider registry and Providers page.
+// @find: workspace provider settings repository, enable or disable provider for workspace, credential rejected, clear rejected key, workspace lock, WorkspaceProviderSettings
+// @what: Spring Data repository for per-workspace provider settings, written by native upserts.
+// @flow: Used by the provider registry and Providers page.
 package os.aiworkforce.orchestrator.repository;
 
 import java.time.Instant;
@@ -21,8 +27,12 @@ import os.aiworkforce.orchestrator.domain.WorkspaceProviderSetting;
 public interface WorkspaceProviderSettings
         extends JpaRepository<WorkspaceProviderSetting, WorkspaceProviderSetting.Key> {
 
+    // @find: list provider settings of workspace
+    // @find: list provider settings of workspace
     List<WorkspaceProviderSetting> findByOrgId(UUID orgId);
 
+    // @find: advisory lock for workspace provider update
+    // @find: advisory lock for workspace provider update
     /**
      * Holds a transaction-scoped advisory lock on one workspace's provider settings.
      *
@@ -43,6 +53,8 @@ public interface WorkspaceProviderSettings
             nativeQuery = true)
     Integer holdWorkspaceLock(@Param("orgId") UUID orgId);
 
+    // @find: enable or disable provider for workspace
+    // @find: enable or disable provider for workspace
     /**
      * Turns a provider on or off for one workspace. An atomic upsert, so a double click on the
      * toggle never breaks the primary key; the credential columns are left as they are.
@@ -66,6 +78,8 @@ public interface WorkspaceProviderSettings
             @Param("now") Instant now,
             @Param("updatedBy") String updatedBy);
 
+    // @find: mark provider key rejected
+    // @find: mark provider key rejected
     /**
      * Records that the provider refused this workspace's key. Only this workspace's row changes:
      * another workspace's key is a different key, and it may be perfectly good.
@@ -86,6 +100,8 @@ public interface WorkspaceProviderSettings
     int markCredentialRejected(
             @Param("orgId") UUID orgId, @Param("providerId") String providerId, @Param("now") Instant now);
 
+    // @find: clear rejected key status
+    // @find: clear rejected key status
     /**
      * Clears this workspace's recorded rejection once the provider has answered one of its calls.
      *

@@ -1,3 +1,6 @@
+// @find: tool labels, plain tool names, human readable tool name, humanise tool names, server__tool, create an issue in GitHub, approval wording, run trace labels, tool name to sentence
+// @what: Turns internal tool names such as github__create_issue into plain labels a person reads.
+// @flow: Used when approvals, traces and agent answers are shown to people; tested by ToolLabelsTest
 package os.aiworkforce.mcp.catalog;
 
 import java.util.ArrayList;
@@ -71,6 +74,7 @@ public final class ToolLabels {
             "(?m)^(\\s*(?:[-*\u2022]|\\d+[.)])?\\s*)(?:\\*\\*|`)*([a-z][a-z0-9-]*(?:__|\\.)[a-z][a-z0-9_]*)(?:\\*\\*|`)*"
                     + "\\s*(?:[:\u2013\u2014]|\\s-)\\s+(\\S)");
 
+    // @find: label for a tool, create an issue in GitHub
     /** "Create an issue in GitHub". */
     public static String label(String server, String tool) {
         if (server == null || tool == null) {
@@ -112,6 +116,7 @@ public final class ToolLabels {
         return CATALOG.find(server).map(ConnectorInfo::displayName).orElseGet(() -> capitalised(server));
     }
 
+    // @find: replace internal tool names in text with plain labels
     /**
      * The text with every internal tool name a person could see replaced by its plain label. A line
      * that only names a tool before describing it keeps the description. Text with no tool name in

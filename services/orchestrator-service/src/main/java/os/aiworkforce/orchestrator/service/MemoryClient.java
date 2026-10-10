@@ -1,3 +1,6 @@
+// @find: memory client, memory service, remember note, recall notes, agent memory http client, never throws, memory failure
+// @what: HTTP client that asks the memory service to keep or recall an agent's notes, reporting failures instead of throwing.
+// @flow: Called by AgentMemoryTool
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -67,6 +70,7 @@ public class MemoryClient {
 
     private record RecalledBody(List<Note> memories) {}
 
+    // @find: save note to memory service
     public Remembered remember(UUID orgId, UUID agentId, UUID runId, String kind, String content) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
@@ -101,10 +105,11 @@ public class MemoryClient {
         }
     }
 
+    // @find: recall notes from memory service
     public Recalled recall(UUID orgId, UUID agentId, String query, int limit) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("query", query == null ? "" : query);
+            body.put("query", recallQuery(query));
             body.put("limit", limit);
             RecalledBody found = client.post()
                     .uri("/internal/memory/agents/{agentId}/recall", agentId)
@@ -121,6 +126,25 @@ public class MemoryClient {
             return Recalled.couldNotRecall();
         }
     }
+
+    /**
+     * The memory service refuses a recall query longer than {@link #MAX_RECALL_QUERY} characters (422),
+     * which used to cost every long request its remembered notes. A longer one is cut at a word.
+     */
+    static String recallQuery(String query) {
+        if (query == null) {
+            return "";
+        }
+        String text = query.strip();
+        if (text.length() <= MAX_RECALL_QUERY) {
+            return text;
+        }
+        int cut = text.lastIndexOf(' ', MAX_RECALL_QUERY);
+        return (cut > MAX_RECALL_QUERY / 2 ? text.substring(0, cut) : text.substring(0, MAX_RECALL_QUERY)).strip();
+    }
+
+    /** The longest recall query the memory service accepts (its RecallRequest's own limit). */
+    static final int MAX_RECALL_QUERY = 500;
 
     /** The service's own sentence for a refusal, found in its error body, or a plain default. */
     private static String readableReason(WebClientResponseException refused) {

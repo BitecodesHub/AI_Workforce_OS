@@ -1,3 +1,6 @@
+// @find: schedules repository, find schedules, due schedules query, schedules by owner, Schedules, schedule lookup by id
+// @what: Spring Data repository for Schedule rows.
+// @flow: Used by ScheduleService
 package os.aiworkforce.orchestrator.schedule;
 
 import java.time.Instant;
@@ -32,6 +35,7 @@ public interface Schedules extends JpaRepository<Schedule, UUID> {
      * unbounded backlog; a workspace with more due schedules than fit in one tick simply gets the
      * rest on the next one.
      */
+    // @find: find due schedules, next_run_at passed
     @Query("select s from Schedule s where s.enabled = true and s.nextRunAt <= :now order by s.nextRunAt asc")
     List<Schedule> findDue(@Param("now") Instant now, Pageable pageable);
 }

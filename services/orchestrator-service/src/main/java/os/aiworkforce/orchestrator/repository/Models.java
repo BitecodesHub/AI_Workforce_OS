@@ -1,3 +1,9 @@
+// @find: models repository, list enabled models, models by provider, discovered models, models in policies, Models
+// @what: Spring Data repository for LlmModelEntity rows.
+// @flow: Used by the provider registry and the Models page.
+// @find: models repository, list enabled models, models by provider, discovered models, models in policies, Models
+// @what: Spring Data repository for LlmModelEntity rows.
+// @flow: Used by the provider registry and the Models page.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.List;
@@ -18,6 +24,8 @@ import os.aiworkforce.orchestrator.domain.LlmModelEntity;
 
 public interface Models extends JpaRepository<LlmModelEntity, LlmModelEntity.Key> {
 
+    // @find: enabled seed models of a provider
+    // @find: enabled seed models of a provider
     /**
      * The provider's enabled catalogue models: the seeded rows, not the hundreds a provider's own
      * model list may have added (those are read through {@link #findByProviderIdAndEnabledTrueAndSource}).
@@ -25,9 +33,13 @@ public interface Models extends JpaRepository<LlmModelEntity, LlmModelEntity.Key
     @Query("select m from LlmModelEntity m where m.providerId = :providerId and m.enabled = true and m.source = 'seed'")
     List<LlmModelEntity> findByProviderIdAndEnabledTrue(@Param("providerId") String providerId);
 
+    // @find: enabled models of a provider by source
+    // @find: enabled models of a provider by source
     /** Every enabled model of a provider from one source, {@code seed} or {@code discovered}. */
     List<LlmModelEntity> findByProviderIdAndEnabledTrueAndSource(String providerId, String source);
 
+    // @find: all enabled seed models
+    // @find: all enabled seed models
     /**
      * The enabled catalogue models, seeded rows only. Discovered models are offered through the
      * per-provider model list instead, so that the workspace model list stays the short, curated
@@ -36,6 +48,8 @@ public interface Models extends JpaRepository<LlmModelEntity, LlmModelEntity.Key
     @Query("select m from LlmModelEntity m where m.enabled = true and m.source = 'seed' order by m.providerId, m.modelId")
     List<LlmModelEntity> findAllEnabled();
 
+    // @find: discovered models used in policies
+    // @find: discovered models used in policies
     /** Discovered models that one of the workspace's routing policies names. */
     @Query(
             value = "SELECT DISTINCT m.* FROM llm_models m"

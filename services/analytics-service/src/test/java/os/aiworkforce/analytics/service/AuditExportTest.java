@@ -1,3 +1,5 @@
+// @find: tests for audit export, csv format, json lines, formula injection escaping, export fields
+// @what: Checks the audit export formats and the spreadsheet formula protection.
 package os.aiworkforce.analytics.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

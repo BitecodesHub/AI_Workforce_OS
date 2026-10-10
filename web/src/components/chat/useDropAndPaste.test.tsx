@@ -1,3 +1,6 @@
+// @find: tests for useDropAndPaste, drag and drop files, paste image, paste file, file drop, drop zone, screenshot paste
+// @what: Automated tests for useDropAndPaste.
+// @flow: Run with the web test runner; covers useDropAndPaste.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { filesFromPaste, useFileDrop } from './useDropAndPaste'

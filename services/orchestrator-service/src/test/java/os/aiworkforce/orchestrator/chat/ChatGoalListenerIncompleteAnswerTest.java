@@ -1,3 +1,6 @@
+// @find: tests for chat goal listener incomplete answer, chat, failed task with an answer carries it, failed task without an answer carries none, ChatGoalListenerIncompleteAnswerTest, ChatGoalListenerIncompleteAnswer
+// @what: Tests for ChatGoalListenerIncompleteAnswer in the orchestrator chat package (2 test methods).
+// @flow: Exercises ChatGoalListenerIncompleteAnswer
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -86,6 +89,7 @@ class ChatGoalListenerIncompleteAnswerTest {
         return saved.getValue();
     }
 
+    // @find: test failed task with an answer carries it, chat goal listener incomplete answer
     @Test
     @DisplayName("a failed task that kept an answer puts it in the error message, beside the reason and the code")
     void failedTaskWithAnAnswerCarriesIt() {
@@ -108,6 +112,7 @@ class ChatGoalListenerIncompleteAnswerTest {
                 .containsEntry("runId", run.getId().toString());
     }
 
+    // @find: test failed task without an answer carries none, chat goal listener incomplete answer
     @Test
     @DisplayName("a failed task with no answer, or a blank one, carries none")
     void failedTaskWithoutAnAnswerCarriesNone() {

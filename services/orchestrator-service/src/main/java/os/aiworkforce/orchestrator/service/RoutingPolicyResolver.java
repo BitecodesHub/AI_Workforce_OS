@@ -1,3 +1,6 @@
+// @find: routing policy, model chain, which model, agent model policy, workspace default policy, no AI model is set, model fallback order
+// @what: Works out the ordered chain of models for an agent: its own policy first, then the workspace default.
+// @flow: Called by AgentRunner before routing; reads ModelPolicies
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -16,35 +19,50 @@ import os.aiworkforce.orchestrator.repository.ModelPolicies;
 /**
  * Works out which chain of models an agent should use.
  *
- * <p>Resolution runs narrowest first: the agent's own policy, then the workspace default, then a
- * built-in fallback. The built-in exists so a brand-new workspace with no configuration at all
- * still runs - on the offline model, saying so - rather than failing with "no policy".
+ * <p>Resolution runs narrowest first: the agent's own policy, then the workspace default. When
+ * neither lists a model the chain is empty and the run fails with a plain "no AI model is set"
+ * - never a quiet answer from the offline sandbox, which a person could mistake for a real
+ * model's work. The sandbox only answers when an administrator lists it as a candidate.
  */
 @Service
 public class RoutingPolicyResolver {
 
-    /**
-     * The last resort when nothing is configured.
-     *
-     * <p>Deliberately the sandbox alone. A default that pointed at a real provider would start
-     * spending money for a workspace that never chose to, and a default that pointed at nothing
-     * would make a fresh installation look broken.
-     */
-    private static final RoutingPolicy BUILT_IN = new RoutingPolicy(
-            List.of(RoutingPolicy.Candidate.of("sandbox", "sandbox-1")),
-            RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED,
-            1,
-            Duration.ofMinutes(2),
-            true);
+    /** Nothing chosen anywhere: an empty chain, which the router refuses with a plain sentence. */
+    static final RoutingPolicy NOTHING_SET = new RoutingPolicy(
+            List.of(), RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, 1, Duration.ofMinutes(2), true);
 
     private final ModelPolicies policies;
+    private final ServerRouting server;
 
     public RoutingPolicyResolver(ModelPolicies policies) {
-        this.policies = policies;
+        this(policies, ServerRouting.none());
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public RoutingPolicyResolver(ModelPolicies policies, ServerRouting server) {
+        this.policies = policies;
+        this.server = server == null ? ServerRouting.none() : server;
+    }
+
+    // @find: workspace default routing policy
+    /** The workspace's own chain, or empty when it lists no model. */
+    @Transactional(readOnly = true)
+    public RoutingPolicy workspaceDefault(UUID orgId) {
+        return resolve(orgId, null);
+    }
+
+    // @find: resolve routing policy for agent
     @Transactional(readOnly = true)
     public RoutingPolicy resolve(UUID orgId, UUID agentId) {
+        return server.withLocalFallback(saved(orgId, agentId));
+    }
+
+    /**
+     * The saved chain: the agent's, then the workspace's, then the deployment's default chain
+     * ({@code AIWOS_DEFAULT_ROUTING}) for a workspace that has chosen nothing. The local fallback
+     * is appended by {@link #resolve} on top of whichever applies, never saved.
+     */
+    private RoutingPolicy saved(UUID orgId, UUID agentId) {
         Optional<ModelPolicyEntity> agentPolicy = policies.findByOrgIdAndAgentId(orgId, agentId)
                 .filter(policy -> !policy.getCandidates().isEmpty());
         if (agentPolicy.isPresent()) {
@@ -54,7 +72,15 @@ public class RoutingPolicyResolver {
         return policies.findWorkspaceDefault(orgId)
                 .filter(policy -> !policy.getCandidates().isEmpty())
                 .map(this::toPolicy)
-                .orElse(BUILT_IN);
+                .orElseGet(this::deploymentDefault);
+    }
+
+    private RoutingPolicy deploymentDefault() {
+        if (server.defaultChain().isEmpty()) {
+            return NOTHING_SET;
+        }
+        return new RoutingPolicy(
+                server.defaultChain(), RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, 2, Duration.ofMinutes(5), true);
     }
 
     private RoutingPolicy toPolicy(ModelPolicyEntity entity) {

@@ -1,3 +1,5 @@
+// @find: tests for api client, ApiError, describeApiError, token refresh, timeouts, network failure, field errors
+// @what: Unit tests for the HTTP client and its error messages.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, READ_TIMEOUT_MS, TIMEOUT_FAILURE, WRITE_TIMEOUT_MS, api } from './api'
 import { clearSession, saveSession, takeRecentRenewal } from './session'

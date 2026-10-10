@@ -1,3 +1,6 @@
+// @find: retry run, run again, rerun failed run, POST /api/runs/{runId}/retry, Retry button on run
+// @what: REST endpoint that starts a failed run again.
+// @flow: Delegates to AgentRunner and RunExecutor
 package os.aiworkforce.orchestrator.web;
 
 import java.util.Set;
@@ -54,6 +57,7 @@ public class RunRetryController {
 
     public record Retried(UUID runId, UUID retryOf, String status) {}
 
+    // @find: retry run, POST /api/runs/{runId}/retry
     @PostMapping("/{runId}/retry")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @RequiresPermission(Permission.Codes.AGENT_RUN)

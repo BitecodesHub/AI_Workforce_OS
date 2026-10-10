@@ -1,3 +1,6 @@
+// @find: cited answer model, citations data, answer passages, document name, page count, questions, decline message, sliceWords, wordCount, plainText, Project_Proposal.pdf
+// @what: Data and helpers for the cited-answer demo: the questions, answer segments, passages and decline text.
+// @flow: Used by CitedAnswerDemo
 /*
  * The cited-answer demo, as data.
  *
@@ -60,6 +63,7 @@ export const DECLINE = 'No document in this workspace supports an answer to that
 const WORD = /\S+/g
 
 /** The answer's text with the citation markers left out. */
+// @find: plainText, answer as plain text
 export function plainText(segments: ReadonlyArray<Segment>): string {
   return segments.map((segment) => (segment.kind === 'text' ? segment.text : '')).join('')
 }
@@ -68,6 +72,7 @@ export function plainText(segments: ReadonlyArray<Segment>): string {
  * The number of words the reveal steps through. Citation markers are not words: each one appears
  * together with the word it follows.
  */
+// @find: wordCount, answer word count
 export function wordCount(segments: ReadonlyArray<Segment>): number {
   let count = 0
   for (const segment of segments) {
@@ -80,6 +85,7 @@ export function wordCount(segments: ReadonlyArray<Segment>): number {
  * The first n words of the answer, with their original spacing. A citation marker is whole or
  * absent, never split, and it appears as soon as every word before it has.
  */
+// @find: sliceWords, reveal answer word by word
 export function sliceWords(segments: ReadonlyArray<Segment>, n: number): Segment[] {
   const out: Segment[] = []
   let left = Math.max(0, Math.floor(n))

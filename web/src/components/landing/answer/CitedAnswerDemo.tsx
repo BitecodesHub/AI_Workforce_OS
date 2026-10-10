@@ -1,3 +1,6 @@
+// @find: cited answer demo, citations, sources, answer with sources, retrieval, RAG, grounding, knowledge base demo, decline unsupported question, Project_Proposal.pdf, CitedAnswerDemo, #cited
+// @what: The landing page demo that replays retrieval, writes an answer word by word with citation markers, and declines an unsupported question.
+// @flow: Used by DemoStage; data from citedAnswerModel
 import { Fragment, useEffect, useReducer } from 'react'
 import type { Dispatch, ReactElement } from 'react'
 import { Button, Tag } from '../../ui'
@@ -242,6 +245,7 @@ const COPY: Record<DemoVoice, { name: string; lead: string; footnote: string; so
 
 export type CitedAnswerDemoProps = { voice?: DemoVoice }
 
+// @find: CitedAnswerDemo component, cited answer demo
 export function CitedAnswerDemo({ voice = 'technical' }: CitedAnswerDemoProps = {}): ReactElement {
   const copy = COPY[voice]
   const { reduced } = useLandingMotion()

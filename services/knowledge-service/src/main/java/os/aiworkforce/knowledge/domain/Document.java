@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, document entity, uploaded file, documents table, document status indexed skipped failed, content hash, unchanged file, replaced version, notice, skip reason, page count, Document
+// @what: JPA entity for one uploaded file inside a source, with its status, content hash, notice and skip reason.
+// @flow: Written by IngestionService.ingest (upload, re-upload, replace); read by KnowledgeController document lists.
 package os.aiworkforce.knowledge.domain;
 
 import java.time.Instant;

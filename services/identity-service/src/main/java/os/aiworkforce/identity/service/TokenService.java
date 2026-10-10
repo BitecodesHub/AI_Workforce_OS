@@ -1,3 +1,6 @@
+// @find: token service, access token, jwt, issue token, internal service token, refresh token generate, refresh token hash, jwks, ES256, signing, TokenService
+// @what: Mints ES256 access tokens and service tokens, hashes refresh tokens and serves the JWKS key set.
+// @flow: Called by AuthService, InternalTokenController, JwksController, AuditWiring; keys from SigningKeyStore.
 package os.aiworkforce.identity.service;
 
 import java.math.BigInteger;
@@ -119,6 +122,7 @@ public class TokenService {
         }
     }
 
+    // @find: issue access token, create jwt, sign token
     /**
      * An access token for a person acting in one workspace.
      *
@@ -157,6 +161,7 @@ public class TokenService {
         return new IssuedToken(sign(claims), expiry);
     }
 
+    // @find: issue service token, internal token, service to service token
     /**
      * A short-lived token for one service calling another.
      *
@@ -189,6 +194,7 @@ public class TokenService {
         return new IssuedToken(sign(claims), expiry);
     }
 
+    // @find: generate refresh token
     /**
      * A refresh token, returned once and stored only as a hash.
      *
@@ -202,6 +208,7 @@ public class TokenService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    // @find: hash refresh token
     /** SHA-256 of a refresh token. Fast by design: the token is already high-entropy random. */
     public String hashRefreshToken(String token) {
         try {
@@ -213,6 +220,7 @@ public class TokenService {
         }
     }
 
+    // @find: jwks key set, public keys
     /**
      * The public key set every other service fetches to verify tokens.
      *
@@ -253,6 +261,7 @@ public class TokenService {
         return keys;
     }
 
+    // @find: active key id, kid
     public String activeKeyId() {
         return activeKey.get().getKeyID();
     }
@@ -273,6 +282,7 @@ public class TokenService {
         }
     }
 
+    // @find: read PEM key, derive public key
     /**
      * The signing JWK for a configured private key.
      *

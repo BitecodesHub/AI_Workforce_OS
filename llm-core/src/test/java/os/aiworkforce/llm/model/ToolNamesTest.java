@@ -1,3 +1,5 @@
+// @find: tests for tool names, wire names, server__tool conversion, ToolNames
+// @what: Checks tool names convert to and from the provider form.
 package os.aiworkforce.llm.model;
 
 import static org.assertj.core.api.Assertions.assertThat;

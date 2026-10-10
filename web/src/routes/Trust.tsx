@@ -1,3 +1,6 @@
+// @find: trust, technical details, security, how it works under the hood, architecture, audit, privacy, /trust, Trust page
+// @what: The public Technical details page for people who want the engineering facts.
+// @flow: Routed from App.tsx at /trust; shares landing styles and LandingRoot with Landing.tsx
 import type { ReactElement } from 'react'
 import '../styles/landing/index.css'
 import { Eyebrow } from '../components/ui'
@@ -30,6 +33,7 @@ const TRUST_SECTIONS: readonly BarSection[] = [
   { id: 'limits', label: 'Limits' },
 ]
 
+// @find: Trust component, technical details page, /trust
 export function Trust(): ReactElement {
   return (
     <LandingRoot>

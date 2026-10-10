@@ -1,3 +1,5 @@
+// @find: tests for agent memory tool, agent memory, memory.remember, memory.recall, notes, long-term memory
+// @what: Unit and integration tests (6 cases) for agent memory tool, for example: reads aremember call; reads arecall call and clamps the limit; recalled notes are wrapped and cannot close their own tag; sayings for the model.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,5 +55,16 @@ class AgentMemoryToolTest {
         assertThat(AgentMemoryTool.isMemoryTool("memory.remember")).isTrue();
         assertThat(AgentMemoryTool.isMemoryTool("memory.recall")).isTrue();
         assertThat(AgentMemoryTool.isMemoryTool("gmail.send_message")).isFalse();
+    }
+
+    @Test
+    void aKeptNoteTellsTheModelToConfirmAndFinishWhenThatWasTheWholeRequest() {
+        // Seen live: Research kept "Our main competitor is CareCo", then asked which market and
+        // period a report should cover, though no report was asked for.
+        String kept = AgentMemoryTool.rememberedText(new MemoryClient.Remembered(null, true, null, false));
+        String again = AgentMemoryTool.rememberedText(new MemoryClient.Remembered(null, false, null, false));
+
+        assertThat(kept).startsWith("Kept.").contains("confirm it in one short sentence and finish");
+        assertThat(again).startsWith("Already in your memory.").contains("finish");
     }
 }

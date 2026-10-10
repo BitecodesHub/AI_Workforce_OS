@@ -1,3 +1,6 @@
+// @find: roving tabindex, keyboard navigation, arrow keys list, accessible list, focus list item
+// @what: Roving-tabindex keyboard navigation for a vertical list.
+// @flow: Used by ChatSidebar and MessageList.
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useState } from 'react'
 
@@ -8,6 +11,7 @@ import { useState } from 'react'
  * other row) - this hook only tracks which id that is and reacts to the keys.
  */
 
+// @find: nextRovingId, next roving id, roving tabindex, keyboard navigation, arrow keys list, accessible list
 /** Where the roving focus moves to for one of the four navigation keys, or null for an empty list. */
 export function nextRovingId(
   ids: readonly string[],
@@ -37,6 +41,7 @@ export type RovingList = {
   onKeyDown: (event: ReactKeyboardEvent) => void
 }
 
+// @find: useRovingList, use roving list, roving tabindex, keyboard navigation, arrow keys list, accessible list
 /**
  * `ids` in the order they are rendered. The active id defaults to the first one, and is adjusted
  * during render (the "previous value" pattern, 0.2) whenever the list's own ids change so it never

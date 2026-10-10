@@ -1,3 +1,5 @@
+// @find: tests for ready-made assistants, agent templates, TEMPLATES, templateFor, connectPrompts, AgentTemplates.java drift check, landing page examples
+// @what: Unit tests that keep the template copy in step with AgentTemplates.java and the home page.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'

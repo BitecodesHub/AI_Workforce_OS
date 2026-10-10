@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, text extraction, extract text from file, PDF, Word docx, Excel, PowerPoint, CSV, plain text, scanned PDF, skip reason, content hash sha256, page count, max characters, file types supported, upload parsing, TextExtractor
+// @what: Turns an uploaded file's bytes into plain text, reporting media type, page count, hash and why a file was skipped.
+// @flow: Called by IngestionService.ingest and InternalExtractController (chat attachments).
 package os.aiworkforce.knowledge.service;
 
 import java.io.ByteArrayInputStream;
@@ -106,6 +109,7 @@ public class TextExtractor {
         }
     }
 
+    // @find: extract text from uploaded file, read PDF docx xlsx pptx, unsupported file skipped
     public Extraction extract(byte[] content, String filename) {
         String hash = sha256(content);
 
@@ -275,6 +279,7 @@ public class TextExtractor {
                 .strip();
     }
 
+    // @find: content hash, detect unchanged file on re-upload
     /** Identifies the exact bytes, so an unchanged file is skipped rather than re-embedded. */
     public static String sha256(byte[] content) {
         try {

@@ -1,3 +1,6 @@
+// @find: in view, on screen, intersection observer, scroll visible, lazy start, useInView hook
+// @what: React hook that reports whether an element is on screen.
+// @flow: Used by landing demos to start when scrolled to
 import { useCallback, useState } from 'react'
 import type { RefCallback } from 'react'
 
@@ -11,6 +14,7 @@ import type { RefCallback } from 'react'
 
 export type InViewOptions = { threshold?: number; rootMargin?: string; once?: boolean }
 
+// @find: useInView hook, element visible on screen
 export function useInView<T extends Element>(
   options?: InViewOptions,
 ): { ref: RefCallback<T>; inView: boolean } {

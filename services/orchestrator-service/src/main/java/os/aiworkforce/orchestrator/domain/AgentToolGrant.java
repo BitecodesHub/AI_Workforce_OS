@@ -1,3 +1,9 @@
+// @find: agent tool grant, tool permissions, what an agent may use, allowed tools, scopes, require approval, max calls per run, least privilege, grant tool server to agent, agent_tool_grants, Tools tab, AgentToolGrant
+// @what: Entity recording which tool server and tools one agent may use, with scopes, approval gate and per-run call ceiling.
+// @flow: Read from ToolGrants repository when a run builds its tool list.
+// @find: agent tool grant, tool permissions, what an agent may use, allowed tools, scopes, require approval, max calls per run, least privilege, grant tool server to agent, agent_tool_grants, Tools tab, AgentToolGrant
+// @what: Entity recording which tool server and tools one agent may use, with scopes, approval gate and per-run call ceiling.
+// @flow: Read from ToolGrants repository when a run builds its tool list.
 package os.aiworkforce.orchestrator.domain;
 
 import java.util.List;

@@ -1,3 +1,9 @@
+// @find: workspace model availability, model set aside, out of credit, quota, model not found, per workspace model cooldown, workspace_model_availability, WorkspaceModelAvailability
+// @what: Entity for a model one workspace has set aside because its own account cannot use it.
+// @flow: Written only by upsert in WorkspaceModelAvailabilities; read by the provider registry.
+// @find: workspace model availability, model set aside, out of credit, quota, model not found, per workspace model cooldown, workspace_model_availability, WorkspaceModelAvailability
+// @what: Entity for a model one workspace has set aside because its own account cannot use it.
+// @flow: Written only by upsert in WorkspaceModelAvailabilities; read by the provider registry.
 package os.aiworkforce.orchestrator.domain;
 
 import java.io.Serializable;

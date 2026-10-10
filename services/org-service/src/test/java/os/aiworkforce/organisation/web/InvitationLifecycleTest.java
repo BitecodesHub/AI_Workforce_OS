@@ -1,3 +1,6 @@
+// @find: tests for invitations, create invitation, resend, revoke, accept, expired invitation, role grant check, existing member refused, invite beyond own role
+// @what: Tests the invitation lifecycle end to end, including grant checks and refusal messages.
+// @flow: Exercises InvitationController and InvitationService with a stubbed identity-service.
 package os.aiworkforce.organisation.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -258,6 +261,21 @@ class InvitationLifecycleTest {
                 .andExpect(jsonPath("$.code").value("permission_denied"))
                 .andExpect(jsonPath("$.errors.reason").value("exceeds_grantor"));
         assertThat(rows).isEmpty();
+    }
+
+    @Test
+    @DisplayName("an address that already belongs to an active member is refused on the email field, nothing stored")
+    void existingMemberRefused() throws Exception {
+        checkGrantAnswer = "{\"allowed\":false,\"reason\":\"already_member\"}";
+        signInAsInviter(Permission.Codes.MEMBER_INVITE);
+
+        invite("Viewer@Example.test", "employee")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors.field").value("email"));
+        assertThat(rows).isEmpty();
+        // The address is sent, normalised, so identity can tell.
+        assertThat(identityBodies.get("/internal/memberships/check-grant").get("email").asText())
+                .isEqualTo("viewer@example.test");
     }
 
     @Test

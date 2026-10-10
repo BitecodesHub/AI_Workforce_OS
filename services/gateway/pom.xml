@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- @find: gateway pom, gateway maven build, gateway dependencies, spring cloud gateway, webflux, oauth2 resource server, redis reactive, resilience4j, springdoc, openapi, api gateway module -->
+<!-- @what: Maven build file for the reactive gateway service, the single edge in front of the seven business services. -->
+<!-- @flow: Inherits the root pom; depends on platform-core, not platform-web, because the gateway is reactive. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

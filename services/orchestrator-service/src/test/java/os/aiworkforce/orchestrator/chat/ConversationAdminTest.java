@@ -1,3 +1,6 @@
+// @find: tests for conversation admin, chat, rename allowed for creator, rename allowed for workspace update, rename refused for others, pin archive and read call the upserts, no human cannot pin but read is quiet, delete with someone elses active work is409 and stops nothing, delete by cancel holder stops others work, delete cancels detaches and deletes, ConversationAdminTest, ConversationAdmin
+// @what: Tests for ConversationAdmin in the orchestrator chat package (10 test methods).
+// @flow: Exercises ConversationAdmin
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,6 +110,7 @@ class ConversationAdminTest {
         return Actor.user(id.toString(), ORG.toString(), "role", Set.of(permissions), 0L);
     }
 
+    // @find: test rename allowed for creator, conversation admin
     @Test
     @DisplayName("the creator may rename a conversation")
     void renameAllowedForCreator() {
@@ -117,6 +121,7 @@ class ConversationAdminTest {
         assertThat(conversation.getTitle()).isEqualTo("New title");
     }
 
+    // @find: test rename allowed for workspace update, conversation admin
     @Test
     @DisplayName("a holder of workspace:update may rename a conversation")
     void renameAllowedForWorkspaceUpdate() {
@@ -127,6 +132,7 @@ class ConversationAdminTest {
         assertThat(conversation.getTitle()).isEqualTo("New title");
     }
 
+    // @find: test rename refused for others, conversation admin
     @Test
     @DisplayName("anyone else is refused with a sentence explaining why")
     void renameRefusedForOthers() {
@@ -136,6 +142,7 @@ class ConversationAdminTest {
                         ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.PERMISSION_DENIED));
     }
 
+    // @find: test pin archive and read call the upserts, conversation admin
     @Test
     @DisplayName("pin, archive and read call the upserts, and a double pin is harmless")
     void pinArchiveAndReadCallTheUpserts() {
@@ -162,6 +169,7 @@ class ConversationAdminTest {
         verify(marks).upsertRead(any(), eq(ORG), eq(conversation.getId()), eq(creatorId), eq(5));
     }
 
+    // @find: test no human cannot pin but read is quiet, conversation admin
     @Test
     @DisplayName("a caller with no person behind them cannot pin, but marking read is a quiet no-op")
     void noHumanCannotPinButReadIsQuiet() {
@@ -174,6 +182,7 @@ class ConversationAdminTest {
         verify(marks, never()).upsertRead(any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
     }
 
+    // @find: test delete with someone elses active work is409 and stops nothing, conversation admin
     @Test
     @DisplayName("deleting with someone else's active work is a conflict, and stops nothing")
     void deleteWithSomeoneElsesActiveWorkIs409AndStopsNothing() {
@@ -189,6 +198,7 @@ class ConversationAdminTest {
         verify(conversations, never()).delete(any());
     }
 
+    // @find: test delete by cancel holder stops others work, conversation admin
     @Test
     @DisplayName("a task:cancel holder can delete a conversation and stop someone else's active work")
     void deleteByCancelHolderStopsOthersWork() {
@@ -205,6 +215,7 @@ class ConversationAdminTest {
         verify(conversations).delete(conversation);
     }
 
+    // @find: test delete cancels detaches and deletes, conversation admin
     @Test
     @DisplayName("delete cancels active goals, detaches them, then deletes the row read fresh under a lock")
     void deleteCancelsDetachesAndDeletes() {
@@ -219,6 +230,7 @@ class ConversationAdminTest {
         verify(conversations).delete(conversation);
     }
 
+    // @find: test delete after notice bumped the version still succeeds, conversation admin
     @Test
     @DisplayName("a version bumped by a cancel's notice between the first read and the lock is not a problem")
     void deleteAfterNoticeBumpedTheVersionStillSucceeds() {
@@ -230,6 +242,7 @@ class ConversationAdminTest {
         verify(conversations).delete(conversation);
     }
 
+    // @find: test delete of aconversation already gone is204, conversation admin
     @Test
     @DisplayName("deleting a conversation that is already gone returns quietly")
     void deleteOfAConversationAlreadyGoneIs204() {

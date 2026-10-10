@@ -1,3 +1,6 @@
+// @find: retention, data retention, how long runs are kept, run detail days, purge, nightly purge, privacy, delete old steps, retention setting
+// @what: Defines how long run detail is kept per workspace and runs the nightly purge that enforces it.
+// @flow: Called by MaintenanceScheduler and RetentionController; uses RetentionStore
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Clock;
@@ -100,6 +103,7 @@ public class RetentionService {
         }
     }
 
+    // @find: get retention days
     /** How many days this workspace keeps run detail: its own setting, or the default. */
     public int runDetailDays(UUID orgId) {
         if (config == null) {
@@ -119,6 +123,7 @@ public class RetentionService {
         }
     }
 
+    // @find: set retention days
     /**
      * Sets how many days this workspace keeps run detail.
      *
@@ -137,6 +142,7 @@ public class RetentionService {
         return RUN_DETAIL_DAYS.maximum().intValue();
     }
 
+    // @find: run purge, delete old run detail
     /**
      * Runs one night's purge, unless another instance is already running it.
      *

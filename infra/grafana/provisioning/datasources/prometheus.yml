@@ -1,3 +1,6 @@
+# @find: grafana, datasource, prometheus datasource, monitoring, metrics source, observability
+# @what: Registers Prometheus as the default Grafana data source.
+# @flow: Read by Grafana at startup; Prometheus is configured in infra/prometheus/prometheus.yml
 apiVersion: 1
 datasources:
   - name: Prometheus

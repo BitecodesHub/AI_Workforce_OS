@@ -1,3 +1,6 @@
+// @find: notification settings, webhook url, notify on approval, test webhook, /api/orchestrator/notification-settings, Notifications settings page
+// @what: REST endpoints to read, change and test the workspace's outbound webhook notifications.
+// @flow: Delegates to NotificationService
 package os.aiworkforce.orchestrator.web;
 
 import java.util.LinkedHashMap;
@@ -73,6 +76,7 @@ public class NotificationSettingsController {
             new EventOption(NotificationService.APPROVAL_EXPIRED, "An approval expired before anybody decided it"),
             new EventOption(NotificationService.SCHEDULE_PAUSED, "A schedule paused itself after repeated failures"));
 
+    // @find: get notification settings, GET /api/orchestrator/notification-settings
     @GetMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
     @Operation(summary = "Where this workspace is told that something is waiting")
@@ -80,6 +84,7 @@ public class NotificationSettingsController {
         return view(notifications.settings(orgId()));
     }
 
+    // @find: update notification settings, PUT /api/orchestrator/notification-settings
     @PutMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
     @Operation(summary = "Set the webhook, its secret and the events it hears")
@@ -99,6 +104,7 @@ public class NotificationSettingsController {
         return view(saved);
     }
 
+    // @find: send test notification, POST .../notification-settings/test
     @PostMapping("/test")
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
     @Operation(summary = "Send a test message to the saved webhook and say how it went")

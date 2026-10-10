@@ -1,3 +1,6 @@
+// @find: jpa auditing, created by, created date, auditing config, auditor aware
+// @what: Switches on JPA auditing so created-by and created-at are filled in on insert.
+// @flow: Uses the actor from RequestContext
 package os.aiworkforce.platform.web.persistence;
 
 import java.util.Optional;

@@ -1,0 +1,161 @@
+# @find: deploy, aws deployment, continuous deployment, ecr push, oidc, configure-aws-credentials, ssm send-command, smoke test, ap-southeast-2, AWS_DEPLOY_ROLE_ARN, AIWOS_INSTANCE_ID
+# @what: On every push to main: runs CI, builds the images, pushes them to ECR with the commit SHA, rolls the EC2 server forward over SSM and smoke-tests the live address.
+# @flow: Calls ci.yml; assumes the role and reaches the instance created by infra/aws/cloudformation.yaml; runs infra/aws/aiwos.sh deploy on the server
+#
+# AWS credentials are short-lived, from GitHub's OIDC token: no AWS keys are stored in GitHub. The
+# role trusts only this repository's main branch (see DeployRole in cloudformation.yaml), so this
+# workflow uses no GitHub "environment", which would change the token's subject and be refused.
+#
+# Repository variables (Settings > Secrets and variables > Actions > Variables):
+#   AWS_DEPLOY_ROLE_ARN  the stack's DeployRoleArn output
+#   AIWOS_INSTANCE_ID    the stack's InstanceId output
+# Until both are set, the AWS jobs are skipped and only CI runs.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, in push order; a running deploy is never cancelled half-way.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-2
+
+jobs:
+  ci:
+    name: Build and test
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    name: Build and push images
+    needs: ci
+    if: vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AIWOS_INSTANCE_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: aiwos-images-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sign in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # The same Dockerfiles and compose file the server runs. The secrets the compose file
+      # requires are only interpolated, never built into an image, so placeholders do here.
+      - name: Build the images
+        env:
+          AIWOS_IMAGE_PREFIX: ${{ steps.ecr.outputs.registry }}/aiwos
+          AIWOS_IMAGE_TAG: ${{ github.sha }}
+          AIWOS_DB_PASSWORD: build-only
+          AIWOS_ENCRYPTION_MASTER_KEY: build-only
+          AIWOS_SECURITY_DEVELOPMENT_SECRET: build-only
+          AIWOS_SECURITY_INTERNAL_SERVICE_SECRET: build-only
+          AIWOS_PUBLIC_HOST: build.invalid
+          AIWOS_PUBLIC_BASE_URL: https://build.invalid
+        run: docker compose -f infra/aws/docker-compose.prod.yml --profile gateway build
+
+      - name: Push to ECR, tagged with the commit and as latest
+        env:
+          PREFIX: ${{ steps.ecr.outputs.registry }}/aiwos
+          TAG: ${{ github.sha }}
+        run: |
+          for image in identity-service org-service orchestrator-service memory-service knowledge-service \
+            integrations-service analytics-service gateway web; do
+            docker push --quiet "$PREFIX/$image:$TAG"
+            docker tag "$PREFIX/$image:$TAG" "$PREFIX/$image:latest"
+            docker push --quiet "$PREFIX/$image:latest"
+          done
+
+  deploy:
+    name: Roll out and smoke test
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Sign in to AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: aiwos-deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy on the server over SSM
+        id: rollout
+        env:
+          INSTANCE_ID: ${{ vars.AIWOS_INSTANCE_ID }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          commands="$(jq -nc --arg sha "$SHA" '{commands: [
+            "set -euo pipefail",
+            "git -C /opt/aiwos/repo fetch --quiet origin main",
+            ("git -C /opt/aiwos/repo checkout --quiet --force " + $sha),
+            ("bash /opt/aiwos/repo/infra/aws/aiwos.sh deploy " + $sha)
+          ]}')"
+          command_id="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy ${SHA:0:12}" \
+            --timeout-seconds 2400 \
+            --parameters "$commands" \
+            --query Command.CommandId --output text)"
+          echo "SSM command $command_id"
+
+          status=Pending
+          for _ in $(seq 1 160); do
+            sleep 15
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)"
+            case "$status" in
+              Pending | InProgress | Delayed) echo "Still deploying ($status)" ;;
+              *) break ;;
+            esac
+          done
+
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text | tee rollout.log
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text | tail -n 50 >&2 || true
+          if [ "$status" != "Success" ]; then
+            echo "::error::Deploy on the server ended with $status. Roll back with: sudo aiwos rollback (in Session Manager)."
+            exit 1
+          fi
+          url="$(grep -o 'AIWOS_URL=https://[^[:space:]]*' rollout.log | tail -n 1 | cut -d= -f2-)"
+          if [ -z "$url" ]; then
+            echo "::error::The server did not report its address."
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test the live address
+        env:
+          URL: ${{ steps.rollout.outputs.url }}
+        run: |
+          set -euo pipefail
+          # Identity is up and answering through Caddy and nginx, over a valid certificate.
+          curl -fsS --retry 20 --retry-delay 15 --retry-all-errors --max-time 20 "$URL/.well-known/jwks.json" \
+            | grep -q '"keys"'
+          # The web client's sign-in page is served.
+          curl -fsS --retry 10 --retry-delay 10 --retry-all-errors --max-time 20 "$URL/sign-in" \
+            | grep -q '<title>AI Workforce OS</title>'
+          echo "### Deployed ${GITHUB_SHA:0:12} to $URL" >> "$GITHUB_STEP_SUMMARY"

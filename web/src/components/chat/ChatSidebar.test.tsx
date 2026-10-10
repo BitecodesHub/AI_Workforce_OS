@@ -1,7 +1,10 @@
+// @find: tests for ChatSidebar, conversation list, chat sidebar, search conversations, new conversation, Mine Everyone scope, pinned, archive conversation, rename conversation, delete conversation, needs you, Chat page
+// @what: Automated tests for ChatSidebar.
+// @flow: Run with the web test runner; covers ChatSidebar.
 import axe from 'axe-core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { createRef } from 'react'
+import { createRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Conversation, ConversationPage } from '../../lib/queries'
 import { ChatSidebar } from './ChatSidebar'
@@ -189,3 +192,35 @@ describe('ChatSidebar', () => {
     expect(header.textContent).not.toMatch(/(Cmd|Ctrl) K/)
   })
 })
+
+describe('ChatSidebar collapse focus', () => {
+  function Harness() {
+    const [variant, setVariant] = useState<'panel' | 'rail'>('panel')
+    return (
+      <ChatSidebar
+        variant={variant}
+        onExpand={() => setVariant('panel')}
+        onCollapse={() => setVariant('rail')}
+        selectedId={null}
+        onSelect={() => {}}
+        onNew={() => {}}
+        searchRef={createRef()}
+        focusSection={null}
+      />
+    )
+  }
+
+  it('moves focus to the button that replaces the one pressed, so it is never left on the page', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Hide conversations' }))
+    expect(screen.getByRole('button', { name: 'Show conversations' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Show conversations' }))
+    expect(screen.getByRole('button', { name: 'Hide conversations' })).toHaveFocus()
+  })
+})
+

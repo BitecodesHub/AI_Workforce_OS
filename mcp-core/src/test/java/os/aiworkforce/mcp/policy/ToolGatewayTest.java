@@ -1,3 +1,5 @@
+// @find: tests for tool gateway, approvals policy, grant check, scope check, approval gate cannot be disabled, rate limit, per run call limit, circuit breaker, indeterminate timeout, audit, agent cannot send without approval
+// @what: Asserts the governance path: grants, scopes, approval gate, rate limits and unknown outcomes.
 package os.aiworkforce.mcp.policy;
 
 import static org.assertj.core.api.Assertions.assertThat;

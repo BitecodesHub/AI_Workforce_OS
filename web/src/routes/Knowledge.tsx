@@ -1,3 +1,6 @@
+// @find: knowledge, knowledge base, documents, sources, add source, upload files, create source, list sources, restricted source, search knowledge, ask documents, passages, meaning based search, keyword search, RAG, /knowledge, Knowledge page
+// @what: The Knowledge page: lists knowledge sources, lets people add one, and search across everything they may read.
+// @flow: Routed from App.tsx at /knowledge; each source opens SourceDetail.tsx; calls the knowledge service via lib/queries
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
@@ -18,6 +21,7 @@ import {
 } from '../components/ui'
 import type { Column } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
+import { EmbeddingSettingsCard } from '../components/knowledge/EmbeddingSettingsCard'
 import { KnowledgeSearch } from '../components/knowledge/KnowledgeSearch'
 import { ApiError, describeApiError } from '../lib/api'
 import { formatCount, nameList, truncateWords } from '../lib/format'
@@ -140,6 +144,7 @@ const COLUMNS: Column<Source>[] = [
   },
 ]
 
+// @find: Knowledge component, knowledge page, create knowledge source, POST /api/sources, search all sources, /knowledge
 export function Knowledge() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [name, setName] = useState('')
@@ -272,6 +277,10 @@ export function Knowledge() {
                     caption="Knowledge sources and the state of their most recent indexing."
                   />
                 </Card>
+              </section>
+
+              <section style={{ marginTop: 'var(--space-7)' }}>
+                <EmbeddingSettingsCard />
               </section>
 
               {canQuery && totalDocuments > 0 && (

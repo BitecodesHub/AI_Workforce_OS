@@ -1,3 +1,6 @@
+// @find: markdown, render markdown, chat message formatting, citations, source links, code block, safe rendering, Markdown component
+// @what: Renders the safe parsed markdown tree as React elements, with optional clickable citations.
+// @flow: Used by Chat and run output; parses with lib/markdown.
 import type { CSSProperties, ReactNode } from 'react'
 import { createContext, useContext, useMemo } from 'react'
 import type { MdAlign, MdBlock, MdInline, MdListItem } from '../../lib/markdown'
@@ -178,6 +181,7 @@ function Blocks({ blocks }: { blocks: MdBlock[] }) {
   )
 }
 
+// @find: markdown renderer, citations, code blocks
 export function Markdown({
   text,
   className,

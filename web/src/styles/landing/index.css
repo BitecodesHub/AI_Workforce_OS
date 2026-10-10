@@ -1,3 +1,8 @@
+/*
+ * @find: landing styles index, imports landing css, public home page styles
+ * @what: Imports every landing stylesheet in order.
+ * @flow: Imported by Landing.tsx and Trust.tsx
+ */
 @import './base.css';
 @import './hero.css';
 @import './agent-run.css';

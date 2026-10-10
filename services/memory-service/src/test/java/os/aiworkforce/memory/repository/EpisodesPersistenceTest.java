@@ -1,3 +1,5 @@
+// @find: tests for episodes persistence, search query, workspace scope, agent filter, real postgres, AIWOS_DATABASE_TESTS
+// @what: Checks the episode search query against a real PostgreSQL schema (opt-in).
 package os.aiworkforce.memory.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

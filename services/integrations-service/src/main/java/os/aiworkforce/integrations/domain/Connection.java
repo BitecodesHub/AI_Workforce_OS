@@ -1,3 +1,6 @@
+// @find: connection entity, connections table, connector connection, connected status, credential ref, encrypted token, granted scopes, requested scopes, account label, reconnect required, token expiry, last checked, connect disconnect, connectors, integrations, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: Database entity for one workspace connection to one connector, with status, encrypted credential reference, scopes and check results.
+// @flow: Stored through Connections repository; changed by ConnectorService and OAuthService
 package os.aiworkforce.integrations.domain;
 
 import java.time.Duration;
@@ -89,6 +92,7 @@ public class Connection extends OrgScopedEntity {
         return tokenExpiresAt != null && tokenExpiresAt.minus(margin).isBefore(Instant.now());
     }
 
+    // @find: mark needs reconnect, expired sign in
     /** A refresh that failed needs consent again, which is a different state from never connected. */
     public void requireReconnect(String reason) {
         this.reconnectRequired = true;
@@ -107,6 +111,7 @@ public class Connection extends OrgScopedEntity {
         this.lastError = null;
     }
 
+    // @find: connect with token, store pasted token, mark connected
     /**
      * Stores a token that its provider has just accepted.
      *
@@ -125,6 +130,7 @@ public class Connection extends OrgScopedEntity {
         this.tokenExpiresAt = null;
     }
 
+    // @find: connect with oauth, store sign-in tokens
     /**
      * Stores the tokens of a completed sign-in.
      *
@@ -146,6 +152,7 @@ public class Connection extends OrgScopedEntity {
         this.lastRefreshedAt = this.connectedAt;
     }
 
+    // @find: record refreshed oauth token
     /** Stores the tokens after a successful refresh. The account and the consent are unchanged. */
     public void recordRefresh(String encryptedCredential, Instant expiresAt) {
         this.credentialRef = encryptedCredential;
@@ -158,6 +165,7 @@ public class Connection extends OrgScopedEntity {
         }
     }
 
+    // @find: record connection test result
     /**
      * Records the result of checking the stored token again.
      *
@@ -179,6 +187,7 @@ public class Connection extends OrgScopedEntity {
         this.lastCheckedAt = Instant.now();
     }
 
+    // @find: disconnect connector, remove credential
     /** Forgets the token and returns the connector to practice data. */
     public void disconnect() {
         this.credentialRef = null;

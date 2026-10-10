@@ -1,3 +1,6 @@
+// @find: app entry, main, bootstrap, start app, render root, query client, React Query, router provider, fonts, styles import, main.tsx
+// @what: The browser entry point: loads fonts and styles, creates the data client and renders the App.
+// @flow: Renders App from App.tsx inside QueryClientProvider and RouterProvider
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

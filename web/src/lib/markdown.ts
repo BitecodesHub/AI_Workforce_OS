@@ -1,3 +1,6 @@
+// @find: markdown, parse markdown, safe markdown, render message, agent answer formatting, tables, lists, code blocks, links, no html injection, MdBlock
+// @what: A small safe Markdown parser that returns plain data trees (never HTML) for agent answers and chat messages.
+// @flow: Rendered by components/ui/Markdown.tsx
 /*
  * A small, safe subset of Markdown: enough for an agent's answer or a person's message to read
  * well, with no way for either to inject HTML.
@@ -55,6 +58,7 @@ export type MarkdownOptions = {
   citations?: number
 }
 
+// @find: parse markdown, markdown to blocks, safe rendering
 export function parseMarkdown(src: string, options: MarkdownOptions = {}): MdBlock[] {
   if (!src) return []
   if (src.length > MAX_LENGTH) return [{ type: 'paragraph', children: rawInline(src) }]

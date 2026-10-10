@@ -1,3 +1,6 @@
+// @find: demo accounts, demo login buttons, GET /api/auth/demo-accounts, sign in screen, DemoController, try demo
+// @what: Lists the demo accounts and shared password for the sign-in screen in local and test only.
+// @flow: Reads DemoDataSeeder.published.
 package os.aiworkforce.identity.web;
 
 import java.util.List;
@@ -41,6 +44,7 @@ public class DemoController {
      */
     public record DemoAccounts(List<DemoDataSeeder.DemoAccountView> accounts, String password) {}
 
+    // @find: list demo accounts, GET /api/auth/demo-accounts
     @GetMapping
     @Operation(summary = "Demo accounts available in this environment")
     public DemoAccounts list() {

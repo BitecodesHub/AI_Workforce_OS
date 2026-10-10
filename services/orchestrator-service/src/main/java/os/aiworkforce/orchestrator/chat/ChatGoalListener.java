@@ -1,3 +1,6 @@
+// @find: chat goal listener, agent answer lands in chat, task finished message, goal finished, goal cancelled, goal retried, question asked in chat, ChatGoalListener, GoalLifecycleListener, announce result in conversation
+// @what: Turns task outcomes, stops, retries and agent questions into messages in the conversation that started the work.
+// @flow: Called by LifecycleAnnouncer and TaskProgress after commits; writes through ChatAppender and starts the next queued message.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.LinkedHashMap;
@@ -47,6 +50,10 @@ public class ChatGoalListener implements GoalLifecycleListener {
     private static final int DUPLICATE_CHECK_WINDOW = 50;
 
     private final ChatAppender appender;
+
+    /** Starts the next queued message once work ends; absent only where a test builds this by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ChatQueueRunner queueRunner;
     private final ChatMessages messages;
     private final Runs runs;
     private final RunSteps steps;
@@ -63,6 +70,7 @@ public class ChatGoalListener implements GoalLifecycleListener {
         this.json = json;
     }
 
+    // @find: task finished, agent answer appears in chat, task completed or failed message
     @Override
     @Transactional
     public void onTaskFinished(Goal goal, Task task, String status) {
@@ -87,6 +95,11 @@ public class ChatGoalListener implements GoalLifecycleListener {
             // The web stops fetching a run's steps for an answer once it already knows the answer
             // came from the offline sandbox rather than a real model.
             detail.put("sandbox", runId != null && steps.existsByRunIdAndProviderId(runId, "sandbox"));
+            // A connector with no real account behind it answers from practice data. The model is
+            // told so, yet still writes "The email has been sent", so the answer carries the fact.
+            if (runId != null && steps.usedPracticeData(runId)) {
+                detail.put("practiceData", true);
+            }
             appendAs(
                     "agent",
                     goal,
@@ -126,8 +139,37 @@ public class ChatGoalListener implements GoalLifecycleListener {
         }
         // Skipped tasks are ordinary chain outcomes with nothing new to tell a person that the
         // progress card, driven off the goal itself, does not already show.
+        lookAtQueue(goal.getOrgId(), conversationId);
     }
 
+    // @find: goal finished, final summary message in chat
+    @Override
+    public void onGoalFinished(Goal goal) {
+        if (goal != null && goal.getConversationId() != null) {
+            lookAtQueue(goal.getOrgId(), goal.getConversationId());
+        }
+    }
+
+    /** Once this commits, the conversation's next waiting message may start. */
+    private void lookAtQueue(UUID orgId, UUID conversationId) {
+        if (queueRunner == null || orgId == null || conversationId == null) {
+            return;
+        }
+        ChatQueueRunner runner = queueRunner;
+        os.aiworkforce.orchestrator.service.LifecycleAnnouncer.afterCommit(
+                () -> runner.drainSoon(orgId, conversationId));
+    }
+
+    /** "Stopped. <why>", without saying it twice when the reason already starts "Stopped from the chat." */
+    static String stoppedText(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "Stopped.";
+        }
+        String why = reason.strip();
+        return why.regionMatches(true, 0, "Stopped", 0, "Stopped".length()) ? why : "Stopped. " + why;
+    }
+
+    // @find: goal cancelled, stopped work message in chat
     @Override
     @Transactional
     public void onGoalCancelled(Goal goal, String reason) {
@@ -143,9 +185,11 @@ public class ChatGoalListener implements GoalLifecycleListener {
         detail.put("goalId", goal.getId().toString());
         detail.put("event", "cancelled");
         detail.put("reason", reason);
-        appendAs("system", goal, goal.getConversationId(), null, "notice", "Stopped. " + reason, detail);
+        appendAs("system", goal, goal.getConversationId(), null, "notice", stoppedText(reason), detail);
+        lookAtQueue(goal.getOrgId(), goal.getConversationId());
     }
 
+    // @find: goal retried, retry message in chat
     @Override
     @Transactional
     public void onGoalRetried(Goal goal, Task fromTask) {
@@ -161,6 +205,7 @@ public class ChatGoalListener implements GoalLifecycleListener {
         appendAs("system", goal, goal.getConversationId(), null, "notice", content, detail);
     }
 
+    // @find: question asked, agent asks the person in chat, run question
     @Override
     @Transactional
     public void onQuestionAsked(Goal goal, Task task, RunQuestion question) {

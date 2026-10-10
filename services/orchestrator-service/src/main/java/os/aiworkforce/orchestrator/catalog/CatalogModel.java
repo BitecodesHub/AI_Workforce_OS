@@ -1,3 +1,6 @@
+// @find: catalog model, model description, tool calling, free model, model id, display name, price, CatalogModel, provider model list entry
+// @what: One model as a provider's model list describes it, reduced to what choosing a model needs.
+// @flow: Produced by ModelListParsers and stored by ModelCatalogStore.
 package os.aiworkforce.orchestrator.catalog;
 
 import java.math.BigDecimal;

@@ -1,3 +1,6 @@
+// @find: jwt actor converter, token to actor, permissions from token, org from token, roles claim, authentication
+// @what: Turns a verified token into the Actor and puts it in the request context.
+// @flow: Used by ResourceServerConfig; Actor read by PermissionInterceptor
 package os.aiworkforce.platform.web.security;
 
 import java.util.Collection;

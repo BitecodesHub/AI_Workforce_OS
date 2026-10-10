@@ -1,3 +1,6 @@
+// @find: tests for insights service queries, board, goals, tasks, runs, spend, cost per goal and waste, approvals, questions, failure reasons, InsightsServiceQueriesTest, InsightsServiceQueries
+// @what: Tests for InsightsServiceQueries in the orchestrator board package (21 test methods).
+// @flow: Exercises InsightsServiceQueries
 package os.aiworkforce.orchestrator.board;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -335,6 +338,7 @@ class InsightsServiceQueriesTest {
 
     // ---- Work done -------------------------------------------------------------------------
 
+    // @find: test goals, insights service queries
     @Test
     @DisplayName("goals are counted on the day they finished, by outcome and by where they came from")
     void goals() {
@@ -363,6 +367,7 @@ class InsightsServiceQueriesTest {
         assertThat(byDay.get("2026-10-09")).containsExactly(0, 0);
     }
 
+    // @find: test tasks, insights service queries
     @Test
     @DisplayName("task success counts finished tasks, and 'without retry' counts those that needed one run")
     void tasks() {
@@ -375,6 +380,7 @@ class InsightsServiceQueriesTest {
         assertThat(tasks.withoutRetryRate()).isEqualByComparingTo("0.75");
     }
 
+    // @find: test runs, insights service queries
     @Test
     @DisplayName("runs are counted by how they ended, with the ones still going apart and unpriced ones named")
     void runs() {
@@ -394,6 +400,7 @@ class InsightsServiceQueriesTest {
 
     // ---- Spend -----------------------------------------------------------------------------
 
+    // @find: test spend, insights service queries
     @Test
     @DisplayName("spend is summed from the usage table by day, failed attempts and embeddings included")
     void spend() {
@@ -411,6 +418,7 @@ class InsightsServiceQueriesTest {
         assertThat(spend.basis()).isEqualTo(InsightsService.BASIS);
     }
 
+    // @find: test cost per goal and waste, insights service queries
     @Test
     @DisplayName("cost per goal leaves out sandbox and unpriced goals and says how many; waste is what failed runs cost")
     void costPerGoalAndWaste() {
@@ -428,6 +436,7 @@ class InsightsServiceQueriesTest {
 
     // ---- People ----------------------------------------------------------------------------
 
+    // @find: test approvals, insights service queries
     @Test
     @DisplayName("approvals are counted by outcome, and the wait is the time to a person's decision, not to an expiry")
     void approvals() {
@@ -443,6 +452,7 @@ class InsightsServiceQueriesTest {
         assertThat(approvals.p90DecisionSeconds()).isEqualTo(3000);
     }
 
+    // @find: test questions, insights service queries
     @Test
     @DisplayName("questions are counted per 100 runs, with the median time a person took to answer")
     void questions() {
@@ -454,6 +464,7 @@ class InsightsServiceQueriesTest {
         assertThat(questions.medianAnswerSeconds()).isEqualTo(450);
     }
 
+    // @find: test failure reasons, insights service queries
     @Test
     @DisplayName("the top failure reasons are the ones that happened most, failed and abandoned runs alike")
     void failureReasons() {
@@ -466,6 +477,7 @@ class InsightsServiceQueriesTest {
 
     // ---- Against the week before -----------------------------------------------------------
 
+    // @find: test deltas, insights service queries
     @Test
     @DisplayName("each figure is compared with the same length of time before, and a change from nothing has no percentage")
     void deltas() {
@@ -492,6 +504,7 @@ class InsightsServiceQueriesTest {
         assertThat(deltas.get("medianApprovalSeconds").change()).isNull();
     }
 
+    // @find: test windows, insights service queries
     @Test
     @DisplayName("the window is the days asked for and the one before is as long and ends the same time of day")
     void windows() {
@@ -513,6 +526,7 @@ class InsightsServiceQueriesTest {
 
     // ---- Estimated value -------------------------------------------------------------------
 
+    // @find: test no value without inputs, insights service queries
     @Test
     @DisplayName("with no inputs the estimate is absent, not zero")
     void noValueWithoutInputs() {
@@ -522,6 +536,7 @@ class InsightsServiceQueriesTest {
         assertThat(alpha.hoursReturned()).isNull();
     }
 
+    // @find: test value from inputs, insights service queries
     @Test
     @DisplayName("minutes per task and an hourly rate give hours, what a person would have cost and the net, sandbox work left out")
     void valueFromInputs() {
@@ -542,6 +557,7 @@ class InsightsServiceQueriesTest {
         assertThat(week().deltas().get("hoursReturned").previous()).isEqualByComparingTo("0.50");
     }
 
+    // @find: test hours without rate, insights service queries
     @Test
     @DisplayName("minutes without a rate give the hours and leave what they are worth absent")
     void hoursWithoutRate() {
@@ -554,6 +570,7 @@ class InsightsServiceQueriesTest {
         assertThat(value.netValue()).isNull();
     }
 
+    // @find: test malformed inputs, insights service queries
     @Test
     @DisplayName("inputs that are not numbers or ids are ignored rather than failing the page")
     void malformedInputs() {
@@ -566,6 +583,7 @@ class InsightsServiceQueriesTest {
 
     // ---- Per agent -------------------------------------------------------------------------
 
+    // @find: test agent success needs five runs, insights service queries
     @Test
     @DisplayName("an agent with five finished runs has a success rate and one with fewer has none")
     void agentSuccessNeedsFiveRuns() {
@@ -592,6 +610,7 @@ class InsightsServiceQueriesTest {
         assertThat(beta.successRate()).isNull();
     }
 
+    // @find: test agent unpriced and sandbox, insights service queries
     @Test
     @DisplayName("unpriced and sandbox runs are named on the agent, never shown as free")
     void agentUnpricedAndSandbox() {
@@ -603,6 +622,7 @@ class InsightsServiceQueriesTest {
         assertThat(beta.avgCostPerCompleted()).isNull();
     }
 
+    // @find: test agent satisfaction, insights service queries
     @Test
     @DisplayName("satisfaction is thumbs up over ratings, from the ratings given in the window")
     void agentSatisfaction() {
@@ -616,6 +636,7 @@ class InsightsServiceQueriesTest {
         assertThat(row(agents, GAMMA).satisfactionRate()).isNull();
     }
 
+    // @find: test quiet agent, insights service queries
     @Test
     @DisplayName("an agent with no runs shows as quiet, with nothing to rate and no last activity")
     void quietAgent() {
@@ -627,6 +648,7 @@ class InsightsServiceQueriesTest {
         assertThat(gamma.ratings()).isZero();
     }
 
+    // @find: test agent hours, insights service queries
     @Test
     @DisplayName("hours returned per agent need that agent's own estimate, and say 'not estimated' as absent")
     void agentHours() {
@@ -642,6 +664,7 @@ class InsightsServiceQueriesTest {
 
     // ---- Isolation and emptiness -----------------------------------------------------------
 
+    // @find: test workspace isolation, insights service queries
     @Test
     @DisplayName("another workspace's rows never reach the figures, and its own show only its own")
     void workspaceIsolation() {
@@ -657,6 +680,7 @@ class InsightsServiceQueriesTest {
                 .doesNotContain("Their own failure");
     }
 
+    // @find: test empty workspace, insights service queries
     @Test
     @DisplayName("a workspace with nothing in it has zeros and absent rates, not errors or invented figures")
     void emptyWorkspace() {

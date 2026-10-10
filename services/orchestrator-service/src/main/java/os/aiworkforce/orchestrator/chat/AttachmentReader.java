@@ -1,3 +1,6 @@
+// @find: attachment reader, extract text from attachment, read PDF Word Excel file, knowledge service extract endpoint, AttachmentReader, file type detection, unreadable file reason
+// @what: Asks the knowledge service what an attached file really is and what text it contains, without indexing it.
+// @flow: Called by AttachmentService.upload; calls the knowledge service internal extract endpoint.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;

@@ -1,3 +1,6 @@
+// @find: knowledge service, knowledge base service, knowledge-service startup, Spring Boot main, KnowledgeApplication, documents sources ingestion embeddings Qdrant search
+// @what: Starts the knowledge-service Spring Boot application that owns the knowledge base (sources, documents, chunks, vector search).
+// @flow: Boots the controllers in web/, IngestionService, RetrievalService and QdrantClient.
 package os.aiworkforce.knowledge;
 
 import org.springframework.boot.SpringApplication;

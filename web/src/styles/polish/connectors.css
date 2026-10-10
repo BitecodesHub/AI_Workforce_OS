@@ -1,4 +1,9 @@
 /*
+ * @find: polish styles, connectors toolbar, search, dropdown filters, live status pill
+ * @what: Styles for the Connectors page toolbar.
+ * @flow: Used by ConnectorToolbar; imported by polish/index.css
+ */
+/*
  * The Connectors page's one-line toolbar (components/connectors/ConnectorToolbar.tsx): a search
  * that widens while it is used, two dropdowns, and a live-status pill on the right. It sticks under
  * the top of the window while the connector grid scrolls beneath it. On a narrow screen the search
@@ -245,6 +250,15 @@
 
 .cx-dot-attention {
   background: var(--warning-ink);
+}
+
+.cx-dot-builtin {
+  background: var(--blue);
+}
+
+.cx-dot-disconnected {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--muted) 70%, transparent);
 }
 
 .cx-dot-all {

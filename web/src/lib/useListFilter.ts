@@ -1,3 +1,6 @@
+// @find: list filter, search box, facets, filter chips, query string filter, ?q=, status filter, useListFilter, filtered list survives reload
+// @what: Search and facet filters for a list, kept in the URL so Back, reload and shared links keep the filter.
+// @flow: Used by list pages; reads and writes the URL via router.tsx
 import { useCallback, useMemo } from 'react'
 import { useRouter } from './router'
 
@@ -68,6 +71,7 @@ function termsOf(query: string): string[] {
   return query.toLowerCase().split(/\s+/).filter(Boolean)
 }
 
+// @find: use list filter, search and filter a table, URL query state
 export function useListFilter<T>({ rows, text, facets, queryParam = 'q' }: ListFilterOptions<T>): ListFilter<T> {
   const { search, navigate } = useRouter()
 

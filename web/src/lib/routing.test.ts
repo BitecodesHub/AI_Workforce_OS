@@ -1,3 +1,5 @@
+// @find: tests for model routing, isEmbeddingModel, credentialState, providerReadiness, liveRouting, routingSummary, turning a provider on or off, Model Routing page
+// @what: Unit tests for the routing readiness and summary rules.
 import { describe, expect, it } from 'vitest'
 import {
   credentialState,
@@ -106,19 +108,22 @@ describe('providerReadiness', () => {
       reason: 'disabled',
     })
     expect(providerReadiness(openrouter, [], NOW).reason).toBe('no_key')
-    expect(providerReadiness({ ...openrouter, credentialStatus: 'rejected' }, [openrouterKey], NOW).reason).toBe(
-      'rejected',
-    )
     expect(providerReadiness(openrouter, [{ ...openrouterKey, expiresAt: '2026-01-01T00:00:00Z' }], NOW).reason).toBe(
       'expired',
     )
   })
 
-  it('reads the circuit state in upper case', () => {
-    expect(providerReadiness({ ...openrouter, circuitState: 'OPEN' }, [openrouterKey], NOW).reason).toBe('paused')
-    expect(providerReadiness({ ...openrouter, circuitState: 'FORCED_OPEN' }, [openrouterKey], NOW).reason).toBe('paused')
-    expect(providerReadiness({ ...openrouter, circuitState: 'open' }, [openrouterKey], NOW).reason).toBe('paused')
-    expect(providerReadiness({ ...openrouter, circuitState: 'HALF_OPEN' }, [openrouterKey], NOW).ready).toBe(true)
+  it('never treats a provider as paused after failures: every run tries it again', () => {
+    for (const circuitState of ['OPEN', 'FORCED_OPEN', 'open', 'HALF_OPEN']) {
+      expect(providerReadiness({ ...openrouter, circuitState }, [openrouterKey], NOW)).toEqual({ ready: true, reason: 'ready' })
+    }
+  })
+
+  it('still tries a provider whose key was refused before; the refusal is information only', () => {
+    expect(providerReadiness({ ...openrouter, credentialStatus: 'rejected' }, [openrouterKey], NOW)).toEqual({
+      ready: true,
+      reason: 'ready',
+    })
   })
 
   it('needs no key for the sandbox', () => {
@@ -145,17 +150,17 @@ describe('liveRouting and routingSummary', () => {
 
   it('explains an unset policy', () => {
     const result = liveRouting(undefined, providers, [], NOW)
-    expect(result).toEqual({ live: false, reason: 'no_policy', blocked: [], fallsBackToSandbox: true })
+    expect(result).toEqual({ live: false, reason: 'no_policy', blocked: [], fallsBackToSandbox: false })
     expect(liveRouting({ configured: false, candidates: [] }, providers, [], NOW).reason).toBe('no_policy')
     expect(liveRouting({ configured: true, candidates: [] }, providers, [], NOW).reason).toBe('no_policy')
 
     expect(routingSummary(result, { canManage: true })).toEqual({
       tone: 'info',
-      text: 'No workspace routing policy is set, so agents without their own routing answer on the offline sandbox model.',
+      text: 'No AI model is set for the workspace, so agents without routing of their own cannot answer until one is added in Model routing.',
       linkToRouting: true,
     })
     expect(routingSummary(result, { canManage: false }).text).toBe(
-      'No workspace routing policy is set, so agents without their own routing answer on the offline sandbox model. An owner or admin can connect a live model.',
+      'No AI model is set for the workspace, so agents without routing of their own cannot answer until one is added in Model routing. An owner or admin can connect a live model.',
     )
     expect(routingSummary(result, { canManage: false }).linkToRouting).toBe(false)
   })
@@ -186,7 +191,7 @@ describe('liveRouting and routingSummary', () => {
     expect(result.fallsBackToSandbox).toBe(true)
     expect(routingSummary(result, { canManage: true })).toEqual({
       tone: 'success',
-      text: 'Runs try OpenRouter (google/gemini-2.5-flash) first, from the workspace routing policy. An agent with its own routing may use a different chain.',
+      text: 'Agents answer with a live AI model. OpenRouter (google/gemini-2.5-flash) is asked first, and the next one in Model routing takes over if it cannot answer. An agent with its own model choice may use a different one.',
       linkToRouting: false,
     })
   })
@@ -197,15 +202,15 @@ describe('liveRouting and routingSummary', () => {
         ['openrouter', 'google/gemini-2.5-flash'],
         ['groq', 'llama-3.1-8b-instant'],
       ]),
-      [sandbox, { ...openrouter, enabled: false }, { ...groq, circuitState: 'OPEN' }],
-      [groqKey],
+      [sandbox, { ...openrouter, enabled: false }, groq],
+      [{ ...groqKey, expiresAt: '2026-01-01T00:00:00Z' }],
       NOW,
     )
     expect(result.reason).toBe('none_ready')
     expect(result.fallsBackToSandbox).toBe(false)
     expect(routingSummary(result, { canManage: true })).toEqual({
       tone: 'warning',
-      text: 'OpenRouter is turned off and Groq is paused after failures, so runs fail until a provider is ready.',
+      text: 'OpenRouter is turned off and Groq is holding an expired key, so runs fail until a provider is ready.',
       linkToRouting: true,
     })
   })
@@ -237,7 +242,7 @@ describe('liveRouting and routingSummary', () => {
     )
   })
 
-  it('names a rejected key and treats a sandbox later in the chain as a fallback', () => {
+  it('still uses a provider whose key was refused before, and treats a sandbox later in the chain as a fallback', () => {
     const result = liveRouting(
       policy([
         ['openrouter', 'google/gemini-2.5-flash'],
@@ -247,10 +252,20 @@ describe('liveRouting and routingSummary', () => {
       [openrouterKey],
       NOW,
     )
-    expect(result.reason).toBe('none_ready')
+    expect(result.reason).toBe('live')
     expect(result.fallsBackToSandbox).toBe(true)
-    expect(routingSummary(result, { canManage: true }).text).toBe(
-      'OpenRouter is refusing its key, so runs fall back to the offline sandbox model.',
+
+    const noKey = liveRouting(
+      policy([
+        ['openrouter', 'google/gemini-2.5-flash'],
+        ['sandbox', 'sandbox-1'],
+      ]),
+      [sandbox, openrouter],
+      [],
+      NOW,
+    )
+    expect(routingSummary(noKey, { canManage: true }).text).toBe(
+      'OpenRouter is missing a key, so runs fall back to the offline sandbox model.',
     )
   })
 

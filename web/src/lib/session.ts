@@ -1,3 +1,6 @@
+// @find: session, sign in state, access token, profile, permissions, can, is signed in, sign out, clear session, sessionStorage, role change delay, session owner change, initials, refresh promise
+// @what: What the client knows about the signed-in session: short-lived access token in sessionStorage, profile and permissions, sign-out and cross-tab detection.
+// @flow: Used by api.ts, accountQueries.ts and every permission check (can)
 /*
  * What the client knows about the current session.
  *
@@ -169,6 +172,7 @@ export function forgetSignedInHint() {
   setSignedInHint(false)
 }
 
+// @find: save session, store access token and profile after sign in
 /** Stores a session in this tab and tells the shell, which re-reads the role and who is signed in. */
 export function saveSession(accessToken: string, profile: Profile) {
   try {
@@ -194,6 +198,7 @@ export function announceSessionChange() {
   }
 }
 
+// @find: clear session, sign out locally
 /**
  * Forgets the session in this tab and tells every other tab to forget it too. The caller moves
  * this tab on (to sign in, usually), as before; the other tabs move themselves.
@@ -233,6 +238,7 @@ function ownerOf(who: Profile | null): string | null {
   return who ? `${who.userId}/${who.workspaceId ?? ''}` : null
 }
 
+// @find: watch session owner, other tab signed out or switched account
 /**
  * Calls `onChange` when the session in this tab comes to belong to somebody else - a sign-in as
  * another person or into another workspace, a demo role switch - or when another tab signs out.
@@ -255,6 +261,7 @@ export function watchSessionOwner(onChange: (change: SessionOwnerChange) => void
   return () => window.removeEventListener(SESSION_EVENT, onSession)
 }
 
+// @find: access token, bearer token
 export function accessToken(): string | null {
   try {
     return sessionStorage.getItem(TOKEN_KEY)
@@ -263,6 +270,7 @@ export function accessToken(): string | null {
   }
 }
 
+// @find: profile, current user, workspace, roles
 export function profile(): Profile | null {
   try {
     const raw = sessionStorage.getItem(PROFILE_KEY)
@@ -272,10 +280,12 @@ export function profile(): Profile | null {
   }
 }
 
+// @find: is signed in
 export function isSignedIn(): boolean {
   return accessToken() !== null
 }
 
+// @find: can, permission check, hide button without permission
 /** Whether the signed-in account holds a permission, for hiding what it cannot do. */
 export function can(permission: string): boolean {
   return profile()?.permissions.includes(permission) ?? false

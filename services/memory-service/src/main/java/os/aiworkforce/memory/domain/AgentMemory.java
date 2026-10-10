@@ -1,3 +1,6 @@
+// @find: agent memory, agent notes, memories, note, remember, pinned memory, agent_memories table, editable note, memory kind, source
+// @what: Database entity for one note an AI employee keeps, which people can edit, pin or delete.
+// @flow: Used by AgentMemoryService; table from V2__agent_memories.sql
 package os.aiworkforce.memory.domain;
 
 import java.time.Instant;
@@ -66,6 +69,13 @@ public class AgentMemory {
     @Column(name = "updated_by")
     private String updatedBy;
 
+    /** Always recalled, and listed first; only a person pins a note. */
+    @Column(nullable = false)
+    private boolean pinned;
+
+    @Column(name = "pinned_at")
+    private Instant pinnedAt;
+
     public static AgentMemory of(UUID orgId, UUID agentId, String kind, String content, String source, String by) {
         AgentMemory memory = new AgentMemory();
         memory.orgId = orgId;
@@ -83,6 +93,20 @@ public class AgentMemory {
         this.content = content;
         this.updatedBy = by;
         this.updatedAt = Instant.now();
+    }
+
+    /** Pins or unpins the note; neither counts as changing what it says. */
+    public void pin(boolean pin) {
+        this.pinned = pin;
+        this.pinnedAt = pin ? Instant.now() : null;
+    }
+
+    public boolean isPinned() {
+        return pinned;
+    }
+
+    public Instant getPinnedAt() {
+        return pinnedAt;
     }
 
     public void touch() {

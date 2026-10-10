@@ -1,3 +1,6 @@
+// @find: tests for schedule goal listener announcement, schedule, announces the pause, below the limit is quiet, an already paused schedule is not news again, no announcer, ScheduleGoalListenerAnnouncementTest, ScheduleGoalListenerAnnouncement
+// @what: Tests for ScheduleGoalListenerAnnouncement in the orchestrator schedule package (4 test methods).
+// @flow: Exercises ScheduleGoalListenerAnnouncement
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,6 +66,7 @@ class ScheduleGoalListenerAnnouncementTest {
         return goal;
     }
 
+    // @find: test announces the pause, schedule goal listener announcement
     @Test
     @DisplayName("the third failure in a row pauses the schedule and announces it, with who it works for")
     void announcesThePause() {
@@ -80,6 +84,7 @@ class ScheduleGoalListenerAnnouncementTest {
         assertThat(schedule.isEnabled()).isFalse();
     }
 
+    // @find: test below the limit is quiet, schedule goal listener announcement
     @Test
     @DisplayName("a failure short of the limit is not announced")
     void belowTheLimitIsQuiet() {
@@ -88,6 +93,7 @@ class ScheduleGoalListenerAnnouncementTest {
         verify(announcer, never()).schedulePaused(any());
     }
 
+    // @find: test an already paused schedule is not news again, schedule goal listener announcement
     @Test
     @DisplayName("a schedule already paused that fails again, run by hand, is not announced a second time")
     void anAlreadyPausedScheduleIsNotNewsAgain() {
@@ -96,6 +102,7 @@ class ScheduleGoalListenerAnnouncementTest {
         verify(announcer, never()).schedulePaused(any());
     }
 
+    // @find: test no announcer, schedule goal listener announcement
     @Test
     @DisplayName("with no announcer to tell, the pause still happens")
     void noAnnouncer() {

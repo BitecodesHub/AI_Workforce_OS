@@ -1,3 +1,6 @@
+// @find: tests for AnswerCard, run answer, final answer, what the person asked, completed run answer, answer card, run detail
+// @what: Automated tests for AnswerCard.
+// @flow: Run with the web test runner; covers AnswerCard.
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { RunStep } from '../../lib/queries'

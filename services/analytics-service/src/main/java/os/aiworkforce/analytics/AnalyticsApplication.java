@@ -1,3 +1,5 @@
+// @find: analytics service, application entry, spring boot main, audit log service, analytics app
+// @what: Spring Boot entry point of analytics-service.
 package os.aiworkforce.analytics;
 
 import org.springframework.boot.SpringApplication;

@@ -1,3 +1,6 @@
+// @find: voice properties, elevenlabs settings, base url, model id, timeouts, voices cache, VoiceProperties, aiwos.voice
+// @what: Configuration properties for the voice feature.
+// @flow: Bound from application.yml; used by VoiceConfig and VoiceService
 package os.aiworkforce.orchestrator.voice;
 
 import java.time.Duration;

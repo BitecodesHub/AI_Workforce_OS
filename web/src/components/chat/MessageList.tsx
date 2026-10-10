@@ -1,3 +1,6 @@
+// @find: message list, chat thread, day divider, grouped messages, thread scroll, new message announce, conversation messages
+// @what: The thread itself: messages grouped by day and author.
+// @flow: Used by the Chat page; renders MessageItem.
 import { memo, useMemo } from 'react'
 import { formatDateTime } from '../../lib/format'
 import type { Agent, BoardGoal, ChatMessage, Member, RunQuestion } from '../../lib/queries'
@@ -174,6 +177,7 @@ function MessageListInner({
   )
 }
 
+// @find: MessageList, message list, message list, chat thread, day divider, grouped messages
 /**
  * Wrapped in React.memo: Chat re-renders on every poll, and a poll that changed nothing in the
  * thread hands this the same props. Chat passes the handlers through stable callbacks for this.

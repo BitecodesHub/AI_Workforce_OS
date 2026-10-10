@@ -1,3 +1,6 @@
+// @find: tests for schedule goal listener, schedule, ignores goal with no schedule, completed resets failures, failure below limit does not pause, third failure pauses, cancelled leaves streak alone, missing schedule is skipped, ScheduleGoalListenerTest, ScheduleGoalListener
+// @what: Tests for ScheduleGoalListener in the orchestrator schedule package (6 test methods).
+// @flow: Exercises ScheduleGoalListener
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,6 +51,7 @@ class ScheduleGoalListenerTest {
         return schedule;
     }
 
+    // @find: test ignores goal with no schedule, schedule goal listener
     @Test
     @DisplayName("a goal with no schedule is ignored entirely")
     void ignoresGoalWithNoSchedule() {
@@ -61,6 +65,7 @@ class ScheduleGoalListenerTest {
         verify(schedules, never()).findByIdAndOrgId(any(), any());
     }
 
+    // @find: test completed resets failures, schedule goal listener
     @Test
     @DisplayName("a completed run resets the failure streak")
     void completedResetsFailures() {
@@ -75,6 +80,7 @@ class ScheduleGoalListenerTest {
         assertThat(schedule.isEnabled()).isTrue();
     }
 
+    // @find: test failure below limit does not pause, schedule goal listener
     @Test
     @DisplayName("a failure short of the limit only counts, it does not pause")
     void failureBelowLimitDoesNotPause() {
@@ -89,6 +95,7 @@ class ScheduleGoalListenerTest {
         assertThat(schedule.getPausedReason()).isNull();
     }
 
+    // @find: test third failure pauses, schedule goal listener
     @Test
     @DisplayName("the third failure in a row pauses the schedule with an honest reason")
     void thirdFailurePauses() {
@@ -103,6 +110,7 @@ class ScheduleGoalListenerTest {
         assertThat(schedule.getPausedReason()).isEqualTo("Paused after 3 failed runs in a row.");
     }
 
+    // @find: test cancelled leaves streak alone, schedule goal listener
     @Test
     @DisplayName("a cancelled goal records the status but leaves the failure streak untouched")
     void cancelledLeavesStreakAlone() {
@@ -117,6 +125,7 @@ class ScheduleGoalListenerTest {
         assertThat(schedule.isEnabled()).isTrue();
     }
 
+    // @find: test missing schedule is skipped, schedule goal listener
     @Test
     @DisplayName("a schedule that no longer exists is simply skipped")
     void missingScheduleIsSkipped() {

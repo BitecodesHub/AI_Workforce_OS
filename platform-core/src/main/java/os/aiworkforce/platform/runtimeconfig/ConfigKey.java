@@ -1,3 +1,6 @@
+// @find: config key, runtime setting definition, operator setting, default value, setting type, change without deploy
+// @what: Describes one setting an operator can change while the platform runs.
+// @flow: Registered with RuntimeConfigService
 package os.aiworkforce.platform.runtimeconfig;
 
 import java.time.Duration;

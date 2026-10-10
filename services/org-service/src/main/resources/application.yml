@@ -1,3 +1,6 @@
+# @find: org-service config, organisation service settings, application.yml, database schema organisation, flyway, datasource, port, workspaces, invitations, credentials
+# @what: Spring configuration for org-service: its own Postgres schema, Flyway, JPA and service-specific settings.
+# @flow: Imports platform-defaults.yml for shared security, resilience and observability settings.
 # Workspaces, membership and governance policy.
 #
 # This file holds only what belongs to this service. Everything shared - security, resilience,

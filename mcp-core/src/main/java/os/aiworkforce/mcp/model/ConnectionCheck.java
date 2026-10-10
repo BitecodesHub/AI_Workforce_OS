@@ -1,3 +1,6 @@
+// @find: connection check result, test connection result, ok message account label, connection test, connected account, token accepted, connect dialog result
+// @what: Record holding the outcome of checking a stored credential against its provider.
+// @flow: Returned by McpServerAdapter.check and shown by IntegrationController test endpoint
 package os.aiworkforce.mcp.model;
 
 /**

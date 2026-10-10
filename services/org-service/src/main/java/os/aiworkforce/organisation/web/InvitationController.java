@@ -1,3 +1,6 @@
+// @find: invitation endpoints, POST /api/orgs/{orgId}/invitations, GET /api/orgs/{orgId}/invitations, DELETE invitations, POST /api/invitations/accept, accept-signed-in, invite teammate, Team page, Accept invite page, invite link
+// @what: REST endpoints for inviting, listing, revoking and accepting workspace invitations.
+// @flow: Delegates to InvitationService; the accept-invite page in the web app calls the accept endpoints.
 package os.aiworkforce.organisation.web;
 
 import java.util.List;
@@ -65,6 +68,7 @@ public class InvitationController {
 
     public record AcceptSignedInRequest(@NotBlank String token) {}
 
+    // @find: create invitation, invite member, POST /api/orgs/{orgId}/invitations
     @PostMapping("/api/orgs/{orgId}/invitations")
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.MEMBER_INVITE)
@@ -77,6 +81,7 @@ public class InvitationController {
                 orgId, UUID.fromString(actor.id()), request.email(), request.roleName(), originOf(http));
     }
 
+    // @find: list invitations, pending invites, GET /api/orgs/{orgId}/invitations
     @GetMapping("/api/orgs/{orgId}/invitations")
     @RequiresPermission(Permission.Codes.MEMBER_INVITE)
     @Operation(summary = "Invitations pending for this workspace")
@@ -85,6 +90,7 @@ public class InvitationController {
         return invitations.list(orgId);
     }
 
+    // @find: revoke invitation, withdraw invite, DELETE /api/orgs/{orgId}/invitations/{invitationId}
     @DeleteMapping("/api/orgs/{orgId}/invitations/{invitationId}")
     @RequiresPermission(Permission.Codes.MEMBER_INVITE)
     @Operation(summary = "Withdraw an invitation, so its link stops working")
@@ -93,12 +99,14 @@ public class InvitationController {
         return invitations.revoke(orgId, invitationId);
     }
 
+    // @find: accept invitation with new account, POST /api/invitations/accept
     @PostMapping("/api/invitations/accept")
     @Operation(summary = "Accept an invitation and become a member")
     public InvitationService.AcceptResult accept(@Valid @RequestBody AcceptInvitationRequest request) {
         return invitations.accept(request.token(), request.displayName(), request.password());
     }
 
+    // @find: accept invitation when signed in, POST /api/invitations/accept-signed-in
     @PostMapping("/api/invitations/accept-signed-in")
     @Operation(summary = "Accept an invitation with the account already signed in")
     public InvitationService.AcceptResult acceptSignedIn(

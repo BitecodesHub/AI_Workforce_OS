@@ -1,3 +1,9 @@
+// @find: conversation mark, pin conversation, archive conversation, unread, read position, mark as read, personal chat flags, conversation_marks, ConversationMark entity, Chat list pin archive
+// @what: Entity for one person's own pin, archive and read position on a shared conversation.
+// @flow: Written by native upserts in ConversationMarks; read by the chat list.
+// @find: conversation mark, pin conversation, archive conversation, unread, read position, mark as read, personal chat flags, conversation_marks, ConversationMark entity, Chat list pin archive
+// @what: Entity for one person's own pin, archive and read position on a shared conversation.
+// @flow: Written by native upserts in ConversationMarks; read by the chat list.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;

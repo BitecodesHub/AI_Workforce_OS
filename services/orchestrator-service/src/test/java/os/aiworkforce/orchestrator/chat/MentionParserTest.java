@@ -1,3 +1,6 @@
+// @find: tests for mention parser, chat, matches key, matches camel case name, matches hyphenated name, matches two word name, leaves unknown token alone, collects several mentions in order, empty inputs match nothing, MentionParserTest, MentionParser
+// @what: Tests for MentionParser in the orchestrator chat package (7 test methods).
+// @flow: Exercises MentionParser
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +28,7 @@ class MentionParserTest {
     private final Agent research = agent("research", "Research");
     private final List<Agent> agents = List.of(support, hr, research);
 
+    // @find: test matches key, mention parser
     @Test
     @DisplayName("matches a key written as a single word")
     void matchesKey() {
@@ -34,6 +38,7 @@ class MentionParserTest {
         assertThat(result.text()).isEqualTo("onboard the new starter");
     }
 
+    // @find: test matches camel case name, mention parser
     @Test
     @DisplayName("matches a two-word name written with no space")
     void matchesCamelCaseName() {
@@ -43,6 +48,7 @@ class MentionParserTest {
         assertThat(result.text()).isEqualTo("please reply");
     }
 
+    // @find: test matches hyphenated name, mention parser
     @Test
     @DisplayName("matches a two-word name written with a hyphen")
     void matchesHyphenatedName() {
@@ -51,6 +57,7 @@ class MentionParserTest {
         assertThat(result.agents()).containsExactly(support);
     }
 
+    // @find: test matches two word name, mention parser
     @Test
     @DisplayName("matches a two-word name written as two words followed by a space")
     void matchesTwoWordName() {
@@ -60,6 +67,7 @@ class MentionParserTest {
         assertThat(result.text()).isEqualTo("please reply to Jordan");
     }
 
+    // @find: test leaves unknown token alone, mention parser
     @Test
     @DisplayName("leaves an unrecognised token as ordinary text")
     void leavesUnknownTokenAlone() {
@@ -69,6 +77,7 @@ class MentionParserTest {
         assertThat(result.text()).isEqualTo("email jordan@example.com about the invoice");
     }
 
+    // @find: test collects several mentions in order, mention parser
     @Test
     @DisplayName("collects several mentions in the order written, without duplicates")
     void collectsSeveralMentionsInOrder() {
@@ -78,6 +87,7 @@ class MentionParserTest {
         assertThat(result.agents()).containsExactly(research, support);
     }
 
+    // @find: test empty inputs match nothing, mention parser
     @Test
     @DisplayName("an empty message or an empty agent list matches nothing")
     void emptyInputsMatchNothing() {

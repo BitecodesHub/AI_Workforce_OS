@@ -1,3 +1,6 @@
+// @find: tests for markdown rendering, unsafe link, javascript url, html injection, citations, Markdown
+// @what: Rendering tests that unsafe links and raw HTML never become live elements.
+// @flow: Covers Markdown.tsx.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Markdown } from './Markdown'

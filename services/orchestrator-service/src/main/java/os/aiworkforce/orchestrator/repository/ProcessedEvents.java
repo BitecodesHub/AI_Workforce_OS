@@ -1,3 +1,9 @@
+// @find: processed events repository, event dedupe, delete old processed events, cleanup, ProcessedEvents
+// @what: Spring Data repository for ProcessedEvent rows with a cleanup query.
+// @flow: Used by event listeners and a cleanup job.
+// @find: processed events repository, event dedupe, delete old processed events, cleanup, ProcessedEvents
+// @what: Spring Data repository for ProcessedEvent rows with a cleanup query.
+// @flow: Used by event listeners and a cleanup job.
 package os.aiworkforce.orchestrator.repository;
 
 import java.time.Instant;
@@ -17,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 public interface ProcessedEvents extends JpaRepository<ProcessedEvent, String> {
 
+    // @find: delete old processed events, cleanup job
+    // @find: delete old processed events, cleanup job
     /**
      * Removes records older than the idempotency window, so the table does not grow forever.
      *

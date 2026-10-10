@@ -1,3 +1,6 @@
+// @find: run answer, final answer, what the person asked, completed run answer, answer card, run detail
+// @what: Shows what a completed run answered and what was asked.
+// @flow: Used by RunDetail; uses traceModel.
 import { Card, Eyebrow, Tag } from '../ui'
 import { Markdown } from '../ui/Markdown'
 import { truncateWords } from '../../lib/format'
@@ -28,6 +31,7 @@ function askedText(instruction: string): string {
   return text.trim()
 }
 
+// @find: AnswerCard, answer card, run answer, final answer, what the person asked, completed run answer
 /** What a completed run answered: the last model reply with text (see answerStep in traceModel). */
 export function AnswerCard({ step, instruction }: { step: RunStep; instruction: string | null }) {
   const sandbox = isSandboxStep(step)

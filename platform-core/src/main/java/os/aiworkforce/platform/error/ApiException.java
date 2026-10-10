@@ -1,3 +1,6 @@
+// @find: api exception, deliberate error, throw error, error code, http status, problem response
+// @what: The one exception type services throw on purpose, carrying an ErrorCode.
+// @flow: Thrown by services; converted by GlobalExceptionHandler
 package os.aiworkforce.platform.error;
 
 import java.time.Duration;

@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, citable chunk, citation, passage projection, search result row, grounding, CitableChunk
+// @what: Read-only projection of a passage with the document and source names needed to cite it.
+// @flow: Returned by Chunks queries; turned into RetrievalService.Passage.
 package os.aiworkforce.knowledge.repository;
 
 import java.util.UUID;

@@ -1,3 +1,6 @@
+// @find: accept invitation, join workspace, invite link, accept invite, set password, new account, existing account, sign up with invite, /accept-invite, AcceptInvite, Join the workspace page
+// @what: The signed-out page where an invited person joins a workspace by opening their invitation link, creating an account or signing in.
+// @flow: Routed from App.tsx at /accept-invite; uses AuthShell and the invitation API in lib/queries
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Eyebrow, Input, Notice, PasswordInput } from '../components/ui'
@@ -45,7 +48,23 @@ const FIELD_IDS = {
 
 const SIGN_IN_ID = 'invite-sign-in'
 
+const ERROR_ID = 'invite-error'
+
 type FieldName = keyof typeof FIELD_IDS
+
+/**
+ * Why a link can no longer be used, when the platform said so: an unknown token (404), or an
+ * invitation that was withdrawn, has expired or was already used. The form is pointless then, so
+ * the page says what happened and what to do instead of offering it again.
+ */
+type ClosedReason = 'invalid' | 'revoked' | 'expired' | 'accepted'
+
+function closedReason(thrown: unknown): ClosedReason | null {
+  if (!(thrown instanceof ApiError)) return null
+  if (thrown.status === 404) return 'invalid'
+  const reason = thrown.fields.reason
+  return reason === 'revoked' || reason === 'expired' || reason === 'accepted' ? reason : null
+}
 
 /** A failure in words the invitee can act on. The platform's own sentence is kept where it has one. */
 function acceptErrorMessage(thrown: unknown): string {
@@ -80,6 +99,7 @@ function takeAcceptIntent(token: string): boolean {
   }
 }
 
+// @find: AcceptInvite component, accept invitation, join workspace, /accept-invite, invitation link page
 export function AcceptInvite() {
   const { search, navigate } = useRouter()
   const token = search.get('token') ?? ''
@@ -94,12 +114,21 @@ export function AcceptInvite() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Focus moves to a failure once it is on screen. A frame after setError was not enough: when
+  // React had not committed by then, there was nothing to focus and focus stayed on the page.
+  const [errorFocus, setErrorFocus] = useState(0)
+  useEffect(() => {
+    if (errorFocus > 0) document.getElementById(ERROR_ID)?.focus()
+  }, [errorFocus])
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [done, setDone] = useState<{ email: string } | null>(null)
   // The address already has an account, so the next step is signing in, not registering.
   const [needsSignIn, setNeedsSignIn] = useState(false)
   // Joined as the signed-in account, but the session could not be moved to the workspace.
   const [joinedElsewhere, setJoinedElsewhere] = useState(false)
+  // The link is dead (unknown, withdrawn, expired or used): the message replaces the form.
+  const [closed, setClosed] = useState<{ reason: ClosedReason; message: string } | null>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
 
   const accept = useAcceptInvitation()
   const acceptSignedIn = useAcceptInvitationSignedIn()
@@ -115,6 +144,23 @@ export function AcceptInvite() {
     })
   }
 
+  /**
+   * Shows a failure. A dead link replaces the form with what happened; anything else is shown
+   * above the form. Either way focus moves to where the message is read from, because the button
+   * that was pressed was busy and focus had fallen to the page.
+   */
+  function fail(thrown: unknown) {
+    const message = acceptErrorMessage(thrown)
+    const reason = closedReason(thrown)
+    if (reason) {
+      setClosed({ reason, message })
+      requestAnimationFrame(() => heading.current?.focus())
+      return
+    }
+    setError(message)
+    setErrorFocus((count) => count + 1)
+  }
+
   async function join() {
     setError(null)
     try {
@@ -122,7 +168,7 @@ export function AcceptInvite() {
       if (result.entered) navigate('/', { replace: true, scroll: true })
       else setJoinedElsewhere(true)
     } catch (thrown) {
-      setError(acceptErrorMessage(thrown))
+      fail(thrown)
     }
   }
 
@@ -138,6 +184,11 @@ export function AcceptInvite() {
     // join reads only the token, which is part of the condition above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, signedIn, continuing])
+
+  // The form is gone once joined, and focus with it: the heading that now says so takes it.
+  useEffect(() => {
+    if (done || joinedElsewhere) heading.current?.focus()
+  }, [done, joinedElsewhere])
 
   // When registering turns out to be the wrong step, the way forward takes focus.
   useEffect(() => {
@@ -173,7 +224,7 @@ export function AcceptInvite() {
       setDone({ email: result.email })
     } catch (thrown) {
       if (isAccountExists(thrown)) setNeedsSignIn(true)
-      else setError(acceptErrorMessage(thrown))
+      else fail(thrown)
     }
   }
 
@@ -185,8 +236,13 @@ export function AcceptInvite() {
       : PASSWORD_HINT
 
   const success = Boolean(token && (done || joinedElsewhere))
-  const asAccount = Boolean(token && account && !done && !joinedElsewhere)
-  const subtitle = success
+  const open = Boolean(token && !closed)
+  const asAccount = Boolean(open && account && !done && !joinedElsewhere)
+  const subtitle = closed
+    ? closed.reason === 'accepted'
+      ? 'This invitation has already been used.'
+      : 'This invitation link can no longer be used.'
+    : success
     ? joinedElsewhere
       ? 'You have joined the workspace. Sign in again to open it.'
       : 'Sign in with the password you just chose to open the workspace.'
@@ -206,7 +262,9 @@ export function AcceptInvite() {
             </span>
           )}
           <Eyebrow>You have been invited</Eyebrow>
-          <h1 className="auth-title">{success ? 'You are in' : 'Join the workspace'}</h1>
+          <h1 className="auth-title" tabIndex={-1} ref={heading}>
+            {closed ? 'This link cannot be used' : success ? 'You are in' : 'Join the workspace'}
+          </h1>
           <p className="auth-subtitle">{subtitle}</p>
         </div>
 
@@ -214,6 +272,19 @@ export function AcceptInvite() {
           <Notice tone="warning">
             This link is missing its invitation token. Ask whoever invited you for the link again.
           </Notice>
+        )}
+
+        {closed && (
+          <>
+            <Notice tone="warning" live>
+              {closed.message}
+            </Notice>
+            {closed.reason === 'accepted' && (
+              <Button className="auth-submit" onClick={() => navigate('/sign-in')}>
+                Sign in
+              </Button>
+            )}
+          </>
         )}
 
         {token && done && (
@@ -244,9 +315,11 @@ export function AcceptInvite() {
         {asAccount && (
           <div className="auth-form">
             {error && (
-              <Notice tone="warning" live>
-                {error}
-              </Notice>
+              <div id={ERROR_ID} tabIndex={-1}>
+                <Notice tone="warning" live>
+                  {error}
+                </Notice>
+              </div>
             )}
             <Button className="auth-submit" loading={acceptSignedIn.isPending} onClick={() => void join()}>
               {acceptSignedIn.isPending ? 'Joining the workspace' : 'Accept the invitation'}
@@ -266,7 +339,7 @@ export function AcceptInvite() {
           </div>
         )}
 
-        {token && !account && !done && needsSignIn && (
+        {open && !account && !done && needsSignIn && (
           <div className="auth-form">
             <Notice tone="info" live>
               An account for this address already exists. Sign in with it, and the invitation is
@@ -285,12 +358,14 @@ export function AcceptInvite() {
           </div>
         )}
 
-        {token && !account && !done && !needsSignIn && (
+        {open && !account && !done && !needsSignIn && (
           <form noValidate onSubmit={handleSubmit} className="auth-form">
             {error && (
-              <Notice tone="warning" live>
-                {error}
-              </Notice>
+              <div id={ERROR_ID} tabIndex={-1}>
+                <Notice tone="warning" live>
+                  {error}
+                </Notice>
+              </div>
             )}
             <Input
               id={FIELD_IDS.displayName}
@@ -340,7 +415,7 @@ export function AcceptInvite() {
           </form>
         )}
 
-        {!account && !done && !needsSignIn && (
+        {!closed && !account && !done && !needsSignIn && (
           <p className="auth-switch">
             Already have an account?{' '}
             <a href={signInPath} onClick={() => rememberAcceptIntent(token)}>

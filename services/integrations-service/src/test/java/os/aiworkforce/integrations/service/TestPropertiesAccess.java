@@ -1,3 +1,5 @@
+// @find: test properties access, share test platform settings across packages, test helper
+// @what: Public helper letting tests in other packages reuse the service test settings.
 package os.aiworkforce.integrations.service;
 
 import os.aiworkforce.platform.config.PlatformProperties;

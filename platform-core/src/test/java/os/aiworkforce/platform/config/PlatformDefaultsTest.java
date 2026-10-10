@@ -1,3 +1,5 @@
+// @find: tests for platform defaults, default settings, launcher environment variable names, permission cache, platform-defaults.yml
+// @what: Checks the shared default settings and the environment variable names the launcher writes.
 package os.aiworkforce.platform.config;
 
 import static org.assertj.core.api.Assertions.assertThat;

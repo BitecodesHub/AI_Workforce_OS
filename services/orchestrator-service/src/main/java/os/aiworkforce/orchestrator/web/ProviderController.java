@@ -1,3 +1,6 @@
+// @find: providers api, model providers, add API key, test key, check provider, enable provider, disable provider, list models, OpenRouter, Groq, Bedrock, OpenAI, /api/providers, Providers page, Test key button
+// @what: REST endpoints to list providers and models, enable or disable them, and test or check an API key.
+// @flow: Called by the Providers settings page; uses JpaProviderRegistry and organisation service credentials
 package os.aiworkforce.orchestrator.web;
 
 import java.math.BigDecimal;
@@ -41,6 +44,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.Exceptions;
 
+import os.aiworkforce.llm.bedrock.BedrockCredentials;
 import os.aiworkforce.llm.model.ChatMessage;
 import os.aiworkforce.llm.model.ChatRequest;
 import os.aiworkforce.llm.model.ModelSpec;
@@ -50,6 +54,7 @@ import os.aiworkforce.llm.model.ProviderFailure;
 import os.aiworkforce.llm.router.ModelRouter;
 import os.aiworkforce.llm.router.RoutingPolicy;
 import os.aiworkforce.llm.spi.ChatProvider;
+import os.aiworkforce.llm.spi.CredentialResolver;
 import os.aiworkforce.orchestrator.domain.Agent;
 import os.aiworkforce.orchestrator.domain.LlmModelEntity;
 import os.aiworkforce.orchestrator.domain.LlmProviderEntity;
@@ -163,6 +168,15 @@ public class ProviderController {
     /** The recent key checks per workspace, newest last, for the rate limit. In memory: one instance counts its own. */
     private final Map<UUID, Deque<Long>> recentTests = new ConcurrentHashMap<>();
 
+    /** The recent "Test now" checks per workspace, newest last. */
+    private final Map<UUID, Deque<Long>> recentChecks = new ConcurrentHashMap<>();
+
+    /** "Test now" checks one workspace may make in {@link #TEST_WINDOW}. */
+    static final int CHECK_LIMIT = 20;
+
+    /** The workspace's stored keys, for "Test now"; absent only where a test builds this by hand. */
+    private CredentialResolver credentials;
+
     /** Where the rate limit reads the time; replaced by a test. */
     LongSupplier clock = System::currentTimeMillis;
 
@@ -194,6 +208,11 @@ public class ProviderController {
         this.transaction = new TransactionTemplate(transactions);
     }
 
+    @Autowired(required = false)
+    void setCredentials(CredentialResolver credentials) {
+        this.credentials = credentials;
+    }
+
     public record ProviderView(
             String id,
             String displayName,
@@ -209,7 +228,38 @@ public class ProviderController {
             Instant credentialCheckedAt,
             String circuitState,
             List<String> regions,
-            int modelCount) {}
+            int modelCount,
+            /** A plain sentence when the change just made leaves some routing with no provider that is on; else null. */
+            String warning) {
+
+        /** The view with no warning, as every read returns it. */
+        public ProviderView(
+                String id,
+                String displayName,
+                String kind,
+                boolean enabled,
+                boolean platformEnabled,
+                String credentialRef,
+                String credentialStatus,
+                Instant credentialCheckedAt,
+                String circuitState,
+                List<String> regions,
+                int modelCount) {
+            this(
+                    id,
+                    displayName,
+                    kind,
+                    enabled,
+                    platformEnabled,
+                    credentialRef,
+                    credentialStatus,
+                    credentialCheckedAt,
+                    circuitState,
+                    regions,
+                    modelCount,
+                    null);
+        }
+    }
 
     public record ModelView(
             String providerId,
@@ -226,6 +276,7 @@ public class ProviderController {
             Instant unavailableUntil,
             String unavailableReason) {}
 
+    // @find: list providers, GET /api/providers
     @GetMapping
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
     @Operation(summary = "Configured providers and their current health, for this workspace")
@@ -237,6 +288,7 @@ public class ProviderController {
                 .toList();
     }
 
+    // @find: list models, GET /api/providers/models
     @GetMapping("/models")
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
     @Operation(summary = "Every model available to this workspace")
@@ -244,6 +296,7 @@ public class ProviderController {
         return registry.workspaceModels(orgId()).stream().map(ProviderController::toView).toList();
     }
 
+    // @find: enable provider, POST /api/providers/{providerId}/enable
     @PostMapping("/{providerId}/enable")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
     @Transactional
@@ -252,6 +305,7 @@ public class ProviderController {
         return setEnabled(providerId, true);
     }
 
+    // @find: disable provider, POST /api/providers/{providerId}/disable
     @PostMapping("/{providerId}/disable")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
     @Transactional
@@ -294,6 +348,7 @@ public class ProviderController {
             description =
                     "Nothing is stored: the key lives only for this request. A key that works is recorded as"
                             + " valid for this workspace, never on the shared provider row.")
+    // @find: test API key, POST /api/providers/{providerId}/test
     public KeyTestResult test(@PathVariable String providerId, @Valid @RequestBody KeyTestRequest request) {
         UUID orgId = orgId();
         WorkspaceProvider provider = registry.workspaceProvider(orgId, providerId)
@@ -305,12 +360,6 @@ public class ProviderController {
         if (kind == ProviderDescriptor.Kind.SANDBOX) {
             throw ApiException.validation("providerId", name + " runs offline and needs no key.");
         }
-        if (kind == ProviderDescriptor.Kind.BEDROCK) {
-            throw ApiException.validation(
-                    "providerId",
-                    name + " signs in with AWS credentials and regions rather than one key. Set it up on the"
-                            + " Model routing page.");
-        }
         if (!provider.platformEnabled()) {
             throw new ApiException(
                     ErrorCode.PROVIDER_NOT_CONFIGURED,
@@ -321,12 +370,25 @@ public class ProviderController {
             throw new ApiException(
                     ErrorCode.PROVIDER_NOT_CONFIGURED, "This installation cannot check keys for " + name + ".");
         }
-        // A key is one unbroken piece of text. Anything else is a paste that took more than the key,
-        // and sent as a header it would fail in a way that reads as the provider being unreachable.
-        String key = request.value().strip();
-        if (key.chars().anyMatch(c -> Character.isWhitespace(c) || Character.isISOControl(c))) {
-            throw ApiException.validation(
-                    "value", "A key has no spaces or line breaks. Copy it again, with nothing around it.");
+        boolean bedrock = kind == ProviderDescriptor.Kind.BEDROCK;
+        String key;
+        if (bedrock) {
+            // Bedrock's credential is several fields (an access key pair or an API key, and a
+            // region) sent as one JSON value. Each field is checked here, before any call.
+            try {
+                key = BedrockCredentials.parse(request.value()).toJson();
+            } catch (BedrockCredentials.Invalid invalid) {
+                throw ApiException.validation(invalid.field(), invalid.getMessage());
+            }
+        } else {
+            // A key is one unbroken piece of text. Anything else is a paste that took more than the
+            // key, and sent as a header it would fail in a way that reads as the provider being
+            // unreachable.
+            key = request.value().strip();
+            if (key.chars().anyMatch(c -> Character.isWhitespace(c) || Character.isISOControl(c))) {
+                throw ApiException.validation(
+                        "value", "A key has no spaces or line breaks. Copy it again, with nothing around it.");
+            }
         }
 
         // Only a call that would reach a provider uses up one of the workspace's checks.
@@ -340,8 +402,10 @@ public class ProviderController {
 
         ProviderException failed = probe(adapter, descriptor, model, key);
         ProviderFailure failure = failed == null ? null : failed.failure();
-        KeyCheck check = classifyAnswer(failed);
-        String message = messageFor(check, failure, name);
+        // Bedrock's adapter already reads AWS's error type, and its 403 also means "model access
+        // not turned on", which says the credentials worked; so the failure alone decides.
+        KeyCheck check = bedrock ? classify(failure) : classifyAnswer(failed);
+        String message = bedrock ? bedrockMessage(check, failed, name, model) : messageFor(check, failure, name);
         log.info("Key check for provider {} in workspace {}: {}", providerId, orgId, check.wire());
 
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
@@ -472,6 +536,36 @@ public class ProviderController {
     }
 
     /**
+     * What a Bedrock check came to. The adapter's own sentence says which AWS answer it was (model
+     * access not turned on, an inference profile needed, IAM not allowing the call), which matters
+     * more here than for a one-key provider: AWS can accept the credentials and still refuse the
+     * model, and the person needs to know which of the two to fix.
+     */
+    static String bedrockMessage(KeyCheck check, ProviderException failed, String provider, ModelSpec model) {
+        String detail = failed == null || failed.getMessage() == null ? "" : " " + failed.getMessage();
+        String modelName = model.displayName() == null || model.displayName().isBlank()
+                ? model.modelId()
+                : model.displayName();
+        return switch (check) {
+            case VALID -> failed == null
+                    ? provider + " accepted the credentials, and " + modelName + " answered."
+                    : provider + " accepted the credentials, but " + modelName + " could not answer." + detail
+                            + " Turn on model access in the Amazon Bedrock console for the models you want, in"
+                            + " the region you chose.";
+            case REJECTED -> failed != null && failed.failure() == ProviderFailure.AUTHORISATION_FAILED
+                    ? detail.strip() + " Nothing was saved."
+                    : "Credentials refused." + detail + " Check the access key ID, secret access key and session"
+                            + " token, or the API key, then try again. Nothing was saved.";
+            case NO_CREDIT -> messageFor(check, failed == null ? null : failed.failure(), provider);
+            case NETWORK_ERROR -> failed != null && failed.failure() == ProviderFailure.RATE_LIMITED
+                    ? provider + " is limiting requests right now, so the credentials could not be checked. Wait a"
+                            + " minute, then try again."
+                    : "We could not reach " + provider + " in that region to check the credentials, so nothing"
+                            + " was saved. Check the region, then try again.";
+        };
+    }
+
+    /**
      * The cheapest chat model this workspace can see for the provider, to spend the one token on.
      * Availability notes are ignored: a model set aside for a lapsed account is exactly what a
      * new key is being checked against.
@@ -492,23 +586,168 @@ public class ProviderController {
 
     /** Counts this check against the workspace's allowance, or refuses it with how long to wait. */
     private void takeTestSlot(UUID orgId) {
+        takeSlot(
+                recentTests,
+                orgId,
+                TEST_LIMIT,
+                "A key can be checked " + TEST_LIMIT + " times a minute in a workspace. Wait a moment, then try again.");
+    }
+
+    private void takeSlot(Map<UUID, Deque<Long>> recent, UUID orgId, int limit, String refusal) {
         long now = clock.getAsLong();
         long window = TEST_WINDOW.toMillis();
-        Deque<Long> calls = recentTests.computeIfAbsent(orgId, id -> new ArrayDeque<>());
+        Deque<Long> calls = recent.computeIfAbsent(orgId, id -> new ArrayDeque<>());
         synchronized (calls) {
             while (!calls.isEmpty() && now - calls.peekFirst() >= window) {
                 calls.pollFirst();
             }
-            if (calls.size() >= TEST_LIMIT) {
+            if (calls.size() >= limit) {
                 long waitMillis = window - (now - calls.peekFirst());
-                throw new ApiException(
-                                ErrorCode.RATE_LIMITED,
-                                "A key can be checked " + TEST_LIMIT
-                                        + " times a minute in a workspace. Wait a moment, then try again.")
+                throw new ApiException(ErrorCode.RATE_LIMITED, refusal)
                         .retryAfter(Duration.ofSeconds(Math.max(1, (waitMillis + 999) / 1000)));
             }
             calls.addLast(now);
         }
+    }
+
+    /** What "Test now" is asked: one model of the provider, or its cheapest when none is named. */
+    public record CheckRequest(@Size(max = 300) String modelId) {}
+
+    /**
+     * What "Test now" found.
+     *
+     * @param result ok, rejected, no_credit, not_found, busy, timeout, unreachable, no_key or error
+     * @param message what happened, in plain words, safe to show; never what the provider said
+     * @param latencyMs how long the call took, when one was made
+     */
+    public record CheckResult(
+            String providerId,
+            String modelId,
+            String modelName,
+            String result,
+            String message,
+            Long latencyMs,
+            Instant checkedAt) {}
+
+    @PostMapping("/{providerId}/check")
+    @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
+    @Operation(
+            summary = "Test a provider's model now, with the workspace's stored key",
+            description =
+                    "Makes one real, minimal call and says what happened. Also clears anything a past"
+                            + " failure left behind for the model, so the next run starts fresh.")
+    // @find: check provider, POST /api/providers/{providerId}/check
+    public CheckResult check(@PathVariable String providerId, @RequestBody(required = false) CheckRequest request) {
+        UUID orgId = orgId();
+        WorkspaceProvider provider = registry.workspaceProvider(orgId, providerId)
+                .orElseThrow(() -> ApiException.notFound("provider", providerId));
+        String name = provider.entity().getDisplayName();
+        ProviderDescriptor.Kind kind = ProviderDescriptor.Kind.valueOf(provider.entity().getKind());
+        ChatProvider adapter = adapters.get(kind);
+        if (adapter == null) {
+            throw new ApiException(
+                    ErrorCode.PROVIDER_NOT_CONFIGURED, "This installation cannot test " + name + ".");
+        }
+        String wanted = request == null || request.modelId() == null || request.modelId().isBlank()
+                ? null
+                : request.modelId().strip();
+        ModelSpec model = (wanted == null
+                        ? cheapestChatModel(orgId, providerId)
+                        : registry.model(orgId.toString(), providerId, wanted))
+                .orElseThrow(() -> wanted == null
+                        ? new ApiException(
+                                ErrorCode.PROVIDER_NOT_CONFIGURED, "No chat model is listed for " + name + " to test.")
+                        : ApiException.notFound("model", providerId + "/" + wanted));
+        String modelName = model.displayName() == null || model.displayName().isBlank()
+                ? model.modelId()
+                : model.displayName();
+
+        takeSlot(recentChecks, orgId, CHECK_LIMIT, "Models can be tested " + CHECK_LIMIT
+                + " times a minute in a workspace. Wait a moment, then try again.");
+        // Whatever a past failure left behind goes, whatever this call finds.
+        router.forgetCoolOff(orgId.toString(), providerId, model.modelId());
+        registry.forgetNotes(orgId, providerId, model.modelId());
+
+        ProviderDescriptor descriptor = registry.provider(orgId.toString(), providerId)
+                .orElseThrow(() -> ApiException.notFound("provider", providerId));
+        String key = null;
+        if (descriptor.requiresCredential()) {
+            CredentialResolver.Lookup lookup =
+                    credentials == null ? null : credentials.lookup(orgId.toString(), descriptor.credentialRef());
+            if (lookup instanceof CredentialResolver.Found found && !found.value().isBlank()) {
+                key = found.value();
+            } else if (lookup instanceof CredentialResolver.NotFound && adapter.hasAmbientCredential(descriptor)) {
+                // Nothing stored, and this server reaches the provider with its own identity (an
+                // instance role): the test makes the same call a run would, with no key.
+                key = null;
+            } else {
+                String message = lookup instanceof CredentialResolver.Unavailable
+                        ? "Could not reach the key store to test " + name + ". Try again in a minute."
+                        : "No key is stored for " + name + ". Add one, then test again.";
+                return new CheckResult(
+                        providerId,
+                        model.modelId(),
+                        modelName,
+                        lookup instanceof CredentialResolver.Unavailable ? "unreachable" : "no_key",
+                        message,
+                        null,
+                        Instant.now());
+            }
+        }
+
+        long started = System.nanoTime();
+        ProviderException failed = probe(adapter, descriptor, model, key);
+        long latency = (System.nanoTime() - started) / 1_000_000;
+        String result = checkResult(failed);
+        String label = name + " \u00b7 " + modelName;
+        String message = switch (result) {
+            case "ok" -> label + " answered in " + latency + " ms.";
+            case "rejected" -> name + " refused the stored key. Paste a new key for " + name + ".";
+            case "no_credit" -> label + " needs credit the account does not have. Add credit with " + name + ".";
+            case "not_found" -> kind == ProviderDescriptor.Kind.BEDROCK && failed != null
+                    ? label + " could not answer. " + failed.getMessage()
+                            + " Turn on model access in the Amazon Bedrock console, or choose another model."
+                    : name + " does not offer " + modelName + " to this account.";
+            case "busy" -> label + " is busy right now. It will still be tried on every run.";
+            case "timeout" -> label + " did not answer in time. It will still be tried on every run.";
+            case "unreachable" -> "Could not reach " + name + ". It will still be tried on every run.";
+            default -> label + " answered with an error. It will still be tried on every run.";
+        };
+        Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
+        if ("ok".equals(result)) {
+            recordValid(orgId, providerId, actor);
+        } else if ("rejected".equals(result)) {
+            registry.markCredentialInvalid(orgId.toString(), providerId, "Refused during a test");
+        }
+        log.info("Model test for {}/{} in workspace {}: {}", providerId, model.modelId(), orgId, result);
+        audit.record(
+                orgId,
+                actor,
+                "provider.check",
+                "provider",
+                providerId,
+                "ok".equals(result) ? "succeeded" : "failed",
+                Map.of("provider", name, "model", model.modelId(), "result", result));
+        return new CheckResult(providerId, model.modelId(), modelName, result, message, latency, Instant.now());
+    }
+
+    /** What a test call came to, in the words the console switches on. */
+    static String checkResult(ProviderException failed) {
+        if (failed == null) {
+            return "ok";
+        }
+        return switch (failed.failure()) {
+            case AUTHENTICATION_FAILED, AUTHORISATION_FAILED -> "rejected";
+            case INSUFFICIENT_CREDIT, QUOTA_EXHAUSTED -> "no_credit";
+            case MODEL_NOT_FOUND -> "not_found";
+            case RATE_LIMITED, OVERLOADED -> "busy";
+            case TIMEOUT -> "timeout";
+            case NETWORK_ERROR -> "unreachable";
+            case UNKNOWN -> "No answer".equals(failed.getMessage()) ? "timeout" : "error";
+            default -> classifyAnswer(failed) == KeyCheck.VALID
+                    ? "ok"
+                    : classifyAnswer(failed) == KeyCheck.REJECTED ? "rejected" : "error";
+        };
     }
 
     /**
@@ -558,9 +797,10 @@ public class ProviderController {
                     ErrorCode.PROVIDER_NOT_CONFIGURED,
                     entity.getDisplayName() + " is not available yet. Contact support to have it offered.");
         }
-        if (!enabled && current.enabled()) {
-            requireAnotherProviderInPolicy(orgId, entity);
-        }
+        // Turning a provider off is never refused. Chains that list it keep it (turning it back on
+        // restores them); the router skips it while it is off, and the person is told which
+        // routing is left with nothing that is on.
+        String warning = !enabled && current.enabled() ? strandedWarning(orgId, entity) : null;
 
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
         if (entity.isPlatformWide()) {
@@ -582,24 +822,33 @@ public class ProviderController {
         WorkspaceProvider updated = new WorkspaceProvider(
                 entity, nowEnabled, current.credentialStatus(), current.credentialCheckedAt());
         String circuit = router.providerHealth(orgId.toString()).getOrDefault(providerId, "UNKNOWN");
-        return toView(updated, circuit);
+        ProviderView view = toView(updated, circuit);
+        return warning == null
+                ? view
+                : new ProviderView(
+                        view.id(),
+                        view.displayName(),
+                        view.kind(),
+                        view.enabled(),
+                        view.platformEnabled(),
+                        view.credentialRef(),
+                        view.credentialStatus(),
+                        view.credentialCheckedAt(),
+                        view.circuitState(),
+                        view.regions(),
+                        view.modelCount(),
+                        warning);
     }
 
     /**
-     * Refuses to switch off the last provider a routing policy in this workspace can use.
-     *
-     * <p>Without this, one click leaves runs without a model and the failure only shows up when
-     * the next run stops. Every policy that decides a run here is checked: the workspace default,
-     * which agents without their own routing inherit, and each agent's own, which the router tries
-     * instead of the default. A policy that falls back to the offline sandbox when everything fails
-     * still has somewhere to go, so it is not guarded. A retired agent never runs, so its policy
-     * is left out.
-     *
-     * <p>The agents' own policies are read in one query for the whole workspace, not one per agent;
-     * an agent with none inherits the workspace default, which was checked first.
+     * Which routing is left with no provider that is on once this one is off, as a sentence, or
+     * null when every chain still has one. The workspace default, which agents without their own
+     * routing inherit, and each active agent's own chain are checked. A chain that falls back to
+     * the offline model when everything fails still has somewhere to go, so it is not named.
      */
-    private void requireAnotherProviderInPolicy(UUID orgId, LlmProviderEntity provider) {
+    private String strandedWarning(UUID orgId, LlmProviderEntity provider) {
         Map<String, Boolean> onHere = new HashMap<>();
+        boolean workspaceStranded = false;
         RoutingPolicy workspace = policies.resolve(orgId, null);
         if (strands(
                 workspace.exhausted() == RoutingPolicy.ExhaustedBehaviour.DEGRADE_TO_SANDBOX,
@@ -607,50 +856,48 @@ public class ProviderController {
                 orgId,
                 provider,
                 onHere)) {
-            throw stranded(
-                    "Turning off " + provider.getDisplayName() + " would leave this workspace's routing policy"
-                            + " with no provider that is on, so every run would stop. Add another model to the"
-                            + " routing policy first, or turn on a provider it already lists.",
-                    "workspace");
+            workspaceStranded = true;
         }
-        // The router skips an agent policy with no candidates, so only a non-empty one is the agent's own.
         Map<UUID, ModelPolicyEntity> own = new HashMap<>();
         for (ModelPolicyEntity policy : modelPolicies.findByOrgId(orgId)) {
             if (policy.getAgentId() != null && !policy.getCandidates().isEmpty()) {
                 own.put(policy.getAgentId(), policy);
             }
         }
-        if (own.isEmpty()) {
-            return;
-        }
-        for (Agent agent : agents.findByOrgIdOrderByName(orgId)) {
-            ModelPolicyEntity policy = own.get(agent.getId());
-            if (policy == null || "retired".equals(agent.getStatus())) {
-                continue;
-            }
-            if (strands(
-                    "DEGRADE_TO_SANDBOX".equals(policy.getExhaustedBehaviour()),
-                    policy.getCandidates().stream().map(ModelPolicyCandidate::getProviderId).toList(),
-                    orgId,
-                    provider,
-                    onHere)) {
-                throw stranded(
-                        "Turning off " + provider.getDisplayName() + " would leave " + agent.getName()
-                                + "'s own routing with no provider that is on, so its runs would stop. Add another"
-                                + " model to " + agent.getName() + "'s routing first, or turn on a provider it"
-                                + " already lists.",
-                        "agent");
+        List<String> agentNames = new java.util.ArrayList<>();
+        if (!own.isEmpty()) {
+            for (Agent agent : agents.findByOrgIdOrderByName(orgId)) {
+                ModelPolicyEntity policy = own.get(agent.getId());
+                if (policy == null || "retired".equals(agent.getStatus())) {
+                    continue;
+                }
+                if (strands(
+                        "DEGRADE_TO_SANDBOX".equals(policy.getExhaustedBehaviour()),
+                        policy.getCandidates().stream()
+                                .map(ModelPolicyCandidate::getProviderId)
+                                .toList(),
+                        orgId,
+                        provider,
+                        onHere)) {
+                    agentNames.add(agent.getName());
+                }
             }
         }
-    }
-
-    /**
-     * The 409 for a toggle that would strand a policy. {@code routing} says whose policy, so the
-     * console offers a link to the workspace policy only when that is where the fix is made.
-     */
-    private static ApiException stranded(String message, String routing) {
-        ErrorCode code = ErrorCode.RESOURCE_IN_USE;
-        return new ApiException(code, message, Map.of("routing", routing), null, null, code.retryable());
+        if (!workspaceStranded && agentNames.isEmpty()) {
+            return null;
+        }
+        List<String> whose = new java.util.ArrayList<>();
+        if (workspaceStranded) {
+            whose.add("the workspace routing");
+        }
+        if (!agentNames.isEmpty()) {
+            whose.add((agentNames.size() == 1 ? "this agent's own routing: " : "these agents' own routing: ")
+                    + String.join(", ", agentNames));
+        }
+        return provider.getDisplayName() + " is off. Its models stay in the routing and are skipped while it is"
+                + " off, so " + String.join(", and ", whose)
+                + " now has no provider that is on, and those runs will fail until you turn a provider on or"
+                + " add another model.";
     }
 
     /**

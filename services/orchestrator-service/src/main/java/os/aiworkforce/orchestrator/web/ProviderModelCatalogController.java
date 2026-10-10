@@ -1,3 +1,6 @@
+// @find: model catalogue, available models for provider, embedding models, GET /api/providers/{providerId}/models, GET /api/providers/embedding-models, model picker
+// @what: Lists the models a provider offers, including embedding models.
+// @flow: Uses ModelCatalogService
 package os.aiworkforce.orchestrator.web;
 
 import java.util.UUID;
@@ -34,6 +37,20 @@ public class ProviderModelCatalogController {
         this.catalogue = catalogue;
     }
 
+    @GetMapping("/embedding-models")
+    @RequiresPermission(Permission.Codes.PROVIDER_READ)
+    @Operation(
+            summary = "Every embedding model this workspace can use, free ones first",
+            description = "Read from the own model list of each switched-on provider with a stored key, cached"
+                    + " for six hours; refresh=true asks again. Used to choose how the knowledge base searches"
+                    + " by meaning.")
+    // @find: embedding models, GET /api/providers/embedding-models
+    public ModelCatalogService.EmbeddingCatalogue embeddingModels(
+            @RequestParam(defaultValue = "false") boolean refresh) {
+        UUID orgId = UUID.fromString(RequestContext.requireOrgId());
+        return catalogue.embeddingModels(orgId, refresh);
+    }
+
     @GetMapping("/{providerId}/models")
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
     @Operation(
@@ -42,6 +59,7 @@ public class ProviderModelCatalogController {
                     + " hours; refresh=true asks again. When the provider cannot be asked, the saved models are"
                     + " returned with source=saved and a message saying so. all=true includes models that cannot"
                     + " call tools, for diagnosis.")
+    // @find: provider model catalogue, GET /api/providers/{providerId}/models
     public CatalogueView models(
             @PathVariable String providerId,
             @RequestParam(defaultValue = "false") boolean refresh,

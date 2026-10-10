@@ -1,3 +1,6 @@
+// @find: tests for feedback controller, chat, permissions, only aperson rates, other workspaces conversation, message of another conversation, message of another workspace, only answers, server resolves agent and run, foreign run is dropped, FeedbackControllerTest, FeedbackController
+// @what: Tests for FeedbackController in the orchestrator chat package (17 test methods).
+// @flow: Exercises FeedbackController
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,6 +114,7 @@ class FeedbackControllerTest {
 
     // ---- Who may ---------------------------------------------------------------------------
 
+    // @find: test permissions, feedback controller
     @Test
     @DisplayName("rating and withdrawing need chat:use, reading a run's ratings needs run:read")
     void permissions() throws Exception {
@@ -125,6 +129,7 @@ class FeedbackControllerTest {
         return FeedbackController.class.getMethod(name, parameters).getAnnotation(RequiresPermission.class).value();
     }
 
+    // @find: test only aperson rates, feedback controller
     @Test
     @DisplayName("only a signed-in person's own opinion is a rating: an agent or a machine key cannot give one")
     void onlyAPersonRates() {
@@ -141,6 +146,7 @@ class FeedbackControllerTest {
 
     // ---- Which messages --------------------------------------------------------------------
 
+    // @find: test other workspaces conversation, feedback controller
     @Test
     @DisplayName("a conversation of another workspace is not found, so its existence is not confirmed")
     void otherWorkspacesConversation() {
@@ -152,6 +158,7 @@ class FeedbackControllerTest {
         verifyNoInteractions(feedbacks, audit);
     }
 
+    // @find: test message of another conversation, feedback controller
     @Test
     @DisplayName("a message that is not in that conversation is not found")
     void messageOfAnotherConversation() {
@@ -163,6 +170,7 @@ class FeedbackControllerTest {
         verifyNoInteractions(feedbacks);
     }
 
+    // @find: test message of another workspace, feedback controller
     @Test
     @DisplayName("a message row of another workspace is not found even when the ids line up")
     void messageOfAnotherWorkspace() {
@@ -175,6 +183,7 @@ class FeedbackControllerTest {
         assertThat(refused.code()).isEqualTo(ErrorCode.NOT_FOUND);
     }
 
+    // @find: test only answers, feedback controller
     @Test
     @DisplayName("only an agent's answer can be rated: a question, a notice or a person's own message cannot")
     void onlyAnswers() {
@@ -194,6 +203,7 @@ class FeedbackControllerTest {
 
     // ---- What is stored --------------------------------------------------------------------
 
+    // @find: test server resolves agent and run, feedback controller
     @Test
     @DisplayName("the agent and the run come from the stored answer, and the vote is the caller's own")
     void serverResolvesAgentAndRun() {
@@ -213,6 +223,7 @@ class FeedbackControllerTest {
         assertThat(view.messageId()).isEqualTo(MESSAGE);
     }
 
+    // @find: test foreign run is dropped, feedback controller
     @Test
     @DisplayName("a run named on the message that is not this workspace's is not carried onto the rating")
     void foreignRunIsDropped() {
@@ -226,6 +237,7 @@ class FeedbackControllerTest {
                 .upsert(any(), eq(ORG), eq(CONVERSATION), eq(MESSAGE), eq(PERSON), eq(AGENT), eq(null), eq((short) 1), eq(null));
     }
 
+    // @find: test agent from detail, feedback controller
     @Test
     @DisplayName("an answer whose message has no agent column falls back to the agent in its detail")
     void agentFromDetail() {
@@ -237,6 +249,7 @@ class FeedbackControllerTest {
                 .upsert(any(), eq(ORG), eq(CONVERSATION), eq(MESSAGE), eq(PERSON), eq(AGENT), eq(RUN), eq((short) 1), eq(null));
     }
 
+    // @find: test rating values, feedback controller
     @Test
     @DisplayName("a rating is 1 or -1 and nothing else")
     void ratingValues() {
@@ -247,6 +260,7 @@ class FeedbackControllerTest {
         verifyNoInteractions(feedbacks);
     }
 
+    // @find: test reason rules, feedback controller
     @Test
     @DisplayName("a blank reason is no reason, and one over 500 characters is refused")
     void reasonRules() {
@@ -262,6 +276,7 @@ class FeedbackControllerTest {
 
     // ---- Audit -----------------------------------------------------------------------------
 
+    // @find: test audited, feedback controller
     @Test
     @DisplayName("a rating is audited as chat.answer.rated, naming the verdict, the agent and the run but never the reason")
     void audited() {
@@ -296,6 +311,7 @@ class FeedbackControllerTest {
         return ArgumentCaptor.forClass((Class<Map<String, Object>>) (Class<?>) Map.class);
     }
 
+    // @find: test refused is not audited, feedback controller
     @Test
     @DisplayName("a refused rating is not audited")
     void refusedIsNotAudited() {
@@ -306,6 +322,7 @@ class FeedbackControllerTest {
 
     // ---- Withdrawing and reading -----------------------------------------------------------
 
+    // @find: test withdraw, feedback controller
     @Test
     @DisplayName("withdrawing removes only the caller's own vote, and withdrawing a vote that is not there is not an error")
     void withdraw() {
@@ -316,6 +333,7 @@ class FeedbackControllerTest {
         verify(feedbacks).withdraw(ORG, MESSAGE, PERSON);
     }
 
+    // @find: test withdraw other workspace, feedback controller
     @Test
     @DisplayName("withdrawing from another workspace's conversation finds nothing")
     void withdrawOtherWorkspace() {
@@ -327,6 +345,7 @@ class FeedbackControllerTest {
         verify(feedbacks, never()).withdraw(any(), any(), any());
     }
 
+    // @find: test ratings on arun, feedback controller
     @Test
     @DisplayName("a run's ratings come with their reasons, newest first, for a run of this workspace only")
     void ratingsOnARun() {
@@ -345,6 +364,7 @@ class FeedbackControllerTest {
         assertThat(refused.code()).isEqualTo(ErrorCode.NOT_FOUND);
     }
 
+    // @find: test ratings in aconversation, feedback controller
     @Test
     @DisplayName("the ratings a person has given in a conversation are theirs alone")
     void ratingsInAConversation() {

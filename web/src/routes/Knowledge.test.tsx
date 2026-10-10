@@ -1,3 +1,6 @@
+// @find: tests for the knowledge page, search wording, sources, vitest, Knowledge component tests, Knowledge page
+// @what: Automated tests that check the the knowledge page screen (/knowledge) behaves as users expect.
+// @flow: Renders Knowledge from Knowledge.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

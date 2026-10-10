@@ -1,3 +1,6 @@
+// @find: sandbox server, practice data, fake connector, demo connector, seeded records, in memory store, no credentials needed, fault injection, timeout test, list create update delete send draft, sandbox twin, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: A working in-memory stand-in for one vendor server, so every connector works with practice data and no credentials.
+// @flow: Built per server by SandboxServerRegistry; wrapped by live adapters; called through ToolGateway
 package os.aiworkforce.mcp.sandbox;
 
 import java.time.Duration;
@@ -118,11 +121,13 @@ public class SandboxServerAdapter implements McpServerAdapter {
         return true;
     }
 
+    // @find: sandbox health check, always healthy
     @Override
     public Mono<Boolean> healthCheck(String credential) {
         return Mono.just(true);
     }
 
+    // @find: run sandbox tool, verb collection routing, practice data store, fault marker
     @Override
     public Mono<ToolResult> invoke(ToolInvocation invocation, String credential) {
         return Mono.fromCallable(() -> run(invocation))

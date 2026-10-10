@@ -1,3 +1,5 @@
+// @find: tests for member role change, promote to owner refused, demote owner, remove owner, last owner kept, MemberController
+// @what: Tests that member role changes and removals follow the grant rules.
 package os.aiworkforce.identity.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,6 @@
+// @find: agent memory service, add note, update note, delete note, pin note, forget all, recall notes, remember, memory cap per agent, duplicate note, refuse secrets
+// @what: Creates, edits, pins, deletes and recalls an AI employee's memory notes within one workspace.
+// @flow: Called by AgentMemoryController and InternalAgentMemoryController; uses SecretGuard
 package os.aiworkforce.memory.service;
 
 import java.util.ArrayList;
@@ -51,7 +54,7 @@ public class AgentMemoryService {
     @Transactional(readOnly = true)
     public List<AgentMemory> list(UUID orgId, UUID agentId, int limit) {
         int capped = Math.min(Math.max(limit, 1), MAX_PER_AGENT);
-        return memories.findByOrgIdAndAgentIdOrderByUpdatedAtDesc(orgId, agentId, PageRequest.of(0, capped));
+        return memories.findByOrgIdAndAgentIdOrderByPinnedDescUpdatedAtDesc(orgId, agentId, PageRequest.of(0, capped));
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +63,7 @@ public class AgentMemoryService {
     }
 
     @Transactional
+    // @find: add agent memory note, remember, create note
     public Saved add(UUID orgId, UUID agentId, String kind, String content, String source, String by, UUID runId) {
         String clean = cleanContent(content);
         String chosenKind = cleanKind(kind);
@@ -82,6 +86,7 @@ public class AgentMemoryService {
     }
 
     @Transactional
+    // @find: update agent memory note, edit note
     public AgentMemory update(UUID orgId, UUID agentId, UUID id, String kind, String content, String by) {
         AgentMemory memory = memories
                 .findByIdAndOrgIdAndAgentId(id, orgId, agentId)
@@ -91,6 +96,7 @@ public class AgentMemoryService {
     }
 
     @Transactional
+    // @find: delete agent memory note, forget one
     public void delete(UUID orgId, UUID agentId, UUID id) {
         AgentMemory memory = memories
                 .findByIdAndOrgIdAndAgentId(id, orgId, agentId)
@@ -98,19 +104,41 @@ public class AgentMemoryService {
         memories.delete(memory);
     }
 
+    /** Pins a note so it is always recalled, or unpins it. */
+    @Transactional
+    // @find: pin or unpin agent memory note
+    public AgentMemory pin(UUID orgId, UUID agentId, UUID id, boolean pin) {
+        AgentMemory memory = memories
+                .findByIdAndOrgIdAndAgentId(id, orgId, agentId)
+                .orElseThrow(() -> ApiException.notFound("memory", id));
+        memory.pin(pin);
+        return memories.save(memory);
+    }
+
+    /** Forgets every note this agent keeps, pinned ones too; returns how many were removed. */
+    @Transactional
+    // @find: forget all agent memories, clear memory
+    public int forgetAll(UUID orgId, UUID agentId) {
+        return memories.deleteAllOfAgent(orgId, agentId);
+    }
+
     /**
      * The notes that bear on a query, best match first; with no query, the most recently changed.
      * Each one returned counts as recalled.
      */
     @Transactional
+    // @find: recall agent notes, search memory
     public List<AgentMemory> recall(UUID orgId, UUID agentId, String query, int limit) {
         int capped = Math.min(Math.max(limit, 1), 20);
-        List<AgentMemory> found = new ArrayList<>();
+        // Pinned notes come first, whatever the request is about: somebody decided they always matter.
+        List<AgentMemory> found = new ArrayList<>(
+                memories.findByOrgIdAndAgentIdAndPinnedTrueOrderByPinnedAtDesc(orgId, agentId, PageRequest.of(0, capped)));
+        int pinnedCount = found.size();
         String tsQuery = tsQueryOf(query);
         if (tsQuery != null) {
             found.addAll(memories.search(orgId, agentId, tsQuery, capped));
         }
-        if (found.size() < capped && (tsQuery == null || found.isEmpty())) {
+        if (found.size() < capped && (tsQuery == null || found.size() == pinnedCount)) {
             // Nothing matched the words: the newest notes are still the best guess at what matters.
             found.addAll(memories.findByOrgIdAndAgentIdOrderByUpdatedAtDesc(orgId, agentId, PageRequest.of(0, capped)));
         }

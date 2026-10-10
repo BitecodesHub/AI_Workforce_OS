@@ -1,3 +1,5 @@
+// @find: tests for run retry controller, retry run, POST /api/runs/{id}/retry
+// @what: Unit and integration tests (4 cases) for run retry controller, for example: starts anew run with the original instruction; a run still going cannot be retried; someone elses run needs the stop permission; a goal run is retried through its goal.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

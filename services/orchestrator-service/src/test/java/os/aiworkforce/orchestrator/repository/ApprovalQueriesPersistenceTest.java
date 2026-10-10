@@ -1,3 +1,6 @@
+// @find: tests for approval queries persistence, repository, sweep returns only parked runs, pages the queue and the history, counts by decider, runtime settings store, ApprovalQueriesPersistenceTest, ApprovalQueriesPersistence
+// @what: Tests for ApprovalQueriesPersistence in the orchestrator repository package (4 test methods).
+// @flow: Exercises ApprovalQueriesPersistence
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -100,6 +103,7 @@ class ApprovalQueriesPersistenceTest {
         return approvals.saveAndFlush(approval);
     }
 
+    // @find: test sweep returns only parked runs, approval queries persistence
     @Test
     @DisplayName("the resume sweep returns an approved approval only while its run is still parked, and only its newest")
     void sweepReturnsOnlyParkedRuns() {
@@ -140,6 +144,7 @@ class ApprovalQueriesPersistenceTest {
         assertThat(later).extracting(Approval::getRunId).containsExactly(parked.getId(), justApproved.getId());
     }
 
+    // @find: test pages the queue and the history, approval queries persistence
     @Test
     @DisplayName("the queue pages soonest-expiring first, the history newest decision first, per workspace and per agent")
     void pagesTheQueueAndTheHistory() {
@@ -187,6 +192,7 @@ class ApprovalQueriesPersistenceTest {
                 .containsExactly(theirs.getId());
     }
 
+    // @find: test counts by decider, approval queries persistence
     @Test
     @DisplayName("pending approvals are counted by who may decide them, without loading a payload")
     void countsByDecider() {
@@ -220,6 +226,7 @@ class ApprovalQueriesPersistenceTest {
         assertThat(approvals.countPendingByDeciderForAgent(ORG, first.getAgentId())).hasSize(1);
     }
 
+    // @find: test runtime settings store, approval queries persistence
     @Test
     @DisplayName("the runtime-settings store upserts a workspace value and the platform value separately, and clears one")
     void runtimeSettingsStore() {

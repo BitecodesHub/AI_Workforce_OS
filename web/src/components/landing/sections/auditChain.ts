@@ -1,3 +1,6 @@
+// @find: audit chain model, hash chain, FNV-1a, record, tamper, verify, genesis, tamper evident log
+// @what: Small synchronous hash-chained audit log model for the demo.
+// @flow: Used by AuditChainDemo
 /*
  * A small, synchronous model of a hash-chained audit log, for the audit demo.
  *
@@ -36,6 +39,7 @@ function utf8(input: string): ArrayLike<number> {
 }
 
 /** 32-bit FNV-1a over the UTF-8 bytes of the input, as 8 lowercase hex characters. */
+// @find: fnv1a32, illustrative hash
 export function fnv1a32(input: string): string {
   const bytes = utf8(input)
   let hash = FNV_OFFSET_BASIS
@@ -51,6 +55,7 @@ function entryHash(prev: string, entry: AuditEntry): string {
 }
 
 /** Writes the chain: each entry records the previous hash and its own hash over it. */
+// @find: record, hash chain entries
 export function record(entries: ReadonlyArray<AuditEntry>): Recorded[] {
   const chain: Recorded[] = []
   let prev = GENESIS
@@ -63,6 +68,7 @@ export function record(entries: ReadonlyArray<AuditEntry>): Recorded[] {
 }
 
 /** The edit the demo makes: the second entry's approval is rewritten as a rejection. */
+// @find: tamper, edit second audit entry
 export function tamper(entries: ReadonlyArray<AuditEntry>): AuditEntry[] {
   return entries.map((entry, index) =>
     index === 1 ? { ...entry, text: entry.text.replace('approved', 'rejected') } : { ...entry },
@@ -76,6 +82,7 @@ export function tamper(entries: ReadonlyArray<AuditEntry>): AuditEntry[] {
  * hash. prevMismatch: the entry's recorded previous hash no longer matches what the entry before
  * it now hashes to.
  */
+// @find: verify, check hash chain
 export function verify(recorded: ReadonlyArray<Recorded>, current: ReadonlyArray<AuditEntry>): Verification[] {
   const results: Verification[] = []
   recorded.forEach((stored, index) => {

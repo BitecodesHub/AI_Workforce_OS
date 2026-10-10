@@ -1,3 +1,6 @@
+// @find: default schedule previewer, parse schedule from chat text, every day at, schedule phrase, DefaultSchedulePreviewer, ScheduleParser seam
+// @what: The real SchedulePreviewer bean that reads a schedule out of a chat message.
+// @flow: Called by IntentDetector; calls ScheduleParser.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;

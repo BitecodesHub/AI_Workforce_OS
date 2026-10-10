@@ -1,3 +1,6 @@
+// @find: outcomes, goal outcomes, completed, failed, waiting approval, success rate, results breakdown, analytics outcomes, OutcomesCard
+// @what: Analytics card summarising how goals ended (completed, failed, waiting).
+// @flow: Rendered on the Analytics page from Insights
 import type { ReactNode } from 'react'
 import { Card, Eyebrow, StatusTag } from '../ui'
 import { formatCount } from '../../lib/format'
@@ -12,7 +15,12 @@ import { formatPercent, formatSeconds } from './figures'
  * apart, as still going.
  */
 
-const GOAL_SOURCE: Record<string, string> = { chat: 'Chat', schedule: 'Schedules', manual: 'Given directly' }
+/** Each row's whole label: "Goals from given directly" is what a prefix made of the third one. */
+const GOAL_SOURCE: Record<string, string> = {
+  chat: 'Goals from chat',
+  schedule: 'Goals from schedules',
+  manual: 'Goals given directly',
+}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -40,6 +48,7 @@ function Row({ label, value, note }: { label: string; value: string; note?: stri
   )
 }
 
+// @find: OutcomesCard, goal outcomes summary
 export function OutcomesCard({ insights }: { insights: Insights }) {
   const { runs, approvals, questions, failureReasons, goals } = insights
   const decided = approvals.approved + approvals.rejected
@@ -83,7 +92,7 @@ export function OutcomesCard({ insights }: { insights: Insights }) {
               {goals.bySource.map((source) => (
                 <Row
                   key={source.source}
-                  label={`Goals from ${(GOAL_SOURCE[source.source] ?? source.source).toLowerCase()}`}
+                  label={GOAL_SOURCE[source.source] ?? `Goals from ${source.source}`}
                   value={`${formatCount(source.completed)} done`}
                   {...(source.failed > 0 ? { note: `${formatCount(source.failed)} failed` } : {})}
                 />

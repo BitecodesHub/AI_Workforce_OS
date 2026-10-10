@@ -1,3 +1,6 @@
+// @find: encryption, decrypt, envelope encryption, master key, data key, provider api key storage, connector credentials, key rotation, rewrap, fingerprint, AES-GCM
+// @what: Encrypts and decrypts stored secrets such as provider keys and connector credentials using envelope encryption.
+// @flow: Used by org-service CredentialService and integrations-service ConnectorService
 package os.aiworkforce.platform.crypto;
 
 import java.nio.charset.StandardCharsets;
@@ -81,6 +84,7 @@ public class EnvelopeEncryptionService {
     }
 
     /** Encrypts {@code plaintext} for {@code orgId}. */
+    // @find: encrypt secret, store credential securely
     public EncryptedValue encrypt(String orgId, String plaintext) {
         if (plaintext == null) {
             throw new IllegalArgumentException("plaintext must not be null");
@@ -99,6 +103,7 @@ public class EnvelopeEncryptionService {
     }
 
     /** Decrypts a stored value for {@code orgId}. */
+    // @find: decrypt secret, read stored credential
     public String decrypt(String orgId, EncryptedValue value) {
         try {
             SecretKey dataKey = unwrap(value.wrappedDataKey(), value.keyId(), orgId);

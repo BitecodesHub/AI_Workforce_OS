@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, provider exception, classified failure, provider error, ProviderException
+// @what: A classified failure thrown by an adapter and handled by the router.
+// @flow: Thrown by providers; caught by ModelRouter.route.
 package os.aiworkforce.llm.model;
 
 import java.time.Duration;

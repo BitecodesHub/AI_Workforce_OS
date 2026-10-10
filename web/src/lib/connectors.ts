@@ -1,3 +1,6 @@
+// @find: connectors, integrations, capabilities, tool groups, asks first, grant tools, calls per run limit, connector state, connected, sandbox, OAuth return, docs url, web address check, agents using connector, Connectors page, grant dialog
+// @what: Plain-word rules for connectors: tool groups, approval-first tools, grant selection, connector state, OAuth return handling and field problems.
+// @flow: Shared by the Connectors page and the agent grant dialog; typed structurally against connector query types
 import { formatCount, sentenceCase } from './format'
 
 /*
@@ -46,6 +49,7 @@ const GROUP_OF: Record<string, CapabilityGroupKey> = {
   DESTRUCTIVE: 'deletes',
 }
 
+// @find: capability group, reads edits sends deletes, side effect class
 /**
  * The group a tool belongs to. An unknown class reads as "Creates and edits" rather than "Reads":
  * a tool whose effect is not known is never presented as harmless.
@@ -54,6 +58,7 @@ export function capabilityGroup(tool: Pick<CapabilityTool, 'sideEffect'>): Capab
   return GROUP_OF[String(tool.sideEffect).toUpperCase()] ?? 'edits'
 }
 
+// @find: asks first, requires approval, outbound destructive tools
 /**
  * Whether a person is asked before this tool acts: always for sending and deleting, for a tool
  * flagged to, and for everything when the grant asks for every call.
@@ -66,6 +71,7 @@ export function asksFirst(tool: CapabilityTool, grantRequiresApproval = false): 
 
 export type CapabilityGroup<T> = CapabilityGroupInfo & { tools: T[] }
 
+// @find: group tools, connector capabilities list
 /** The tools in their groups, in CAPABILITY_GROUPS order, leaving out groups with no tools. */
 export function groupCapabilities<T extends CapabilityTool>(tools: readonly T[]): CapabilityGroup<T>[] {
   return CAPABILITY_GROUPS.map((group) => ({
@@ -81,6 +87,7 @@ export function capabilityLabel(tool: Pick<CapabilityTool, 'name'>): string {
 
 /* ---- Grants --------------------------------------------------------------------------------- */
 
+// @find: default tool selection, grant dialog defaults
 /**
  * What a new grant starts with: everything that only reads. Creating, sending and deleting are
  * choices somebody makes on purpose, so they start unticked.
@@ -110,6 +117,7 @@ export function initialSelection(
   return grant ? grantedToolNames(grant, tools) : defaultSelection(tools)
 }
 
+// @find: grant tools, give agent access to connector tools
 /**
  * The tool list to save, in the connector's own order. Always explicit, never the empty "every
  * tool" list: a tool the server adds later must be granted by a person, not inherited silently.
@@ -122,6 +130,7 @@ export function grantTools(selected: readonly string[], tools: readonly Capabili
 export const MIN_CALLS_PER_RUN = 1
 export const MAX_CALLS_PER_RUN = 200
 
+// @find: calls per run, call limit, max tool calls
 /** The call limit as typed: null for empty (no limit), a number, or false when it is not a valid limit. */
 export function parseCallLimit(value: string): number | null | false {
   const trimmed = value.trim()
@@ -133,7 +142,7 @@ export function parseCallLimit(value: string): number | null | false {
 
 /* ---- Connection state ----------------------------------------------------------------------- */
 
-export type ConnectorState = 'connected' | 'sandbox' | 'attention'
+export type ConnectorState = 'connected' | 'sandbox' | 'attention' | 'builtin'
 
 export type ConnectorLike = {
   server: string
@@ -142,16 +151,20 @@ export type ConnectorLike = {
   reconnectRequired?: boolean | null
   lastError?: string | null
   category?: string | null
+  authType?: string | null
 }
 
 const ATTENTION_STATUSES = new Set(['error', 'reconnect_required', 'revoked'])
 
+// @find: connector state, connected, sandbox, needs attention, built in
 /**
  * One of the three states the product promises: Sandbox (practice data, nothing leaves), Connected
  * (a live token is stored and passed its last check) or Needs attention (a stored token failed its
- * last check, or the service asked for it to be connected again).
+ * last check, or the service asked for it to be connected again). A connector built into the
+ * platform (Voice notes) has no account at all, so it is Built in rather than practice data.
  */
 export function connectorState(connector: ConnectorLike): ConnectorState {
+  if (connector.authType === 'none') return 'builtin'
   if (connector.reconnectRequired) return 'attention'
   if (connector.sandbox) return 'sandbox'
   if (connector.lastError || ATTENTION_STATUSES.has(connector.status.toLowerCase())) return 'attention'
@@ -171,6 +184,7 @@ export type ConnectorSummary = {
   sentence: string
 }
 
+// @find: connector summary, connector card text
 /**
  * Where the connectors stand together, once per page: a few words for the toolbar and the full
  * sentence about practice data behind them. Nothing done on practice data leaves the workspace.
@@ -246,6 +260,7 @@ export function connectorCategory(connector: Pick<ConnectorLike, 'server' | 'cat
   return KNOWN_CATEGORIES[connector.server.toLowerCase()] ?? 'other'
 }
 
+// @find: agents using a connector, who uses this connector
 /** The agents granted this server, by name, from the agents list (Agent.tools holds server names). */
 export function agentsUsing<A extends { tools?: readonly string[] | null; name: string }>(
   server: string,
@@ -263,6 +278,7 @@ export type OAuthReturn = { connected: string | null; error: string | null }
 /** The longest provider message shown; anything beyond it is cut so a crafted link cannot fill the page. */
 const MAX_RETURN_ERROR = 300
 
+// @find: oauth return, sign in with provider callback, connected or error
 /**
  * What the provider's redirect left in the address: ?connected=<server> after a success, or
  * ?error=<message> after a failure. Both are plain text, never markup. A blank value counts as absent.
@@ -347,6 +363,7 @@ export type PlacedProblems = {
 
 const withStop = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
 
+// @find: field problems, connector form errors, validation messages
 /**
  * Places a refused save next to the fields it is about.
  *

@@ -1,3 +1,8 @@
+/*
+ * @find: polish styles, navbar overflow, shell screens, top navigation
+ * @what: Styles for navbar overflow behaviour.
+ * @flow: Used by Navbar; imported by polish/index.css
+ */
 /* UI/UX polish: shell screens. Loaded after components.css, so rules here refine it. */
 
 /*

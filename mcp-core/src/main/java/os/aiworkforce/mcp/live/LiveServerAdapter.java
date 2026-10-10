@@ -1,3 +1,6 @@
+// @find: live adapter base, real API, connector base class, tool dispatch, check connection, test connection, who am I, health check, token refresh, retry, timeout, indeterminate, vendor error message, gmail, slack, github, jira, stripe, all vendors
+// @what: Base class for every live vendor adapter: routes tool calls to the vendor call, checks credentials with a who-am-I request, and turns vendor errors and timeouts into plain results.
+// @flow: Extended by each vendor adapter and by OAuthAdapter; wrapped around a SandboxServerAdapter for tools without a live call
 package os.aiworkforce.mcp.live;
 
 import java.net.ConnectException;
@@ -167,6 +170,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return false;
     }
 
+    // @find: run live tool call, invoke tool, vendor request, timeout becomes indeterminate, 401 renew token
     @Override
     public Mono<ToolResult> invoke(ToolInvocation invocation, String credential) {
         if (credential == null || credential.isBlank()) {
@@ -188,6 +192,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
                 .map(result -> redacted(timed(result, startedAt), secrets));
     }
 
+    // @find: test connection, check credential, who am I, connect dialog test, POST /api/integrations/connectors/{server}/test
     @Override
     public Mono<ConnectionCheck> check(String credential) {
         if (credential == null || credential.isBlank()) {
@@ -237,6 +242,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
                                 }));
     }
 
+    // @find: health check, connection healthy
     @Override
     public Mono<Boolean> healthCheck(String credential) {
         return check(credential).map(ConnectionCheck::ok);
@@ -425,7 +431,14 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
             if (status == 429) {
                 return vendor + " is limiting requests right now. Try again in a minute.";
             }
-            return vendor + " answered the check with status " + status + ".";
+            if (status == 404) {
+                // Most often a mistyped site or account: the address answered, but nothing is there.
+                return vendor + " could not find that account or site. Check the address and details, then try again.";
+            }
+            if (status >= 500) {
+                return vendor + " had a problem answering the check. Try again shortly.";
+            }
+            return vendor + " did not accept the check. Check the details, then try again.";
         }
         if (error instanceof WebClientRequestException) {
             return "Could not reach " + inSentence() + ". Check the network and try again.";

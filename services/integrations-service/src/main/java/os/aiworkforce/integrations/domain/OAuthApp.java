@@ -1,3 +1,6 @@
+// @find: oauth app entity, oauth_apps table, client id, client secret ref, provider settings, tenant, login domain, google, microsoft, salesforce, register oauth app, set up the app
+// @what: Database entity for the OAuth app an administrator registers per provider (client id, secret reference, extra settings).
+// @flow: Used by OAuthService.saveApp
 package os.aiworkforce.integrations.domain;
 
 import jakarta.persistence.Column;

@@ -1,3 +1,6 @@
+// @find: knowledge search tool, knowledge.search, search documents, grounding, citations, RAG, passages, reference material, restricted sources, knowledge__search, document search by agent, KnowledgeClient, cited passages, degraded search
+// @what: Gives agents a tool to search the workspace's indexed documents as the requesting person, and shapes passages, citations and the reference block added to a run.
+// @flow: Called by AgentRunner at run start and on tool calls; calls KnowledgeClient (knowledge-service)
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Clock;
@@ -115,7 +118,24 @@ public class KnowledgeSearchTool {
             UUID chunkId,
             double score,
             String content,
-            boolean restricted) {
+            boolean restricted,
+            Double similarity) {
+
+        public Cited(
+                int number,
+                String documentTitle,
+                Integer pageNumber,
+                String heading,
+                String uri,
+                UUID sourceId,
+                UUID documentId,
+                UUID chunkId,
+                double score,
+                String content,
+                boolean restricted) {
+            this(number, documentTitle, pageNumber, heading, uri, sourceId, documentId, chunkId, score, content,
+                    restricted, null);
+        }
 
         /** The label an answer cites it by: its title, and its page when it has one. */
         String label() {
@@ -167,6 +187,7 @@ public class KnowledgeSearchTool {
 
     // ---- Whether to offer it -------------------------------------------------------------------
 
+    // @find: is knowledge search offered, workspace has documents, tool availability
     /**
      * Whether this workspace has at least one indexed source, so agents are offered the tool. Held
      * for {@value #AVAILABLE_TTL}; when the knowledge service cannot be asked the answer is no, and
@@ -176,6 +197,7 @@ public class KnowledgeSearchTool {
         return isOfferedIn(orgId, null);
     }
 
+    // @find: agent own documents, offer knowledge search for agent
     /**
      * As {@link #isOfferedIn(UUID)}, counting this agent's own documents too: an agent with a
      * handbook of its own is offered the search even in a workspace with no documents.
@@ -196,6 +218,7 @@ public class KnowledgeSearchTool {
 
     // ---- Reading the model's call --------------------------------------------------------------
 
+    // @find: parse knowledge search arguments
     /** Parses the model's arguments, or throws Invalid with a sentence the model can act on. */
     public Query parse(String argumentsJson) throws Invalid {
         JsonNode root;
@@ -225,6 +248,7 @@ public class KnowledgeSearchTool {
 
     // ---- Searching ---------------------------------------------------------------------------------
 
+    // @find: search documents, run knowledge search, query workspace knowledge, ground answer
     /**
      * Searches as the person the run is for. Never throws: a search that cannot be made is a result
      * the model is told about, so it can carry on and say the documents could not be checked.
@@ -259,7 +283,8 @@ public class KnowledgeSearchTool {
                         passage.chunkId(),
                         passage.score(),
                         passage.content() == null ? "" : passage.content(),
-                        passage.restricted()));
+                        passage.restricted(),
+                        passage.similarity()));
             }
         }
         boolean grounded = found.grounded() && !passages.isEmpty();
@@ -268,6 +293,7 @@ public class KnowledgeSearchTool {
 
     // ---- What the model and the trace are told ----------------------------------------------------
 
+    // @find: search result text for model, passages in tags
     /**
      * The tool's answer, as the model reads it: the passages between their tags, introduced as
      * reference material. A search that found nothing says so in words the agent can repeat.
@@ -289,6 +315,7 @@ public class KnowledgeSearchTool {
         return text.toString().stripTrailing();
     }
 
+    // @find: reference block at run start, best passages in first message
     /**
      * The block added to the first message of a run when the workspace's documents bear on its
      * instruction: the same passages, introduced as reference material and not as part of the
@@ -316,6 +343,7 @@ public class KnowledgeSearchTool {
         }
     }
 
+    // @find: citations in trace, source excerpts
     /**
      * The citations a trace shows: where each passage came from, with a short excerpt of the ones
      * anyone may read. A passage from a restricted source is cited without its text.

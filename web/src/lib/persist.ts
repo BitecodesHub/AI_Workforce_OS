@@ -1,3 +1,6 @@
+// @find: persist, localStorage, remember state, saved draft, collapsed section, chosen tab, usePersistentState, readStored, writeStored
+// @what: Safe localStorage helpers for state that survives a reload (drafts, tabs, collapsed sections).
+// @flow: Used by many pages; never throws if storage is blocked
 import { useCallback, useState } from 'react'
 
 /*
@@ -7,6 +10,7 @@ import { useCallback, useState } from 'react'
  * nothing had ever been saved.
  */
 
+// @find: read stored value, localStorage get
 export function readStored<T>(key: string, fallback: T, validate?: (value: unknown) => value is T): T {
   try {
     const raw = localStorage.getItem(key)
@@ -19,6 +23,7 @@ export function readStored<T>(key: string, fallback: T, validate?: (value: unkno
   }
 }
 
+// @find: write stored value, localStorage set
 export function writeStored<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value))
@@ -28,6 +33,7 @@ export function writeStored<T>(key: string, value: T): void {
   }
 }
 
+// @find: use persistent state, remembered state hook
 /** React state that reads its initial value from storage and writes every change back to it. */
 export function usePersistentState<T>(
   key: string,

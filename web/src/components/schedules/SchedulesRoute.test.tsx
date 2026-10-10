@@ -1,3 +1,6 @@
+// @find: tests for Schedules page, schedule row actions, owner, cancel permission, take ownership, /api/schedules, /api/schedules/:id/owner, pause, delete schedule, permissions
+// @what: Tests that each Schedules row offers only the actions its viewer may take.
+// @flow: Exercises routes/Schedules with a mocked fetch
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -159,6 +162,13 @@ describe('Schedules row actions', () => {
     const theirs = await rowOf('Board pack')
     await waitFor(() => expect(within(theirs).getByText('Priya Shah')).toBeInTheDocument())
     expect(within(await rowOf('My digest')).getByText('You')).toBeInTheDocument()
+  })
+
+  it('names the time zone each schedule fires in beside when it fires', async () => {
+    signIn(EMPLOYEE)
+    renderSchedules()
+
+    expect(within(await rowOf('My digest')).getByText('(Australia/Melbourne)')).toBeInTheDocument()
   })
 
   it('lets someone who can cancel work change any schedule and hand it to someone else', async () => {

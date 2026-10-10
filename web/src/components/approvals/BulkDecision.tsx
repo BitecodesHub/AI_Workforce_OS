@@ -1,3 +1,6 @@
+// @find: bulk approve, bulk reject, approve all, reject all, similar requests, decide together, group of identical requests, bulk dialog, Approvals page, approval queue
+// @what: Offers and confirms deciding several identical approval requests at once.
+// @flow: Used by the Approvals page above the queue.
 import { useId, useState } from 'react'
 import { Button, Card, ConfirmDialog, Eyebrow, Tag, Textarea, Time } from '../ui'
 import { Collapsible } from '../ui/Collapsible'
@@ -15,6 +18,7 @@ import type { ApprovalItem } from '../../lib/approvalQueries'
 /** Which group is being decided, and which way. */
 export type BulkTarget = { group: ApprovalGroup<ApprovalItem>; mode: 'approve' | 'reject' }
 
+// @find: SimilarRequests, similar requests, bulk approve, bulk reject, approve all, reject all
 /**
  * Identical requests - the same agent, the same tool, the same words - decided together. A
  * schedule that posts a daily summary leaves a queue of them, and reading thirty to click thirty
@@ -74,6 +78,7 @@ export function SimilarRequests({
   )
 }
 
+// @find: BulkDialog, bulk dialog, bulk approve, bulk reject, approve all, reject all
 /**
  * The confirmation for deciding a group. It lists every request it would decide, one line each.
  * Approving leaves out the ones that remove something until the person ticks them, so a deletion

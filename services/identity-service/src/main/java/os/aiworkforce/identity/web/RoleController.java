@@ -1,3 +1,6 @@
+// @find: roles, create role, edit role, delete role, custom role, permissions list, role permissions, /api/roles, Roles page, RoleController
+// @what: REST endpoints to list, create, edit and delete roles and list permission codes.
+// @flow: Uses GrantGuard, Roles, Permissions; backs the Roles page.
 package os.aiworkforce.identity.web;
 
 import java.util.ArrayList;
@@ -85,6 +88,7 @@ public class RoleController {
     public record SaveRoleRequest(
             @NotBlank @Size(max = 60) String name, @Size(max = 300) String description, Set<String> permissions) {}
 
+    // @find: list roles, GET /api/roles
     @GetMapping
     @RequiresPermission(Permission.Codes.ROLE_READ)
     @Operation(summary = "List the roles available in this workspace")
@@ -94,6 +98,7 @@ public class RoleController {
     }
 
     /*
+    // @find: list permissions, permission catalogue, GET /api/roles/permissions
      * WORKSPACE_READ, not ROLE_READ: this is the compile-time permission registry - the same
      * catalogue every role's own description is drawn from - not workspace data, and not
      * sensitive. Gating it behind ROLE_READ meant the profile page's "what your role allows"
@@ -113,6 +118,7 @@ public class RoleController {
                 .toList();
     }
 
+    // @find: create role, new custom role, POST /api/roles
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.ROLE_CREATE)
@@ -125,8 +131,8 @@ public class RoleController {
 
         // Looked up as it will be stored, so " Manager" cannot slip past the check for "Manager".
         String name = request.name().strip();
-        if (roles.findByOrgAndName(orgId, name).isPresent()
-                || roles.findSystemRole(name).isPresent()) {
+        // Case is ignored: "Owner" or "ADMIN" would read exactly like the built-in role.
+        if (!roles.findNameClashes(orgId, name).isEmpty()) {
             throw new ApiException(ErrorCode.ALREADY_EXISTS, "A role with that name already exists.");
         }
 
@@ -145,6 +151,7 @@ public class RoleController {
         return toView(saved);
     }
 
+    // @find: update role, edit role permissions, PUT /api/roles/{roleId}
     @PutMapping("/{roleId}")
     @RequiresPermission(Permission.Codes.ROLE_UPDATE)
     @Transactional
@@ -168,10 +175,8 @@ public class RoleController {
         // Renaming onto a name another role already uses is refused the same way creating one
         // is, rather than left to the unique index to reject as a bare conflict.
         String name = request.name().strip();
-        boolean taken = roles.findByOrgAndName(orgId, name)
-                        .filter(other -> !other.getId().equals(role.getId()))
-                        .isPresent()
-                || roles.findSystemRole(name).isPresent();
+        boolean taken = roles.findNameClashes(orgId, name).stream()
+                .anyMatch(other -> !other.getId().equals(role.getId()));
         if (taken) {
             throw new ApiException(ErrorCode.ALREADY_EXISTS, "A role with that name already exists.");
         }
@@ -200,6 +205,7 @@ public class RoleController {
         return toView(saved);
     }
 
+    // @find: delete role, DELETE /api/roles/{roleId}
     @DeleteMapping("/{roleId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.ROLE_DELETE)

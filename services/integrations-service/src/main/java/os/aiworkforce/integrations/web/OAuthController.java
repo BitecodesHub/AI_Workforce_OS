@@ -1,3 +1,6 @@
+// @find: oauth controller, oauth callback, GET /api/oauth/callback, redirect after sign in, browser nonce cookie, connect with google microsoft salesforce, return to console
+// @what: Endpoint the provider redirects to after sign-in; completes the connection and returns the browser to the console.
+// @flow: Calls OAuthService.callback
 package os.aiworkforce.integrations.web;
 
 import java.net.URI;
@@ -36,6 +39,7 @@ public class OAuthController {
         this.oauth = oauth;
     }
 
+    // @find: oauth callback endpoint, GET /api/oauth/callback
     @GetMapping(OAuthProperties.CALLBACK_PATH)
     @Operation(summary = "OAuth redirect target: exchanges the code and returns the browser to the console")
     public ResponseEntity<Void> callback(

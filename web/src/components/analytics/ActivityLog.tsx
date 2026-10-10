@@ -1,3 +1,6 @@
+// @find: activity log, audit log, audit events, who did what, analytics activity, recent activity, collapsible panel, ActivityLog
+// @what: Collapsible Analytics panel listing recent audit events in the workspace.
+// @flow: Rendered on the Analytics page; reads useAnalytics
 import { useMemo } from 'react'
 import { Card, DataTable, EmptyState, Eyebrow, Notice, StatRow, StatTile, Tag } from '../ui'
 import type { Column, TagTone } from '../ui'
@@ -145,6 +148,7 @@ function ActivityLogBody() {
   )
 }
 
+// @find: ActivityLog, audit trail panel, Analytics page activity
 export function ActivityLog() {
   const [open, toggle] = useCollapsed('analytics.activity-log', false)
   return (

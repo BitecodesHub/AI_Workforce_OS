@@ -1,3 +1,6 @@
+// @find: routing receipt, who is on it, why this agent, send to someone else, reroute, hand off, routing decision, coordinator
+// @what: Receipt showing which agent took the request, why, and a way to send it elsewhere.
+// @flow: Used by MessageItem.
 import { useContext, useRef, useState } from 'react'
 import type { FocusEvent as ReactFocusEvent } from 'react'
 import { Card, Eyebrow, Tag } from '../ui'
@@ -8,7 +11,7 @@ import { canStopGoal } from '../../lib/goals'
 import { isGoalActive } from '../../lib/queries'
 import type { Agent, BoardGoal, ChatMessage } from '../../lib/queries'
 import { can, profile } from '../../lib/session'
-import { becauseText, routingModeLabel, routingSummary } from './chatModel'
+import { agentDescription, becauseText, routingModeLabel, routingSummary } from './chatModel'
 import { DetailsContext } from './detailsContext'
 
 /*
@@ -24,6 +27,7 @@ function closeOnFocusOut(close: () => void) {
   }
 }
 
+// @find: RoutingCard, routing card, routing receipt, who is on it, why this agent, send to someone else
 export function RoutingCard({
   message,
   agentNames,
@@ -126,7 +130,8 @@ export function RoutingCard({
   }
 
   const summary = routingSummary(message, agentNames)
-  const reason = detail.reason ? becauseText(detail.reason) : ''
+  // A mention's line already says "as you asked"; its reason ("You mentioned @X") only repeats it.
+  const reason = detail.reason && detail.mode !== 'mention' ? becauseText(detail.reason) : ''
   const reasonShort = truncateWords(reason, 70)
   const hasMore = reason.length > reasonShort.length || matched.length > 0 || agents.some((a) => agents.length > 1 && a.instruction)
   const canChange = !chosenName && canSendElsewhere && others.length > 0
@@ -182,7 +187,7 @@ export function RoutingCard({
                       }}
                     >
                       <span className="menu-item-label">{agent.name}</span>
-                      <span className="menu-item-note">{agent.summary ?? ''}</span>
+                      <span className="menu-item-note">{agentDescription(agent)}</span>
                     </button>
                   ))}
                 </div>

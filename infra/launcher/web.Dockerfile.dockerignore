@@ -1,3 +1,6 @@
+# @find: dockerignore, build context, exclude node_modules, exclude dist, launcher web image
+# @what: Lists files kept out of the web image build context for the launcher.
+# @flow: Used with infra/launcher/web.Dockerfile
 node_modules
 dist
 *.tsbuildinfo

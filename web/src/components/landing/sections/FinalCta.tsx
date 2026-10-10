@@ -1,3 +1,6 @@
+// @find: final call to action, closing cta, create your workspace, try the demo, sign up, FinalCta
+// @what: The closing call-to-action block shared by the home and Trust pages.
+// @flow: Uses useDemoCta
 import type { ReactElement } from 'react'
 import { Eyebrow } from '../../ui'
 import { Icon } from '../shared/Icon'
@@ -21,6 +24,7 @@ export type FinalCtaProps = {
   body?: string
 }
 
+// @find: FinalCta component, closing call to action
 export function FinalCta({
   eyebrow = 'See it for yourself',
   title = 'Watch your AI team at work',

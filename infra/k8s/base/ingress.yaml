@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, ingress, routes, hostname, tls, external access, web client route, api route
+# @what: Kubernetes ingress that exposes the gateway and web client outside the cluster.
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 # The only route into the platform.
 #
 # Everything arrives at the gateway; no other service is exposed. The headers below are set at

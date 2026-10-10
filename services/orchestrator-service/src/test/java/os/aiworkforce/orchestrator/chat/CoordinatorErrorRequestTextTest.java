@@ -1,3 +1,6 @@
+// @find: tests for coordinator error request text, chat, decide failure keeps request, refused goal keeps request, documents unavailable keeps request, apply failure keeps request, CoordinatorErrorRequestTextTest, CoordinatorErrorRequestText
+// @what: Tests for CoordinatorErrorRequestText in the orchestrator chat package (4 test methods).
+// @flow: Exercises CoordinatorErrorRequestText
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -136,6 +139,7 @@ class CoordinatorErrorRequestTextTest {
         assertThat(error.getContent()).isNotEqualTo(request);
     }
 
+    // @find: test decide failure keeps request, coordinator error request text
     @Test
     @DisplayName("an error while deciding keeps the person's request on the error message")
     void decideFailureKeepsRequest() {
@@ -148,6 +152,7 @@ class CoordinatorErrorRequestTextTest {
         assertCarriesRequest(error, request);
     }
 
+    // @find: test refused goal keeps request, coordinator error request text
     @Test
     @DisplayName("a goal refused at validation keeps the person's request on the error message")
     void refusedGoalKeepsRequest() {
@@ -162,6 +167,7 @@ class CoordinatorErrorRequestTextTest {
         assertCarriesRequest(error, request);
     }
 
+    // @find: test documents unavailable keeps request, coordinator error request text
     @Test
     @DisplayName("an unreachable document search keeps the person's question on the error message")
     void documentsUnavailableKeepsRequest() {
@@ -175,6 +181,7 @@ class CoordinatorErrorRequestTextTest {
         assertCarriesRequest(error, request);
     }
 
+    // @find: test apply failure keeps request, coordinator error request text
     @Test
     @DisplayName("a failure while acting on the decision keeps the person's request on the error message")
     void applyFailureKeepsRequest() {

@@ -1,3 +1,6 @@
+// @find: goal views, goal and task view, task runs, cost per task, attempts, latest run, GoalViews, goal list view, failed today list
+// @what: Turns goals and their tasks into read-only views, batching task and run lookups.
+// @flow: Called by BoardService, the goals list and conversations.
 package os.aiworkforce.orchestrator.board;
 
 import java.math.BigDecimal;
@@ -35,6 +38,7 @@ public final class GoalViews {
     public record TaskRuns(Run latest, BigDecimal cost, int attempts) {}
 
     /** A goal as the board shows it, its tasks kept in position order. */
+    // @find: build goal view with tasks
     public static GoalView goalView(Goal goal, List<Task> tasks, Map<UUID, TaskRuns> runsByTask) {
         List<TaskView> taskViews =
                 tasks.stream().map(task -> taskView(task, runsByTask)).toList();
@@ -61,6 +65,7 @@ public final class GoalViews {
      * attempts} is counted from the runs rather than read from {@code task.getAttempt()}, which a
      * retry sets back to zero.
      */
+    // @find: build task view
     public static TaskView taskView(Task task, Map<UUID, TaskRuns> runsByTask) {
         TaskRuns runs = runsByTask.get(task.getId());
         Run latest = runs == null ? null : runs.latest();
@@ -88,6 +93,7 @@ public final class GoalViews {
      * A goal as the goals list returns it: the same tasks, each with its latest run's id, built
      * from the same batched maps as the board so a page of goals costs a fixed number of queries.
      */
+    // @find: build plain goal view
     public static GoalController.GoalView plainView(Goal goal, List<Task> tasks, Map<UUID, TaskRuns> runsByTask) {
         List<GoalController.TaskView> taskViews = tasks.stream()
                 .map(task -> {
@@ -128,6 +134,7 @@ public final class GoalViews {
      * is its latest one - the same run {@code findFirstByTaskIdOrderByStartedAtDesc} gives one
      * task at a time.
      */
+    // @find: runs grouped by task, cost and attempts
     public static Map<UUID, TaskRuns> runsByTask(Runs runs, Collection<UUID> taskIds) {
         if (taskIds.isEmpty()) {
             return Map.of();
@@ -149,6 +156,7 @@ public final class GoalViews {
     }
 
     /** Each task's latest run, from {@link #runsByTask}, for callers that need nothing else. */
+    // @find: latest run per task
     public static Map<UUID, Run> latestRuns(Map<UUID, TaskRuns> runsByTask) {
         Map<UUID, Run> latest = new LinkedHashMap<>();
         runsByTask.forEach((taskId, runs) -> latest.put(taskId, runs.latest()));

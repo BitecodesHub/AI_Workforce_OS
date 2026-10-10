@@ -1,3 +1,5 @@
+// @find: tests for OrchestratorClient, member left, owner-removed call, after commit, failed call logged
+// @what: Tests that the orchestrator is told after commit and failures never propagate.
 package os.aiworkforce.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

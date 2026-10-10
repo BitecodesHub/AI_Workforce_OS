@@ -1,4 +1,9 @@
 /*
+ * @find: attachment styles, chips, drop overlay, thumbnails, composer attachments css, chat attachment card styles
+ * @what: Styles for attachment chips, drop overlay and attachment cards in chat.
+ * @flow: Used by AttachmentChips and AttachmentCards.
+ */
+/*
  * Chat attachments: the chips above the composer's text box, the drop overlay, the cards on a sent
  * message and the image lightbox. Held to the design-system rules: borders from --line, radii
  * from the token scale, colours from tokens only, and no shadow on anything at rest.

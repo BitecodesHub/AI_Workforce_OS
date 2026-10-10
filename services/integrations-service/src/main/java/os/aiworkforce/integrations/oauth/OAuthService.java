@@ -1,3 +1,6 @@
+// @find: oauth service, connect with google, connect with microsoft, connect with salesforce, sign in, oauth start, oauth callback, save oauth app, PKCE, state, refresh token, access token renewal, reconnect required, gmail, calendar, drive, sheets, outlook, teams, salesforce, GET /api/oauth/callback
+// @what: Runs the OAuth sign-in for connectors: saves the app, builds the consent address, handles the callback, stores tokens and renews them.
+// @flow: Called by IntegrationController and OAuthController; uses OAuthProviders and OAuthStateCodec
 package os.aiworkforce.integrations.oauth;
 
 import java.net.URLEncoder;
@@ -149,6 +152,7 @@ public class OAuthService {
         return OAuthProviders.forServer(server).isPresent();
     }
 
+    // @find: get oauth app status, GET /api/integrations/{server}/oauth/app
     public AppView app(UUID orgId, String server) {
         OAuthProvider provider = providerFor(server);
         Optional<OAuthApp> stored = apps.findByOrgIdAndProvider(orgId, provider.id());
@@ -160,6 +164,7 @@ public class OAuthService {
         return apps.findByOrgId(orgId).stream().map(OAuthApp::getProvider).collect(java.util.stream.Collectors.toSet());
     }
 
+    // @find: save oauth app, register client id and secret, set up the app step, PUT /api/integrations/{server}/oauth/app
     /** Saves the app. A blank secret keeps the one already stored, so a setting can change without retyping it. */
     public AppView saveApp(UUID orgId, Actor actor, String server, String clientId, String clientSecret, Map<String, String> settings) {
         OAuthProvider provider = providerFor(server);
@@ -206,6 +211,7 @@ public class OAuthService {
 
     // ---- Start ----------------------------------------------------------------------------------
 
+    // @find: start oauth sign in, build consent url, GET /api/integrations/{server}/oauth/start, connect with Google
     /**
      * Opens a consent screen: stores the PKCE verifier, signs a state for it, and builds the address.
      *
@@ -254,6 +260,7 @@ public class OAuthService {
 
     // ---- Callback -------------------------------------------------------------------------------
 
+    // @find: oauth callback, exchange code for tokens, store connection, GET /api/oauth/callback
     /**
      * Completes a sign-in from the provider's redirect and says where to send the browser next.
      *
@@ -367,6 +374,7 @@ public class OAuthService {
 
     // ---- Using and refreshing tokens -------------------------------------------------------------
 
+    // @find: get current oauth credential, renew when near expiry
     /**
      * The credential an adapter should use for this connection, refreshed first when it is about to
      * expire. When the refresh fails because the provider refused it, the connection is marked as
@@ -392,6 +400,7 @@ public class OAuthService {
         }
     }
 
+    // @find: refresh after provider rejected token, renew access token
     /**
      * A new credential after the provider rejected {@code rejected} with 401, whatever the stored
      * expiry says. Empty when the sign-in cannot be renewed; the connection is then marked as
@@ -430,6 +439,7 @@ public class OAuthService {
         }
     }
 
+    // @find: flag connection to reconnect
     /** Records that only a new consent will fix this connection. */
     public void requireReconnect(UUID orgId, Connection connection, String reason) {
         synchronized (locks.computeIfAbsent(orgId + ":" + connection.getServer(), key -> new Object())) {

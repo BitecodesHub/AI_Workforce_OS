@@ -1,3 +1,6 @@
+// @find: hero, first screen, landing hero, headline, call to action, try the demo, benefits, what is this product, Hero
+// @what: The first screen of the home page: the offer, two ways in, four benefit links and the console figure.
+// @flow: Uses HeroConsole, useDemoCta and useInPageLink
 import type { ReactElement } from 'react'
 import { Eyebrow } from '../../ui'
 import { revealStyle } from '../../../hooks/useReveal'
@@ -28,6 +31,7 @@ const BENEFITS: ReadonlyArray<{ icon: IconName; label: string; href: string }> =
   { icon: 'check', label: 'A record of every decision', href: '#safety' },
 ]
 
+// @find: Hero component, home page hero
 export function Hero(): ReactElement {
   const inPage = useInPageLink()
   const demo = useDemoCta()

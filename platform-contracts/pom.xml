@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  @find: platform contracts, shared api contracts, shared dtos, maven module, event schemas, internal api types
+  @what: Maven module definition for the shared contracts that services use to talk to each other.
+  @flow: Child of the root pom.xml; depended on by services
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

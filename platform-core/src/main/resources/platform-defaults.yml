@@ -1,3 +1,6 @@
+# @find: platform defaults, default settings, imported by every service, logging, tracing sampling, jwt, jwks, database defaults, actuator, management, aiwos settings
+# @what: Default settings every service imports: security, logging, tracing, health and platform behaviour.
+# @flow: Imported by each service's application.yml
 # Defaults shared by every service.
 #
 # A service imports this file and overrides only what is genuinely its own: its name, its port,

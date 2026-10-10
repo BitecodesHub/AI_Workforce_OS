@@ -1,3 +1,6 @@
+// @find: tests for chat polling, poll, redraw, new messages, vitest, Chat component tests, Chat page
+// @what: Automated tests that check the chat polling screen (/chat) behaves as users expect.
+// @flow: Renders Chat from Chat.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

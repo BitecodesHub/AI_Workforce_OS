@@ -1,3 +1,6 @@
+// @find: conversation row, sidebar item, rename inline, pin conversation, archive, delete, open conversation, conversation title, status text
+// @what: One row of the conversation sidebar with a renamable title and actions.
+// @flow: Used by ChatSidebar.
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { formatDateTime, formatShortTime } from '../../lib/format'
@@ -46,6 +49,7 @@ function Highlighted({ text, query, className }: { text: string; query: string; 
   )
 }
 
+// @find: ConversationRow, conversation row, conversation row, sidebar item, rename inline, pin conversation
 export function ConversationRow({
   conversation,
   current,

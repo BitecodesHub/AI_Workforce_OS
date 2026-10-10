@@ -1,24 +1,35 @@
+// @find: run stats, model turns, duration, tokens, cost, run numbers, run detail
+// @what: The run's own numbers: turns, duration, tokens and cost.
+// @flow: Used by RunDetail.
 import { StatRow, StatTile } from '../ui'
-import { formatCount, formatElapsed, formatMoney, formatRelative } from '../../lib/format'
-import type { Run, RunStep } from '../../lib/queries'
+import { formatCount, formatElapsed, formatRelative } from '../../lib/format'
+import { runCost } from '../analytics/figures'
+import type { Run, RunPricing, RunStep } from '../../lib/queries'
 import { isSandboxStep } from './traceModel'
 
+const COST_NOTES: Record<RunPricing, string> = {
+  priced: 'At catalogue prices per million tokens',
+  free: 'Every model it used is free in the catalogue',
+  sandbox: 'Offline sandbox',
+  unpriced: 'No catalogue price for the model it used',
+  none: 'No model has answered yet',
+}
+
+// @find: RunStats, run stats, run stats, model turns, duration, tokens
 /** The run's own numbers: model turns, duration (still ticking if it is running), tokens, cost. */
 export function RunStats({ run, steps, now }: { run: Run; steps: RunStep[] | undefined; now: number }) {
-  const cost = Number(run.cost) || 0
   const modelSteps = steps?.filter((step) => step.kind === 'model_call') ?? []
   const sandboxOnly = modelSteps.length > 0 && modelSteps.every(isSandboxStep)
-  const PRICED = 'At catalogue prices per million tokens'
-  // A run that cost nothing is free only when the offline sandbox answered every call; otherwise
-  // it is a real figure of zero. Until the steps arrive there is no telling which.
+  // The same words as the Runs list and the agent's page. The service says what a zero cost
+  // means; an older one that does not is read from the steps, once they arrive.
+  const pricing: RunPricing | undefined =
+    Number(run.cost) > 0
+      ? 'priced'
+      : (run.pricing ?? (steps === undefined ? undefined : sandboxOnly ? 'sandbox' : 'unpriced'))
   const costTile =
-    cost > 0
-      ? { value: formatMoney(cost), note: PRICED }
-      : steps === undefined
-        ? { value: '—', note: undefined }
-        : sandboxOnly
-          ? { value: 'Free', note: 'Offline sandbox' }
-          : { value: formatMoney(0), note: PRICED }
+    pricing === undefined
+      ? { value: '—', note: undefined }
+      : { value: runCost({ ...run, pricing }).text, note: COST_NOTES[pricing] }
 
   let duration: { value: string; note: string }
   if (run.status === 'running') {

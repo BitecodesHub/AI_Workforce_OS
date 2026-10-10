@@ -1,3 +1,5 @@
+// @find: tests for mentions, @mention, findMentionQuery, matchAgents, insertMention
+// @what: Unit tests for @mention helpers.
 import { describe, expect, it } from 'vitest'
 import { extractMentions, findMentionQuery, insertMention, matchAgents } from './mentions'
 import type { MentionCandidate } from './mentions'

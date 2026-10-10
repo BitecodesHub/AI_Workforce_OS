@@ -1,3 +1,6 @@
+// @find: agent grants, tool server grants, what each agent may do, gated tools, outbound destructive, DemoAgentSeeder, SandboxServerRegistry, AGENT_GRANTS
+// @what: One plain sentence per agent and tool server grant, with whether a person must approve.
+// @flow: Used by AgentsSection
 import type { AgentId, ToolServer } from '../shared/landingFacts'
 
 /*
@@ -43,6 +46,7 @@ export const AGENT_GRANTS: Record<AgentId, ReadonlyArray<AgentGrant>> = {
 }
 
 /** The grant shown first: the first gated one, or the first grant when none is gated. */
+// @find: defaultGrant, default tool server for agent
 export function defaultGrant(agent: AgentId): ToolServer | null {
   const grants = AGENT_GRANTS[agent]
   return (grants.find((grant) => grant.gated) ?? grants[0])?.server ?? null

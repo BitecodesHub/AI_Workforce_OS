@@ -1,10 +1,30 @@
+// @find: add people to chat, share conversation, private conversation, conversation members, invite to chat, who can read, Add people dialog, canUseChat, chat permission, role
+// @what: Dialog to choose who else can read a private conversation.
+// @flow: Used by ThreadHeader.
 import { useState } from 'react'
 import { Button, Dialog, Notice } from '../ui'
 import { QueryState } from '../ui/QueryState'
 import { describeApiError } from '../../lib/api'
 import { useAddConversationPeople, useConversationPeople, useRemoveConversationPerson } from '../../lib/chatQueries'
-import { useMembers } from '../../lib/queries'
-import { profile } from '../../lib/session'
+import { useMembers, useRoles } from '../../lib/queries'
+import type { Role } from '../../lib/queries'
+import { can, profile } from '../../lib/session'
+
+/** The built-in roles that cannot open Chat (PermissionSeeder), for a person who cannot read the roles. */
+const BUILT_IN_WITHOUT_CHAT = new Set(['viewer'])
+
+// @find: AddPeopleDialog, add people dialog, add people to chat, share conversation, private conversation, conversation members
+/**
+ * Whether a member with `role` can open Chat, and so read a conversation they are added to.
+ * Uses the workspace's roles when they could be read (a custom role is judged by its own
+ * permissions), else what the built-in roles hold. A custom role nobody here can read is assumed
+ * to have it, because refusing everyone on a guess would be worse.
+ */
+export function canUseChat(role: string, roles: readonly Pick<Role, 'name' | 'permissions'>[] | undefined): boolean {
+  const found = roles?.find((candidate) => candidate.name === role)
+  if (found) return found.permissions.includes('chat:use')
+  return !BUILT_IN_WITHOUT_CHAT.has(role)
+}
 
 /*
  * Who else can read a private conversation: everyone in the workspace is listed, those already
@@ -21,6 +41,7 @@ export function AddPeopleDialog({
   onClose: () => void
 }) {
   const members = useMembers({ enabled: open })
+  const roles = useRoles({ enabled: open && can('role:read') })
   const added = useConversationPeople(conversationId, open)
   const add = useAddConversationPeople()
   const remove = useRemoveConversationPerson()
@@ -89,7 +110,16 @@ export function AddPeopleDialog({
             <ul className="stack" style={{ gap: 'var(--space-2)', listStyle: 'none', padding: 0, margin: 0 }}>
               {candidates.map((member) => (
                 <li key={member.userId} className="row" style={{ justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-                  {already.has(member.userId) ? (
+                  {!already.has(member.userId) && !canUseChat(member.role, roles.data) ? (
+                    // Listed, so nobody wonders where they went, but not offered: their role
+                    // cannot open Chat, so they could never read it.
+                    <span>
+                      {member.displayName}{' '}
+                      <span className="caption muted">
+                        Cannot be added: the {member.role} role cannot open Chat.
+                      </span>
+                    </span>
+                  ) : already.has(member.userId) ? (
                     <>
                       <span>
                         {member.displayName} <span className="caption muted">can read this</span>

@@ -1,3 +1,9 @@
+// @find: run, agent run, execution, run status, run lease, abandoned run, worker, total cost, total tokens, failure reason, step count, runs table, Run entity, Runs page, trace
+// @what: Entity for one agent's attempt at one task, with status, lease, token and cost totals.
+// @flow: Stored by Runs; steps in RunStep; reaper marks lapsed leases abandoned.
+// @find: run, agent run, execution, run status, run lease, abandoned run, worker, total cost, total tokens, failure reason, step count, runs table, Run entity, Runs page, trace
+// @what: Entity for one agent's attempt at one task, with status, lease, token and cost totals.
+// @flow: Stored by Runs; steps in RunStep; reaper marks lapsed leases abandoned.
 package os.aiworkforce.orchestrator.domain;
 
 import java.math.BigDecimal;
@@ -177,22 +183,30 @@ public class Run extends OrgScopedEntity {
         this.failureReason = failureReason;
     }
 
+    // @find: is run active, working or waiting
+    // @find: is run active, working or waiting
     /** Still going: working, or parked waiting for a person's approval or answer. */
     public boolean isActive() {
         return "running".equals(status) || isParked();
     }
 
+    // @find: is run parked, waiting for approval or answer
+    // @find: is run parked, waiting for approval or answer
     /** Parked waiting for a person, either to approve an action or to answer a question. */
     public boolean isParked() {
         return "waiting_approval".equals(status) || "waiting_input".equals(status);
     }
 
+    // @find: renew run lease, heartbeat, keep run alive
+    // @find: renew run lease, heartbeat, keep run alive
     /** Extends the lease. Called after every step, so a long run is not reaped mid-flight. */
     public void renewLease(String workerId, java.time.Duration duration) {
         this.workerId = workerId;
         this.leaseExpiresAt = Instant.now().plus(duration);
     }
 
+    // @find: finish run, complete run, fail run, set final status
+    // @find: finish run, complete run, fail run, set final status
     public void finish(String status, String failureReason) {
         this.status = status;
         this.failureReason = failureReason;

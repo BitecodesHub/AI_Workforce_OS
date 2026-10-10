@@ -1,3 +1,5 @@
+// @find: tests for goal service, goals, tasks, dependencies, create goal, retry goal, cancel goal, concurrency cap, claim task
+// @what: Unit and integration tests (45 cases) for goal service, for example: stops run and approval; old approval cannot be decided; finished run untouched; finished goal refused.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

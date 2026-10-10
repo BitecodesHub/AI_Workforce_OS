@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, staging, overlay, kustomize, staging environment, replicas, image tags, environment overrides
+# @what: Staging overlay that adjusts the base Kubernetes manifests for the staging environment.
+# @flow: Builds on infra/k8s/base/kustomization.yaml
 # Staging runs the same manifests with less of everything.
 #
 # Same images, same configuration shape, same probes. A staging environment that differs

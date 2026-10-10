@@ -1,3 +1,5 @@
+// @find: tests for onboarding, guide steps, hide guide, localStorage failure
+// @what: Unit tests for the getting-started guide memory.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GUIDE_CHANGE_EVENT, isGuideHidden, isStepDone, markStepDone, onGuideChange, setGuideHidden } from './onboarding'
 

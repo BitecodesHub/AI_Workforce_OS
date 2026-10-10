@@ -1,3 +1,6 @@
+// @find: user, account, person who signs in, password hash, failed login, lockout, locked account, mfa, email verified, User entity, users table
+// @what: JPA entity for a person account with credentials and lockout state.
+// @flow: Used by Users repository, AuthService, PasswordResetService, DemoDataSeeder.
 package os.aiworkforce.identity.domain;
 
 import java.time.Duration;
@@ -69,6 +72,7 @@ public class User extends BaseEntity {
         return emailVerifiedAt != null;
     }
 
+    // @find: failed login, wrong password, lock account, lockout
     /**
      * Records a failed sign-in and locks the account once the threshold is reached.
      *
@@ -88,6 +92,7 @@ public class User extends BaseEntity {
         lastLoginAt = Instant.now();
     }
 
+    // @find: unlock account, reset lockout
     /** Forgets earlier failures, as a successful sign-in or a password reset does. */
     public void clearLockout() {
         failedLoginCount = 0;
@@ -136,6 +141,7 @@ public class User extends BaseEntity {
         this.passwordHash = passwordHash;
     }
 
+    // @find: change password, new password, password changed at
     /** A new password chosen by the person, or set through a reset link. */
     public void changePassword(String newHash) {
         this.passwordHash = newHash;

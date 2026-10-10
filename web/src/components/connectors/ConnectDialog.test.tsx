@@ -1,3 +1,6 @@
+// @find: tests for ConnectDialog, connect connector, add connector, connect account, token, api key, sign in, oauth, credentials, Connect dialog, Integrations page, live account
+// @what: Automated tests for ConnectDialog.
+// @flow: Run with the web test runner; covers ConnectDialog.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -268,6 +271,19 @@ describe('ConnectDialog: problems shown next to the field', () => {
     })
     expect(await screen.findByRole('alert')).toHaveTextContent('Jira answered the check with status 404.')
     expect(screen.getByLabelText('Atlassian site')).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('refuses a client ID with a space in it under the field, without saving', async () => {
+    show({ ...base, authType: 'oauth', oauth, oauthAppConfigured: false })
+    type('Client ID', 'not a real id')
+    type('Client secret', 'shh')
+    type('Tenant', 'contoso')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save app' }))
+    })
+    expect(screen.getByLabelText('Client ID')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText(/A client ID has no spaces/)).toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false)
   })
 
   it('puts a refused app setting under that setting, not under "Settings"', async () => {

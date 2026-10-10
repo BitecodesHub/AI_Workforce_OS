@@ -1,3 +1,6 @@
+// @find: agent memory, GET/POST/PUT/DELETE /api/memory/agents/{agentId}/memories, add note, edit note, delete note, pin note, forget all, Agent page memory tab, what an agent remembers
+// @what: REST endpoints that let people view and manage what an AI employee remembers.
+// @flow: Calls AgentMemoryService; permission agent:read / agent:update
 package os.aiworkforce.memory.web;
 
 import java.time.Instant;
@@ -58,7 +61,8 @@ public class AgentMemoryController {
             Instant lastRecalledAt,
             Instant createdAt,
             String createdBy,
-            Instant updatedAt) {
+            Instant updatedAt,
+            boolean pinned) {
 
         static MemoryView of(AgentMemory memory) {
             return new MemoryView(
@@ -71,7 +75,8 @@ public class AgentMemoryController {
                     memory.getLastRecalledAt(),
                     memory.getCreatedAt(),
                     memory.getCreatedBy(),
-                    memory.getUpdatedAt());
+                    memory.getUpdatedAt(),
+                    memory.isPinned());
         }
     }
 
@@ -80,6 +85,7 @@ public class AgentMemoryController {
     public record MemoryRequest(
             @Size(max = 20) String kind, @NotBlank @Size(max = AgentMemory.MAX_CONTENT) String content) {}
 
+    // @find: GET /api/memory/agents/{agentId}/memories, list, endpoint, agent memory
     @GetMapping
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "What this agent remembers, newest change first")
@@ -90,6 +96,7 @@ public class AgentMemoryController {
         return new MemoryList(views, memories.count(orgId, agentId), AgentMemoryService.MAX_PER_AGENT);
     }
 
+    // @find: POST /api/memory/agents/{agentId}/memories, add, endpoint, agent memory
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -100,6 +107,7 @@ public class AgentMemoryController {
         return MemoryView.of(saved.memory());
     }
 
+    // @find: PUT /api/memory/agents/{agentId}/memories/{memoryId}, update, endpoint, agent memory
     @PutMapping("/{memoryId}")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Operation(summary = "Correct a note")
@@ -109,12 +117,43 @@ public class AgentMemoryController {
                 memories.update(orgId(), agentId, memoryId, request.kind(), request.content(), actorId()));
     }
 
+    // @find: DELETE /api/memory/agents/{agentId}/memories/{memoryId}, delete, endpoint, agent memory
     @DeleteMapping("/{memoryId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Operation(summary = "Remove a note")
     public void delete(@PathVariable UUID agentId, @PathVariable UUID memoryId) {
         memories.delete(orgId(), agentId, memoryId);
+    }
+
+    // @find: PUT /api/memory/agents/{agentId}/memories/{memoryId}/pin, pin, endpoint, agent memory
+    @PutMapping("/{memoryId}/pin")
+    @RequiresPermission(Permission.Codes.AGENT_UPDATE)
+    @Operation(summary = "Pin a note so the agent always recalls it")
+    public MemoryView pin(@PathVariable UUID agentId, @PathVariable UUID memoryId) {
+        return MemoryView.of(memories.pin(orgId(), agentId, memoryId, true));
+    }
+
+    // @find: DELETE /api/memory/agents/{agentId}/memories/{memoryId}/pin, unpin, endpoint, agent memory
+    @DeleteMapping("/{memoryId}/pin")
+    @RequiresPermission(Permission.Codes.AGENT_UPDATE)
+    @Operation(summary = "Unpin a note")
+    public MemoryView unpin(@PathVariable UUID agentId, @PathVariable UUID memoryId) {
+        return MemoryView.of(memories.pin(orgId(), agentId, memoryId, false));
+    }
+
+    public record Forgotten(int removed) {}
+
+    /**
+     * Removes every note, pinned ones too: the same permission as removing one note, since this is
+     * that many times over. Episodes (the record of what happened) are kept.
+     */
+    // @find: DELETE /api/memory/agents/{agentId}/memories, forgetAll, endpoint, agent memory
+    @DeleteMapping
+    @RequiresPermission(Permission.Codes.AGENT_UPDATE)
+    @Operation(summary = "Forget everything this agent remembers")
+    public Forgotten forgetAll(@PathVariable UUID agentId) {
+        return new Forgotten(memories.forgetAll(orgId(), agentId));
     }
 
     private static UUID orgId() {

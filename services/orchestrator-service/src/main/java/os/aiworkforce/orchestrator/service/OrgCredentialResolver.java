@@ -1,3 +1,6 @@
+// @find: provider credential, API key lookup, organisation service, credentialRef, decrypt key remotely, model provider key, no encryption key in orchestrator
+// @what: Fetches a model-provider API key from the organisation service, which alone holds the encryption key.
+// @flow: Called by ModelRouter providers at call time
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -66,11 +69,13 @@ public class OrgCredentialResolver implements CredentialResolver {
         this.resilience = resilience;
     }
 
+    // @find: resolve provider credential
     @Override
     public Optional<String> resolve(String orgId, String credentialRef) {
         return lookup(orgId, credentialRef) instanceof Found found ? Optional.of(found.value()) : Optional.empty();
     }
 
+    // @find: lookup credential with reason
     @Override
     public Lookup lookup(String orgId, String credentialRef) {
         if (credentialRef == null || credentialRef.isBlank()) {

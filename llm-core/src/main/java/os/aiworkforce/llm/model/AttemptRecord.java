@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, attempt record, failed attempts, retries log, which model answered, latency, failure reason, AttemptRecord
+// @what: Record of one attempt at one candidate model, successful or not.
+// @flow: Built by ModelRouter; stored via UsageRecorder.
 package os.aiworkforce.llm.model;
 
 import java.time.Duration;

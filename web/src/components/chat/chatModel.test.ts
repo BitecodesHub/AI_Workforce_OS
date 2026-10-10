@@ -1,5 +1,11 @@
+// @find: tests for chatModel, chat model, group messages, message grouping, new message ids, answer announce, read aloud, goal chain, thread rules, pure functions
+// @what: Automated tests for chatModel.
+// @flow: Run with the web test runner; covers chatModel.
 import { describe, expect, it } from 'vitest'
 import {
+  retryLeftInBox,
+  titleFromFirstMessage,
+  isRoutingLastMessage,
   activeGoals,
   autoAnswerTarget,
   canRetryGoal,
@@ -786,7 +792,16 @@ describe('liveStepText', () => {
     expect(liveStepText(step({ kind: 'question' }))).toBe('Waiting for an answer')
     expect(liveStepText(step({ kind: 'approval' }))).toBe('Waiting for approval')
     expect(liveStepText(step({ kind: 'handoff', detail: { fromAgentName: 'Research' } }))).toBe('Picking up from Research')
-    expect(liveStepText(step({ kind: 'note' }))).toBe('Starting')
+    expect(liveStepText(step({ kind: 'memory_read' }))).toBe('Last step: read its notes')
+    expect(liveStepText(step({ kind: 'knowledge_query' }))).toBe('Last step: searched the documents')
+  })
+
+  // Regression: a model call is recorded only after the model replies, so a run waiting on its
+  // first reply has only its instruction note, and the card read "Starting" for the whole wait.
+  it('reads a run waiting on its first reply as working, never as starting', () => {
+    expect(liveStepText(step({ kind: 'note', detail: { type: 'instruction' } }))).toBe('Working on a reply')
+    expect(liveStepText(step({ kind: 'error' }))).toBe('Working on a reply')
+    expect(liveStepText(step({ kind: 'something_new' }))).toBe('Working on a reply')
   })
 })
 
@@ -1035,3 +1050,40 @@ describe('describeAgent', () => {
     expect(describeAgent('You are a helpful assistant.', 'Engineering')).toBe('Engineering')
   })
 })
+
+describe('isRoutingLastMessage', () => {
+  const user = { authorKind: 'user', kind: 'text' } as ChatMessage
+  const routing = { authorKind: 'coordinator', kind: 'routing' } as ChatMessage
+  const active = { status: 'running', tasks: [] } as unknown as BoardGoal
+
+  it('is true while the server routes the person\'s newest message, so a reload still shows it', () => {
+    expect(isRoutingLastMessage([routing, user], [], 'working')).toBe(true)
+  })
+
+  it('is false once routed, while a goal runs, or when nothing is in progress', () => {
+    expect(isRoutingLastMessage([user, routing], [], 'working')).toBe(false)
+    expect(isRoutingLastMessage([user], [active], 'working')).toBe(false)
+    expect(isRoutingLastMessage([user], [], 'idle')).toBe(false)
+    expect(isRoutingLastMessage([], [], 'working')).toBe(false)
+  })
+})
+
+describe('titleFromFirstMessage', () => {
+  it('keeps a short message whole and cuts a long one at a word, as the server does', () => {
+    expect(titleFromFirstMessage('  Email   Jane about the refund ')).toBe('Email Jane about the refund')
+    const long = 'Email jane@example.com to tell her that her refund for order 4471 has been processed'
+    const title = titleFromFirstMessage(long)
+    expect(title).toBe('Email jane@example.com to tell her that her refund for')
+    expect(title.length).toBeLessThanOrEqual(60)
+  })
+})
+
+describe('retryLeftInBox', () => {
+  it('is true only when the box still holds exactly the words that were sent again', () => {
+    expect(retryLeftInBox('What is 12 x 12? ', 'What is 12 x 12?')).toBe(true)
+    expect(retryLeftInBox('What is 12 x 12? And 13?', 'What is 12 x 12?')).toBe(false)
+    expect(retryLeftInBox('', 'What is 12 x 12?')).toBe(false)
+    expect(retryLeftInBox(undefined, 'x')).toBe(false)
+  })
+})
+

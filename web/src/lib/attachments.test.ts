@@ -1,3 +1,5 @@
+// @find: tests for attachments, checkFile, kindOf, upload attachment, formatBytes, save to knowledge
+// @what: Unit tests for chat attachment validation and upload helpers.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
 import {

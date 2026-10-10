@@ -1,3 +1,6 @@
+// @find: tests for the knowledge source page, upload, notices, manage knowledge, vitest, SourceDetail component tests, Source page
+// @what: Automated tests that check the the knowledge source page screen (/knowledge/:id) behaves as users expect.
+// @flow: Renders SourceDetail from SourceDetail.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -69,8 +72,12 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
+/** When set, the source the page is given: an agent's own documents rather than a workspace source. */
+let sourceAgentId: string | null = null
+
 function answer(method: string, url: string): Response {
-  if (method === 'GET' && url === '/api/sources/s1') return json(200, SOURCE)
+  if (method === 'GET' && url === '/api/sources/s1') return json(200, { ...SOURCE, agentId: sourceAgentId })
+  if (method === 'GET' && url === '/api/agents') return json(200, [{ id: 'a-hr', name: 'HR', status: 'active' }])
   if (method === 'GET' && url === '/api/sources/s1/documents') return json(200, documents)
   if (method === 'DELETE' && url.startsWith('/api/sources/s1/documents/')) {
     const id = url.slice('/api/sources/s1/documents/'.length)
@@ -94,6 +101,7 @@ function signedIn(permissions: string[]) {
 
 beforeEach(() => {
   calls = []
+  sourceAgentId = null
   documents = [LEAVE, HANDBOOK]
   uploadAnswer = (name) => ({ documentId: 'd-new', status: 'indexed', chunkCount: 1, searchable: true, title: name })
   vi.stubGlobal('scrollTo', vi.fn())
@@ -275,5 +283,22 @@ describe('SourceDetail for someone who can only read', () => {
 
     expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Upload documents' })).not.toBeInTheDocument()
+  })
+})
+
+describe('SourceDetail for an agent\'s own documents', () => {
+  it('says whose documents they are and offers none of the workspace-source controls', async () => {
+    sourceAgentId = 'a-hr'
+    signedIn([...MANAGE, 'agent:read'])
+    await renderSource()
+
+    // Reached from a citation: the raw "Agent documents <id>" name told nobody whose they were.
+    expect(await screen.findByRole('heading', { name: 'HR’s documents' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'the agent’s page' })).toHaveAttribute('href', '/agents/a-hr')
+    expect(screen.queryByRole('button', { name: 'Upload documents' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete source' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+    expect(screen.queryByText(/Everyone with Chat access/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Delete Leave policy/ })).toBeNull()
   })
 })

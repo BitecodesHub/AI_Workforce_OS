@@ -1,3 +1,6 @@
+// @find: org-service startup, organisation application, main class, Spring Boot entry point, workspaces service, invitations service
+// @what: Spring Boot entry point for org-service.
+// @flow: Scans platform-core and platform-web beans; starts the web controllers in web/.
 package os.aiworkforce.organisation;
 
 import org.springframework.boot.SpringApplication;

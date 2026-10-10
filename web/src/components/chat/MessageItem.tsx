@@ -1,3 +1,6 @@
+// @find: thread item, message kind, render message, answer, question, routing, error, notice, schedule, progress, chat message dispatch
+// @what: Picks the right component for each kind of thread item.
+// @flow: Called by MessageList; renders AnswerBubble, UserBubble, ErrorCard, RoutingCard and others.
 import { memo } from 'react'
 import type { Agent, BoardGoal, ChatMessage, Member, RunQuestion } from '../../lib/queries'
 import { isGoalActive } from '../../lib/queries'
@@ -168,4 +171,5 @@ function MessageItemInner({
   }
 }
 
+// @find: MessageItem, message item, thread item, message kind, render message, answer
 export const MessageItem = memo(MessageItemInner)

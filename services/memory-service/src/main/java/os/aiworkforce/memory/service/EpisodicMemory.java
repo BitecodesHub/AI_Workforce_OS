@@ -1,3 +1,6 @@
+// @find: episodic memory, record episode, recall episodes, compact episodes, episodes for run, purge expired, what do we already know, agent history
+// @what: Records, recalls, compacts and purges the permanent record of what agents did and decided.
+// @flow: Called by InternalMemoryController, MemoryController and EpisodePurgeJob
 package os.aiworkforce.memory.service;
 
 import java.time.Duration;
@@ -45,6 +48,7 @@ public class EpisodicMemory {
     }
 
     @Transactional
+    // @find: record episode, save what an agent did
     public Episode record(
             UUID orgId,
             UUID agentId,
@@ -68,6 +72,7 @@ public class EpisodicMemory {
      * task out of it.
      */
     @Transactional(readOnly = true)
+    // @find: recall episodes, search episodes
     public List<Episode> recall(UUID orgId, UUID agentId, String query, int limit) {
         int capped = Math.min(Math.max(limit, 1), 50);
         if (query == null || query.isBlank()) {
@@ -77,6 +82,7 @@ public class EpisodicMemory {
     }
 
     @Transactional(readOnly = true)
+    // @find: episodes for a run, run memory
     public List<Episode> forRun(UUID orgId, UUID runId) {
         return episodes.findByOrgIdAndRunIdOrderByOccurredAt(orgId, runId);
     }
@@ -92,6 +98,7 @@ public class EpisodicMemory {
      * ones somebody reconstructs an incident from.
      */
     @Transactional
+    // @find: compact episodes, summarise old episodes
     public int compact(UUID orgId, int batchSize) {
         Instant before = Instant.now().minus(COMPACTION_AGE);
         List<Episode> candidates =
@@ -154,6 +161,7 @@ public class EpisodicMemory {
 
     /** Removes episodes past their retention date. Runs in small batches for the same reason. */
     @Transactional
+    // @find: purge expired episodes, retention cleanup
     public int purgeExpired(int batchSize) {
         return episodes.deleteExpired(Instant.now(), batchSize);
     }

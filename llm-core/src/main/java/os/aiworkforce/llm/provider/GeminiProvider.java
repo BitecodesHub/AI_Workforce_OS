@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, Google Gemini, Generative Language API, roles, function calls, embeddings, GeminiProvider
+// @what: Adapter for Google's Gemini API, including embeddings.
+// @flow: Registered as a ChatProvider; called by ModelRouter.
 package os.aiworkforce.llm.provider;
 
 import java.time.Duration;
@@ -63,6 +66,7 @@ public class GeminiProvider implements ChatProvider {
         return ProviderDescriptor.Kind.GEMINI;
     }
 
+    // @find: call Gemini, chat completion
     @Override
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -78,6 +82,7 @@ public class GeminiProvider implements ChatProvider {
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    // @find: stream Gemini answer
     @Override
     public Flux<ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
@@ -96,6 +101,7 @@ public class GeminiProvider implements ChatProvider {
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    // @find: Gemini embeddings, knowledge base embeddings
     @Override
     public Mono<List<float[]>> embed(
             ProviderDescriptor provider, ModelSpec model, List<String> inputs, String credential) {
@@ -127,6 +133,7 @@ public class GeminiProvider implements ChatProvider {
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    // @find: check Gemini key works
     @Override
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         return client(provider, credential)

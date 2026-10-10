@@ -1,3 +1,6 @@
+// @find: schedule sweep, scheduler job, due schedules, every 30 seconds, start scheduled work, ScheduleSweep, background job, aiwos.scheduling.schedule-interval
+// @what: Background job that regularly starts schedules whose time has come.
+// @flow: Calls ScheduleService.sweepDue
 package os.aiworkforce.orchestrator.schedule;
 
 import org.slf4j.Logger;
@@ -27,6 +30,7 @@ public class ScheduleSweep {
         this.service = service;
     }
 
+    // @find: scheduled job, sweep due schedules every 30 seconds
     @Scheduled(fixedDelayString = "${aiwos.scheduling.schedule-interval:PT30S}")
     public void sweep() {
         try {

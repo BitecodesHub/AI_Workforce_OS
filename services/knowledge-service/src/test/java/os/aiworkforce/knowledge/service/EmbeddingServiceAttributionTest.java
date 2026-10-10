@@ -1,3 +1,5 @@
+// @find: tests for embedding cost attribution, embedding spend by agent and run, runId, usage booking, embedding service, knowledge base
+// @what: Checks embedding calls carry the agent and run so the orchestrator books the spend correctly.
 package os.aiworkforce.knowledge.service;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

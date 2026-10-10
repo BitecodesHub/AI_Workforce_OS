@@ -1,3 +1,6 @@
+// @find: base entity, uuid id, created at, created by, version, optimistic locking, jpa base class
+// @what: Base class for persisted rows: UUIDv7 id, created/updated stamps and a version for optimistic locking.
+// @flow: Extended by entities in every service
 package os.aiworkforce.platform.web.persistence;
 
 import java.time.Instant;

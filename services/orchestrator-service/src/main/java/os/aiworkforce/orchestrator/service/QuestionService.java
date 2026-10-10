@@ -1,3 +1,6 @@
+// @find: questions, run asks a question, answer question, extend question, question expiry, overdue questions, pending questions, resume after answer, skip question, who can answer, conversation questions, QuestionService
+// @what: Records the questions a run parks on, accepts a person's answers or skips, expires overdue ones and finds runs ready to resume.
+// @flow: Called by AgentRunner (raise) and QuestionController (answer, extend); sweeps run from MaintenanceScheduler
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -168,6 +171,7 @@ public class QuestionService {
 
     // ---- Asking ---------------------------------------------------------------------------------
 
+    // @find: may this run ask a question, ask policy
     /**
      * Whether this run may ask a question now.
      *
@@ -196,6 +200,7 @@ public class QuestionService {
         return new AskPolicy(true, everAsked, null);
     }
 
+    // @find: raise question, park run on question, create question
     /**
      * Records the question a run is about to park on.
      *
@@ -257,6 +262,7 @@ public class QuestionService {
 
     // ---- Answering ------------------------------------------------------------------------------
 
+    // @find: answer a question, submit answer, skip question, POST answer
     /**
      * Records a person's answer.
      *
@@ -319,6 +325,7 @@ public class QuestionService {
         return new AnswerOutcome(question, true);
     }
 
+    // @find: extend question deadline, one more window
     /**
      * Gives a question one more window, up to seven days from when it was asked.
      *
@@ -355,6 +362,7 @@ public class QuestionService {
         return question;
     }
 
+    // @find: who can answer a question
     /**
      * The goal's requester, or anyone who can cancel work, and in either case someone who can
      * start work: an answer steers it.
@@ -508,11 +516,13 @@ public class QuestionService {
 
     // ---- Expiry, withdrawal and resuming --------------------------------------------------------
 
+    // @find: overdue questions, expiry sweep
     @Transactional(readOnly = true)
     public List<UUID> overdueIds(int limit) {
         return questions.findExpiredIds(Instant.now(), PageRequest.of(0, limit));
     }
 
+    // @find: expire overdue question
     /**
      * Expires one overdue question, in a transaction of its own under a row lock.
      *
@@ -542,6 +552,7 @@ public class QuestionService {
         return questions.findStrandedPendingIds(PageRequest.of(0, limit));
     }
 
+    // @find: close stranded question
     /** Closes a pending question whose run stopped by a path that could not withdraw it. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void closeStranded(UUID questionId) {
@@ -558,6 +569,7 @@ public class QuestionService {
         }
     }
 
+    // @find: withdraw question when run stopped
     /**
      * Withdraws a stopped run's pending question with a conditional bulk update, never by loading
      * and saving it. Joins the caller's transaction, which holds the run's lock.
@@ -569,6 +581,7 @@ public class QuestionService {
         return questions.withdrawPending(runId, reason, Instant.now());
     }
 
+    // @find: runs awaiting resume after answer
     /** Runs parked on a question that has since been answered or expired, for the resume sweep. */
     @Transactional(readOnly = true)
     public List<RunRef> awaitingResume(Instant cutoff, int limit) {
@@ -606,6 +619,7 @@ public class QuestionService {
         return questions.conversationsNeedingAnswerFrom(orgId, me);
     }
 
+    // @find: unlink deleted conversation questions
     /** Unlinks a deleted conversation's questions, which stay on their runs. */
     @Transactional
     public int detachConversation(UUID orgId, UUID conversationId) {

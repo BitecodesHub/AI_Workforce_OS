@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- @find: org-service build, organisation service, workspaces, invitations, credentials vault, maven module, dependencies, envelope encryption
+     @what: Maven build file for the org-service module (workspaces, invitations, encrypted credentials).
+     @flow: Inherits the parent pom; depends on platform-web; packaged as org-service.jar for Docker.
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

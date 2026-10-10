@@ -1,3 +1,6 @@
+// @find: microsoft teams, teams, channels, chat, messages, list channels, get messages, post message, Graph API, OAuth, live adapter, real API, communication
+// @what: Live Microsoft Teams connector: runs teams__ tools (list channels, read and post messages) against Microsoft Graph with an OAuth access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -49,6 +52,7 @@ public final class TeamsAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Microsoft Teams list channels, tool teams__list_channels, live Microsoft Teams call
     private Mono<ToolResult> listChannels(ToolInvocation invocation, JsonNode arguments, String token) {
         String requested = text(arguments, "team");
         return teams(token).flatMap(teams -> {
@@ -77,6 +81,7 @@ public final class TeamsAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Microsoft Teams get messages, tool teams__get_messages, live Microsoft Teams call
     private Mono<ToolResult> getMessages(ToolInvocation invocation, JsonNode arguments, String token) {
         String reference = required(arguments, "channel");
         int top = Math.min(limit(arguments, 20, 50), 50);
@@ -106,6 +111,7 @@ public final class TeamsAdapter extends OAuthAdapter {
                 }));
     }
 
+    // @find: Microsoft Teams post message, tool teams__post_message, live Microsoft Teams call
     private Mono<ToolResult> postMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String reference = required(arguments, "channel");
         String content = required(arguments, "text");

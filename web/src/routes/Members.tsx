@@ -1,3 +1,6 @@
+// @find: members, people, invite member, invitation, roles, permissions, change role, remove member, revoke invitation, resend invite, custom role, permission picker, transfer owner, delete workspace, /members, Members and roles page
+// @what: The Members and roles page: who is in the workspace, invitations, role creation and permission editing.
+// @flow: Routed from App.tsx at /members; calls the identity service via lib/queries
 import React from 'react'
 import {
   Button,
@@ -96,6 +99,7 @@ function invitationStatus(invitation: Invitation, now: number): string {
   return status === 'pending' && isPast(invitation.expiresAt, now) ? 'expired' : status
 }
 
+// @find: invitation timing, expires in, sent when
 function InvitationTiming({ invitation, now }: { invitation: Invitation; now: number }) {
   const status = invitationStatus(invitation, now)
   if (status === 'accepted') {
@@ -127,6 +131,7 @@ function InvitationTiming({ invitation, now }: { invitation: Invitation; now: nu
  * is unavailable or refused, the link is selected instead so it can be copied from the keyboard.
  * The result is said beside the button: a toast would sit behind the dialog's backdrop.
  */
+// @find: invite link box, copy invitation link
 function InviteLink({ url, inputId, label = 'Invitation link' }: { url: string; inputId: string; label?: string }) {
   const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'manual'>('idle')
 
@@ -185,6 +190,7 @@ function groupPermissions(catalogue: PermissionInfo[]): Array<[string, Permissio
  * The permission checkboxes. A permission the viewer does not hold cannot be added, since a role
  * may only carry what its author holds; one already in the role can still be taken out.
  */
+// @find: permission picker, choose permissions for a role, custom role
 function PermissionPicker({
   catalogue,
   selected,
@@ -280,6 +286,7 @@ function memberErrorMessage(error: unknown): string {
   return describeApiError(error, { roleName: 'New role' })
 }
 
+// @find: Members component, members page, invite person, POST /api/invitations, change role, remove member, create role, /members
 export function Members() {
   const me = profile()
   const myId = me?.userId ?? null
@@ -312,7 +319,10 @@ export function Members() {
   // can only be refused.
   const rolesQuery = useRoles({ enabled: canReadRoles })
   const roles = rolesQuery.data
-  const { data: catalogue } = usePermissionCatalogue({ enabled: canCreateRole || canUpdateRole })
+  // Read for everyone who sees the roles table, not only for role editors: the permission counts
+  // there are counted against it, and without it a manager saw 47 for the owner where an
+  // administrator saw 40 (planned codes that nothing checks yet are left out of the catalogue).
+  const { data: catalogue } = usePermissionCatalogue({ enabled: canReadRoles })
   const catalogueCodes = React.useMemo(
     () => (catalogue ? new Set(catalogue.map((permission) => permission.code)) : null),
     [catalogue],
@@ -398,6 +408,11 @@ export function Members() {
   const sortedRoles = React.useMemo(() => [...(roles ?? [])].sort((a, b) => byRoleRank(a.name, b.name)), [roles])
   const roleByName = React.useMemo(() => Object.fromEntries((roles ?? []).map((role) => [role.name, role])), [roles])
 
+  const activeOwners = React.useMemo(
+    () => (membersQuery.data ?? []).filter((member) => member.role === 'owner' && member.status === 'active').length,
+    [membersQuery.data],
+  )
+
   const memberColumns = React.useMemo<Column<Member>[]>(() => {
     const columns: Column<Member>[] = [
       {
@@ -455,6 +470,11 @@ export function Members() {
               </span>
             )
           }
+          // The last active owner can be neither demoted nor removed; the server refuses both, so
+          // the row says so rather than offering a dialog that can only fail.
+          if (row.role === 'owner' && row.status === 'active' && activeOwners <= 1) {
+            return <span className="caption">The last owner cannot be demoted or removed.</span>
+          }
           return (
             <div className="row action-group">
               {canUpdateMember && (
@@ -505,7 +525,7 @@ export function Members() {
       })
     }
     return columns
-  }, [canUpdateMember, canRemoveMember, myId, roleByName, grantor])
+  }, [canUpdateMember, canRemoveMember, myId, roleByName, grantor, activeOwners])
 
   const roleColumns = React.useMemo<Column<Role>[]>(() => {
     const columns: Column<Role>[] = [

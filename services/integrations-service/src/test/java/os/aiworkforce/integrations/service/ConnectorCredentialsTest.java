@@ -1,3 +1,5 @@
+// @find: tests for connector credentials, multi-part credential, jira, confluence, zendesk, zoom, site email token, stored encrypted, checked before saving
+// @what: Checks connectors with several credential fields are validated and stored as one encrypted value.
 package os.aiworkforce.integrations.service;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -162,6 +164,22 @@ class ConnectorCredentialsTest {
 
         assertThatThrownBy(() -> service.connect(ORG, "jira", null, fields, null)).isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> service.connect(ORG, "jira", TOKEN, Map.of(), null)).isInstanceOf(ApiException.class);
+        assertThat(provider.getAllServeEvents()).isEmpty();
+        verify(connections, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("an account email that is not an email is refused under its field and never sent")
+    void malformedEmailRefused() {
+        Map<String, String> fields = jiraFields();
+        fields.put("email", "notanemail");
+
+        assertThatThrownBy(() -> service.connect(ORG, "jira", null, fields, null))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getMessage()).contains("you@company.com");
+                    assertThat(e.details()).containsEntry("field", "email");
+                    assertThat(e.status()).isEqualTo(422);
+                });
         assertThat(provider.getAllServeEvents()).isEmpty();
         verify(connections, never()).save(any());
     }

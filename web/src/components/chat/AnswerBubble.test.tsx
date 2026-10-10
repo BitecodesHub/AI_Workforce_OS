@@ -1,3 +1,6 @@
+// @find: tests for AnswerBubble, agent answer, reply bubble, answer message, copy answer, read aloud, thumbs up, thumbs down, feedback, sources, citations, sandbox model, markdown answer, chat thread
+// @what: Automated tests for AnswerBubble.
+// @flow: Run with the web test runner; covers AnswerBubble.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import axe from 'axe-core'
 import { fireEvent, render, screen } from '@testing-library/react'
@@ -286,3 +289,15 @@ describe('AnswerBubble sources', () => {
     expect((await check()).violations).toEqual([])
   })
 })
+
+describe('AnswerBubble practice data', () => {
+  it('says under the answer when its tools ran on practice data, and nothing otherwise', () => {
+    const practice = { ...ANSWER, detail: { ...ANSWER.detail, practiceData: true } } as ChatMessage
+    const { unmount } = renderBubble({ message: practice })
+    expect(screen.getByText('Practice data: nothing was sent or changed outside this workspace.')).toBeInTheDocument()
+    unmount()
+    renderBubble()
+    expect(screen.queryByText(/Practice data/)).toBeNull()
+  })
+})
+

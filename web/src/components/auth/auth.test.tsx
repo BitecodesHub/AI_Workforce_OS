@@ -1,3 +1,5 @@
+// @find: tests for sign in, DemoRolePicker tests, PasswordInput tests, Stepper tests, SignIn page tests, demo accounts
+// @what: Tests the sign-in page pieces: demo role picker, password input, stepper and the sign-in form.
 import axe from 'axe-core'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -129,6 +131,23 @@ describe('SignIn', () => {
     expect(email.compareDocumentPosition(roles) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(roles.compareDocumentPosition(pitch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(container.querySelector('input[autocomplete="current-password"]')).not.toBeNull()
+  })
+
+  it('says why a sign-in failed and puts focus back in the password, selected', async () => {
+    await renderSignIn()
+    vi.mocked(fetch).mockImplementationOnce(
+      async () => ({ ok: false, json: async () => ({ detail: 'Those details did not work.' }) }) as Response,
+    )
+    fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'owner@demo.test' } })
+    const password = screen.getByLabelText('Password') as HTMLInputElement
+    fireEvent.change(password, { target: { value: 'wrong' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    })
+    expect(screen.getByText('Those details did not work.')).toBeInTheDocument()
+    expect(password).toHaveFocus()
+    expect(password.selectionStart).toBe(0)
+    expect(password.selectionEnd).toBe('wrong'.length)
   })
 
   it('has no axe violations', async () => {

@@ -1,4 +1,9 @@
 /*
+ * @find: polish styles index, imports screen polish css, shell, work, knowledge, admin, chat, orchestrator, auth, connectors, pickers, setup
+ * @what: Imports every screen-level polish stylesheet.
+ * @flow: Loaded after components.css
+ */
+/*
  * Screen-level polish, one file per area, loaded after components.css. Held to the same rules
  * as components.css by design-system.test.ts: tokens only, borders from --line, radii from the
  * token families, no resting card shadow, motion disabled under reduced motion.
@@ -12,3 +17,4 @@
 @import './auth.css';
 @import './connectors.css';
 @import './pickers.css';
+@import './setup.css';

@@ -1,3 +1,6 @@
+// @find: schedule goal listener, goal finished, schedule last status, consecutive failures, auto pause schedule, announce pause, lifecycle listener, ScheduleGoalListener
+// @what: Updates a schedule's last result when its goal finishes and pauses it after repeated failures.
+// @flow: Called by the goal lifecycle (GoalLifecycleListener); updates Schedule
 package os.aiworkforce.orchestrator.schedule;
 
 import org.slf4j.Logger;
@@ -47,6 +50,7 @@ public class ScheduleGoalListener implements GoalLifecycleListener {
         this.announcer = announcer;
     }
 
+    // @find: schedule goal finished, update last status, pause after failures
     @Override
     @Transactional
     public void onGoalFinished(Goal goal) {

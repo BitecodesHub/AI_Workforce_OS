@@ -1,3 +1,6 @@
+// @find: workspace timezone, zone lookup, workspace name lookup, today in workspace, schedule timezone, WorkspaceZoneLookup, ScheduleZoneLookup, identity service workspace
+// @what: Looks up and caches a workspace's timezone and name from the identity service.
+// @flow: Called by CoordinatorService, the board, schedules and date text given to agents.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
@@ -62,11 +65,13 @@ public class WorkspaceZoneLookup {
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record WorkspaceResponse(UUID id, String name, String slug, String timezone, String status) {}
 
+    // @find: zone for workspace, workspace timezone
     public ZoneId zoneFor(UUID orgId) {
         return lookup(orgId).zone();
     }
 
     /** The workspace's display name, or null when the organisation service cannot say. */
+    // @find: name for workspace, workspace display name
     public String nameFor(UUID orgId) {
         return lookup(orgId).name();
     }

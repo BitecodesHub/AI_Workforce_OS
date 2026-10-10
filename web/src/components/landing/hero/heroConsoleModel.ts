@@ -1,3 +1,6 @@
+// @find: hero console model, heroFrame, hero animation frames, activity rows, routing trace lines, approval parked, cycle ms, composed frame
+// @what: Pure function giving what the hero console shows at a given elapsed time.
+// @flow: Used by HeroConsole
 import type { AgentCategory } from '../shared/landingFacts'
 
 /*
@@ -71,6 +74,7 @@ function researchRow(c: number, t: number): HeroRow {
   return { ...base, status: 'running', seconds: Math.floor((t - 6_000) / 1_000) }
 }
 
+// @find: heroFrame, hero console frame at elapsed time
 export function heroFrame(elapsedMs: number): HeroFrame {
   // Negative or non-finite input is treated as the very start, so the function is total.
   const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0

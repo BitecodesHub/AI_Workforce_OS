@@ -1,3 +1,5 @@
+// @find: tests for sign in audit, audit events, failed login audit, lockout audit, unknown address fingerprint
+// @what: Tests that sign-in outcomes are written to the audit log per workspace.
 package os.aiworkforce.identity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,6 @@
+// @find: landing page, home page, marketing page, public page, buyers, what is this, hero, how it works, FAQ, pricing, call to action, /home, Landing
+// @what: The public home page written for company buyers in plain words.
+// @flow: Routed from App.tsx at /home; assembled from components/landing sections and styles/landing
 import type { ReactElement } from 'react'
 import '../styles/landing/index.css'
 import { Eyebrow } from '../components/ui'
@@ -34,6 +37,7 @@ const HOME_DEMOS: readonly StageItem[] = [
   { id: 'cited', name: 'It answers from your documents' },
 ]
 
+// @find: Landing component, public home page, /home
 export function Landing(): ReactElement {
   return (
     <LandingRoot>

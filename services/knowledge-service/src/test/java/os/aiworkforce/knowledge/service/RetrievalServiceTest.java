@@ -1,3 +1,5 @@
+// @find: tests for knowledge search, retrieval, degraded search, vector store slow or down, keyword fallback, search by meaning, restricted sources, knowledge base
+// @what: Checks what a search does when meaning-based search is slow, down or pointless, and which sources it reads.
 package os.aiworkforce.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -275,5 +277,30 @@ class RetrievalServiceTest {
                 ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
         verify(chunks).searchLexical(eq(org), anyString(), anyString(), anyDouble(), anyDouble(), page.capture());
         assertThat(page.getValue().getPageSize()).isEqualTo(RetrievalService.MAX_LIMIT * 3);
+    }
+
+    @Test
+    @DisplayName("a passage found by meaning carries its similarity, and the model's measured floor is the one sent to the store")
+    void denseHitCarriesSimilarityAndModelFloor() {
+        Source travel = source("Travel", "nvidia", false);
+        travel.setEmbeddingModel("nvidia/nemotron-3-embed-1b");
+        visible(false, travel);
+        UUID chunkId = UUID.randomUUID();
+        stored.add(new Row(chunkId, UUID.randomUUID(), travel.getId(), "Travel rules.txt", null, 1, null,
+                "Business class is allowed only when the flight lasts longer than eight hours."));
+        when(chunks.searchLexical(eq(org), anyString(), anyString(), anyDouble(), anyDouble(), any()))
+                .thenReturn(List.of());
+        when(embeddings.embedQuery(any(), anyString(), anyString(), anyString())).thenReturn(new float[] {0.1f, 0.2f});
+        when(vectors.search(anyString(), eq(org), any(), any(), anyInt(), any()))
+                .thenReturn(List.of(new QdrantClient.Hit(chunkId, 0.267, java.util.Map.of())));
+
+        RetrievalService.Retrieval result =
+                retrieval.retrieve(org, "Can I sit in the premium cabin on a long trip?", 5, null, false);
+
+        assertThat(result.passages()).singleElement().satisfies(passage -> {
+            assertThat(passage.chunkId()).isEqualTo(chunkId);
+            assertThat(passage.similarity()).isEqualTo(0.267);
+        });
+        verify(vectors).search(anyString(), eq(org), any(), any(), anyInt(), eq(0.19));
     }
 }

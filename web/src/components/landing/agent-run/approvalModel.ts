@@ -1,3 +1,6 @@
+// @find: approval model, approval state machine, approvalReducer, canDecide, approval:decide, approve reject expire, step timeline, plan draft gate send summary, who can approve, nothing sent by default
+// @what: Pure state machine for the approval-gate demo, including the guard that only a manager may decide.
+// @flow: Used by ApprovalDemo; timelines played through useSequence
 import type { SequenceStep } from '../../../hooks/useSequence'
 
 /*
@@ -128,6 +131,7 @@ const PARKED_STEPS: Readonly<Record<StepId, StepState>> = {
  * The first render. With reduced motion the run is already parked at the gate, which is the
  * state worth seeing; otherwise nothing has happened yet and autoplay starts the run.
  */
+// @find: initApprovalState, approval initial state
 export function initApprovalState(reduced: boolean): ApprovalState {
   const base = {
     decider: 'manager' as const,
@@ -145,6 +149,7 @@ function focusOn(s: ApprovalState, target: FocusTarget): ApprovalState['focus'] 
   return { target, nonce: s.focus.nonce + 1 }
 }
 
+// @find: approvalReducer, approve, reject, expire transitions
 export function approvalReducer(s: ApprovalState, e: ApprovalEvent): ApprovalState {
   switch (e.type) {
     case 'START': {
@@ -244,6 +249,7 @@ export function approvalReducer(s: ApprovalState, e: ApprovalEvent): ApprovalSta
 
 /* ---- Sequences, played with useSequence (times in ms) --------------------------------------- */
 
+// @find: startSteps, run starts, plan and draft timeline
 export function startSteps(dispatch: ApprovalDispatch, byUser: boolean): SequenceStep[] {
   return [
     { at: 0, run: () => dispatch({ type: 'START', byUser }) },
@@ -265,6 +271,7 @@ export function startSteps(dispatch: ApprovalDispatch, byUser: boolean): Sequenc
   ]
 }
 
+// @find: approveSteps, approval timeline, send email after approve
 export function approveSteps(dispatch: ApprovalDispatch): SequenceStep[] {
   return [
     { at: 0, run: () => dispatch({ type: 'APPROVE' }) },
@@ -286,6 +293,7 @@ export function approveSteps(dispatch: ApprovalDispatch): SequenceStep[] {
   ]
 }
 
+// @find: expireSteps, deadline passes, run cancelled
 export function expireSteps(dispatch: ApprovalDispatch): SequenceStep[] {
   return [
     { at: 0, run: () => dispatch({ type: 'LET_EXPIRE' }) },

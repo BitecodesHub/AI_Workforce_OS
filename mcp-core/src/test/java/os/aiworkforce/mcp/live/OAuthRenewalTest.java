@@ -1,3 +1,5 @@
+// @find: tests for oauth renewal, token refresh on 401, one retry, reconnect required, refresh then retry, expired access token, gmail, google, microsoft, salesforce
+// @what: Checks a 401 from an OAuth provider causes exactly one refresh and one retry, then a plain reconnect message.
 package os.aiworkforce.mcp.live;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

@@ -1,3 +1,6 @@
+// @find: connector info, connector description, connector category, auth type token oauth url none, live available, token label, setup steps, docs url, credential fields, oauth setup, connector card
+// @what: Record describing one connector as the console shows it before and after connecting.
+// @flow: Built in ConnectorCatalog; serialised by IntegrationController
 package os.aiworkforce.mcp.catalog;
 
 import java.util.List;

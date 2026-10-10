@@ -1,3 +1,6 @@
+// @find: retention store, purge, delete old run detail, advisory lock, pg_try_advisory_lock, clear run steps, delete usage rows, nightly purge SQL, Postgres
+// @what: Postgres implementation of the retention deletes, guarded by a session advisory lock so one instance purges at a time.
+// @flow: Used by RetentionService.purge
 package os.aiworkforce.orchestrator.service;
 
 import java.sql.Connection;
@@ -98,6 +101,7 @@ public class JdbcRetentionStore implements RetentionStore {
         this.dataSource = dataSource;
     }
 
+    // @find: try lock for purge, advisory lock
     @Override
     public Optional<Session> tryOpen() {
         Connection connection = null;

@@ -1,0 +1,85 @@
+{
+ "modelSummaries": [
+  {
+   "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0",
+   "modelId": "amazon.titan-embed-text-v2:0",
+   "modelName": "Titan Text Embeddings V2",
+   "providerName": "Amazon",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "EMBEDDING"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ],
+   "modelLifecycle": {
+    "status": "ACTIVE"
+   }
+  },
+  {
+   "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v1:2:8k",
+   "modelId": "amazon.titan-embed-text-v1:2:8k",
+   "modelName": "Titan Embeddings G1 - Text",
+   "providerName": "Amazon",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "EMBEDDING"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "PROVISIONED"
+   ],
+   "modelLifecycle": {
+    "status": "ACTIVE"
+   }
+  },
+  {
+   "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-image-v1",
+   "modelId": "amazon.titan-embed-image-v1",
+   "modelName": "Titan Multimodal Embeddings G1",
+   "providerName": "Amazon",
+   "inputModalities": [
+    "TEXT",
+    "IMAGE"
+   ],
+   "outputModalities": [
+    "EMBEDDING"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ],
+   "modelLifecycle": {
+    "status": "ACTIVE"
+   }
+  },
+  {
+   "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/cohere.embed-multilingual-v3",
+   "modelId": "cohere.embed-multilingual-v3",
+   "modelName": "Embed Multilingual",
+   "providerName": "Cohere",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "EMBEDDING"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ],
+   "modelLifecycle": {
+    "status": "ACTIVE"
+   }
+  }
+ ]
+}

@@ -1,3 +1,6 @@
+// @find: tests for board changes, diffCards, countChanged, live update highlight, changed cards, Orchestrator board
+// @what: Unit tests for detecting which board cards changed between two polls.
+// @flow: Exercises boardChanges.ts
 import { describe, expect, it } from 'vitest'
 import { countChanged, diffCards } from './boardChanges'
 import type { Board, BoardGoal, BoardTask } from '../../lib/queries'

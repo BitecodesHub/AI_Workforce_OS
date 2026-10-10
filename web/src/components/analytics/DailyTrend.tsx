@@ -1,3 +1,6 @@
+// @find: daily trend, chart, completed vs failed per day, daily cost, trend chart, goals per day, analytics chart, DailyTrend, dayPoints
+// @what: Analytics chart of completed and failed goals and cost per day.
+// @flow: Rendered on the Analytics page from Insights
 import { useId } from 'react'
 import { Card, Eyebrow } from '../ui'
 import { formatCount, formatMoney } from '../../lib/format'
@@ -15,6 +18,7 @@ import { dayLabel, niceMax } from './figures'
 export type DayPoint = { day: string; completed: number; failed: number; cost: number }
 
 /** The goal counts and the spend of each day on one list, oldest first. A day with neither is a zero. */
+// @find: dayPoints, chart points per day
 export function dayPoints(insights: Pick<Insights, 'goals' | 'spend'>): DayPoint[] {
   const points = new Map<string, DayPoint>()
   for (const row of insights.goals.byDay) {
@@ -174,6 +178,7 @@ const FAILED: Series = { label: 'Failed', style: { fill: 'var(--chart-secondary)
 const SPEND: Series = { label: 'Spend', style: { fill: 'var(--chart-primary)' }, value: (point) => point.cost }
 
 /** Goals finished each day, and what each day cost. */
+// @find: DailyTrend, daily trend chart, completed failed cost by day
 export function DailyTrend({ insights }: { insights: Insights }) {
   const points = dayPoints(insights)
   const anyGoals = points.some((point) => point.completed + point.failed > 0)

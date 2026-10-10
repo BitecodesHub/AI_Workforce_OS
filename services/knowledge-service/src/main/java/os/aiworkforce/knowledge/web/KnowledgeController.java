@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, knowledge controller, Knowledge page, REST API, GET /api/sources, POST /api/sources, PATCH /api/sources/{id}, DELETE /api/sources/{id}, POST /api/sources/{id}/documents, POST /api/knowledge/search, POST /api/sources/{id}/reindex, upload file, search, delete document, KnowledgeController
+// @what: REST endpoints behind the Knowledge page: list, create, rename, restrict, upload into, reindex, search and delete sources and documents.
+// @flow: Called by the web console and gateway; delegates to IngestionService, RetrievalService, Sources and Documents.
 package os.aiworkforce.knowledge.web;
 
 import java.time.Instant;
@@ -90,6 +93,7 @@ public class KnowledgeController {
      * @param restricted whether only people who manage knowledge can search and see it
      * @param searchMode how it is searched: {@code keyword} for a source whose embeddings are the
      *     offline sandbox's, which carry no meaning, otherwise {@code keyword+meaning}
+     * @param agentId the agent whose own documents these are, or null for a workspace source
      */
     public record SourceView(
             UUID id,
@@ -104,7 +108,8 @@ public class KnowledgeController {
             Instant lastIngestedAt,
             String lastError,
             boolean restricted,
-            String searchMode) {}
+            String searchMode,
+            UUID agentId) {}
 
     /**
      * @param skipReason why nothing of it could be indexed
@@ -141,6 +146,7 @@ public class KnowledgeController {
      */
     public record SearchResponse(List<RetrievalService.Passage> passages, boolean grounded, boolean degraded) {}
 
+    // @find: list knowledge sources, GET /api/sources, Knowledge page source list
     @GetMapping("/sources")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Connected knowledge sources")
@@ -150,6 +156,7 @@ public class KnowledgeController {
                 .toList();
     }
 
+    // @find: get one source, GET /api/sources/{sourceId}
     @GetMapping("/sources/{sourceId}")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "One source")
@@ -159,6 +166,7 @@ public class KnowledgeController {
 
     public record UpdateSourceRequest(@Size(max = 120) String name, Boolean restricted) {}
 
+    // @find: update source, rename source, restrict source, PATCH /api/sources/{sourceId}
     /**
      * Renames a source, or changes who may search it. Either field may be left out to keep it.
      *
@@ -185,6 +193,7 @@ public class KnowledgeController {
         return updated;
     }
 
+    // @find: list documents in a source, GET /api/sources/{sourceId}/documents
     @GetMapping("/sources/{sourceId}/documents")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Documents in a source, including the ones that could not be indexed")
@@ -211,6 +220,7 @@ public class KnowledgeController {
     public record DocumentPassages(
             UUID documentId, String title, long total, int page, int size, List<PassageView> passages) {}
 
+    // @find: view document passages, chunks of a document, GET /api/sources/{sourceId}/documents/{documentId}/chunks
     /**
      * A document's passages in reading order, so a person can see what search will find in it -
      * and why a question it should answer comes back empty - without running an agent.
@@ -252,6 +262,7 @@ public class KnowledgeController {
                         .toList());
     }
 
+    // @find: search the knowledge base, POST /api/knowledge/search, citations, ask documents
     @PostMapping("/knowledge/search")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_QUERY)
     @Operation(summary = "Search the knowledge base, with a citation for every passage")
@@ -270,6 +281,7 @@ public class KnowledgeController {
     /** @param restricted whether only people who manage knowledge may search it; false when left out */
     public record CreateSourceRequest(@NotBlank @Size(max = 120) String name, String kind, Boolean restricted) {}
 
+    // @find: create knowledge source, where the knowledge base is created, POST /api/sources, New source button
     @PostMapping("/sources")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
     @Operation(summary = "Create a source to upload documents into")
@@ -284,6 +296,7 @@ public class KnowledgeController {
         return created;
     }
 
+    // @find: upload document to source, add file, update by re-upload, replace or keep both, POST /api/sources/{sourceId}/documents
     /**
      * Uploads and indexes one document.
      *
@@ -335,6 +348,7 @@ public class KnowledgeController {
     public record ReindexResponse(
             UUID sourceId, String status, int documentsQueued, boolean vectorised, String detail, int recovered) {}
 
+    // @find: reindex source, rebuild index, update search index, POST /api/sources/{sourceId}/reindex
     /**
      * Re-embeds a source from its already-stored text, for when the vector store was down
      * during ingestion. Nothing is re-uploaded: the passages survived that failure in Postgres,
@@ -354,6 +368,7 @@ public class KnowledgeController {
                 result.recovered());
     }
 
+    // @find: delete document, remove file, DELETE /api/sources/{sourceId}/documents/{documentId}
     /**
      * Erases one document: its passages, its vectors and the record of it.
      *
@@ -369,6 +384,7 @@ public class KnowledgeController {
         record("document.delete", "document", documentId, java.util.Map.of("sourceId", sourceId.toString()));
     }
 
+    // @find: delete source, remove knowledge source, DELETE /api/sources/{sourceId}
     /** Erases a source with every document in it. Other sources in the workspace are untouched. */
     @DeleteMapping("/sources/{sourceId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -385,6 +401,7 @@ public class KnowledgeController {
         }
     }
 
+    // @find: knowledge health, vector store status, GET /api/knowledge/health
     @GetMapping("/knowledge/health")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Whether the knowledge base can currently answer")
@@ -419,7 +436,9 @@ public class KnowledgeController {
                 source.getLastIngestedAt(),
                 source.getLastError(),
                 source.isRestricted(),
-                source.getSearchMode());
+                source.getSearchMode(),
+                // Set for an agent's own documents, so a citation that lands on one can say whose they are.
+                source.getAgentId());
     }
 
     static DocumentView toView(Document document) {

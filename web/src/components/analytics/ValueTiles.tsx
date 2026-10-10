@@ -1,3 +1,6 @@
+// @find: value tiles, kpi tiles, hours saved, money saved, runs completed, cost, change vs previous period, headline numbers, ValueTiles
+// @what: Headline figure tiles on Analytics (runs, hours saved, value, cost) with change over the previous period.
+// @flow: Rendered at the top of Analytics; formats via figures.ts
 import { StatRow, StatTile } from '../ui'
 import { formatCount, formatMoney } from '../../lib/format'
 import type { Insights, InsightsWindow } from '../../lib/insightsQueries'
@@ -19,6 +22,7 @@ function join(parts: Array<string | false | null | undefined>): string {
   return parts.filter((part): part is string => Boolean(part)).join('. ')
 }
 
+// @find: ValueTiles, headline kpi tiles, hours saved, value, cost
 export function ValueTiles({ insights, window }: { insights: Insights; window: InsightsWindow }) {
   const { goals, tasks, spend, approvals, value, deltas } = insights
   const finishedTasks = tasks.completed + tasks.failed

@@ -1,3 +1,6 @@
+// @find: approval, approve, reject, decide request, pending approval, decided approval, approval queue, request waiting, approval card, Approvals page, decision history, expired, withdrawn
+// @what: Shows one approval request: waiting ones with approve/reject, and decided ones with the record of what happened.
+// @flow: Used by the Approvals page; uses PayloadPreview.
 import { useState } from 'react'
 import { Button, Card, Eyebrow, Tag, Time } from '../ui'
 import type { TagTone } from '../ui'
@@ -17,6 +20,7 @@ import { can } from '../../lib/session'
 
 const ACTION_TONE: Record<string, TagTone> = { OUTBOUND: 'warning', DESTRUCTIVE: 'danger', WRITE: 'blue' }
 
+// @find: ApprovalCard, approval card, approval, approve, reject, decide request
 /** A request waiting for a decision. */
 export function ApprovalCard({
   approval,
@@ -185,6 +189,7 @@ function DecisionLine({
   )
 }
 
+// @find: DecidedCard, decided card, approval, approve, reject, decide request
 /** A request that was decided, expired or withdrawn, with the record of what happened to it. */
 export function DecidedCard({
   approval,

@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, analytics deployment, audit log, analytics, activity dashboard, deployment, service, resources, probes, replicas, manifest
+# @what: Kubernetes deployment and service for the analytics service (audit log and activity).
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 # analytics service.
 #
 # Resource requests are what the scheduler places on and what the JVM sizes its heap against, so

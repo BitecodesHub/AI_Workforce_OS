@@ -1,3 +1,6 @@
+// @find: labels, status words, status tone, status label, audit action label, role label, source kind, media type, connector category, provider kind, tool label, action class, outcome
+// @what: Plain words and colour tones for every code the platform returns (statuses, audit actions, roles, tools, providers).
+// @flow: Used by nearly every page and component; sentenceCase from format.ts
 import { sentenceCase } from './format'
 
 /*
@@ -36,7 +39,6 @@ export type StatusKind =
   | 'invitation'
   | 'member'
   | 'outcome'
-  | 'circuit'
   | 'toolCall'
   | 'question'
 
@@ -128,18 +130,7 @@ const STATUS: Record<StatusKind, Record<string, StatusEntry>> = {
     // A sign-in refused because the account was locked after too many wrong passwords.
     locked: entry('warning', 'Locked'),
   },
-  // Resilience4j circuit breaker states, as the provider list reports them (upper case).
-  circuit: {
-    closed: entry('success', 'Healthy'),
-    half_open: entry('warning', 'Recovering'),
-    open: entry('danger', 'Paused after failures'),
-    forced_open: entry('danger', 'Paused'),
-    disabled: entry('neutral', 'Not monitored'),
-    metrics_only: entry('neutral', 'Never paused'),
-    // Reported when the service did not look the breaker up, for example in the response to
-    // turning a provider on or off. The next refresh of the list has the real state.
-    unknown: entry('neutral', 'Not checked yet'),
-  },
+
   toolCall: {
     succeeded: entry('success', 'Succeeded'),
     failed: entry('danger', 'Failed'),
@@ -162,6 +153,7 @@ function statusKey(value: string): string {
   return value.trim().toLowerCase().replace(/-/g, '_')
 }
 
+// @find: status label, status tone, pending running failed, badge
 /**
  * The words and tone for a status of a given kind of record. Case and hyphens are ignored, so
  * 'CLOSED', 'half-open' and 'HALF_OPEN' all resolve. An unknown status reads in sentence case in
@@ -248,6 +240,7 @@ const SYSTEM_ROLES: Record<string, string> = {
   viewer: 'Viewer',
 }
 
+// @find: role label, owner admin member names
 /** The five built-in roles capitalised; a workspace's own roles exactly as it named them. */
 export function roleLabel(name?: string | null): string {
   if (!name) return 'No role'
@@ -331,6 +324,7 @@ const AUDIT_ACTIONS: Record<string, string> = {
 /** Every action the log can hold a plain-words name for, for the filter list. */
 export const AUDIT_ACTION_CODES: string[] = Object.keys(AUDIT_ACTIONS)
 
+// @find: audit action label, audit log wording, Audit page
 /** 'run.fail' reads 'Run failed'; an approval decision says which way it went when it can. */
 export function auditActionLabel(action?: string | null, detail?: Record<string, unknown> | null): string {
   if (!action) return 'Unknown action'
@@ -344,6 +338,7 @@ export function auditActionLabel(action?: string | null, detail?: Record<string,
 
 /* ---- Runs --------------------------------------------------------------------------------------- */
 
+// @find: started by, run trigger label, schedule or person
 /** What started a run: a person's direct instruction, or a task in a goal. */
 export function startedByLabel(run: { trigger: string; taskId?: string | null }, taskTitle?: string | null): string {
   if (run.trigger === 'manual') return 'Direct instruction'
@@ -361,6 +356,7 @@ const SOURCE_KINDS: Record<string, string> = {
   github_wiki: 'GitHub wiki',
 }
 
+// @find: knowledge source kind label
 export function sourceKindLabel(kind?: string | null): string {
   if (!kind) return 'Unknown'
   return SOURCE_KINDS[kind] ?? sentenceCase(kind)
@@ -370,6 +366,10 @@ const MEDIA_TYPES: Record<string, string> = {
   'application/pdf': 'PDF',
   'application/msword': 'Word document',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word document',
+  'application/vnd.ms-excel': 'Excel spreadsheet',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel spreadsheet',
+  'application/vnd.ms-powerpoint': 'PowerPoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
   'text/plain': 'Plain text',
   'text/markdown': 'Markdown',
   'text/x-markdown': 'Markdown',
@@ -380,6 +380,10 @@ const EXTENSIONS: Record<string, string> = {
   pdf: 'PDF',
   doc: 'Word document',
   docx: 'Word document',
+  xls: 'Excel spreadsheet',
+  xlsx: 'Excel spreadsheet',
+  ppt: 'PowerPoint',
+  pptx: 'PowerPoint',
   txt: 'Plain text',
   md: 'Markdown',
   markdown: 'Markdown',
@@ -387,6 +391,7 @@ const EXTENSIONS: Record<string, string> = {
   htm: 'HTML',
 }
 
+// @find: file type label, mime type words
 /** 'application/pdf' reads 'PDF'. Otherwise the file's extension in capitals ('CSV'), or 'File'. */
 export function mediaTypeLabel(mime?: string | null, filename?: string | null): string {
   const type = mime?.split(';')[0]?.trim().toLowerCase()
@@ -458,8 +463,11 @@ const CONNECTOR_STATES: Record<string, StatusEntry> = {
   connected: entry('success', 'Connected'),
   sandbox: entry('neutral', 'Sandbox'),
   attention: entry('warning', 'Needs attention'),
+  disconnected: entry('neutral', 'Not connected'),
+  builtin: entry('neutral', 'Built in'),
 }
 
+// @find: connector state label
 export function connectorStateLabel(state?: string | null): StatusEntry {
   if (!state) return entry('neutral', 'Unknown')
   return CONNECTOR_STATES[state] ?? entry('neutral', sentenceCase(state))
@@ -472,6 +480,7 @@ export function serverLabel(server?: string | null, displayName?: string | null)
   return SERVERS[server.toLowerCase()] ?? sentenceCase(server)
 }
 
+// @find: tool label, server__tool name in words
 /**
  * 'gmail.send_message' reads 'Gmail · send message'. The model is shown a tool as server__tool,
  * and that form turns up in a trace, so it reads the same. The internal ask tool reads on its own.
@@ -501,6 +510,7 @@ const PROVIDER_KINDS: Record<string, string> = {
   SANDBOX: 'Offline sandbox',
 }
 
+// @find: model provider kind label
 export function providerKindLabel(kind?: string | null): string {
   if (!kind) return 'Unknown'
   return PROVIDER_KINDS[kind.toUpperCase()] ?? sentenceCase(kind)
@@ -511,6 +521,7 @@ const EMBEDDING_PROVIDERS: Record<string, string> = {
   openai: 'OpenAI',
   gemini: 'Google Gemini',
   anthropic: 'Anthropic',
+  bedrock: 'AWS Bedrock',
 }
 
 /**

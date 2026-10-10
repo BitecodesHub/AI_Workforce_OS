@@ -1,3 +1,6 @@
+// @find: model list http, GET provider model list, http seam, testable network call, ModelListHttp, API key header, no logging of keys
+// @what: The single HTTP GET a model list needs, behind an interface so tests need no network.
+// @flow: Used by ModelCatalogService and BedrockRegionFinder callers.
 package os.aiworkforce.orchestrator.catalog;
 
 import java.io.IOException;

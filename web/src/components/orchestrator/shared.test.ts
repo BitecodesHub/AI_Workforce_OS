@@ -1,3 +1,6 @@
+// @find: tests for requester label, who asked, You, Someone, member directory, UNKNOWN_REQUESTER
+// @what: Unit tests for naming the person who requested a goal.
+// @flow: Exercises requesterLabel in shared.ts
 import { describe, expect, it } from 'vitest'
 import type { Member } from '../../lib/queries'
 import { requesterLabel, UNKNOWN_REQUESTER } from './shared'

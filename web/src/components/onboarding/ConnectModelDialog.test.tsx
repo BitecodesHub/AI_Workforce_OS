@@ -1,5 +1,7 @@
+// @find: tests for ConnectModelDialog, connect model tests, openrouter, groq, bedrock key test, store credential, enable provider, model policy, /api/providers, /api/credentials, /api/model-policy
+// @what: Tests the Connect a model dialog flow against mocked provider, credential and policy endpoints.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearSession, saveSession } from '../../lib/session'
@@ -59,6 +61,7 @@ let providers: ReturnType<typeof provider>[]
 let policy: Record<string, unknown>
 let testAnswer: { result: string; message: string }
 let failNext: Set<string>
+let bedrockRefusal: { field: string; problem: string } | null
 
 const UNSET_POLICY = {
   configured: false,
@@ -76,6 +79,7 @@ function json(status: number, body: unknown): Response {
 beforeEach(() => {
   calls = []
   failNext = new Set()
+  bedrockRefusal = null
   providers = [
     provider('openrouter', 'OPENAI_COMPATIBLE', { enabled: false }),
     provider('groq', 'OPENAI_COMPATIBLE'),
@@ -106,6 +110,7 @@ beforeEach(() => {
           model('openrouter', 'meta-llama/llama-3.3-70b-instruct', 'Llama 3.3 70B', 0.12, 0.3),
           model('openrouter', 'embedder', 'Embedder', 0.02, 0, { maxOutputTokens: 1 }),
           model('groq', 'llama-3.1-8b-instant', 'Llama 3.1 8B', 0.05, 0.08),
+          model('bedrock', 'amazon.nova-micro-v1:0', 'Nova Micro', 0.035, 0.14),
           model('sandbox', 'sandbox-1', 'Sandbox', 0, 0),
         ])
       }
@@ -119,6 +124,15 @@ beforeEach(() => {
       if (key === 'POST /api/providers/groq/test') return json(200, { result: 'valid', message: 'Groq accepted the key.' })
       if (key === 'PUT /api/credentials/provider:groq') {
         return json(200, { ref: 'provider:groq', kind: 'api_key', present: true, fingerprint: 'cd34' })
+      }
+      if (key === 'POST /api/providers/bedrock/test') {
+        if (bedrockRefusal) {
+          return json(400, { code: 'validation_failed', detail: 'Some of the values supplied are not valid.', errors: bedrockRefusal })
+        }
+        return json(200, { result: 'valid', message: 'AWS Bedrock accepted the credentials, and Nova Micro answered.' })
+      }
+      if (key === 'PUT /api/credentials/provider:bedrock') {
+        return json(200, { ref: 'provider:bedrock', kind: 'aws_bedrock', present: true, fingerprint: 'ef56' })
       }
       if (key === 'PUT /api/model-policy') {
         policy = { ...(policy as object), configured: true, ...(init.body ? JSON.parse(String(init.body)) : {}) }
@@ -165,7 +179,7 @@ async function open() {
   )
   await screen.findByLabelText('API key')
   // The provider list has loaded once OpenRouter is a choice.
-  await screen.findByRole('option', { name: 'OpenRouter' })
+  await screen.findByRole('option', { name: /^OpenRouter/ })
   return view
 }
 
@@ -180,11 +194,78 @@ async function paste(key: string, providerName = 'OpenRouter') {
 }
 
 describe('which providers it offers', () => {
-  it('offers live providers with one key, and neither Bedrock nor the offline sandbox', async () => {
+  it('offers every live provider, Bedrock included, but not the offline sandbox', async () => {
     await open()
 
-    const options = screen.getAllByRole('option').map((option) => option.textContent)
-    expect([...options].sort()).toEqual(['Groq', 'OpenRouter'])
+    const options = within(screen.getByLabelText('Provider')).getAllByRole('option').map((option) => option.textContent)
+    // Providers with a free way in say so, so a first-time setup can start without paying.
+    expect([...options].sort()).toEqual(['AWS Bedrock', 'Groq (free to start)', 'OpenRouter (free to start)'])
+  })
+})
+
+describe('Amazon Bedrock', () => {
+  function chooseBedrock() {
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'bedrock' } })
+  }
+
+  it('asks for a Bedrock API key and a region, with the setup steps, instead of one API key', async () => {
+    await open()
+    chooseBedrock()
+
+    expect(screen.queryByLabelText('API key')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Sign in with')).toHaveValue('api_key')
+    expect(screen.getByLabelText('Bedrock API key')).toHaveAttribute('type', 'password')
+    expect(screen.getByRole('combobox', { name: 'Region' })).toHaveValue('US East (N. Virginia) — us-east-1')
+    expect(screen.getByText('How to set up Bedrock')).toBeInTheDocument()
+    expect(screen.getByText('bedrock:ListInferenceProfiles')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'AWS guide to getting started with Bedrock' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('docs.aws.amazon.com/bedrock'),
+    )
+    // Nothing to send until the key is there.
+    expect(screen.getByRole('button', { name: 'Verify and connect' })).toBeDisabled()
+  })
+
+  it('checks an access key, session token and region as one value, then stores it encrypted as one credential', async () => {
+    await open()
+    chooseBedrock()
+    fireEvent.change(screen.getByLabelText('Sign in with'), { target: { value: 'access_key' } })
+    expect(screen.queryByLabelText('Bedrock API key')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Access key ID'), { target: { value: ' ASIAIOSFODNN7EXAMPLE ' } })
+    fireEvent.change(screen.getByLabelText('Secret access key'), { target: { value: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY' } })
+    fireEvent.change(screen.getByLabelText(/Session token/), { target: { value: 'FwoGZXIvYXdzEXAMPLE' } })
+    // The region is searched by id, name or geography, and chosen from the list.
+    const region = screen.getByRole('combobox', { name: 'Region' })
+    fireEvent.change(region, { target: { value: 'eu-west-1' } })
+    fireEvent.keyDown(region, { key: 'Enter' })
+    expect(region).toHaveValue('Europe (Ireland) — eu-west-1')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Verify and connect' }))
+    })
+
+    const value = JSON.stringify({
+      type: 'access_key',
+      accessKeyId: 'ASIAIOSFODNN7EXAMPLE',
+      secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+      sessionToken: 'FwoGZXIvYXdzEXAMPLE',
+      region: 'eu-west-1',
+    })
+    expect(sent('POST', '/api/providers/bedrock/test')[0]?.body).toEqual({ value })
+    expect(await screen.findByText(/AWS Bedrock is connected. Runs now use Nova Micro/)).toBeInTheDocument()
+    expect(sent('PUT', '/api/credentials/provider:bedrock')[0]?.body).toEqual({ kind: 'aws_bedrock', value })
+  })
+
+  it('shows which field the service refused, in the form’s own words, and saves nothing', async () => {
+    bedrockRefusal = { field: 'secretAccessKey', problem: 'Enter the secret access key that came with the access key ID.' }
+    await open()
+    chooseBedrock()
+    fireEvent.change(screen.getByLabelText('Bedrock API key'), { target: { value: 'ABSKexampleexampleexample' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Verify and connect' }))
+    })
+
+    expect(await screen.findAllByText(/Enter the secret access key/)).not.toHaveLength(0)
+    expect(wrote()).toEqual(['POST /api/providers/bedrock/test'])
   })
 })
 

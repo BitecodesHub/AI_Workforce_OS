@@ -1,3 +1,6 @@
+// @find: schedule service, create schedule, update schedule, delete schedule, pause, resume, run now, change owner, sweep due schedules, fire schedule, schedule audit, preview, ScheduleService, recurring work, overlap
+// @what: Business logic for schedules: create, edit, pause, resume, run now, delete, owner changes and firing due schedules as goals.
+// @flow: Called by ScheduleController, ScheduleSweep, InternalScheduleController; creates goals via the board
 package os.aiworkforce.orchestrator.schedule;
 
 import java.nio.charset.StandardCharsets;
@@ -88,6 +91,7 @@ public class ScheduleService {
     public record PreviewResult(
             String kind, String cron, Instant runAt, String description, String timezone, List<Instant> nextRuns) {}
 
+    // @find: preview schedule, when will it run
     @Transactional(readOnly = true)
     public PreviewResult preview(UUID orgId, String text, String timezoneOverride) {
         ZoneId zone = resolveZone(orgId, timezoneOverride);
@@ -109,11 +113,13 @@ public class ScheduleService {
         }
     }
 
+    // @find: list schedules
     @Transactional(readOnly = true)
     public List<Schedule> list(UUID orgId) {
         return schedules.findByOrgIdOrderByNameAsc(orgId);
     }
 
+    // @find: get one schedule
     @Transactional(readOnly = true)
     public Schedule get(UUID orgId, UUID id) {
         return schedules.findByIdAndOrgId(id, orgId).orElseThrow(() -> ApiException.notFound("schedule", id));
@@ -131,6 +137,7 @@ public class ScheduleService {
      *
      * @throws ApiException {@code PERMISSION_DENIED} naming {@code task:cancel}
      */
+    // @find: who can manage a schedule, owner or admin check
     public void requireCanManage(Schedule schedule, Actor actor) {
         if (!isOwner(schedule, actor) && (actor == null || !actor.hasPermission(Permission.Codes.TASK_CANCEL))) {
             throw new ApiException(
@@ -157,6 +164,7 @@ public class ScheduleService {
 
     // ---- Creating and changing ------------------------------------------------------------------
 
+    // @find: create schedule, new schedule
     @Transactional
     public Schedule create(UUID orgId, String name, UUID agentId, String instruction, String text) {
         Agent agent = requireActiveAgent(orgId, agentId);
@@ -198,6 +206,7 @@ public class ScheduleService {
      * <p>A one-off that has already run comes back to life when it is given a new time that is
      * still ahead. A schedule somebody paused on purpose stays paused whatever is edited.
      */
+    // @find: update schedule, edit schedule
     @Transactional
     public Schedule update(
             UUID orgId, UUID id, String name, UUID agentId, String instruction, String text, Actor actor) {
@@ -287,6 +296,7 @@ public class ScheduleService {
      * Hands a schedule to another person, who it then fires as. Needs {@code task:cancel}: an owner
      * cannot give their own work away to somebody, only someone who can manage everyone's can.
      */
+    // @find: change schedule owner
     @Transactional
     public Schedule changeOwner(UUID orgId, UUID id, UUID newOwner, Actor actor) {
         if (actor == null || !actor.hasPermission(Permission.Codes.TASK_CANCEL)) {
@@ -351,12 +361,14 @@ public class ScheduleService {
      * #pause(UUID, UUID, Actor)}. Stop everything does not come through here: it uses {@link
      * #pauseInternal}, which has to reach every schedule whoever owns it.
      */
+    // @find: pause schedule
     @Transactional
     public Schedule pause(UUID orgId, UUID id) {
         return pause(orgId, id, RequestContext.requireActor());
     }
 
     /** Pauses a schedule so it is skipped by the sweep until someone resumes it. */
+    // @find: pause schedule with actor
     @Transactional
     public Schedule pause(UUID orgId, UUID id, Actor actor) {
         Schedule schedule = get(orgId, id);
@@ -383,6 +395,7 @@ public class ScheduleService {
      * schedule's owner has left. The audit entry names whoever is in the request context, or the
      * platform when nobody is.
      */
+    // @find: pause schedule by system, auto pause with reason
     @Transactional
     public Schedule pauseInternal(UUID orgId, UUID id, String reason) {
         Schedule schedule = get(orgId, id);
@@ -408,6 +421,7 @@ public class ScheduleService {
      *
      * @return how many enabled schedules this paused
      */
+    // @find: pause schedules of removed member
     @Transactional
     public int pauseForRemovedOwner(UUID orgId, UUID userId, Actor caller) {
         int paused = 0;
@@ -439,6 +453,7 @@ public class ScheduleService {
      * the person resuming it is that owner, back again: it would otherwise fire in a former
      * member's name, and transferring it first is how somebody else takes it on.
      */
+    // @find: resume schedule
     @Transactional
     public Schedule resume(UUID orgId, UUID id, Actor actor) {
         Schedule schedule = get(orgId, id);
@@ -473,6 +488,7 @@ public class ScheduleService {
      * <p>The goal it starts is the caller's, not the owner's: a person pressing "Run now" is the one
      * deciding this run happens, so it starts in their name. Only the sweep fires as the owner.
      */
+    // @find: run schedule now, run now
     @Transactional
     public Schedule runNow(UUID orgId, UUID id, Actor actor) {
         Schedule schedule = get(orgId, id);
@@ -490,6 +506,7 @@ public class ScheduleService {
         return schedule;
     }
 
+    // @find: delete schedule
     @Transactional
     public void delete(UUID orgId, UUID id, Actor actor) {
         Schedule schedule = get(orgId, id);
@@ -505,6 +522,7 @@ public class ScheduleService {
     }
 
     /** One page of the goals this schedule has fired, newest first. */
+    // @find: schedule run history
     @Transactional(readOnly = true)
     public Page<Goal> runs(UUID orgId, UUID id, Pageable pageable) {
         get(orgId, id);
@@ -519,6 +537,7 @@ public class ScheduleService {
      * Stop everything runs each cancellation in a transaction of its own, so by the time it calls
      * this they have all committed.
      */
+    // @find: audit stop all schedules
     public void recordStopAll(UUID orgId, Actor actor, Map<String, Object> counts) {
         Actor recordedAs = actor == null ? Actor.SYSTEM : actor;
         Map<String, Object> detail = counts == null ? Map.of() : new LinkedHashMap<>(counts);
@@ -534,6 +553,7 @@ public class ScheduleService {
      *
      * @return how many due schedules were processed, fired or skipped for an overlap alike
      */
+    // @find: sweep due schedules, start due work, scheduler tick
     @Transactional
     public int sweepDue(int limit) {
         Instant now = Instant.now();

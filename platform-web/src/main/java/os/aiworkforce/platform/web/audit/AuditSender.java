@@ -1,3 +1,6 @@
+// @find: audit sender, send audit event, delivery interface
+// @what: Interface for sending one audit event to the audit log.
+// @flow: Implemented by HttpAuditSender
 package os.aiworkforce.platform.web.audit;
 
 /** Delivers one outbox event to analytics-service, or throws. */

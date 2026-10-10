@@ -1,3 +1,5 @@
+// @find: tests for model router, routing, failover, retries, cool off, circuit breaker, budget, rate limit, provider failure, compaction, health
+// @what: States the router's resilience behaviours as tests.
 package os.aiworkforce.llm.router;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -259,19 +261,22 @@ class ModelRouterTest {
     }
 
     @Test
-    @DisplayName("marks a model unavailable after the provider reports it does not exist")
-    void marksRetiredModelUnavailable() {
+    @DisplayName("a model the provider called unknown is not set aside: the next call asks it again")
+    void retiredModelIsAskedAgainNextTime() {
         registry.add("vendor", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "retired-model");
         registry.add("vendor2", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+        AtomicInteger calls = new AtomicInteger();
 
         ModelRouter router = router(
-                new ScriptedProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE, ProviderFailure.MODEL_NOT_FOUND),
+                new ScriptedProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE, ProviderFailure.MODEL_NOT_FOUND, calls),
                 new ScriptedProvider(ProviderDescriptor.Kind.ANTHROPIC, null));
 
         router.route(request("hello"), policy("vendor/retired-model", "vendor2/model-b"), CONTEXT);
+        router.route(request("hello"), policy("vendor/retired-model", "vendor2/model-b"), CONTEXT);
 
-        // Every later request must skip it for free rather than repeating the doomed round trip.
-        assertThat(registry.unavailable).containsKey("vendor/retired-model");
+        // Not retried within a call (a 404 does not pass on a repeat), but asked again on the next.
+        assertThat(calls.get()).isEqualTo(2);
+        assertThat(registry.unavailable).isEmpty();
     }
 
     @Test
@@ -291,7 +296,7 @@ class ModelRouterTest {
     }
 
     @Test
-    @DisplayName("records every attempt, including the failures, for the spend report")
+    @DisplayName("records every attempt, including the failures and retries, for the spend report")
     void recordsFailedAttemptsToo() {
         registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
         registry.add("b", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
@@ -302,9 +307,10 @@ class ModelRouterTest {
 
         router.route(request("hello"), policy("a/model-a", "b/model-b"), CONTEXT);
 
-        assertThat(recorded).hasSize(2);
-        assertThat(recorded.get(0).outcome()).isEqualTo(AttemptRecord.Outcome.FAILED);
-        assertThat(recorded.get(1).outcome()).isEqualTo(AttemptRecord.Outcome.SUCCEEDED);
+        // One try and two retries of the timed-out model, then the answer from the next.
+        assertThat(recorded).hasSize(4);
+        assertThat(recorded.subList(0, 3)).allMatch(r -> r.outcome() == AttemptRecord.Outcome.FAILED);
+        assertThat(recorded.get(3).outcome()).isEqualTo(AttemptRecord.Outcome.SUCCEEDED);
     }
 
     @Test
@@ -363,6 +369,280 @@ class ModelRouterTest {
         assertThat(first.content()).isEqualTo(second.content());
     }
 
+    // ---- Every call tries again: retries, fall-through and the plain summary --------------
+
+    private static ProviderException failure(ProviderFailure kind, String provider, Integer status, Duration retryAfter) {
+        return new ProviderException(kind, provider, "m", "scripted", status, retryAfter, null, null);
+    }
+
+    @Test
+    @DisplayName("a transient failure is retried twice with back-off, then the next candidate is asked")
+    void transientFailuresAreRetriedTwice() {
+        registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        registry.add("b", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+        SequenceProvider a = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        a.failWith(
+                failure(ProviderFailure.SERVER_ERROR, "a", 500, null),
+                failure(ProviderFailure.TIMEOUT, "a", null, null),
+                failure(ProviderFailure.NETWORK_ERROR, "a", null, null));
+        SequenceProvider b = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        List<Duration> waits = new ArrayList<>();
+        ModelRouter router = router(a, b);
+        router.useSleeper(waits::add);
+
+        ChatResponse response = router.route(request("hello"), policy("a/model-a", "b/model-b"), CONTEXT);
+
+        assertThat(a.seen).hasSize(3);
+        assertThat(waits).hasSize(2);
+        assertThat(response.provider()).isEqualTo("b");
+    }
+
+    @Test
+    @DisplayName("a retry that succeeds answers from the same candidate")
+    void retryCanSucceed() {
+        registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        registry.add("b", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+        SequenceProvider a = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        a.failWith(failure(ProviderFailure.RATE_LIMITED, "a", 429, Duration.ofSeconds(2)));
+        SequenceProvider b = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        List<Duration> waits = new ArrayList<>();
+        ModelRouter router = router(a, b);
+        router.useSleeper(waits::add);
+
+        ChatResponse response = router.route(request("hello"), policy("a/model-a", "b/model-b"), CONTEXT);
+
+        assertThat(response.provider()).isEqualTo("a");
+        // A short Retry-After is honoured as the wait.
+        assertThat(waits).containsExactly(Duration.ofSeconds(2));
+        assertThat(b.seen).isEmpty();
+    }
+
+    @Test
+    @DisplayName("credit, key and request failures fall through at once, in order, without retries")
+    void nonRetryableFailuresFallThroughImmediately() {
+        registry.add("credit", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        registry.add("key", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+        registry.add("ok", ProviderDescriptor.Kind.GEMINI, "model-c");
+        SequenceProvider credit = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        credit.failWith(failure(ProviderFailure.INSUFFICIENT_CREDIT, "credit", 402, null));
+        SequenceProvider key = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        key.failWith(failure(ProviderFailure.AUTHENTICATION_FAILED, "key", 401, null));
+        SequenceProvider ok = new SequenceProvider(ProviderDescriptor.Kind.GEMINI);
+        List<Duration> waits = new ArrayList<>();
+        ModelRouter router = router(credit, key, ok);
+        router.useSleeper(waits::add);
+
+        ChatResponse response =
+                router.route(request("hello"), policy("credit/model-a", "key/model-b", "ok/model-c"), CONTEXT);
+
+        assertThat(response.provider()).isEqualTo("ok");
+        assertThat(credit.seen).hasSize(1);
+        assertThat(key.seen).hasSize(1);
+        assertThat(waits).isEmpty();
+        assertThat(response.attempts())
+                .extracting(AttemptRecord::provider)
+                .containsExactly("credit", "key", "ok");
+    }
+
+    @Test
+    @DisplayName("a 429 with a long Retry-After is not waited out: the next candidate is asked")
+    void longRetryAfterFallsThrough() {
+        registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        registry.add("b", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+        SequenceProvider a = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        a.failWith(failure(ProviderFailure.RATE_LIMITED, "a", 429, Duration.ofSeconds(60)));
+        SequenceProvider b = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        List<Duration> waits = new ArrayList<>();
+        ModelRouter router = router(a, b);
+        router.useSleeper(waits::add);
+
+        assertThat(router.route(request("hello"), policy("a/model-a", "b/model-b"), CONTEXT).provider())
+                .isEqualTo("b");
+        assertThat(a.seen).hasSize(1);
+        assertThat(waits).isEmpty();
+    }
+
+    @Test
+    @DisplayName("an overloaded model is asked after the others for a moment, never dropped")
+    void overloadedModelIsDeferredNotDropped() {
+        registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        registry.add("b", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+        SequenceProvider a = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        a.failWith(failure(ProviderFailure.RATE_LIMITED, "a", 429, Duration.ofSeconds(60)));
+        SequenceProvider b = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        ModelRouter router = router(a, b);
+        router.useSleeper(wait -> {});
+        RoutingPolicy chain = policy("a/model-a", "b/model-b");
+
+        router.route(request("hello"), chain, CONTEXT);
+        assertThat(router.coolingOff(ORG, "a", "model-a")).isTrue();
+
+        // Within the cool-off, the next call goes to b first.
+        assertThat(router.route(request("again"), chain, CONTEXT).provider()).isEqualTo("b");
+        assertThat(a.seen).hasSize(1);
+
+        // When b fails too, a is still asked: the cool-off only reorders.
+        b.failWith(failure(ProviderFailure.MODEL_NOT_FOUND, "b", 404, null));
+        assertThat(router.route(request("third"), chain, CONTEXT).provider()).isEqualTo("a");
+        assertThat(a.seen).hasSize(2);
+
+        // Forgetting it (Test now) clears it.
+        router.forgetCoolOff(ORG, "a", "model-a");
+        assertThat(router.coolingOff(ORG, "a", "model-a")).isFalse();
+    }
+
+    @Test
+    @DisplayName("the only candidate is always attempted, even while it is cooling off")
+    void lastCandidateIsAlwaysAttempted() {
+        registry.add("only", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        SequenceProvider only = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        // A Retry-After over ten seconds is not waited out, so one failure ends the first call.
+        only.failWith(failure(ProviderFailure.OVERLOADED, "only", 503, Duration.ofSeconds(20)));
+        ModelRouter router = router(only);
+        router.useSleeper(wait -> {});
+
+        assertThatThrownBy(() -> router.route(request("hello"), policy("only/model-a"), CONTEXT))
+                .isInstanceOf(ApiException.class);
+        assertThat(router.coolingOff(ORG, "only", "model-a")).isTrue();
+
+        ChatResponse answer = router.route(request("hello"), policy("only/model-a"), CONTEXT);
+        assertThat(answer.provider()).isEqualTo("only");
+        assertThat(only.seen).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("a policy asking for one attempt per model moves on after the first timeout")
+    void policyAttemptsPerCandidateAreHonoured() {
+        // Seen live: a chat's routing step waited three 20-second timeouts on NVIDIA before
+        // OpenRouter, next in the policy, was asked at all.
+        registry.add("nvidia", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "slow");
+        registry.add("openrouter", ProviderDescriptor.Kind.ANTHROPIC, "fast");
+        SequenceProvider nvidia = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        nvidia.failWith(
+                failure(ProviderFailure.TIMEOUT, "nvidia", null, null),
+                failure(ProviderFailure.TIMEOUT, "nvidia", null, null),
+                failure(ProviderFailure.TIMEOUT, "nvidia", null, null));
+        SequenceProvider openrouter = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        ModelRouter router = router(nvidia, openrouter);
+        router.useSleeper(wait -> {});
+        RoutingPolicy once = new RoutingPolicy(
+                List.of(RoutingPolicy.Candidate.of("nvidia", "slow"), RoutingPolicy.Candidate.of("openrouter", "fast")),
+                RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED,
+                1,
+                Duration.ofSeconds(20),
+                true);
+
+        ChatResponse answer = router.route(request("hello"), once, CONTEXT);
+
+        assertThat(answer.provider()).isEqualTo("openrouter");
+        assertThat(nvidia.seen).hasSize(1);
+        assertThat(ModelRouter.attemptsFor(once)).isEqualTo(1);
+        assertThat(ModelRouter.attemptsFor(new RoutingPolicy(List.of(), null, 10, null, true))).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("a model that never answers is given its budget, retries included, then the next is asked")
+    void silentModelIsPassedOverAfterItsBudget() {
+        // Seen live on 8 Oct 2026: a step waited two minutes on a model that never answered
+        // before the working one next in the list was asked.
+        registry.add("nvidia", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "silent");
+        registry.add("openrouter", ProviderDescriptor.Kind.ANTHROPIC, "fast");
+        HangingProvider nvidia = new HangingProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        SequenceProvider openrouter = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        ModelRouter router = router(nvidia, openrouter);
+        router.useSleeper(wait -> {});
+        router.useCandidateBudget(Duration.ofMillis(300));
+        ChatRequest slowRequest = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("hello")))
+                .timeout(Duration.ofMinutes(2))
+                .build();
+
+        long started = System.nanoTime();
+        ChatResponse answer = router.route(slowRequest, policy("nvidia/silent", "openrouter/fast"), CONTEXT);
+        Duration took = Duration.ofNanos(System.nanoTime() - started);
+
+        assertThat(answer.provider()).isEqualTo("openrouter");
+        assertThat(took).isLessThan(Duration.ofSeconds(3));
+        assertThat(answer.attempts().getFirst().failure()).isEqualTo(ProviderFailure.TIMEOUT);
+        assertThat(ModelRouter.CANDIDATE_BUDGET).isLessThanOrEqualTo(Duration.ofSeconds(45));
+    }
+
+    @Test
+    @DisplayName("the last candidate is still asked once after the chain's own deadline has passed")
+    void lastCandidateIsAskedPastTheDeadline() {
+        registry.add("nvidia", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "silent");
+        registry.add("openrouter", ProviderDescriptor.Kind.ANTHROPIC, "fast");
+        HangingProvider nvidia = new HangingProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        SequenceProvider openrouter = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        ModelRouter router = router(nvidia, openrouter);
+        router.useSleeper(wait -> {});
+        router.useCandidateBudget(Duration.ofMillis(300));
+        RoutingPolicy tight = new RoutingPolicy(
+                List.of(RoutingPolicy.Candidate.of("nvidia", "silent"), RoutingPolicy.Candidate.of("openrouter", "fast")),
+                RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED,
+                3,
+                Duration.ofMillis(100),
+                true);
+
+        ChatResponse answer = router.route(request("hello"), tight, CONTEXT);
+
+        assertThat(answer.provider()).isEqualTo("openrouter");
+        assertThat(openrouter.seen).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a blocking read that ran out of time counts as a timeout")
+    void blockingTimeoutIsRecognised() {
+        assertThat(ModelRouter.isBlockingTimeout(
+                        new IllegalStateException("Timeout on blocking read for 300000000 NANOSECONDS")))
+                .isTrue();
+        assertThat(ModelRouter.isBlockingTimeout(new IllegalStateException("something else"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("when every model fails, the error names each one with a plain reason")
+    void errorSummaryNamesEachCandidate() {
+        registry.add("openrouter", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "llama");
+        registry.add("nvidia", ProviderDescriptor.Kind.ANTHROPIC, "nemo");
+        registry.add("keyless", ProviderDescriptor.Kind.GEMINI, "gem");
+        registry.withoutCredential("keyless");
+        SequenceProvider openrouter = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        openrouter.failWith(failure(ProviderFailure.INSUFFICIENT_CREDIT, "openrouter", 402, null));
+        SequenceProvider nvidia = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        nvidia.failWith(
+                failure(ProviderFailure.TIMEOUT, "nvidia", null, null),
+                failure(ProviderFailure.TIMEOUT, "nvidia", null, null),
+                failure(ProviderFailure.TIMEOUT, "nvidia", null, null));
+        ModelRouter router = router(openrouter, nvidia, new ScriptedProvider(ProviderDescriptor.Kind.GEMINI, null));
+        router.useSleeper(wait -> {});
+
+        assertThatThrownBy(() -> router.route(
+                        request("hello"), policy("openrouter/llama", "nvidia/nemo", "keyless/gem"), CONTEXT))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> {
+                    assertThat(((ApiException) e).code()).isEqualTo(ErrorCode.NO_MODEL_AVAILABLE);
+                    assertThat(e.getMessage())
+                            .isEqualTo("No model could answer. openrouter \u00b7 llama: out of credit; nvidia \u00b7"
+                                    + " nemo: timed out (3 tries); keyless \u00b7 gem: no key is stored. Every model"
+                                    + " will be tried again on the next run.");
+                });
+
+        // And the next call tries all of them again.
+        openrouter.failWith();
+        assertThat(router.route(request("hello"), policy("openrouter/llama", "nvidia/nemo"), CONTEXT).provider())
+                .isEqualTo("openrouter");
+        assertThat(openrouter.seen).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("an empty chain fails with the plain 'no AI model is set' sentence")
+    void emptyChainSaysNoModelIsSet() {
+        ModelRouter router = router();
+        assertThatThrownBy(() -> router.route(request("hello"), RoutingPolicy.of(List.of()), CONTEXT))
+                .isInstanceOf(ApiException.class)
+                .hasMessage(ModelRouter.NO_MODEL_SET);
+    }
+
     // ---- One workspace's failures stay in that workspace ----------------------------------
 
     private static final String ORG_A = "org-a";
@@ -414,68 +694,66 @@ class ModelRouterTest {
     }
 
     @Test
-    @DisplayName("a provider paused by one workspace's failures stays open to another workspace")
-    void breakerIsPerWorkspace() {
+    @DisplayName("repeated failures never pause a provider: every later call still reaches it")
+    void repeatedFailuresNeverPauseAProvider() {
         registry.add("vendor", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        AtomicInteger calls = new AtomicInteger();
         ModelRouter router = router(new KeyedProvider(
                 ProviderDescriptor.Kind.OPENAI_COMPATIBLE,
                 "secret-" + ORG_A,
                 ProviderFailure.SERVER_ERROR,
-                new AtomicInteger()));
+                calls));
+        router.useSleeper(wait -> {});
 
         for (int i = 0; i < 10; i++) {
-            try {
-                router.route(request("hello"), policy("vendor/model-a"), context(ORG_A));
-            } catch (ApiException expected) {
-                // Each call fails; the point is the breaker they leave behind.
-            }
+            assertThatThrownBy(() -> router.route(request("hello"), policy("vendor/model-a"), context(ORG_A)))
+                    .isInstanceOf(ApiException.class);
         }
 
-        assertThat(breakerState(ORG_A, "vendor")).isEqualTo(CircuitBreaker.State.OPEN);
-        assertThat(router.providerHealth(ORG_A)).containsEntry("vendor", "OPEN");
-        assertThat(router.providerHealth(ORG_B)).containsEntry("vendor", "CLOSED");
+        // Ten calls, each with two retries, all reached the provider.
+        assertThat(calls.get()).isEqualTo(30);
+        assertThat(router.providerHealth(ORG_A)).containsEntry("vendor", "CLOSED");
         assertThat(router.route(request("hello"), policy("vendor/model-a"), context(ORG_B)).provider())
                 .isEqualTo("vendor");
     }
 
     @Test
-    @DisplayName("credit, quota and authorisation failures are not counted against the breaker")
-    void accountFailuresAreNotBreakerFailures() {
+    @DisplayName("credit, quota and authorisation failures are not counted as the provider being unwell")
+    void accountFailuresAreNotProviderFaults() {
         for (ProviderFailure failure : List.of(
                 ProviderFailure.AUTHENTICATION_FAILED,
                 ProviderFailure.AUTHORISATION_FAILED,
                 ProviderFailure.INSUFFICIENT_CREDIT,
                 ProviderFailure.QUOTA_EXHAUSTED)) {
-            assertThat(ModelRouter.countsAgainstBreaker(ProviderException.of(failure, "p", "m", "x")))
-                    .as(failure.name())
-                    .isFalse();
+            assertThat(ModelRouter.isProviderFault(failure)).as(failure.name()).isFalse();
         }
-        assertThat(ModelRouter.countsAgainstBreaker(ProviderException.of(ProviderFailure.SERVER_ERROR, "p", "m", "x")))
-                .isTrue();
-        assertThat(ModelRouter.countsAgainstBreaker(new IllegalStateException("boom"))).isTrue();
+        assertThat(ModelRouter.isProviderFault(ProviderFailure.SERVER_ERROR)).isTrue();
     }
 
     @Test
-    @DisplayName("an account out of credit or quota sets the model aside for that workspace, naming the cause")
-    void accountFailuresAreReportedWithTheirCause() {
+    @DisplayName("an account out of credit or quota is not set aside: the next call asks it again")
+    void accountFailuresAreNotRemembered() {
         registry.add("credit", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
         registry.add("quota", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
         registry.add("fallback", ProviderDescriptor.Kind.GEMINI, "model-c");
+        AtomicInteger creditCalls = new AtomicInteger();
 
         ModelRouter router = router(
-                new ScriptedProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE, ProviderFailure.INSUFFICIENT_CREDIT),
+                new ScriptedProvider(
+                        ProviderDescriptor.Kind.OPENAI_COMPATIBLE, ProviderFailure.INSUFFICIENT_CREDIT, creditCalls),
                 new ScriptedProvider(ProviderDescriptor.Kind.ANTHROPIC, ProviderFailure.QUOTA_EXHAUSTED),
                 new ScriptedProvider(ProviderDescriptor.Kind.GEMINI, null));
 
-        router.route(request("hello"), policy("credit/model-a", "quota/model-b", "fallback/model-c"), context(ORG_A));
+        RoutingPolicy chain = policy("credit/model-a", "quota/model-b", "fallback/model-c");
+        router.route(request("hello"), chain, context(ORG_A));
+        router.route(request("hello"), chain, context(ORG_A));
 
-        assertThat(registry.causes)
-                .containsEntry(ORG_A + "/credit/model-a", ProviderFailure.INSUFFICIENT_CREDIT)
-                .containsEntry(ORG_A + "/quota/model-b", ProviderFailure.QUOTA_EXHAUSTED);
+        // A 402 is not retried within a call, and is asked again on the next call.
+        assertThat(creditCalls.get()).isEqualTo(2);
+        assertThat(registry.causes).isEmpty();
         // An empty account is not a refused key: the key itself is left alone.
         assertThat(registry.rejected).isEmpty();
     }
-
 
     // ---- Spending caps ---------------------------------------------------------------------
 
@@ -745,7 +1023,7 @@ class ModelRouterTest {
         registry.add("small", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a", true, 6_000);
         registry.add("large", ProviderDescriptor.Kind.ANTHROPIC, "model-b", true, 200_000);
         SequenceProvider small = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
-        small.failWith(ProviderException.of(ProviderFailure.SERVER_ERROR, "small", "model-a", "boom"));
+        small.failWith(ProviderException.of(ProviderFailure.MODEL_NOT_FOUND, "small", "model-a", "boom"));
         SequenceProvider large = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
         ModelRouter router = router(small, large);
         ChatRequest original = conversationRequest();
@@ -906,6 +1184,46 @@ class ModelRouterTest {
         return resilience.circuitBreaker(ModelRouter.breakerName(orgId, providerId)).getState();
     }
 
+    @Test
+    @DisplayName("calls an adapter with an ambient credential (an instance role) when no key is stored")
+    void usesAmbientCredentialWhenNothingIsStored() {
+        registry.add("bedrock", ProviderDescriptor.Kind.BEDROCK, "apac.amazon.nova-lite-v1:0");
+        registry.withoutCredential("bedrock");
+        List<String> seen = new ArrayList<>();
+        ModelRouter router = router(new CredentialRecordingProvider(ProviderDescriptor.Kind.BEDROCK, true, seen));
+
+        ChatResponse response = router.route(request("hello"), policy("bedrock/apac.amazon.nova-lite-v1:0"), CONTEXT);
+
+        assertThat(response.provider()).isEqualTo("bedrock");
+        assertThat(seen).containsExactly((String) null);
+    }
+
+    @Test
+    @DisplayName("still skips a provider with no stored key when its adapter has no ambient credential")
+    void skipsMissingKeyWithoutAmbientCredential() {
+        registry.add("bedrock", ProviderDescriptor.Kind.BEDROCK, "apac.amazon.nova-lite-v1:0");
+        registry.add("ollama", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "qwen2.5:1.5b-instruct");
+        registry.keyless("ollama");
+        registry.withoutCredential("bedrock");
+        List<String> bedrockSeen = new ArrayList<>();
+        List<String> ollamaSeen = new ArrayList<>();
+        ModelRouter router = router(
+                new CredentialRecordingProvider(ProviderDescriptor.Kind.BEDROCK, false, bedrockSeen),
+                new CredentialRecordingProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE, false, ollamaSeen));
+
+        ChatResponse response = router.route(
+                request("hello"),
+                policy("bedrock/apac.amazon.nova-lite-v1:0", "ollama/qwen2.5:1.5b-instruct"),
+                CONTEXT);
+
+        // Bedrock is skipped for the missing key; the keyless local model answers with no key at all.
+        assertThat(bedrockSeen).isEmpty();
+        assertThat(response.provider()).isEqualTo("ollama");
+        assertThat(ollamaSeen).containsExactly((String) null);
+        assertThat(response.attempts()).anySatisfy(attempt -> assertThat(attempt.skipReason())
+                .isEqualTo(AttemptRecord.SkipReason.CREDENTIAL_MISSING));
+    }
+
     private ModelRouter router(ChatProvider... providers) {
         return new ModelRouter(
                 List.of(providers),
@@ -973,8 +1291,8 @@ class ModelRouterTest {
             String[] parts = candidate.split("/", 2);
             list.add(RoutingPolicy.Candidate.of(parts[0], parts[1]));
         }
-        // One attempt per candidate keeps the tests fast; retry behaviour is asserted separately.
-        return new RoutingPolicy(list, RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, 1, Duration.ofSeconds(20), true);
+        // The router's full retry allowance; a policy asking for fewer is asserted separately.
+        return new RoutingPolicy(list, RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, 3, Duration.ofSeconds(20), true);
     }
 
     private static ModelSpec spec(String providerId, String modelId, boolean tools, int window) {
@@ -1106,6 +1424,14 @@ class ModelRouterTest {
             withoutCredential.add(providerId);
         }
 
+        /** The provider row names no credential at all, as a local keyless endpoint's does. */
+        void keyless(String providerId) {
+            ProviderDescriptor d = providers.get(providerId);
+            providers.put(providerId, new ProviderDescriptor(
+                    d.id(), d.displayName(), d.kind(), d.baseUrl(), null, d.enabled(), d.defaultHeaders(),
+                    d.regions(), d.requestsPerMinute(), d.maxConcurrentRequests(), d.priority()));
+        }
+
         /** The credential store does not answer for this provider's key. */
         void unreachableStore(String providerId) {
             unreachableStore.add(providerId);
@@ -1219,6 +1545,37 @@ class ModelRouterTest {
         }
     }
 
+    /** A provider that never answers, as a stalled model does. */
+    private static final class HangingProvider implements ChatProvider {
+        private final ProviderDescriptor.Kind kind;
+
+        HangingProvider(ProviderDescriptor.Kind kind) {
+            this.kind = kind;
+        }
+
+        @Override
+        public ProviderDescriptor.Kind kind() {
+            return kind;
+        }
+
+        @Override
+        public Mono<ChatResponse> complete(
+                ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
+            return Mono.never();
+        }
+
+        @Override
+        public Flux<ChatChunk> stream(
+                ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
+            return Flux.never();
+        }
+
+        @Override
+        public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
+            return Mono.just(true);
+        }
+    }
+
     /** A provider that either fails with a named failure or answers successfully. */
     private static final class ScriptedProvider implements ChatProvider {
         private final ProviderDescriptor.Kind kind;
@@ -1301,6 +1658,56 @@ class ModelRouterTest {
             if (next != null) {
                 return Mono.error(next);
             }
+            return Mono.just(new ChatResponse(
+                    "answer from " + provider.id(),
+                    List.of(),
+                    FinishReason.STOP,
+                    TokenUsage.of(10, 5),
+                    provider.id(),
+                    model.modelId(),
+                    Duration.ofMillis(1),
+                    List.of(),
+                    Map.of()));
+        }
+
+        @Override
+        public Flux<ChatChunk> stream(
+                ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
+            return Flux.just(ChatChunk.terminal(FinishReason.STOP, TokenUsage.NONE));
+        }
+
+        @Override
+        public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
+            return Mono.just(true);
+        }
+    }
+
+    /** Answers every call and records the credential it was given; optionally has an ambient one. */
+    private static final class CredentialRecordingProvider implements ChatProvider {
+        private final ProviderDescriptor.Kind kind;
+        private final boolean ambient;
+        private final List<String> seen;
+
+        CredentialRecordingProvider(ProviderDescriptor.Kind kind, boolean ambient, List<String> seen) {
+            this.kind = kind;
+            this.ambient = ambient;
+            this.seen = seen;
+        }
+
+        @Override
+        public ProviderDescriptor.Kind kind() {
+            return kind;
+        }
+
+        @Override
+        public boolean hasAmbientCredential(ProviderDescriptor provider) {
+            return ambient;
+        }
+
+        @Override
+        public Mono<ChatResponse> complete(
+                ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
+            seen.add(credential);
             return Mono.just(new ChatResponse(
                     "answer from " + provider.id(),
                     List.of(),

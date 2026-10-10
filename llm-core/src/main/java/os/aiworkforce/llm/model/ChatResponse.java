@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, chat response, model answer, tokens used, cost, which provider answered, tool calls, finish reason, ChatResponse
+// @what: What a model returned, plus cost, usage and who answered.
+// @flow: Returned by ModelRouter.route and provider adapters.
 package os.aiworkforce.llm.model;
 
 import java.time.Duration;

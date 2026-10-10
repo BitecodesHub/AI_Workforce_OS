@@ -1,3 +1,5 @@
+// @find: tests for goal controller start and stop, start goal, stop goal, cancel, retry, POST /api/goals, /api/goals/{id}/cancel
+// @what: Unit and integration tests (4 cases) for goal controller start and stop, for example: create starts without running; cancel checks before stopping; cancel refused stops nothing; cancel is open to readers.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

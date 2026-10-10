@@ -1,3 +1,5 @@
+// @find: tests for agent queries, bulk pause, resume all, bulk message, success rate figure, cost figure, change summary, not enough runs
+// @what: Unit tests for bulk agent targeting, toast messages, outcome figures and revision summaries.
 import { describe, expect, it } from 'vitest'
 import {
   NOT_ENOUGH_RUNS,
@@ -119,14 +121,21 @@ describe('costFigure', () => {
     })
   })
 
+  it('says Free when nothing was spent because the models used are free in the catalogue', () => {
+    expect(costFigure(outcome({ totalCost: 0, freeRuns: 3 }))).toEqual({
+      value: 'Free',
+      note: '3 runs on models that are free in the catalogue.',
+    })
+  })
+
   it('says what a total leaves out', () => {
     expect(costFigure(outcome({ unpricedRuns: 1 })).note).toBe('Leaves out 1 run with no catalogue price.')
   })
 
-  it('shows a real zero for an agent with no runs, and for sandbox runs that cost nothing', () => {
+  it('shows a real zero for an agent with no runs, and Free for sandbox runs, as the run page does', () => {
     expect(costFigure(undefined)).toEqual({ value: 'US$0.00', note: 'No runs in this window.' })
     expect(costFigure(outcome({ totalCost: 0, runs: 4, sandboxRuns: 4 }))).toEqual({
-      value: 'US$0.00',
+      value: 'Free',
       note: 'Offline sandbox runs cost nothing.',
     })
   })

@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, provider failure, rate limited, 429, timeout, server error, auth failed, content filter, context too long, payload too large, retry same model, try next model, failover, circuit breaker, operator action required, ProviderFailure
+// @what: Every way a model call can fail, with whether to retry, fail over or stop.
+// @flow: Set by adapters; used by ModelRouter for retries and failover.
 package os.aiworkforce.llm.model;
 
 /**
@@ -103,16 +106,19 @@ public enum ProviderFailure {
         this.operatorActionRequired = operatorActionRequired;
     }
 
+    // @find: should the same model be retried
     /** Whether repeating the identical call to the identical model could succeed shortly. */
     public boolean retrySameCandidate() {
         return retrySameCandidate;
     }
 
+    // @find: should the next model be tried, failover
     /** Whether a different model in the chain should be tried. */
     public boolean tryNextCandidate() {
         return tryNextCandidate;
     }
 
+    // @find: does an administrator need to fix this, key or credits problem
     /**
      * Whether this needs a person, not a retry.
      *
@@ -124,6 +130,7 @@ public enum ProviderFailure {
         return operatorActionRequired;
     }
 
+    // @find: does this failure trip the circuit breaker
     /**
      * Whether the failure should count against the circuit breaker.
      *
@@ -135,6 +142,7 @@ public enum ProviderFailure {
         return this != CONTENT_FILTERED && this != INVALID_REQUEST && this != CONTEXT_LENGTH_EXCEEDED;
     }
 
+    // @find: payload too large, 413 request too big
     /**
      * What an HTTP 413 means, given the provider's body.
      *
@@ -147,6 +155,7 @@ public enum ProviderFailure {
         return isTokensPerMinuteLimit(body) ? RATE_LIMITED : CONTEXT_LENGTH_EXCEEDED;
     }
 
+    // @find: tokens per minute limit, rate limit by tokens
     /** Whether a provider's body describes a tokens-per-minute throttle rather than an overflow. */
     public static boolean isTokensPerMinuteLimit(String body) {
         if (body == null || body.isBlank()) {
@@ -157,6 +166,7 @@ public enum ProviderFailure {
         return lower.contains("tokens per minute") || body.contains("TPM") || lower.contains("rate_limit_exceeded");
     }
 
+    // @find: map provider failure to API error code
     /** Maps to the platform's own error code when every candidate has been exhausted. */
     public os.aiworkforce.platform.error.ErrorCode toErrorCode() {
         return switch (this) {

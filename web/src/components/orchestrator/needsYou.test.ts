@@ -1,3 +1,6 @@
+// @find: tests for needs you inbox, buildNeedsYou, questions, approvals, failed work, held work, scope for me everyone
+// @what: Unit tests for what the Needs you inbox collects and in what order.
+// @flow: Exercises needsYou.ts
 import { describe, expect, it } from 'vitest'
 import { buildNeedsYou } from './needsYou'
 import type { Board, BoardApproval, BoardGoal, BoardQueueEntry, BoardTask, RunQuestion } from '../../lib/queries'

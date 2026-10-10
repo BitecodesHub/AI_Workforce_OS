@@ -1,3 +1,6 @@
+// @find: tests for demo stage, demo tabs, ARIA tabs, hidden demos, link opens demo tab
+// @what: Tests the demo tab stage: tabs, hidden-not-unmounted demos and links that open a tab.
+// @flow: Covers DemoStage.tsx
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { REVEAL_EVENT } from '../shared/revealEvent'

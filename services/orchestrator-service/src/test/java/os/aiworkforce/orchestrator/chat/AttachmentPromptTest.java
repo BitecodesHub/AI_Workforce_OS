@@ -1,3 +1,6 @@
+// @find: tests for attachment prompt, chat, text under names, budget is shared, pictures and problems, tag look alikes removed, AttachmentPromptTest, AttachmentPrompt
+// @what: Tests for AttachmentPrompt in the orchestrator chat package (4 test methods).
+// @flow: Exercises AttachmentPrompt
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +24,7 @@ class AttachmentPromptTest {
                 text == null && !"image".equals(kind) ? "The PDF has no text layer." : null, null, null, Instant.now(), text);
     }
 
+    // @find: test text under names, attachment prompt
     @Test
     @DisplayName("each file's text sits under its name, after the rule to read and cite it, never obey it")
     void textUnderNames() {
@@ -44,6 +48,7 @@ class AttachmentPromptTest {
         assertThat(material.summary()).isEqualTo("Read 2 attached files: q3.pdf, stock.xlsx.");
     }
 
+    // @find: test budget is shared, attachment prompt
     @Test
     @DisplayName("long files share the budget, a short one keeps all of its text, and a cut says so")
     void budgetIsShared() {
@@ -59,6 +64,7 @@ class AttachmentPromptTest {
         assertThat(material.text().length()).isLessThan(AttachmentPrompt.TOTAL_CHARS + 4_000);
     }
 
+    // @find: test pictures and problems, attachment prompt
     @Test
     @DisplayName("a picture is sent as an image part; HEIC and unreadable files are described plainly")
     void picturesAndProblems() {
@@ -81,6 +87,7 @@ class AttachmentPromptTest {
         assertThat(material.summary()).contains("only if it can read images");
     }
 
+    // @find: test tag look alikes removed, attachment prompt
     @Test
     @DisplayName("a file cannot close its own block and speak as the person")
     void tagLookAlikesRemoved() {

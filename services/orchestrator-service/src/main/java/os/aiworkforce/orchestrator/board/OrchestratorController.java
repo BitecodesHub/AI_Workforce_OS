@@ -1,3 +1,6 @@
+// @find: orchestrator controller, board endpoint, stop all, pause schedules, GET /api/orchestrator/board, POST /api/orchestrator/stop-all, Orchestrator page, Stop everything button
+// @what: REST endpoints for the live board of everything the workforce is doing and the stop-all button.
+// @flow: Called by the Orchestrator page; delegates to BoardService.
 package os.aiworkforce.orchestrator.board;
 
 import java.util.UUID;
@@ -33,6 +36,7 @@ public class OrchestratorController {
         this.generalEmployee = generalEmployee;
     }
 
+    // @find: orchestrator board, live view, GET /api/orchestrator/board
     @GetMapping("/board")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "Every agent, goal, queued task, question, approval and recent run in this workspace")
@@ -43,6 +47,7 @@ public class OrchestratorController {
         return board.board(orgId, parsed, RequestContext.requireActor());
     }
 
+    // @find: stop everything, stop all work, pause schedules, POST /api/orchestrator/stop-all
     @PostMapping("/stop-all")
     @RequiresPermission(Permission.Codes.RUN_CANCEL)
     @Operation(

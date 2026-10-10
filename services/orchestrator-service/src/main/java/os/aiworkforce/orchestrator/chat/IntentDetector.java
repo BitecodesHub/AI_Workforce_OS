@@ -1,3 +1,6 @@
+// @find: intent detector, what did the person mean, schedule intent, documents intent, work intent, question about documents, timing phrase, IntentDetector, @mention wins, refers to documents
+// @what: Classifies a chat message without an @mention as a schedule request, a question about documents, or work to route.
+// @flow: Called by CoordinatorService; uses SchedulePreviewer.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;
@@ -90,6 +93,7 @@ public final class IntentDetector {
                     + "|in\\s+\\d+\\s*(minute|minutes|hour|hours|day|days))\\b");
 
     /** Mentions decide work by themselves; call this only when the message has none. */
+    // @find: detect intent of message, schedule or documents or work
     public static Intent detect(String text, ZoneId zone, Instant now, SchedulePreviewer previewer) {
         if (text == null || text.isBlank()) {
             return Intent.WORK;
@@ -146,6 +150,7 @@ public final class IntentDetector {
      * wrote it - line breaks, spacing and pasted text included - because this is the standing
      * instruction every run of the schedule works from.
      */
+    // @find: remove timing phrase from text
     public static String withoutTimingPhrase(String text) {
         if (text == null) {
             return "";
@@ -176,6 +181,7 @@ public final class IntentDetector {
      * the handbook" - so that, when no document turns out to cover it, the agent can be told to say
      * so rather than state company facts it would otherwise have to invent.
      */
+    // @find: message refers to documents, asks about knowledge base
     public static boolean refersToDocuments(String text) {
         return text != null && DOCUMENT_REFERENCE.matcher(text).find();
     }

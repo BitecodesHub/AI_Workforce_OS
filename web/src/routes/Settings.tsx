@@ -1,22 +1,24 @@
+// @find: workspace settings, settings, workspace name, time zone, notifications, email alerts, approval rules, who may approve, retention, keep data for, delete old data, /settings, Settings page
+// @what: The Workspace settings page: name, time zone, notifications, approval rules and data retention.
+// @flow: Routed from App.tsx at /settings; saves through the settings queries in lib/queries
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Button, Card, Eyebrow, Input, Notice, PageHeader, PasswordInput } from '../components/ui'
+import { Button, Card, Eyebrow, Input, Notice, PageHeader, PasswordInput, Select } from '../components/ui'
 import { QueryState } from '../components/ui/QueryState'
 import { TimeZoneField } from '../components/onboarding/TimeZoneField'
 import { ApiError, describeApiError } from '../lib/api'
-import {
-  enableBrowserNotifications,
-  notificationPermission,
-  setBrowserNotifications,
-  useBrowserNotifications,
-} from '../lib/attention'
+import { BrowserNotificationsCard } from '../components/settings/BrowserNotificationsCard'
+import { SetupBanner } from '../components/setup/SetupBanner'
 import { can, profile } from '../lib/session'
 import {
   WORKSPACE_NAME_MAX,
   browserTimeZone,
   timeZoneChoices,
+  REQUESTER_RULE_LABEL,
+  useApprovalSettings,
   useNotificationSettings,
   useRetentionSettings,
+  useSaveApprovalSettings,
   useSaveRetentionSettings,
   useSaveNotificationSettings,
   useSendTestNotification,
@@ -28,6 +30,7 @@ import {
   type NotificationSettings,
   type RetentionSettings,
   type NotificationTest,
+  type RequesterRule,
   type Workspace,
   type WorkspaceFormErrors,
 } from '../lib/settingsQueries'
@@ -46,6 +49,7 @@ import { useToast } from '../lib/toast'
 
 const WORKSPACE_FIELD_LABELS = { name: 'Workspace name', timezone: 'Time zone' }
 
+// @find: workspace card, rename workspace, change time zone
 function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const toast = useToast()
   const save = useUpdateWorkspaceSettings(workspace.id)
@@ -131,7 +135,8 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   )
 }
 
-function NotificationsCard({ settings }: { settings: NotificationSettings }) {
+// @find: notifications card, email notifications, approval alerts
+export function NotificationsCard({ settings }: { settings: NotificationSettings }) {
   const toast = useToast()
   const save = useSaveNotificationSettings()
   const test = useSendTestNotification()
@@ -282,8 +287,12 @@ function NotificationsCard({ settings }: { settings: NotificationSettings }) {
             Send test message
           </Button>
         </div>
-        {!canTest && settings.webhookUrl !== '' && (
-          <p className="caption">Save your changes first. The test message goes to the address that is saved.</p>
+        {!canTest && (
+          <p className="caption">
+            {settings.webhookUrl !== ''
+              ? 'Save your changes first. The test message goes to the address that is saved.'
+              : 'Save a webhook address first. The test message goes to the address that is saved.'}
+          </p>
         )}
         {result && (
           <Notice tone={result.delivered ? 'success' : 'warning'} live>
@@ -295,7 +304,67 @@ function NotificationsCard({ settings }: { settings: NotificationSettings }) {
   )
 }
 
+/**
+ * A second pair of eyes: whether the person who asked for work may approve what its agent then
+ * does. Applies from the next decision, to requests already waiting too.
+ */
+// @find: approval rule card, who can approve requests
+function ApprovalRuleCard({ rule }: { rule: RequesterRule }) {
+  const toast = useToast()
+  const save = useSaveApprovalSettings()
+  const [chosen, setChosen] = useState<RequesterRule>(rule)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    setFailure(null)
+    save.mutate(chosen, {
+      onSuccess: (saved) =>
+        toast.success(
+          saved.requesterCannotApprove === 'off'
+            ? 'Saved. The person who asked may approve their own requests.'
+            : 'Saved. Someone other than the person who asked now decides these requests.',
+        ),
+      onError: (error) => setFailure(describeApiError(error)),
+    })
+  }
+
+  return (
+    <Card as="section">
+      <Eyebrow as="h2">A second pair of eyes</Eyebrow>
+      <p className="muted" style={{ maxWidth: '62ch', marginBottom: 'var(--space-5)' }}>
+        Choose when someone other than the person who asked for the work must approve what its agent wants to do.
+        It applies to the next decision, including requests already waiting.
+      </p>
+      <form className="stack" style={{ gap: 'var(--space-4)', maxWidth: '420px' }} onSubmit={submit} noValidate>
+        {failure && (
+          <Notice tone="warning" live>
+            {failure}
+          </Notice>
+        )}
+        <Select
+          label="Someone else must approve"
+          value={chosen}
+          onChange={(event) => setChosen(event.target.value as RequesterRule)}
+        >
+          {(Object.keys(REQUESTER_RULE_LABEL) as RequesterRule[]).map((value) => (
+            <option key={value} value={value}>
+              {REQUESTER_RULE_LABEL[value]}
+            </option>
+          ))}
+        </Select>
+        <div>
+          <Button type="submit" loading={save.isPending} disabled={chosen === rule}>
+            Save
+          </Button>
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 /** Whether this browser shows a notification for what is waiting on this person. Theirs alone, kept in this browser. */
+// @find: retention card, how long to keep data
 function RetentionCard({ settings }: { settings: RetentionSettings }) {
   const toast = useToast()
   const save = useSaveRetentionSettings()
@@ -348,67 +417,13 @@ function RetentionCard({ settings }: { settings: RetentionSettings }) {
   )
 }
 
-function BrowserNotificationsCard() {
-  const userId = profile()?.userId ?? ''
-  const on = useBrowserNotifications(userId)
-  const [note, setNote] = useState<string | null>(null)
-  const permission = notificationPermission()
-
-  async function change(next: boolean) {
-    setNote(null)
-    if (!next) {
-      setBrowserNotifications(userId, false)
-      return
-    }
-    // The browser is asked for permission now, because the person just asked for notifications.
-    const outcome = await enableBrowserNotifications(userId)
-    if (outcome === 'denied') {
-      setNote(
-        'Your browser did not allow notifications for this site. Allow them in the browser’s site settings, then turn this on again.',
-      )
-    } else if (outcome === 'unsupported') {
-      setNote('This browser does not support notifications.')
-    } else if (outcome === 'not-saved') {
-      setNote('This browser would not keep the setting, so it lasts only until you close the tab.')
-    }
-  }
-
-  return (
-    <Card as="section">
-      <Eyebrow as="h2">Browser notifications</Eyebrow>
-      <label className="question-option" style={{ maxWidth: '520px' }}>
-        <input
-          type="checkbox"
-          role="switch"
-          checked={on}
-          disabled={permission === 'unsupported'}
-          onChange={(event) => void change(event.target.checked)}
-        />
-        <span className="question-option-label">
-          Show a notification in this browser
-          <span className="question-option-description">
-            When an approval you can decide, or a question an agent asked you, arrives while this tab is not in front.
-            Your browser asks for permission when you turn it on. This is your own setting, kept in this browser.
-          </span>
-        </span>
-      </label>
-      {on && permission === 'denied' && (
-        <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
-          This browser is blocking notifications for this site, so none will show until you allow them.
-        </p>
-      )}
-      <p className="caption" role="status" style={{ marginTop: 'var(--space-3)' }}>
-        {note}
-      </p>
-    </Card>
-  )
-}
-
+// @find: Settings component, workspace settings page, /settings
 export function Settings() {
   const workspaceId = profile()?.workspaceId ?? null
   const workspace = useWorkspace(workspaceId)
   const notifications = useNotificationSettings()
   const retention = useRetentionSettings()
+  const approvalRule = useApprovalSettings()
 
   return (
     <div className="page">
@@ -419,6 +434,7 @@ export function Settings() {
       />
 
       <div className="page-sections">
+        <SetupBanner always />
         <QueryState query={workspace} permission="workspace:update" what="the workspace settings" rows={3}>
           {(loaded) => <WorkspaceCard key={`${loaded.id}:${loaded.name}:${loaded.timezone}`} workspace={loaded} />}
         </QueryState>
@@ -433,6 +449,10 @@ export function Settings() {
         </QueryState>
 
         <BrowserNotificationsCard />
+
+        <QueryState query={approvalRule} permission="workspace:update" what="the approval setting" rows={2}>
+          {(loaded) => <ApprovalRuleCard key={loaded.requesterCannotApprove} rule={loaded.requesterCannotApprove} />}
+        </QueryState>
 
         <QueryState query={retention} permission="workspace:update" what="the retention settings" rows={2}>
           {(loaded) => <RetentionCard key={String(loaded.runDetailDays)} settings={loaded} />}

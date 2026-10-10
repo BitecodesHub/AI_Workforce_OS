@@ -1,3 +1,6 @@
+// @find: passages, quoted passages, citations, sources, document page, section, grounding, answer sources
+// @what: Quoted passages from workspace documents behind an answer.
+// @flow: Used by AnswerBubble.
 import { useState } from 'react'
 import { can } from '../../lib/session'
 import { passageLink } from './chatModel'
@@ -10,11 +13,13 @@ import type { SourcePassage } from './chatModel'
  * "[2]" in either means the same thing: the second passage here.
  */
 
+// @find: passageItemId, passage item id, passages, quoted passages, citations, sources
 /** The id of the list item holding passage `index` (counting from 1), for a citation to move focus to. */
 export function passageItemId(prefix: string, index: number): string {
   return `${prefix}-passage-${index}`
 }
 
+// @find: PassageList, passage list, passages, quoted passages, citations, sources
 export function PassageList({
   passages,
   idPrefix,

@@ -1,3 +1,6 @@
+// @find: waiting for approval, run held for approval, approve to continue, where to decide, approval pending
+// @what: Shows a run held for a decision and where to decide it.
+// @flow: Used by RunDetail.
 import { Notice } from '../ui'
 import { readableSummary } from '../../lib/approvals'
 import { useRunApproval } from '../../lib/approvalQueries'
@@ -5,6 +8,7 @@ import type { Run, RunStep } from '../../lib/queries'
 import { can } from '../../lib/session'
 import { withoutFinalStop } from './traceModel'
 
+// @find: WaitingForApproval, waiting for approval, waiting for approval, run held for approval, approve to continue, where to decide
 /**
  * A run held for a person's decision: what it is waiting for and where to decide it, or, for a
  * role that cannot see the queue, who can.

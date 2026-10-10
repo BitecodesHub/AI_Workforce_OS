@@ -1,3 +1,6 @@
+// @find: tests for gateway routes, route table, dev proxy, vite config, nginx launcher, path prefixes, StripPrefix, RewritePath, route drift, Nothing configured, No open invitations, workspaces route, GatewayRoutesTest, served roots, AIWOS_URL
+// @what: Checks that gateway routes, the web dev proxy and the launcher nginx agree on every path prefix and that no route rewrites paths.
+// @flow: Reads services/gateway application.yml, web/vite.config.ts and the launcher nginx conf without starting the gateway.
 package os.aiworkforce.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +57,7 @@ class GatewayRoutesTest {
 
     private record Route(String id, String port, String service, List<String> patterns, List<String> filters) {}
 
+    // @find: test gateway covers every dev proxy prefix, same service
     @Test
     @DisplayName("every prefix the dev proxy routes reaches the same service through the gateway")
     void gatewayCoversDevProxy() throws IOException {
@@ -81,6 +85,7 @@ class GatewayRoutesTest {
 
     @Test
     @DisplayName("the launcher's nginx, the dev proxy and the gateway send each prefix to the same service")
+    // @find: test launcher nginx matches dev proxy and gateway
     void launcherMatchesDevProxyAndGateway() throws IOException {
         Path vite = repositoryFile("web/vite.config.ts");
         Path nginx = repositoryFile("infra/launcher/nginx.conf");
@@ -117,6 +122,7 @@ class GatewayRoutesTest {
 
     @Test
     @DisplayName("no route except identity-public changes the path on its way to the service")
+    // @find: test no StripPrefix or RewritePath filters on routes
     void noPathChangingFilters() throws IOException {
         List<String> problems = new ArrayList<>();
         for (Route route : gatewayRoutes()) {
@@ -136,6 +142,7 @@ class GatewayRoutesTest {
 
     @Test
     @DisplayName("every Path predicate is under /api/ or /.well-known/, where the services serve")
+    // @find: test route path predicates are under /api/ or /.well-known/
     void pathPredicatesUnderServedRoots() throws IOException {
         List<String> problems = new ArrayList<>();
         for (Route route : gatewayRoutes()) {
@@ -151,6 +158,7 @@ class GatewayRoutesTest {
 
     @Test
     @DisplayName("the check finds a path-changing filter in either form the gateway accepts")
+    // @find: test route filter names are parsed
     void filterNamesRead() {
         assertThat(filterName("StripPrefix=1")).isEqualTo("StripPrefix");
         assertThat(filterName(Map.of("name", "RewritePath", "args", Map.of()))).isEqualTo("RewritePath");

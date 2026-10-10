@@ -1,3 +1,8 @@
+/*
+ * @find: polish styles, orchestrator, board, map, timeline, swimlanes, sheet, page frame
+ * @what: Styles for the Orchestrator board, map and timeline.
+ * @flow: Used by Orchestrator.tsx; imported by polish/index.css
+ */
 /* UI/UX polish: orchestrator screens. Loaded after components.css, so rules here refine it. */
 
 /* ---- Page frame (B2.13) --------------------------------------------------------------------------

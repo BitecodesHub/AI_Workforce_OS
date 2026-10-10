@@ -1,3 +1,9 @@
+// @find: conversation marks repository, pin conversation, archive conversation, mark read, upsert flags, read position, ConversationMarks
+// @what: Spring Data repository for per-person ConversationMark rows, written by native upserts.
+// @flow: Used by the chat service for pin, archive and read state.
+// @find: conversation marks repository, pin conversation, archive conversation, mark read, upsert flags, read position, ConversationMarks
+// @what: Spring Data repository for per-person ConversationMark rows, written by native upserts.
+// @flow: Used by the chat service for pin, archive and read state.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.List;
@@ -20,10 +26,16 @@ import os.aiworkforce.orchestrator.domain.ConversationMark;
 
 public interface ConversationMarks extends JpaRepository<ConversationMark, UUID> {
 
+    // @find: get my mark on a conversation
+    // @find: get my mark on a conversation
     Optional<ConversationMark> findByConversationIdAndUserId(UUID conversationId, UUID userId);
 
+    // @find: all my conversation marks
+    // @find: all my conversation marks
     List<ConversationMark> findByOrgIdAndUserId(UUID orgId, UUID userId);
 
+    // @find: pin or archive conversation, upsert flags
+    // @find: pin or archive conversation, upsert flags
     /**
      * Sets {@code pinned} and/or {@code archived}; a null argument keeps the current value (or
      * false on insert). An atomic upsert, so a double click on Pin, or a read marker racing a
@@ -49,6 +61,8 @@ public interface ConversationMarks extends JpaRepository<ConversationMark, UUID>
             @Param("pinned") Boolean pinned,
             @Param("archived") Boolean archived);
 
+    // @find: mark conversation read, upsert read position
+    // @find: mark conversation read, upsert read position
     /** Moves the read marker forward only; an older position never moves it back. */
     @Modifying
     @Query(

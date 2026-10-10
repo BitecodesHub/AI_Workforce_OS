@@ -1,3 +1,6 @@
+// @find: tests for RoutingCard, routing receipt, who is on it, why this agent, send to someone else, reroute, hand off, routing decision, coordinator
+// @what: Automated tests for RoutingCard.
+// @flow: Run with the web test runner; covers RoutingCard.
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent, ChatMessage } from '../../lib/queries'
@@ -39,5 +42,15 @@ describe('RoutingCard', () => {
   it('lower-cases the start of a reason and drops its final full stop', () => {
     expect(becauseText('The request is about HR.')).toBe('the request is about HR')
     expect(becauseText('HR owns this.')).toBe('HR owns this')
+  })
+
+  it('does not repeat a mention as its own reason', () => {
+    const mention = {
+      ...message,
+      detail: { mode: 'mention', reason: 'You mentioned @HR.', agents: [{ id: 'a1', name: 'HR' }] },
+    } as unknown as ChatMessage
+    render(<RoutingCard message={mention} agentNames={{ a1: HR, a2: IT }} settled chosenName={null} rerouting={false} onReroute={vi.fn()} />)
+    expect(screen.getByText('Sent to @HR, as you asked')).toBeInTheDocument()
+    expect(screen.queryByText(/because you mentioned/)).not.toBeInTheDocument()
   })
 })

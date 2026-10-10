@@ -1,3 +1,6 @@
+// @find: token refresh, OAuth refresh, connector token, reconnect required, integrations service, refresh access token, expired token, mark reconnect
+// @what: Asks the integrations service for a fresh OAuth access token or flags a connection as needing reconnection.
+// @flow: Used by live connector adapters during tool calls; calls integrations-service
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -38,6 +41,7 @@ public class IntegrationsTokenRefresher implements TokenRefresher {
         this.tokens = tokens;
     }
 
+    // @find: refresh OAuth token, rejected credential
     @Override
     public Mono<String> refresh(String orgId, String server, String rejectedCredential) {
         return authorised(orgId)
@@ -55,6 +59,7 @@ public class IntegrationsTokenRefresher implements TokenRefresher {
                         "Could not renew the {} sign-in in workspace {}: {}", server, orgId, error.getClass().getSimpleName()));
     }
 
+    // @find: mark connection reconnect required
     @Override
     public Mono<Void> markReconnectRequired(String orgId, String server, String reason) {
         return authorised(orgId)

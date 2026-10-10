@@ -1,3 +1,6 @@
+// @find: swimlanes, timeline, agent lanes, run bars, time window, who was busy, history of the window, Swimlanes, Orchestrator
+// @what: One lane per agent across the chosen time window with a bar for each run, plus a table fallback.
+// @flow: Uses layout.ts laneWindow, laneBarRect, laneTicks; clicking navigates via the router
 import { useMemo, useState } from 'react'
 import { Button, DataTable, StatusTag } from '../ui'
 import type { Column } from '../ui'
@@ -45,6 +48,7 @@ function barLabel(agentName: string, entry: BoardTimelineEntry, timezone: string
   return `${agentName} · ${status} · ${started} to ${ended}`
 }
 
+// @find: swimlanes component, timeline of runs per agent
 export function Swimlanes({
   board,
   now,

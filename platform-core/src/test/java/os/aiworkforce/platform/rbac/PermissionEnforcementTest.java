@@ -1,3 +1,5 @@
+// @find: tests for permission enforcement, every permission checked or planned, role builder checkbox grants nothing
+// @what: Checks every permission code is enforced by some endpoint or openly marked planned.
 package os.aiworkforce.platform.rbac;
 
 import static org.assertj.core.api.Assertions.assertThat;

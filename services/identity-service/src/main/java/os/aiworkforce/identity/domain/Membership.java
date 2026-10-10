@@ -1,3 +1,6 @@
+// @find: membership, workspace member, member role, user in workspace, org member, removed member, reactivate member, Membership entity, memberships table
+// @what: JPA entity for a person's membership and role in one workspace.
+// @flow: Used by Memberships repository, AuthService, GrantGuard, MemberController, InternalMembershipController.
 package os.aiworkforce.identity.domain;
 
 import java.time.Instant;
@@ -39,6 +42,7 @@ public class Membership extends BaseEntity {
         return "active".equals(status);
     }
 
+    // @find: reactivate member, re-invite removed member, suspended member returns, accept invitation again
     /**
      * Brings a removed or suspended member back, at the role their new invitation names.
      *

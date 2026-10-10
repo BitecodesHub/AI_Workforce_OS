@@ -1,3 +1,6 @@
+// @find: tool grant, agent permissions, allowed tools, scopes, require approval, max calls per run, grant enabled, which agent may use which connector, agent connector access
+// @what: Record describing what one agent may do with one connector server.
+// @flow: Loaded per agent by the orchestrator; checked by ToolGateway
 package os.aiworkforce.mcp.policy;
 
 import java.util.List;

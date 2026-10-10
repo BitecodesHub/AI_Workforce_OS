@@ -1,3 +1,6 @@
+// @find: orchestrator board, goals board, kanban, queued working needs you finished, goal cards, board view, list view, filters, search goals, open goal, live updates, OrchestratorBoard
+// @what: The Orchestrator board of goal cards in columns, with toolbar, list view, live change highlighting and keyboard support.
+// @flow: Uses BoardToolbar, BoardList, layout.ts, boardChanges, useBoardKeyboard, useKeepCardFocus; opens GoalSheet
 import { useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, EmptyState, StatusTag } from '../ui'
@@ -44,6 +47,7 @@ const STATUS_LABEL: Record<CardStatusKey, string> = {
 }
 const CARDS_PER_COLUMN = 8
 
+// @find: orchestrator board component, goals board, board or list
 export function OrchestratorBoard({
   board,
   cards,

@@ -1,3 +1,6 @@
+// @find: hubspot, crm, contacts, deals, list contacts, search contacts, create contact, list deals, private app token, live adapter, real API, sales
+// @what: Live HubSpot connector: runs hubspot__ tools (contacts, deals) against the HubSpot CRM API with a private app token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -46,6 +49,7 @@ public final class HubSpotAdapter extends LiveServerAdapter {
                         WebClientResponseException.Forbidden.class, forbidden -> Mono.just("HubSpot account"));
     }
 
+    // @find: HubSpot list contacts, tool hubspot__list_contacts, live HubSpot call
     private Mono<ToolResult> listContacts(ToolInvocation invocation, JsonNode arguments, String token) {
         return get(
                         token,
@@ -55,6 +59,7 @@ public final class HubSpotAdapter extends LiveServerAdapter {
                 .map(answer -> contacts(answer, "Read "));
     }
 
+    // @find: HubSpot search contacts, tool hubspot__search_contacts, live HubSpot call
     private Mono<ToolResult> searchContacts(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         body.put("query", required(arguments, "query"));
@@ -67,6 +72,7 @@ public final class HubSpotAdapter extends LiveServerAdapter {
                 .map(answer -> contacts(answer, "Found "));
     }
 
+    // @find: HubSpot create contact, tool hubspot__create_contact, live HubSpot call
     private Mono<ToolResult> createContact(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         ObjectNode properties = body.putObject("properties");
@@ -82,6 +88,7 @@ public final class HubSpotAdapter extends LiveServerAdapter {
                 .map(contact -> done(contact(contact), "Added " + properties.path("email").asText() + " to HubSpot."));
     }
 
+    // @find: HubSpot list deals, tool hubspot__list_deals, live HubSpot call
     private Mono<ToolResult> listDeals(ToolInvocation invocation, JsonNode arguments, String token) {
         return get(
                         token,

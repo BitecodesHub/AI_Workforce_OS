@@ -1,3 +1,5 @@
+// @find: Spring Data repository for user accounts.
+// @what: users, find user by email, email exists, find users by id, Users repository
 package os.aiworkforce.identity.repository;
 
 import java.util.List;

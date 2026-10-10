@@ -1,3 +1,5 @@
+// @find: tests for conversational queries, questions about the assistant, small talk search, retrieval, knowledge base
+// @what: Checks conversational questions about the assistant itself are handled in search.
 package os.aiworkforce.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

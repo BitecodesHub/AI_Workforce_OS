@@ -1,3 +1,6 @@
+// @find: audit relay, deliver audit events, retry, backoff, scheduled relay, outbox to analytics, audit never dropped
+// @what: Timer-driven relay that delivers queued audit events to analytics-service and retries until accepted.
+// @flow: Reads AuditOutbox; sends through AuditSender (HttpAuditSender)
 package os.aiworkforce.platform.web.audit;
 
 import java.util.List;
@@ -67,6 +70,7 @@ public class AuditOutboxRelay {
         nudges.shutdown();
     }
 
+    // @find: scheduled job or startup listener tick, audit relay
     @Scheduled(fixedDelayString = "${aiwos.audit.relay-interval:PT10S}", initialDelayString = "PT5S")
     public void tick() {
         deliverDue();
@@ -77,6 +81,7 @@ public class AuditOutboxRelay {
      *
      * @return how many events were delivered
      */
+    // @find: deliver due audit events to analytics
     public int deliverDue() {
         if (!properties.enabled() || !running.compareAndSet(false, true)) {
             return 0;

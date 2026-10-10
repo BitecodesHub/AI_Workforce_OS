@@ -1,3 +1,6 @@
+// @find: google sheets, sheets, spreadsheets, rows, list spreadsheets, list rows, append row, update row, OAuth, live adapter, real API, Sheets API
+// @what: Live Google Sheets connector: runs sheets__ tools (list spreadsheets and rows, append and update rows) against the Google Sheets API with an OAuth access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -52,6 +55,7 @@ public final class SheetsAdapter extends OAuthAdapter {
         return get(token, driveBaseUrl + DriveAdapter.ABOUT).map(DriveAdapter::account);
     }
 
+    // @find: Google Sheets list spreadsheets, tool sheets__list_spreadsheets, live Google Sheets call
     private Mono<ToolResult> listSpreadsheets(ToolInvocation invocation, JsonNode arguments, String token) {
         return get(
                         token,
@@ -71,6 +75,7 @@ public final class SheetsAdapter extends OAuthAdapter {
                 });
     }
 
+    // @find: Google Sheets list rows, tool sheets__list_rows, live Google Sheets call
     private Mono<ToolResult> listRows(ToolInvocation invocation, JsonNode arguments, String token) {
         String spreadsheet = required(arguments, "spreadsheetId");
         int max = limit(arguments, 50, 500);
@@ -98,6 +103,7 @@ public final class SheetsAdapter extends OAuthAdapter {
                 }));
     }
 
+    // @find: Google Sheets append row, tool sheets__append_row, live Google Sheets call
     private Mono<ToolResult> appendRow(ToolInvocation invocation, JsonNode arguments, String token) {
         String spreadsheet = required(arguments, "spreadsheetId");
         List<String> cells = cells(arguments, "values");
@@ -117,6 +123,7 @@ public final class SheetsAdapter extends OAuthAdapter {
                 }));
     }
 
+    // @find: Google Sheets update row, tool sheets__update_row, live Google Sheets call
     private Mono<ToolResult> updateRow(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         int split = id.indexOf(':');

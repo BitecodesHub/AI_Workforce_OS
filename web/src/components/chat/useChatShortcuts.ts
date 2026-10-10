@@ -1,3 +1,6 @@
+// @find: chat keyboard shortcuts, hotkeys, escape order, shortcut help, new conversation shortcut, focus composer
+// @what: Chat's keyboard shortcuts built on useHotkeys.
+// @flow: Used by the Chat page.
 import { formatHotkey, modLabel, useHotkeys } from '../../lib/hotkeys'
 import type { Hotkey } from '../../lib/hotkeys'
 
@@ -17,6 +20,7 @@ export type ChatShortcutHandlers = {
   onEscape: () => void
 }
 
+// @find: useChatShortcuts, use chat shortcuts, chat keyboard shortcuts, hotkeys, escape order, shortcut help
 export function useChatShortcuts(handlers: ChatShortcutHandlers, enabled = true) {
   const bindings: Hotkey[] = [
     { key: 'k', mod: true, allowInInput: true, handler: handlers.onFocusSearch },
@@ -44,6 +48,7 @@ const GLOBAL_GROUP = {
   ],
 }
 
+// @find: chatShortcutGroups, chat shortcut groups, chat keyboard shortcuts, hotkeys, escape order, shortcut help
 /** The groups shown in the shortcuts dialog (WP3's ShortcutsDialog). */
 export function chatShortcutGroups() {
   return [GLOBAL_GROUP]

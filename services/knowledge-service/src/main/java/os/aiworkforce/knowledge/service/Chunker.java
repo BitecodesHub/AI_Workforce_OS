@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, chunking, split text into chunks, passages, chunk size, overlap, headings, paragraph splitting, ingestion, Chunker
+// @what: Splits extracted document text into overlapping, heading-aware passages that are indexed and cited.
+// @flow: Called by IngestionService.ingest and reindex after TextExtractor; output stored as Chunk rows.
 package os.aiworkforce.knowledge.service;
 
 import java.util.ArrayList;
@@ -44,6 +47,7 @@ public class Chunker {
         }
     }
 
+    // @find: chunk text, split document into passages, chunk size and overlap
     public List<Chunk> chunk(String text, int targetSize, int overlap) {
         if (text == null || text.isBlank()) {
             return List.of();

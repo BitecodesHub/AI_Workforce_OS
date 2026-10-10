@@ -1,3 +1,5 @@
+// @find: tests for grounding, grounded answers, drop irrelevant passages, no evidence, citations, retrieval, knowledge base search
+// @what: Checks only passages that really match the question are returned as grounded evidence.
 package os.aiworkforce.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,9 @@
 /*
+ * @find: landing styles, provider failover demo, cited answer demo, citations, lp-route, lp-cite, home page
+ * @what: Styles for the provider-failover and cited-answer demos on the home page.
+ * @flow: Imported by landing/index.css
+ */
+/*
  * Public home page: the provider-failover demo (.lp-route-*) and the cited-answer demo
  * (.lp-cite-*). Owner: failover-and-answer.
  *

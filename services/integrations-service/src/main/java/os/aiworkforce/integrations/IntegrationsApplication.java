@@ -1,3 +1,6 @@
+// @find: integrations service main, spring boot application, connectors service entry point, integrations app
+// @what: Spring Boot entry point for the integrations service.
+// @flow: Scans mcp-core so the tool gateway and adapters are available
 package os.aiworkforce.integrations;
 
 import org.springframework.boot.SpringApplication;

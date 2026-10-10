@@ -1,3 +1,6 @@
+// @find: internal token, service token, service-to-service auth, actor propagation, mint token, token for sibling service, forRequester, JWT for internal call
+// @what: Mints short-lived service tokens that carry the original human actor for calls to sibling services.
+// @flow: Used by AuditClient, MemoryClient, KnowledgeClient, resolvers
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -57,12 +60,14 @@ public class InternalTokenProvider {
         this.internalSecret = properties.security().internalServiceSecret();
     }
 
+    // @find: token for service, platform actor
     /** A token for {@code service}, for whoever and whichever workspace the current context names. */
     public String forService(String service) {
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
         return mint(service, actor, actor.orgId());
     }
 
+    // @find: token for service in workspace
     /**
      * A token for {@code service} that names {@code orgId} as its workspace.
      *
@@ -83,6 +88,7 @@ public class InternalTokenProvider {
         return mint(service, actor, orgId.toString());
     }
 
+    // @find: token for requester, act as person
     /**
      * A token for {@code service} that acts as one named person in {@code orgId}, whoever the
      * current context says is running.

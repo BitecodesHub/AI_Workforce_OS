@@ -1,3 +1,5 @@
+// @find: tests for actor context filter, request id echoed, trace id in error body, context cleared
+// @what: Checks the first filter records the request id and trace id and clears the context.
 package os.aiworkforce.platform.web.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;

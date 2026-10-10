@@ -1,3 +1,6 @@
+// @find: organisations repository, find workspace by slug, workspace lookup, find organisation by id, Organisations JPA repository
+// @what: Spring Data repository for workspaces, with a case-insensitive slug lookup.
+// @flow: Used by WorkspaceController, InternalWorkspaceController and DemoDataSeeder.
 package os.aiworkforce.organisation.repository;
 
 import java.util.Optional;
@@ -18,6 +21,7 @@ import os.aiworkforce.organisation.domain.Organisation;
 
 public interface Organisations extends JpaRepository<Organisation, UUID> {
 
+    // @find: find workspace by slug, unique slug check, case-insensitive
     @Query("select o from Organisation o where lower(o.slug) = lower(:slug)")
     Optional<Organisation> findBySlug(@Param("slug") String slug);
 }

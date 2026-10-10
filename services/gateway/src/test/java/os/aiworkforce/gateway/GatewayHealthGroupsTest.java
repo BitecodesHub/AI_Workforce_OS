@@ -1,3 +1,6 @@
+// @find: tests for gateway health, readiness probe, liveness, redis health, health groups, actuator health, validate-group-membership, GatewayHealthGroupsTest, redis outage, readiness excludes db and redis
+// @what: Checks that gateway readiness depends only on its own state and that Redis is reported in a separate dependencies group.
+// @flow: Loads application.yml plus platform-defaults.yml through ApplicationContextRunner.
 package os.aiworkforce.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +33,7 @@ class GatewayHealthGroupsTest {
     private final ApplicationContextRunner runner =
             new ApplicationContextRunner().withInitializer(new ConfigDataApplicationContextInitializer());
 
+    // @find: test readiness is own state only, readinessState, exclude db redis
     @Test
     @DisplayName("readiness is the gateway's own state only, whatever the platform defaults list")
     void readinessIsOwnStateOnly() {
@@ -44,6 +48,7 @@ class GatewayHealthGroupsTest {
         });
     }
 
+    // @find: test redis reported separately, dependencies group, show-details when-authorized
     @Test
     @DisplayName("Redis is still reported, in a group that does not route traffic")
     void redisReportedSeparately() {

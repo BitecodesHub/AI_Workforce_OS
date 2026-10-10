@@ -1,3 +1,6 @@
+// @find: tests for the agent detail page, pause agent, resume agent, edit instructions, revisions, connectors, vitest, AgentDetail component tests, Agent page
+// @what: Automated tests that check the the agent detail page screen (/agents/:id) behaves as users expect.
+// @flow: Renders AgentDetail from AgentDetail.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -171,7 +174,14 @@ beforeEach(() => {
       }
       if (method === 'DELETE' && path === '/api/agents/a-legal/model-policy') {
         policy = NO_POLICY
-        return json(200, policy)
+        return json(200, { ...policy, warning: 'This agent will use the workspace default: Groq · Llama Fast.' })
+      }
+      if (method === 'DELETE' && path === '/api/agents/a-legal/model-policy/candidates') {
+        policy = NO_POLICY
+        return json(200, {
+          ...policy,
+          warning: 'No AI model is set for this agent or the workspace — add one in Model routing',
+        })
       }
       return json(404, { code: 'not_found', detail: 'Not here.' })
     }),
@@ -391,7 +401,7 @@ describe('model routing', () => {
 
     expect(await screen.findByLabelText('Candidate 1 provider')).toHaveValue('groq')
     expect(screen.getByRole('button', { name: 'Save these models' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Use the workspace policy' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use the workspace default for Legal' })).toBeInTheDocument()
   })
 
   it('saves the agent\'s own chain with PUT', async () => {
@@ -413,21 +423,50 @@ describe('model routing', () => {
     expect(await screen.findByText("Legal's models were saved.")).toBeInTheDocument()
   })
 
-  it('hands the agent back to the workspace policy with DELETE', async () => {
+  it('hands the agent back to the workspace default with DELETE, and shows the warning', async () => {
     permissions = ['agent:read', 'agent:set_model_policy', 'provider:read']
     policy = OWN_POLICY
     await open()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Use the workspace policy' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Use the workspace policy for Legal?' })
+    fireEvent.click(await screen.findByRole('button', { name: 'Use the workspace default for Legal' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Use the workspace default for Legal?' })
     await act(async () => {
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Use the workspace policy' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Use workspace default' }))
     })
 
     expect(writes()).toEqual([{ method: 'DELETE', url: '/api/agents/a-legal/model-policy', body: null }])
-    expect(await screen.findByText('Legal now follows the workspace routing policy.')).toBeInTheDocument()
-    // With nothing of its own the editor offers no way back to the workspace policy.
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Use the workspace policy' })).not.toBeInTheDocument())
+    expect(await screen.findByText('Legal now uses the workspace default.')).toBeInTheDocument()
+    expect(screen.getByText('This agent will use the workspace default: Groq · Llama Fast.')).toBeInTheDocument()
+    // Still offered afterwards: it is available at any time.
+    expect(screen.getByRole('button', { name: 'Use the workspace default for Legal' })).toBeInTheDocument()
+  })
+
+  it('removes one model from the agent at once with DELETE, the model id encoded', async () => {
+    permissions = ['agent:read', 'agent:set_model_policy', 'provider:read']
+    policy = { ...OWN_POLICY, candidates: [{ position: 0, providerId: 'groq', modelId: 'meta/llama-3.3:free' }] }
+    await open()
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: "Remove meta/llama-3.3:free from Legal's routing" }))
+    })
+
+    expect(writes()).toEqual([
+      {
+        method: 'DELETE',
+        url: '/api/agents/a-legal/model-policy/candidates?providerId=groq&modelId=meta%2Fllama-3.3%3Afree',
+        body: null,
+      },
+    ])
+    expect(await screen.findByText('meta/llama-3.3:free was removed. Legal now uses the workspace default.')).toBeInTheDocument()
+    expect(screen.getByText('No AI model is set for this agent or the workspace — add one in Model routing')).toBeInTheDocument()
+  })
+
+  it('shows the warning the service sends when the routing is read', async () => {
+    permissions = ['agent:read', 'agent:set_model_policy', 'provider:read']
+    policy = { ...OWN_POLICY, warning: 'Every provider this agent lists is turned off.' }
+    await open()
+
+    expect(await screen.findByText('Every provider this agent lists is turned off.')).toBeInTheDocument()
   })
 
   it('stays read-only without agent:set_model_policy', async () => {
@@ -448,6 +487,27 @@ describe('model routing', () => {
     expect(await screen.findByText(/Choosing models also needs a role that can see the model providers/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Candidate 1 provider')).not.toBeInTheDocument()
     expect(calls.some((call) => call.url === '/api/providers')).toBe(false)
+  })
+
+  it('can still remove a model and use the workspace default without provider:read', async () => {
+    permissions = ['agent:read', 'agent:set_model_policy']
+    policy = OWN_POLICY
+    await open()
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: "Remove llama-fast from Legal's routing" }))
+    })
+    expect(writes()).toEqual([
+      { method: 'DELETE', url: '/api/agents/a-legal/model-policy/candidates?providerId=groq&modelId=llama-fast', body: null },
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use the workspace default for Legal' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Use the workspace default for Legal?' })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Use workspace default' }))
+    })
+    expect(writes()).toHaveLength(2)
+    expect(await screen.findByText('This agent will use the workspace default: Groq · Llama Fast.')).toBeInTheDocument()
   })
 })
 
@@ -498,5 +558,78 @@ describe('connectors on the agent', () => {
     expect(writes()).toEqual([expect.objectContaining({ method: 'DELETE', url: '/api/agents/a-legal/grants/linear' })])
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove Linear' })).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add connector' })).toHaveFocus())
+  })
+})
+
+describe('description', () => {
+  it('heads the page with what the agent does, never a quote of its instructions', async () => {
+    agent = { ...LEGAL, description: 'Reviews contracts and flags risky clauses.' }
+    await open()
+    expect(screen.getByText(/Reviews contracts and flags risky clauses\./)).toBeInTheDocument()
+    expect(screen.queryByText(/From its instructions/)).not.toBeInTheDocument()
+  })
+
+  it('falls back to a line derived from the instructions when none is written', async () => {
+    await open()
+    expect(screen.getByText(/Reviews contracts\./)).toBeInTheDocument()
+  })
+
+  it('is edited on its own, not as a new revision', async () => {
+    permissions = ['agent:read', 'agent:update']
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit what Legal does' }))
+    const dialog = await screen.findByRole('dialog', { name: 'What Legal does' })
+    fireEvent.change(within(dialog).getByLabelText(/What it does/), { target: { value: 'Reviews contracts.' } })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save description' }))
+    })
+    expect(writes()).toEqual([
+      { method: 'PUT', url: '/api/agents/a-legal/description', body: { description: 'Reviews contracts.' } },
+    ])
+  })
+
+  it('offers no edit to a role that cannot change agents', async () => {
+    await open()
+    expect(screen.queryByRole('button', { name: 'Edit what Legal does' })).not.toBeInTheDocument()
+  })
+})
+
+describe('editing the configuration', () => {
+  it('saves the temperature, and keeps the output limit it had', async () => {
+    permissions = ['agent:read', 'agent:update']
+    agent = { ...LEGAL, temperature: 0.3, maxOutputTokens: 2000 }
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit instructions' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Change how Legal works' })
+    expect(within(dialog).getByLabelText(/Temperature/)).toHaveValue('0.3')
+    fireEvent.change(within(dialog).getByLabelText(/Temperature/), { target: { value: '0.7' } })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save instructions' }))
+    })
+    expect(writes()[0]?.body).toEqual({
+      systemPrompt: 'You review contracts. Revision three.',
+      goals: 'Keep every contract reviewed.',
+      maxSteps: 12,
+      temperature: 0.7,
+      maxOutputTokens: 2000,
+    })
+  })
+
+  it('refuses a temperature outside 0 to 2 beside the field', async () => {
+    permissions = ['agent:read', 'agent:update']
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit instructions' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Change how Legal works' })
+    fireEvent.change(within(dialog).getByLabelText(/Temperature/), { target: { value: '3' } })
+    expect(within(dialog).getByText(/Enter a number from 0 to 2/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Save instructions' })).toBeDisabled()
+  })
+})
+
+describe('voice', () => {
+  it('is not shown to a role that cannot use Chat, which is the only place an agent speaks', async () => {
+    await open()
+    expect(screen.queryByRole('heading', { name: 'Voice' })).not.toBeInTheDocument()
+    expect(calls.some((call) => call.url.startsWith('/api/voice'))).toBe(false)
   })
 })

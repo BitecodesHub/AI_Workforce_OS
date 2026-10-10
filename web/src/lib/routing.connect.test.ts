@@ -1,3 +1,5 @@
+// @find: tests for connecting a provider, connectableProviders, recommendModel, planConnect, connectedSentence, Connect your AI dialog, routing policy
+// @what: Unit tests for the Connect your AI routing plan.
 import { describe, expect, it } from 'vitest'
 import {
   connectableProviders,
@@ -43,8 +45,8 @@ const model = (providerId: string, modelId: string, extra: Partial<ConnectModel>
 })
 
 describe('connectableProviders', () => {
-  it('offers live providers with one key, and neither Bedrock nor the offline sandbox', () => {
-    expect(connectableProviders(PROVIDERS).map((entry) => entry.id)).toEqual(['openrouter', 'groq'])
+  it('offers every live provider, Bedrock included, but not the offline sandbox', () => {
+    expect(connectableProviders(PROVIDERS).map((entry) => entry.id)).toEqual(['openrouter', 'groq', 'bedrock'])
   })
 
   it('leaves out a provider this installation does not offer, and one with no credential to store', () => {
@@ -58,9 +60,7 @@ describe('connectableProviders', () => {
 })
 
 describe('recommendModel', () => {
-  const NOW = Date.parse('2026-10-04T10:00:00Z')
-
-  it('picks the cheapest model that can use tools, is not an embedding model, is on and is available', () => {
+  it('picks the cheapest model that can use tools, is not an embedding model and is on', () => {
     const models = [
       model('openrouter', 'pricey', { inputCostPerMillion: 3, outputCostPerMillion: 15 }),
       model('openrouter', 'cheap', { inputCostPerMillion: 0.1, outputCostPerMillion: 0.3 }),
@@ -68,29 +68,27 @@ describe('recommendModel', () => {
       model('openrouter', 'embedder', { maxOutputTokens: 1, inputCostPerMillion: 0, outputCostPerMillion: 0 }),
       model('openrouter', 'no-tools', { supportsTools: false, inputCostPerMillion: 0, outputCostPerMillion: 0 }),
       model('openrouter', 'switched-off', { enabled: false, inputCostPerMillion: 0, outputCostPerMillion: 0 }),
-      model('openrouter', 'set-aside', {
-        unavailableUntil: '2026-10-04T11:00:00Z',
-        inputCostPerMillion: 0,
-        outputCostPerMillion: 0,
-      }),
       model('groq', 'other-provider', { inputCostPerMillion: 0, outputCostPerMillion: 0 }),
     ]
-    expect(recommendModel('openrouter', models, NOW)?.modelId).toBe('cheap')
+    expect(recommendModel('openrouter', models)?.modelId).toBe('cheap')
   })
 
-  it('takes a model back once its set-aside time has passed', () => {
-    const models = [model('openrouter', 'back', { unavailableUntil: '2026-10-04T09:00:00Z' })]
-    expect(recommendModel('openrouter', models, NOW)?.modelId).toBe('back')
+  it('never passes over a model that failed recently: every model is tried again', () => {
+    const models = [
+      model('openrouter', 'failed-lately', { unavailableUntil: '2099-01-01T00:00:00Z', inputCostPerMillion: 0 }),
+      model('openrouter', 'pricier', { inputCostPerMillion: 5 }),
+    ]
+    expect(recommendModel('openrouter', models)?.modelId).toBe('failed-lately')
   })
 
   it('breaks a tie by model name, so the choice does not change between loads', () => {
     const models = [model('openrouter', 'b-model'), model('openrouter', 'a-model')]
-    expect(recommendModel('openrouter', models, NOW)?.modelId).toBe('a-model')
+    expect(recommendModel('openrouter', models)?.modelId).toBe('a-model')
   })
 
   it('finds nothing when the provider has no usable model', () => {
-    expect(recommendModel('openrouter', [model('openrouter', 'x', { supportsTools: false })], NOW)).toBeUndefined()
-    expect(recommendModel('openrouter', [], NOW)).toBeUndefined()
+    expect(recommendModel('openrouter', [model('openrouter', 'x', { supportsTools: false })])).toBeUndefined()
+    expect(recommendModel('openrouter', [])).toBeUndefined()
   })
 })
 

@@ -1,3 +1,5 @@
+// @find: llm-core, component scan marker, model router beans, provider adapters, LlmCore
+// @what: Marker class so services can scan the model router and provider adapters as Spring beans.
 package os.aiworkforce.llm;
 
 /**

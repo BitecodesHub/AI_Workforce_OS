@@ -1,3 +1,6 @@
+// @find: tests for chat messages earlier turns, repository, only turns newest first, window counts turns not cards, other conversations are not read, ChatMessagesEarlierTurnsTest, ChatMessagesEarlierTurns
+// @what: Tests for ChatMessagesEarlierTurns in the orchestrator repository package (3 test methods).
+// @flow: Exercises ChatMessagesEarlierTurns
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,6 +70,7 @@ class ChatMessagesEarlierTurnsTest {
                 ChatMessage.of(ORG, conversationId, position, authorKind, author, agent, kind, content, Map.of(), null));
     }
 
+    // @find: test only turns newest first, chat messages earlier turns
     @Test
     @DisplayName("returns only people's messages and agents' answers, newest first, before the given position")
     void onlyTurnsNewestFirst() {
@@ -88,6 +92,7 @@ class ChatMessagesEarlierTurnsTest {
                 .containsExactly("second request", "first answer", "first request");
     }
 
+    // @find: test window counts turns not cards, chat messages earlier turns
     @Test
     @DisplayName("a window of a given size holds that many turns, however many cards sit between them")
     void windowCountsTurnsNotCards() {
@@ -107,6 +112,7 @@ class ChatMessagesEarlierTurnsTest {
                 .containsExactly("answer 9", "request 9", "answer 8", "request 8", "answer 7", "request 7");
     }
 
+    // @find: test other conversations are not read, chat messages earlier turns
     @Test
     @DisplayName("reads nothing from another conversation")
     void otherConversationsAreNotRead() {

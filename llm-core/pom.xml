@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  @find: llm-core pom, llm-core maven build, model router dependencies, provider adapters, webflux, jackson, shared LLM library
+  @what: Maven build file for llm-core, the shared library holding the model router and every provider adapter.
+  @flow: Used by orchestrator-service and knowledge-service.
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -32,14 +37,14 @@
       <artifactId>resilience4j-reactor</artifactId>
     </dependency>
 
-    <!-- Bedrock speaks SigV4, so it needs the AWS SDK rather than a plain HTTP client. -->
+    <!--
+      Bedrock is reached over WebClient like every other provider, signed with the SigV4 code in
+      os.aiworkforce.llm.bedrock. The SDK's own signer is used only in tests, as an oracle.
+    -->
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
-      <artifactId>bedrockruntime</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>software.amazon.awssdk</groupId>
-      <artifactId>netty-nio-client</artifactId>
+      <artifactId>http-auth-aws</artifactId>
+      <scope>test</scope>
     </dependency>
 
     <dependency>

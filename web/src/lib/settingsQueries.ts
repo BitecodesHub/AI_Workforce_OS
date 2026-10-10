@@ -1,3 +1,6 @@
+// @find: workspace settings, Settings page, rename workspace, time zone, notifications webhook, send test message, retention settings, run detail days, approvals second pair of eyes, requester cannot approve, test model key, find Bedrock region, Connect your AI dialog, GET/PATCH /api/workspaces/{id}, /api/orchestrator/notification-settings, /api/orchestrator/retention-settings, /api/approvals/settings, POST /api/providers/{id}/test, POST /api/providers/{id}/bedrock-regions
+// @what: Hooks and form rules for the Settings page and the model-key check in the Connect your AI dialog.
+// @flow: Used by routes/Settings.tsx, components/onboarding/ConnectModelDialog.tsx and BedrockCredentialFields.tsx.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 
@@ -34,6 +37,7 @@ const FALLBACK_ZONES = [
   'America/Toronto',
 ]
 
+// @find: browser time zone, default time zone
 /** The time zone this browser is set to, or UTC when it will not say. */
 export function browserTimeZone(): string {
   try {
@@ -43,6 +47,7 @@ export function browserTimeZone(): string {
   }
 }
 
+// @find: time zone list, choose time zone; used by: Settings page, Create workspace page
 /**
  * Every IANA time zone the browser knows, sorted, plus UTC (which `Intl.supportedValuesOf` leaves
  * out) and any extra zones asked for, such as the zone the workspace already has or the browser's
@@ -87,6 +92,7 @@ export type WorkspaceForm = { name: string; timezone: string }
 
 export type WorkspaceFormErrors = { name?: string | undefined; timezone?: string | undefined }
 
+// @find: validate workspace name and time zone, Settings page form errors
 /**
  * What is wrong with the settings form, field by field, before anything is sent. The service
  * refuses the same things; checking first means the message sits beside the field.
@@ -102,6 +108,7 @@ export function validateWorkspaceForm(form: WorkspaceForm, choices: readonly str
   return errors
 }
 
+// @find: get workspace, workspace name and time zone; route: GET /api/workspaces/{id}; used by: Settings page
 export function useWorkspace(id: string | null | undefined) {
   return useQuery({
     queryKey: ['workspace', id],
@@ -110,6 +117,7 @@ export function useWorkspace(id: string | null | undefined) {
   })
 }
 
+// @find: rename workspace, change workspace time zone, save workspace settings; route: PATCH /api/workspaces/{id}/settings; used by: Settings page
 /** Renames the workspace or moves its time zone (workspace:update). */
 export function useUpdateWorkspaceSettings(id: string) {
   const client = useQueryClient()
@@ -152,6 +160,7 @@ export type NotificationErrors = {
   events?: string | undefined
 }
 
+// @find: validate notification form, webhook address, secret length, Settings page
 /**
  * What is wrong with the notification form. An empty address is allowed: it turns notifications
  * off. The service decides which addresses it will really call (https only, nothing private).
@@ -173,6 +182,7 @@ export function validateNotifications(
   return errors
 }
 
+// @find: notification settings, webhook, events to hear about; route: GET /api/orchestrator/notification-settings; used by: Settings page, Setup page
 export function useNotificationSettings(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['notification-settings'],
@@ -181,6 +191,7 @@ export function useNotificationSettings(options: { enabled?: boolean } = {}) {
   })
 }
 
+// @find: save notification settings, set webhook; route: PUT /api/orchestrator/notification-settings; used by: Settings page
 export function useSaveNotificationSettings() {
   const client = useQueryClient()
   return useMutation({
@@ -190,6 +201,7 @@ export function useSaveNotificationSettings() {
   })
 }
 
+// @find: send test message, test webhook; route: POST /api/orchestrator/notification-settings/test; used by: Settings page
 /** Sends a test message to the address that is saved, not the one being typed. */
 export function useSendTestNotification() {
   return useMutation({
@@ -208,6 +220,7 @@ export type RetentionSettings = {
   usageDays: number
 }
 
+// @find: retention settings, how long run detail is kept; route: GET /api/orchestrator/retention-settings; used by: Settings page
 export function useRetentionSettings(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['retention-settings'],
@@ -216,12 +229,54 @@ export function useRetentionSettings(options: { enabled?: boolean } = {}) {
   })
 }
 
+// @find: save retention, run detail days; route: PUT /api/orchestrator/retention-settings; used by: Settings page
 export function useSaveRetentionSettings() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (runDetailDays: number) =>
       api<RetentionSettings>('/api/orchestrator/retention-settings', { method: 'PUT', body: { runDetailDays } }),
     onSuccess: (saved) => client.setQueryData(['retention-settings'], saved),
+  })
+}
+
+/* ---- A second pair of eyes on approvals ---------------------------------------------------------- */
+
+/**
+ * Whether the person who asked for the work may approve what its agent then does
+ * (GET/PUT /api/approvals/settings): off, destructive (deletions and the like need someone else)
+ * or all (every approval needs someone other than the requester).
+ */
+export type RequesterRule = 'off' | 'destructive' | 'all'
+
+export const REQUESTER_RULE_LABEL: Record<RequesterRule, string> = {
+  off: 'Off: the person who asked may approve',
+  destructive: 'For actions that delete or cannot be undone',
+  all: 'For every approval',
+}
+
+// @find: approval settings, requester cannot approve, second pair of eyes; route: GET /api/approvals/settings; used by: Settings page
+export function useApprovalSettings(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['approval-settings'],
+    queryFn: ({ signal }) => api<{ requesterCannotApprove: RequesterRule }>('/api/approvals/settings', { signal }),
+    enabled: options.enabled ?? true,
+  })
+}
+
+// @find: save approval rule, requester cannot approve own work; route: PUT /api/approvals/settings; used by: Settings page
+export function useSaveApprovalSettings() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (requesterCannotApprove: RequesterRule) =>
+      api<{ requesterCannotApprove: RequesterRule }>('/api/approvals/settings', {
+        method: 'PUT',
+        body: { requesterCannotApprove },
+      }),
+    onSuccess: (saved) => {
+      client.setQueryData(['approval-settings'], saved)
+      // Who may decide each waiting request changes with the rule.
+      client.invalidateQueries({ queryKey: ['approvals'] })
+    },
   })
 }
 
@@ -233,6 +288,7 @@ export type KeyCheck = 'valid' | 'rejected' | 'no_credit' | 'network_error'
 /** POST /api/providers/{id}/test: `message` is plain words, written by the service. */
 export type KeyTest = { result: KeyCheck; message: string }
 
+// @find: test model key, check API key before saving; route: POST /api/providers/{id}/test; used by: Connect your AI dialog (ConnectModelDialog)
 /**
  * Checks a key with one small call before it is stored (provider:manage). Nothing is saved by the
  * call itself, and the service allows five a minute in a workspace.
@@ -241,6 +297,33 @@ export function useTestProviderKey() {
   return useMutation({
     mutationFn: (input: { providerId: string; value: string }) =>
       api<KeyTest>(`/api/providers/${encodeURIComponent(input.providerId)}/test`, {
+        method: 'POST',
+        body: { value: input.value },
+      }),
+  })
+}
+
+/* ---- Finding a Bedrock region ------------------------------------------------------------------ */
+
+/** What one region came to (BedrockRegionFinder.Status). */
+export type RegionStatus = 'ready' | 'no_model_access' | 'accepted' | 'refused' | 'unreachable'
+
+/** POST /api/providers/{id}/bedrock-regions: region ids, counts and plain sentences; never the credential. */
+export type RegionFinding = {
+  best: string | null
+  regions: Array<{ region: string; status: RegionStatus; modelCount: number | null; message: string }>
+  message: string
+}
+
+// @find: find my Bedrock region, which AWS region works; route: POST /api/providers/{id}/bedrock-regions; used by: Connect your AI dialog (BedrockCredentialFields)
+/**
+ * "Find my region": every Bedrock region is asked at once whether it accepts the pasted
+ * credential, and the best few get one tiny call. Nothing is stored; three a minute per workspace.
+ */
+export function useFindBedrockRegion() {
+  return useMutation({
+    mutationFn: (input: { providerId: string; value: string }) =>
+      api<RegionFinding>(`/api/providers/${encodeURIComponent(input.providerId)}/bedrock-regions`, {
         method: 'POST',
         body: { value: input.value },
       }),

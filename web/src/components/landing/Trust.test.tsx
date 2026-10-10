@@ -1,3 +1,6 @@
+// @find: tests for trust page, IT and security page, technical demos, permission map, limits, /trust, axe accessibility, demo accounts lookup
+// @what: Tests the technical Trust page: all four demos in technical voice, permission map and limits, network use and accessibility.
+// @flow: Renders routes/Trust; exercises DemoStage, RoleSwitcher, LimitsSection
 import axe from 'axe-core'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

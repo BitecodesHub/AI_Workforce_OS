@@ -1,3 +1,7 @@
+// @find: brand, logo, wordmark, aiworkforce logo, home link, navbar logo, Brand mark, header logo
+// @what: The product wordmark and inline SVG mark linking home.
+// @flow: Rendered at the left of Navbar.
+// @find: brand logo wordmark, home link
 /**
  * The wordmark and its mark.
  *

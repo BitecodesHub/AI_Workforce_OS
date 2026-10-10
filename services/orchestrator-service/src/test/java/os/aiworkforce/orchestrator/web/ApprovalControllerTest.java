@@ -1,3 +1,5 @@
+// @find: tests for approval controller, approvals api, decide, /api/approvals/{id}/decision, approve, reject
+// @what: Unit and integration tests (3 cases) for approval controller, for example: approve returns without driving the run; approve reports the stored status; reject resumes nothing.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

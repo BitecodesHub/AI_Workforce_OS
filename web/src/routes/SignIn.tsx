@@ -1,3 +1,6 @@
+// @find: sign in, log in, login, email and password, forgot password, session, sign-in error, locked, /sign-in, SignIn
+// @what: The signed-out sign-in page.
+// @flow: Routed from App.tsx at /sign-in; uses AuthShell and AuthShowcase and the identity login API
 import { useEffect, useState } from 'react'
 import { Button, Eyebrow, Input, Notice, PasswordInput } from '../components/ui'
 import { AuthShell } from '../components/auth/AuthShell'
@@ -40,9 +43,12 @@ import { useRouter } from '../lib/router'
  * explanation on the left.
  */
 
+const PASSWORD_ID = 'sign-in-password'
+
 /** 'form' while the form's own sign-in runs, or the demo address being signed in. */
 type Pending = 'form' | string | null
 
+// @find: SignIn component, sign in page, log in, POST /api/auth/login, /sign-in
 export function SignIn() {
   const { search, navigate } = useRouter()
   // Where to go afterwards. Only same-site paths are honoured, so a crafted link cannot bounce a
@@ -137,6 +143,13 @@ export function SignIn() {
       if (!response.ok) {
         const problem = await response.json().catch(() => null)
         setError(problem?.detail ?? 'Those details did not work, or there have been too many attempts. Try again later.')
+        // The submit button is disabled while the request runs, so focus fell to the page. Put it
+        // back in the password field, selected, so the person can retype straight away.
+        const field = document.getElementById(PASSWORD_ID)
+        if (field instanceof HTMLInputElement) {
+          field.focus()
+          field.select()
+        }
         return
       }
       const session = (await response.json()) as SessionPayload
@@ -248,6 +261,7 @@ export function SignIn() {
               onChange={(event) => setEmail(event.target.value)}
             />
             <PasswordInput
+              id={PASSWORD_ID}
               label="Password"
               autoComplete="current-password"
               required

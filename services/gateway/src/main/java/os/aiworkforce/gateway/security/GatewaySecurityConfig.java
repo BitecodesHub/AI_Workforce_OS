@@ -1,3 +1,6 @@
+// @find: gateway security, token check, verify jwt, access token, bearer token, public paths, unauthenticated, login open, CORS, allowed origins, JWKS, ES256, issuer, audience, jwt decoder, GatewaySecurityConfig, filterChain, CSRF, invitations accept, oauth callback, 401 unauthorized
+// @what: Edge security for the gateway: which paths are public, JWT verification against identity's published keys, and CORS rules.
+// @flow: Runs before every proxied route; reads PlatformProperties security and http settings; mirrors platform-web ResourceServerConfig.
 package os.aiworkforce.gateway.security;
 
 import java.net.MalformedURLException;
@@ -74,6 +77,7 @@ public class GatewaySecurityConfig {
         "/api/oauth/callback",
     };
 
+    // @find: gateway security filter chain, which paths need a token, public paths, permit all, CSRF off, CORS, oauth2 resource server, who can call the api without logging in
     @Bean
     public SecurityWebFilterChain filterChain(ServerHttpSecurity http, PlatformProperties properties) {
         return http.csrf(csrf -> csrf.disable())
@@ -97,11 +101,13 @@ public class GatewaySecurityConfig {
      * Same key, same algorithm, same issuer/audience check as {@code platform-web}'s servlet
      * decoder, so a token good enough for a business service is good enough for the edge.
      */
+    // @find: jwt decoder bean, verify access token, ES256 token, issuer and audience check
     @Bean
     public ReactiveJwtDecoder jwtDecoder(PlatformProperties properties) {
         return decoder(properties.security());
     }
 
+    // @find: build jwt decoder, ES256, issuer audience validator, token rejected invalid_token
     static NimbusReactiveJwtDecoder decoder(PlatformProperties.Security security) {
         JWKSource<SecurityContext> keys = publishedKeys(security);
         NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder.withJwkSource(jwt -> keysFor(keys, jwt))
@@ -133,6 +139,7 @@ public class GatewaySecurityConfig {
      * rate-limited - when a token names an unknown key, which every new key now does, because
      * identity names each key by its own thumbprint.
      */
+    // @find: identity public keys, JWKS cache, jwks-uri, key refresh cooldown, unknown key refetch, new signing key
     static JWKSource<SecurityContext> publishedKeys(PlatformProperties.Security security) {
         try {
             return JWKSourceBuilder.create(new URI(security.jwksUri()).toURL())
@@ -156,6 +163,7 @@ public class GatewaySecurityConfig {
                 .flatMapMany(Flux::fromIterable);
     }
 
+    // @find: CORS configuration, allowed origins, allowed headers, exposed headers, X-Request-Id, X-Workspace-Id, Idempotency-Key
     private CorsConfigurationSource corsSource(PlatformProperties properties) {
         PlatformProperties.Http http = properties.http();
         CorsConfiguration config = new CorsConfiguration();

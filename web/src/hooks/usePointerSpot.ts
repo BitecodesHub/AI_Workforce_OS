@@ -1,3 +1,6 @@
+// @find: pointer spot, mouse glow, hover light, spotlight, cursor follow, usePointerSpot hook
+// @what: React hook that tracks the pointer over an element for a soft spotlight effect, off under reduced motion.
+// @flow: Used by landing cards; calls useReducedMotion
 import { useCallback } from 'react'
 import type { RefCallback } from 'react'
 import { useReducedMotion } from './useReducedMotion'
@@ -13,6 +16,7 @@ import { useReducedMotion } from './useReducedMotion'
 
 const FINE_POINTER = '(hover: hover) and (pointer: fine)'
 
+// @find: usePointerSpot hook, hover spotlight
 export function usePointerSpot<T extends HTMLElement>(): RefCallback<T> {
   const reduced = useReducedMotion()
 

@@ -1,3 +1,6 @@
+// @find: platform band, spec band, counts, services providers connectors permission codes, what is running, PlatformBand
+// @what: The band of counts and names showing what is actually running.
+// @flow: Facts from landingFacts
 import type { ReactElement } from 'react'
 import { Tag } from '../../ui'
 import { useCountUp } from '../../../hooks/useCountUp'
@@ -81,6 +84,7 @@ function ConnectorRow({
   )
 }
 
+// @find: PlatformBand component, spec band
 export function PlatformBand(): ReactElement {
   const { ref, inView } = useInView<HTMLUListElement>({ threshold: 0.3 })
 

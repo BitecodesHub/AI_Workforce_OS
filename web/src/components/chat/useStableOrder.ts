@@ -1,3 +1,6 @@
+// @find: stable order, list order frozen, avoid reorder while polling, sidebar order, hover freeze
+// @what: Keeps a list's order steady while it polls under the reader's pointer.
+// @flow: Used by ChatSidebar.
 import { useState } from 'react'
 
 /*

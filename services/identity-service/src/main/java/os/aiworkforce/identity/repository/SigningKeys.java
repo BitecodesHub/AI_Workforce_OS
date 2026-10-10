@@ -1,3 +1,5 @@
+// @find: Spring Data repository for token signing keys.
+// @what: signing keys, active key, key creation lock, advisory lock, SigningKeys repository
 package os.aiworkforce.identity.repository;
 
 import java.util.Collection;

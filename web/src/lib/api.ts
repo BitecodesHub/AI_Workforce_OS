@@ -1,3 +1,6 @@
+// @find: api client, fetch wrapper, http request, ApiError, access token, refresh token, 401 retry, timeout, network failure, error messages, describeApiError, restore session, sign in silently, timeAgo, formatDuration
+// @what: The single HTTP client every query and mutation uses: attaches the bearer token, renews it on 401, applies timeouts and turns failures into readable messages.
+// @flow: Called by every *Queries.ts hook; uses session.ts for tokens and format.ts for times
 import { formatElapsed, formatRelative } from './format'
 import {
   accessToken,
@@ -21,6 +24,7 @@ import {
  * them staring at a screen full of failures.
  */
 
+// @find: api error, error class, http status, field errors
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -156,6 +160,7 @@ function limitsFor(path: string, options: Options) {
   return { signal, failure }
 }
 
+// @find: field errors, validation errors, form field problems
 /**
  * Field problems from a problem document's `errors`, keyed by field name.
  *
@@ -218,6 +223,7 @@ function toApiError(response: Response, body: unknown): ApiError {
   return new ApiError(response.status, code, message, retryable, fields, requestId)
 }
 
+// @find: error message, readable error, what went wrong, 403 forbidden, 404, 5xx
 /**
  * One sentence to show a person for any thrown value.
  *
@@ -346,6 +352,7 @@ async function read<T>(response: Response, limits: Limits): Promise<T> {
   return body as T
 }
 
+// @find: refresh token, renew access token, session renewal, POST /api/auth/refresh
 /**
  * One refresh at a time, shared with anyone else already waiting on one (api() itself, and
  * fetchAudio in voice.ts for the one binary endpoint api() cannot serve). A network failure
@@ -366,6 +373,7 @@ export async function refreshAccessToken(): Promise<boolean> {
 /** How restoring a session on boot ended. 'unreachable' is a network failure, worth a retry. */
 export type RestoreOutcome = 'restored' | 'signed-out' | 'unreachable'
 
+// @find: restore session, stay signed in, reload sign in, silent sign in
 /**
  * One attempt to restore the session from the refresh cookie, for a tab that opened without an
  * access token: a new tab, a reload after closing the browser, a link pasted from elsewhere.
@@ -382,6 +390,7 @@ export async function restoreSession(): Promise<RestoreOutcome> {
   }
 }
 
+// @find: api call, fetch, request backend, bearer token, GET POST PUT DELETE, timeout
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const token = accessToken()
   const limits = limitsFor(path, options)

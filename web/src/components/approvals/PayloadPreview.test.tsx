@@ -1,3 +1,6 @@
+// @find: tests for PayloadPreview, approval preview, what will be sent, email preview, message preview, payload, recipients, cc, bcc, action class, exactly what will be sent, approval details
+// @what: Automated tests for PayloadPreview.
+// @flow: Run with the web test runner; covers PayloadPreview.
 import axe from 'axe-core'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'

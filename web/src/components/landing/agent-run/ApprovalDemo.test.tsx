@@ -1,3 +1,6 @@
+// @find: tests for approval demo, approval gate, approve reject expire, manager employee viewer, gmail.send_message, reduced motion autoplay, Simulated tag
+// @what: Tests the simulated approval-gate demo: parked state, deciders, approve, reject and expiry, autoplay with motion on.
+// @flow: Renders ApprovalDemo with approvalModel
 import { StrictMode } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

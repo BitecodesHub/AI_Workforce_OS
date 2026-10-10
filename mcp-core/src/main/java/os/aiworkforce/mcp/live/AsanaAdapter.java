@@ -1,3 +1,6 @@
+// @find: asana, asana tasks, project tasks, task management, list tasks, get task, create task, update task, delete task, personal access token, live adapter, real API, work management
+// @what: Live Asana connector: turns the asana__ tools (list, get, create, update, delete task) into real calls to the Asana REST API using a pasted personal access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -51,6 +54,7 @@ public final class AsanaAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Asana list tasks, tool asana__list_tasks, live Asana call
     private Mono<ToolResult> listTasks(ToolInvocation invocation, JsonNode arguments, String token) {
         String project = text(arguments, "project");
         String assignee = text(arguments, "assignee");
@@ -82,6 +86,7 @@ public final class AsanaAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Asana get task, tool asana__get_task, live Asana call
     private Mono<ToolResult> getTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(token, "/tasks/{id}?opt_fields={fields}", id, TASK_FIELDS_FULL)
@@ -89,6 +94,7 @@ public final class AsanaAdapter extends LiveServerAdapter {
                         + answer.path("data").path("name").asText() + "\"."));
     }
 
+    // @find: Asana create task, tool asana__create_task, live Asana call
     private Mono<ToolResult> createTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String name = required(arguments, "name");
         String project = text(arguments, "project");
@@ -112,6 +118,7 @@ public final class AsanaAdapter extends LiveServerAdapter {
                 .map(answer -> done(task(answer.path("data"), false), "Created the Asana task \"" + name + "\"."));
     }
 
+    // @find: Asana update task, tool asana__update_task, live Asana call
     private Mono<ToolResult> updateTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         ObjectNode data = json.createObjectNode();
@@ -129,6 +136,7 @@ public final class AsanaAdapter extends LiveServerAdapter {
                         + answer.path("data").path("name").asText() + "\"."));
     }
 
+    // @find: Asana delete task, tool asana__delete_task, live Asana call
     private Mono<ToolResult> deleteTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return call(HttpMethod.DELETE, token, "/tasks/{id}", id).map(answer -> {

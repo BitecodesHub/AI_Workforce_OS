@@ -1,3 +1,6 @@
+// @find: give agent a task, new task, assign task, start run, create goal, task dialog, choose agent, run trace, Command Map task, Tasks page, TaskDialog, orchestrator
+// @what: Dialog to give an agent a task: starts a run directly from an agent page or creates a goal from elsewhere, then opens the run.
+// @flow: Opened from Command Map, Agent page, Tasks, Runs; uses useCreateGoal and the runs API.
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Notice, Select, Textarea } from './index'
@@ -5,6 +8,7 @@ import { ApiError, api, describeApiError } from '../../lib/api'
 import { sentenceCase, truncateWords } from '../../lib/format'
 import { CATEGORY_LABEL, statusLabel } from '../../lib/labels'
 import { markStepDone } from '../../lib/onboarding'
+import { agentDescription } from '../../lib/agentDescription'
 import { useAgents, useCreateGoal } from '../../lib/queries'
 import type { Agent, Goal } from '../../lib/queries'
 import { useRouter } from '../../lib/router'
@@ -25,6 +29,7 @@ import { useToast } from '../../lib/toast'
  * for that run for a few seconds, and opens the goal on Tasks if it has not appeared by then.
  */
 
+// @find: task started result type
 /** Where a task ended up once the dialog's request came back. */
 export type TaskStarted = {
   /** The run the task started, when one started. */
@@ -35,9 +40,11 @@ export type TaskStarted = {
   href: string
 }
 
+// @find: task started message
 /** What the person is told once the work is saved. The run's own page then shows how it goes. */
 export const STARTED_MESSAGE = 'Started. The agent is working on it.'
 
+// @find: wait time for first run of a goal
 /** How long the dialog looks for a new goal's first run before opening the goal instead. */
 export const FIRST_RUN_WAIT_MS = 5_000
 const FIRST_RUN_POLL_MS = 500
@@ -51,6 +58,7 @@ interface TaskDialogProps {
   onSuccess?: (runId: string | undefined, started: TaskStarted) => void
 }
 
+// @find: give agent a task dialog, create goal, start run
 export function TaskDialog({ open, onClose, agentId, onSuccess }: TaskDialogProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -105,6 +113,7 @@ export function TaskDialog({ open, onClose, agentId, onSuccess }: TaskDialogProp
  */
 const LEGACY_LAST_AGENT_KEY = 'aiwos.lastAgentId'
 
+// @find: last chosen agent storage key
 /** Where the signed-in person's last choice is kept; null when nobody is signed in. */
 export function lastAgentKey(): string | null {
   const userId = profile()?.userId
@@ -165,6 +174,7 @@ const couldNotStart = (goal: Goal) => {
 
 const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
+// @find: wait for a goal first run to appear
 /**
  * Looks for a new goal's first run for up to `waitMs`, asking every `pollMs`. The goal is saved
  * first and its run starts a moment later, so the answer to creating it seldom names the run yet.
@@ -341,11 +351,8 @@ function TaskForm({ agentId, onSuccess, busy, onBusyChange, onError, onCancel, o
             disabled={agentsQuery.isLoading || busy}
             required
             hint={
-              selectedAgent?.summary ? (
-                <>
-                  From its instructions: <q>{selectedAgent.summary}</q>
-                </>
-              ) : undefined
+              // What the agent does, written about it, never a quote of its second-person instructions.
+              (selectedAgent && agentDescription(selectedAgent)) || undefined
             }
           >
             {agentsQuery.isLoading && <option value="">Loading agents…</option>}

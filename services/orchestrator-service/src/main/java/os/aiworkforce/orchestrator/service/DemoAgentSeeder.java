@@ -1,3 +1,6 @@
+// @find: demo agents, seed agents, demo workspace, starter agents on startup, seed demo data, empty Agents page, ApplicationReadyEvent, grants for demo agents
+// @what: Seeds four ready-made agents with grants into the demo workspace when the service starts.
+// @flow: Runs on ApplicationReadyEvent; uses AgentTemplates
 package os.aiworkforce.orchestrator.service;
 
 import java.util.List;
@@ -106,6 +109,7 @@ public class DemoAgentSeeder {
         this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    // @find: seed demo agents on startup
     @EventListener(ApplicationReadyEvent.class)
     public void seed() {
         if (properties.environment().isDeployed()) {
@@ -137,6 +141,7 @@ public class DemoAgentSeeder {
             agent.setKey(template.key());
             agent.setName(template.name());
             agent.setCategory(template.category());
+            agent.setDescription(template.description());
             agents.save(agent);
 
             AgentVersion version = new AgentVersion();

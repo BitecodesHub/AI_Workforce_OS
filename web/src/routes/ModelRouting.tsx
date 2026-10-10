@@ -1,3 +1,6 @@
+// @find: model routing, models, providers, connect your AI, API key, routing policy, fallback, failover, test now, prices, catalogue, NVIDIA NIM, OpenAI, Bedrock, workspace model chain, /routing, Model routing page
+// @what: The Model routing page: connect AI providers, see their models and prices, test them and set the order models are tried in.
+// @flow: Routed from App.tsx at /routing; opens with ?connect=1 to show the Connect your AI dialog
 import React from 'react'
 import {
   Button,
@@ -6,9 +9,9 @@ import {
   DataTable,
   Dialog,
   Eyebrow,
-  Input,
   Notice,
   PageHeader,
+  PasswordInput,
   StatRow,
   StatTile,
   Tag,
@@ -16,11 +19,14 @@ import {
 } from '../components/ui'
 import type { Column } from '../components/ui'
 import { ConnectModelDialog } from '../components/onboarding/ConnectModelDialog'
+import { isBedrock } from '../lib/bedrock'
+import { cleanKey, keyMismatch } from '../lib/keyFormats'
 import { PolicyEditor } from '../components/routing/PolicyEditor'
+import { TestNow } from '../components/routing/TestNow'
 import { QueryState } from '../components/ui/QueryState'
 import { describeApiError } from '../lib/api'
 import { formatCompactTokens, formatCount, formatMoney } from '../lib/format'
-import { providerKindLabel, statusLabel } from '../lib/labels'
+import { providerKindLabel } from '../lib/labels'
 import {
   credentialState,
   isEmbeddingModel,
@@ -34,6 +40,8 @@ import {
   type ToggleRefusal,
 } from '../lib/routing'
 import { useRouter } from '../lib/router'
+import { fetchRoutingUsage, useRemoveFromAllRouting, usageSentence, warningOf } from '../lib/routingActions'
+import type { RoutingUsage } from '../lib/routingActions'
 import { useToast } from '../lib/toast'
 import { useNow } from '../lib/useNow'
 import { can } from '../lib/session'
@@ -52,12 +60,14 @@ import type { CredentialView, Model, ModelPolicy, Provider } from '../lib/querie
  * Model routing.
  *
  * Which model answers a run, worked out from the same facts the router uses (lib/routing.ts, which
- * the Command Map's banner shares): the workspace routing policy, whether each provider is on,
- * whether it holds a usable key, and whether its circuit breaker has paused it. The page states
- * the outcome in one sentence at the top, then shows each of those facts where it can be changed.
+ * the Command Map's banner shares): the workspace routing policy, whether each provider is on and
+ * whether it holds a usable key. Nothing is ever set aside or paused after a failure: every run
+ * tries every listed model again, and "Test now" finds out at once instead of on the next run.
+ * The page states the outcome in one sentence at the top, then shows each fact where it can be
+ * changed.
  *
- * All of it is this workspace's own. Turning a provider on or off, a refused key and a paused
- * provider stay in this workspace; the copy says so wherever a change is made.
+ * All of it is this workspace's own. Turning a provider on or off and a refused key stay in this
+ * workspace; the copy says so wherever a change is made.
  *
  * "Connect your AI" is the short way through for somebody who just wants a live model: it checks a
  * key, stores it, turns the provider on and puts a model in the policy in one go. It opens from
@@ -67,16 +77,12 @@ import type { CredentialView, Model, ModelPolicy, Provider } from '../lib/querie
 
 const isSandbox = (provider: Provider) => provider.kind.toUpperCase() === 'SANDBOX'
 
-const circuitOf = (provider: Provider) => (provider.circuitState ?? '').toUpperCase()
-
 /** For the sentence naming live candidates the router passes over before the one it uses. */
 const SKIP_REASON: Record<string, string> = {
   disabled: 'turned off for this workspace',
   platform_off: 'not offered on this installation',
   no_key: 'no key stored',
-  rejected: 'the provider refused its key',
   expired: 'its key has expired',
-  paused: 'paused after failures',
   unavailable: 'not available in this workspace',
 }
 
@@ -85,29 +91,17 @@ function storedCredential(provider: Provider, credentials: readonly CredentialVi
 }
 
 /** A catalogue price with its exact figure in a title, because a price such as 0.075 rounds on screen. */
+// @find: model price display
 function Price({ amount }: { amount: number }) {
   return <span title={`US$${amount} per million tokens`}>{formatMoney(amount)}</span>
 }
 
+// @find: yes or no cell
 function YesNo({ value }: { value: boolean }) {
   return <Tag tone={value ? 'success' : 'neutral'}>{value ? 'Yes' : 'No'}</Tag>
 }
 
-function Availability({ model, now }: { model: Model; now: number }) {
-  const until = model.unavailableUntil ? new Date(model.unavailableUntil).getTime() : Number.NaN
-  if (Number.isNaN(until) || until <= now) return <span className="muted">Available</span>
-  return (
-    <div>
-      <Tag tone="warning">Unavailable</Tag>
-      <p className="caption">
-        Back <Time iso={model.unavailableUntil} />
-      </p>
-      {model.unavailableReason && <p className="caption">{model.unavailableReason}</p>}
-    </div>
-  )
-}
-
-function modelColumns(embedding: boolean, now: number): Column<Model>[] {
+function modelColumns(embedding: boolean, canManage: boolean): Column<Model>[] {
   const dash = <span className="muted">—</span>
   const columns: Column<Model>[] = [
     {
@@ -154,12 +148,20 @@ function modelColumns(embedding: boolean, now: number): Column<Model>[] {
       numeric: true,
       render: (row) => (embedding ? dash : <Price amount={row.outputCostPerMillion} />),
     },
-    { key: 'availability', header: 'Availability', render: (row) => <Availability model={row} now={now} /> },
   )
+  // Every model is tried on every run; a test only tells you now how one is doing.
+  if (canManage && !embedding) {
+    columns.push({
+      key: 'test',
+      header: 'Check',
+      render: (row) => <TestNow providerId={row.providerId} modelId={row.modelId} name={row.displayName} />,
+    })
+  }
   return columns
 }
 
 /** The state of a provider's key, with the stored key's fingerprint and when it was last used. */
+// @find: provider key cell, API key status, replace key
 function KeyCell({
   provider,
   credentials,
@@ -200,13 +202,15 @@ function KeyCell({
       )}
       {state === 'rejected' && (
         <p className="caption" style={{ color: 'var(--warning-ink)' }}>
-          This workspace's key was refused by the provider <Time iso={provider.credentialCheckedAt} />
+          This workspace's key was refused by the provider <Time iso={provider.credentialCheckedAt} />. It is
+          still tried on every run.
         </p>
       )}
     </div>
   )
 }
 
+// @find: routing banner, sandbox mode warning, connect your AI prompt
 function RoutingBanner({
   policy,
   providers,
@@ -251,6 +255,7 @@ function RoutingBanner({
  * The workspace-wide chain: what every agent without one of its own tries, in order. The editor is
  * shared with an agent's own page (components/routing/PolicyEditor.tsx); this is where it is saved.
  */
+// @find: routing policy card, workspace model order, PUT /api/model-policy
 function RoutingPolicyCard({
   policy,
   providers,
@@ -258,6 +263,7 @@ function RoutingPolicyCard({
   credentials,
   canManage,
   now,
+  onRemoveEverywhere,
 }: {
   policy: ModelPolicy
   providers: Provider[]
@@ -265,6 +271,7 @@ function RoutingPolicyCard({
   credentials: CredentialView[] | undefined
   canManage: boolean
   now: number
+  onRemoveEverywhere: (target: { providerId: string; modelId: string; name: string }) => void
 }) {
   const setPolicy = useSetModelPolicy()
   return (
@@ -278,10 +285,13 @@ function RoutingPolicyCard({
       now={now}
       onSave={(input) => setPolicy.mutateAsync(input)}
       liveCatalogue
+      testable={canManage}
+      onRemoveEverywhere={canManage ? onRemoveEverywhere : undefined}
     />
   )
 }
 
+// @find: ModelRouting component, model routing page, connect provider, test now, routing policy, /routing
 export function ModelRouting() {
   const providersQuery = useProviders()
   const modelsQuery = useModels()
@@ -299,6 +309,8 @@ export function ModelRouting() {
   // providers sees the page as it always was.
   const wantsConnect = search.get('connect') === '1' && canManage
   const [connectOpen, setConnectOpen] = React.useState(wantsConnect)
+  /** The provider the Connect dialog opens on, when a row's own button opened it (Bedrock's fields live there). */
+  const [connectProviderId, setConnectProviderId] = React.useState<string | undefined>(undefined)
   // Arriving at the same page again with ?connect=1 (a link inside the page) opens it again too.
   const [couldConnect, setCouldConnect] = React.useState(wantsConnect)
   if (wantsConnect !== couldConnect) {
@@ -326,6 +338,51 @@ export function ModelRouting() {
   // A 409 from the toggle: the service explains why, and the page shows it beside the providers.
   const [refusal, setRefusal] = React.useState<(ToggleRefusal & { providerId: string }) | null>(null)
 
+  // The service's sentence after turning a provider off: the chains now left with nothing on.
+  const [offWarning, setOffWarning] = React.useState<string | null>(null)
+
+  // "Remove from all routing": who lists it is read first, then the person confirms.
+  const removeEverywhere = useRemoveFromAllRouting()
+  const [removeTarget, setRemoveTarget] = React.useState<{
+    providerId: string
+    modelId?: string
+    name: string
+    usage: RoutingUsage
+  } | null>(null)
+  const [removeError, setRemoveError] = React.useState<string | null>(null)
+  const [checkingUsage, setCheckingUsage] = React.useState<string | null>(null)
+  const [removalWarning, setRemovalWarning] = React.useState<string | null>(null)
+
+  const askRemoveEverywhere = async (target: { providerId: string; modelId?: string; name: string }) => {
+    const key = `${target.providerId}/${target.modelId ?? ''}`
+    setCheckingUsage(key)
+    try {
+      const usage = await fetchRoutingUsage(target.providerId, target.modelId)
+      setRemoveError(null)
+      setRemoveTarget({ ...target, usage })
+    } catch (err) {
+      toast.error(describeApiError(err))
+    } finally {
+      setCheckingUsage(null)
+    }
+  }
+
+  const confirmRemoveEverywhere = async () => {
+    if (!removeTarget) return
+    setRemoveError(null)
+    try {
+      const result = await removeEverywhere.mutateAsync({
+        providerId: removeTarget.providerId,
+        ...(removeTarget.modelId ? { modelId: removeTarget.modelId } : {}),
+      })
+      setRemovalWarning(warningOf(result))
+      toast.success(`${removeTarget.name} was removed from all routing.`)
+      setRemoveTarget(null)
+    } catch (err) {
+      setRemoveError(describeApiError(err))
+    }
+  }
+
   /** Closes the refusal and returns focus to the button that raised it, rather than to the page. */
   const dismissRefusal = () => {
     const providerId = refusal?.providerId
@@ -348,6 +405,12 @@ export function ModelRouting() {
   }
 
   const openStoreKey = (provider: Provider) => {
+    // Bedrock is several fields and a region, which the Connect dialog asks for and checks.
+    if (isBedrock(provider)) {
+      setConnectProviderId(provider.id)
+      setConnectOpen(true)
+      return
+    }
     setKeyTarget(provider)
     setKeyValue('')
     setKeyError(null)
@@ -370,8 +433,10 @@ export function ModelRouting() {
    */
   const toggle = async (provider: Provider, enable: boolean, keyMissing = false): Promise<unknown> => {
     try {
-      await toggleProvider.mutateAsync({ id: provider.id, enable })
+      const result = await toggleProvider.mutateAsync({ id: provider.id, enable })
       setRefusal(null)
+      // Turning a provider off is never refused; the service says which chains it leaves empty.
+      setOffWarning(enable ? null : warningOf(result))
       toast.success(toggledMessage(provider, enable, { keyMissing, inPolicy: inPolicy(provider) }))
       return null
     } catch (err) {
@@ -436,7 +501,11 @@ export function ModelRouting() {
       render: (row) => (
         <div>
           <span>{row.displayName}</span>
-          {row.regions.length > 0 && <p className="caption">Regions, in fallback order: {row.regions.join(', ')}</p>}
+          {isBedrock(row) ? (
+            <p className="caption">The AWS region is chosen with its credentials.</p>
+          ) : (
+            row.regions.length > 0 && <p className="caption">Regions, in fallback order: {row.regions.join(', ')}</p>
+          )}
         </div>
       ),
     },
@@ -455,15 +524,6 @@ export function ModelRouting() {
       key: 'key',
       header: "This workspace's key",
       render: (row) => <KeyCell provider={row} credentials={credentials} failed={Boolean(credentialsQuery.error)} now={now} />,
-    },
-    {
-      key: 'circuitState',
-      header: 'Circuit',
-      render: (row) => {
-        if (!row.enabled) return <Tag tone="neutral">Off</Tag>
-        const circuit = statusLabel('circuit', row.circuitState)
-        return <Tag tone={circuit.tone} title={circuit.label}>{circuit.label}</Tag>
-      },
     },
     { key: 'modelCount', header: 'Models', numeric: true, render: (row) => formatCount(row.modelCount) },
   ]
@@ -503,6 +563,16 @@ export function ModelRouting() {
                 {copy.label}
               </Button>
             )}
+            <TestNow providerId={row.id} name={row.displayName} />
+            <Button
+              variant="quiet"
+              className="button-sm"
+              aria-label={`Remove every ${row.displayName} model from all routing`}
+              loading={checkingUsage === `${row.id}/`}
+              onClick={() => void askRemoveEverywhere({ providerId: row.id, name: row.displayName })}
+            >
+              Remove from all routing
+            </Button>
           </div>
         )
       },
@@ -518,7 +588,18 @@ export function ModelRouting() {
         eyebrow="Where the thinking happens"
         title="Model routing"
         description="Agents ask for an answer and state what they need. This chain decides which model provides it, and what happens when one cannot."
-        action={canManage ? <Button onClick={() => setConnectOpen(true)}>Connect your AI</Button> : undefined}
+        action={
+          canManage ? (
+            <Button
+              onClick={() => {
+                setConnectProviderId(undefined)
+                setConnectOpen(true)
+              }}
+            >
+              Connect your AI
+            </Button>
+          ) : undefined
+        }
       />
 
       {/* The one-sentence answer to "which model do runs use". It is left out until every fact it
@@ -557,8 +638,6 @@ export function ModelRouting() {
           const liveReady = credentials
             ? liveProviders.filter((provider) => providerReadiness(provider, credentials, now).ready).length
             : null
-          const healthy = enabled.filter((provider) => circuitOf(provider) === 'CLOSED').length
-          const paused = enabled.filter((provider) => ['OPEN', 'FORCED_OPEN'].includes(circuitOf(provider))).length
           const chatModelCount = allModels.filter((model) => !isEmbeddingModel(model) && enabledIds.has(model.providerId)).length
 
           return (
@@ -571,13 +650,12 @@ export function ModelRouting() {
                     unit={`of ${formatCount(liveProviders.length)}`}
                   />
                   <StatTile label="Models available" value={formatCount(chatModelCount)} unit="chat models" />
-                  <StatTile label="Healthy" value={formatCount(healthy)} unit={`of ${formatCount(enabled.length)} enabled`} />
-                  <StatTile label="Paused" value={formatCount(paused)} unit="after failures" />
+                  <StatTile label="Providers on" value={formatCount(enabled.length)} unit={`of ${formatCount(allProviders.length)}`} />
                 </StatRow>
                 <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
-                  A live provider is ready when it is on, holds a usable key and is not paused. Healthy
-                  and paused count providers that are on. Source: the provider registry, stored keys
-                  and circuit breaker state.
+                  A live provider is ready when it is on and holds a usable key. Every listed model is
+                  tried on every run, even one that failed last time. Source: the provider registry and
+                  stored keys.
                 </p>
               </div>
 
@@ -586,9 +664,21 @@ export function ModelRouting() {
                   <Eyebrow as="h2">Providers</Eyebrow>
                   <p className="muted" style={{ marginBottom: 'var(--space-5)' }}>
                     Turning a provider on or off, and the keys stored here, apply to this workspace only.
-                    A provider is paused automatically after repeated failures and probed again once the
-                    cool-down passes. One vendor being unwell never stops calls to the others.
+                    A failure never takes a provider out of use: the next run tries it again. Use Test
+                    now to check one straight away.
                   </p>
+                  {offWarning && (
+                    <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+                      <Notice tone="warning" live>
+                        {offWarning}
+                      </Notice>
+                      <div>
+                        <Button variant="quiet" className="button-sm" onClick={() => setOffWarning(null)}>
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {refusal && (
                     <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
                       <Notice tone="warning" live>
@@ -628,7 +718,7 @@ export function ModelRouting() {
                     columns={providerColumns}
                     rows={allProviders}
                     getKey={(row) => row.id}
-                    caption="Each provider: whether it is on in this workspace, the state of this workspace's key and its circuit breaker."
+                    caption="Each provider: whether it is on in this workspace and the state of this workspace's key."
                   />
                   {!canManage && (
                     <p className="caption" style={{ marginTop: 'var(--space-4)' }}>
@@ -641,6 +731,18 @@ export function ModelRouting() {
 
               {/* A failed policy request shows the failure and a retry here, never "Nothing configured". */}
               <div style={{ marginTop: 'var(--space-6)' }}>
+                {removalWarning && (
+                  <div className="stack" style={{ gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+                    <Notice tone="warning" live>
+                      {removalWarning}
+                    </Notice>
+                    <div>
+                      <Button variant="quiet" className="button-sm" onClick={() => setRemovalWarning(null)}>
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <QueryState query={policyQuery} permission="provider:read" what="the routing policy" rows={3}>
                   {(loadedPolicy) => (
                     <RoutingPolicyCard
@@ -650,6 +752,7 @@ export function ModelRouting() {
                       credentials={credentials}
                       canManage={canManage}
                       now={now}
+                      onRemoveEverywhere={(target) => void askRemoveEverywhere(target)}
                     />
                   )}
                 </QueryState>
@@ -677,7 +780,7 @@ export function ModelRouting() {
                         </h3>
                         {chat.length > 0 && (
                           <DataTable
-                            columns={modelColumns(false, now)}
+                            columns={modelColumns(false, canManage)}
                             rows={chat}
                             getKey={(row) => row.modelId}
                             caption={`Chat models from ${provider.displayName}`}
@@ -689,7 +792,7 @@ export function ModelRouting() {
                               Embedding models, used for document search rather than for answering runs
                             </h4>
                             <DataTable
-                              columns={modelColumns(true, now)}
+                              columns={modelColumns(true, canManage)}
                               rows={embedding}
                               getKey={(row) => row.modelId}
                               caption={`Embedding models from ${provider.displayName}`}
@@ -706,7 +809,13 @@ export function ModelRouting() {
         }}
       </QueryState>
 
-      {canManage && <ConnectModelDialog open={connectOpen} onClose={() => setConnectOpen(false)} />}
+      {canManage && (
+        <ConnectModelDialog
+          open={connectOpen}
+          onClose={() => setConnectOpen(false)}
+          initialProviderId={connectProviderId}
+        />
+      )}
 
       {/* Before the key dialog, so that when "Store a key first" swaps one for the other, this one
           has closed before the key dialog opens and takes focus. */}
@@ -742,6 +851,24 @@ export function ModelRouting() {
         ) : null}
       </ConfirmDialog>
 
+      <ConfirmDialog
+        open={removeTarget !== null}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={confirmRemoveEverywhere}
+        eyebrow="Remove from all routing"
+        title={`Remove ${removeTarget?.name ?? 'this'} from all routing?`}
+        description={
+          removeTarget
+            ? `${usageSentence(removeTarget.usage, removeTarget.modelId ? 'this model' : `${removeTarget.name} models`)} Work already running keeps the models it started with.`
+            : undefined
+        }
+        confirmLabel="Remove from all routing"
+        cancelLabel="Keep it"
+        tone="danger"
+        loading={removeEverywhere.isPending}
+        error={removeError}
+      />
+
       <Dialog
         open={keyTarget !== null}
         onClose={closeStoreKey}
@@ -768,16 +895,20 @@ export function ModelRouting() {
         }
       >
         <form id="store-key-form" onSubmit={handleStoreKey}>
-          <Input
+          <PasswordInput
             label="API key"
-            type="password"
             value={keyValue}
-            onChange={(event) => setKeyValue(event.target.value)}
+            onChange={(event) => setKeyValue(cleanKey(event.target.value))}
             autoComplete="off"
             spellCheck={false}
             required
             data-autofocus
-            hint={replacingKey ? 'The new key replaces the stored one as soon as you store it.' : undefined}
+            error={keyTarget && keyValue ? (keyMismatch(keyTarget.id, keyTarget.displayName, keyValue) ?? undefined) : undefined}
+            hint={
+              replacingKey
+                ? 'The new key replaces the stored one as soon as you store it. Use Test now on the row afterwards to check it.'
+                : 'Use Connect your AI instead to check the key before it is stored.'
+            }
           />
         </form>
       </Dialog>

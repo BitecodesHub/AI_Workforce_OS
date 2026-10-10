@@ -1,3 +1,6 @@
+// @find: tests for schedule model, scheduleStatus, Active, Paused, Done, SCHEDULE_EXAMPLES, scheduleDebounceKey, owner left reason
+// @what: Unit tests for the Schedules screen status and helper rules.
+// @flow: Exercises scheduleModel.ts
 import { describe, expect, it } from 'vitest'
 import {
   OWNER_LEFT_REASON,

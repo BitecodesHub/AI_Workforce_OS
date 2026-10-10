@@ -1,3 +1,6 @@
+// @find: tests for agents strip, Pause all, Resume all, pause agent, resume agent, POST /api/agents/:id/pause, POST /api/agents/:id/resume, General Employee, bulk actions
+// @what: Tests for the Orchestrator agents list and its pause all and resume all actions.
+// @flow: Exercises AgentsStrip.tsx
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

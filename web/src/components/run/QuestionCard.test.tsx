@@ -1,3 +1,6 @@
+// @find: tests for QuestionCard, agent question, clarifying question, answer question, choose option, Other answer, answered count, question closed, run waiting for answer, Approvals page questions
+// @what: Automated tests for QuestionCard.
+// @flow: Run with the web test runner; covers QuestionCard.
 import axe from 'axe-core'
 import type { ComponentProps } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

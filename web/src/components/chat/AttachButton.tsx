@@ -1,8 +1,12 @@
+// @find: attach file, paperclip, upload file in chat, file picker, composer button, attachment
+// @what: The paperclip button beside the composer that opens the file picker.
+// @flow: Used by Composer.
 import { useRef } from 'react'
 import { IconButton } from '../ui'
 import { ACCEPT } from '../../lib/attachments'
 import './attachments.css'
 
+// @find: AttachButton, attach button, attach file, paperclip, upload file in chat, file picker
 /**
  * The paperclip beside the composer's other tools. It opens the system file picker (several files
  * at once) and hands back whatever was chosen; the picker is reset afterwards, so choosing the same

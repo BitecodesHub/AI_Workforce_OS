@@ -1,3 +1,6 @@
+// @find: sandbox server registry, tool definitions, connector tools, side effect class, sandbox seeds, practice records, register connectors, live adapter wiring, token refresher, webhook loopback, tool list per connector, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: Defines every connector's tools as data (name, scopes, side effect) and builds the sandbox and live adapters from them.
+// @flow: Spring bean list used by ToolGateway and ConnectorService; reads /mcp/sandbox-seeds.json
 package os.aiworkforce.mcp.sandbox;
 
 import java.io.IOException;
@@ -70,6 +73,7 @@ public class SandboxServerRegistry {
     private static final Logger log = LoggerFactory.getLogger(SandboxServerRegistry.class);
     private static final String SEEDS = "/mcp/sandbox-seeds.json";
 
+    // @find: register all connector servers, sandbox and live adapters beans
     @Bean
     public List<McpServerAdapter> sandboxServers(
             ObjectMapper json,
@@ -91,6 +95,7 @@ public class SandboxServerRegistry {
         return servers;
     }
 
+    // @find: build all connector adapters
     /**
      * Builds every server: the sandbox for each, wrapped in its live adapter where one exists.
      *
@@ -130,6 +135,7 @@ public class SandboxServerRegistry {
         return List.copyOf(servers);
     }
 
+    // @find: tool definitions for every connector, tool catalog
     /** Every server's tools, in the order the console lists them. */
     public static Map<String, List<ToolDefinition>> definitions() {
         Map<String, List<ToolDefinition>> servers = new LinkedHashMap<>();

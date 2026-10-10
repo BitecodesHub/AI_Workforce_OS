@@ -1,3 +1,6 @@
+// @find: tests for ProgressCard, goal progress, live goal, chain of agents, task steps, who is up next, review, approval in chat, orchestrator progress, work in progress, run trace
+// @what: Automated tests for ProgressCard.
+// @flow: Run with the web test runner; covers ProgressCard.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'

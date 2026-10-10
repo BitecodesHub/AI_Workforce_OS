@@ -1,3 +1,6 @@
+# @find: makefile, make targets, build, test, lint, format, up, down, logs, restart, clean, dev-backend, web-dev, web-build, web-test, design-check, verify, docker compose commands, developer commands
+# @what: Developer command shortcuts for building, testing, formatting, running the Docker stack and the web client.
+# @flow: Calls ./mvnw, infra/compose/docker-compose.yml, scripts/dev-backend.sh and pnpm in web/
 # AI Workforce OS
 #
 # Every target here is meant to work on a machine that has just cloned the repository, with no

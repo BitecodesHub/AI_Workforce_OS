@@ -1,3 +1,6 @@
+// @find: zendesk, support, tickets, helpdesk, list tickets, get ticket, update ticket, public reply, private note, subdomain email api token, live adapter, real API, customer support
+// @what: Live Zendesk connector: runs zendesk__ tools (list, get, update tickets, reply or add notes) against a Zendesk subdomain using email and API token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.Set;
@@ -90,6 +93,7 @@ public final class ZendeskAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Zendesk list tickets, tool zendesk__list_tickets, live Zendesk call
     private Mono<ToolResult> listTickets(ToolInvocation invocation, JsonNode arguments, String credential) {
         String status = text(arguments, "status");
         int limit = limit(arguments, 25, 100);
@@ -112,6 +116,7 @@ public final class ZendeskAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Zendesk get ticket, tool zendesk__get_ticket, live Zendesk call
     private Mono<ToolResult> getTicket(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         return get(credential, "/api/v2/tickets/{id}", id)
@@ -131,6 +136,7 @@ public final class ZendeskAdapter extends LiveServerAdapter {
                 });
     }
 
+    // @find: Zendesk update ticket, tool zendesk__update_ticket, live Zendesk call
     private Mono<ToolResult> updateTicket(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         ObjectNode ticket = json.createObjectNode();

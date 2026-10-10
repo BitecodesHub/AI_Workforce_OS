@@ -1,3 +1,5 @@
+// @find: tests for work fixture, test fixture, shared test data, builders for goals tasks runs agents
+// @what: Unit and integration tests (0 cases) for work fixture.
 package os.aiworkforce.orchestrator.service;
 
 import static org.mockito.ArgumentMatchers.any;

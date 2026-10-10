@@ -1,3 +1,6 @@
+// @find: account, profile, sign in, sign out, sign out everywhere, devices, sessions, end session, change password, reset password, choose workspace, enter workspace, GET /api/users/me/sessions, Profile page, Sign in page
+// @what: The signed-in person's own account: devices, password changes, workspace entry, password reset and sign-out.
+// @flow: Called by Profile, SignIn, CreateWorkspace, AcceptInvite, Navbar and ResetPasswordForm; talks to the identity service through api() or fetch.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, api, normaliseFields } from './api'
 import { announceSessionChange, clearSession, saveSession } from './session'
@@ -93,11 +96,13 @@ async function withRefreshLock<T>(work: () => Promise<T>): Promise<T> {
   return locks.request('aiwos-refresh', work) as Promise<T>
 }
 
+// @find: list my workspaces, choose workspace; route: GET /api/users/me/workspaces; used by: Sign in page
 /** The workspaces the signed-in account belongs to, for the picker after sign-in. */
 export function fetchWorkspaces(): Promise<WorkspaceChoice[]> {
   return api<WorkspaceChoice[]>('/api/users/me/workspaces')
 }
 
+// @find: enter workspace, switch workspace; route: POST /api/auth/refresh?workspaceId=; used by: Sign in page, Create workspace page
 /**
  * Re-issues the session for one workspace and stores it.
  *
@@ -118,6 +123,7 @@ export async function enterWorkspace(workspaceId: string): Promise<SessionPayloa
   })
 }
 
+// @find: reset password with link; route: POST /api/auth/password-reset; used by: Reset password form
 /** Sets a new password with a reset link's token. Resolves when the password has changed. */
 export async function resetPassword(token: string, newPassword: string): Promise<void> {
   const response = await reach('/api/auth/password-reset', {
@@ -128,6 +134,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
   if (!response.ok) throw await problemError(response, 'The password could not be changed. Try again.')
 }
 
+// @find: sign out, sign out everywhere; route: POST /api/auth/sign-out; used by: Navbar, Profile page, Sign in page
 /**
  * Ends the session on the server, and here.
  *
@@ -146,6 +153,7 @@ export async function signOut(everywhere = false): Promise<void> {
   clearSession()
 }
 
+// @find: my devices, signed-in sessions; route: GET /api/users/me/sessions; used by: Profile page
 /** The devices this account is signed in on, the current one marked. */
 export function useAccountSessions() {
   return useQuery({
@@ -154,6 +162,7 @@ export function useAccountSessions() {
   })
 }
 
+// @find: sign out one device; route: DELETE /api/users/me/sessions/{familyId}; used by: Profile page
 /** Signs one device out. */
 export function useEndSession() {
   const client = useQueryClient()
@@ -164,6 +173,7 @@ export function useEndSession() {
   })
 }
 
+// @find: change password; route: PUT /api/users/me/password; used by: Profile page
 /** Changes the password. The server signs out every other device as part of it. */
 export function useChangePassword() {
   const client = useQueryClient()

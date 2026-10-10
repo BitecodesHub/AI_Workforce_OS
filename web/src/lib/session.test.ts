@@ -1,3 +1,5 @@
+// @find: tests for session, saveSession, clearSession, can, permissions, watchSessionOwner
+// @what: Unit tests for session handling.
 import { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, NETWORK_FAILURE, api, refreshAccessToken, restoreSession } from './api'

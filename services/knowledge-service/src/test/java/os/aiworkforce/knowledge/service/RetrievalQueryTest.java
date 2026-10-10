@@ -1,3 +1,5 @@
+// @find: tests for search query wording, conversational words stripped, how a person asks, question phrasing, retrieval, knowledge base
+// @what: Checks the way a question is phrased does not decide whether the document is found.
 package os.aiworkforce.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

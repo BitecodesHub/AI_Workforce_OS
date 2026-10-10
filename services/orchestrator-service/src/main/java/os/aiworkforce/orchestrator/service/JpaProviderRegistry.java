@@ -1,3 +1,6 @@
+// @find: provider registry, model providers, models list, OpenRouter, Groq, Bedrock, workspace providers, model unavailable, credential invalid, model fallback, adding a provider is a row, enabled models
+// @what: Serves the model router its providers and models from the database, per workspace, and records unavailable models and invalid credentials.
+// @flow: Called by ModelRouter and ProviderController
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -47,34 +50,17 @@ import os.aiworkforce.orchestrator.repository.WorkspaceProviderSettings;
  *       and it never changes what another workspace sees.
  *   <li><b>Credential status</b> is the workspace's own, defaulting to {@code unknown}: keys are
  *       stored per workspace, so one workspace's refused key says nothing about another's.
- *   <li><b>Model availability</b> is the later of the platform's note and the workspace's own.
- *       An account out of credit or quota only ever writes the workspace's note. A model the
- *       provider calls unknown does too, and reaches the platform note only when a second
- *       workspace reports it within the cool-down.
+ *   <li><b>Model availability</b> is always "available". Notes that set a model aside after a
+ *       failure are no longer written or read; see {@link #markModelUnavailable}.
  *   <li><b>Visibility</b>: a provider another workspace added for itself, and its models, are
  *       invisible here, not merely unusable.
  * </ul>
  *
- * <p>Accepted risk: anybody can create two workspaces, and if both store keys the provider
- * answers with a 404 for a catalogue model, together they can still set that model aside for
- * everybody, {@link #MAX_PLATFORM_COOLDOWN} at a time and again after each lapse. One workspace
- * alone cannot, each episode is short, and every promotion is logged at WARN naming the
- * workspaces behind it. Never sharing a 404 at all would close this, at the price of one wasted
- * call per workspace per cool-down for a model that really is gone; that is the fallback if the
- * WARN shows abuse.
  */
 @Service
 public class JpaProviderRegistry implements ProviderRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(JpaProviderRegistry.class);
-
-    /**
-     * The longest a "model does not exist" note may last, for one workspace or for every one. A
-     * 404 is how a retirement arrives, but also how "not enabled on this account" arrives, so the
-     * note is kept short whatever the caller asked for. It is also the window in which a second
-     * workspace's report makes the note platform-wide.
-     */
-    static final Duration MAX_PLATFORM_COOLDOWN = Duration.ofMinutes(15);
 
     private final Providers providers;
     private final Models models;
@@ -111,6 +97,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
 
     // ---- Workspace views, for the console and the router alike ----------------------------
 
+    // @find: list workspace providers
     @Transactional(readOnly = true)
     public List<WorkspaceProvider> workspaceProviders(UUID orgId) {
         Map<String, WorkspaceProviderSetting> own = orgId == null
@@ -122,6 +109,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
                 .toList();
     }
 
+    // @find: get workspace provider
     @Transactional(readOnly = true)
     public Optional<WorkspaceProvider> workspaceProvider(UUID orgId, String providerId) {
         return providers
@@ -131,6 +119,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
                 .map(entity -> merge(entity, ownSetting(orgId, providerId)));
     }
 
+    // @find: list workspace models
     /** Every enabled model of a provider this workspace can see, with its availability merged in. */
     @Transactional(readOnly = true)
     public List<WorkspaceModel> workspaceModels(UUID orgId) {
@@ -178,6 +167,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
 
     // ---- ProviderRegistry ------------------------------------------------------------------
 
+    // @find: providers for router
     @Override
     @Transactional(readOnly = true)
     public List<ProviderDescriptor> providers(String orgId) {
@@ -190,6 +180,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
         return workspaceProvider(parse(orgId), providerId).map(this::toDescriptor);
     }
 
+    // @find: look up model spec
     @Override
     @Transactional(readOnly = true)
     public Optional<ModelSpec> model(String orgId, String providerId, String modelId) {
@@ -215,22 +206,14 @@ public class JpaProviderRegistry implements ProviderRegistry {
         return workspaceModels(parse(orgId)).stream().map(this::toSpec).toList();
     }
 
+    // @find: mark model unavailable, fallback to next model
     /**
-     * Sets a model aside after a failure that will keep repeating.
-     *
-     * <p>Every note is written for the workspace that saw the failure, and an account out of
-     * credit or quota stays there: another workspace with a funded account keeps the model. A
-     * model the provider calls unknown is noted the same way, briefly, and is copied to the
-     * platform row for every workspace only when another workspace has reported the same model
-     * within {@link #MAX_PLATFORM_COOLDOWN}. One workspace's 404s alone, however often repeated,
-     * never reach anybody else; see the class comment for the risk that remains.
-     *
-     * <p>Runs in its own transaction. The caller is on a failure path whose transaction will very
-     * likely roll back, and this note is exactly the thing that must survive that rollback -
-     * otherwise every request repeats the same doomed round trip.
+     * Does nothing any more, on purpose. A model used to be set aside for minutes or hours after
+     * a 402, a 404 or an exhausted quota, and runs then failed with "no model available" long
+     * after somebody had topped the account up or enabled the model. Every call now asks every
+     * model again; the router keeps at most a few seconds' in-memory cool-off for overload.
      */
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markModelUnavailable(
             String orgId,
             String providerId,
@@ -238,68 +221,20 @@ public class JpaProviderRegistry implements ProviderRegistry {
             ProviderFailure cause,
             Duration duration,
             String reason) {
-        UUID org = parse(orgId);
-        if (org == null) {
-            // Every one of these is learned through some workspace's key or account. With none to
-            // name, writing it platform-wide would set the model aside for every workspace instead.
-            log.warn(
-                    "Model {}/{} failed outside any workspace ({}) and was not set aside: {}",
-                    providerId,
-                    modelId,
-                    cause,
-                    reason);
-            return;
-        }
-        if (providers.findById(providerId).filter(entity -> entity.isVisibleTo(org)).isEmpty()
-                || models.findById(new LlmModelEntity.Key(providerId, modelId)).isEmpty()) {
-            return;
-        }
-
-        boolean notFound = cause == ProviderFailure.MODEL_NOT_FOUND;
-        Duration noted = notFound && duration.compareTo(MAX_PLATFORM_COOLDOWN) > 0 ? MAX_PLATFORM_COOLDOWN : duration;
-        Instant now = Instant.now();
-        availability.upsert(org, providerId, modelId, now.plus(noted), cause.name(), reason);
-        log.warn(
-                "Model {}/{} set aside for workspace {} for {} ({}): {}",
-                providerId,
-                modelId,
-                orgId,
-                noted,
-                cause,
-                reason);
-
-        if (notFound) {
-            List<UUID> others = availability.findOtherWorkspacesReporting(providerId, modelId, cause.name(), org, now);
-            if (!others.isEmpty()) {
-                setAsideForEveryone(providerId, modelId, noted, reason, org, others);
-            }
-        }
+        log.debug("Not setting {}/{} aside for workspace {} ({}): models are always tried", providerId, modelId, orgId, cause);
     }
 
+    // @find: forget unavailable note, reset model status
     /**
-     * Copies a "does not exist" to the platform row once two workspaces agree on it. Never
-     * shortens a longer note already there, such as one an operator wrote.
+     * Clears any note left from before models were always tried, for one model or a whole
+     * provider, in this workspace. Called by "Test now".
      */
-    private void setAsideForEveryone(
-            String providerId, String modelId, Duration duration, String reason, UUID org, List<UUID> others) {
-        models.findById(new LlmModelEntity.Key(providerId, modelId)).ifPresent(model -> {
-            Instant until = Instant.now().plus(duration);
-            if (model.getUnavailableUntil() != null && model.getUnavailableUntil().isAfter(until)) {
-                return;
-            }
-            model.markUnavailable(duration, reason);
-            models.save(model);
-            log.warn(
-                    "Model {}/{} set aside for every workspace for {}: workspace {} and {} were all told: {}",
-                    providerId,
-                    modelId,
-                    duration,
-                    org,
-                    others,
-                    reason);
-        });
+    @Transactional
+    public void forgetNotes(UUID orgId, String providerId, String modelId) {
+        availability.forget(orgId, providerId, modelId);
     }
 
+    // @find: mark credential invalid, bad API key
     /** Records the refusal against the workspace whose key it was; no other workspace sees it. */
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -335,13 +270,9 @@ public class JpaProviderRegistry implements ProviderRegistry {
                 own == null ? null : own.getCredentialCheckedAt());
     }
 
-    /** The later of the two notes wins, with its reason: whichever keeps the model away longer. */
+    /** Notes are no longer honoured: a model is always offered, whatever an old note said. */
     private static WorkspaceModel merge(LlmModelEntity model, WorkspaceModelAvailability own) {
-        Instant platform = model.getUnavailableUntil();
-        if (own != null && (platform == null || own.getUnavailableUntil().isAfter(platform))) {
-            return new WorkspaceModel(model, own.getUnavailableUntil(), own.getReason());
-        }
-        return new WorkspaceModel(model, platform, model.getUnavailableReason());
+        return new WorkspaceModel(model, null, null);
     }
 
     private ProviderDescriptor toDescriptor(WorkspaceProvider provider) {

@@ -1,3 +1,6 @@
+// @find: summary strip, summary tiles, running, waiting, needs you, failed today, held, done today, filter by status, counts, SummaryStrip, Orchestrator
+// @what: The compact strip of figures that answer what is running and what needs me, each acting as a filter.
+// @flow: Counts from layout.countCards; rendered above the Board
 import { formatCount, formatMoney } from '../../lib/format'
 import type { BoardStats } from '../../lib/queries'
 import { can } from '../../lib/session'
@@ -39,6 +42,7 @@ function Figure({
   )
 }
 
+// @find: summary strip component, status tiles and counts
 export function SummaryStrip({
   cards,
   stats,

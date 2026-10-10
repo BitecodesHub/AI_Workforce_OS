@@ -1,3 +1,6 @@
+// @find: schedule entity, recurring work, schedule record, name, instruction, cron, run at, timezone, enabled, paused, overlap policy, next run, last run, consecutive failures, owner, requested by, schedules table
+// @what: JPA entity for one schedule (recurring or one-off work given to an agent).
+// @flow: Stored in the schedules table; handled by ScheduleService and Schedules
 package os.aiworkforce.orchestrator.schedule;
 
 import java.time.Instant;

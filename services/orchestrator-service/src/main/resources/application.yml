@@ -1,3 +1,6 @@
+# @find: orchestrator application config, application.yml, spring settings, port, database url, flyway, model routing settings, chat queue, schedules, voice elevenlabs settings, knowledge service url, runtime tuning
+# @what: Service-specific Spring configuration for the orchestrator (agents, goals, runs, approvals, chat, schedules, voice).
+# @flow: Imports platform-defaults.yml for shared settings; bound by OrchestratorApplication and the *Properties classes
 # Agents, goals, runs, approvals and model routing.
 #
 # This file holds only what belongs to this service. Everything shared - security, resilience,

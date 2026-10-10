@@ -1,3 +1,9 @@
+// @find: budgets repository, find budget for workspace, create budget row if absent, insert default budget, Budgets
+// @what: Spring Data repository for the per-workspace Budget row.
+// @flow: Used by the budget service and the run engine cap checks.
+// @find: budgets repository, find budget for workspace, create budget row if absent, insert default budget, Budgets
+// @what: Spring Data repository for the per-workspace Budget row.
+// @flow: Used by the budget service and the run engine cap checks.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.Optional;
@@ -19,9 +25,13 @@ import os.aiworkforce.orchestrator.domain.Budget;
 
 public interface Budgets extends JpaRepository<Budget, UUID> {
 
+    // @find: find budget for workspace
+    // @find: find budget for workspace
     @Query("select b from Budget b where b.id = :orgId")
     Optional<Budget> findForOrg(@Param("orgId") UUID orgId);
 
+    // @find: create default budget row if missing
+    // @find: create default budget row if missing
     /**
      * Creates the workspace's row if it has none, and does nothing if it has.
      *

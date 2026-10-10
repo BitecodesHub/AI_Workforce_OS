@@ -1,3 +1,6 @@
+// @find: tests for workspace zone lookup, chat, internal endpoint then cache, WorkspaceZoneLookupTest, WorkspaceZoneLookup
+// @what: Tests for WorkspaceZoneLookup in the orchestrator chat package (1 test methods).
+// @flow: Exercises WorkspaceZoneLookup
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +53,7 @@ class WorkspaceZoneLookupTest {
         lookup = new WorkspaceZoneLookup(builder, properties, tokens);
     }
 
+    // @find: test internal endpoint then cache, workspace zone lookup
     @Test
     @DisplayName("the zone comes from the internal workspace endpoint and is then served from cache")
     void internalEndpointThenCache() {

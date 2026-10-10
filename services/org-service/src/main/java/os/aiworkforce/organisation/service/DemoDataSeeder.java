@@ -1,3 +1,6 @@
+// @find: demo workspace, demo data, seed demo organisation, Demo Workspace, startup seeding, demo org id, dev sample data
+// @what: Creates the Demo Workspace row on startup in non-deployed environments.
+// @flow: Runs on ApplicationReadyEvent; identity-service seeds the matching demo users.
 package os.aiworkforce.organisation.service;
 
 import java.util.UUID;
@@ -40,6 +43,7 @@ public class DemoDataSeeder {
         this.properties = properties;
     }
 
+    // @find: seed demo workspace on startup, create Demo Workspace
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void seed() {

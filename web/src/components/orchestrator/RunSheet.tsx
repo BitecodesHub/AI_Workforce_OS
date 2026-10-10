@@ -1,3 +1,6 @@
+// @find: run sheet, run details, run drawer, run trace, cancel run, approve inline, answer question, RunSheet, Orchestrator
+// @what: The side sheet showing one run with its trace, pending approval or question, and a cancel action.
+// @flow: Opened from the board; uses RunTraceCompact, InlineApproval, QuestionCard and useCancelRun
 import { useState } from 'react'
 import { Button, ConfirmDialog, StatusTag } from '../ui'
 import { Sheet } from '../ui/Sheet'
@@ -19,6 +22,7 @@ import { useToast } from '../../lib/toast'
  * its own to hang a GoalSheet off. It shows the same open question or approval, at the top, and
  * the same trace, but its footer offers only what a run without a chain can: stop it, or open it.
  */
+// @find: run sheet component, run details drawer, cancel run
 export function RunSheet({ runId, board, onClose }: { runId: string; board: Board; onClose: () => void }) {
   const toast = useToast()
   const { members } = useMemberDirectory()

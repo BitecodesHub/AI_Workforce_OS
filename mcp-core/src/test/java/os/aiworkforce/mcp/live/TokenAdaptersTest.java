@@ -1,3 +1,5 @@
+// @find: tests for token adapters, jira, confluence, zendesk, zoom, atlassian site, email api token, server-to-server oauth, wiremock stand-in provider, token connectors
+// @what: Checks the token-based live adapters (Jira, Confluence, Zendesk, Zoom and similar) against a stand-in provider.
 package os.aiworkforce.mcp.live;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

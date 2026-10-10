@@ -1,3 +1,9 @@
+// @find: agent version, system prompt, agent instructions, edit prompt, prompt history, seal version, revision, temperature, max steps, max output tokens, agent_versions, AgentVersion
+// @what: Entity for a frozen snapshot of an agent configuration (system prompt, goals, limits); sealed once a run uses it.
+// @flow: Created via agent update endpoints; pinned by Run.agentVersionId; stored by AgentVersions.
+// @find: agent version, system prompt, agent instructions, edit prompt, prompt history, seal version, revision, temperature, max steps, max output tokens, agent_versions, AgentVersion
+// @what: Entity for a frozen snapshot of an agent configuration (system prompt, goals, limits); sealed once a run uses it.
+// @flow: Created via agent update endpoints; pinned by Run.agentVersionId; stored by AgentVersions.
 package os.aiworkforce.orchestrator.domain;
 
 import java.math.BigDecimal;
@@ -72,6 +78,8 @@ public class AgentVersion {
     @Column(name = "created_by")
     private String createdBy;
 
+    // @find: seal agent version, lock prompt after first run, immutable version
+    // @find: seal agent version, lock prompt after first run, immutable version
     /** Called when a run first uses this version. Idempotent, because many runs will use it. */
     public void seal() {
         if (!sealed) {

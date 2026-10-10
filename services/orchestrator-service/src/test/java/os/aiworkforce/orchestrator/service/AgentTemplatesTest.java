@@ -1,3 +1,5 @@
+// @find: tests for agent templates, agent templates, ready-made assistants, starter agents, template catalogue
+// @what: Unit and integration tests (4 cases) for agent templates, for example: the catalogue is well formed; suggestions cover the demo grants; finds by key; the seeder uses the catalogue.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

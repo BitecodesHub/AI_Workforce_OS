@@ -1,3 +1,5 @@
+// @find: tests for model policy agent clear, model policy, clear agent policy, remove candidate, DELETE /api/agents/{id}/model-policy
+// @what: Unit and integration tests (13 cases) for model policy agent clear, for example: clear falls back to the workspace policy; clear with no workspace policy says no model is set; clear names the workspace default; remove one candidate.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,6 +65,7 @@ class ModelPolicyAgentClearTest {
     private final List<ModelPolicyEntity> table = new ArrayList<>();
 
     private ModelPolicies policies;
+    private Models models;
     private AuditClient audit;
     private ModelPolicyController controller;
     private RoutingPolicyResolver resolver;
@@ -70,7 +73,7 @@ class ModelPolicyAgentClearTest {
     @BeforeEach
     void setUp() {
         policies = mock(ModelPolicies.class);
-        Models models = mock(Models.class);
+        models = mock(Models.class);
         Agents agents = mock(Agents.class);
         WorkspaceProviderSettings settings = mock(WorkspaceProviderSettings.class);
         JpaProviderRegistry registry = mock(JpaProviderRegistry.class);
@@ -83,6 +86,8 @@ class ModelPolicyAgentClearTest {
         ReflectionTestUtils.setField(agent, "id", AGENT);
         agent.setName("Ava");
         when(agents.findByIdAndOrgId(AGENT, ORG)).thenReturn(Optional.of(agent));
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(agent));
+        when(policies.findByOrgId(ORG)).thenAnswer(call -> List.copyOf(table));
         when(models.findById(any(LlmModelEntity.Key.class))).thenReturn(Optional.of(mock(LlmModelEntity.class)));
         LlmProviderEntity groq = new LlmProviderEntity();
         groq.setId("groq");
@@ -146,17 +151,90 @@ class ModelPolicyAgentClearTest {
     }
 
     @Test
-    @DisplayName("with no workspace policy either, a cleared agent resolves to the built-in offline model")
-    void clearWithNoWorkspacePolicyFallsToTheBuiltIn() {
+    @DisplayName("with no workspace policy either, clearing is allowed and says plainly that no model is set")
+    void clearWithNoWorkspacePolicySaysNoModelIsSet() {
         controller.setForAgent(AGENT, chain("groq/agent-model"));
 
-        controller.clearForAgent(AGENT);
+        ModelPolicyController.ModelPolicyView view = controller.clearForAgent(AGENT);
 
-        assertThat(resolver.resolve(ORG, AGENT).candidates())
-                .extracting(RoutingPolicy.Candidate::providerId)
-                .containsExactly("sandbox");
+        assertThat(view.warning())
+                .isEqualTo("No AI model is set for this agent or the workspace \u2014 add one in Model routing.");
+        // Never a quiet answer from the offline model: the chain is empty and runs say why.
+        assertThat(resolver.resolve(ORG, AGENT).candidates()).isEmpty();
     }
 
+    @Test
+    @DisplayName("clearing names the workspace default the agent will use")
+    void clearNamesTheWorkspaceDefault() {
+        controller.setWorkspaceDefault(chain("groq/workspace-model"));
+        controller.setForAgent(AGENT, chain("groq/agent-model"));
+
+        assertThat(controller.clearForAgent(AGENT).warning())
+                .isEqualTo("This agent will use the workspace default: groq \u00b7 workspace-model.");
+    }
+
+    @Test
+    @DisplayName("one model can be removed from an agent's chain at any time; runs already going keep theirs")
+    void removeOneCandidate() {
+        controller.setForAgent(AGENT, chain("groq/a", "groq/b", "groq/c"));
+        RoutingPolicy runningWith = resolver.resolve(ORG, AGENT);
+
+        ModelPolicyController.ModelPolicyView view = controller.removeAgentCandidate(AGENT, "groq", "b");
+
+        assertThat(view.candidates()).extracting(ModelPolicyController.CandidateView::modelId).containsExactly("a", "c");
+        assertThat(view.candidates()).extracting(ModelPolicyController.CandidateView::position).containsExactly(0, 1);
+        assertThat(resolver.resolve(ORG, AGENT).candidates())
+                .extracting(RoutingPolicy.Candidate::modelId)
+                .containsExactly("a", "c");
+        // A run resolves its chain when it starts; the one it holds is unchanged.
+        assertThat(runningWith.candidates()).extracting(RoutingPolicy.Candidate::modelId).containsExactly("a", "b", "c");
+    }
+
+    @Test
+    @DisplayName("removing a model the catalogue no longer lists is allowed, and so is keeping one")
+    void removalNeverRefusedForUnknownModels() {
+        controller.setForAgent(AGENT, chain("groq/a", "groq/gone"));
+        when(models.findById(any(LlmModelEntity.Key.class))).thenReturn(Optional.empty());
+
+        assertThat(controller.removeAgentCandidate(AGENT, "groq", "a").candidates())
+                .extracting(ModelPolicyController.CandidateView::modelId)
+                .containsExactly("gone");
+        // Saving the chain as it now stands is accepted too: the model was already in it.
+        assertThat(controller.setForAgent(AGENT, chain("groq/gone")).candidates()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("removing the last model gives the agent back to the workspace routing, with a warning")
+    void removingTheLastCandidateClears() {
+        controller.setForAgent(AGENT, chain("groq/only"));
+
+        ModelPolicyController.ModelPolicyView view = controller.removeAgentCandidate(AGENT, "groq", "only");
+
+        assertThat(view.configured()).isFalse();
+        assertThat(view.warning()).startsWith("No AI model is set");
+        assertThat(table).isEmpty();
+    }
+
+    @Test
+    @DisplayName("removing a model everywhere drops it from the workspace and every agent, listing who changed")
+    void removeEverywhere() {
+        controller.setWorkspaceDefault(chain("groq/shared", "groq/other"));
+        controller.setForAgent(AGENT, chain("groq/shared"));
+
+        assertThat(controller.usage("groq", "shared").agents())
+                .extracting(ModelPolicyController.AgentRef::name)
+                .containsExactly("Ava");
+
+        ModelPolicyController.RemoveResult result =
+                controller.removeEverywhere(new ModelPolicyController.RemoveRequest("groq", "shared"));
+
+        assertThat(result.workspace()).isTrue();
+        assertThat(result.agents()).extracting(ModelPolicyController.RemovedFrom::nowEmpty).containsExactly(true);
+        assertThat(result.warning()).contains("Ava now has no model of its own").contains("groq \u00b7 other");
+        assertThat(resolver.resolve(ORG, AGENT).candidates())
+                .extracting(RoutingPolicy.Candidate::modelId)
+                .containsExactly("other");
+    }
     @Test
     @DisplayName("clearing an agent that has no policy of its own changes nothing and is not audited")
     void clearIsIdempotent() {
@@ -233,6 +311,7 @@ class ModelPolicyAgentClearTest {
     @Test
     @DisplayName("a refused save is not audited")
     void aRefusedSaveLeavesNoEntry() {
+        when(models.findById(any(LlmModelEntity.Key.class))).thenReturn(Optional.empty());
         assertThatThrownBy(() -> controller.setForAgent(AGENT, chain("someone-elses/model")))
                 .isInstanceOf(ApiException.class);
 

@@ -1,3 +1,6 @@
+// @find: zoom, meetings, video calls, list meetings, get meeting, schedule meeting, cancel meeting, list recordings, server-to-server OAuth, account id client id secret, live adapter, real API
+// @what: Live Zoom connector: runs zoom__ tools (meetings and recordings) against the Zoom API using server-to-server OAuth credentials exchanged for a short-lived token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.nio.charset.StandardCharsets;
@@ -140,6 +143,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Zoom list meetings, tool zoom__list_meetings, live Zoom call
     private Mono<ToolResult> listMeetings(ToolInvocation invocation, JsonNode arguments, String token) {
         StringBuilder uri = new StringBuilder("/users/me/meetings?type=upcoming&page_size={n}");
         java.util.List<Object> variables = new java.util.ArrayList<>();
@@ -152,6 +156,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Zoom get meeting, tool zoom__get_meeting, live Zoom call
     private Mono<ToolResult> getMeeting(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(token, "/meetings/{id}", id).map(meeting -> {
@@ -162,6 +167,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Zoom schedule meeting, tool zoom__schedule_meeting, live Zoom call
     private Mono<ToolResult> scheduleMeeting(ToolInvocation invocation, JsonNode arguments, String token) {
         String topic = required(arguments, "topic");
         String start = required(arguments, "start");
@@ -183,6 +189,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Zoom cancel meeting, tool zoom__cancel_meeting, live Zoom call
     private Mono<ToolResult> cancelMeeting(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return call(HttpMethod.DELETE, token, "/meetings/{id}", id).map(ignored -> {
@@ -193,6 +200,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         });
     }
 
+    // @find: Zoom list recordings, tool zoom__list_recordings, live Zoom call
     private Mono<ToolResult> listRecordings(ToolInvocation invocation, JsonNode arguments, String token) {
         StringBuilder uri = new StringBuilder("/users/me/recordings?page_size={n}");
         java.util.List<Object> variables = new java.util.ArrayList<>();

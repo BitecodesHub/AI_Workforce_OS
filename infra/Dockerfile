@@ -1,3 +1,6 @@
+# @find: dockerfile, docker image, build service image, SERVICE build arg, multi-stage build, maven build layer, jre runtime, container image for services, compose and kubernetes image
+# @what: Single Dockerfile that builds any one of the eight backend services into a container image, chosen by the SERVICE build argument.
+# @flow: Used by infra/compose/docker-compose.yml and the Kubernetes manifests
 # One Dockerfile for all eight services.
 #
 # The service is chosen at build time with --build-arg SERVICE=identity-service, so a change to

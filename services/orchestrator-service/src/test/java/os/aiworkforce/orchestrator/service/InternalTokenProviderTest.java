@@ -1,3 +1,5 @@
+// @find: tests for internal token provider, internal token, service token, actor propagation, service-to-service auth
+// @what: Unit and integration tests (7 cases) for internal token provider, for example: system context names requested workspace; person carried; other workspace refused; cached per workspace.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

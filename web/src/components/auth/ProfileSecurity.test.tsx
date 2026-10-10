@@ -1,3 +1,5 @@
+// @find: tests for profile security, sessions list, revoke session, change password, sign out all devices, DELETE /api/users/me/sessions, POST /api/users/me/password, POST /api/auth/sign-out
+// @what: Tests the Profile security panel: listing and revoking sessions, changing password, signing out everywhere.
 import axe from 'axe-core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'

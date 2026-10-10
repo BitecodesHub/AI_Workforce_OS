@@ -1,3 +1,6 @@
+# @find: prometheus, metrics scraping, scrape config, targets, monitoring, alert rules path, observability
+# @what: Prometheus configuration that scrapes metrics from every service and loads the alert rules.
+# @flow: Loads infra/prometheus/rules/aiwos-alerts.yml; read by Grafana datasource
 # Scrapes every service's Micrometer endpoint.
 global:
   scrape_interval: 15s

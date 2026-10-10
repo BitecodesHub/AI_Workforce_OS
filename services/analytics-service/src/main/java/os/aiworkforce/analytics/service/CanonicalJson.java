@@ -1,3 +1,6 @@
+// @find: canonical json, stable json text, hash input, sorted keys, number format, reproducible hash
+// @what: Writes JSON in one canonical form so audit hashes can be reproduced exactly.
+// @flow: Used by AuditChain and AuditExport
 package os.aiworkforce.analytics.service;
 
 import java.math.BigDecimal;

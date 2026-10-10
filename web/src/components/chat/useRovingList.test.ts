@@ -1,3 +1,6 @@
+// @find: tests for useRovingList, roving tabindex, keyboard navigation, arrow keys list, accessible list, focus list item
+// @what: Automated tests for useRovingList.
+// @flow: Run with the web test runner; covers useRovingList.
 import { act, renderHook } from '@testing-library/react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { describe, expect, it } from 'vitest'

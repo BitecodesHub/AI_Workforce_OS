@@ -1,4 +1,7 @@
-import { formatBytes } from '../../lib/attachments'
+// @find: attachment chips, files being attached, upload progress, remove attachment, drop overlay, drag and drop files, composer attachments
+// @what: Chips above the text box for files being attached, plus the drag-and-drop overlay.
+// @flow: Used by Composer; state from useAttachments.
+import { chipError, formatBytes } from '../../lib/attachments'
 import { AttachmentIcon } from './AttachmentIcon'
 import type { DraftAttachment } from './useAttachments'
 import './attachments.css'
@@ -9,6 +12,7 @@ import './attachments.css'
  * The live line beneath is read out by a screen reader as each file uploads, attaches or fails.
  */
 
+// @find: AttachmentChips, attachment chips, attachment chips, files being attached, upload progress, remove attachment
 export function AttachmentChips({
   items,
   onRemove,
@@ -38,7 +42,7 @@ export function AttachmentChips({
                   {item.name}
                 </span>
                 {item.status === 'error' ? (
-                  <span className="chat-attach-error">{item.error ?? 'This file could not be attached.'}</span>
+                  <span className="chat-attach-error">{chipError(item)}</span>
                 ) : (
                   <span className="chat-attach-meta">
                     {item.status === 'uploading' ? `Uploading, ${formatBytes(item.size)}` : formatBytes(item.size)}
@@ -81,6 +85,7 @@ export function AttachmentChips({
   )
 }
 
+// @find: AttachmentDropOverlay, attachment drop overlay, attachment chips, files being attached, upload progress, remove attachment
 /** Laid over the chat panel while files are dragged across it. */
 export function AttachmentDropOverlay({ visible }: { visible: boolean }) {
   if (!visible) return null

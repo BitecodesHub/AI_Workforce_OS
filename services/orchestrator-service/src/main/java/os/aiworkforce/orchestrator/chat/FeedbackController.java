@@ -1,3 +1,6 @@
+// @find: feedback, thumbs up, thumbs down, rate answer, rate agent answer, withdraw rating, rating reason, FeedbackController, POST /api/conversations/{id}/messages/{messageId}/feedback, run feedback, quality signal
+// @what: REST endpoints for rating an agent's answer with thumbs up or down and an optional reason, and reading the ratings.
+// @flow: Called by the Chat page and the run detail page; stores ratings tied to the stored message, agent and run.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;
@@ -107,6 +110,7 @@ public class FeedbackController {
     /** Every rating the answers of one run have. */
     public record RunFeedback(List<RunRating> ratings) {}
 
+    // @find: rate answer, thumbs up or down, POST /api/conversations/{id}/messages/{messageId}/feedback
     @PostMapping("/conversations/{id}/messages/{messageId}/feedback")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Transactional
@@ -143,6 +147,7 @@ public class FeedbackController {
         return view(saved);
     }
 
+    // @find: withdraw rating, remove thumbs, DELETE /api/conversations/{id}/messages/{messageId}/feedback
     @DeleteMapping("/conversations/{id}/messages/{messageId}/feedback")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -157,6 +162,7 @@ public class FeedbackController {
         feedbacks.withdraw(orgId, messageId, userId);
     }
 
+    // @find: ratings in conversation, GET /api/conversations/{id}/feedback
     @GetMapping("/conversations/{id}/feedback")
     @RequiresPermission(Permission.Codes.CHAT_USE)
     @Transactional(readOnly = true)
@@ -170,6 +176,7 @@ public class FeedbackController {
                 .toList());
     }
 
+    // @find: ratings on a run, GET /api/runs/{runId}/feedback
     @GetMapping("/runs/{runId}/feedback")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Transactional(readOnly = true)

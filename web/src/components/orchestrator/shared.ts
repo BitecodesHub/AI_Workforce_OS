@@ -1,3 +1,6 @@
+// @find: requester label, who requested, member directory, current task for goal, unknown requester, Someone, You, Orchestrator helpers
+// @what: Small pure helpers that name requesters and find a goal's current task.
+// @flow: Used by FlowMap, BoardList, Board and GoalSheet
 import type { BoardGoal, BoardTask, Member } from '../../lib/queries'
 
 /*
@@ -22,6 +25,7 @@ export const UNKNOWN_REQUESTER = 'Someone'
  * Who asked for a goal, in the words the board uses: 'Scheduled', 'You', a member's name,
  * 'Former member' only when the loaded member list genuinely lacks them, and otherwise 'Someone'.
  */
+// @find: requester label, who asked for this goal, requested by
 export function requesterLabel(
   goal: { source: string; requestedBy: string | null },
   directory: MemberDirectory,
@@ -38,6 +42,7 @@ export function requesterLabel(
 const CURRENT_TASK_STATUS = new Set(['running', 'waiting_approval', 'waiting_input'])
 
 /** The task an agent is in the middle of right now, if any, with the goal it belongs to. */
+// @find: current task of a goal, running task
 export function currentTaskFor(
   board: { goals: readonly BoardGoal[] },
   agentId: string,

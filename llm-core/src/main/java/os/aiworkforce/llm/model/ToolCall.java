@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, tool call, model asks to run tool, tool arguments json, function call, ToolCall
+// @what: A tool the model asked to run, with raw JSON arguments.
 package os.aiworkforce.llm.model;
 
 import java.util.Objects;

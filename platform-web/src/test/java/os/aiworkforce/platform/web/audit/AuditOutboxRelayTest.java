@@ -1,3 +1,5 @@
+// @find: tests for audit relay, delivery, retry, backoff, outbox claim, never drop audit event
+// @what: Checks the relay delivers, retries and never drops queued audit events.
 package os.aiworkforce.platform.web.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;

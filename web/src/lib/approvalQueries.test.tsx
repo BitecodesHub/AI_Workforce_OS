@@ -1,3 +1,5 @@
+// @find: tests for approval queries, pending approvals paging, decided approvals, approval count, run approval, decide approvals, bulk decision, approval item row
+// @what: Tests for approval paging helpers and the queue, history, count and bulk decision hooks.
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'

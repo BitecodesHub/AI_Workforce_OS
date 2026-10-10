@@ -1,3 +1,6 @@
+// @find: limits section, what it does not do, limitations, connectors live vs practice, offline model, LimitsSection
+// @what: Section stating what the platform does not do, for IT reviewers.
+// @flow: Used by Trust; facts from landingFacts
 import type { ReactElement } from 'react'
 import { Icon } from '../shared/Icon'
 import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
@@ -24,6 +27,7 @@ const LIMITS: ReadonlyArray<string> = [
   `Each connector reaches a real account only once an administrator adds its access token or signs in with the provider (${listOf(LIVE_CONNECTORS.map(proseLabel))}). Until then agents work with practice data and nothing is sent.`,
 ]
 
+// @find: LimitsSection component, limits
 export function LimitsSection(): ReactElement {
   return (
     <LandingSection id="limits" labelledBy="limits-title">

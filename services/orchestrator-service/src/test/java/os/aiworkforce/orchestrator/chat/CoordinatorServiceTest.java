@@ -1,3 +1,6 @@
+// @find: tests for coordinator service, chat, mentions chain into one goal, model plan is used when available, unmatched goes to general employee, paused general shows choice, tie shows choice with general last, retired mention starts nothing, paused mention starts nothing, fallback instruction lists colleagues, CoordinatorServiceTest, CoordinatorService
+// @what: Tests for CoordinatorService in the orchestrator chat package (60 test methods).
+// @flow: Exercises CoordinatorService
 package os.aiworkforce.orchestrator.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -162,6 +165,7 @@ class CoordinatorServiceTest {
         return agent;
     }
 
+    // @find: test mentions chain into one goal, coordinator service
     @Test
     @DisplayName("several mentions chain into one goal, each task depending on the one before it")
     void mentionsChainIntoOneGoal() {
@@ -195,6 +199,7 @@ class CoordinatorServiceTest {
         assertThat(conversation.getTitle()).isNotBlank();
     }
 
+    // @find: test model plan is used when available, coordinator service
     @Test
     @DisplayName("the model router's plan is used, and routed as mode 'model', when it answers")
     void modelPlanIsUsedWhenAvailable() {
@@ -212,6 +217,7 @@ class CoordinatorServiceTest {
         verify(goalService).createGoal(eq(ORG), any(), eq(true));
     }
 
+    // @find: test unmatched goes to general employee, coordinator service
     @Test
     @DisplayName("unmatched text goes to General Employee instead of a dead end")
     void unmatchedGoesToGeneralEmployee() {
@@ -231,6 +237,7 @@ class CoordinatorServiceTest {
         verify(goalService).createGoal(eq(ORG), any(), eq(true));
     }
 
+    // @find: test paused general shows choice, coordinator service
     @Test
     @DisplayName("a paused General Employee is never chosen, and the choice card offers no fallback")
     void pausedGeneralShowsChoice() {
@@ -249,6 +256,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test tie shows choice with general last, coordinator service
     @Test
     @DisplayName("a tie between two specialists asks, and lists General last among the alternatives")
     void tieShowsChoiceWithGeneralLast() {
@@ -272,6 +280,23 @@ class CoordinatorServiceTest {
         assertThat(alternatives.getLast().get("score")).isEqualTo(0);
     }
 
+    // @find: test retired mention starts nothing, coordinator service
+    @Test
+    @DisplayName("a mention of a retired agent starts nothing, and says it is retired")
+    void retiredMentionStartsNothing() {
+        research.setStatus("retired");
+        Agent general = fallbackAgent();
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, general));
+        when(generalEmployee.activeIn(List.of(research, support, general))).thenReturn(Optional.of(general));
+
+        List<ChatMessage> created =
+                coordinator.handleMessage(ORG, conversation.getId(), "@Research help please", null, null);
+
+        assertThat(created.get(1).getContent()).contains("Research is retired");
+        verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    // @find: test paused mention starts nothing, coordinator service
     @Test
     @DisplayName("a mention of a paused agent starts nothing, and offers a choice instead")
     void pausedMentionStartsNothing() {
@@ -295,6 +320,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test fallback instruction lists colleagues, coordinator service
     @Test
     @DisplayName("fallback work names the colleagues the person can point to instead")
     void fallbackInstructionListsColleagues() {
@@ -312,6 +338,7 @@ class CoordinatorServiceTest {
         assertThat(instruction).contains("Customer Support");
     }
 
+    // @find: test custom agent keyed general is scored as specialist, coordinator service
     @Test
     @DisplayName("a custom agent keyed 'general' without the fallback flag is scored as an ordinary specialist")
     void customAgentKeyedGeneralIsScoredAsSpecialist() {
@@ -327,6 +354,7 @@ class CoordinatorServiceTest {
         assertThat(routing.getDetail()).containsEntry("needsChoice", false);
     }
 
+    // @find: test documents question searches knowledge, coordinator service
     @Test
     @DisplayName("a document question searches the knowledge base rather than routing to an agent")
     void documentsQuestionSearchesKnowledge() {
@@ -344,6 +372,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test documents failure is reported honestly, coordinator service
     @Test
     @DisplayName("an unreachable knowledge service produces an honest error, not a stack trace")
     void documentsFailureIsReportedHonestly() {
@@ -357,6 +386,7 @@ class CoordinatorServiceTest {
         assertThat(error.getContent()).isEqualTo(CoordinatorService.DOCUMENTS_UNAVAILABLE);
     }
 
+    // @find: test documents not grounded is routed like work, coordinator service
     @Test
     @DisplayName("when no document answers a question, it is routed like any request, not always to General")
     void documentsNotGroundedIsRoutedLikeWork() {
@@ -376,6 +406,7 @@ class CoordinatorServiceTest {
         verify(goalService).createGoal(eq(ORG), any(), eq(true));
     }
 
+    // @find: test documents without task create keeps card, coordinator service
     @Test
     @DisplayName("without task:create, an ungrounded search keeps the documents card even with General active")
     void documentsWithoutTaskCreateKeepsCard() {
@@ -395,6 +426,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test schedule phrase becomes suggestion, coordinator service
     @Test
     @DisplayName("a schedule phrase becomes a suggestion, naming the agent the same routing would choose")
     void schedulePhraseBecomesSuggestion() {
@@ -420,6 +452,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test refused goal becomes error message, coordinator service
     @Test
     @DisplayName("a goal the engine refuses at validation time becomes an honest error message")
     void refusedGoalBecomesErrorMessage() {
@@ -436,6 +469,7 @@ class CoordinatorServiceTest {
         assertThat(error.getContent()).contains("at most 5 tasks");
     }
 
+    // @find: test create goal validation race becomes its own sentence, coordinator service
     @Test
     @DisplayName("validate passes but createGoal refuses in a race - the error still carries the problem text")
     void createGoalValidationRaceBecomesItsOwnSentence() {
@@ -451,6 +485,7 @@ class CoordinatorServiceTest {
         assertThat(error.getContent()).containsIgnoringCase("an agent may not appear twice");
     }
 
+    // @find: test person message survives when apply fails, coordinator service
     @Test
     @DisplayName("a person's message survives even an unexpected failure acting on the decision")
     void personMessageSurvivesWhenApplyFails() {
@@ -465,6 +500,7 @@ class CoordinatorServiceTest {
         assertThat(created).anySatisfy(m -> assertThat(m.getKind()).isEqualTo("error"));
     }
 
+    // @find: test thread context prepended to first task only, coordinator service
     @Test
     @DisplayName("earlier turns are prepended to the first task's instruction only")
     void threadContextPrependedToFirstTaskOnly() {
@@ -482,6 +518,7 @@ class CoordinatorServiceTest {
         assertThat(spec.getValue().tasks().get(1).instruction()).doesNotContain("context from before");
     }
 
+    // @find: test planner gets last answer agent hint, coordinator service
     @Test
     @DisplayName("the planner is given the agent whose reply was last in the conversation as a hint")
     void plannerGetsLastAnswerAgentHint() {
@@ -510,6 +547,7 @@ class CoordinatorServiceTest {
                 ORG, conversation.getId(), 1, "coordinator", null, null, "routing", "needs a choice", detail, goalId);
     }
 
+    // @find: test reroute cancels and starts again, coordinator service
     @Test
     @DisplayName("rerouting cancels the active goal and starts a new one for the chosen agent")
     void rerouteCancelsAndStartsAgain() {
@@ -552,6 +590,7 @@ class CoordinatorServiceTest {
         assertThat(spec.getValue().tasks().getFirst().agentId()).isEqualTo(support.getId());
     }
 
+    // @find: test reroute uses request text not progress, coordinator service
     @Test
     @DisplayName("reroute prefers the routing message's own requestText over the progress line before it")
     void rerouteUsesRequestTextNotProgress() {
@@ -568,6 +607,7 @@ class CoordinatorServiceTest {
         assertThat(created).hasSize(2);
     }
 
+    // @find: test reroute of settled choice is conflict, coordinator service
     @Test
     @DisplayName("rerouting a needs-choice card that was already settled is a conflict")
     void rerouteOfSettledChoiceIsConflict() {
@@ -598,6 +638,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test reroute recheck after lock is conflict, coordinator service
     @Test
     @DisplayName("a reroute race that only shows up after the lock is also a conflict")
     void rerouteRecheckAfterLockIsConflict() {
@@ -624,6 +665,7 @@ class CoordinatorServiceTest {
                         ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
     }
 
+    // @find: test reroute of someone elses active goal is403, coordinator service
     @Test
     @DisplayName("rerouting someone else's active work without task:cancel is refused")
     void rerouteOfSomeoneElsesActiveGoalIs403() {
@@ -645,6 +687,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).cancel(any(), any(), any());
     }
 
+    // @find: test reroute of someone elses active goal by cancel holder is allowed, coordinator service
     @Test
     @DisplayName("a task:cancel holder may reroute someone else's active work")
     void rerouteOfSomeoneElsesActiveGoalByCancelHolderIsAllowed() {
@@ -670,6 +713,7 @@ class CoordinatorServiceTest {
 
     // ---- Stop and retry -----------------------------------------------------------------------
 
+    // @find: test stop requires requester or cancel, coordinator service
     @Test
     @DisplayName("stopping a goal asks the goal service whether the person may, the rule the board and endpoint share")
     void stopRequiresRequesterOrCancel() {
@@ -700,6 +744,7 @@ class CoordinatorServiceTest {
         verify(goalService).cancel(ORG, goalId, "Stopped from the chat.");
     }
 
+    // @find: test retry passes the actor to goal service, coordinator service
     @Test
     @DisplayName("retry passes the acting person to the goal service and returns where it resumed from")
     void retryPassesTheActorToGoalService() {
@@ -747,6 +792,7 @@ class CoordinatorServiceTest {
                 null);
     }
 
+    // @find: test answer from documents builds numbered passages, coordinator service
     @Test
     @DisplayName("answer from documents builds a numbered prompt from the card's own passages")
     void answerFromDocumentsBuildsNumberedPassages() {
@@ -768,6 +814,7 @@ class CoordinatorServiceTest {
         assertThat(spec.getValue().tasks().getFirst().agentId()).isEqualTo(general.getId());
     }
 
+    // @find: test answer from documents loads message through its conversation, coordinator service
     @Test
     @DisplayName("the target message is loaded through its own conversation, never by id alone")
     void answerFromDocumentsLoadsMessageThroughItsConversation() {
@@ -784,6 +831,7 @@ class CoordinatorServiceTest {
         verify(messages, never()).findById(any());
     }
 
+    // @find: test answer from documents twice is conflict, coordinator service
     @Test
     @DisplayName("a second click to answer from the same documents card is a conflict")
     void answerFromDocumentsTwiceIsConflict() {
@@ -813,6 +861,7 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test follow up detection, coordinator service
     @Test
     @DisplayName("a short reply that points back at earlier work reads as a follow-up; a new question does not")
     void followUpDetection() {
@@ -823,6 +872,7 @@ class CoordinatorServiceTest {
         assertThat(CoordinatorService.looksLikeFollowUp("")).isFalse();
     }
 
+    // @find: test informational requests are recognised, coordinator service
     @Test
     @DisplayName("requests that ask to be told something search the documents; plain tasks do not")
     void informationalRequestsAreRecognised() {
@@ -834,6 +884,7 @@ class CoordinatorServiceTest {
                 .isFalse();
     }
 
+    // @find: test follow up search uses the earlier request, coordinator service
     @Test
     @DisplayName("a follow-up that names no subject is searched together with the earlier request")
     void followUpSearchUsesTheEarlierRequest() {
@@ -845,6 +896,7 @@ class CoordinatorServiceTest {
                 .isEqualTo("What is our leave policy?");
     }
 
+    // @find: test knowledge block shape, coordinator service
     @Test
     @DisplayName("passages go ahead of the request, numbered, and end with the request marker")
     void knowledgeBlockShape() {
@@ -892,6 +944,7 @@ class CoordinatorServiceTest {
         return (List<Map<String, Object>>) routing.getDetail().get("passages");
     }
 
+    // @find: test model plan leaves the request as written, coordinator service
     @Test
     @DisplayName("in model mode the agent is given the person's own text, and the planner's sentence only names the task")
     void modelPlanLeavesTheRequestAsWritten() {
@@ -909,6 +962,7 @@ class CoordinatorServiceTest {
         assertThat(routed.getFirst()).containsEntry("instruction", "Summarise the risks in the pasted contract");
     }
 
+    // @find: test task title is the label cut at aword, coordinator service
     @Test
     @DisplayName("the planner's own sentence is cut to a label for the task title but kept whole on the routing card")
     void taskTitleIsTheLabelCutAtAWord() {
@@ -926,6 +980,7 @@ class CoordinatorServiceTest {
         assertThat(routed.getFirst()).containsEntry("instruction", label);
     }
 
+    // @find: test model chain gives every step the request, coordinator service
     @Test
     @DisplayName("in a chain every step is given the person's request verbatim, then its own part")
     void modelChainGivesEveryStepTheRequest() {
@@ -951,6 +1006,7 @@ class CoordinatorServiceTest {
         assertThat(tasks.get(1).dependsOnPositions()).containsExactly(0);
     }
 
+    // @find: test rules routing leaves the request as written, coordinator service
     @Test
     @DisplayName("without a model the rules' routing also hands the agent the whole text, not a clause of it")
     void rulesRoutingLeavesTheRequestAsWritten() {
@@ -963,6 +1019,7 @@ class CoordinatorServiceTest {
         assertThat(task.instruction()).isEqualTo(text);
     }
 
+    // @find: test mention keeps the message as written, coordinator service
     @Test
     @DisplayName("a mention hands every named agent the message exactly as it was written")
     void mentionKeepsTheMessageAsWritten() {
@@ -975,6 +1032,7 @@ class CoordinatorServiceTest {
         assertThat(task.title()).startsWith("look at the three quotes below:");
     }
 
+    // @find: test schedule instruction is verbatim, coordinator service
     @Test
     @DisplayName("a schedule's standing instruction is the person's own words minus the timing, whatever the planner wrote")
     void scheduleInstructionIsVerbatim() {
@@ -1001,6 +1059,7 @@ class CoordinatorServiceTest {
 
     // ---- Follow-up context ----------------------------------------------------------------------
 
+    // @find: test follow up carries the whole last answer, coordinator service
     @Test
     @DisplayName("a 2,000-character answer followed by 'now send it' reaches the agent intact")
     void followUpCarriesTheWholeLastAnswer() {
@@ -1025,6 +1084,7 @@ class CoordinatorServiceTest {
         assertThat(instruction).endsWith("\nRequest:\nnow send it");
     }
 
+    // @find: test follow up without amodel keeps the last reply, coordinator service
     @Test
     @DisplayName("without a model a follow-up still goes to the agent that answered, with its full last reply")
     void followUpWithoutAModelKeepsTheLastReply() {
@@ -1045,6 +1105,7 @@ class CoordinatorServiceTest {
         assertThat(task.instruction()).endsWith("\nRequest:\nmake it shorter");
     }
 
+    // @find: test earlier turns window, coordinator service
     @Test
     @DisplayName("earlier turns are fetched in a window of 30 text and answer messages")
     void earlierTurnsWindow() {
@@ -1054,6 +1115,7 @@ class CoordinatorServiceTest {
                 .findEarlierTurns(eq(conversation.getId()), anyInt(), argThat(page -> page.getPageSize() == 30));
     }
 
+    // @find: test colleagues are labelled, coordinator service
     @Test
     @DisplayName("a colleague's message in a shared thread is not read as the requester's own")
     void colleaguesAreLabelled() {
@@ -1076,6 +1138,7 @@ class CoordinatorServiceTest {
         assertThat(createdGoal().tasks().getFirst().instruction()).contains("Another person: Please also copy finance");
     }
 
+    // @find: test budget drops older turns first, coordinator service
     @Test
     @DisplayName("past the budget only the older turns give way; the header, last reply, passages and request stay whole")
     void budgetDropsOlderTurnsFirst() {
@@ -1115,6 +1178,7 @@ class CoordinatorServiceTest {
         assertThat(tight).startsWith(GoalService.PASSAGES_HEADING);
     }
 
+    // @find: test the request is never cut, coordinator service
     @Test
     @DisplayName("the request itself is never cut, even when it fills the whole budget")
     void theRequestIsNeverCut() {
@@ -1130,8 +1194,27 @@ class CoordinatorServiceTest {
         assertThat(instruction).startsWith(ThreadContext.HEADER);
     }
 
+    // @find: test attached files are the documents so the no coverage note is not added, coordinator service
+    @Test
+    void attachedFilesAreTheDocumentsSoTheNoCoverageNoteIsNotAdded() {
+        // Seen live: "Using only the attached files, ..." was answered by Groq gpt-oss-120b with
+        // "No workspace document covers this request." as its first line, above correct answers.
+        CoordinatorService.Background uncovered = CoordinatorService.Background.of(
+                        ThreadContext.of(List.of(), Map.of(), Map.of(), requesterId))
+                .withoutCoverage();
+
+        String withFiles = CoordinatorService.withPreamble(
+                CoordinatorService.withFiles(uncovered, true), support.getId(), "Using the attached files, list the dates.");
+        String withoutFiles = CoordinatorService.withPreamble(
+                CoordinatorService.withFiles(uncovered, false), support.getId(), "Using our files, list the dates.");
+
+        assertThat(withFiles).doesNotContain(CoordinatorService.NO_COVERAGE_NOTE);
+        assertThat(withoutFiles).startsWith(CoordinatorService.NO_COVERAGE_NOTE);
+    }
+
     // ---- Knowledge for work -----------------------------------------------------------------------
 
+    // @find: test work request with grounded search attaches passages, coordinator service
     @Test
     @DisplayName("a work request that leans on documents is searched, and grounded passages are attached and recorded")
     void workRequestWithGroundedSearchAttachesPassages() {
@@ -1162,6 +1245,7 @@ class CoordinatorServiceTest {
         verify(knowledge).search(eq(ORG), eq(text), eq("Bearer token"));
     }
 
+    // @find: test recorded passages match what the agent read, coordinator service
     @Test
     @DisplayName("the recorded passages are at most six, in the order the agent reads them, with the same 900-character cut")
     void recordedPassagesMatchWhatTheAgentRead() {
@@ -1191,6 +1275,7 @@ class CoordinatorServiceTest {
         assertThat(instruction).doesNotContain("[7] ");
     }
 
+    // @find: test uncovered request gets the note, coordinator service
     @Test
     @DisplayName("when nothing is grounded and the request names documents, the agent is told to say so")
     void uncoveredRequestGetsTheNote() {
@@ -1207,6 +1292,7 @@ class CoordinatorServiceTest {
         assertThat(routingOf(created).getDetail()).doesNotContainKeys("passages", "grounded");
     }
 
+    // @find: test ordinary request gets no note, coordinator service
     @Test
     @DisplayName("an ungrounded search adds no note to a request that does not mention documents")
     void ordinaryRequestGetsNoNote() {
@@ -1219,6 +1305,7 @@ class CoordinatorServiceTest {
         assertThat(createdGoal().tasks().getFirst().instruction()).isEqualTo("Draft a welcome email for Priya");
     }
 
+    // @find: test unavailable search does not block work, coordinator service
     @Test
     @DisplayName("a search that cannot run leaves the work going ahead with no passages and no claim about documents")
     void unavailableSearchDoesNotBlockWork() {
@@ -1232,6 +1319,7 @@ class CoordinatorServiceTest {
         assertThat(routingOf(created).getDetail()).doesNotContainKeys("passages", "grounded");
     }
 
+    // @find: test mentioned work gets passages, coordinator service
     @Test
     @DisplayName("a mention is searched too, and its passages are attached to that agent's work")
     void mentionedWorkGetsPassages() {
@@ -1250,6 +1338,7 @@ class CoordinatorServiceTest {
         verify(knowledge).search(eq(ORG), eq("what is our parental leave policy?"), eq("Bearer token"));
     }
 
+    // @find: test explicit agent work gets passages, coordinator service
     @Test
     @DisplayName("an agent chosen from the picker is searched for as well")
     void explicitAgentWorkGetsPassages() {
@@ -1263,6 +1352,7 @@ class CoordinatorServiceTest {
         assertThat(passagesOf(routingOf(created))).hasSize(1);
     }
 
+    // @find: test schedule is not searched, coordinator service
     @Test
     @DisplayName("a schedule is not searched: nobody is present to read the answer when it runs")
     void scheduleIsNotSearched() {
@@ -1274,6 +1364,7 @@ class CoordinatorServiceTest {
         verify(knowledge, never()).search(any(), any(), any());
     }
 
+    // @find: test document question is searched once, coordinator service
     @Test
     @DisplayName("a question about documents with an agent to hand is searched once, not twice")
     void documentQuestionIsSearchedOnce() {
@@ -1292,6 +1383,7 @@ class CoordinatorServiceTest {
         assertThat(routingOf(created).getContent()).startsWith("Found 1 passage in Leave policy. ");
     }
 
+    // @find: test documents card carries source and degraded, coordinator service
     @Test
     @DisplayName("the passages card records which source each passage came from, and whether the search was degraded")
     void documentsCardCarriesSourceAndDegraded() {
@@ -1309,6 +1401,7 @@ class CoordinatorServiceTest {
         assertThat(passagesOf(documents).getFirst()).containsEntry("sourceId", leave.sourceId().toString());
     }
 
+    // @find: test reroute carries the passages, coordinator service
     @Test
     @DisplayName("rerouting keeps the passages the first routing gave the agent, and records them again")
     void rerouteCarriesThePassages() {
@@ -1341,6 +1434,7 @@ class CoordinatorServiceTest {
         assertThat(passagesOf(routing).getFirst()).containsEntry("sourceId", stored.get("sourceId"));
     }
 
+    // @find: test reroute keeps the thread without duplicating the request, coordinator service
     @Test
     @DisplayName("rerouting gives the new agent the same thread, without the request repeated as an earlier turn")
     void rerouteKeepsTheThreadWithoutDuplicatingTheRequest() {
@@ -1363,6 +1457,7 @@ class CoordinatorServiceTest {
         assertThat(instruction).endsWith("\nRequest:\nnow send it to Slack");
     }
 
+    // @find: test passage block round trips to the chain, coordinator service
     @Test
     @DisplayName("the numbered block the coordinator writes is the one a later step of a chain reads its passage titles from")
     void passageBlockRoundTripsToTheChain() {

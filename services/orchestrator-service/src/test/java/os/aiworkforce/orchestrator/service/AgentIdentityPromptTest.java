@@ -1,3 +1,5 @@
+// @find: tests for agent identity prompt, agent identity prompt, system prompt, persona, who the agent is, instructions
+// @what: Unit and integration tests (2 cases) for agent identity prompt, for example: states name workspace and category; falls back when workspace name is unknown.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

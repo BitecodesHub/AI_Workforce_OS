@@ -1,3 +1,6 @@
+// @find: tests for MessageList, message list, chat thread, day divider, grouped messages, thread scroll, new message announce, conversation messages
+// @what: Automated tests for MessageList.
+// @flow: Run with the web test runner; covers MessageList.
 import { render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

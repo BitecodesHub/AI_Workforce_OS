@@ -1,3 +1,6 @@
+// @find: google calendar, calendar, events, list events, create event, delete event, meetings, schedule, OAuth, live adapter, real API, Calendar API
+// @what: Live Google Calendar connector: runs calendar__ tools (list, create, delete events) against the Google Calendar API with an OAuth access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -37,6 +40,7 @@ public final class CalendarAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Google Calendar list events, tool calendar__list_events, live Google Calendar call
     private Mono<ToolResult> listEvents(ToolInvocation invocation, JsonNode arguments, String token) {
         String from = text(arguments, "from");
         String to = text(arguments, "to");
@@ -57,6 +61,7 @@ public final class CalendarAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Google Calendar create event, tool calendar__create_event, live Google Calendar call
     private Mono<ToolResult> createEvent(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         body.put("summary", required(arguments, "title"));
@@ -76,6 +81,7 @@ public final class CalendarAdapter extends OAuthAdapter {
                 .map(event -> done(event(event), "Created \"" + body.path("summary").asText() + "\" in Google Calendar."));
     }
 
+    // @find: Google Calendar delete event, tool calendar__delete_event, live Google Calendar call
     private Mono<ToolResult> deleteEvent(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return call(HttpMethod.DELETE, token, EVENTS + "/{id}", id).map(ignored -> {

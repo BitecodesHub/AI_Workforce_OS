@@ -1,3 +1,6 @@
+// @find: tests for schedule controller, schedule, list includes agent name, preview delegates, runs are slim and paged, runs page is bounded, changes pass the caller, view derives state, view carries owner, pause delegates, ScheduleControllerTest, ScheduleController
+// @what: Tests for ScheduleController in the orchestrator schedule package (8 test methods).
+// @flow: Exercises ScheduleController
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,6 +72,7 @@ class ScheduleControllerTest {
         return schedule;
     }
 
+    // @find: test list includes agent name, schedule controller
     @Test
     @DisplayName("list looks up each schedule's agent name")
     void listIncludesAgentName() {
@@ -86,6 +90,7 @@ class ScheduleControllerTest {
         assertThat(views.get(0).id()).isEqualTo(schedule.getId());
     }
 
+    // @find: test preview delegates, schedule controller
     @Test
     @DisplayName("preview passes the timezone override through and echoes back the parser's result")
     void previewDelegates() {
@@ -100,6 +105,7 @@ class ScheduleControllerTest {
         assertThat(response.nextRuns()).containsExactly(Instant.EPOCH);
     }
 
+    // @find: test runs are slim and paged, schedule controller
     @Test
     @DisplayName("a schedule's runs come back as slim rows, a page at a time, with no tasks")
     void runsAreSlimAndPaged() {
@@ -124,6 +130,7 @@ class ScheduleControllerTest {
         assertThat(page.hasMore()).isTrue();
     }
 
+    // @find: test runs page is bounded, schedule controller
     @Test
     @DisplayName("a history page is at least 1 and at most 100 long, from page 0")
     void runsPageIsBounded() {
@@ -140,6 +147,7 @@ class ScheduleControllerTest {
         assertThat(asked.getAllValues().get(1).getPageSize()).isEqualTo(1);
     }
 
+    // @find: test changes pass the caller, schedule controller
     @Test
     @DisplayName("every change passes the signed-in caller to the service, which decides whether they may")
     void changesPassTheCaller() {
@@ -167,6 +175,7 @@ class ScheduleControllerTest {
         verify(service).delete(ORG, id, caller);
     }
 
+    // @find: test view derives state, schedule controller
     @Test
     @DisplayName("a one-off that already ran reads as done; a paused one as paused; an enabled one as active")
     void viewDerivesState() {
@@ -189,6 +198,7 @@ class ScheduleControllerTest {
         assertThat(views).extracting(ScheduleController.ScheduleView::completed).containsExactly(true, false, false);
     }
 
+    // @find: test view carries owner, schedule controller
     @Test
     @DisplayName("the view names who the schedule runs as")
     void viewCarriesOwner() {
@@ -200,6 +210,7 @@ class ScheduleControllerTest {
         assertThat(controller.list().get(0).createdBy()).isEqualTo(ownerId);
     }
 
+    // @find: test pause delegates, schedule controller
     @Test
     @DisplayName("pause delegates to the service and returns its result")
     void pauseDelegates() {

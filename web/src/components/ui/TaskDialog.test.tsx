@@ -1,3 +1,6 @@
+// @find: tests for task dialog, give agent task, start run, create goal, waitForFirstRun, TaskDialog
+// @what: Tests TaskDialog closes at once and opens the run or goal.
+// @flow: Covers TaskDialog.tsx.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'

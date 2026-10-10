@@ -1,3 +1,6 @@
+// @find: tests for TraceStep, trace step, run step, step kind, tool call, model reply, search citations, approval result, step duration, run detail trace
+// @what: Automated tests for TraceStep.
+// @flow: Run with the web test runner; covers TraceStep.
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { RunStep } from '../../lib/queries'

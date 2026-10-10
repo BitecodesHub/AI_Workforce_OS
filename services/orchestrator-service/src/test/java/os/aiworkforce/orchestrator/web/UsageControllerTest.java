@@ -1,3 +1,5 @@
+// @find: tests for usage controller, usage report, usage csv, cost by model, /api/orchestrator/usage
+// @what: Unit and integration tests (14 cases) for usage controller, for example: groups and totals; each grouping; defaults; date bounds cover whole days.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

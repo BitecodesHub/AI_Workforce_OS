@@ -1,3 +1,6 @@
+// @find: web mvc config, interceptors, permission interceptor registration, mvc setup
+// @what: Registers shared web behaviour such as the permission interceptor.
+// @flow: Wires PermissionInterceptor into every servlet service
 package os.aiworkforce.platform.web.config;
 
 import org.springframework.context.annotation.Configuration;

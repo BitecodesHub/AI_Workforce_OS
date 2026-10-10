@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, agent search knowledge, search tool, internal search, POST /internal/knowledge/search, GET /internal/knowledge/status, searches as the person, restricted sources, person permissions, indexed sources count, InternalSearchController
+// @what: Internal endpoints the AI employees use to search the knowledge base as a given person, honouring restricted and agent-owned sources.
+// @flow: Called by orchestrator-service tool calls; uses RetrievalService and a permission lookup against identity-service.
 package os.aiworkforce.knowledge.web;
 
 import java.time.Duration;
@@ -107,6 +110,7 @@ public class InternalSearchController {
         this.people = people;
     }
 
+    // @find: agent searches knowledge base, search tool, POST /internal/knowledge/search
     @PostMapping("/search")
     @Operation(summary = "Internal: search the knowledge base for a person an agent is working for")
     public KnowledgeController.SearchResponse search(
@@ -150,6 +154,7 @@ public class InternalSearchController {
         return new KnowledgeController.SearchResponse(found.passages(), !found.passages().isEmpty(), found.degraded());
     }
 
+    // @find: how many sources are indexed, GET /internal/knowledge/status
     @GetMapping("/status")
     @Operation(summary = "Internal: whether the workspace has any indexed documents")
     public Status status(
@@ -221,6 +226,7 @@ public class InternalSearchController {
             this.tokens = tokens;
         }
 
+        // @find: look up a person's permissions for restricted sources
         @Override
         public Set<String> permissionsOf(UUID orgId, UUID userId) {
             Key key = new Key(orgId, userId);

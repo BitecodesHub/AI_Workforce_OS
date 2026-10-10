@@ -1,3 +1,9 @@
+// @find: run question, agent asks a question, ask the user, clarifying question, answer question, waiting input, question expiry, run_questions, RunQuestion entity, Questions inbox
+// @what: Entity for a question a run stopped to ask a person; the run resumes when it is answered or expires.
+// @flow: Stored by RunQuestions; answered through the question controller; resumes its Run.
+// @find: run question, agent asks a question, ask the user, clarifying question, answer question, waiting input, question expiry, run_questions, RunQuestion entity, Questions inbox
+// @what: Entity for a question a run stopped to ask a person; the run resumes when it is answered or expires.
+// @flow: Stored by RunQuestions; answered through the question controller; resumes its Run.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;
@@ -75,10 +81,14 @@ public class RunQuestion extends OrgScopedEntity {
     @Column(name = "closed_reason", columnDefinition = "text")
     private String closedReason;
 
+    // @find: is question pending
+    // @find: is question pending
     public boolean isPending() {
         return "pending".equals(status);
     }
 
+    // @find: question expired, past expiry
+    // @find: question expired, past expiry
     /** Still pending although its time is up. The expiry sweep closes it; an answer is refused. */
     public boolean hasExpired(Instant now) {
         return isPending() && expiresAt.isBefore(now);

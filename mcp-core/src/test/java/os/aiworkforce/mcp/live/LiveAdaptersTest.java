@@ -1,3 +1,5 @@
+// @find: tests for live adapters, github, slack, hubspot, linear, notion, stripe, asana, request shapes, plain failure messages, wiremock stand-in provider
+// @what: Checks live adapters send the real request shapes and report failures in plain words.
 package os.aiworkforce.mcp.live;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -87,6 +89,20 @@ class LiveAdaptersTest {
         assertThat(check.message()).startsWith("GitHub did not accept this token");
         assertThat(created.status()).isEqualTo(ToolResult.Status.FAILED);
         assertThat(created.summary()).contains("connect GitHub again").doesNotContain(TOKEN);
+    }
+
+    @Test
+    @DisplayName("a check that finds nothing at the address says so in plain words, not as a status code")
+    void checkNotFoundIsPlain() {
+        provider.stubFor(get("/user").willReturn(aResponse().withStatus(404)));
+        GitHubAdapter github = new GitHubAdapter(sandbox("github"), json, WebClient.builder(), provider.baseUrl());
+
+        ConnectionCheck check = github.check(TOKEN).block();
+
+        assertThat(check.ok()).isFalse();
+        assertThat(check.message())
+                .isEqualTo("GitHub could not find that account or site. Check the address and details, then try again.")
+                .doesNotContain("404");
     }
 
     @Test

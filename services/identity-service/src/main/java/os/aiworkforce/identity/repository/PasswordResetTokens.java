@@ -1,3 +1,5 @@
+// @find: Spring Data repository for password reset links, with atomic claim.
+// @what: password reset tokens, claim reset link, close open links, find reset token by hash, PasswordResetTokens repository
 package os.aiworkforce.identity.repository;
 
 import java.time.Instant;

@@ -1,3 +1,6 @@
+// @find: gateway application, gateway main, start gateway, api gateway entry point, single edge, reactive gateway, spring boot main class, GatewayApplication, context propagation, request id logging
+// @what: Boot class of the gateway, the platform's single reactive entry point that holds no business logic or database.
+// @flow: Starts Spring Boot, scans the gateway and platform-core packages; routes are declared in application.yml.
 package os.aiworkforce.gateway;
 
 import org.springframework.boot.SpringApplication;
@@ -19,6 +22,7 @@ import os.aiworkforce.platform.PlatformCore;
 @ConfigurationPropertiesScan(basePackageClasses = {GatewayApplication.class, PlatformCore.class})
 public class GatewayApplication {
 
+    // @find: start the gateway, main method, enable automatic context propagation, request id in logs, trace context across threads
     public static void main(String[] args) {
         // A request here hops between reactor threads. Without this the logging context (request id)
         // and the trace context stay on the thread that accepted the request, so a log line written

@@ -1,3 +1,5 @@
+// @find: tests for knowledge queries, upload plan, name clashes, keep both, replace, skip, document notice, delete document, delete source, search mode, restricted source
+// @what: Unit and hook tests for upload planning, clash handling, notices and the knowledge source mutations.
 import { createElement } from 'react'
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

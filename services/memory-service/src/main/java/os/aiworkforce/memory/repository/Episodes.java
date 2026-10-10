@@ -1,3 +1,6 @@
+// @find: episodes repository, search episodes, episodes for run, expired episodes, jpa repository, full text search
+// @what: Spring Data repository for episodes, including the workspace-scoped search query.
+// @flow: Used by EpisodicMemory
 package os.aiworkforce.memory.repository;
 
 import java.time.Instant;

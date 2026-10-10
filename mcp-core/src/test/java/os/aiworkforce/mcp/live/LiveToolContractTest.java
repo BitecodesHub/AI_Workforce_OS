@@ -1,3 +1,6 @@
+// @find: tests for live tool contract, every live tool, request and result, refusal kinds, provider timeout, connection check, sandbox fallback when not connected, all vendors
+// @what: Runs every live tool through the contract table against a stand-in provider, including failures and the connection check.
+// @flow: Uses ContractTable
 package os.aiworkforce.mcp.live;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

@@ -1,3 +1,6 @@
+// @find: tests for message feedbacks persistence, repository, first vote, second vote replaces the first, one vote per person, unique index, rating check, reason check, withdraw, ratings on arun, MessageFeedbacksPersistenceTest, MessageFeedbacksPersistence
+// @what: Tests for MessageFeedbacksPersistence in the orchestrator repository package (9 test methods).
+// @flow: Exercises MessageFeedbacksPersistence
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -98,6 +101,7 @@ class MessageFeedbacksPersistenceTest {
         return jdbc.queryForObject("select count(*) from chat_message_feedback where message_id = ?", Long.class, message);
     }
 
+    // @find: test first vote, message feedbacks persistence
     @Test
     @DisplayName("a first vote is stored with the agent and run it was given about")
     void firstVote() {
@@ -114,6 +118,7 @@ class MessageFeedbacksPersistenceTest {
         assertThat(stored.getConversationId()).isEqualTo(conversation);
     }
 
+    // @find: test second vote replaces the first, message feedbacks persistence
     @Test
     @DisplayName("a second vote by the same person on the same answer changes the first and leaves one row")
     void secondVoteReplacesTheFirst() {
@@ -136,6 +141,7 @@ class MessageFeedbacksPersistenceTest {
         assertThat(changed.getUpdatedAt()).isAfterOrEqualTo(createdAt);
     }
 
+    // @find: test one vote per person, message feedbacks persistence
     @Test
     @DisplayName("two people may each rate the same answer, and each sees only their own in the conversation")
     void oneVotePerPerson() {
@@ -151,6 +157,7 @@ class MessageFeedbacksPersistenceTest {
         assertThat(feedbacks.findByOrgIdAndConversationIdAndUserId(OTHER_ORG, conversation, ANNA)).isEmpty();
     }
 
+    // @find: test unique index, message feedbacks persistence
     @Test
     @DisplayName("the unique index refuses a second row for the same person and answer, even when inserted by hand")
     void uniqueIndex() {
@@ -169,6 +176,7 @@ class MessageFeedbacksPersistenceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // @find: test rating check, message feedbacks persistence
     @Test
     @DisplayName("a rating other than 1 or -1 is refused by the table itself")
     void ratingCheck() {
@@ -179,6 +187,7 @@ class MessageFeedbacksPersistenceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // @find: test reason check, message feedbacks persistence
     @Test
     @DisplayName("a reason over 500 characters is refused by the table itself, and exactly 500 is kept")
     void reasonCheck() {
@@ -192,6 +201,7 @@ class MessageFeedbacksPersistenceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // @find: test withdraw, message feedbacks persistence
     @Test
     @DisplayName("withdrawing removes the person's own vote only")
     void withdraw() {
@@ -209,6 +219,7 @@ class MessageFeedbacksPersistenceTest {
         assertThat(feedbacks.findByOrgIdAndMessageIdAndUserId(ORG, message, BEN)).isPresent();
     }
 
+    // @find: test ratings on arun, message feedbacks persistence
     @Test
     @DisplayName("a run's ratings are found newest first, for that workspace's run only")
     void ratingsOnARun() {
@@ -225,6 +236,7 @@ class MessageFeedbacksPersistenceTest {
         assertThat(feedbacks.findByOrgIdAndRunIdOrderByUpdatedAtDesc(OTHER_ORG, RUN)).isEmpty();
     }
 
+    // @find: test cascades, message feedbacks persistence
     @Test
     @DisplayName("deleting a conversation takes its ratings with it")
     void cascades() {

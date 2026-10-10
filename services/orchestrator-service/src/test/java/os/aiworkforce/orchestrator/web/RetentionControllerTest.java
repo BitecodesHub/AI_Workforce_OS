@@ -1,3 +1,5 @@
+// @find: tests for retention controller, retention settings, /api/orchestrator/retention-settings, run detail days
+// @what: Unit and integration tests (3 cases) for retention controller, for example: reads; saving is audited; guarded.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

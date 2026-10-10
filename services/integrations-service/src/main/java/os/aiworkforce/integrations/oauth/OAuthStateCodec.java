@@ -1,3 +1,6 @@
+// @find: oauth state codec, sign state, verify state, signed state parameter, csrf, browser binding, expiry, oauth security
+// @what: Signs and verifies the OAuth state value so a callback can be trusted and tied to the browser that started it.
+// @flow: Used by OAuthService.start and callback
 package os.aiworkforce.integrations.oauth;
 
 import java.nio.charset.StandardCharsets;

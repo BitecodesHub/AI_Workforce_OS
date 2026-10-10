@@ -1,3 +1,5 @@
+// @find: test properties, platform properties for tests, test environment, development encryption key, test helper
+// @what: Helper giving unit tests platform settings with a development encryption key.
 package os.aiworkforce.integrations.service;
 
 import java.time.Duration;

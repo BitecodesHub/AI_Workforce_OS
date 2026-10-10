@@ -1,3 +1,6 @@
+// @find: tests for useStickToBottom, stick to bottom, auto scroll, scroll to latest, thread scroll, jump to latest, new message scroll
+// @what: Automated tests for useStickToBottom.
+// @flow: Run with the web test runner; covers useStickToBottom.
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useStickToBottom } from './useStickToBottom'

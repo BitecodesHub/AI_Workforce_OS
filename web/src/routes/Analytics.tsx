@@ -1,3 +1,6 @@
+// @find: analytics, insights, usage, cost, spend, tokens, runs per agent, activity log, time window, last 7 days, 30 days, reports, figures, agents table, /analytics, Analytics page
+// @what: The Analytics page: summary figures, a per-agent table and an activity log for a chosen time window.
+// @flow: Routed from App.tsx at /analytics; uses AgentsTable and ActivityLog components and the insights query
 import { Button, Card, EmptyState, PageHeader } from '../components/ui'
 import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { ActivityLog } from '../components/analytics/ActivityLog'
@@ -34,6 +37,7 @@ import { can } from '../lib/session'
  * who read them for the blocked and failed totals.
  */
 
+// @find: time window picker, choose period, 7 days, 30 days
 function WindowPicker({ window, onChange }: { window: InsightsWindow; onChange: (next: InsightsWindow) => void }) {
   return (
     <div role="group" aria-label="Time window" className="row" style={{ gap: 'var(--space-2)' }}>
@@ -51,6 +55,7 @@ function WindowPicker({ window, onChange }: { window: InsightsWindow; onChange: 
   )
 }
 
+// @find: analytics figures, totals, cost, runs, success rate
 function Figures({ insights, window }: { insights: Insights; window: InsightsWindow }) {
   const canReadRuns = can('run:read')
   const agents = useAgentInsights(window, { enabled: canReadRuns })
@@ -102,6 +107,7 @@ function Figures({ insights, window }: { insights: Insights; window: InsightsWin
   )
 }
 
+// @find: Analytics component, analytics page, usage and cost insights, /analytics
 export function Analytics() {
   const { search, hash, navigate } = useRouter()
   const window = parseWindow(search.get('window'))

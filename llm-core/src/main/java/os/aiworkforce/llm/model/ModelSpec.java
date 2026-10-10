@@ -1,3 +1,6 @@
+// @find: model router, LLM, model providers, model spec, model catalogue, context window, pricing per token, capabilities, tools support, vision support, ModelSpec
+// @what: One model offered by one provider, with window, prices and capabilities, as stored in the database.
+// @flow: Read by ModelRouter when picking candidates.
 package os.aiworkforce.llm.model;
 
 import java.math.BigDecimal;

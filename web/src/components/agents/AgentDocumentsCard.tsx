@@ -1,3 +1,6 @@
+// @find: agent documents, agent's own documents, agent files, private documents, upload file to agent, add note, remove document, agent-only knowledge, agent page, Documents card, agent:update
+// @what: Card on an agent's page for the files and typed notes only that agent reads, apart from workspace Knowledge.
+// @flow: Used by the agent detail page; calls source/document queries in lib/queries.
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Card, ConfirmDialog, Eyebrow, Input, Notice, Tag, Textarea } from '../ui'
@@ -20,6 +23,7 @@ import { useToast } from '../../lib/toast'
 
 const NOTE_MAX = 20_000
 
+// @find: AgentDocumentsCard, agent documents card, agent documents, agent's own documents, agent files, private documents
 export function AgentDocumentsCard({ agentId, agentName }: { agentId: string; agentName: string }) {
   const toast = useToast()
   const canEdit = can('agent:update')
@@ -105,12 +109,16 @@ export function AgentDocumentsCard({ agentId, agentName }: { agentId: string; ag
               >
                 <span style={{ overflowWrap: 'anywhere' }}>
                   {document.title}{' '}
-                  {document.status !== 'ready' && document.status !== 'indexed' && (
-                    <Tag tone="warning">{document.skipReason ?? 'Not searchable yet'}</Tag>
+                  {document.status === 'pending' ? (
+                    <Tag>Being read</Tag>
+                  ) : (
+                    document.status !== 'ready' &&
+                    document.status !== 'indexed' && <Tag tone="warning">{document.skipReason ?? 'Not searchable yet'}</Tag>
                   )}
                 </span>
                 {canEdit && (
-                  <Button variant="quiet" onClick={() => setRemoving(document)}>
+                  // Named for its document, so a list of them is not a column of identical "Remove" buttons.
+                  <Button variant="quiet" aria-label={`Remove ${document.title}`} onClick={() => setRemoving(document)}>
                     Remove
                   </Button>
                 )}

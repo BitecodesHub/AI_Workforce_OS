@@ -1,3 +1,5 @@
+// @find: tests for approval controller history, approval history, list approvals, status filter, paging, /api/approvals
+// @what: Unit and integration tests (9 cases) for approval controller history, for example: view exposes the decision and the work behind it; list passes its filters on; count view; get one.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

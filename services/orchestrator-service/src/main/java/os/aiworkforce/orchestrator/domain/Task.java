@@ -1,3 +1,9 @@
+// @find: task, work item, subtask, task dependencies, depends on, ready task, task attempts, max attempts, retry, task result, task status, tasks table, Task entity
+// @what: Entity for one step toward a goal assigned to one agent, forming a dependency graph.
+// @flow: Stored by Tasks; claimed by the dispatcher; produces Run rows.
+// @find: task, work item, subtask, task dependencies, depends on, ready task, task attempts, max attempts, retry, task result, task status, tasks table, Task entity
+// @what: Entity for one step toward a goal assigned to one agent, forming a dependency graph.
+// @flow: Stored by Tasks; claimed by the dispatcher; produces Run rows.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;
@@ -175,6 +181,8 @@ public class Task extends OrgScopedEntity {
         this.completedAt = completedAt;
     }
 
+    // @find: can task retry, attempts left
+    // @find: can task retry, attempts left
     /**
      * Whether the attempt budget allows another automatic attempt. Only the budget: whether a
      * retry is safe - the failed run had already sent or changed something - is decided by
@@ -184,6 +192,8 @@ public class Task extends OrgScopedEntity {
         return attempt < maxAttempts;
     }
 
+    // @find: is task finished, completed failed or cancelled
+    // @find: is task finished, completed failed or cancelled
     public boolean isTerminal() {
         return "completed".equals(status)
                 || "failed".equals(status)

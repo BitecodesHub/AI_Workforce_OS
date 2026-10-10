@@ -1,3 +1,6 @@
+// @find: internal token, service token, issue service token, /internal/tokens, shared secret, on behalf of, InternalTokenController
+// @what: Issues short-lived service-to-service tokens to platform services presenting the shared secret.
+// @flow: Calls TokenService.issueInternalToken; used by every service client.
 package os.aiworkforce.identity.web;
 
 import java.nio.charset.StandardCharsets;
@@ -68,6 +71,7 @@ public class InternalTokenController {
 
     public record InternalTokenResponse(String token, Instant expiresAt) {}
 
+    // @find: issue internal token, service token, POST /internal/tokens
     @PostMapping
     @Operation(summary = "Internal: mint a short-lived service-to-service token")
     public InternalTokenResponse issue(

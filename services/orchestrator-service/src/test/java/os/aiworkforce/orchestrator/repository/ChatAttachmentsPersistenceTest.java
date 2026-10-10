@@ -1,3 +1,6 @@
+// @find: tests for chat attachments persistence, repository, workspace isolation, bind and link, link latest user message, deletion, ChatAttachmentsPersistenceTest, ChatAttachmentsPersistence
+// @what: Tests for ChatAttachmentsPersistence in the orchestrator repository package (4 test methods).
+// @flow: Exercises ChatAttachmentsPersistence
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -84,6 +87,7 @@ class ChatAttachmentsPersistenceTest {
         return id;
     }
 
+    // @find: test workspace isolation, chat attachments persistence
     @Test
     @DisplayName("a file is read only within its own workspace, and its bytes come back exactly")
     void workspaceIsolation() {
@@ -101,6 +105,7 @@ class ChatAttachmentsPersistenceTest {
         assertThat(attachments.delete(OTHER_ORG, id)).isZero();
     }
 
+    // @find: test bind and link, chat attachments persistence
     @Test
     @DisplayName("drafts bind to the message that sends them once, then reach its goal and follow a reroute")
     void bindAndLink() {
@@ -130,6 +135,7 @@ class ChatAttachmentsPersistenceTest {
         });
     }
 
+    // @find: test link latest user message, chat attachments persistence
     @Test
     @DisplayName("a choice made later links the files of the person's message just above it")
     void linkLatestUserMessage() {
@@ -143,6 +149,7 @@ class ChatAttachmentsPersistenceTest {
         assertThat(attachments.find(ORG, a)).get().extracting(ChatAttachments.Row::goalId).isEqualTo(goal);
     }
 
+    // @find: test deletion, chat attachments persistence
     @Test
     @DisplayName("deleting a conversation deletes its files; unsent drafts are swept by age")
     void deletion() {

@@ -1,0 +1,116 @@
+{
+ "inferenceProfileSummaries": [
+  {
+   "inferenceProfileName": "EU Anthropic Claude 3.5 Sonnet v2",
+   "inferenceProfileId": "eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
+   "inferenceProfileArn": "arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
+   "models": [
+    {
+     "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0"
+    },
+    {
+     "modelArn": "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0"
+    }
+   ],
+   "status": "ACTIVE",
+   "type": "SYSTEM_DEFINED",
+   "description": "EU Anthropic Claude 3.5 Sonnet v2"
+  },
+  {
+   "inferenceProfileName": "EU Claude Sonnet 4",
+   "inferenceProfileId": "eu.anthropic.claude-sonnet-4-20250514-v1:0",
+   "inferenceProfileArn": "arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.anthropic.claude-sonnet-4-20250514-v1:0",
+   "models": [
+    {
+     "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0"
+    },
+    {
+     "modelArn": "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0"
+    }
+   ],
+   "status": "ACTIVE",
+   "type": "SYSTEM_DEFINED",
+   "description": "EU Claude Sonnet 4"
+  },
+  {
+   "inferenceProfileName": "EU Nova Pro",
+   "inferenceProfileId": "eu.amazon.nova-pro-v1:0",
+   "inferenceProfileArn": "arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.amazon.nova-pro-v1:0",
+   "models": [
+    {
+     "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/amazon.nova-pro-v1:0"
+    },
+    {
+     "modelArn": "arn:aws:bedrock:eu-central-1::foundation-model/amazon.nova-pro-v1:0"
+    }
+   ],
+   "status": "ACTIVE",
+   "type": "SYSTEM_DEFINED",
+   "description": "EU Nova Pro"
+  },
+  {
+   "inferenceProfileName": "EU Meta Llama 3.2 1B Instruct",
+   "inferenceProfileId": "eu.meta.llama3-2-1b-instruct-v1:0",
+   "inferenceProfileArn": "arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.meta.llama3-2-1b-instruct-v1:0",
+   "models": [
+    {
+     "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/meta.llama3-2-1b-instruct-v1:0"
+    },
+    {
+     "modelArn": "arn:aws:bedrock:eu-central-1::foundation-model/meta.llama3-2-1b-instruct-v1:0"
+    }
+   ],
+   "status": "ACTIVE",
+   "type": "SYSTEM_DEFINED",
+   "description": "EU Meta Llama 3.2 1B Instruct"
+  },
+  {
+   "inferenceProfileName": "EU Meta Llama 3.2 90B Instruct",
+   "inferenceProfileId": "eu.meta.llama3-2-90b-instruct-v1:0",
+   "inferenceProfileArn": "arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.meta.llama3-2-90b-instruct-v1:0",
+   "models": [
+    {
+     "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/meta.llama3-2-90b-instruct-v1:0"
+    },
+    {
+     "modelArn": "arn:aws:bedrock:eu-central-1::foundation-model/meta.llama3-2-90b-instruct-v1:0"
+    }
+   ],
+   "status": "ACTIVE",
+   "type": "SYSTEM_DEFINED",
+   "description": "EU Meta Llama 3.2 90B Instruct"
+  },
+  {
+   "inferenceProfileName": "EU DeepSeek-R1",
+   "inferenceProfileId": "eu.deepseek.r1-v1:0",
+   "inferenceProfileArn": "arn:aws:bedrock:eu-west-1:123456789012:inference-profile/eu.deepseek.r1-v1:0",
+   "models": [
+    {
+     "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/deepseek.r1-v1:0"
+    },
+    {
+     "modelArn": "arn:aws:bedrock:eu-central-1::foundation-model/deepseek.r1-v1:0"
+    }
+   ],
+   "status": "ACTIVE",
+   "type": "SYSTEM_DEFINED",
+   "description": "EU DeepSeek-R1"
+  },
+  {
+   "inferenceProfileName": "Global Anthropic Claude Haiku 4.5",
+   "inferenceProfileId": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "inferenceProfileArn": "arn:aws:bedrock:eu-west-1:123456789012:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "models": [
+    {
+     "modelArn": "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+    },
+    {
+     "modelArn": "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+    }
+   ],
+   "status": "ACTIVE",
+   "type": "SYSTEM_DEFINED",
+   "description": "Global Anthropic Claude Haiku 4.5"
+  }
+ ]
+}

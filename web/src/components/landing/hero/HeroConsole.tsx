@@ -1,3 +1,6 @@
+// @find: hero console, simulated console, command map, routing trace, activity table, approval layer, pause motion, glass layers, HeroConsole
+// @what: The hero figure: a simulated replica of the console with command map, routing trace and a pending approval.
+// @flow: Used by Hero; frames from heroConsoleModel; parallax from usePointerParallax
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Eyebrow, Tag } from '../../ui'
@@ -204,6 +207,7 @@ function TraceLayer({ frame }: { frame: HeroFrame }): ReactElement {
   )
 }
 
+// @find: HeroConsole component, hero figure
 export function HeroConsole(): ReactElement {
   const { reduced, ambientPaused, setAmbientPaused } = useLandingMotion()
   const inPage = useInPageLink()

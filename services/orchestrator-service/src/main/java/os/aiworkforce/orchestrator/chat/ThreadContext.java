@@ -1,3 +1,6 @@
+// @find: thread context, earlier turns, follow-up message, last reply, conversation history for agent, shorter, now send it, ThreadContext, history preamble
+// @what: Builds the earlier-turns preamble that lets an agent understand a short follow-up message.
+// @flow: Called by CoordinatorService when starting work for a message.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.ArrayList;

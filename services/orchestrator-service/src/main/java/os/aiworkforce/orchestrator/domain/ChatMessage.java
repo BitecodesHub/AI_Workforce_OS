@@ -1,3 +1,9 @@
+// @find: chat message, conversation message, chat turn, message detail, routing receipt, citations, append message, immutable message, chat_messages, ChatMessage entity, Chat page
+// @what: Entity for one immutable turn in a chat conversation (user, agent or system), with kind-specific JSON detail.
+// @flow: Written by the chat service; read by ChatMessages; ratings attach via MessageFeedback.
+// @find: chat message, conversation message, chat turn, message detail, routing receipt, citations, append message, immutable message, chat_messages, ChatMessage entity, Chat page
+// @what: Entity for one immutable turn in a chat conversation (user, agent or system), with kind-specific JSON detail.
+// @flow: Written by the chat service; read by ChatMessages; ratings attach via MessageFeedback.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;
@@ -76,6 +82,8 @@ public class ChatMessage implements Persistable<UUID> {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    // @find: create chat message, new message, append message to conversation
+    // @find: create chat message, new message, append message to conversation
     public static ChatMessage of(
             UUID orgId,
             UUID conversationId,

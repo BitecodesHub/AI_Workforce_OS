@@ -1,3 +1,5 @@
+// @find: tests for every tool through gateway, all connectors, practice data, list get create update delete, approval for send and delete, schema built arguments, sandbox, gmail, slack, github, jira, stripe, all vendors
+// @what: Calls every tool of every connector through the real gateway on practice data and checks each verb behaves and send or delete parks for approval.
 package os.aiworkforce.mcp.policy;
 
 import static org.assertj.core.api.Assertions.assertThat;

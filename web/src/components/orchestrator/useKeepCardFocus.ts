@@ -1,3 +1,6 @@
+// @find: keep card focus, live update focus, restore focus, card moved column, announce column change, useKeepCardFocus, accessibility
+// @what: Hook that keeps keyboard focus on a card through live board updates and reports column changes.
+// @flow: Used by Board.tsx
 import { useLayoutEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 
@@ -9,6 +12,7 @@ import type { RefObject } from 'react'
  * ref during render (0.2); a `useLayoutEffect` keyed on the board's own data then restores focus
  * once the new cards have painted, and reports a column change so the caller can announce it.
  */
+// @find: hook keep keyboard focus on card after update
 export function useKeepCardFocus({
   containerRef,
   columnOf,

@@ -1,3 +1,6 @@
+// @find: knowledge client, search documents from chat, knowledge search, passages, grounded, indexed sources, per-agent knowledge, KnowledgeClient, forward authorization, RAG search from orchestrator
+// @what: Asks the knowledge service for passages that support a person's question, using the caller's own authorization.
+// @flow: Called by CoordinatorService and PassageRelevance users; calls the knowledge service search and status endpoints.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
@@ -63,6 +66,8 @@ public class KnowledgeClient {
      * @param restricted whether the source is open only to people who manage knowledge, so a
      *     caller that records this passage where others can read it keeps its text out of that
      *     record; false from a knowledge service that does not send it yet
+     * @param similarity how close in meaning the search by meaning found it, from 0 to 1; null when
+     *     only the keyword search found it, or from a knowledge service that does not send it yet
      */
     public record Passage(
             UUID chunkId,
@@ -74,7 +79,22 @@ public class KnowledgeClient {
             String heading,
             String content,
             double score,
-            boolean restricted) {
+            boolean restricted,
+            Double similarity) {
+
+        public Passage(
+                UUID chunkId,
+                UUID documentId,
+                UUID sourceId,
+                String documentTitle,
+                String uri,
+                Integer pageNumber,
+                String heading,
+                String content,
+                double score,
+                boolean restricted) {
+            this(chunkId, documentId, sourceId, documentTitle, uri, pageNumber, heading, content, score, restricted, null);
+        }
 
         /** A passage from a source everyone in the workspace may read. */
         public Passage(
@@ -98,6 +118,7 @@ public class KnowledgeClient {
      */
     public record SearchResult(List<Passage> passages, boolean grounded, boolean degraded) {}
 
+    // @find: search knowledge for a question, find passages
     public Optional<SearchResult> search(UUID orgId, String query, String authorizationHeader) {
         if (authorizationHeader == null || authorizationHeader.isBlank()) {
             return Optional.empty();
@@ -161,6 +182,7 @@ public class KnowledgeClient {
      * @param runId the run searching
      * @param limit how many passages at most
      */
+    // @find: search knowledge for an agent, agent-specific sources
     public AgentSearch searchFor(
             UUID orgId, UUID requestedBy, String query, int limit, UUID agentId, UUID runId) {
         if (tokens == null || requestedBy == null) {
@@ -203,11 +225,13 @@ public class KnowledgeClient {
      * A fact about the workspace, so no person is named; the caller holds the answer for a short
      * while rather than asking before every run.
      */
+    // @find: has indexed sources, workspace has documents
     public Optional<Boolean> hasIndexedSources(UUID orgId) {
         return hasIndexedSources(orgId, null);
     }
 
     /** As {@link #hasIndexedSources(UUID)}, counting the documents this agent owns as well. */
+    // @find: has indexed sources for agent
     public Optional<Boolean> hasIndexedSources(UUID orgId, UUID agentId) {
         if (tokens == null) {
             return Optional.empty();

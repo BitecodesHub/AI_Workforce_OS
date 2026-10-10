@@ -1,3 +1,5 @@
+// @find: tests for knowledge search tool, knowledge search tool, grounding, citations, RAG, passages, documents search
+// @what: Unit and integration tests (4 cases) for knowledge search tool, for example: offered only when workspace has indexed sources and remembered; work with nobody behind it gets no documents and no search; person without access is told; parse clamps limit and rejects empty query.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

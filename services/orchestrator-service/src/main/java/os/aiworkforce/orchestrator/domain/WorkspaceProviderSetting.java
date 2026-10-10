@@ -1,3 +1,9 @@
+// @find: workspace provider setting, provider enabled for workspace, credential status, key rejected, key last checked, per workspace provider, workspace_provider_settings, WorkspaceProviderSetting, Providers page
+// @what: Entity for one workspace's own state for one provider (switched off, credential status).
+// @flow: Written by upserts in WorkspaceProviderSettings; combined with platform values by the provider registry.
+// @find: workspace provider setting, provider enabled for workspace, credential status, key rejected, key last checked, per workspace provider, workspace_provider_settings, WorkspaceProviderSetting, Providers page
+// @what: Entity for one workspace's own state for one provider (switched off, credential status).
+// @flow: Written by upserts in WorkspaceProviderSettings; combined with platform values by the provider registry.
 package os.aiworkforce.orchestrator.domain;
 
 import java.io.Serializable;

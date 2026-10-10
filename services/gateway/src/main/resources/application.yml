@@ -1,3 +1,6 @@
+# @find: gateway routes, gateway config, api routing, which service handles which path, route table, rate limit settings, redis, jwks uri, CORS, timeouts, swagger ui, openapi, health readiness, port 8080, /api/auth, /api/agents, /api/knowledge, /api/sources, /api/integrations, /api/analytics, /api/memory, /api/workspaces, /api/chat, /api/schedules, /api/voice, ingest rate limit, AIWOS_URL
+# @what: Gateway configuration: route table to the seven services, rate limits, timeouts, merged Swagger list and health groups.
+# @flow: Read by Spring Cloud Gateway; checked by GatewayRoutesTest against web/vite.config.ts and the launcher nginx.
 # The single edge of the platform.
 #
 # Routes are declared here rather than in code so a service can be moved, split or taken out of

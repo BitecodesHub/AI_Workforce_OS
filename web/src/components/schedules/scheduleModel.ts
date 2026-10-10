@@ -1,3 +1,6 @@
+// @find: schedule model, schedule status, Active, Paused, Done, paused reason, owner left, stopped everything, schedule examples, debounce key, Schedules page
+// @what: Pure rules for the Schedules screen: status label and tone, example phrases and the preview debounce key.
+// @flow: Used by the Schedules route and ScheduleDialog
 import { scheduleStateLabel } from '../../lib/labels'
 import type { TagTone } from '../../lib/labels'
 import { isScheduleDone } from '../../lib/schedules'
@@ -34,6 +37,7 @@ type StatusInput = Partial<Pick<ScheduleLike, 'kind' | 'nextRunAt' | 'completed'
  * A schedule's status for the table and the dialog: Active, Done (a one-off that already ran),
  * Paused, Paused, owner left, or Paused after failures.
  */
+// @find: schedule status label, active paused done, why a schedule stopped
 export function scheduleStatus(schedule: StatusInput): ScheduleStatus {
   const done = isScheduleDone({
     kind: schedule.kind ?? 'recurring',
@@ -71,6 +75,7 @@ export const SCHEDULE_EXAMPLES: readonly string[] = [
  * whitespace or capitalisation - so pausing mid-word, or a trim that undoes itself, does not
  * restart the wait or send a request that would only come back with the same answer.
  */
+// @find: schedule preview debounce key
 export function scheduleDebounceKey(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ')
 }

@@ -1,3 +1,6 @@
+// @find: onboarding, getting started guide, guide steps, Command Map guide, hide guide, step done, localStorage progress
+// @what: Remembers per-user progress of the getting-started guide on the Command Map in localStorage.
+// @flow: Used by the Command Map page guide card
 /*
  * Memory for the getting-started guide on the Command Map.
  *
@@ -53,24 +56,28 @@ function write(key: string, value: boolean): boolean {
   return true
 }
 
+// @find: is step done, guide progress
 /** True once the step has been marked done for this user. False when unknown or unreadable. */
 export function isStepDone(userId: string, step: GuideStep): boolean {
   if (!userId) return false
   return read(stepKey(userId, step))
 }
 
+// @find: mark step done, tick guide step
 /** Records the step as done. Returns false when storage refused the write. */
 export function markStepDone(userId: string, step: GuideStep): boolean {
   if (!userId) return false
   return write(stepKey(userId, step), true)
 }
 
+// @find: guide hidden, dismissed guide
 /** True when this user has hidden the guide. False when unknown or unreadable. */
 export function isGuideHidden(userId: string): boolean {
   if (!userId) return false
   return read(hiddenKey(userId))
 }
 
+// @find: hide guide, dismiss getting started
 /** Hides or shows the guide for this user. Returns false when storage refused the write. */
 export function setGuideHidden(userId: string, hidden: boolean): boolean {
   if (!userId) return false

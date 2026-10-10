@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, documents repository, find document by name, list documents in source, replace document, delete document, Documents
+// @what: Spring Data repository for documents, including lookup by source and file name used to detect re-uploads.
+// @flow: Called by IngestionService.ingest/deleteDocument and KnowledgeController list endpoints.
 package os.aiworkforce.knowledge.repository;
 
 import java.util.List;

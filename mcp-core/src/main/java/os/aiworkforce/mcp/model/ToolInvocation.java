@@ -1,3 +1,6 @@
+// @find: tool invocation, tool call request, run tool, agent id run id, idempotency key, arguments json, server tool, call a connector tool
+// @what: Record for a request to run one tool with its arguments, agent, run and idempotency key.
+// @flow: Created by the orchestrator; passed to ToolGateway.evaluate and invoke
 package os.aiworkforce.mcp.model;
 
 import java.util.Map;

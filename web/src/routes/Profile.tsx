@@ -1,3 +1,6 @@
+// @find: profile, my account, change password, devices, signed-in sessions, sign out device, security, my permissions, link to workspace settings, /profile, Profile page
+// @what: The Profile page: the signed-in person's password, signed-in devices and the permissions their role gives them.
+// @flow: Routed from App.tsx at /profile; uses the identity service account queries in lib/queries
 import { useState, type FormEvent } from 'react'
 import {
   Button,
@@ -11,6 +14,7 @@ import {
   Tag,
   Time,
 } from '../components/ui'
+import { BrowserNotificationsCard } from '../components/settings/BrowserNotificationsCard'
 import { ApiError, describeApiError } from '../lib/api'
 import {
   NETWORK_ERROR_COPY,
@@ -47,6 +51,7 @@ function failure(error: unknown): string {
   return error instanceof ApiError && error.status === 0 ? NETWORK_ERROR_COPY : describeApiError(error)
 }
 
+// @find: change password form, POST /api/account/password
 function ChangePassword() {
   const change = useChangePassword()
   const [current, setCurrent] = useState('')
@@ -141,6 +146,7 @@ function ChangePassword() {
   )
 }
 
+// @find: signed-in device row, end session
 function DeviceRow({ session, onEnd, ending }: { session: AccountSession; onEnd: () => void; ending: boolean }) {
   const device = describeDevice(session.userAgent)
   return (
@@ -171,6 +177,7 @@ function DeviceRow({ session, onEnd, ending }: { session: AccountSession; onEnd:
   )
 }
 
+// @find: signed-in devices list, sign out other devices
 function Devices() {
   const { navigate } = useRouter()
   const sessions = useAccountSessions()
@@ -245,6 +252,7 @@ function Devices() {
   )
 }
 
+// @find: security section
 function Security() {
   return (
     <Card as="section" className="stack">
@@ -289,6 +297,7 @@ function byResource(entries: PermissionInfo[]): Array<[string, PermissionInfo[]]
   return [...grouped.entries()]
 }
 
+// @find: permission groups, what my role can do
 function PermissionGroups({ groups, muted = false }: { groups: Array<[string, PermissionInfo[]]>; muted?: boolean }) {
   return (
     <div className="stack" style={{ gap: 'var(--space-5)' }}>
@@ -313,6 +322,7 @@ function PermissionGroups({ groups, muted = false }: { groups: Array<[string, Pe
   )
 }
 
+// @find: Profile component, profile page, my account, /profile
 export function Profile() {
   const me = profile()
   const catalogue = usePermissionCatalogue()
@@ -356,7 +366,9 @@ export function Profile() {
             </div>
             <div>
               <dt>Permissions</dt>
-              <dd className="tabular">{formatCount(held.size)}</dd>
+              {/* Counted against the catalogue, as the list beside it and Members and roles are,
+                  so the same role never shows two different numbers. */}
+              <dd className="tabular">{formatCount(catalogue.data ? entries.length - missing.length : held.size)}</dd>
             </div>
           </dl>
           <p className="caption" style={{ marginTop: 'var(--space-5)' }}>
@@ -398,6 +410,10 @@ export function Profile() {
 
       <div style={{ marginTop: 'var(--space-5)' }}>
         <Security />
+      </div>
+
+      <div style={{ marginTop: 'var(--space-5)' }}>
+        <BrowserNotificationsCard />
       </div>
     </div>
   )

@@ -1,3 +1,6 @@
+// @find: how it works, three steps, assistants, chat, approvals, agent templates, HowItWorks, #how
+// @what: Three-step explanation of how the product works for buyers.
+// @flow: Used by the home page
 import type { ReactElement } from 'react'
 import { Icon } from '../shared/Icon'
 import type { IconName } from '../shared/Icon'
@@ -31,6 +34,7 @@ const STEPS: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [
   },
 ]
 
+// @find: HowItWorks component, how it works section
 export function HowItWorks(): ReactElement {
   return (
     <LandingSection id="how" labelledBy="how-title">

@@ -1,3 +1,7 @@
+// @find: tests for router, redirectFor, match, route parameters, old address redirects
+// @what: Unit tests for route matching and old-address redirects.
+// @find: tests for router, page title, setPageTitle, attention count
+// @what: Unit tests for the router page title.
 import { describe, expect, it } from 'vitest'
 import { match, redirectFor } from './router'
 

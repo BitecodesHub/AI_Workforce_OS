@@ -1,3 +1,6 @@
+// @find: internal memberships, bootstrap owner, bootstrap member, check grant, member permissions, accept invitation, create workspace owner, /internal/memberships, InternalMembershipController
+// @what: Service-to-service endpoints granting memberships for new workspaces and accepted invitations, and checking grants.
+// @flow: Called by the organisation service with a service token; uses GrantGuard, Memberships, Roles.
 package os.aiworkforce.identity.web;
 
 import java.time.Instant;
@@ -57,6 +60,9 @@ public class InternalMembershipController {
 
     private static final Logger log = LoggerFactory.getLogger(InternalMembershipController.class);
 
+    /** The check-grant reason for an invitation to someone who is already an active member. */
+    public static final String ALREADY_MEMBER = "already_member";
+
     private final Memberships memberships;
     private final Roles roles;
     private final Users users;
@@ -85,11 +91,22 @@ public class InternalMembershipController {
 
     public record MembershipResponse(UUID membershipId, UUID orgId, UUID userId, String role) {}
 
-    public record CheckGrantRequest(@NotNull UUID orgId, @NotNull UUID actorUserId, @NotBlank String roleName) {}
+    /**
+     * @param email the address being invited, when the grant is for an invitation; an address that
+     *     already belongs to an active member is answered {@code already_member}, since accepting
+     *     would leave them exactly as they are
+     */
+    public record CheckGrantRequest(
+            @NotNull UUID orgId, @NotNull UUID actorUserId, @NotBlank String roleName, String email) {
+
+        public CheckGrantRequest(UUID orgId, UUID actorUserId, String roleName) {
+            this(orgId, actorUserId, roleName, null);
+        }
+    }
 
     /**
      * @param reason null when allowed; otherwise {@code unknown_role}, {@code not_a_member},
-     *     {@code owner_only} or {@code exceeds_grantor}
+     *     {@code owner_only}, {@code exceeds_grantor} or {@code already_member}
      */
     public record CheckGrantResponse(boolean allowed, String reason) {}
 
@@ -98,6 +115,7 @@ public class InternalMembershipController {
     /** @param member whether the person has an active membership; permissions are empty when not */
     public record PermissionsResponse(boolean member, java.util.List<String> permissions) {}
 
+    // @find: bootstrap owner, workspace creator gets owner role, POST /internal/memberships/bootstrap-owner
     @PostMapping("/bootstrap-owner")
     @Operation(summary = "Internal: grant the owner role for a workspace that was just created")
     @Transactional
@@ -128,6 +146,7 @@ public class InternalMembershipController {
         return new MembershipResponse(membership.getId(), request.orgId(), request.userId(), "owner");
     }
 
+    // @find: bootstrap member, accept invitation, add member, POST /internal/memberships/bootstrap-member
     /**
      * Grants the role an invitation names, to the person accepting it.
      *
@@ -213,6 +232,7 @@ public class InternalMembershipController {
         return new MembershipResponse(membership.getId(), request.orgId(), request.userId(), role.getName());
     }
 
+    // @find: check grant, may inviter give role, POST /internal/memberships/check-grant
     /**
      * Whether a member may give a role, asked before an invitation is created.
      *
@@ -237,9 +257,18 @@ public class InternalMembershipController {
             return new CheckGrantResponse(false, GrantGuard.NOT_A_MEMBER);
         }
         GrantGuard.Decision decision = guard.check(grantor, role);
+        if (decision.allowed() && request.email() != null && !request.email().isBlank()) {
+            boolean alreadyMember = users.findByEmail(normalise(request.email()))
+                    .flatMap(user -> memberships.findActive(user.getId(), request.orgId()))
+                    .isPresent();
+            if (alreadyMember) {
+                return new CheckGrantResponse(false, ALREADY_MEMBER);
+            }
+        }
         return new CheckGrantResponse(decision.allowed(), decision.reason());
     }
 
+    // @find: member permissions, POST /internal/memberships/permissions
     /**
      * What a person holds in a workspace through their membership, for a sibling service that acts
      * for them without their request in flight - an agent searching documents for the person it

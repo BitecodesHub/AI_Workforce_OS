@@ -1,3 +1,6 @@
+// @find: board list, list view, goals table, group by agent, group by requester, requester column, elapsed, cost, BoardList, Orchestrator
+// @what: The table (list) view of the Orchestrator board, optionally grouped by agent or requester.
+// @flow: Rendered by Board.tsx when List is chosen
 import { useMemo } from 'react'
 import { DataTable, StatusTag, Time } from '../ui'
 import type { Column } from '../ui'
@@ -36,6 +39,7 @@ function groupKeyFor(card: BoardCard, group: 'agent' | 'requester', agentNames: 
   return requesterLabel(card.goal, members, me)
 }
 
+// @find: board list view component, goals as table
 export function BoardList({
   cards,
   board,

@@ -1,3 +1,5 @@
+// @find: tests for account queries, describe device, enter workspace, sign out, sign out everywhere, refresh session
+// @what: Tests for device descriptions, workspace entry and sign-out behaviour.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { describeDevice, enterWorkspace, signOut } from './accountQueries'
 import { accessToken, clearSession, profile, saveSession } from './session'

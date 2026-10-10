@@ -1,3 +1,5 @@
+// @find: tests for platform properties, signing key check, startup validation, key id only, placeholder key
+// @what: Checks the startup validation of the token signing key.
 package os.aiworkforce.platform.config;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,3 +1,6 @@
+// @find: approval demo, approval gate, approvals queue, approve action, reject action, human in the loop, gmail.send_message, approval:decide, manager employee viewer, simulated agent run, landing demo, ApprovalDemo, #approval, deadline expire
+// @what: The landing page demo that shows an agent run parking at an approval gate until a person with approval:decide answers.
+// @flow: Used by DemoStage and the home page; state from approvalModel, payload shown by PayloadView, frame from DemoFrame
 import { useEffect, useReducer, useRef } from 'react'
 import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react'
 import { Button, Eyebrow, Spinner, Tag } from '../../ui'
@@ -304,6 +307,7 @@ function EmailPreview({ payload }: { payload: typeof PAYLOAD }): ReactElement {
 
 export type ApprovalDemoProps = { voice?: DemoVoice }
 
+// @find: ApprovalDemo component, approval gate demo
 export function ApprovalDemo({ voice = 'technical' }: ApprovalDemoProps = {}): ReactElement {
   const copy = COPY[voice]
   const { reduced } = useLandingMotion()

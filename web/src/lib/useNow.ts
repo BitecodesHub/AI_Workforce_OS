@@ -1,3 +1,6 @@
+// @find: use now, current time, ticking clock, relative time refresh, shared timer, hidden tab
+// @what: Gives components a shared ticking current time for relative times and running clocks.
+// @flow: Used with format.ts for relative times
 import { useCallback, useSyncExternalStore } from 'react'
 
 /*
@@ -64,6 +67,7 @@ function subscribe(intervalMs: number, listener: () => void): () => void {
   }
 }
 
+// @find: use now, tick every minute, current timestamp hook
 /**
  * Milliseconds since the epoch, refreshed every `intervalMs` (default one minute) while the
  * component is mounted. Pass it as `now` to the functions in ./format.ts.

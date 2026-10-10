@@ -1,3 +1,6 @@
+// @find: orchestrator layout, board cards, columns, queued working needs you finished, flow map geometry, ring layout, flow edges, swimlane window, time ticks, card status, goal task grouping, summary tile notes, queue reason, buildBoardCards, countCards
+// @what: Pure helpers that group goals and tasks into board cards and columns and compute flow map and swimlane geometry.
+// @flow: Used by Board, BoardList, FlowMap, Swimlanes, SummaryStrip and boardChanges
 import type {
   Board,
   BoardGoal,
@@ -25,6 +28,7 @@ export const RING_RADIUS = 128
 export type NodePoint = { x: number; y: number }
 
 /** Evenly spaced points around the hub, starting at the top and going clockwise. */
+// @find: ring layout, place agent nodes around hub, flow map positions
 export function ringLayout(count: number): NodePoint[] {
   if (count <= 0) return []
   return Array.from({ length: count }, (_, index) => {
@@ -82,6 +86,7 @@ const ACTIVE_EDGE_STATUS = new Set(['running', 'waiting_approval', 'waiting_inpu
  * finished (shown on the board only because it finished inside the window) draws nothing: its
  * work is done, and the map is about what is moving, not a history of everything that ever ran.
  */
+// @find: flow edges, goal to agent links, who hands work to whom
 export function flowEdges(goals: readonly BoardGoal[]): FlowEdge[] {
   const edges: FlowEdge[] = []
   for (const goal of goals) {
@@ -119,6 +124,7 @@ export function laneWindow(nowMs: number, windowMinutes: number = SWIMLANE_WINDO
  * Where a run's bar sits in its lane, as a left offset and width in percent, clamped to the
  * window. A bar is never thinner than the eye can find, even for a run that only just started.
  */
+// @find: swimlane bar rectangle, run bar position in lane
 export function laneBarRect(
   entry: { startedAt: string; completedAt: string | null },
   window: TimeWindow,

@@ -1,3 +1,5 @@
+// @find: Spring Data repository for permission code rows.
+// @what: permissions, permission catalogue, permission codes, Permissions repository
 package os.aiworkforce.identity.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;

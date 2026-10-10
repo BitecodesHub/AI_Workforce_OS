@@ -1,3 +1,6 @@
+// @find: chat attachments table, chat_attachments SQL, attachment rows, attachment bytes, find attachment, bind attachment to message, link attachment to goal, delete unsent attachments, ChatAttachments, JdbcTemplate
+// @what: Plain SQL storage for chat attachment rows and their bytes, always scoped to a workspace.
+// @flow: Called by AttachmentService, AttachmentPrompt callers and CoordinatorService.
 package os.aiworkforce.orchestrator.chat;
 
 import java.sql.ResultSet;
@@ -89,6 +92,7 @@ public class ChatAttachments {
         this.jdbc = jdbc;
     }
 
+    // @find: insert attachment row, store uploaded file
     public void insert(NewAttachment a) {
         jdbc.update(
                 "insert into chat_attachments (id, org_id, conversation_id, uploaded_by, name, media_type, kind,"
@@ -166,6 +170,7 @@ public class ChatAttachments {
     }
 
     /** Ties drafts to the message that sent them, and to its conversation if they had none yet. */
+    // @find: bind attachments to message, attach uploaded files to sent message
     public int bindToMessage(UUID orgId, UUID conversationId, UUID messageId, List<UUID> ids) {
         if (ids.isEmpty()) {
             return 0;
@@ -181,6 +186,7 @@ public class ChatAttachments {
     }
 
     /** The goal a message's files were given to. */
+    // @find: link attachment to goal by message
     public int linkGoal(UUID orgId, UUID messageId, UUID goalId) {
         return jdbc.update(
                 "update chat_attachments set goal_id = ? where org_id = ? and message_id = ? and goal_id is null",
@@ -190,6 +196,7 @@ public class ChatAttachments {
     }
 
     /** Work sent to someone else instead: its files go with it. */
+    // @find: move attachments between goals, reroute attachments
     public int moveGoal(UUID orgId, UUID fromGoalId, UUID toGoalId) {
         return jdbc.update(
                 "update chat_attachments set goal_id = ? where org_id = ? and goal_id = ?", toGoalId, orgId, fromGoalId);
@@ -199,6 +206,7 @@ public class ChatAttachments {
      * A choice made after the coordinator could not choose: the files of the last message the
      * person sent before that choice go to the work it started.
      */
+    // @find: link latest user message attachments to goal
     public int linkLatestUserMessage(UUID orgId, UUID conversationId, int beforePosition, UUID goalId) {
         return jdbc.update(
                 "update chat_attachments set goal_id = ? where org_id = ? and goal_id is null and message_id ="
@@ -211,16 +219,19 @@ public class ChatAttachments {
                 beforePosition);
     }
 
+    // @find: delete attachment row
     public int delete(UUID orgId, UUID id) {
         return jdbc.update("delete from chat_attachments where org_id = ? and id = ?", orgId, id);
     }
 
+    // @find: mark attachment saved to knowledge, record document id
     public void markSaved(UUID orgId, UUID id, UUID documentId) {
         jdbc.update(
                 "update chat_attachments set knowledge_document_id = ? where org_id = ? and id = ?", documentId, orgId, id);
     }
 
     /** Drafts nobody sent, older than the cut-off, across every workspace. */
+    // @find: delete unsent attachments before cutoff, sweep old uploads
     public int deleteUnsentBefore(Instant cutoff) {
         return jdbc.update(
                 "delete from chat_attachments where message_id is null and created_at < ?", Timestamp.from(cutoff));

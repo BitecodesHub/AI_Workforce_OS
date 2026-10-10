@@ -1,3 +1,6 @@
+// @find: drag and drop files, paste image, paste file, file drop, drop zone, screenshot paste
+// @what: Hooks for attaching files by dropping onto the chat panel or pasting.
+// @flow: Used by Composer.
 import { useCallback, useRef, useState } from 'react'
 import type { ClipboardEvent as ReactClipboardEvent, DragEvent } from 'react'
 
@@ -11,6 +14,7 @@ function carriesFiles(event: DragEvent): boolean {
   return Array.from(event.dataTransfer?.types ?? []).includes('Files')
 }
 
+// @find: useFileDrop, use file drop, drag and drop files, paste image, paste file, file drop
 export function useFileDrop({ onFiles, disabled = false }: { onFiles: (files: File[]) => void; disabled?: boolean }) {
   const [dragging, setDragging] = useState(false)
   // dragenter and dragleave fire for every child the pointer crosses; the count says whether the
@@ -70,6 +74,7 @@ const EXTENSION: Record<string, string> = {
 
 let pastedImages = 0
 
+// @find: filesFromPaste, files from paste, drag and drop files, paste image, paste file, file drop
 /**
  * The files in a paste, or none. A screenshot arrives with no name (or Chrome's generic
  * "image.png"), so it is given one, "pasted-image-1.png", the person can recognise in the list.

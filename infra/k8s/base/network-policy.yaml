@@ -1,3 +1,6 @@
+# @find: kubernetes, k8s, network policy, deny by default, service to service traffic, internal endpoints, isolation, firewall rules
+# @what: Kubernetes network policies that restrict which pods may talk to which, so internal endpoints stay internal.
+# @flow: Listed in infra/k8s/base/kustomization.yaml
 # East-west traffic is denied by default and allowed only between declared pairs.
 #
 # Without this, a compromise of any one service gives an attacker the whole cluster's internal

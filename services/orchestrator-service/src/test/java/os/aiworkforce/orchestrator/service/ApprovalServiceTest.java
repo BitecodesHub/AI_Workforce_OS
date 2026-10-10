@@ -1,3 +1,5 @@
+// @find: tests for approval service, approvals, approve, reject, four-eyes, send back, expiry, pending approvals, decision
+// @what: Unit and integration tests (36 cases) for approval service, for example: rejection follows through; rejection without note; rejection reason is capped; approval leaves the run to its resume.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

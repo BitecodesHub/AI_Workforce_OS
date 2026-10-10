@@ -1,3 +1,6 @@
+// @find: audit properties, aiwos.audit settings, relay interval, retry settings, enable audit
+// @what: Settings for how a service delivers its audit events.
+// @flow: Read by AuditOutboxRelay and AuditClient
 package os.aiworkforce.platform.web.audit;
 
 import java.time.Duration;

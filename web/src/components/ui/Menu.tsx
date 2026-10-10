@@ -1,3 +1,6 @@
+// @find: dropdown menu, menu button, actions menu, context menu, menu items, keyboard navigation, checkbox menu, radio menu, floating position, MenuButton
+// @what: Dropdown of actions with keyboard support, checkbox and radio items, and floating placement.
+// @flow: Used across screens for more-actions and filter menus.
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -10,6 +13,7 @@ import { createPortal } from 'react-dom'
  * from closing the moment somebody starts picking).
  */
 
+// @find: menu entry type, menu item definition
 export type MenuEntry =
   | {
       id: string
@@ -38,6 +42,7 @@ const MENU_ITEM_SELECTOR = '[role^="menuitem"]:not(:disabled)'
 const FLOAT_GAP = 4
 const VIEWPORT_MARGIN = 8
 
+// @find: position floating menu, viewport edge
 /**
  * Where a floating (portalled) panel sits: below its trigger, or above it when there is no room
  * below, aligned to the trigger's start or end edge and clamped inside the window.
@@ -142,6 +147,7 @@ function portalHost(trigger: HTMLElement | null): HTMLElement {
   return trigger?.closest('dialog') ?? document.body
 }
 
+// @find: dropdown menu button, more actions
 export function MenuButton({
   label,
   items,

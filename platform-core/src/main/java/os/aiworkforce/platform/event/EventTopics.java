@@ -1,3 +1,6 @@
+// @find: event topics, kafka topics, retry topic, dead letter topic, topic names
+// @what: Names every Kafka topic and its retry and dead-letter companions.
+// @flow: Used with EventEnvelope
 package os.aiworkforce.platform.event;
 
 /**

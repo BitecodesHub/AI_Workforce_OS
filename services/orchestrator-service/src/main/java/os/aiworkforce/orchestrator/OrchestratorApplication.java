@@ -1,3 +1,6 @@
+// @find: orchestrator service, spring boot main, agent engine startup, agents goals runs approvals, model routing, scheduling enabled, OrchestratorApplication
+// @what: Boot class of the orchestrator microservice that hosts agents, goals, runs, approvals, questions, providers and budgets.
+// @flow: Starts the Spring context; every service and controller under orchestrator/service and orchestrator/web is wired from here
 package os.aiworkforce.orchestrator;
 
 import org.springframework.boot.SpringApplication;

@@ -1,3 +1,5 @@
+// @find: Spring Data repository for workspace memberships.
+// @what: memberships, find membership, active member, last owner, count owners, members of workspace, Memberships repository
 package os.aiworkforce.identity.repository;
 
 import java.util.List;

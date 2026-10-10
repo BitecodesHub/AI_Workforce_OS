@@ -1,3 +1,6 @@
+// @find: trace model, step mode, step heading, step kind, answer step, incomplete answer, run steps rules, pure functions, detail text
+// @what: Pure rules for what a run step means, shared by full and compact traces.
+// @flow: Used by TraceStep, RunTraceCompact and AnswerCard.
 import type { TagTone } from '../ui'
 import { formatDuration, sentenceCase } from '../../lib/format'
 import { toolLabel } from '../../lib/labels'
@@ -11,16 +14,19 @@ import type { RunStep } from '../../lib/queries'
  * rules become markup.
  */
 
+// @find: detailText, detail text, trace model, step mode, step heading, step kind
 export function detailText(detail: Record<string, unknown>, key: string): string | null {
   const value = detail[key]
   return typeof value === 'string' && value.trim() ? value : null
 }
 
+// @find: detailStrings, detail strings, trace model, step mode, step heading, step kind
 export function detailStrings(detail: Record<string, unknown>, key: string): string[] {
   const value = detail[key]
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
+// @find: detailNumber, detail number, trace model, step mode, step heading, step kind
 export function detailNumber(detail: Record<string, unknown>, key: string): number | null {
   const value = detail[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -56,6 +62,7 @@ function isTraceQuestionItem(value: unknown): value is TraceQuestionItem {
   return typeof item.header === 'string' && typeof item.question === 'string'
 }
 
+// @find: questionItemsOf, question items of, trace model, step mode, step heading, step kind
 /** The questions a `question` step's detail carries (QuestionService.askStepDetail's `questions`). */
 export function questionItemsOf(detail: Record<string, unknown>): TraceQuestionItem[] {
   const raw = detail['questions']
@@ -75,11 +82,13 @@ export const SEARCHED_DOCUMENTS = 'Searched documents'
 /** The document search's name, in the dotted form the platform records and the form providers are sent. */
 const KNOWLEDGE_TOOLS = new Set(['knowledge.search', 'knowledge__search'])
 
+// @find: isKnowledgeSearch, is knowledge search, trace model, step mode, step heading, step kind
 export function isKnowledgeSearch(step: RunStep): boolean {
   if (step.kind === 'knowledge_query') return true
   return step.kind === 'tool_call' && KNOWLEDGE_TOOLS.has(detailText(step.detail, 'tool') ?? '')
 }
 
+// @find: stepKind, step kind, trace model, step mode, step heading, step kind
 /** The tag a step wears: its kind's, except that a call to the document search is not "Tool". */
 export function stepKind(step: RunStep): { tone: TagTone; label: string } {
   if (isKnowledgeSearch(step)) return { tone: 'neutral', label: SEARCHED_DOCUMENTS }
@@ -95,17 +104,20 @@ export function stepKind(step: RunStep): { tone: TagTone; label: string } {
 
 const MEMORY_TOOLS = new Set(['memory.remember', 'memory__remember', 'memory.recall', 'memory__recall'])
 
+// @find: isMemoryStep, is memory step, trace model, step mode, step heading, step kind
 export function isMemoryStep(step: RunStep): boolean {
   if (step.kind === 'memory_read') return true
   return step.kind === 'tool_call' && MEMORY_TOOLS.has(detailText(step.detail, 'tool') ?? '')
 }
 
+// @find: memoryStepLabel, memory step label, trace model, step mode, step heading, step kind
 /** What a memory step is called: Remembered something, or Recalled memory. */
 export function memoryStepLabel(step: RunStep): string {
   const tool = detailText(step.detail, 'tool') ?? ''
   return tool.endsWith('remember') ? 'Remembered something' : 'Recalled memory'
 }
 
+// @find: memoriesOf, memories of, trace model, step mode, step heading, step kind
 /** The notes a memory step recalled, as the trace shows them. */
 export function memoriesOf(step: RunStep): Array<{ kind: string; content: string }> {
   const raw = step.detail['memories']
@@ -128,9 +140,11 @@ export type TraceCitation = {
   restricted: boolean
 }
 
+// @find: searchQueryOf, search query of, trace model, step mode, step heading, step kind
 /** What was searched for, as the step recorded it. */
 export const searchQueryOf = (step: RunStep): string | null => (isKnowledgeSearch(step) ? detailText(step.detail, 'query') : null)
 
+// @find: citationsOf, citations of, trace model, step mode, step heading, step kind
 /** The passages a search cited, in the order the agent read them; none for a step that is not a search. */
 export function citationsOf(step: RunStep): TraceCitation[] {
   if (!isKnowledgeSearch(step)) return []
@@ -156,14 +170,17 @@ export function citationsOf(step: RunStep): TraceCitation[] {
   return found
 }
 
+// @find: isInstruction, is instruction, trace model, step mode, step heading, step kind
 /** The first step of every run since the platform began recording it: what the agent was asked. */
 export const isInstruction = (step: RunStep) => step.kind === 'note' && step.detail.type === 'instruction'
 
+// @find: isSandboxStep, is sandbox step, trace model, step mode, step heading, step kind
 export const isSandboxStep = (step: RunStep) => step.kind === 'model_call' && step.provider === 'sandbox'
 
 /** Where a tool call's answer came from: a connected service, or the workspace's practice data. */
 export type StepMode = 'live' | 'sandbox'
 
+// @find: stepMode, step mode, trace model, step mode, step heading, step kind
 /**
  * `live` when the call went to a connected service, `sandbox` when it was answered from practice
  * data (the platform writes `mode` on every tool call). A step recorded before it was written, and
@@ -178,6 +195,7 @@ export function stepMode(step: RunStep): StepMode | null {
 /** What the badge on a tool call says about where its answer came from. */
 export const MODE_LABEL: Record<StepMode, string> = { live: 'Live', sandbox: 'Practice data' }
 
+// @find: clipIdOf, clip id of, trace model, step mode, step heading, step kind
 /** The clip id a successful voice.create_voice_note tool call attached, if any. */
 export function clipIdOf(step: RunStep): string | null {
   return step.kind === 'tool_call' ? detailText(step.detail, 'clipId') : null
@@ -190,6 +208,7 @@ const ERROR_HEADING: Record<string, string> = {
   output_limit: 'Answer cut short',
 }
 
+// @find: stepHeading, step heading, trace model, step mode, step heading, step kind
 export function stepHeading(step: RunStep): string | null {
   if (isKnowledgeSearch(step)) return SEARCHED_DOCUMENTS
   if (isMemoryStep(step)) return memoryStepLabel(step)
@@ -221,6 +240,7 @@ export function stepHeading(step: RunStep): string | null {
   }
 }
 
+// @find: stepDescription, step description, trace model, step mode, step heading, step kind
 export function stepDescription(step: RunStep): string | null {
   return (
     detailText(step.detail, 'summary') ??
@@ -230,6 +250,7 @@ export function stepDescription(step: RunStep): string | null {
   )
 }
 
+// @find: answerStep, answer step, trace model, step mode, step heading, step kind
 /** The last model reply with any text: what a completed run answered. */
 export function answerStep(steps: RunStep[]): RunStep | undefined {
   for (let index = steps.length - 1; index >= 0; index -= 1) {
@@ -239,6 +260,7 @@ export function answerStep(steps: RunStep[]): RunStep | undefined {
   return undefined
 }
 
+// @find: completedAnswer, completed answer, trace model, step mode, step heading, step kind
 /**
  * What a completed run answered, as the step AnswerCard shows.
  *
@@ -257,6 +279,7 @@ export function completedAnswer(steps: RunStep[], taskResult?: string | null): R
 /** The codes of runs that end with whatever answer they had written: the step limit and the output limit. */
 const PARTIAL_ANSWER_CODES = new Set(['step_limit', 'output_limit'])
 
+// @find: incompleteAnswerText, incomplete answer text, trace model, step mode, step heading, step kind
 /**
  * What a failed run had written when it stopped, to show as an incomplete answer; null when there
  * is nothing to show.
@@ -278,6 +301,7 @@ export function incompleteAnswerText(steps: RunStep[] | undefined, taskResult?: 
   return reply ? detailText(reply.detail, 'content') : null
 }
 
+// @find: latestApprovalId, latest approval id, trace model, step mode, step heading, step kind
 /** The approval the run is paused on, from the latest approval step. */
 export function latestApprovalId(steps: RunStep[] | undefined): string | null {
   if (!steps) return null
@@ -288,6 +312,7 @@ export function latestApprovalId(steps: RunStep[] | undefined): string | null {
   return null
 }
 
+// @find: latestQuestionId, latest question id, trace model, step mode, step heading, step kind
 /** The question the run is paused on, from the latest question step. */
 export function latestQuestionId(steps: RunStep[] | undefined): string | null {
   if (!steps) return null
@@ -298,6 +323,7 @@ export function latestQuestionId(steps: RunStep[] | undefined): string | null {
   return null
 }
 
+// @find: readableAttempt, readable attempt, trace model, step mode, step heading, step kind
 /**
  * One routing attempt as the platform wrote it ('openrouter/gpt-4o answered in 5234 ms'), with
  * its time in the same form as every other duration on the page.
@@ -305,6 +331,7 @@ export function latestQuestionId(steps: RunStep[] | undefined): string | null {
 export const readableAttempt = (attempt: string) =>
   attempt.replace(/answered in (\d+) ms$/, (_, ms: string) => `answered in ${formatDuration(Number(ms))}`)
 
+// @find: withoutFinalStop, without final stop, trace model, step mode, step heading, step kind
 export const withoutFinalStop = (text: string) => text.trim().replace(/[.\s]+$/, '')
 
 /** Runs cancelled before the reason was written for people carry the canceller's user id. */

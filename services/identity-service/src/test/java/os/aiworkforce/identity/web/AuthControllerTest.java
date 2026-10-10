@@ -1,3 +1,5 @@
+// @find: tests for AuthController, client address, forwarded for, address literal
+// @what: Tests of client address extraction used by sign-in.
 package os.aiworkforce.identity.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

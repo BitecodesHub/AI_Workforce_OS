@@ -1,3 +1,6 @@
+// @find: resource server config, spring security, jwt verification, jwks, deny by default, public endpoints, health probes, internal endpoints, cors, token verification
+// @what: Security setup for the seven servlet services: every endpoint needs a verified token except health, docs and pre-flight.
+// @flow: Verifies tokens signed by identity-service through its JWKS endpoint
 package os.aiworkforce.platform.web.security;
 
 import java.net.MalformedURLException;

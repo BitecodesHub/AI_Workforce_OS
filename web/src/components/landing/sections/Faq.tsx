@@ -1,3 +1,6 @@
+// @find: faq, frequently asked questions, buyer questions, limits answered, offline model, practice connectors, who may approve, Faq, #faq
+// @what: Plain-words questions and answers for buyers, built on native details elements.
+// @flow: Used by the home page
 import type { ReactElement } from 'react'
 import { Icon } from '../shared/Icon'
 import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
@@ -47,6 +50,7 @@ const QUESTIONS: ReadonlyArray<{ q: string; a: string }> = [
   },
 ]
 
+// @find: Faq component, FAQ section
 export function Faq(): ReactElement {
   return (
     <LandingSection id="faq" labelledBy="faq-title">

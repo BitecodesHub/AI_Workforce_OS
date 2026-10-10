@@ -1,3 +1,5 @@
+// @find: tests for agent runner attachments, agent run, attachments, files in a run, images, documents sent to agent, tool call
+// @what: Unit and integration tests (2 cases) for agent runner attachments, for example: start gives files; rebuild gives same files.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

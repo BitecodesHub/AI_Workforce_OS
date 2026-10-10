@@ -1,3 +1,5 @@
+// @find: model router, LLM, model providers, token usage, input tokens, output tokens, cached tokens, reasoning tokens, cost, TokenUsage
+// @what: What one attempt consumed, as the provider reported it.
 package os.aiworkforce.llm.model;
 
 import java.math.BigDecimal;

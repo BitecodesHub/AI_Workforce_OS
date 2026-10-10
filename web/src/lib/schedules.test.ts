@@ -1,3 +1,5 @@
+// @find: tests for schedules, canManageSchedule, canTransferSchedule, scheduleState, scheduleStateLabel, editTakesOwnership, scheduleOwnerLabel, transferCandidates, audit action labels, Schedules page
+// @what: Unit tests for the schedule permission and state rules.
 import { describe, expect, it } from 'vitest'
 import { auditActionLabel, scheduleStateLabel } from './labels'
 import {
@@ -7,6 +9,7 @@ import {
   isScheduleDone,
   scheduleOwnerLabel,
   scheduleState,
+  rolesThatCanOwnSchedules,
   transferCandidates,
 } from './schedules'
 
@@ -130,6 +133,23 @@ describe('transferCandidates', () => {
       { userId: 'u-sam', displayName: 'Sam', status: 'suspended' },
     ]
     expect(transferCandidates(members, 'u-owner').map((member) => member.userId)).toEqual(['u-amy', 'u-zed'])
+  })
+
+  it('leaves out members whose role cannot start work, such as viewers', () => {
+    const roles = [
+      { name: 'manager', permissions: ['task:create', 'task:cancel'] },
+      { name: 'employee', permissions: ['task:create'] },
+      { name: 'viewer', permissions: ['task:read'] },
+    ]
+    const members = [
+      { userId: 'u-vic', displayName: 'Vic', status: 'active', role: 'viewer' },
+      { userId: 'u-eve', displayName: 'Eve', status: 'active', role: 'employee' },
+      { userId: 'u-max', displayName: 'Max', status: 'active', role: 'Manager' },
+    ]
+    const ownerRoles = rolesThatCanOwnSchedules(roles)
+    expect(transferCandidates(members, null, ownerRoles).map((member) => member.userId)).toEqual(['u-eve', 'u-max'])
+    expect(rolesThatCanOwnSchedules(undefined)).toBeNull()
+    expect(transferCandidates(members, null, null)).toHaveLength(3)
   })
 })
 

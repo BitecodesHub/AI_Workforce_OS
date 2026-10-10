@@ -1,3 +1,6 @@
+// @find: conversation list, chat sidebar, search conversations, new conversation, Mine Everyone scope, pinned, archive conversation, rename conversation, delete conversation, needs you, Chat page
+// @what: The collapsible sidebar listing conversations with search, scope and groups.
+// @flow: Used by the Chat page; rows are ConversationRow, grouping from conversationGroups.
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, ConfirmDialog, IconButton } from '../ui'
@@ -16,7 +19,7 @@ import { useToast } from '../../lib/toast'
 import { useNow } from '../../lib/useNow'
 import { SidebarSkeleton } from './ChatSkeletons'
 import { ConversationRow } from './ConversationRow'
-import { groupConversations, nextAfterRemoval } from './conversationGroups'
+import { groupConversations, nextAfterRemoval, undoArchive } from './conversationGroups'
 import { nextRovingId, useRovingList } from './useRovingList'
 
 /*
@@ -79,6 +82,10 @@ function CollapseIcon() {
 
 type GroupToggles = Record<string, boolean>
 
+/** Which collapse toggle should take focus once the sidebar has switched between panel and rail. */
+const toggleFocus: { next: string | null } = { next: null }
+
+// @find: ChatSidebar, chat sidebar, conversation list, chat sidebar, search conversations, new conversation
 export function ChatSidebar({
   variant,
   onExpand,
@@ -155,6 +162,15 @@ export function ChatSidebar({
   const roving = useRovingList(allIds)
   const rowRefs = useRef(new Map<string, HTMLAnchorElement>())
 
+  // Hide and Show swap the panel for the rail and back, and the button pressed goes with it: the
+  // one that takes its place gets focus, so a keyboard user is not left on the page itself.
+  useEffect(() => {
+    const label = toggleFocus.next
+    if (!label) return
+    toggleFocus.next = null
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)?.focus()
+  }, [variant])
+
   // Up/Down (and Home/End) on a row move real focus to the next row, scrolled into view inside
   // the list; useRovingList only tracks which row is the Tab stop.
   function navigateRows(event: ReactKeyboardEvent) {
@@ -191,13 +207,35 @@ export function ChatSidebar({
     await archive.mutateAsync({ id: conversation.id, archived: !wasArchived })
     if (!wasArchived) {
       toast.info(`Archived "${conversation.title || 'Untitled conversation'}".`, {
-        action: { label: 'Undo', onSelect: () => void archive.mutateAsync({ id: conversation.id, archived: false }) },
+        action: {
+          label: 'Undo',
+          onSelect: () =>
+            void undoArchive(conversation, {
+              unarchive: (id) => archive.mutateAsync({ id, archived: false }),
+              pin: (id) => pin.mutateAsync({ id, pinned: true }),
+            }),
+        },
       })
-      if (selectedId === conversation.id) {
-        const next = nextAfterRemoval(allIds, conversation.id)
-        if (next) onSelect(next)
-      }
+      moveFocusAfterRemoval(conversation.id)
     }
+  }
+
+  /**
+   * The row and its menu are gone, so focus would fall to the page: it goes to the next
+   * conversation instead (opening it when the removed one was open), or to search when none is left.
+   */
+  function moveFocusAfterRemoval(removedId: string) {
+    const next = nextAfterRemoval(allIds, removedId)
+    if (next && selectedId === removedId) onSelect(next)
+    requestAnimationFrame(() => {
+      const row = next ? rowRefs.current.get(next) : undefined
+      if (row) {
+        setActiveId(next!)
+        row.focus()
+      } else {
+        searchRef.current?.focus()
+      }
+    })
   }
 
   async function handleDelete() {
@@ -205,11 +243,8 @@ export function ChatSidebar({
     setDeleteError(null)
     try {
       await del.mutateAsync(deleteTarget.id)
-      if (selectedId === deleteTarget.id) {
-        const next = nextAfterRemoval(allIds, deleteTarget.id)
-        if (next) onSelect(next)
-      }
       setDeleteTarget(null)
+      moveFocusAfterRemoval(deleteTarget.id)
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : 'This conversation could not be deleted.')
     }
@@ -218,7 +253,15 @@ export function ChatSidebar({
   if (variant === 'rail') {
     return (
       <nav className="chat-rail" aria-label="Conversations">
-        <IconButton label="Show conversations" aria-expanded={false} aria-controls="chat-sidebar-panel" onClick={onExpand}>
+        <IconButton
+          label="Show conversations"
+          aria-expanded={false}
+          aria-controls="chat-sidebar-panel"
+          onClick={() => {
+            toggleFocus.next = 'Hide conversations'
+            onExpand()
+          }}
+        >
           <ExpandIcon />
         </IconButton>
         <IconButton label="New conversation" onClick={onNew}>
@@ -317,7 +360,15 @@ export function ChatSidebar({
           <NewConversationIcon />
         </IconButton>
         {variant !== 'sheet' && (
-          <IconButton label="Hide conversations" aria-expanded={true} aria-controls="chat-sidebar-panel" onClick={onCollapse}>
+          <IconButton
+            label="Hide conversations"
+            aria-expanded={true}
+            aria-controls="chat-sidebar-panel"
+            onClick={() => {
+              toggleFocus.next = 'Show conversations'
+              onCollapse()
+            }}
+          >
             <CollapseIcon />
           </IconButton>
         )}

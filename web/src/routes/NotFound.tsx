@@ -1,3 +1,6 @@
+// @find: not found, 404, page missing, wrong address, broken link, NotFound
+// @what: The page shown when the address does not match any screen.
+// @flow: Used by App.tsx as the fallback route
 import { Card, EmptyState, Eyebrow } from '../components/ui'
 import { isSignedIn } from '../lib/session'
 
@@ -7,6 +10,7 @@ import { isSignedIn } from '../lib/session'
  * A signed-in person sees this inside the usual navigation (App.tsx), so every other screen is
  * still one click away. The heading is the page's h1, because it is the only title the page has.
  */
+// @find: NotFound component, 404 page
 export function NotFound() {
   const signedIn = isSignedIn()
   return (

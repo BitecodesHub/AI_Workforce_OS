@@ -1,3 +1,6 @@
+// @find: tests for GrantDialog, grant connector to agent, give agent access, agent capabilities, change what agent may do, tool permissions, Grant dialog, connector grant, agent page
+// @what: Automated tests for GrantDialog.
+// @flow: Run with the web test runner; covers GrantDialog.
 import axe from 'axe-core'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'

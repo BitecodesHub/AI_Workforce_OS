@@ -1,3 +1,6 @@
+// @find: allowed attachment types, accepted file types, refused file types, macro files blocked, docm xlsm refused, file type allow list, AttachmentTypes, chat file size, supported formats
+// @what: Decides which file types Chat accepts, by detected content rather than file name.
+// @flow: Called by AttachmentService when an upload is checked.
 package os.aiworkforce.orchestrator.chat;
 
 import java.nio.charset.StandardCharsets;

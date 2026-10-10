@@ -1,3 +1,6 @@
+// @find: failover demo, model routing, provider fallback, model router, circuit breaker, retry, back off, fail closed, degrade to sandbox, OpenRouter Groq Gemini Anthropic, trace, inject fault, FailoverDemo, #failover
+// @what: The landing page demo where the visitor breaks providers in a chain and watches the router skip, retry or fail over.
+// @flow: Used by DemoStage; routes planned by failoverModel
 import { useCallback, useEffect, useId, useReducer, useState } from 'react'
 import type { CSSProperties, Dispatch, ReactElement, RefCallback } from 'react'
 import { Button, Tag } from '../../ui'
@@ -259,6 +262,7 @@ function TraceRow({ line }: { line: TraceLine }): ReactElement {
 
 /* ---- Demo ------------------------------------------------------------------------------------------ */
 
+// @find: FailoverDemo component, failover demo
 export function FailoverDemo(): ReactElement {
   const { reduced } = useLandingMotion()
   const [state, dispatch] = useReducer(reducer, reduced, init)

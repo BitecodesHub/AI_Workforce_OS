@@ -1,3 +1,6 @@
+// @find: voice clip service, create voice note, after voice note, save audio clip, voice tool result, key stored, VoiceClipService
+// @what: Creates a stored audio clip after an agent calls the voice tool.
+// @flow: Called by the run engine after create_voice_note; uses VoiceService and VoiceClips
 package os.aiworkforce.orchestrator.voice;
 
 import java.util.Optional;
@@ -36,6 +39,7 @@ public class VoiceClipService {
     }
 
     /** Whether the workspace has an ElevenLabs key at all, so a caller can explain a missing clip. */
+    // @find: is ElevenLabs key stored
     public boolean keyStored(UUID orgId) {
         return voice.keyStored(orgId);
     }
@@ -45,6 +49,7 @@ public class VoiceClipService {
      * @return the saved clip's id, or empty when nothing was produced - no key stored, no voice
      *     available, arguments that did not carry a script, or the provider itself failing
      */
+    // @find: create voice clip after voice note tool call
     public Optional<UUID> afterVoiceNote(Run run, Agent agent, String argumentsJson) {
         if (!voice.keyStored(run.getOrgId())) {
             return Optional.empty();

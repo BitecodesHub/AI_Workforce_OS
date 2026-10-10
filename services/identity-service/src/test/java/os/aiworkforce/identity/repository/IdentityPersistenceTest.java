@@ -1,3 +1,5 @@
+// @find: tests for identity persistence, flyway migration, signing keys, sessions per device, reset token claim, postgres testcontainers
+// @what: Integration tests of identity repositories and migrations against a real Postgres.
 package os.aiworkforce.identity.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

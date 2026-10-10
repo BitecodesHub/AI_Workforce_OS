@@ -1,3 +1,6 @@
+// @find: error boundary, something went wrong, screen failed, blank page, reload page, chunk load error, stale deploy, render error, crash, ErrorBoundary
+// @what: Catches screen render errors and shows a message with reload and a way out; reloads once on a missing chunk.
+// @flow: Wraps each screen in the app shell and the whole app; uses the router and session.
 import { Component, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { QueryErrorResetBoundary } from '@tanstack/react-query'
@@ -23,6 +26,7 @@ import { Button, Eyebrow } from './index'
 const CHUNK_FAILURE =
   /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Expected a JavaScript module|Unable to preload CSS/
 
+// @find: detect chunk load failure, dynamic import failed
 /** Whether `error` is a screen's code failing to load, rather than a screen failing to draw. */
 export function isChunkLoadError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
@@ -44,6 +48,7 @@ function reloadFlag(): string {
   return RELOADED_FOR + (build || 'unknown')
 }
 
+// @find: reload page once after deploy
 /**
  * Reloads the page, unless this build already had its one automatic reload in this tab. Returns
  * whether it did. Without readable storage there is no way to know, so it does not.
@@ -61,6 +66,7 @@ export function reloadOnce(): boolean {
   return true
 }
 
+// @find: clear reload flag after page settles
 /**
  * Clears the reload flags once this page has run for `afterMs` without a chunk failing, which is
  * what a successful load means here: a later failure, after another deploy, gets its own reload.
@@ -82,6 +88,7 @@ export function clearReloadFlagWhenSettled(afterMs = 10_000): () => void {
   return () => window.clearTimeout(timer)
 }
 
+// @find: log render error, crash logging
 /**
  * Logs a render failure with the screen's path (never its query or fragment, which can carry an
  * invitation token or an address) and nothing a person typed or the server returned about them.
@@ -184,6 +191,7 @@ function Fallback({ error, variant }: { error: unknown; variant: Variant }) {
   )
 }
 
+// @find: error boundary component, error screen, reload button
 /**
  * Catches a render failure in `children` and shows what happened, with a way to reload and a way
  * out. Starts afresh when the route changes. Needs the router, so it sits inside RouterProvider.

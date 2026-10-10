@@ -1,3 +1,6 @@
+// @find: runtime config store, settings storage, runtime_settings table, store interface
+// @what: Interface for where runtime settings are stored.
+// @flow: Implemented per service; used by RuntimeConfigService
 package os.aiworkforce.platform.runtimeconfig;
 
 import java.util.List;

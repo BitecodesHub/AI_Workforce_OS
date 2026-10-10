@@ -1,3 +1,6 @@
+// @find: http audit sender, post audit event, POST /internal/audit-events, analytics service client
+// @what: Sends audit events over HTTP to analytics-service's internal audit endpoint.
+// @flow: Calls InternalAuditController.append; used by AuditOutboxRelay
 package os.aiworkforce.platform.web.audit;
 
 import java.time.Duration;

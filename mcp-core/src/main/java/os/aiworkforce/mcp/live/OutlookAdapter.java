@@ -1,3 +1,6 @@
+// @find: outlook, microsoft, microsoft 365, email, inbox, mail, calendar events, list messages, get message, draft message, send message, delete message, list events, Graph API, OAuth, live adapter, real API
+// @what: Live Outlook connector: runs outlook__ tools (mail and calendar) against Microsoft Graph with an OAuth access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.time.LocalDate;
@@ -44,6 +47,7 @@ public final class OutlookAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Microsoft Outlook list messages, tool outlook__list_messages, live Microsoft Outlook call
     private Mono<ToolResult> listMessages(ToolInvocation invocation, JsonNode arguments, String token) {
         String query = text(arguments, "query");
         int top = limit(arguments, 10, 50);
@@ -76,6 +80,7 @@ public final class OutlookAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Microsoft Outlook get message, tool outlook__get_message, live Microsoft Outlook call
     private Mono<ToolResult> getMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(
@@ -102,6 +107,7 @@ public final class OutlookAdapter extends OAuthAdapter {
                 });
     }
 
+    // @find: Microsoft Outlook draft message, tool outlook__draft_message, live Microsoft Outlook call
     private Mono<ToolResult> draftMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode message = message(arguments);
         return send(HttpMethod.POST, token, message, "/me/messages").map(draft -> {
@@ -113,6 +119,7 @@ public final class OutlookAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Microsoft Outlook send message, tool outlook__send_message, live Microsoft Outlook call
     private Mono<ToolResult> sendMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         body.set("message", message(arguments));
@@ -126,6 +133,7 @@ public final class OutlookAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Microsoft Outlook delete message, tool outlook__delete_message, live Microsoft Outlook call
     private Mono<ToolResult> deleteMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return call(HttpMethod.DELETE, token, "/me/messages/{id}", id).map(ignored -> {
@@ -136,6 +144,7 @@ public final class OutlookAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Microsoft Outlook list events, tool outlook__list_events, live Microsoft Outlook call
     private Mono<ToolResult> listEvents(ToolInvocation invocation, JsonNode arguments, String token) {
         String from = text(arguments, "from");
         String to = text(arguments, "to");

@@ -1,3 +1,6 @@
+// @find: agent voice, set voice, text to speech voice for agent, PUT /api/agents/{agentId}/voice, voice picker
+// @what: Sets which voice an agent speaks with.
+// @flow: Called by the Agent detail voice setting
 package os.aiworkforce.orchestrator.web;
 
 import java.util.List;
@@ -52,6 +55,7 @@ public class AgentVoiceController {
 
     public record SetVoiceRequest(String voiceId) {}
 
+    // @find: set agent voice, PUT /api/agents/{agentId}/voice
     @PutMapping("/{agentId}/voice")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Transactional
@@ -71,17 +75,7 @@ public class AgentVoiceController {
         AgentVersion version = agent.getCurrentVersionId() == null
                 ? null
                 : versions.findById(agent.getCurrentVersionId()).orElse(null);
-        return new AgentController.AgentView(
-                agent.getId(),
-                agent.getKey(),
-                agent.getName(),
-                agent.getCategory(),
-                agent.getStatus(),
-                version == null ? null : version.getRevision(),
-                version == null ? null : AgentController.summarise(version.getSystemPrompt()),
-                serverNames(agentId),
-                agent.getVoiceId(),
-                os.aiworkforce.orchestrator.service.GeneralEmployee.isFallback(agent));
+        return AgentController.AgentView.of(agent, version, serverNames(agentId));
     }
 
     private List<String> serverNames(UUID agentId) {

@@ -1,3 +1,6 @@
+// @find: google drive, drive, files, documents, list files, get file, create file, save document, OAuth, live adapter, real API, Drive API
+// @what: Live Google Drive connector: runs drive__ tools (list, read, create files) against the Google Drive API with an OAuth access token.
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.nio.charset.StandardCharsets;
@@ -59,6 +62,7 @@ public final class DriveAdapter extends OAuthAdapter {
         return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'";
     }
 
+    // @find: Google Drive list files, tool drive__list_files, live Google Drive call
     private Mono<ToolResult> listFiles(ToolInvocation invocation, JsonNode arguments, String token) {
         String folder = text(arguments, "folderId");
         String query = folder == null ? "trashed=false" : quoted(folder) + " in parents and trashed=false";
@@ -82,6 +86,7 @@ public final class DriveAdapter extends OAuthAdapter {
                 });
     }
 
+    // @find: Google Drive get file, tool drive__get_file, live Google Drive call
     private Mono<ToolResult> getFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(token, "/drive/v3/files/{id}?fields={fields}", id, "id,name,mimeType").flatMap(meta -> {
@@ -113,6 +118,7 @@ public final class DriveAdapter extends OAuthAdapter {
         });
     }
 
+    // @find: Google Drive create file, tool drive__create_file, live Google Drive call
     private Mono<ToolResult> createFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String name = required(arguments, "name");
         String content = required(arguments, "content");

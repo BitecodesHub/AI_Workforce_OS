@@ -1,3 +1,6 @@
+// @find: approval preview, what will be sent, email preview, message preview, payload, recipients, cc, bcc, action class, exactly what will be sent, approval details
+// @what: Renders an approval's payload the way a person should read it: an email as an email, a message as a message.
+// @flow: Used by ApprovalCard, InlineApproval and BulkDecision.
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Collapsible } from '../ui/Collapsible'
@@ -42,6 +45,7 @@ function Rows({ rows }: { rows: PayloadRow[] }) {
   )
 }
 
+// @find: PayloadPreview, payload preview, approval preview, what will be sent, email preview, message preview
 export function PayloadPreview({ payload, actionClass }: { payload: string; actionClass: string | null | undefined }) {
   const [rawOpen, setRawOpen] = useState(false)
   const parsed = parsePayload(payload)

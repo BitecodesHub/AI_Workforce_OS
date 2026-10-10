@@ -1,3 +1,6 @@
+// @find: connector service, connect connector, test connection, disconnect connector, store credential encrypted, credential lookup, refresh rejected token, reconnect required, check token, connectors, integrations, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: Business logic for connecting, testing and disconnecting connectors: checks the credential, stores it encrypted and keeps the status.
+// @flow: Called by IntegrationController; calls ToolGateway adapters and Connections repository
 package os.aiworkforce.integrations.service;
 
 import java.time.Duration;
@@ -84,6 +87,7 @@ public class ConnectorService {
         return connect(orgId, server, token, Map.of(), accountLabel);
     }
 
+    // @find: connect connector with token, paste token, save credential, Connect button, PUT /api/integrations/{server}/connection
     /**
      * As {@link #connect(UUID, String, String, String)}, for a connector whose credential has several
      * parts (a site, an email and a token). The parts are stored together as one encrypted JSON value.
@@ -134,6 +138,7 @@ public class ConnectorService {
         return saved;
     }
 
+    // @find: test connection, check credential, Test button, POST /api/integrations/{server}/test
     /** Checks the stored token again and records the result. With no token, nothing is checked. */
     public CheckOutcome test(UUID orgId, String server) {
         McpServerAdapter adapter = adapter(server);
@@ -190,6 +195,7 @@ public class ConnectorService {
         return new CheckOutcome(check.ok(), check.message(), saved.getLastCheckedAt());
     }
 
+    // @find: disconnect connector, remove credential, Disconnect button, DELETE /api/integrations/{server}/connection
     /** Forgets the stored token. Disconnecting a connector that was never connected is not an error. */
     public void disconnect(UUID orgId, String server) {
         adapter(server);
@@ -208,6 +214,7 @@ public class ConnectorService {
         }
     }
 
+    // @find: get decrypted credential for a connector, internal use by orchestrator
     /**
      * The credential for an internal caller, or empty when agents should use the sandbox.
      *
@@ -241,6 +248,7 @@ public class ConnectorService {
         public static final String UNREADABLE = "unreadable";
     }
 
+    // @find: look up credential state, connected or reconnect needed
     /**
      * The credential for an internal caller together with the connection's state.
      *
@@ -272,6 +280,7 @@ public class ConnectorService {
         }
     }
 
+    // @find: renew rejected oauth token
     /**
      * A new credential for a sign-in connector after the provider rejected {@code rejected} with
      * 401; empty when the sign-in cannot be renewed, in which case the connection is marked as
@@ -293,6 +302,7 @@ public class ConnectorService {
         return renewed;
     }
 
+    // @find: mark connector needs reconnect
     /** Marks a sign-in connector as needing an administrator to connect it again. */
     public void requireReconnect(UUID orgId, String server, String reason) {
         if (!oauth.isOAuth(server)) {
@@ -359,14 +369,20 @@ public class ConnectorService {
     }
 
     /*
-     * A site or subdomain that cannot be an address of the provider is refused under its own
-     * field, before anything is sent, so the form can show the problem next to the box it is in.
+     * A site or subdomain that cannot be an address of the provider, or an email that is not one,
+     * is refused under its own field, before anything is sent, so the form can show the problem next to the box it is in.
      */
     private static void checkAddress(String key, String value) {
         try {
             switch (key) {
                 case "site" -> os.aiworkforce.mcp.live.Hosts.atlassianBase(value);
                 case "subdomain" -> os.aiworkforce.mcp.live.Hosts.zendeskBase(value);
+                case "email" -> {
+                    // Sent as the sign-in name; a typo here reads as a refused token at the provider.
+                    if (!value.trim().matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")) {
+                        throw new IllegalArgumentException("The account email must look like you@company.com.");
+                    }
+                }
                 default -> {}
             }
         } catch (IllegalArgumentException e) {

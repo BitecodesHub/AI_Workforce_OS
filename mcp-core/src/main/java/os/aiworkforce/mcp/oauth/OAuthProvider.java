@@ -1,3 +1,6 @@
+// @find: oauth provider, authorize url, token url, profile url, scopes by server, app fields, tenant, login domain, validate settings, google microsoft salesforce, consent screen, refresh token endpoint
+// @what: Pure data for one OAuth provider: endpoints, scopes per connector and checks on app settings.
+// @flow: Used by OAuthService in integrations-service to run the sign-in flow
 package os.aiworkforce.mcp.oauth;
 
 import java.util.ArrayList;
@@ -81,6 +84,7 @@ public record OAuthProvider(
                 uncheckedScopes, appSteps, appDocsUrl);
     }
 
+    // @find: validate oauth app settings, tenant, login domain, check app fields
     /** The settings, checked and normalised, or an IllegalArgumentException a person can act on. */
     public Map<String, String> validatedSettings(Map<String, String> given) {
         Map<String, String> clean = new LinkedHashMap<>();

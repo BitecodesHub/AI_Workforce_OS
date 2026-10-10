@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- @find: orchestrator-service maven build, pom, dependencies, agents, goals, runs, approvals, chat, schedules, voice, model routing, llm-core, mcp-core, build config
+     @what: Maven module definition for the orchestrator service (agents, goals, runs, approvals, chat, schedules, voice).
+     @flow: Child of the root pom; depends on platform and llm-core modules -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

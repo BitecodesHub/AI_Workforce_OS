@@ -1,3 +1,6 @@
+// @find: approvals, approve, reject, decide request, pending queue, waiting for approval, decided history, human in the loop, questions waiting, approval expires, who asked, email approval, tool call payload, /approvals, Approvals page
+// @what: The Approvals page: where people approve or reject what an assistant wants to do (such as send an email) and answer assistant questions, plus the history of decisions.
+// @flow: Routed from App.tsx at /approvals; decisions go to the approvals API in lib/queries and resume the run
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
@@ -90,6 +93,7 @@ function useLandOnCard(target: string | null, listed: boolean) {
 }
 
 /** Questions agents have asked, shown above the approvals queue: another way work waits on a person. */
+// @find: questions waiting, assistant asks a question, answer question, ask the user
 function QuestionsWaiting() {
   const canRead = can('run:read')
   const questions = useQuestions({ status: 'pending' }, { enabled: canRead })
@@ -124,6 +128,7 @@ function QuestionsWaiting() {
 
 /* ---- The queue ------------------------------------------------------------------------------------ */
 
+// @find: pending approvals queue, approve request, reject request, decide, comment, payload, expires, POST /api/approvals/:id/decision
 function PendingQueue() {
   const toast = useToast()
   const { hash } = useRouter()
@@ -145,6 +150,8 @@ function PendingQueue() {
   const [sendBackTarget, setSendBackTarget] = useState<ApprovalItem | null>(null)
   const [sendBackNote, setSendBackNote] = useState({ approvalId: '', text: '' })
   const [sendBackError, setSendBackError] = useState<string | null>(null)
+  // A missing note is said at the field it is about; the dialog's own notice is for a failed send.
+  const [sendBackFieldError, setSendBackFieldError] = useState<string | null>(null)
   const [sendingBackId, setSendingBackId] = useState<string | null>(null)
   // The note belongs to one request: it survives a failed attempt and a reopened dialog for the
   // same request, and starts empty for a different one.
@@ -277,6 +284,7 @@ function PendingQueue() {
   const openSendBack = (approval: ApprovalItem) => {
     if (sendBackNote.approvalId !== approval.id) setSendBackNote({ approvalId: approval.id, text: '' })
     setSendBackError(null)
+    setSendBackFieldError(null)
     setSendBackTarget(approval)
   }
 
@@ -285,7 +293,7 @@ function PendingQueue() {
     if (!approval) return
     const text = sendBackNote.approvalId === approval.id ? sendBackNote.text.trim() : ''
     if (!text) {
-      setSendBackError('Say what should change, so the agent has something to revise.')
+      setSendBackFieldError('Say what should change, so the agent has something to revise.')
       return
     }
     setSendBackError(null)
@@ -494,9 +502,11 @@ function PendingQueue() {
           <Textarea
             label="What should change"
             value={sendBackNote.text}
-            onChange={(e) =>
+            onChange={(e) => {
               setSendBackNote({ approvalId: sendBackTarget?.id ?? '', text: e.target.value.slice(0, NOTE_MAX) })
-            }
+              setSendBackFieldError(null)
+            }}
+            error={sendBackFieldError ?? undefined}
             placeholder="For example: use a softer tone, and leave out the discount."
             maxLength={NOTE_MAX}
             rows={4}
@@ -539,6 +549,7 @@ function PendingQueue() {
 
 /* ---- The history ---------------------------------------------------------------------------------- */
 
+// @find: decided approvals history, who approved, past decisions, rejected list
 function DecidedHistory() {
   const toast = useToast()
   const { search, hash } = useRouter()
@@ -684,6 +695,7 @@ function DecidedHistory() {
 
 /* ---- The page ------------------------------------------------------------------------------------- */
 
+// @find: Approvals component, approvals page, approve or reject, waiting and decided tabs, /approvals
 export function Approvals() {
   const { search, navigate } = useRouter()
   const canRead = can('approval:read')

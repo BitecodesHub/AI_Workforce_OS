@@ -1,3 +1,6 @@
+// @find: queries, react-query hooks, data fetching, API client hooks, agents, runs, approvals, goals, tasks, chat, conversations, schedules, knowledge sources, connectors, model routing, members, roles, audit log, analytics
+// @what: Every TanStack Query hook and mutation the web app uses to read and change platform data, with types and polling rules.
+// @flow: Called by pages in web/src/routes; calls api() in lib/api.ts, which hits the /api gateway routes noted on each hook.
 import { useMemo } from 'react'
 import {
   keepPreviousData,
@@ -41,6 +44,12 @@ export type Agent = {
    * description written about the agent, so present it as such.
    */
   summary?: string | null
+  /**
+   * What the agent does, in one line written about it ("Screens applications and books
+   * interviews"). Null when nobody has written one; show agentDescription(), which then derives a
+   * line from `summary`.
+   */
+  description?: string | null
   /** The distinct tool servers this agent is granted, by server name (show them with serverLabel). */
   tools?: string[] | null
   /** The ElevenLabs voice id this agent speaks with. Null (or absent) reads as the browser voice. */
@@ -62,6 +71,9 @@ export type AgentDetail = Agent & {
   systemPrompt: string | null
   goals: string | null
   maxSteps: number | null
+  /** Null means the model's own default; kept when the instructions are saved again. */
+  temperature?: number | null
+  maxOutputTokens?: number | null
   sealed: boolean
   grants: AgentGrant[]
 }
@@ -84,7 +96,15 @@ export type Run = {
   goalId?: string | null
   /** Who asked for this: the goal's requester, carried onto every run of its tasks. */
   requestedBy?: string | null
+  /**
+   * RunView.pricing, what `cost` means: priced; free (every model it used is free in the
+   * catalogue); sandbox; unpriced (no price on file, so the cost is not known); none (no model
+   * answered yet). Absent from an older service.
+   */
+  pricing?: RunPricing | null
 }
+
+export type RunPricing = 'priced' | 'free' | 'sandbox' | 'unpriced' | 'none'
 
 /** What starting a run returns (AgentController.RunStarted). The run's id is `runId`. */
 export type RunStarted = {
@@ -179,9 +199,12 @@ export type Provider = {
   credentialRef?: string | null
   credentialStatus: string
   credentialCheckedAt?: string | null
-  circuitState: string
+  /** Always CLOSED now: providers are never paused after failures. Kept for older responses. */
+  circuitState?: string | null
   regions: string[]
   modelCount: number
+  /** After turning a provider off: the routing chains that now have no provider switched on. */
+  warning?: string | null
 }
 
 export type Model = {
@@ -196,7 +219,7 @@ export type Model = {
   inputCostPerMillion: number
   outputCostPerMillion: number
   enabled: boolean
-  /** Set while the router has taken this model out of rotation, with the reason. */
+  /** No longer set: every model is tried on every run. Kept optional for older responses. */
   unavailableUntil?: string | null
   unavailableReason?: string | null
 }
@@ -217,6 +240,8 @@ export type ModelPolicy = {
   overallDeadlineSeconds: number
   compactOnOverflow: boolean
   candidates: ModelPolicyCandidate[]
+  /** A plain sentence about what this chain now means, such as every listed provider being off. */
+  warning?: string | null
 }
 
 /** A field left out keeps its stored value; the candidate list is always replaced. */
@@ -255,6 +280,8 @@ export type Source = {
   embeddingDimension: number
   lastIngestedAt: string | null
   lastError: string | null
+  /** Set when these are one agent's own documents, which only that agent searches. */
+  agentId?: string | null
 }
 
 export type SourceDocument = {
@@ -384,6 +411,8 @@ export type ChatMessageDetail = {
   fromTaskId?: string
   code?: string | null
   sandbox?: boolean
+  /** On an answer: a tool in its run succeeded against practice data, not a real account. */
+  practiceData?: boolean
 }
 
 export type ChatMessage = {
@@ -457,7 +486,35 @@ export type ConversationDetail = {
    * out by a server that predates incremental reads, which then sends the whole window each time.
    */
   generatedAt?: string
+  /**
+   * Messages sent while an answer was still being worked on, oldest first. Always the whole queue,
+   * on delta reads too, so it replaces the held list rather than merging into it. Left out by a
+   * server that predates the queue.
+   */
+  queued?: QueuedMessage[]
+  /** Whether work is in progress in this conversation, and whether it is parked on a decision. */
+  busy?: ConversationBusy
 }
+
+export type ConversationBusy = 'idle' | 'working' | 'waiting_decision'
+
+/** A message held back until the answer in progress finishes (one answer at a time per conversation). */
+export type QueuedMessage = {
+  id: string
+  /** 1-based place in the queue. */
+  order: number
+  authorId: string | null
+  text: string
+  agentIds: string[]
+  attachmentCount: number
+  createdAt: string
+  updatedAt: string
+  status: 'queued' | 'starting' | 'expired'
+  canManage: boolean
+}
+
+/** What sending a message returns: the messages it added, or the queued item when work was in progress. */
+export type SendMessageResult = { messages: ChatMessage[]; queued: QueuedMessage | null }
 
 /* ---- Orchestrator board --------------------------------------------------------------------------- */
 
@@ -802,11 +859,13 @@ const ACTIVE_GOAL_STATUSES = new Set(['planning', 'running', 'waiting'])
 /** A run parked for a person: an approval or a question, neither of which the agent can move past alone. */
 const PARKED_STATUSES = new Set(['waiting_approval', 'waiting_input'])
 
+// @find: is run active; route: none; used by: Runs, Run detail pages
 /** Whether a run can still change: running, waiting for approval, or waiting for an answer. */
 export function isRunActive(run?: { status: string } | null): boolean {
   return run != null && ACTIVE_RUN_STATUSES.has(run.status.toLowerCase())
 }
 
+// @find: is goal active; route: none; used by: Tasks, Chat pages
 /** Whether a goal can still change: planning, running or waiting. */
 export function isGoalActive(goal?: { status: string } | null): boolean {
   return goal != null && ACTIVE_GOAL_STATUSES.has(goal.status.toLowerCase())
@@ -960,6 +1019,14 @@ const conversationDetailRow = (detail: ConversationDetail): ConversationDetail =
   questions: (detail.questions ?? []).map(questionRow),
   hasEarlier: detail.hasEarlier ?? false,
   ...(detail.generatedAt ? { generatedAt: detail.generatedAt } : {}),
+  queued: (detail.queued ?? []).map(queuedMessageRow),
+  busy: detail.busy ?? 'idle',
+})
+export const queuedMessageRow = (item: QueuedMessage): QueuedMessage => ({
+  ...item,
+  authorId: item.authorId ?? null,
+  agentIds: item.agentIds ?? [],
+  attachmentCount: item.attachmentCount ?? 0,
 })
 
 const scheduleRow = (schedule: Schedule): Schedule =>
@@ -1016,8 +1083,14 @@ export function conversationPollMs(detail: ConversationDetail | undefined): numb
   if (!detail) return false
   const activeGoal = detail.goals.some(isGoalActive)
   const pendingQuestion = detail.questions.some((question) => question.status === 'pending')
-  if (!activeGoal && !pendingQuestion) return false
-  return detail.goals.some((goal) => goalIsMoving(goal)) ? BUSY_POLL_MS : PARKED_THREAD_POLL_MS
+  const busy = detail.busy ?? 'idle'
+  const waiting = (detail.queued ?? []).filter((item) => item.status !== 'expired')
+  if (!activeGoal && !pendingQuestion && busy === 'idle' && waiting.length === 0) return false
+  // Work the server reports as in progress (a message still being routed has no goal yet), or a
+  // queued message about to start, moves by itself.
+  const queueMoving = waiting.some((item) => item.status === 'starting') || (busy === 'idle' && waiting.length > 0)
+  const moving = busy === 'working' || queueMoving || detail.goals.some((goal) => goalIsMoving(goal))
+  return moving ? BUSY_POLL_MS : PARKED_THREAD_POLL_MS
 }
 
 /**
@@ -1095,6 +1168,7 @@ function useFirstPagePoll<T>(options: {
 
 /* ---- Invalidation ------------------------------------------------------------------------------- */
 
+// @find: refresh work lists after change; route: none (cache invalidation); used by: all mutations that change goals, runs, approvals
 /**
  * Refreshes everything a piece of work shows on: the goals and tasks lists, the runs lists, the
  * orchestrator board, the approvals queue and the conversations it came from. Starting, stopping,
@@ -1111,6 +1185,7 @@ export function invalidateWork(client: QueryClient): void {
 
 /* ---- Reads ------------------------------------------------------------------------------------- */
 
+// @find: list agents, agent roster, all agents; route: GET /api/agents; used by: Agents page, Chat agent picker, Orchestrator
 export const useAgents = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['agents'],
@@ -1118,12 +1193,14 @@ export const useAgents = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: get one agent, agent detail; route: GET /api/agents/{id}; used by: Agent detail page
 export const useAgent = (id: string) =>
   useQuery({
     queryKey: ['agents', id],
     queryFn: async ({ signal }) => agentDetailRow(await api<AgentDetail>(`/api/agents/${id}`, { signal })),
   })
 
+// @find: agent model policy, per-agent model routing; route: GET /api/agents/{id}/model-policy; used by: Agent detail page
 /** An agent's own routing policy. `configured` false means it follows the workspace policy. */
 export const useAgentModelPolicy = (id: string, options: QueryOptions = {}) =>
   useQuery({
@@ -1132,6 +1209,7 @@ export const useAgentModelPolicy = (id: string, options: QueryOptions = {}) =>
     enabled: Boolean(id) && (options.enabled ?? true),
   })
 
+// @find: recent runs, run list polling; route: GET /api/runs?size=50; used by: Runs page, dashboard
 /** The 50 most recent runs, refreshed every 5 seconds while any is active and every 30 otherwise. */
 export const useRuns = () =>
   useQuery({
@@ -1142,6 +1220,7 @@ export const useRuns = () =>
 
 export type RunListFilter = { status?: string | null; agentId?: string | null }
 
+// @find: paged run list, filter runs by status or agent; route: GET /api/runs?page&size&status&agentId; used by: Runs page
 /**
  * Every run, newest first, a page of 50 at a time. `status` and `agentId` filter on the server,
  * so they search every run, not only the loaded pages. `hasNextPage` stays true while the last
@@ -1179,6 +1258,7 @@ export function useRunList(filter: RunListFilter = {}) {
   return list
 }
 
+// @find: get one run, run status polling; route: GET /api/runs/{id}; used by: Run detail page
 /**
  * One run, refreshed every 3 seconds while it is running or held for an approval. When it
  * finishes, its trace is refetched once more so the last steps are not missed.
@@ -1199,6 +1279,7 @@ export function useRun(id: string) {
   })
 }
 
+// @find: run trace, run steps; route: GET /api/runs/{id}/steps; used by: Run detail page
 /**
  * A run's trace, refreshed every 3 seconds while the run is active. Pass `active` from the run
  * the screen already holds; without it, the cached run from useRun decides.
@@ -1214,6 +1295,7 @@ export function useRunSteps(id: string, options: { active?: boolean } = {}) {
   })
 }
 
+// @find: pending approvals, approval queue; route: GET /api/approvals; used by: Approvals page, navigation badge
 export const useApprovals = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['approvals'],
@@ -1223,6 +1305,7 @@ export const useApprovals = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: recent goals with tasks; route: GET /api/goals; used by: Tasks page, Orchestrator
 /** The 50 most recent goals with their tasks, refreshed every 5 seconds while any is still active. */
 export const useGoals = (options: QueryOptions = {}) =>
   useQuery({
@@ -1235,6 +1318,7 @@ export const useGoals = (options: QueryOptions = {}) =>
 /** What the goals list can be narrowed to on the server: one status, one source, or one schedule's goals. */
 export type GoalListFilter = { status?: string | null; source?: GoalSource | null; scheduleId?: string | null }
 
+// @find: paged goals, filter goals by status or source; route: GET /api/goals?page&size&status&source&scheduleId; used by: Tasks page, Schedules page
 /**
  * Every goal, newest first, a page of 50 at a time. `status`, `source` and `scheduleId` filter on
  * the server, so they find every matching goal, not only the ones in the loaded pages. Stops
@@ -1278,6 +1362,7 @@ export function useGoalPages(options: QueryOptions & GoalListFilter = {}) {
   return list
 }
 
+// @find: get one goal, goal deep link; route: GET /api/goals/{id}; used by: Tasks page
 /** One goal and its tasks, for deep links and goals older than the loaded pages. Skipped without an id. */
 export const useGoal = (id: string | null | undefined, options: QueryOptions = {}) =>
   useQuery({
@@ -1289,6 +1374,7 @@ export const useGoal = (id: string | null | undefined, options: QueryOptions = {
 
 /* ---- Clarifying questions ------------------------------------------------------------------- */
 
+// @find: clarifying questions, pending questions; route: GET /api/orchestrator/questions; used by: Orchestrator page, Approvals page
 /** Every question in the workspace: pending ones ordered by deadline, or every one, newest first. */
 export function useQuestions(
   filter: { status?: 'pending' | 'all'; mine?: boolean } = {},
@@ -1307,6 +1393,7 @@ export function useQuestions(
   })
 }
 
+// @find: questions for a run; route: GET /api/runs/{id}/questions; used by: Run detail page
 /** A run's own questions, refreshed every 3 seconds while `active` (default: the cached run's own state). */
 export function useRunQuestions(runId: string, options: { active?: boolean } = {}) {
   return useQuery({
@@ -1318,6 +1405,7 @@ export function useRunQuestions(runId: string, options: { active?: boolean } = {
   })
 }
 
+// @find: answer clarifying question; route: POST /api/orchestrator/questions/{id}/answer; used by: Chat, Orchestrator, Run detail, Approvals pages
 /** Answers a question. On settle (success or failure) refetches everywhere the question could show. */
 export function useAnswerQuestion() {
   const client = useQueryClient()
@@ -1336,6 +1424,7 @@ export function useAnswerQuestion() {
   })
 }
 
+// @find: extend question deadline, keep question open; route: POST /api/orchestrator/questions/{id}/extend; used by: Orchestrator page
 /** Keeps a question open another day. */
 export function useExtendQuestion() {
   const client = useQueryClient()
@@ -1352,6 +1441,7 @@ export function useExtendQuestion() {
 
 /* ---- Chat -------------------------------------------------------------------------------------- */
 
+// @find: list conversations, search chats, paged chat list; route: GET /api/conversations; used by: Chat page sidebar
 /**
  * The workspace's conversations, in three groups (pinned, needing the caller, and the rest),
  * searched and paged. `hasMore` on the last page means there may be another one.
@@ -1388,6 +1478,7 @@ function mergeById<T>(held: readonly T[], received: readonly T[], idOf: (row: T)
   return merged
 }
 
+// @find: merge chat poll, delta merge conversation; route: none (client-side merge); used by: Chat page
 /**
  * What a conversation reads as once a reply is merged into the copy already held.
  *
@@ -1419,9 +1510,48 @@ export function mergeConversationDetail(held: ConversationDetail, received: Conv
     // A reply that only holds changes says nothing about what lies before the thread held.
     hasEarlier: held.hasEarlier,
     ...(received.generatedAt ? { generatedAt: received.generatedAt } : {}),
+    // The queue always comes whole, delta reads included: it replaces the held one.
+    queued: received.queued ?? held.queued ?? [],
+    busy: received.busy ?? held.busy ?? 'idle',
   }
 }
 
+// @find: detect stale goal or question in chat poll; route: none (client-side check); used by: Chat page
+/**
+ * Whether a reply to "what changed since" leaves the held copy unable to settle by itself.
+ *
+ * The server puts every goal still open and every question still pending in each such reply, so
+ * a held goal that is open but missing from one has finished, and a held pending question that is
+ * missing has been answered or withdrawn. The reply only says so when the change itself falls in
+ * its window; when it does not (a write that committed late, a read that crossed it) the held copy
+ * kept the goal open for good: its card stayed on "Starting" and the thread kept polling, until a
+ * reload read the whole window again. This is the sign to read it now.
+ */
+export function deltaMissesHeldWork(held: ConversationDetail, received: ConversationDetail): boolean {
+  const goalIds = new Set(received.goals.map((goal) => goal.id))
+  if (held.goals.some((goal) => isGoalActive(goal) && !goalIds.has(goal.id))) return true
+  const questionIds = new Set(received.questions.map((question) => question.id))
+  return held.questions.some((question) => question.status === 'pending' && !questionIds.has(question.id))
+}
+
+// @find: settle chat copy with full read; route: none (client-side merge); used by: Chat page
+/**
+ * The held copy brought up to date by a whole read. A goal or question the held copy still has as
+ * open, that the whole read (which carries every open one) leaves out, is not open any more; it is
+ * dropped rather than kept open forever when it is too old to be in the window.
+ */
+export function settleWithWholeRead(held: ConversationDetail, whole: ConversationDetail): ConversationDetail {
+  const merged = mergeConversationDetail(held, whole)
+  const goalIds = new Set(whole.goals.map((goal) => goal.id))
+  const questionIds = new Set(whole.questions.map((question) => question.id))
+  return {
+    ...merged,
+    goals: merged.goals.filter((goal) => !isGoalActive(goal) || goalIds.has(goal.id)),
+    questions: merged.questions.filter((question) => question.status !== 'pending' || questionIds.has(question.id)),
+  }
+}
+
+// @find: open conversation, chat thread, poll messages; route: GET /api/conversations/{id}; used by: Chat page
 /**
  * One conversation, its thread, its board-style goals and its questions. Polls through
  * conversationPollMs while something in it is still moving.
@@ -1443,10 +1573,14 @@ export function useConversation(id: string | null | undefined, options: QueryOpt
         params.set('after', String(newestMessagePosition(held.messages)))
         params.set('since', held.generatedAt)
       }
-      const received = conversationDetailRow(
-        await api<ConversationDetail>(`/api/conversations/${id ?? ''}?${params.toString()}`, { signal }),
-      )
-      return held ? mergeConversationDetail(held, received) : received
+      const read = async (query: URLSearchParams) =>
+        conversationDetailRow(await api<ConversationDetail>(`/api/conversations/${id ?? ''}?${query.toString()}`, { signal }))
+      const received = await read(params)
+      if (!held) return received
+      if (held.generatedAt && deltaMissesHeldWork(held, received)) {
+        return settleWithWholeRead(held, await read(new URLSearchParams({ limit: '200' })))
+      }
+      return mergeConversationDetail(held, received)
     },
     enabled: Boolean(id) && (options.enabled ?? true),
     refetchInterval: (query) =>
@@ -1454,6 +1588,7 @@ export function useConversation(id: string | null | undefined, options: QueryOpt
   })
 }
 
+// @find: new chat, create conversation; route: POST /api/conversations; used by: Chat page New chat button
 export function useCreateConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1463,21 +1598,40 @@ export function useCreateConversation() {
   })
 }
 
-/** Sends a message in a conversation. Resolves to the messages the request created (the person's, then any coordinator replies). */
+// @find: send chat message, queue message; route: POST /api/conversations/{id}/messages; used by: Chat page composer
+/**
+ * Sends a message in a conversation. Resolves to the messages the request created (the person's,
+ * then any coordinator replies), or, while an answer is still being worked on, to the queued item,
+ * which is added to the cached queue at once so it never shows as an ordinary sent message.
+ */
 export function useSendMessage(conversationId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { text: string; agentIds?: string[]; attachmentIds?: string[] }) => {
-      const result = await api<{ messages: ChatMessage[] }>(`/api/conversations/${conversationId}/messages`, {
+    mutationFn: async (input: { text: string; agentIds?: string[]; attachmentIds?: string[] }): Promise<SendMessageResult> => {
+      const result = await api<Partial<SendMessageResult>>(`/api/conversations/${conversationId}/messages`, {
         method: 'POST',
         body: input,
       })
-      return result.messages.map(chatMessageRow)
+      return {
+        messages: (result?.messages ?? []).map(chatMessageRow),
+        queued: result?.queued ? queuedMessageRow(result.queued) : null,
+      }
     },
-    onSuccess: () => invalidateWork(client),
+    onSuccess: (result) => {
+      const queued = result.queued
+      if (queued) {
+        client.setQueryData<ConversationDetail>(['conversations', conversationId], (detail) =>
+          detail
+            ? { ...detail, queued: [...(detail.queued ?? []).filter((item) => item.id !== queued.id), queued] }
+            : detail,
+        )
+      }
+      invalidateWork(client)
+    },
   })
 }
 
+// @find: reroute message to another agent; route: POST /api/conversations/{id}/messages/{messageId}/reroute; used by: Chat page
 /** Sends one routed message to a different agent instead, cancelling the goal it started if that goal is still open. */
 export function useReroute(conversationId: string) {
   const client = useQueryClient()
@@ -1493,6 +1647,7 @@ export function useReroute(conversationId: string) {
   })
 }
 
+// @find: rename chat; route: PATCH /api/conversations/{id}; used by: Chat page
 export function useRenameConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1502,6 +1657,7 @@ export function useRenameConversation() {
   })
 }
 
+// @find: pin or unpin chat; route: PUT|DELETE /api/conversations/{id}/pin; used by: Chat page
 export function usePinConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1511,6 +1667,7 @@ export function usePinConversation() {
   })
 }
 
+// @find: archive or unarchive chat; route: PUT|DELETE /api/conversations/{id}/archive; used by: Chat page
 export function useArchiveConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1520,6 +1677,7 @@ export function useArchiveConversation() {
   })
 }
 
+// @find: delete chat, delete conversation; route: DELETE /api/conversations/{id}; used by: Chat page
 /** Deletes a conversation. The service refuses this for anyone but the person who created it. */
 export function useDeleteConversation() {
   const client = useQueryClient()
@@ -1533,6 +1691,7 @@ export function useDeleteConversation() {
   })
 }
 
+// @find: mark chat read, clear unread dot; route: PUT /api/conversations/{id}/read; used by: Chat page
 /**
  * Marks a conversation read up to `position`. Patches the cached list rows directly instead of
  * refetching, so the unread dot clears at once and there is no refetch storm.
@@ -1557,6 +1716,7 @@ export function useMarkConversationRead(conversationId: string) {
   })
 }
 
+// @find: stop goal from chat; route: POST /api/conversations/{id}/goals/{goalId}/stop; used by: Chat page
 /** Stops a chat-started goal from the thread. */
 export function useStopChatGoal(conversationId: string) {
   const client = useQueryClient()
@@ -1570,6 +1730,7 @@ export function useStopChatGoal(conversationId: string) {
   })
 }
 
+// @find: retry goal from chat; route: POST /api/conversations/{id}/goals/{goalId}/retry; used by: Chat page
 /** Retries a chat-started goal from the thread. */
 export function useRetryChatGoal(conversationId: string) {
   const client = useQueryClient()
@@ -1580,6 +1741,7 @@ export function useRetryChatGoal(conversationId: string) {
   })
 }
 
+// @find: answer from documents, fall back to General Employee; route: POST /api/conversations/{id}/messages/{messageId}/answer-from-documents; used by: Chat page
 /** Falls back to General Employee, or answers from the passages already found, for a documents message. */
 export function useAnswerFromDocuments(conversationId: string) {
   const client = useQueryClient()
@@ -1595,6 +1757,7 @@ export function useAnswerFromDocuments(conversationId: string) {
   })
 }
 
+// @find: deprecated flat conversation list; route: GET /api/conversations?scope=all; used by: Chat page (legacy)
 /**
  * The old, flat conversation list, kept only so `routes/Chat.tsx` keeps compiling until it moves
  * to useConversationList. Reads the first page with scope=all (the server default) and flattens
@@ -1620,6 +1783,7 @@ export const useConversations = (options: QueryOptions = {}) =>
 
 /* ---- Orchestrator board -------------------------------------------------------------------------- */
 
+// @find: orchestrator board, live board, queue and timeline; route: GET /api/orchestrator/board; used by: Orchestrator page
 /** The whole live board: agents, active goals, the queue, questions, approvals and the timeline (run:read). */
 export const useBoard = (options: { window?: BoardWindow; paused?: boolean } = {}) => {
   const boardWindow = options.window ?? 'PT2H'
@@ -1631,6 +1795,7 @@ export const useBoard = (options: { window?: BoardWindow; paused?: boolean } = {
   })
 }
 
+// @find: stop all work, emergency stop; route: POST /api/orchestrator/stop-all; used by: Orchestrator page Stop all button
 /** Cancels every active run, pending approval and open task in the workspace (run:cancel). */
 export function useStopAll() {
   const client = useQueryClient()
@@ -1648,6 +1813,7 @@ export function useStopAll() {
   })
 }
 
+// @find: pause agent, resume agent; route: POST /api/agents/{id}/pause|resume; used by: Agents page, Orchestrator page
 /** Pauses or resumes one agent (agent:update), chosen by `action`: its queued and future tasks stay pending, held rather than failed. */
 export function useSetAgentStatus() {
   const client = useQueryClient()
@@ -1661,8 +1827,27 @@ export function useSetAgentStatus() {
   })
 }
 
+// @find: retire agent, restore agent; route: POST /api/agents/{id}/retire|restore; used by: Agent detail page
+/**
+ * Retires an agent, or restores a retired one (agent:delete). Retiring archives it: chat, routing
+ * and its schedules stop reaching it, and its history is kept. A restored agent comes back paused.
+ */
+export function useRetireAgent() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { id: string; action: 'retire' | 'restore' }) =>
+      agentRow(await api<Agent>(`/api/agents/${input.id}/${input.action}`, { method: 'POST' })),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['agents'] })
+      client.invalidateQueries({ queryKey: ['board'] })
+      client.invalidateQueries({ queryKey: ['schedules'] })
+    },
+  })
+}
+
 /* ---- Schedules ----------------------------------------------------------------------------------- */
 
+// @find: list schedules; route: GET /api/schedules; used by: Schedules page
 /** Every schedule in the workspace (task:read), refreshed every 30 seconds. */
 export const useSchedules = (options: QueryOptions = {}) =>
   useQuery({
@@ -1672,6 +1857,7 @@ export const useSchedules = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: preview schedule from plain English; route: POST /api/schedules/preview; used by: Schedules page create dialog
 /** Reads a plain-English phrase back as a schedule, without saving anything (task:read). */
 export function useSchedulePreview() {
   return useMutation({
@@ -1680,6 +1866,7 @@ export function useSchedulePreview() {
   })
 }
 
+// @find: create schedule; route: POST /api/schedules; used by: Schedules page
 export function useCreateSchedule() {
   const client = useQueryClient()
   return useMutation({
@@ -1692,6 +1879,7 @@ export function useCreateSchedule() {
   })
 }
 
+// @find: update schedule, edit schedule; route: PUT /api/schedules/{id}; used by: Schedules page
 export function useUpdateSchedule(id: string) {
   const client = useQueryClient()
   return useMutation({
@@ -1719,11 +1907,15 @@ function useScheduleAction(id: string, action: 'pause' | 'resume' | 'run-now') {
   })
 }
 
+// @find: pause schedule; route: POST /api/schedules/{id}/pause; used by: Schedules page
 export const usePauseSchedule = (id: string) => useScheduleAction(id, 'pause')
+// @find: resume schedule; route: POST /api/schedules/{id}/resume; used by: Schedules page
 export const useResumeSchedule = (id: string) => useScheduleAction(id, 'resume')
+// @find: run schedule now; route: POST /api/schedules/{id}/run-now; used by: Schedules page
 /** Fires the schedule now, outside its own timetable. The returned ScheduleView carries the new goal in `lastGoalId`. */
 export const useRunScheduleNow = (id: string) => useScheduleAction(id, 'run-now')
 
+// @find: delete schedule; route: DELETE /api/schedules/{id}; used by: Schedules page
 export function useDeleteSchedule() {
   const client = useQueryClient()
   return useMutation({
@@ -1738,6 +1930,7 @@ export function useDeleteSchedule() {
 /** A schedule's own run history: the goals it created, newest first (task:read). */
 /* ---- Voice --------------------------------------------------------------------------------------- */
 
+// @find: voice status, ElevenLabs configured, voice quota; route: GET /api/voice/status; used by: Chat page, Agent detail page
 /** Whether ElevenLabs is configured for this workspace, and today's quota (chat:use). */
 export const useVoiceStatus = (options: QueryOptions = {}) =>
   useQuery({
@@ -1746,6 +1939,7 @@ export const useVoiceStatus = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: list voices, ElevenLabs voices; route: GET /api/voice/voices; used by: Agent detail page
 /** The voices ElevenLabs offers. Empty without a stored key (chat:use). */
 export const useVoices = (options: QueryOptions = {}) =>
   useQuery({
@@ -1754,6 +1948,7 @@ export const useVoices = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: set agent voice, clear voice; route: PUT /api/agents/{id}/voice; used by: Agent detail page
 /** Sets, or clears with null, the voice an agent speaks with (agent:update). */
 export function useSetAgentVoice(agentId: string) {
   const client = useQueryClient()
@@ -1767,6 +1962,7 @@ export function useSetAgentVoice(agentId: string) {
   })
 }
 
+// @find: list model providers; route: GET /api/providers; used by: Model routing page
 export const useProviders = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['providers'],
@@ -1774,6 +1970,7 @@ export const useProviders = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: list models; route: GET /api/providers/models; used by: Model routing page
 export const useModels = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['providers', 'models'],
@@ -1781,6 +1978,7 @@ export const useModels = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: provider model catalogue, refresh model list; route: GET /api/providers/{id}/models; used by: Model routing page model picker
 /**
  * Every tool-capable model a provider itself lists, for the model picker. The service caches the
  * list for six hours per workspace; `refresh` asks the provider again and replaces what is shown.
@@ -1801,6 +1999,7 @@ export function useProviderCatalogue(providerId: string, options: QueryOptions =
   return { ...query, refresh }
 }
 
+// @find: workspace model policy; route: GET /api/model-policy; used by: Model routing page
 export const useModelPolicy = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['model-policy'],
@@ -1808,6 +2007,7 @@ export const useModelPolicy = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: stored credentials, provider keys without values; route: GET /api/credentials; used by: Model routing page
 /** Which credentials are stored, without their values (provider:read). */
 export const useCredentials = (options: QueryOptions = {}) =>
   useQuery({
@@ -1816,6 +2016,7 @@ export const useCredentials = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: save model policy; route: PUT /api/model-policy; used by: Model routing page
 export function useSetModelPolicy() {
   const client = useQueryClient()
   return useMutation({
@@ -1825,6 +2026,7 @@ export function useSetModelPolicy() {
   })
 }
 
+// @find: store provider API key, save credential; route: PUT /api/credentials/{ref}; used by: Model routing page connect dialog
 export function useStoreCredential() {
   const client = useQueryClient()
   return useMutation({
@@ -1840,6 +2042,7 @@ export function useStoreCredential() {
   })
 }
 
+// @find: list knowledge sources, knowledge base; route: GET /api/sources; used by: Knowledge page
 export const useSources = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['sources'],
@@ -1847,12 +2050,14 @@ export const useSources = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: get one knowledge source; route: GET /api/sources/{id}; used by: Source detail page
 export const useSource = (id: string) =>
   useQuery({
     queryKey: ['sources', id],
     queryFn: async ({ signal }) => sourceRow(await api<Source>(`/api/sources/${id}`, { signal })),
   })
 
+// @find: list source documents; route: GET /api/sources/{id}/documents; used by: Source detail page
 export const useSourceDocuments = (id: string) =>
   useQuery({
     queryKey: ['sources', id, 'documents'],
@@ -1860,6 +2065,7 @@ export const useSourceDocuments = (id: string) =>
       (await api<SourceDocument[]>(`/api/sources/${id}/documents`, { signal })).map(documentRow),
   })
 
+// @find: list connectors, integrations; route: GET /api/integrations; used by: Connectors page, Agent detail grants
 /** Every connector, with its tools, catalog details and connection state (integration:read). */
 export const useIntegrations = (options: QueryOptions = {}) =>
   useQuery({
@@ -1868,6 +2074,7 @@ export const useIntegrations = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: list members, team members; route: GET /api/users; used by: Members page
 export const useMembers = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['members'],
@@ -1875,6 +2082,7 @@ export const useMembers = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: list invitations; route: GET /api/orgs/{orgId}/invitations; used by: Members page
 export const useInvitations = (orgId: string, options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['invitations', orgId],
@@ -1882,6 +2090,7 @@ export const useInvitations = (orgId: string, options: QueryOptions = {}) =>
     enabled: Boolean(orgId) && (options.enabled ?? true),
   })
 
+// @find: list roles; route: GET /api/roles; used by: Members page roles tab
 /** Every role with its permissions and holder count (role:read). */
 export const useRoles = (options: QueryOptions = {}) =>
   useQuery({
@@ -1890,6 +2099,7 @@ export const useRoles = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: permission catalogue; route: GET /api/roles/permissions; used by: Members page role editor
 /** Every permission code with its description (workspace:read, which every role holds). */
 export const usePermissionCatalogue = (options: QueryOptions = {}) =>
   useQuery({
@@ -1900,6 +2110,7 @@ export const usePermissionCatalogue = (options: QueryOptions = {}) =>
 
 /* ---- Writes ------------------------------------------------------------------------------------ */
 
+// @find: create goal, assign task to agent; route: POST /api/goals; used by: Tasks page New goal, Agent detail page
 export function useCreateGoal() {
   const client = useQueryClient()
   return useMutation({
@@ -1917,6 +2128,7 @@ export function useCreateGoal() {
   })
 }
 
+// @find: approve, reject, request changes; route: POST /api/approvals/{id}/decision; used by: Approvals page, Chat page, Orchestrator
 export function useDecideApproval() {
   const client = useQueryClient()
   return useMutation({
@@ -1935,27 +2147,49 @@ export function useDecideApproval() {
   })
 }
 
+// @find: create agent, new agent; route: POST /api/agents; used by: Agents page New agent dialog
 export function useCreateAgent() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { key: string; name: string; category: string; systemPrompt: string }) =>
+    mutationFn: async (input: { key: string; name: string; category: string; systemPrompt: string; description?: string }) =>
       agentRow(await api<Agent>('/api/agents', { method: 'POST', body: input })),
     onSuccess: () => client.invalidateQueries({ queryKey: ['agents'] }),
   })
 }
 
+// @find: update agent configuration, system prompt, goals; route: PUT /api/agents/{id}/configuration; used by: Agent detail page
 export function useUpdateAgent(id: string) {
   const client = useQueryClient()
   return useMutation({
-    /** `maxSteps` null or left out saves the default of 12. */
-    mutationFn: async (input: { systemPrompt: string; goals: string; maxSteps?: number | null }) =>
-      agentRow(await api<Agent>(`/api/agents/${id}/configuration`, { method: 'PUT', body: input })),
+    /**
+     * `maxSteps` null or left out saves the default of 12. `temperature` and `maxOutputTokens`
+     * null or left out save no setting (the model's default), so pass the current ones to keep them.
+     */
+    mutationFn: async (input: {
+      systemPrompt: string
+      goals: string
+      maxSteps?: number | null
+      temperature?: number | null
+      maxOutputTokens?: number | null
+    }) => agentRow(await api<Agent>(`/api/agents/${id}/configuration`, { method: 'PUT', body: input })),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['agents'] })
     },
   })
 }
 
+// @find: set agent description; route: PUT /api/agents/{id}/description; used by: Agent detail page
+/** Sets or clears (empty) the one line that says what an agent does (agent:update). Not a revision. */
+export function useSetAgentDescription(id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (description: string) =>
+      agentRow(await api<Agent>(`/api/agents/${id}/description`, { method: 'PUT', body: { description } })),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['agents'] }),
+  })
+}
+
+// @find: cancel run, stop run; route: POST /api/runs/{id}/cancel; used by: Run detail page, Runs page
 export function useCancelRun() {
   const client = useQueryClient()
   return useMutation({
@@ -1967,6 +2201,7 @@ export function useCancelRun() {
   })
 }
 
+// @find: create knowledge source, new source; route: POST /api/sources; used by: Knowledge page Add source dialog
 export function useCreateSource() {
   const client = useQueryClient()
   return useMutation({
@@ -1976,6 +2211,7 @@ export function useCreateSource() {
   })
 }
 
+// @find: enable or disable provider; route: POST /api/providers/{id}/enable|disable; used by: Model routing page
 export function useToggleProvider() {
   const client = useQueryClient()
   return useMutation({
@@ -1989,6 +2225,7 @@ export function useToggleProvider() {
 
 const serverPath = (server: string) => `/api/integrations/${encodeURIComponent(server)}`
 
+// @find: connect connector, store token, connect integration; route: PUT /api/integrations/{server}/connection; used by: Connectors page Connect dialog
 /**
  * Stores a live token for a connector (integration:connect). The service checks it with the
  * connector's own "who am I" call first and refuses one that fails (422 connector_check_failed),
@@ -2016,6 +2253,7 @@ export function useConnectIntegration() {
   })
 }
 
+// @find: OAuth app settings for connector; route: GET /api/integrations/{server}/oauth/app; used by: Connectors page
 /** The app saved for a sign-in connector's provider (integration:connect). */
 export const useOAuthApp = (server: string, options: QueryOptions = {}) =>
   useQuery({
@@ -2024,6 +2262,7 @@ export const useOAuthApp = (server: string, options: QueryOptions = {}) =>
     queryFn: ({ signal }) => api<OAuthAppView>(`${serverPath(server)}/oauth/app`, { signal }),
   })
 
+// @find: save OAuth app, client id and secret; route: PUT /api/integrations/{server}/oauth/app; used by: Connectors page
 /** Saves the app (client ID, secret and settings). Omit clientSecret to keep the stored one. */
 export function useSaveOAuthApp() {
   const client = useQueryClient()
@@ -2044,6 +2283,7 @@ export function useSaveOAuthApp() {
   })
 }
 
+// @find: start OAuth sign-in; route: GET /api/integrations/{server}/oauth/start; used by: Connectors page
 /** Asks for the provider's sign-in address; the page then sends the browser there. */
 export function useStartOAuth() {
   return useMutation({
@@ -2051,6 +2291,7 @@ export function useStartOAuth() {
   })
 }
 
+// @find: test connector connection; route: POST /api/integrations/{server}/test; used by: Connectors page Test button
 /** Runs the connector's check again against the stored token (integration:read). Records lastError. */
 export function useTestIntegration() {
   const client = useQueryClient()
@@ -2061,6 +2302,7 @@ export function useTestIntegration() {
   })
 }
 
+// @find: disconnect connector, remove token; route: DELETE /api/integrations/{server}/connection; used by: Connectors page
 /** Deletes the stored token and puts the connector back on the sandbox (integration:disconnect). */
 export function useDisconnectIntegration() {
   const client = useQueryClient()
@@ -2078,6 +2320,7 @@ function afterGrantChange(client: ReturnType<typeof useQueryClient>, agentId: st
   client.invalidateQueries({ queryKey: ['agents'] })
 }
 
+// @find: grant connector to agent, edit grant; route: PUT /api/agents/{id}/grants/{server}; used by: Agent detail page tools tab
 /** Adds a connector to an agent, or changes what it may do there (agent:update). Upsert. */
 export function useSaveAgentGrant(agentId: string) {
   const client = useQueryClient()
@@ -2091,6 +2334,7 @@ export function useSaveAgentGrant(agentId: string) {
   })
 }
 
+// @find: remove connector from agent; route: DELETE /api/agents/{id}/grants/{server}; used by: Agent detail page tools tab
 /** Takes a connector away from an agent (agent:update). */
 export function useRemoveAgentGrant(agentId: string) {
   const client = useQueryClient()
@@ -2101,12 +2345,14 @@ export function useRemoveAgentGrant(agentId: string) {
   })
 }
 
+// @find: agent names by id lookup; route: GET /api/agents (via useAgents); used by: Runs, Approvals, Tasks pages
 /** Agent names by id, for screens that show runs and approvals. */
 export function useAgentNames(options: QueryOptions = {}): Record<string, Agent> {
   const { data } = useAgents(options)
   return useMemo(() => Object.fromEntries((data ?? []).map((agent) => [agent.id, agent])), [data])
 }
 
+// @find: member names by id lookup; route: GET /api/users (via useMembers); used by: Audit log, Runs, Approvals pages
 /**
  * Members by user id, for naming the people behind audit entries, cancellations and decisions.
  * member:read is held by every built-in role. A miss means a former member: show a short id.
@@ -2116,6 +2362,7 @@ export function useMemberNames(options: QueryOptions = {}): Record<string, Membe
   return useMemo(() => Object.fromEntries((data ?? []).map((member) => [member.userId, member])), [data])
 }
 
+// @find: task index by id lookup; route: GET /api/goals (via useGoals); used by: Runs, Approvals pages
 /**
  * Each task with its goal, by task id, from the 50 most recent goals (useGoals). A miss means the
  * task belongs to an older goal: fall back to neutral wording, or load it with useGoal.
@@ -2131,6 +2378,7 @@ export function useTaskIndex(options: QueryOptions = {}): Record<string, { task:
   }, [data])
 }
 
+// @find: start run, run agent with instruction; route: POST /api/agents/{id}/runs; used by: Agent detail page Run button
 /**
  * Starts a run from a direct instruction. Resolves to RunStarted: navigate with `runId`.
  * `id` repeats `runId` only so callers written against the old Run typing keep working.
@@ -2149,6 +2397,7 @@ export function useCreateRun(agentId: string) {
   })
 }
 
+// @find: cancel goal; route: POST /api/goals/{id}/cancel; used by: Tasks page, Orchestrator
 export function useCancelGoal(goalId: string) {
   const client = useQueryClient()
   return useMutation({
@@ -2160,6 +2409,7 @@ export function useCancelGoal(goalId: string) {
   })
 }
 
+// @find: retry goal; route: POST /api/goals/{id}/retry; used by: Tasks page
 /** Tries a failed or stopped goal again, from the step that did not finish (D-7: requester or task:cancel). */
 export function useRetryGoal() {
   const client = useQueryClient()
@@ -2169,6 +2419,7 @@ export function useRetryGoal() {
   })
 }
 
+// @find: retry run; route: POST /api/runs/{id}/retry; used by: Run detail page
 /** Starts a failed, abandoned or cancelled direct run again with its original instruction; returns the new run. */
 export function useRetryRun() {
   const client = useQueryClient()
@@ -2179,6 +2430,7 @@ export function useRetryRun() {
   })
 }
 
+// @find: re-index source, update knowledge, rebuild embeddings; route: POST /api/sources/{id}/reindex; used by: Source detail page
 export function useReindexSource(sourceId: string) {
   const client = useQueryClient()
   return useMutation({
@@ -2191,6 +2443,7 @@ export function useReindexSource(sourceId: string) {
   })
 }
 
+// @find: create role; route: POST /api/roles; used by: Members page role editor
 export function useCreateRole() {
   const client = useQueryClient()
   return useMutation({
@@ -2200,6 +2453,7 @@ export function useCreateRole() {
   })
 }
 
+// @find: delete role; route: DELETE /api/roles/{id}; used by: Members page role editor
 export function useDeleteRoleMutation() {
   const client = useQueryClient()
   return useMutation({
@@ -2208,6 +2462,7 @@ export function useDeleteRoleMutation() {
   })
 }
 
+// @find: update role permissions; route: PUT /api/roles/{id}; used by: Members page role editor
 export function useUpdateRoleMutation() {
   const client = useQueryClient()
   return useMutation({
@@ -2217,6 +2472,7 @@ export function useUpdateRoleMutation() {
   })
 }
 
+// @find: invite member, send invitation; route: POST /api/orgs/{orgId}/invitations; used by: Members page Invite dialog
 export function useInviteMember(orgId: string, email: string, roleName: string) {
   const client = useQueryClient()
   return useMutation({
@@ -2232,6 +2488,7 @@ export function useInviteMember(orgId: string, email: string, roleName: string) 
   })
 }
 
+// @find: change member role; route: PUT /api/users/{userId}/role; used by: Members page
 export function useUpdateMemberRole() {
   const client = useQueryClient()
   return useMutation({
@@ -2245,6 +2502,7 @@ export function useUpdateMemberRole() {
   })
 }
 
+// @find: remove member; route: DELETE /api/users/{userId}; used by: Members page
 export function useRemoveMember() {
   const client = useQueryClient()
   return useMutation({
@@ -2256,6 +2514,7 @@ export function useRemoveMember() {
   })
 }
 
+// @find: accept invitation, join workspace; route: POST /api/invitations/accept; used by: Accept invite page
 export function useAcceptInvitation() {
   return useMutation({
     mutationFn: (input: { token: string; displayName: string; password: string }) =>
@@ -2293,6 +2552,7 @@ export type AnalyticsSummary = {
   byOutcome: OutcomeCount[]
 }
 
+// @find: analytics summary, audit counts; route: GET /api/analytics; used by: Analytics page
 export function useAnalytics() {
   return useQuery({
     queryKey: ['analytics'],
@@ -2311,6 +2571,7 @@ export type AuditFilters = {
   to?: string | undefined
 }
 
+// @find: audit filter query string; route: GET /api/audit params; used by: Audit log page
 /** The query string for a set of filters. A calendar day becomes the start or end of that day in UTC. */
 export function auditFilterParams(filters: AuditFilters): URLSearchParams {
   const params = new URLSearchParams()
@@ -2323,6 +2584,7 @@ export function auditFilterParams(filters: AuditFilters): URLSearchParams {
   return params
 }
 
+// @find: audit log, filter audit events; route: GET /api/audit; used by: Audit log page
 /** The audit log, newest first, a page of 100 at a time, narrowed by the server. */
 export function useAuditPages(filters: AuditFilters = {}) {
   const extra = auditFilterParams(filters).toString()
@@ -2348,6 +2610,7 @@ export type AuditVerification = {
   reason?: string
 }
 
+// @find: verify audit chain, tamper check; route: GET /api/audit/verify; used by: Audit log page Verify button
 export function useVerifyAudit() {
   return useMutation({ mutationFn: () => api<AuditVerification>('/api/audit/verify') })
 }

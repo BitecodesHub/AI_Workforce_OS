@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { conversationStatusText, groupConversations, highlightParts, nextAfterRemoval } from './conversationGroups'
+// @find: tests for conversationGroups, conversation groups, sidebar grouping, pinned, needs you, today, yesterday, older, search highlight, status text, archive restore
+// @what: Automated tests for conversationGroups.
+// @flow: Run with the web test runner; covers conversationGroups.
+import { describe, expect, it, vi } from 'vitest'
+import { conversationStatusText, groupConversations, highlightParts, nextAfterRemoval, undoArchive } from './conversationGroups'
 import type { Conversation } from '../../lib/queries'
 
 function conversation(overrides: Partial<Conversation> & Pick<Conversation, 'id'>): Conversation {
@@ -107,3 +110,20 @@ describe('nextAfterRemoval', () => {
     expect(nextAfterRemoval(['a', 'b'], 'z')).toBeNull()
   })
 })
+
+describe('undoArchive', () => {
+  it('unarchives, and pins again a conversation that was pinned when it was archived', async () => {
+    const actions = { unarchive: vi.fn(async () => undefined), pin: vi.fn(async () => undefined) }
+    await undoArchive({ id: 'c1', pinned: true }, actions)
+    expect(actions.unarchive).toHaveBeenCalledWith('c1')
+    expect(actions.pin).toHaveBeenCalledWith('c1')
+  })
+
+  it('leaves an unpinned conversation unpinned', async () => {
+    const actions = { unarchive: vi.fn(async () => undefined), pin: vi.fn(async () => undefined) }
+    await undoArchive({ id: 'c2', pinned: false }, actions)
+    expect(actions.unarchive).toHaveBeenCalledWith('c2')
+    expect(actions.pin).not.toHaveBeenCalled()
+  })
+})
+

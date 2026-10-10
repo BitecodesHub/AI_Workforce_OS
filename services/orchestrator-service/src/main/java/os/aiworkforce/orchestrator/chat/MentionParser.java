@@ -1,3 +1,6 @@
+// @find: mention parser, @agent mention, address an agent, @research, agent name or key, MentionParser, strip mention from text, chat mention
+// @what: Finds @agent mentions in a chat message and resolves them to real agents.
+// @flow: Called by CoordinatorService before intent detection.
 package os.aiworkforce.orchestrator.chat;
 
 import java.util.ArrayList;
@@ -39,6 +42,7 @@ public final class MentionParser {
     /** @param agents the agents matched, in the order they were written, without duplicates */
     public record Result(List<Agent> agents, String text) {}
 
+    // @find: parse mentions, find @agent in message
     public static Result parse(String text, List<Agent> agents) {
         if (text == null || text.isBlank() || agents == null || agents.isEmpty()) {
             return new Result(List.of(), text == null ? "" : text);

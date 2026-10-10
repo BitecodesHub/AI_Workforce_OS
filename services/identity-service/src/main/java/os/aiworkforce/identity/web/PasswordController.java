@@ -1,3 +1,6 @@
+// @find: change password, my sessions, signed in devices, sign out device, password reset link, account security, /api/users/me, PasswordController
+// @what: REST endpoints for a person's own password and devices, and for administrators to create a reset link.
+// @flow: Calls AuthService and PasswordResetService; backs account security settings.
 package os.aiworkforce.identity.web;
 
 import java.time.Instant;
@@ -69,6 +72,7 @@ public class PasswordController {
      */
     public record ResetLinkResponse(String url, Instant expiresAt) {}
 
+    // @find: list my sessions, signed in devices, GET /api/users/me/sessions
     @GetMapping("/me/sessions")
     @Operation(summary = "The devices the signed-in account is signed in on")
     public List<AuthService.SessionSummary> sessions() {
@@ -76,6 +80,7 @@ public class PasswordController {
         return auth.listSessions(UUID.fromString(person.id()), person.sessionId());
     }
 
+    // @find: end session, sign out device, DELETE /api/users/me/sessions/{familyId}
     @DeleteMapping("/me/sessions/{familyId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Sign one device out")
@@ -84,6 +89,7 @@ public class PasswordController {
         auth.endSession(UUID.fromString(person.id()), familyId);
     }
 
+    // @find: change my password, PUT /api/users/me/password
     @PutMapping("/me/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Change the signed-in account's password and sign out its other devices")
@@ -93,6 +99,7 @@ public class PasswordController {
                 UUID.fromString(person.id()), person.sessionId(), request.currentPassword(), request.newPassword());
     }
 
+    // @find: create password reset link, POST /api/users/{userId}/password-reset-link
     @PostMapping("/{userId}/password-reset-link")
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.MEMBER_UPDATE)

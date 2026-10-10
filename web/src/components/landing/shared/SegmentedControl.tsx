@@ -1,3 +1,6 @@
+// @find: segmented control, radio group, toggle options, SegmentedControl
+// @what: Segmented control built from a native radio group.
+// @flow: Used by ApprovalDemo and FailoverDemo
 import { useId } from 'react'
 import type { ReactElement } from 'react'
 
@@ -21,6 +24,7 @@ export type SegmentedControlProps<V extends string> = {
   fullWidth?: boolean
 }
 
+// @find: SegmentedControl component, radio options
 export function SegmentedControl<V extends string>({
   legend,
   value,

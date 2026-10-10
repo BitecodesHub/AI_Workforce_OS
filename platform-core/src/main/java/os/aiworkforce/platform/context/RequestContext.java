@@ -1,3 +1,6 @@
+// @find: request context, current actor, request id, trace id, thread local, current organisation, workspace from token
+// @what: Holds the current actor, workspace and request identifiers for the running request.
+// @flow: Set by ActorContextFilter and JwtActorConverter; read by services and controllers
 package os.aiworkforce.platform.context;
 
 import java.util.HashMap;

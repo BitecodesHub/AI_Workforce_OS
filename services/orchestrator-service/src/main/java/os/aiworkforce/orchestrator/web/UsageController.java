@@ -1,3 +1,6 @@
+// @find: usage report, usage by model, cost report, usage csv export, spend, tokens, /api/orchestrator/usage, Usage page, Download CSV
+// @what: REST endpoints for the usage and cost report and its CSV export.
+// @flow: Reads usage rows written by JpaUsageRecorder
 package os.aiworkforce.orchestrator.web;
 
 import java.io.IOException;
@@ -145,6 +148,7 @@ public class UsageController {
         this.clock = clock;
     }
 
+    // @find: usage report, GET /api/orchestrator/usage
     @GetMapping("/usage")
     @RequiresPermission(Permission.Codes.BUDGET_READ)
     @Operation(summary = "Spend, tokens, failed-attempt cost and skipped candidates, grouped, for a window")
@@ -161,6 +165,7 @@ public class UsageController {
     @RequiresPermission(Permission.Codes.BUDGET_READ)
     @Operation(
             summary = "The same data as a CSV file: one row per attempt, or one per group when groupBy is given")
+    // @find: usage CSV export, GET /api/orchestrator/usage.csv
     public void csv(
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,

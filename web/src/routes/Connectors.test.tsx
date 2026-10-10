@@ -1,3 +1,6 @@
+// @find: tests for the connectors page, voice card, permissions, vitest, Connectors component tests, Connectors page
+// @what: Automated tests that check the the connectors page screen (/connectors) behaves as users expect.
+// @flow: Renders Connectors from Connectors.tsx inside a QueryClientProvider and RouterProvider with mocked API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -62,6 +65,13 @@ beforeEach(() => {
         return json(200, [connected ? webhook : { ...webhook, status: 'sandbox', sandbox: true, accountLabel: null }])
       }
       if (path === '/api/voice/status') return json(200, { keyStored: false })
+      if (path === '/api/voice/key/check') {
+        return json(422, {
+          code: 'validation_failed',
+          detail: 'Some of the values supplied are not valid.',
+          errors: { field: 'value', problem: 'ElevenLabs did not accept this key. Check that it was copied in full and is still active.' },
+        })
+      }
       return json(200, [])
     }),
   )
@@ -104,6 +114,20 @@ describe('Connectors: voice card per role', () => {
     open(['integration:read', 'chat:use'])
     expect(await screen.findByText("Using your browser's built-in voice until a key is stored.")).toBeInTheDocument()
     expect(calls.some((c) => c.path === '/api/voice/status')).toBe(true)
+  })
+})
+
+describe('Connectors: ElevenLabs key', () => {
+  it('refuses a key ElevenLabs rejects under the field, and never stores it', async () => {
+    open(OWNER)
+    fireEvent.click(await screen.findByRole('button', { name: 'Store key' }))
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'short' } })
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Store key' }).at(-1)!)
+    })
+    await waitFor(() => expect(screen.getByLabelText('API key')).toHaveAttribute('aria-invalid', 'true'))
+    expect(screen.getByText(/ElevenLabs did not accept this key/)).toBeInTheDocument()
+    expect(calls.some((call) => call.path.startsWith('/api/credentials') && call.method === 'PUT')).toBe(false)
   })
 })
 
@@ -217,17 +241,23 @@ describe('Connectors: toolbar', () => {
     expect(cardNames()).toEqual(['ElevenLabs'])
   })
 
-  it('filters by status, with a count beside each choice', async () => {
+  it('filters by status, with a count beside each choice that adds up to the whole', async () => {
     list = [webhook, jira]
     open(OWNER)
+    // The voice card without a key is Not connected: once a bucket of its own, the counts summed
+    // to one short of "All statuses".
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/voice/status')).toBe(true))
     fireEvent.click(await screen.findByRole('button', { name: /^Status:/ }))
     const listbox = screen.getByRole('listbox', { name: 'Status' })
-    expect(within(listbox).getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'All statuses3',
-      'Connected1',
-      'Sandbox1',
-      'Needs attention0',
-    ])
+    await waitFor(() =>
+      expect(within(listbox).getAllByRole('option').map((option) => option.textContent)).toEqual([
+        'All statuses3',
+        'Connected1',
+        'Sandbox1',
+        'Needs attention0',
+        'Not connected1',
+      ]),
+    )
     fireEvent.click(within(listbox).getByRole('option', { name: /Connected/ }))
     expect(window.location.search).toBe('?status=connected')
     expect(cardNames()).toEqual(['Webhook'])

@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, Qdrant, vector store, vector database, vector search, collection, upsert vectors, delete vectors, delete by document, delete by source, semantic search, search by meaning, reachable, health, QdrantClient
+// @what: REST client for the Qdrant vector database: creates collections, writes, searches and deletes vector points.
+// @flow: Called by IngestionService (write/delete), RetrievalService (search) and KnowledgeController.health.
 package os.aiworkforce.knowledge.service;
 
 import java.time.Duration;
@@ -76,11 +79,30 @@ public class QdrantClient {
      */
     public record Hit(UUID chunkId, double score, Map<String, Object> payload) {}
 
+    // @find: collection name per workspace
     /** Collection names carry the dimension, so a mismatched model cannot corrupt an index. */
     public static String collectionFor(String prefix, UUID orgId, int dimension) {
         return prefix + "_" + orgId.toString().replace("-", "") + "_d" + dimension;
     }
 
+    // @find: collection name per embedding model
+    /**
+     * The collection for one embedding model in one workspace. The model is part of the name, not
+     * only the width: two models of the same width put text in unrelated spaces, so a query
+     * embedded by one compared with passages embedded by the other returns confident nonsense,
+     * and a change of model must start an empty collection rather than mix the two.
+     */
+    public static String collectionFor(String prefix, UUID orgId, String provider, String model, int dimension) {
+        String slug = (provider + "_" + model).toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        slug = slug.replaceAll("^_+|_+$", "");
+        if (slug.length() > 60) {
+            // Long ids are cut, with a hash of the whole id so two long ids cannot meet.
+            slug = slug.substring(0, 51) + "_" + Integer.toHexString((provider + "/" + model).hashCode());
+        }
+        return prefix + "_" + orgId.toString().replace("-", "") + "_" + slug + "_d" + dimension;
+    }
+
+    // @find: create qdrant collection, where vectors are created
     public void ensureCollection(String collection, int dimension) {
         try {
             JsonNode existing = client.get()
@@ -159,6 +181,7 @@ public class QdrantClient {
         }
     }
 
+    // @find: write vectors to qdrant, index chunks, update vectors
     /**
      * Writes points in batches of {@value #UPSERT_BATCH}.
      *
@@ -204,6 +227,7 @@ public class QdrantClient {
         }
     }
 
+    // @find: vector search, semantic search qdrant, search by meaning
     /**
      * Searches within one workspace, and within the sources the caller may read.
      *
@@ -273,11 +297,13 @@ public class QdrantClient {
         }
     }
 
+    // @find: delete vectors of a document, remove document from search
     /** Removes every vector for a document, used when a document is deleted. */
     public void deleteByDocument(String collection, UUID documentId) {
         deleteMatching(collection, "documentId", documentId, "document");
     }
 
+    // @find: delete vectors of a source, remove source from search
     /**
      * Removes every vector for a source, used when a whole source is deleted.
      *
@@ -288,6 +314,7 @@ public class QdrantClient {
         deleteMatching(collection, "sourceId", sourceId, "source");
     }
 
+    // @find: delete specific vector points
     /**
      * Removes specific points, used to retire the passages a re-indexed document replaced, or the
      * ones just written for a document whose indexing then failed.
@@ -338,6 +365,7 @@ public class QdrantClient {
                 .block();
     }
 
+    // @find: is qdrant up, vector store health check
     public boolean isReachable() {
         try {
             return client.get()

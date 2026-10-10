@@ -1,3 +1,6 @@
+// @find: knowledge base, knowledge, documents, sources, search, retrieval, retrieve passages, search documents, semantic search, keyword search, hybrid search, grounding, grounded answer, citations, RAG, restricted sources, agent-owned sources, degraded search, no evidence, query rewriting, RetrievalService
+// @what: Finds the passages that answer a question by combining keyword and meaning-based search, filtered to what the caller may read, with grounding checks.
+// @flow: Called by KnowledgeController.search, InternalSearchController.search and AgentKnowledgeController; uses Chunks, QdrantClient and EmbeddingService.
 package os.aiworkforce.knowledge.service;
 
 import java.time.Duration;
@@ -87,8 +90,6 @@ public class RetrievalService {
      */
     private static final int RRF_K = 60;
 
-    /** Below this similarity a dense hit is noise, and including it invites a fabricated answer. */
-    private static final double MIN_SCORE = 0.25;
 
     /**
      * The equivalent floor for keyword search.
@@ -152,6 +153,9 @@ public class RetrievalService {
      * @param score fused rank score, for ordering and as a confidence signal
      * @param restricted whether the source is restricted to people who manage knowledge, so a caller
      *     that records the passage where others can read it keeps its text out of that record
+     * @param similarity the cosine similarity the meaning-based search found it at, or null when
+     *     only the keyword search found it; lets a caller trust a passage that shares no word with
+     *     the question but means the same
      */
     public record Passage(
             UUID chunkId,
@@ -163,7 +167,22 @@ public class RetrievalService {
             String heading,
             String content,
             double score,
-            boolean restricted) {
+            boolean restricted,
+            Double similarity) {
+
+        public Passage(
+                UUID chunkId,
+                UUID documentId,
+                UUID sourceId,
+                String documentTitle,
+                String uri,
+                Integer pageNumber,
+                String heading,
+                String content,
+                double score,
+                boolean restricted) {
+            this(chunkId, documentId, sourceId, documentTitle, uri, pageNumber, heading, content, score, restricted, null);
+        }
 
         /** A passage from a source everyone in the workspace may read. */
         public Passage(
@@ -187,6 +206,7 @@ public class RetrievalService {
      */
     public record Retrieval(List<Passage> passages, boolean degraded) {}
 
+    // @find: search the knowledge base, retrieve passages for a question, RAG lookup
     /**
      * Searches the sources the caller may read.
      *
@@ -225,16 +245,16 @@ public class RetrievalService {
 
         // Started first, so it runs while the keyword search does.
         List<DenseGroup> groups = denseGroups(searchable);
-        CompletableFuture<List<UUID>> dense = groups.isEmpty()
-                ? CompletableFuture.completedFuture(List.of())
+        CompletableFuture<Map<UUID, Double>> dense = groups.isEmpty()
+                ? CompletableFuture.completedFuture(Map.of())
                 : startDense(orgId, query, groups, capped * 3);
 
         List<UUID> lexical = lexicalSearch(orgId, query, allowedArray, capped * 3);
 
         boolean degraded = false;
-        List<UUID> denseHits;
+        Map<UUID, Double> denseScores;
         try {
-            denseHits = dense.join();
+            denseScores = dense.join();
         } catch (CompletionException | CancellationException e) {
             /*
              * Caught broadly, and deliberately so. Anything that goes wrong in the dense half -
@@ -242,7 +262,7 @@ public class RetrievalService {
              * answer. The keyword results stand, and the response says they are all there is.
              */
             degraded = true;
-            denseHits = List.of();
+            denseScores = Map.of();
             Throwable cause = e.getCause() == null ? e : e.getCause();
             if (cause instanceof TimeoutException) {
                 log.warn("Meaning-based search took longer than {} ms; answering from keyword search", DENSE_BUDGET.toMillis());
@@ -251,6 +271,7 @@ public class RetrievalService {
             }
         }
 
+        List<UUID> denseHits = List.copyOf(denseScores.keySet());
         if (denseHits.isEmpty() && lexical.isEmpty()) {
             // Returning nothing is the honest answer. Returning the least-bad match is how an
             // agent ends up citing an unrelated document with total confidence.
@@ -261,10 +282,11 @@ public class RetrievalService {
         List<UUID> fused = fuse(denseHits, lexical, capped);
         Map<UUID, Boolean> restricted = new HashMap<>();
         searchable.forEach(source -> restricted.put(source.getId(), source.isRestricted()));
-        List<Passage> found = hydrate(orgId, fused, allowedArray, restricted);
+        List<Passage> found = hydrate(orgId, fused, allowedArray, restricted, denseScores);
         return new Retrieval(groundedPassages(query, found, new LinkedHashSet<>(denseHits)), degraded);
     }
 
+    // @find: count searchable sources in workspace
     /**
      * How many of the workspace's sources hold at least one passage, restricted ones included.
      *
@@ -276,6 +298,7 @@ public class RetrievalService {
         return indexedSources(orgId, null);
     }
 
+    // @find: count searchable sources for one agent
     /** As {@link #indexedSources(UUID)}, counting this agent's own documents as well. */
     public int indexedSources(UUID orgId, UUID agentId) {
         return (int) sources.findByOrgIdOrderByName(orgId).stream()
@@ -328,7 +351,7 @@ public class RetrievalService {
         return groups;
     }
 
-    private CompletableFuture<List<UUID>> startDense(UUID orgId, String query, List<DenseGroup> groups, int limit) {
+    private CompletableFuture<Map<UUID, Double>> startDense(UUID orgId, String query, List<DenseGroup> groups, int limit) {
         // The caller's identity goes with the work: the embedding call is made on their behalf.
         RequestContext.Snapshot context = RequestContext.snapshot();
         return CompletableFuture.supplyAsync(
@@ -340,19 +363,22 @@ public class RetrievalService {
      * Embeds the query once per group, with that group's own model, and merges the hits by score.
      * Throws on any failure; the caller decides what a failure costs.
      */
-    private List<UUID> denseSearch(UUID orgId, String query, List<DenseGroup> groups, int limit) {
+    private Map<UUID, Double> denseSearch(UUID orgId, String query, List<DenseGroup> groups, int limit) {
         List<QdrantClient.Hit> hits = new ArrayList<>();
         for (DenseGroup group : groups) {
             float[] vector = embeddings.embedQuery(orgId, group.provider(), group.model(), query);
-            hits.addAll(vectors.search(group.collection(), orgId, group.sourceIds(), vector, limit, MIN_SCORE));
+            // Below its model's floor a dense hit is noise, and including it invites a fabricated answer.
+            hits.addAll(vectors.search(
+                    group.collection(), orgId, group.sourceIds(), vector, limit, EmbeddingSettings.meaningFloor(group.model())));
         }
         Map<UUID, Double> best = new HashMap<>();
         hits.forEach(hit -> best.merge(hit.chunkId(), hit.score(), Math::max));
-        return best.entrySet().stream()
+        Map<UUID, Double> ordered = new LinkedHashMap<>();
+        best.entrySet().stream()
                 .sorted(Map.Entry.<UUID, Double>comparingByValue().reversed())
                 .limit(limit)
-                .map(Map.Entry::getKey)
-                .toList();
+                .forEach(entry -> ordered.put(entry.getKey(), entry.getValue()));
+        return ordered;
     }
 
     private List<UUID> lexicalSearch(UUID orgId, String query, String allowedArray, int limit) {
@@ -422,7 +448,11 @@ public class RetrievalService {
      * sources are applied here too, because a vector hit is only an id until it is resolved.
      */
     private List<Passage> hydrate(
-            UUID orgId, List<UUID> chunkIds, String allowedArray, Map<UUID, Boolean> restrictedBySource) {
+            UUID orgId,
+            List<UUID> chunkIds,
+            String allowedArray,
+            Map<UUID, Boolean> restrictedBySource,
+            Map<UUID, Double> similarities) {
         if (chunkIds.isEmpty()) {
             return List.of();
         }
@@ -444,7 +474,8 @@ public class RetrievalService {
                     row.getHeading(),
                     row.getContent(),
                     1.0 - (order.getOrDefault(row.getChunkId(), 0) / (double) Math.max(1, chunkIds.size())),
-                    Boolean.TRUE.equals(restrictedBySource.get(row.getSourceId()))));
+                    Boolean.TRUE.equals(restrictedBySource.get(row.getSourceId())),
+                    similarities.get(row.getChunkId())));
         }
         passages.sort(Comparator.comparingDouble(Passage::score).reversed());
         return passages;
@@ -467,6 +498,7 @@ public class RetrievalService {
 
     private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
 
+    // @find: grounding check, drop passages that do not match the question, citations
     /**
      * The passages that clear the grounding bar.
      *
@@ -588,6 +620,7 @@ public class RetrievalService {
         return w;
     }
 
+    // @find: no evidence found, nothing in knowledge base answers this
     /**
      * Raised when an agent asked a question the corpus cannot support.
      *

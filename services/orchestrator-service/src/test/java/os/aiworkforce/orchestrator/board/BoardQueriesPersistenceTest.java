@@ -1,3 +1,6 @@
+// @find: tests for board queries persistence, board, migration, recent goals, filtered goals, conversation goals changed since, recent runs, purges processed events, BoardQueriesPersistenceTest, BoardQueriesPersistence
+// @what: Tests for BoardQueriesPersistence in the orchestrator board package (6 test methods).
+// @flow: Exercises BoardQueriesPersistence
 package os.aiworkforce.orchestrator.board;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,6 +94,7 @@ class BoardQueriesPersistenceTest {
         return Instant.now().minus(minutes, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.MICROS);
     }
 
+    // @find: test migration, board queries persistence
     @Test
     @DisplayName("V11 adds the indexes the hot queries need, and leaves the one that already existed alone")
     void migration() {
@@ -116,6 +120,7 @@ class BoardQueriesPersistenceTest {
                 .isEqualTo(1L);
     }
 
+    // @find: test recent goals, board queries persistence
     @Test
     @DisplayName("the newest goals come back as a plain list, newest first, for one workspace only")
     void recentGoals() {
@@ -130,6 +135,7 @@ class BoardQueriesPersistenceTest {
         assertThat(goals.findRecent(ORG, PageRequest.of(1, 2))).extracting(Goal::getId).containsExactly(oldest);
     }
 
+    // @find: test filtered goals, board queries persistence
     @Test
     @DisplayName("the goals list narrows by status, source and schedule, alone or together, and never crosses workspaces")
     void filteredGoals() {
@@ -158,6 +164,7 @@ class BoardQueriesPersistenceTest {
         assertThat(goals.findFiltered(ORG, "cancelled", "", true, none, page)).isEmpty();
     }
 
+    // @find: test conversation goals changed since, board queries persistence
     @Test
     @DisplayName("a conversation's goals changed since a moment are found by the conversation, not by scanning the workspace")
     void conversationGoalsChangedSince() {
@@ -173,6 +180,7 @@ class BoardQueriesPersistenceTest {
         assertThat(changed).extracting(Goal::getId).containsExactly(recent);
     }
 
+    // @find: test recent runs, board queries persistence
     @Test
     @DisplayName("the newest runs come back as a plain list, newest first, for one workspace only")
     void recentRuns() {
@@ -200,6 +208,7 @@ class BoardQueriesPersistenceTest {
         return id;
     }
 
+    // @find: test purges processed events, board queries persistence
     @Test
     @DisplayName("the purge forgets only event ids older than the cut-off, and says how many")
     void purgesProcessedEvents() {

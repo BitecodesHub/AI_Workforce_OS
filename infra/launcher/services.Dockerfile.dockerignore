@@ -1,3 +1,6 @@
+# @find: dockerignore, build context, exclude node_modules, exclude target, launcher services image
+# @what: Lists files kept out of the backend image build context for the launcher.
+# @flow: Used with infra/launcher/services.Dockerfile
 **/node_modules
 **/target
 **/dist

@@ -1,3 +1,6 @@
+// @find: inline approval, approve in chat, decide approval in thread, run waiting for approval, approve reject button, orchestrator approval
+// @what: Approval decided without leaving the thread that waits on it.
+// @flow: Used by ProgressCard and the Orchestrator; uses PayloadPreview.
 import { useEffect, useState } from 'react'
 import { Button, Notice, Textarea, Time } from '../ui'
 import { Collapsible, useCollapsed } from '../ui/Collapsible'
@@ -18,6 +21,7 @@ import { useToast } from '../../lib/toast'
 
 const REASON_MAX = 1_000
 
+// @find: InlineApproval, inline approval, inline approval, approve in chat, decide approval in thread, run waiting for approval
 /**
  * A run held for an approval, decided without leaving the thread that is waiting on it.
  *
@@ -153,8 +157,10 @@ function InlineDecision({
         </Notice>
       ) : sendingBack ? (
         <div className="stack" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+          {/* The button that opened this is gone, so focus moves here, which also brings the box into view. */}
           <Textarea
             label="What should change"
+            autoFocus
             value={reason}
             onChange={(event) => setReason(event.target.value.slice(0, REASON_MAX))}
             maxLength={REASON_MAX}
@@ -186,6 +192,7 @@ function InlineDecision({
           <Textarea
             label="Reason"
             optional
+            autoFocus
             value={reason}
             onChange={(event) => setReason(event.target.value.slice(0, REASON_MAX))}
             maxLength={REASON_MAX}

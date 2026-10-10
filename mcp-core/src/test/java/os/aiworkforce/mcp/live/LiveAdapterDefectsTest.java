@@ -1,3 +1,5 @@
+// @find: tests for live adapter defects, regression tests, zoom stale token, vendor bugs found while covering adapters, live connectors regression
+// @what: One regression test per defect found while covering the live adapters.
 package os.aiworkforce.mcp.live;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;

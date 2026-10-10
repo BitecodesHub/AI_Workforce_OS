@@ -1,3 +1,6 @@
+// @find: runs api, list runs, run detail, run trace, steps, run questions, cancel run, stop run, /api/runs, Runs page, Run trace view, Stop run button
+// @what: REST endpoints to list runs, read a run's step-by-step trace and cancel a run.
+// @flow: Called by the Runs page; reads Runs and Steps, cancels via AgentRunner
 package os.aiworkforce.orchestrator.web;
 
 import java.math.BigDecimal;
@@ -62,6 +65,13 @@ public class RunController {
     private final QuestionService questions;
     private final GoalService goalService;
 
+    /** Stands in for "any agent" so the visible-runs query never binds a null id. */
+    private static final UUID NO_AGENT = new UUID(0L, 0L);
+
+    /** Says what each run's cost means; absent only where a test builds this by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private RunPricing pricing;
+
     /** Who may read which conversation; absent only where a test builds this by hand. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ConversationAccess access;
@@ -92,7 +102,12 @@ public class RunController {
             /** The goal this run's task belongs to. Null for a run started directly on an agent. */
             UUID goalId,
             /** Who asked for the goal this run belongs to. Null when that is not on record. */
-            UUID requestedBy) {}
+            UUID requestedBy,
+            /**
+             * What {@code cost} means: priced, free (every model it used is free in the catalogue),
+             * sandbox, unpriced (no price on file, so not known) or none (no model answered yet).
+             */
+            String pricing) {}
 
     public record StepView(
             UUID id,
@@ -106,6 +121,7 @@ public class RunController {
             long durationMs,
             Instant occurredAt) {}
 
+    // @find: list runs, GET /api/runs
     /**
      * Recent runs, newest first, optionally narrowed by status and agent.
      *
@@ -130,8 +146,20 @@ public class RunController {
                     "must be one of running, waiting_approval, waiting_input, completed, failed, cancelled or abandoned");
         }
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, 100));
+        Set<UUID> hidden =
+                access == null ? Set.of() : access.hiddenConversationIds(orgId, RequestContext.requireActor());
         Page<Run> result;
-        if (wanted != null && agentId != null) {
+        if (!hidden.isEmpty()) {
+            // In the query, so every page is full and a filter finds runs past the first page too.
+            result = runs.findVisible(
+                    orgId,
+                    wanted == null,
+                    wanted == null ? "" : wanted,
+                    agentId == null,
+                    agentId == null ? NO_AGENT : agentId,
+                    hidden,
+                    pageable);
+        } else if (wanted != null && agentId != null) {
             result = runs.findByOrgIdAndAgentIdAndStatusOrderByStartedAtDesc(orgId, agentId, wanted, pageable);
         } else if (wanted != null) {
             result = runs.findByOrgIdAndStatusOrderByStartedAtDesc(orgId, wanted, pageable);
@@ -141,15 +169,10 @@ public class RunController {
             result = runs.findByOrgIdOrderByStartedAtDesc(orgId, pageable);
         }
         List<Run> visible = result.getContent();
-        if (access != null && !visible.isEmpty()) {
-            Set<UUID> hiddenTasks = access.hiddenTaskIds(orgId, RequestContext.requireActor());
-            visible = visible.stream()
-                    .filter(run -> run.getTaskId() == null || !hiddenTasks.contains(run.getTaskId()))
-                    .toList();
-        }
         return toViews(visible);
     }
 
+    // @find: get run, GET /api/runs/{runId}
     @GetMapping("/{runId}")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "One run")
@@ -158,6 +181,7 @@ public class RunController {
         return toViews(List.of(run)).getFirst();
     }
 
+    // @find: run trace, steps, GET /api/runs/{runId}/steps
     @GetMapping("/{runId}/steps")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "The full trace, including attempts that failed")
@@ -168,6 +192,7 @@ public class RunController {
                 .toList();
     }
 
+    // @find: run questions, GET /api/runs/{runId}/questions
     @GetMapping("/{runId}/questions")
     @RequiresPermission(Permission.Codes.RUN_READ)
     @Operation(summary = "The questions this run asked, oldest first")
@@ -177,6 +202,7 @@ public class RunController {
         return questions.views(questions.forRun(orgId, runId), RequestContext.requireActor());
     }
 
+    // @find: cancel run, stop run, POST /api/runs/{runId}/cancel
     @PostMapping("/{runId}/cancel")
     @RequiresPermission(Permission.Codes.RUN_CANCEL)
     @Operation(summary = "Stop a run in progress")
@@ -228,6 +254,9 @@ public class RunController {
             }
         }
 
+        Map<UUID, boolean[]> calls = pricing == null || runList.isEmpty()
+                ? Map.of()
+                : pricing.calls(runList.getFirst().getOrgId(), runList.stream().map(Run::getId).toList());
         List<RunView> views = new ArrayList<>();
         for (Run run : runList) {
             UUID goalId = run.getTaskId() == null ? null : taskGoal.get(run.getTaskId());
@@ -246,7 +275,8 @@ public class RunController {
                     run.getCompletedAt(),
                     run.getFailureReason(),
                     goalId,
-                    requestedBy));
+                    requestedBy,
+                    RunPricing.of(run.getTotalCost(), calls.get(run.getId()))));
         }
         return views;
     }

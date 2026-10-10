@@ -1,3 +1,6 @@
+// @find: tests for internal schedule controller, schedule, service token pauses, user token refused, api key refused, agent token refused, other workspace token refused, no token refused, InternalScheduleControllerTest, InternalScheduleController
+// @what: Tests for InternalScheduleController in the orchestrator schedule package (6 test methods).
+// @flow: Exercises InternalScheduleController
 package os.aiworkforce.orchestrator.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,6 +59,7 @@ class InternalScheduleControllerTest {
                 Map.of());
     }
 
+    // @find: test service token pauses, internal schedule controller
     @Test
     @DisplayName("a service token pauses the departed person's schedules and reports how many")
     void serviceTokenPauses() {
@@ -70,6 +74,7 @@ class InternalScheduleControllerTest {
         verify(service).pauseForRemovedOwner(ORG, LEAVER, identity);
     }
 
+    // @find: test user token refused, internal schedule controller
     @Test
     @DisplayName("a person's token is refused, even an owner's, and nothing is paused")
     void userTokenRefused() {
@@ -88,6 +93,7 @@ class InternalScheduleControllerTest {
         verifyNoInteractions(service);
     }
 
+    // @find: test api key refused, internal schedule controller
     @Test
     @DisplayName("a machine key is refused too")
     void apiKeyRefused() {
@@ -111,6 +117,7 @@ class InternalScheduleControllerTest {
         verifyNoInteractions(service);
     }
 
+    // @find: test agent token refused, internal schedule controller
     @Test
     @DisplayName("an agent's token is refused: only the platform's own services may call this")
     void agentTokenRefused() {
@@ -134,6 +141,7 @@ class InternalScheduleControllerTest {
         verifyNoInteractions(service);
     }
 
+    // @find: test other workspace token refused, internal schedule controller
     @Test
     @DisplayName("a service token minted for another workspace cannot pause this one's schedules")
     void otherWorkspaceTokenRefused() {
@@ -147,6 +155,7 @@ class InternalScheduleControllerTest {
         verifyNoInteractions(service);
     }
 
+    // @find: test no token refused, internal schedule controller
     @Test
     @DisplayName("no token at all is refused as unauthenticated")
     void noTokenRefused() {

@@ -1,3 +1,6 @@
+// @find: tests for failover model, planRoute, presets, provider failover, breakers, safety refusal, fail closed, degrade to sandbox
+// @what: Tests route planning and presets for the failover demo.
+// @flow: Covers failoverModel.ts
 import { describe, expect, it } from 'vitest'
 import {
   CHAIN,

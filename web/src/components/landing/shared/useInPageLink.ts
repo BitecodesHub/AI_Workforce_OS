@@ -1,3 +1,6 @@
+// @find: in-page link, smooth scroll, anchor link, focus target, hash, useInPageLink
+// @what: Click handler that scrolls to a page section and moves focus there.
+// @flow: Used by Hero, LandingBar, HeroConsole
 import { useCallback } from 'react'
 import type { MouseEvent } from 'react'
 import { useLandingMotion } from './LandingRoot'
@@ -15,6 +18,7 @@ import { REVEAL_EVENT, type RevealDetail } from './revealEvent'
  * scrollIntoView - is left to the browser's own navigation.
  */
 
+// @find: useInPageLink hook, anchor scroll
 export function useInPageLink(): (event: MouseEvent<HTMLAnchorElement>) => void {
   const { reduced } = useLandingMotion()
 

@@ -1,3 +1,5 @@
+// @find: tests for budget controller, budget api, spending caps, /api/orchestrator/budget
+// @what: Unit and integration tests (13 cases) for budget controller, for example: permissions; usage permissions; get without abudget; get with acap.
 package os.aiworkforce.orchestrator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;

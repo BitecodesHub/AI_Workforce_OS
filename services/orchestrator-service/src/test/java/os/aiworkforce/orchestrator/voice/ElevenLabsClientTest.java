@@ -1,3 +1,6 @@
+// @find: tests for eleven labs client, voice, speech returns audio bytes, unauthorized is reported as credential rejected, rate limit is reported as throttled, other failures are reported as provider error, voices parses the list, transcribe returns text, ElevenLabsClientTest, ElevenLabsClient
+// @what: Tests for ElevenLabsClient in the orchestrator voice package (6 test methods).
+// @flow: Exercises ElevenLabsClient
 package os.aiworkforce.orchestrator.voice;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +52,7 @@ class ElevenLabsClientTest {
         client = new ElevenLabsClient(builder.build(), PROPERTIES);
     }
 
+    // @find: test speech returns audio bytes, eleven labs client
     @Test
     @DisplayName("speech posts the text and voice settings, and returns the audio bytes")
     void speechReturnsAudioBytes() {
@@ -62,6 +66,7 @@ class ElevenLabsClientTest {
         assertThat(audio).containsExactly(1, 2, 3);
     }
 
+    // @find: test unauthorized is reported as credential rejected, eleven labs client
     @Test
     @DisplayName("a 401 from ElevenLabs is reported as the stored key being rejected")
     void unauthorizedIsReportedAsCredentialRejected() {
@@ -74,6 +79,7 @@ class ElevenLabsClientTest {
                 .isEqualTo(ErrorCode.PROVIDER_CREDENTIAL_INVALID);
     }
 
+    // @find: test rate limit is reported as throttled, eleven labs client
     @Test
     @DisplayName("a 429 from ElevenLabs is reported as throttled")
     void rateLimitIsReportedAsThrottled() {
@@ -86,6 +92,7 @@ class ElevenLabsClientTest {
                 .isEqualTo(ErrorCode.RATE_LIMITED);
     }
 
+    // @find: test other failures are reported as provider error, eleven labs client
     @Test
     @DisplayName("any other failure is reported as a plain provider error")
     void otherFailuresAreReportedAsProviderError() {
@@ -98,6 +105,7 @@ class ElevenLabsClientTest {
                 .isEqualTo(ErrorCode.UPSTREAM_ERROR);
     }
 
+    // @find: test voices parses the list, eleven labs client
     @Test
     @DisplayName("the voice list is parsed from ElevenLabs' own field names")
     void voicesParsesTheList() {
@@ -116,6 +124,7 @@ class ElevenLabsClientTest {
         assertThat(voices.getFirst().previewUrl()).isEqualTo("https://example.com/v1.mp3");
     }
 
+    // @find: test transcribe returns text, eleven labs client
     @Test
     @DisplayName("transcribe posts the recording as multipart form data and returns the heard text")
     void transcribeReturnsText() {

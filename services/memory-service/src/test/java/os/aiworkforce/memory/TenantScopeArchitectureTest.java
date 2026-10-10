@@ -1,3 +1,5 @@
+// @find: tests for tenant scope, workspace from token, no orgId query parameter, memory isolation between workspaces, architecture test
+// @what: Checks no memory endpoint takes the workspace from the request instead of the token.
 package os.aiworkforce.memory;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
