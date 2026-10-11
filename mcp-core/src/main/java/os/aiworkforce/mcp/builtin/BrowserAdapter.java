@@ -56,8 +56,9 @@ public final class BrowserAdapter implements McpServerAdapter {
     public static final String SECRET_HEADER = "X-Runner-Secret";
 
     static final String UNAVAILABLE =
-            "The web browser is not running on this server, so nothing was opened. An administrator needs to start"
-                    + " the browser runner.";
+            "The web browser is not available on this server yet, so nothing was opened. It is a server setting,"
+                    + " not something to switch on in Connectors: an owner or admin needs to check the server's"
+                    + " browser runner.";
     static final String NOT_ANSWERING =
             "The web browser did not answer, so nothing was done. Try again in a minute.";
 

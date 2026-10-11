@@ -224,6 +224,18 @@ export function latestBrowserShot(steps: readonly RunStep[] | undefined): Browse
   return null
 }
 
+// @find: browserShots, every screenshot of a run, pages visited, browser preview filmstrip
+/** Every screenshot in a run's steps, oldest first, for the browser preview's strip of pages. */
+export function browserShots(steps: readonly RunStep[] | undefined): BrowserShotRef[] {
+  if (!steps) return []
+  const shots: BrowserShotRef[] = []
+  for (const step of steps) {
+    const shot = browserShotOf(step)
+    if (shot) shots.push(shot)
+  }
+  return shots
+}
+
 /** The codes the run loop writes itself, in words a person reads; any other code is shown sentence-cased. */
 const ERROR_HEADING: Record<string, string> = {
   loop_detected: 'Stopped for repeating itself',

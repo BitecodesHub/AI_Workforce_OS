@@ -1,12 +1,12 @@
 // @find: browser screenshot, web browser screenshot in trace, page screenshot, live view, current page, shotId, GET /api/browser/shots/{id}, full size screenshot dialog
-// @what: Shows the screenshot the web browser took after a step, and the Live view of a running run's latest page.
+// @what: Shows the screenshot the web browser took after a step, and the browser-window preview of every page a run visited, live while it works.
 // @flow: Used by TraceStep, RunTraceCompact and the Chat ProgressCard; reads the run steps the trace already polls.
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { Dialog } from '../ui'
 import { fetchAudio } from '../../lib/voice'
 import { useRunSteps } from '../../lib/queries'
-import { latestBrowserShot } from './traceModel'
+import { browserShots } from './traceModel'
 import type { BrowserShotRef } from './traceModel'
 
 /**
@@ -105,23 +105,143 @@ export function BrowserShot({ shot, compact = false }: { shot: BrowserShotRef; c
   )
 }
 
-// @find: LiveView, live view, browser live view, current page of running run, latest screenshot
+// @find: BrowserPreview, LiveView, live view, browser preview, browser window, pages visited, filmstrip, latest screenshot
 /**
- * The page the run's browser has open now: its newest screenshot and address, replaced as new
- * steps arrive (the steps query already polls while the run is active). Shows nothing until the
- * run has used the browser.
+ * What the run's web browser saw, drawn as a small browser window: an address bar with the page
+ * being shown, the page itself (a click opens it full size), and a strip of every page the run
+ * visited. While the run is working it follows the newest page as steps arrive (the steps query
+ * already polls); choosing a page in the strip pins it until "Latest" is chosen. Shows nothing until
+ * the run has used the browser.
  */
-export function LiveView({ runId, active }: { runId: string; active: boolean }) {
+export function BrowserPreview({ runId, active }: { runId: string; active: boolean }) {
   const steps = useRunSteps(runId, { active }).data
-  const shot = latestBrowserShot(steps)
-  if (!shot) return null
+  const shots = browserShots(steps)
+  const [pinned, setPinned] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  if (shots.length === 0) return null
+  const latest = shots[shots.length - 1]!
+  const shown = shots.find((shot) => shot.shotId === pinned) ?? latest
+  const following = shown.shotId === latest.shotId
+  const position = shots.findIndex((shot) => shot.shotId === shown.shotId) + 1
+
   return (
-    <div className="browser-live">
-      <p className="browser-live-label caption">
-        {active && <span className="chat-pulse-dot" aria-hidden="true" />}
-        {active ? 'Live view' : 'Last page seen'}
-      </p>
-      <BrowserShot key={shot.shotId} shot={shot} compact />
+    <figure className="browser-preview" aria-label="Web browser preview">
+      <div className="browser-preview-bar">
+        <span className="browser-preview-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+        <p className="browser-preview-address" title={shown.url ?? undefined}>
+          <span className="browser-preview-lock" aria-hidden="true">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="3" y="7" width="10" height="7" rx="1.5" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+            </svg>
+          </span>
+          <span className="browser-preview-host">{displayAddress(shown.url)}</span>
+        </p>
+        {active && following ? (
+          <span className="browser-preview-live">
+            <span className="chat-pulse-dot" aria-hidden="true" />
+            Live
+          </span>
+        ) : (
+          <span className="browser-preview-count caption">
+            Page {position} of {shots.length}
+          </span>
+        )}
+      </div>
+      <PreviewPage key={shown.shotId} shot={shown} onOpen={() => setOpen(true)} open={open} onClose={() => setOpen(false)} />
+      {shots.length > 1 && (
+        <div className="browser-preview-strip" role="group" aria-label="Pages visited">
+          {shots.map((shot, index) => (
+            <Thumbnail
+              key={shot.shotId}
+              shot={shot}
+              index={index + 1}
+              selected={shot.shotId === shown.shotId}
+              onSelect={() => setPinned(shot.shotId === latest.shotId ? null : shot.shotId)}
+            />
+          ))}
+        </div>
+      )}
+      <figcaption className="visually-hidden">
+        {active ? 'Live view of the page the agent has open: ' : 'Last page the agent saw: '}
+        {shown.title || shown.url || 'the page'}
+      </figcaption>
+    </figure>
+  )
+}
+
+function displayAddress(url: string | null): string {
+  if (!url) return 'Opening a page'
+  try {
+    const parsed = new URL(url)
+    const path = parsed.pathname === '/' ? '' : parsed.pathname
+    return `${parsed.host}${path}${parsed.search}`
+  } catch {
+    return url
+  }
+}
+
+function PreviewPage({
+  shot,
+  onOpen,
+  open,
+  onClose,
+}: {
+  shot: BrowserShotRef
+  onOpen: () => void
+  open: boolean
+  onClose: () => void
+}) {
+  const frame = useRef<HTMLDivElement>(null)
+  const { src, failed } = useShotImage(shot.shotId, frame)
+  return (
+    <div ref={frame} className="browser-preview-page">
+      {failed ? (
+        <p className="browser-preview-empty caption muted">The screenshot could not be loaded.</p>
+      ) : src ? (
+        <button type="button" className="browser-preview-open" onClick={onOpen} aria-label={`${altText(shot)}, open full size`}>
+          <img className="browser-preview-image" src={src} alt={altText(shot)} decoding="async" />
+        </button>
+      ) : (
+        <p className="browser-preview-empty caption muted">Loading the page…</p>
+      )}
+      {src && (
+        <Dialog open={open} onClose={onClose} eyebrow="Web browser" title={shot.title || 'Screenshot'} description={shot.url ?? undefined}>
+          <img className="browser-shot-full" src={src} alt={altText(shot)} />
+        </Dialog>
+      )}
     </div>
+  )
+}
+
+function Thumbnail({
+  shot,
+  index,
+  selected,
+  onSelect,
+}: {
+  shot: BrowserShotRef
+  index: number
+  selected: boolean
+  onSelect: () => void
+}) {
+  const frame = useRef<HTMLButtonElement>(null)
+  const { src } = useShotImage(shot.shotId, frame)
+  return (
+    <button
+      ref={frame}
+      type="button"
+      className="browser-preview-thumb"
+      aria-pressed={selected}
+      aria-label={`Page ${index}: ${shot.title || shot.url || 'page'}`}
+      title={shot.title || shot.url || undefined}
+      onClick={onSelect}
+    >
+      {src ? <img src={src} alt="" /> : <span aria-hidden="true">{index}</span>}
+    </button>
   )
 }

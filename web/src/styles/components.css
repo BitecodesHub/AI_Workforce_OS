@@ -3758,16 +3758,6 @@ input[type='checkbox'][role='switch']:checked::before {
   border-radius: var(--radius-md);
 }
 
-.browser-live {
-  margin-top: var(--space-3);
-}
-
-.browser-live-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-}
 
 /* ---- Workforce chat: queued messages ----
  * A message sent while an answer is still being worked on waits here, after the thread, until it
@@ -3992,4 +3982,160 @@ input[type='checkbox'][role='switch']:checked::before {
 /* In the account menu, the switch sits in a menu-item-sized slot. */
 .menu-theme {
   padding: var(--space-2) var(--space-4) var(--space-3);
+}
+
+/* The web browser preview: a small browser window with an address bar, the page the agent has
+   open (live while it works), and a strip of every page it visited. */
+.browser-preview {
+  margin: var(--space-3) 0 0;
+  max-width: 560px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.browser-preview-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.browser-preview-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.browser-preview-dots > span {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--line-strong);
+}
+
+.browser-preview-address {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-caption);
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.browser-preview-lock {
+  display: inline-flex;
+  flex: none;
+  color: var(--green);
+}
+
+.browser-preview-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-preview-live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--blue);
+}
+
+.browser-preview-count {
+  margin: 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.browser-preview-page {
+  position: relative;
+  aspect-ratio: 1280 / 800;
+  background: var(--paper);
+}
+
+.browser-preview-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.browser-preview-open:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: -3px;
+}
+
+.browser-preview-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.browser-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+}
+
+.browser-preview-strip {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.browser-preview-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 72px;
+  height: 45px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-caption);
+  color: var(--muted);
+  background: var(--surface);
+  cursor: pointer;
+  opacity: 0.7;
+  transition:
+    opacity var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.browser-preview-thumb:hover {
+  opacity: 1;
+}
+
+.browser-preview-thumb[aria-pressed='true'] {
+  border-color: var(--blue);
+  opacity: 1;
+}
+
+.browser-preview-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
 }

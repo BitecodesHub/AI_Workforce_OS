@@ -8,7 +8,7 @@ import { statusLabel } from '../../lib/labels'
 import { isRunActive, useRun, useRunSteps } from '../../lib/queries'
 import type { RunStep } from '../../lib/queries'
 import { AnswerCard } from './AnswerCard'
-import { LiveView } from './BrowserShot'
+import { BrowserPreview } from './BrowserShot'
 import { ClipAudio } from './ClipAudio'
 import { WaitingForAnswer } from './WaitingForAnswer'
 import { WaitingForApproval } from './WaitingForApproval'
@@ -124,7 +124,7 @@ export function RunTraceCompact({
 
       {showAnswer && answer && <AnswerCard step={answer} instruction={instructionText} />}
 
-      {liveView && <LiveView runId={runId} active={active} />}
+      {liveView && <BrowserPreview runId={runId} active={active} />}
 
       {shown.length > 0 && (
         <div>

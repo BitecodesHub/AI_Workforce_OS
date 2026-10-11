@@ -1,7 +1,7 @@
 // @find: agent answer, reply bubble, answer message, copy answer, read aloud, thumbs up, thumbs down, feedback, sources, citations, sandbox model, markdown answer, chat thread
 // @what: An agent's reply in the thread: name, markdown answer, action bar (copy, read aloud, feedback) and document sources.
 // @flow: Used by MessageItem; uses PassageList.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { Collapsible } from '../ui/Collapsible'
@@ -14,6 +14,7 @@ import type { useSpeaker } from '../../lib/voice'
 import { AgentAvatar } from '../ui/AgentAvatar'
 import { RatingButtons, RatingReason, useAnswerRating } from '../analytics/AnswerRating'
 import { PassageList, passageItemId } from './PassageList'
+import { BrowserPreview } from '../run/BrowserShot'
 import { PRACTICE_DATA_NOTE, sourcesForAnswer } from './chatModel'
 
 /**
@@ -104,6 +105,7 @@ export function AnswerBubble({
         {message.detail.practiceData === true && (
           <p className="caption muted chat-answer-practice">{PRACTICE_DATA_NOTE}</p>
         )}
+        {runId && <AnswerBrowserPreview runId={runId} />}
         {sources.length > 0 && (
           <div className="chat-sources" style={{ marginTop: 'var(--space-3)' }}>
             <Collapsible title={`Sources (${sources.length})`} open={sourcesOpen} onToggle={setSourcesOpen} headingLevel="p">
@@ -170,4 +172,30 @@ export function AnswerBubble({
       </div>
     </div>
   )
+}
+
+// @find: AnswerBrowserPreview, browser preview under an answer, pages the agent visited
+/**
+ * The pages the answer's run opened in the web browser, under the answer. The run's steps are read
+ * only once the answer scrolls near the screen, so a long conversation does not load every run.
+ */
+function AnswerBrowserPreview({ runId }: { runId: string }) {
+  const anchor = useRef<HTMLDivElement>(null)
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined')
+  useEffect(() => {
+    const node = anchor.current
+    if (near || !node) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setNear(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '300px' },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [near])
+  return <div ref={anchor}>{near && <BrowserPreview runId={runId} active={false} />}</div>
 }

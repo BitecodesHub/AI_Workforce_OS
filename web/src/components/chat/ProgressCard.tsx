@@ -4,7 +4,7 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { InlineApproval } from '../run/InlineApproval'
-import { LiveView } from '../run/BrowserShot'
+import { BrowserPreview } from '../run/BrowserShot'
 import { RunTraceCompact } from '../run/RunTraceCompact'
 import { Card, ConfirmDialog, Tag } from '../ui'
 import { Collapsible, useCollapsed } from '../ui/Collapsible'
@@ -151,7 +151,7 @@ function LiveHeader({
         {stepText(task)}
       </p>
       <div className="chat-live-bar" data-parked={parked || undefined} aria-hidden="true" />
-      {task?.runId && <LiveView runId={task.runId} active={task.status === 'running'} />}
+      {task?.runId && <BrowserPreview runId={task.runId} active={task.status === 'running'} />}
     </div>
   )
 }
