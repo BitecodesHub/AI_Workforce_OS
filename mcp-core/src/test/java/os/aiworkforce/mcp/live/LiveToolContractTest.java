@@ -14,6 +14,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.request;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static os.aiworkforce.mcp.live.ContractTable.ELEVENLABS_KEY;
 import static os.aiworkforce.mcp.live.ContractTable.TOKEN;
 import static os.aiworkforce.mcp.live.ContractTable.ZOOM_ACCESS;
 
@@ -327,7 +328,10 @@ class LiveToolContractTest {
                 .toList();
         assertThat(hits).as("a request " + call).isNotEmpty();
         for (LoggedRequest hit : hits) {
-            if (vendor.authorization() == null) {
+            if (call.keyHeader != null) {
+                assertThat(hit.containsHeader("Authorization")).as(call + " carries no vendor credential").isFalse();
+                assertThat(hit.getHeader(call.keyHeader)).as(call + " " + call.keyHeader).isEqualTo(ELEVENLABS_KEY);
+            } else if (vendor.authorization() == null) {
                 assertThat(hit.containsHeader("Authorization")).as(call + " carries no credential").isFalse();
             } else {
                 assertThat(hit.getHeader("Authorization")).as(call + " authorization").isEqualTo(vendor.authorization());

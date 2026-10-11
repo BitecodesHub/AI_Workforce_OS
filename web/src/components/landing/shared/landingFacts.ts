@@ -89,15 +89,15 @@ export const SANDBOX_MODEL = 'Offline sandbox model'
  * catalogue is the source of truth and these lists only copy it: a connector is live here only
  * where the catalogue marks it liveAvailable, because only those have an adapter that talks to the
  * real service with a token or address an administrator adds. Every other one works with practice
- * data. Voice notes are in the catalogue too but connect to nothing outside, so they are not
- * counted. Check both lists against the catalogue whenever it changes.
+ * data. Voice notes, the web browser and phone calls are in the catalogue too but are built in,
+ * with no account of their own, so they are not counted. Check both lists against the catalogue whenever it changes.
  *
  * The home page promises no live connection at all (see CONNECTOR_NOTICE); only the page for IT
  * teams names the live ones.
  */
 export const LIVE_CONNECTORS = [
   'github', 'slack', 'notion', 'linear', 'hubspot', 'webhook',
-  'jira', 'confluence', 'asana', 'zendesk', 'stripe', 'zoom',
+  'jira', 'confluence', 'asana', 'zendesk', 'stripe', 'zoom', 'twilio',
   'gmail', 'calendar', 'drive', 'sheets', 'outlook', 'teams', 'salesforce',
 ] as const
 
@@ -126,6 +126,7 @@ export const CONNECTOR_LABEL: Record<ConnectorId, string> = {
   asana: 'Asana',
   zendesk: 'Zendesk',
   stripe: 'Stripe',
+  twilio: 'Twilio',
 }
 
 export const CONNECTOR_COUNT = LIVE_CONNECTORS.length + PRACTICE_CONNECTORS.length

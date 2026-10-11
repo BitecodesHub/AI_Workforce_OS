@@ -29,6 +29,8 @@ const FORMATS: readonly Format[] = [
   { pattern: /^xox[abpr]-/, name: 'Slack token', providers: ['slack'] },
   { pattern: /^(sk|rk)_(live|test)_/, name: 'Stripe key', providers: ['stripe'] },
   { pattern: /^lin_api_/, name: 'Linear key', providers: ['linear'] },
+  { pattern: /^AC[0-9a-f]{32}$/i, name: 'Twilio Account SID', providers: ['twilio'] },
+  { pattern: /^SK[0-9a-f]{32}$/i, name: 'Twilio API key SID', providers: ['twilio'] },
   { pattern: /^(secret_|ntn_)/, name: 'Notion token', providers: ['notion'] },
   { pattern: /^(sk-proj-|sk-svcacct-|sk-admin-|sk-[A-Za-z0-9]{20,})/, name: 'OpenAI', providers: ['openai'] },
 ]
@@ -104,4 +106,19 @@ export const KEY_PAGES: Readonly<Record<string, { url: string; free: boolean; no
   anthropic: { url: 'https://console.anthropic.com/settings/keys', free: false, note: 'Paid, billed by Anthropic.' },
   openai: { url: 'https://platform.openai.com/api-keys', free: false, note: 'Paid, billed by OpenAI.' },
   bedrock: { url: 'https://console.aws.amazon.com/bedrock/home#/api-keys', free: false, note: 'Billed to your AWS account.' },
+}
+
+// @find: twilio account sid check, AC prefix, connect Twilio dialog warning
+/**
+ * Why a value typed as a Twilio Account SID does not look like one, or null when it does (or the
+ * field is not one). An API key SID (SK...) or the Auth token pasted into the box is the usual slip.
+ */
+export function accountSidProblem(server: string, fieldKey: string, value: string): string | null {
+  if (server !== 'twilio' || fieldKey !== 'accountSid') return null
+  const sid = value.trim()
+  if (!sid || /^AC[0-9a-f]{32}$/i.test(sid)) return null
+  if (/^SK[0-9a-f]{32}$/i.test(sid)) {
+    return 'This is an API key SID (it starts with SK). Enter the Account SID, which starts with AC.'
+  }
+  return 'An Account SID starts with AC and is 34 characters long. Copy it from the Twilio Console, under Account info.'
 }

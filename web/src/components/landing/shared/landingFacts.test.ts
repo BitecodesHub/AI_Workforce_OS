@@ -39,14 +39,15 @@ describe('connector facts', () => {
     const { live, other, practice } = catalogue(readFileSync(CATALOG, 'utf8'))
     expect(live).toEqual([...LIVE_CONNECTORS])
     expect(practice).toEqual([...PRACTICE_CONNECTORS])
-    // Voice notes are listed there too, but connect to nothing outside the workspace.
-    expect(other).toEqual(['voice'])
+    // The built-in connectors (voice notes, the web browser, phone calls) are listed there too, but
+    // have no account of their own to connect.
+    expect(other).toEqual(['voice', 'browser', 'phone'])
   })
 
   it('label every connector and count the two lists once each', () => {
     const all = [...LIVE_CONNECTORS, ...PRACTICE_CONNECTORS]
     expect(new Set(all).size).toBe(all.length)
-    expect(CONNECTOR_COUNT).toBe(19)
+    expect(CONNECTOR_COUNT).toBe(20)
     for (const id of all) expect(CONNECTOR_LABEL[id]).toBeTruthy()
   })
 

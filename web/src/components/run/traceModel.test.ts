@@ -3,7 +3,7 @@
 // @flow: Run with the web test runner; covers traceModel.
 import { describe, expect, it } from 'vitest'
 import type { RunStep } from '../../lib/queries'
-import { completedAnswer, incompleteAnswerText, stepHeading, stepMode } from './traceModel'
+import { browserShotOf, completedAnswer, incompleteAnswerText, latestBrowserShot, stepHeading, stepMode } from './traceModel'
 
 /*
  * What a trace says about where a tool's answer came from, how a run that stopped itself reads,
@@ -105,5 +105,23 @@ describe('completedAnswer', () => {
     ]
     expect(completedAnswer(steps, null)?.detail.content).toBe('and part two.')
     expect(completedAnswer([step('model_call', { content: '' })], 'Text')).toBeUndefined()
+  })
+})
+
+describe('browser screenshots in the trace', () => {
+  const step = (id: string, detail: Record<string, unknown>, kind = 'tool_call') =>
+    ({ id, position: 1, kind, detail, promptTokens: 0, completionTokens: 0, durationMs: 0, occurredAt: '2026-10-11T10:00:00Z' }) as RunStep
+
+  it('reads a step screenshot and finds the newest one for the live view', () => {
+    const steps = [
+      step('a', { tool: 'browser.open_page', shotId: 's1', url: 'https://example.com/', pageTitle: 'Example Domain' }),
+      step('b', { tool: 'browser.follow_link', shotId: 's2', url: 'https://www.iana.org/', pageTitle: 'IANA' }),
+      step('c', { content: 'Done' }, 'model_call'),
+    ]
+    expect(browserShotOf(steps[0]!)).toEqual({ shotId: 's1', url: 'https://example.com/', title: 'Example Domain' })
+    expect(browserShotOf(steps[2]!)).toBeNull()
+    expect(latestBrowserShot(steps)?.shotId).toBe('s2')
+    expect(latestBrowserShot([])).toBeNull()
+    expect(latestBrowserShot(undefined)).toBeNull()
   })
 })

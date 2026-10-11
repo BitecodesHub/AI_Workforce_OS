@@ -342,6 +342,52 @@ public class SandboxServerAdapter implements McpServerAdapter {
                         : "Marked one " + collection + " record as " + STATUS_AFTER.get(verb)
                                 + " in the sandbox. Nothing left this machine.";
             }
+            // Twilio's numbers: buying adds one, releasing removes one, connecting marks one. Nothing
+            // is bought, released or connected anywhere.
+            case "buy" -> {
+                ObjectNode record = json.createObjectNode();
+                record.put("id", "PN" + Long.toHexString(System.nanoTime()));
+                record.put("createdAt", Instant.now().toString());
+                record.put("createdBy", invocation.agentId());
+                arguments.fields().forEachRemaining(entry -> record.set(entry.getKey(), entry.getValue()));
+                record.put("voice", true);
+                record.put("in_elevenlabs", "no");
+                records.add(record);
+                result.setAll(record.deepCopy());
+                result.put("sandbox", true);
+                summary = "Recorded a " + collection + " purchase in the sandbox. Nothing left this machine and"
+                        + " nothing was bought.";
+            }
+            case "release", "connect" -> {
+                String target = collection.contains("_to_") ? collection.substring(0, collection.indexOf("_to_")) : collection;
+                List<ObjectNode> targets = records(invocation.orgId(), target);
+                String wanted = id != null ? id : arguments.path("phone_number").asText("");
+                ObjectNode match = find(targets, wanted);
+                if (match == null) {
+                    match = snapshot(targets).stream()
+                            .filter(record -> wanted.equals(record.path("phone_number").asText()))
+                            .findFirst()
+                            .orElse(null);
+                }
+                if (match == null) {
+                    return ToolResult.failed("No " + target + " record with id " + wanted + ".");
+                }
+                if ("release".equals(verb)) {
+                    targets.remove(match);
+                    result.put("phone_number", match.path("phone_number").asText());
+                    result.put("released", true);
+                    summary = "Released one " + target + " record from the sandbox. Nothing left this machine.";
+                } else {
+                    synchronized (targets) {
+                        match.put("in_elevenlabs", "yes");
+                        match.put("updatedAt", Instant.now().toString());
+                    }
+                    result.setAll(match.deepCopy());
+                    summary = "Marked one " + target + " record as connected to ElevenLabs in the sandbox. Nothing"
+                            + " left this machine.";
+                }
+                result.put("sandbox", true);
+            }
             default -> {
                 result.put("tool", invocation.qualifiedName());
                 result.put("sandbox", true);

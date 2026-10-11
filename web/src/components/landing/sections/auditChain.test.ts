@@ -169,11 +169,11 @@ describe('sections', () => {
   it('renders the platform counts with their final values for assistive technology', () => {
     const { container } = render(createElement(PlatformBand))
     const hidden = [...container.querySelectorAll('.lp-platform-stats .visually-hidden')].map((node) => node.textContent)
-    expect(hidden).toEqual(['8', '7', '19', '46', '5'])
+    expect(hidden).toEqual(['8', '7', '20', '46', '5'])
     expect(screen.getByText('Sandbox')).toBeInTheDocument()
     // The connectors in two groups, as mcp-core's catalogue splits them.
     const live = screen.getByRole('list', { name: 'Connect live' })
-    expect(within(live).getAllByRole('listitem')).toHaveLength(19)
+    expect(within(live).getAllByRole('listitem')).toHaveLength(20)
     expect(within(live).getByText('HubSpot')).toBeInTheDocument()
     expect(within(live).getByText('Gmail')).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Practice data only' })).not.toBeInTheDocument()

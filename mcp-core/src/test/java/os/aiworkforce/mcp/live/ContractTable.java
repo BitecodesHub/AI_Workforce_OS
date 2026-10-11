@@ -1,4 +1,4 @@
-// @find: test data for live adapter contracts, every tool of every live adapter, provider requests and answers, wiremock stand-in, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @find: test data for live adapter contracts, every tool of every live adapter, provider requests and answers, wiremock stand-in, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook, twilio
 // @what: Table of one row per live tool: arguments, expected provider request, provider answer and expected result.
 // @flow: Used by LiveToolContractTest
 package os.aiworkforce.mcp.live;
@@ -48,6 +48,8 @@ final class ContractTable {
         final List<String> jsonPaths = new ArrayList<>();
         String match;
         String json;
+        /* A request to a second provider (ElevenLabs from the Twilio adapter): its own key header, no Authorization. */
+        String keyHeader;
         int status = 200;
         String answer = "{}";
         String contentType = "application/json";
@@ -64,6 +66,12 @@ final class ContractTable {
 
         Call header(String key, String value) {
             headers.put(key, value);
+            return this;
+        }
+
+        /** A request sent with this header instead of the vendor's Authorization. */
+        Call keyHeader(String name) {
+            keyHeader = name;
             return this;
         }
 
@@ -258,6 +266,10 @@ final class ContractTable {
     static final String SALESFORCE =
             "{\"accessToken\":\"" + TOKEN + "\",\"instanceUrl\":\"https://acme.my.salesforce.com\"}";
     static final String BEARER = "Bearer " + TOKEN;
+    /** Built from parts so secret scanners never see a literal that looks like a real Twilio ID. */
+    static final String TWILIO_SID = "A" + "C" + "0123456789abcdef".repeat(2);
+    static final String TWILIO = "{\"accountSid\":\"" + TWILIO_SID + "\",\"authToken\":\"" + TOKEN + "\"}";
+    static final String ELEVENLABS_KEY = "xi-contract-key";
 
     static String basic(String user, String password) {
         return "Basic " + Base64.getEncoder().encodeToString((user + ":" + password).getBytes(StandardCharsets.UTF_8));
@@ -291,6 +303,11 @@ final class ContractTable {
         add(vendors, new Vendor("confluence", ATLASSIAN, basic(EMAIL, TOKEN), ConfluenceAdapter::new,
                 List.of(GET("/wiki/rest/api/user/current").answer("{\"displayName\":\"Cy\"}")),
                 "Cy on acme.atlassian.net"));
+        add(vendors, new Vendor("twilio", TWILIO, basic(TWILIO_SID, TOKEN),
+                (sandbox, json, http, base) -> new TwilioAdapter(sandbox, json, http, base)
+                        .useElevenLabs(http, base, () -> org -> java.util.Optional.of(ELEVENLABS_KEY)),
+                List.of(GET("/2010-04-01/Accounts/" + TWILIO_SID + ".json").answer("{\"friendly_name\":\"Acme calls\"}")),
+                "Acme calls"));
         add(vendors, new Vendor("zendesk", ZENDESK, basic(EMAIL + "/token", TOKEN), ZendeskAdapter::new,
                 List.of(GET("/api/v2/users/me").answer("{\"user\":{\"name\":\"Zed\"}}")), "Zed on acme.zendesk.com"));
         add(vendors, new Vendor("zoom", ZOOM, "Bearer " + ZOOM_ACCESS,
@@ -791,6 +808,54 @@ final class ContractTable {
                                         + "\"body\":{\"value\":\"<p>New text</p>\"}}")
                                 .answer("{\"id\":\"11\",\"title\":\"Plan\",\"version\":{\"number\":4}}"))
                 .says("Updated the Confluence page \"Plan\".").has("/version", "4"));
+
+        // Twilio
+        String accounts = "/2010-04-01/Accounts/" + TWILIO_SID;
+        String office = "{\"sid\":\"PN1\",\"phone_number\":\"+61255550101\",\"friendly_name\":\"Office\","
+                + "\"capabilities\":{\"voice\":true}}";
+        all.add(tool("twilio", "list_numbers", "{}")
+                .calls(
+                        GET(accounts + "/IncomingPhoneNumbers.json").q("PageSize", "50")
+                                .answer("{\"incoming_phone_numbers\":[" + office + "]}"),
+                        GET("/v1/convai/phone-numbers").keyHeader("xi-api-key")
+                                .answer("[{\"phone_number\":\"+61255550101\",\"phone_number_id\":\"pn_1\","
+                                        + "\"assigned_agent\":{\"agent_name\":\"Caller\"}}]"))
+                .says("Read 1 phone number(s) on the Twilio account.")
+                .has("/items/0/in_elevenlabs", "yes").has("/items/0/elevenlabs_agent", "Caller"));
+        all.add(tool("twilio", "search_available_numbers", "{\"country_code\":\"au\",\"area_code\":\"2\"}")
+                .calls(GET(accounts + "/AvailablePhoneNumbers/AU/Local.json").q("VoiceEnabled", "true").q("AreaCode", "2")
+                        .answer("{\"available_phone_numbers\":[{\"phone_number\":\"+61255550188\",\"locality\":"
+                                + "\"Sydney\",\"iso_country\":\"AU\",\"capabilities\":{\"voice\":true}}]}"))
+                .says("Found 1 number(s) available to buy in AU.").has("/items/0/locality", "Sydney"));
+        all.add(tool("twilio", "buy_number", "{\"phone_number\":\"+61 2 5555 0188\",\"country_code\":\"AU\"}")
+                .calls(
+                        GET("/v1/PhoneNumbers/Countries/AU").answer("{\"price_unit\":\"USD\",\"phone_number_prices\":"
+                                + "[{\"number_type\":\"local\",\"base_price\":\"6.50\",\"current_price\":\"6.50\"}]}"),
+                        POST(accounts + "/IncomingPhoneNumbers.json").match("PhoneNumber=%2B61255550188")
+                                .answer("{\"sid\":\"PN9\",\"phone_number\":\"+61255550188\"}"))
+                .says("Bought +61255550188 on the Twilio account, about 6.50 USD a month.")
+                .has("/monthly_cost", "6.50 USD").has("/sid", "PN9"));
+        all.add(tool("twilio", "release_number", "{\"phone_number\":\"+61255550101\"}")
+                .calls(
+                        GET(accounts + "/IncomingPhoneNumbers.json").q("PhoneNumber", "+61255550101")
+                                .answer("{\"incoming_phone_numbers\":[" + office + "]}"),
+                        DELETE(accounts + "/IncomingPhoneNumbers/PN1.json").empty(204))
+                .says("Released +61255550101 from the Twilio account.").has("/released", "true"));
+        all.add(tool("twilio", "connect_number_to_elevenlabs", "{\"phone_number\":\"+61255550101\",\"agent\":\"caller\"}")
+                .calls(
+                        GET(accounts + "/IncomingPhoneNumbers.json").q("PhoneNumber", "+61255550101")
+                                .answer("{\"incoming_phone_numbers\":[" + office + "]}"),
+                        GET("/v1/convai/phone-numbers").keyHeader("xi-api-key").answer("[]"),
+                        POST("/v1/convai/phone-numbers").keyHeader("xi-api-key")
+                                .json("{\"phone_number\":\"+61255550101\",\"sid\":\"" + TWILIO_SID + "\","
+                                        + "\"provider\":\"twilio\"}")
+                                .answer("{\"phone_number_id\":\"pn_9\"}"),
+                        GET("/v1/convai/agents").keyHeader("xi-api-key")
+                                .answer("{\"agents\":[{\"agent_id\":\"ag_1\",\"name\":\"Caller\"}]}"),
+                        PATCH("/v1/convai/phone-numbers/pn_9").keyHeader("xi-api-key").json("{\"agent_id\":\"ag_1\"}")
+                                .answer("{}"))
+                .says("Connected +61255550101 to ElevenLabs. Assigned the voice agent").has("/phone_number_id", "pn_9")
+                .has("/agent_id", "ag_1"));
 
         // Zendesk
         String ticket = "{\"id\":1,\"subject\":\"Help\",\"status\":\"open\"}";

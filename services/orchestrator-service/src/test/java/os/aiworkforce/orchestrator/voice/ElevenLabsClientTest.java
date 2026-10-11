@@ -136,4 +136,29 @@ class ElevenLabsClientTest {
 
         assertThat(text).isEqualTo("Book a meeting for Tuesday.");
     }
+
+    // @find: test ElevenLabs 401 reasons, quota exceeded, missing permissions, not a bad key
+    @Test
+    @DisplayName("a 401 for a used-up quota or a missing permission is not reported as a bad key")
+    void unauthorizedReasonsAreTellApart() {
+        server.expect(requestTo(containsString("/v1/text-to-speech/voice-1")))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"used\"}}"));
+        server.expect(requestTo(containsString("/v1/user/subscription")))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"detail\":{\"status\":\"missing_permissions\",\"message\":\"user_read\"}}"));
+        server.expect(requestTo(containsString("/v1/user/subscription")))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"detail\":{\"status\":\"invalid_api_key\",\"message\":\"bad\"}}"));
+
+        assertThatThrownBy(() -> client.speech("key", "voice-1", "Hi."))
+                .extracting(e -> ((ApiException) e).code())
+                .isEqualTo(ErrorCode.RATE_LIMITED);
+        assertThatThrownBy(() -> client.subscription("key"))
+                .extracting(e -> ((ApiException) e).code())
+                .isEqualTo(ErrorCode.UPSTREAM_ERROR);
+        assertThatThrownBy(() -> client.subscription("key"))
+                .extracting(e -> ((ApiException) e).code())
+                .isEqualTo(ErrorCode.PROVIDER_CREDENTIAL_INVALID);
+    }
 }

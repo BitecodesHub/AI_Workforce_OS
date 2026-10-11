@@ -1,7 +1,12 @@
 // @find: tests for key formats, cleanKey, recogniseKey, keyMismatch
 // @what: Unit tests for pasted key cleaning and recognition.
 import { describe, expect, it } from 'vitest'
-import { cleanKey, cleanedNote, keyMismatch, recogniseKey } from './keyFormats'
+import { accountSidProblem, cleanKey, cleanedNote, keyMismatch, recogniseKey } from './keyFormats'
+
+// Built from parts so the repository never holds a literal that secret scanners take for a real Twilio ID.
+const FAKE_HEX = '0123456789abcdef'.repeat(2)
+const FAKE_ACCOUNT_SID = 'A' + 'C' + FAKE_HEX
+const FAKE_API_KEY_SID = 'S' + 'K' + FAKE_HEX
 
 describe('cleanKey', () => {
   it('takes off what a paste brings along', () => {
@@ -42,5 +47,16 @@ describe('recognising a key', () => {
     expect(keyMismatch('my-proxy', 'My proxy', 'sk-abcdefghijklmnopqrstuvwxyz')).toBeNull()
     expect(keyMismatch('anthropic', 'Anthropic', 'sk-proj-abc')).toMatch(/OpenAI key/)
     expect(keyMismatch('groq', 'Groq', 'unknown-format')).toBeNull()
+  })
+})
+
+describe('Twilio Account SID check', () => {
+  it('accepts an AC SID and explains an SK SID or anything else', () => {
+    expect(accountSidProblem('twilio', 'accountSid', FAKE_ACCOUNT_SID)).toBeNull()
+    expect(accountSidProblem('twilio', 'accountSid', FAKE_API_KEY_SID)).toMatch(/API key SID/)
+    expect(accountSidProblem('twilio', 'accountSid', 'abc')).toMatch(/starts with AC/)
+    expect(accountSidProblem('twilio', 'accountSid', '')).toBeNull()
+    expect(accountSidProblem('zendesk', 'accountSid', 'abc')).toBeNull()
+    expect(keyMismatch('slack', 'Slack', FAKE_ACCOUNT_SID)).toMatch(/Twilio Account SID/)
   })
 })

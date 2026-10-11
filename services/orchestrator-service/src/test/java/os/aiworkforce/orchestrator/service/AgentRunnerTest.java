@@ -331,6 +331,45 @@ class AgentRunnerTest {
     }
 
     @Test
+    @DisplayName("a browser step stores its screenshot, names it in the trace, and keeps the image out of the model's text")
+    void browserStepCapturesAScreenshot() {
+        UUID shotId = UUID.randomUUID();
+        os.aiworkforce.orchestrator.browser.BrowserShotService shots =
+                mock(os.aiworkforce.orchestrator.browser.BrowserShotService.class);
+        when(shots.save(eq(ORG), any(), any(), any())).thenReturn(Optional.of(shotId));
+        runner.useBrowserShots(shots);
+        when(steps.highestPosition(any())).thenReturn(-1);
+        when(router.route(any(), any(), any()))
+                .thenReturn(
+                        toolCallAnswer("call_1", "browser.open_page", "{\"url\":\"https://example.com\"}"),
+                        answer("It says Example Domain."));
+        when(tools.invoke(any(), any(), any()))
+                .thenReturn(Mono.just(new ToolResult(
+                        ToolResult.Status.SUCCEEDED,
+                        "{\"url\":\"https://example.com/\",\"title\":\"Example Domain\",\"text\":\"Example\"}",
+                        "Opened Example Domain (https://example.com/).",
+                        Duration.ZERO,
+                        Map.of(
+                                os.aiworkforce.mcp.builtin.BrowserAdapter.SCREENSHOT, "/9j/SECRETIMAGE",
+                                os.aiworkforce.mcp.builtin.BrowserAdapter.PAGE_URL, "https://example.com/",
+                                os.aiworkforce.mcp.builtin.BrowserAdapter.PAGE_TITLE, "Example Domain"))));
+
+        runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        ArgumentCaptor<RunStep> saved = ArgumentCaptor.forClass(RunStep.class);
+        verify(steps, atLeastOnce()).save(saved.capture());
+        RunStep step = saved.getAllValues().stream()
+                .filter(s -> "tool_call".equals(s.getKind()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(step.getDetail())
+                .containsEntry("shotId", shotId.toString())
+                .containsEntry("url", "https://example.com/")
+                .containsEntry("pageTitle", "Example Domain");
+        assertThat(step.getDetail().toString()).doesNotContain("SECRETIMAGE");
+    }
+
+    @Test
     @DisplayName("a voice note made without a stored ElevenLabs key says so plainly, but the tool call still succeeds")
     void voiceNoteWithoutKeyNotesItPlainly() {
         // voiceClips defaults (set up in @BeforeEach) already answer no clip and no key.

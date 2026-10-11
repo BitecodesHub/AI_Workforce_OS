@@ -77,4 +77,18 @@ public interface McpServerAdapter {
     default boolean isSandbox() {
         return false;
     }
+
+    // @find: built in connector, no credential needed, browser, phone calls, runs for real without connecting
+    /**
+     * Whether this server is part of the platform itself (the web browser, phone calls): it has no
+     * account to connect and no practice twin, so a call always runs for real and no credential is
+     * looked up for it.
+     */
+    default boolean isBuiltIn() {
+        return false;
+    }
+
+    // @find: release run resources, close browser session when run ends
+    /** Called when a run ends, so a server that keeps something per run (a browser page) can let it go. */
+    default void releaseRun(String runId) {}
 }

@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -199,5 +200,34 @@ class VoiceServiceTest {
 
         // Not every pair of ids is guaranteed to differ, but this pair is fixed and known to.
         assertThat(service.resolveVoiceId(ORG, hr)).isNotEqualTo(service.resolveVoiceId(ORG, support));
+    }
+
+    // @find: test voices cache follows the key, replaced ElevenLabs key
+    @Test
+    @DisplayName("after the key is replaced, the voices are read again rather than served from the old account")
+    void voicesCacheFollowsTheKey() {
+        when(credentials.resolve(ORG.toString(), "elevenlabs"))
+                .thenReturn(Optional.of("old-key"), Optional.of("old-key"), Optional.of("new-key"));
+        when(client.voices("old-key")).thenReturn(List.of(new ElevenLabsClient.VoiceDto("v-old", "Old", null, null, null)));
+        when(client.voices("new-key")).thenReturn(List.of(new ElevenLabsClient.VoiceDto("v-new", "New", null, null, null)));
+
+        assertThat(service.voices(ORG)).extracting(VoiceService.VoiceView::voiceId).containsExactly("v-old");
+        assertThat(service.voices(ORG)).extracting(VoiceService.VoiceView::voiceId).containsExactly("v-old");
+        assertThat(service.voices(ORG)).extracting(VoiceService.VoiceView::voiceId).containsExactly("v-new");
+        verify(client, times(1)).voices("old-key");
+    }
+
+    // @find: test key without permission is stored with the reason
+    @Test
+    @DisplayName("a key that lacks the subscription permission is stored, with ElevenLabs' reason")
+    void keyWithoutPermissionIsStoredWithReason() {
+        when(client.subscription("scoped"))
+                .thenThrow(new ApiException(ErrorCode.UPSTREAM_ERROR,
+                        "The ElevenLabs key does not have the permission this needs. Allow it in ElevenLabs, under API keys."));
+
+        VoiceService.KeyCheck check = service.checkKey("scoped");
+
+        assertThat(check.verified()).isFalse();
+        assertThat(check.message()).contains("permission").endsWith("The key was stored as it is.");
     }
 }

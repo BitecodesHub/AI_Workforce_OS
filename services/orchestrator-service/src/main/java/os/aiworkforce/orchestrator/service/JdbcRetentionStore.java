@@ -92,6 +92,19 @@ public class JdbcRetentionStore implements RetentionStore {
              where s.id = scrubbed.id
             """;
 
+    static final String DELETE_BROWSER_SHOTS =
+            """
+            delete from browser_shots
+             where id in (
+                    select b.id
+                      from browser_shots b
+                      join runs r on r.id = b.run_id
+                     where b.org_id = ?
+                       and r.completed_at < ?
+                       and r.status in ('completed', 'failed', 'cancelled', 'abandoned')
+                     limit ?)
+            """;
+
     static final String DELETE_USAGE =
             "delete from llm_usage where id in (select id from llm_usage where occurred_at < ? limit ?)";
 
@@ -172,6 +185,18 @@ public class JdbcRetentionStore implements RetentionStore {
                 return statement.executeUpdate();
             } catch (SQLException e) {
                 throw new IllegalStateException("Could not clear run detail for workspace " + orgId, e);
+            }
+        }
+
+        @Override
+        public int deleteBrowserShots(UUID orgId, Instant finishedBefore, int batch) {
+            try (PreparedStatement statement = connection.prepareStatement(DELETE_BROWSER_SHOTS)) {
+                statement.setObject(1, orgId);
+                statement.setTimestamp(2, Timestamp.from(finishedBefore));
+                statement.setInt(3, batch);
+                return statement.executeUpdate();
+            } catch (SQLException e) {
+                throw new IllegalStateException("Could not delete browser screenshots for workspace " + orgId, e);
             }
         }
 

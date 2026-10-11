@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# @find: dev backend, run services locally, without docker, start services, stop services, status, with-gateway, local postgres, DB_PORT, run dir, log dir, jar copies, health check
+# @find: dev backend, browser runner env, run services locally, without docker, start services, stop services, status, with-gateway, local postgres, DB_PORT, run dir, log dir, jar copies, health check
 # @what: Runs the seven business services (and optionally the gateway) locally from built jars without Docker.
 # @flow: Called by make dev-backend, dev-status and dev-stop
 #
@@ -15,6 +15,10 @@
 #   scripts/dev-backend.sh --with-gateway   start them and the gateway (needs Redis)
 #   scripts/dev-backend.sh stop             stop everything this script started
 #   scripts/dev-backend.sh status           show what is ready; exits non-zero if anything is not
+#
+# The web browser connector stays off unless AIWOS_BROWSER_RUNNER_URL and AIWOS_BROWSER_RUNNER_SECRET
+# are exported before starting (run infra/browser-runner with `BROWSER_RUNNER_SECRET=... node server.js`
+# and point AIWOS_BROWSER_RUNNER_URL at http://127.0.0.1:8090).
 #
 # Each jar is copied to RUN_DIR before it runs, so `mvn install` can rewrite target/*.jar while
 # the services keep running from their own copies; a JVM whose jar is replaced under it fails
@@ -195,6 +199,7 @@ launch() {
     AIWOS_URL_KNOWLEDGE="http://127.0.0.1:8085" AIWOS_URL_INTEGRATIONS="http://127.0.0.1:8086" \
     AIWOS_URL_ANALYTICS="http://127.0.0.1:8087" \
     AIWOS_EVENTS_ENABLED=false SPRING_KAFKA_LISTENER_AUTO_STARTUP=false \
+    AIWOS_BROWSER_RUNNER_URL="${AIWOS_BROWSER_RUNNER_URL:-}" AIWOS_BROWSER_RUNNER_SECRET="${AIWOS_BROWSER_RUNNER_SECRET:-}" \
     java -jar "$copy" >>"$log" 2>&1 &
   echo $! >"$(pid_file "$name")"
 }

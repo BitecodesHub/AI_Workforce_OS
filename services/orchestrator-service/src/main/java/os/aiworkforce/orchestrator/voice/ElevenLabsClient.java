@@ -140,6 +140,22 @@ public class ElevenLabsClient {
      */
     private ApiException mapped(RestClientResponseException e) {
         HttpStatusCode status = e.getStatusCode();
+        // ElevenLabs answers 401 for more than a bad key: a used-up quota, a scoped key without the
+        // permission for this one call, and a free-tier account it has paused all say 401 with a
+        // detail.status of their own. Calling those "the key was refused" sent people to replace a
+        // key that was fine.
+        String reason = detailStatus(e);
+        if (status.value() == 401 && "quota_exceeded".equals(reason)) {
+            return new ApiException(ErrorCode.RATE_LIMITED, "The ElevenLabs character quota for this period is used up.", e);
+        }
+        if (status.value() == 401 && "missing_permissions".equals(reason)) {
+            return new ApiException(ErrorCode.UPSTREAM_ERROR,
+                    "The ElevenLabs key does not have the permission this needs. Allow it in ElevenLabs, under API keys.", e);
+        }
+        if (status.value() == 401 && "detected_unusual_activity".equals(reason)) {
+            return new ApiException(ErrorCode.UPSTREAM_ERROR,
+                    "ElevenLabs has paused free use for this account. Check the account in ElevenLabs.", e);
+        }
         if (status.value() == 401) {
             return new ApiException(ErrorCode.PROVIDER_CREDENTIAL_INVALID, "ElevenLabs refused the stored key.", e);
         }
@@ -148,6 +164,18 @@ public class ElevenLabsClient {
         }
         log.warn("ElevenLabs returned {}: {}", status, e.getResponseBodyAsString());
         return new ApiException(ErrorCode.UPSTREAM_ERROR, "ElevenLabs returned an unexpected response.", e);
+    }
+
+    /** ElevenLabs' own reason for a refusal ({@code detail.status}), or null when it gives none. */
+    private static String detailStatus(RestClientResponseException e) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode body =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(e.getResponseBodyAsString());
+            String value = body == null ? null : body.path("detail").path("status").asText(null);
+            return value == null || value.isBlank() ? null : value;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private ApiException unavailable(RestClientException e) {

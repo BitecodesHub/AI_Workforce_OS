@@ -1,0 +1,4 @@
+# @find: browser runner docker ignore, node_modules excluded from image context
+# @what: Keeps local installs out of the browser runner image build context.
+node_modules
+npm-debug.log

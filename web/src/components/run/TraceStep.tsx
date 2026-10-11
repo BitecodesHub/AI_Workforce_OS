@@ -8,10 +8,12 @@ import { formatDuration } from '../../lib/format'
 import { statusLabel, toolLabel } from '../../lib/labels'
 import type { RunStep } from '../../lib/queries'
 import { can } from '../../lib/session'
+import { BrowserShot } from './BrowserShot'
 import { ClipAudio } from './ClipAudio'
 import {
   MODE_LABEL,
   citationsOf,
+  browserShotOf,
   clipIdOf,
   detailNumber,
   detailStrings,
@@ -169,6 +171,7 @@ export function TraceStep({ step }: { step: RunStep }) {
   const toolCalls = detailStrings(step.detail, 'toolCalls')
   const attempts = detailStrings(step.detail, 'attempts')
   const clipId = clipIdOf(step)
+  const shot = browserShotOf(step)
 
   return (
     <li className="trace-step">
@@ -257,6 +260,8 @@ export function TraceStep({ step }: { step: RunStep }) {
       )}
 
       {clipId && <ClipAudio clipId={clipId} />}
+
+      {shot && <BrowserShot shot={shot} />}
 
       {time}
     </li>

@@ -63,7 +63,7 @@ describe('Trust', () => {
     renderTrust()
     const live = screen.getByRole('list', { name: 'Connect live' })
     const names = within(live).getAllByRole('listitem').map((item) => item.textContent)
-    expect(names).toHaveLength(19)
+    expect(names).toHaveLength(20)
     expect(names).toEqual(expect.arrayContaining(['GitHub', 'Gmail', 'Salesforce', 'Webhook']))
     expect(screen.queryByRole('list', { name: 'Practice data only' })).not.toBeInTheDocument()
   })

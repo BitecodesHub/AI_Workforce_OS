@@ -271,3 +271,10 @@ describe('connectorSummary', () => {
     expect(connectorSummary([live]).sentence).toBe('1 connected to a live account.')
   })
 })
+
+describe('capability labels keep product names', () => {
+  it('spells ElevenLabs as the product does', () => {
+    expect(capabilityLabel({ name: 'connect_number_to_elevenlabs' })).toBe('Connect number to ElevenLabs')
+    expect(capabilityLabel({ name: 'list_numbers' })).toBe('List numbers')
+  })
+})

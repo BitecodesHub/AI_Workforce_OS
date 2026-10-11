@@ -8,6 +8,7 @@ import { statusLabel } from '../../lib/labels'
 import { isRunActive, useRun, useRunSteps } from '../../lib/queries'
 import type { RunStep } from '../../lib/queries'
 import { AnswerCard } from './AnswerCard'
+import { LiveView } from './BrowserShot'
 import { ClipAudio } from './ClipAudio'
 import { WaitingForAnswer } from './WaitingForAnswer'
 import { WaitingForApproval } from './WaitingForApproval'
@@ -85,6 +86,7 @@ export function RunTraceCompact({
   headingLevel = 'h3',
   limit = 6,
   showAnswer = true,
+  liveView = true,
   onGoToQuestion,
 }: {
   runId: string
@@ -94,6 +96,8 @@ export function RunTraceCompact({
   limit?: number
   /** False where the caller already shows the finished answer elsewhere, to avoid showing it twice. */
   showAnswer?: boolean
+  /** False where the caller already shows this run's Live view of the web browser. */
+  liveView?: boolean
   /** Where "Go to question" (shown while the run is waiting for an answer) should take the person. */
   onGoToQuestion?: (questionId: string) => void
 }) {
@@ -119,6 +123,8 @@ export function RunTraceCompact({
       {run.status === 'waiting_input' && <WaitingForAnswer run={run} mode="notice" onGoToQuestion={onGoToQuestion} />}
 
       {showAnswer && answer && <AnswerCard step={answer} instruction={instructionText} />}
+
+      {liveView && <LiveView runId={runId} active={active} />}
 
       {shown.length > 0 && (
         <div>

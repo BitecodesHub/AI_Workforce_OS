@@ -39,6 +39,17 @@ public interface RetentionStore {
          */
         int clearRunDetail(UUID orgId, Instant finishedBefore, int batch);
 
+        // @find: delete old browser screenshots, retention purge screenshots
+        /**
+         * Deletes the web browser's screenshots of one workspace's runs that finished before
+         * {@code finishedBefore}: a screenshot is what the agent saw, so it goes with the step text.
+         *
+         * @return how many screenshots were deleted, at most {@code batch}
+         */
+        default int deleteBrowserShots(UUID orgId, Instant finishedBefore, int batch) {
+            return 0;
+        }
+
         /** Deletes model-usage rows recorded before {@code cutoff}; at most {@code batch} of them. */
         int deleteUsageBefore(Instant cutoff, int batch);
 

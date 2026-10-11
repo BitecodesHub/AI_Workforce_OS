@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# @find: aws server script, pull deployment, systemd timer, git fetch, build on server, sha image tags, automatic rollback, flock, deploy-status.json, init, generate secrets, /opt/aiwos/.env, status, logs, aiwos.sh
+# @find: aws server script, browser runner secret, browser image, pull deployment, systemd timer, git fetch, build on server, sha image tags, automatic rollback, flock, deploy-status.json, init, generate secrets, /opt/aiwos/.env, status, logs, aiwos.sh
 # @what: Operates the AI Workforce OS stack on the EC2 server: first-boot setup with generated secrets, a self-deploying update loop (fetch, build, start, health check, automatic rollback), manual deploy/rollback, status and logs.
 # @flow: Called by the CloudFormation user data (init, install); run every 2 minutes by aiwos-update.timer (update); run by hand through SSM Session Manager as "sudo aiwos ..."
 #
@@ -48,7 +48,7 @@ COMPOSE_FILE="$REPO/infra/aws/docker-compose.prod.yml"
 HEALTH_TIMEOUT="${AIWOS_HEALTH_TIMEOUT:-600}"
 FIRST_HEALTH_TIMEOUT="${AIWOS_FIRST_HEALTH_TIMEOUT:-1800}"
 CORE_SERVICES="identity organisation orchestrator memory knowledge integrations analytics web caddy"
-APP_SERVICES="identity organisation orchestrator memory knowledge integrations analytics web"
+APP_SERVICES="identity organisation orchestrator memory knowledge integrations analytics web browser"
 
 log() {
   local line
@@ -174,10 +174,22 @@ AIWOS_ENCRYPTION_MASTER_KEY=$(openssl rand -base64 32)
 AIWOS_SECURITY_DEVELOPMENT_SECRET=$(openssl rand -hex 32)
 AIWOS_SECURITY_INTERNAL_SERVICE_SECRET=$(openssl rand -hex 32)
 AIWOS_DB_PASSWORD=$(openssl rand -hex 24)
+AIWOS_BROWSER_RUNNER_SECRET=$(openssl rand -hex 32)
 EOF
   )
   mv -f "$ENV_FILE.tmp" "$ENV_FILE"
   log "Generated new secrets in $ENV_FILE"
+}
+
+# The browser runner's shared secret, added to an existing .env on the first deploy that needs it
+# (servers set up before the browser existed have none), and never rewritten.
+ensure_browser_secret() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  if [[ -z "$(env_value AIWOS_BROWSER_RUNNER_SECRET)" ]]; then
+    set_env_value AIWOS_BROWSER_RUNNER_SECRET "$(openssl rand -hex 32)"
+    chmod 600 "$ENV_FILE"
+    log "Generated the browser runner secret in $ENV_FILE"
+  fi
 }
 
 # Caddy reads its file from a mounted directory; copied on every deploy so a changed Caddyfile in the
@@ -447,6 +459,7 @@ with_lock() {
 image_of() {
   case "$1" in
     organisation) echo org-service ;;
+    browser) echo browser-runner ;;
     gateway | web) echo "$1" ;;
     *) echo "$1-service" ;;
   esac
@@ -599,6 +612,7 @@ switch_to() {
   local sha="$1" deadline="$2"
   git -C "$REPO" checkout --quiet --force "$sha" || { log "Could not check out ${sha:0:12}"; return 1; }
   set_env_value AIWOS_IMAGE_TAG "$sha"
+  ensure_browser_secret
   render_site_config
   load_env
   export AIWOS_IMAGE_TAG="$sha"

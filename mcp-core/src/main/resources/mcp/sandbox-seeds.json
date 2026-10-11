@@ -205,5 +205,15 @@
       {"id": "evt_hook_1", "event": "order.shipped", "data": {"order": "SO-1042"}, "status": "sent", "createdAt": "2026-10-01T03:00:00Z"},
       {"id": "evt_hook_2", "event": "ticket.escalated", "data": {"ticket": "9001"}, "status": "sent", "createdAt": "2026-10-02T05:30:00Z"}
     ]
+  },
+  "twilio": {
+    "numbers": [
+      {"id": "PN00000000000000000000000000000001", "phone_number": "+61255550101", "friendly_name": "Office line", "voice": true, "in_elevenlabs": "no"},
+      {"id": "PN00000000000000000000000000000002", "phone_number": "+61255550102", "friendly_name": "Support line", "voice": true, "in_elevenlabs": "no"}
+    ],
+    "available_numbers": [
+      {"id": "+61255550188", "phone_number": "+61255550188", "locality": "Sydney", "region": "NSW", "country": "AU", "voice": true},
+      {"id": "+61355550177", "phone_number": "+61355550177", "locality": "Melbourne", "region": "VIC", "country": "AU", "voice": true}
+    ]
   }
 }

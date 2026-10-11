@@ -4,7 +4,7 @@
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Input, Notice, PasswordInput } from '../ui'
-import { cleanKey, keyMismatch } from '../../lib/keyFormats'
+import { accountSidProblem, cleanKey, keyMismatch } from '../../lib/keyFormats'
 import { CopyButton } from '../ui/CopyButton'
 import { ApiError, describeApiError } from '../../lib/api'
 import { isHttpsUrl, placeFieldProblems, safeDocsUrl, secretNoun, usesSignIn, webAddressProblem } from '../../lib/connectors'
@@ -232,7 +232,9 @@ function TokenDialog({ open, integration, onClose }: { open: boolean; integratio
             hint: hintFor(field, index === 0),
             error:
               problems.inline[field.key] ??
-              (field.secret && values[field.key] ? keyMismatch(integration.server, name, values[field.key] ?? '') : null),
+              (field.secret && values[field.key]
+                ? keyMismatch(integration.server, name, values[field.key] ?? '')
+                : accountSidProblem(integration.server, field.key, values[field.key] ?? '')),
             ...(index === 0 ? { 'data-autofocus': true } : {}),
           }
           return field.secret ? (

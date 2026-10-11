@@ -1,4 +1,4 @@
-// @find: connector catalog, connectors list, integrations page, add connector dialog, available connectors, connector categories, setup steps, token label, credential fields, oauth connectors, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook, voice, live available, GET /api/integrations/connectors
+// @find: connector catalog, connectors list, integrations page, add connector dialog, available connectors, connector categories, setup steps, token label, credential fields, oauth connectors, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook, voice, twilio, phone numbers, web browser, phone calls, built in, live available, GET /api/integrations/connectors
 // @what: The data behind the Integrations page: every connector, its category, plain description, how to connect it and whether a live adapter exists.
 // @flow: Read by ConnectorService and IntegrationController; checked against registered servers by ConnectorCatalogTest
 package os.aiworkforce.mcp.catalog;
@@ -17,7 +17,8 @@ import os.aiworkforce.mcp.oauth.OAuthProviders;
  * What the console says about every connector, defined as data beside the tool definitions.
  *
  * <p>Honest by construction: {@code liveAvailable} is true only for the connectors that have a
- * live adapter. Every connector except Voice has one; Voice has nothing to connect. A test keeps
+ * live adapter. Every connector except the built-in ones (Voice notes, Web browser, Phone calls) has
+ * one; those have nothing to connect. A test keeps
  * this list and the registered servers in step.
  */
 @Component
@@ -177,6 +178,24 @@ public class ConnectorCatalog {
                         "Enter all three here. Agents act on the meetings of the account that owns the app."),
                 "https://developers.zoom.us/docs/internal-apps/s2s-oauth/");
 
+        token("twilio", "Twilio", "voice",
+                "Find, buy and release phone numbers in Twilio, and connect them to ElevenLabs for phone calls.",
+                "Auth token",
+                List.of(
+                        CredentialField.plain("accountSid", "Account SID", "AC followed by 32 letters and digits",
+                                "Shown in the Twilio Console under Account info. It starts with AC."),
+                        CredentialField.secret("authToken", "Auth token",
+                                "Shown beside the Account SID in the Twilio Console. Choose Show to copy it.")),
+                List.of(
+                        "Sign in to console.twilio.com with the account whose numbers agents should use.",
+                        "On the Account Dashboard, under Account info, copy the Account SID (it starts with AC) and the"
+                                + " Auth token.",
+                        "Enter both here. The connection check reads the account's name.",
+                        "Buying or releasing a number, and connecting one to ElevenLabs, always asks a person first.",
+                        "To place calls from a number, also store an ElevenLabs key on this page and give an agent"
+                                + " Phone calls."),
+                "https://www.twilio.com/docs/iam/api/account");
+
         // ---- Live through OAuth: an administrator registers the app, then signs in ----------------
         oauth("gmail", "Gmail", "communication", "Read, draft and send email from a Gmail inbox.");
         oauth("calendar", "Google Calendar", "productivity",
@@ -198,6 +217,38 @@ public class ConnectorCatalog {
                 null,
                 List.of("Nothing to connect here. To hear notes read aloud, add an ElevenLabs key under Settings."),
                 null));
+        add(new ConnectorInfo(
+                "browser",
+                "Web browser",
+                "productivity",
+                "Open public web pages, read them and follow links, and fill in and submit forms after a person approves.",
+                "none",
+                false,
+                null,
+                List.of(
+                        "Nothing to connect here. Give an agent the web browser on its page to let it use it.",
+                        "Each page the agent opens is shown as a screenshot in the run, updated after every step.",
+                        "Reading pages and typing into fields happen freely. Every click and every form submission"
+                                + " asks a person first.",
+                        "Pages inside private networks, and addresses on the server itself, are never opened."),
+                null));
+        add(new ConnectorInfo(
+                "phone",
+                "Phone calls",
+                "voice",
+                "Place phone calls with an AI voice through ElevenLabs, and read back each call's summary and transcript.",
+                "none",
+                false,
+                null,
+                List.of(
+                        "Needs the ElevenLabs key stored for voice on this page, and a phone number added in ElevenLabs"
+                                + " under Phone numbers.",
+                        "In ElevenLabs, open Phone numbers and add a number (through Twilio or a SIP trunk). The first"
+                                + " number on the account is used for every call.",
+                        "The first call creates an ElevenLabs agent named AI Workforce caller; each call gives it"
+                                + " that call's purpose.",
+                        "Every call asks a person first. Premium-rate numbers and short codes are never dialled."),
+                "https://elevenlabs.io/docs/agents-platform/phone-numbers/twilio-integration/native-integration"));
     }
 
     // @find: list all connectors, connector catalog list

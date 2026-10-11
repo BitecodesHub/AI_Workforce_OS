@@ -1,0 +1,3 @@
+# @find: browser runner gitignore, node_modules
+# @what: Keeps the browser runner's local node_modules out of git.
+node_modules/

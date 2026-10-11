@@ -1,4 +1,4 @@
-# @find: launcher compose, one-click stack, docker compose, web port 4173, postgres, redis, qdrant, eight services, pinned images, .env, AIWOS_EXPOSE_LAN, demo data, healthchecks
+# @find: launcher compose, browser runner profile, one-click stack, docker compose, web port 4173, postgres, redis, qdrant, eight services, pinned images, .env, AIWOS_EXPOSE_LAN, demo data, healthchecks
 # @what: Docker Compose stack behind the one-click launcher, publishing only the web client on the local machine.
 # @flow: Started by the Start AI Workforce OS .command/.bat files; settings come from infra/launcher/.env
 # The stack behind the one-click launcher (Start AI Workforce OS.command / .bat).
@@ -23,7 +23,7 @@ name: aiwos-app
 x-service: &service
   restart: unless-stopped
   networks: [aiwos]
-  environment:
+  environment: &service-environment
     AIWOS_ENVIRONMENT: local
     DB_HOST: postgres
     DB_PORT: "5432"
@@ -127,6 +127,24 @@ services:
     <<: *service
     image: aiwos-app/orchestrator-service
     build: {<<: *build, args: {SERVICE: orchestrator-service}}
+    # The web browser connector is off unless the "browser" profile runs: start the launcher with
+    # COMPOSE_PROFILES=browser and AIWOS_BROWSER_RUNNER_URL=http://browser:8090 in infra/launcher/.env.
+    environment:
+      <<: *service-environment
+      AIWOS_BROWSER_RUNNER_URL: ${AIWOS_BROWSER_RUNNER_URL:-}
+      AIWOS_BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-local-browser-runner-secret}
+
+  # Headless Chromium for the built-in web browser connector; off by default (see above).
+  browser:
+    profiles: ["browser"]
+    image: aiwos-app/browser-runner
+    build: {context: ../browser-runner}
+    restart: unless-stopped
+    networks: [aiwos]
+    mem_limit: 700m
+    shm_size: 256m
+    environment:
+      BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-local-browser-runner-secret}
 
   memory:
     <<: *service

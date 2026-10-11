@@ -302,6 +302,13 @@ public class ToolGateway {
     /** Called when a run ends, so the counters do not accumulate for the life of the process. */
     public void releaseRun(String runId) {
         runCallCounts.remove(runId);
+        adapters.values().forEach(adapter -> {
+            try {
+                adapter.releaseRun(runId);
+            } catch (RuntimeException e) {
+                log.debug("{} could not release run {}: {}", adapter.server(), runId, e.toString());
+            }
+        });
     }
 
     // @find: which connectors are connected, server status map

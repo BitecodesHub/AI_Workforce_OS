@@ -167,6 +167,8 @@ public class RetentionService {
                 try (RunLogContext ignored = RunLogContext.workspace(orgId)) {
                     Instant cutoff = now.minus(Duration.ofDays(runDetailDays(orgId)));
                     int changed = drain(() -> session.clearRunDetail(orgId, cutoff, BATCH));
+                    // Screenshots are what the agent saw, so they go with the step text.
+                    drain(() -> session.deleteBrowserShots(orgId, cutoff, BATCH));
                     cleared += changed;
                     purged += changed > 0 ? 1 : 0;
                 } catch (RuntimeException e) {

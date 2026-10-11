@@ -201,6 +201,29 @@ export function clipIdOf(step: RunStep): string | null {
   return step.kind === 'tool_call' ? detailText(step.detail, 'clipId') : null
 }
 
+/** A screenshot the web browser took after a step: the stored picture and the page it shows. */
+export type BrowserShotRef = { shotId: string; url: string | null; title: string | null }
+
+// @find: browserShotOf, browser screenshot of step, shotId, web browser page screenshot
+/** The screenshot a web browser tool call attached (its detail.shotId), with the page's address and title. */
+export function browserShotOf(step: RunStep): BrowserShotRef | null {
+  if (step.kind !== 'tool_call') return null
+  const shotId = detailText(step.detail, 'shotId')
+  if (!shotId) return null
+  return { shotId, url: detailText(step.detail, 'url'), title: detailText(step.detail, 'pageTitle') }
+}
+
+// @find: latestBrowserShot, live view, latest screenshot of the run, current page
+/** The newest screenshot in a run's steps, for the live view; null before the browser was used. */
+export function latestBrowserShot(steps: readonly RunStep[] | undefined): BrowserShotRef | null {
+  if (!steps) return null
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const shot = browserShotOf(steps[index]!)
+    if (shot) return shot
+  }
+  return null
+}
+
 /** The codes the run loop writes itself, in words a person reads; any other code is shown sentence-cased. */
 const ERROR_HEADING: Record<string, string> = {
   loop_detected: 'Stopped for repeating itself',

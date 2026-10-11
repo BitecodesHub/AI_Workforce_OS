@@ -28,7 +28,8 @@ class SandboxSeedsTest {
     @Test
     @DisplayName("every list or search tool returns seeded records on a first call")
     void firstListReturnsData() {
-        servers.values().forEach(server -> server.tools().stream()
+        // Built-in connectors (phone calls) list real things, not practice records.
+        servers.values().stream().filter(server -> !server.isBuiltIn()).forEach(server -> server.tools().stream()
                 .filter(tool -> tool.name().startsWith("list_") || tool.name().startsWith("search_"))
                 .forEach(tool -> {
                     JsonNode result = content(call(server.server(), tool.name(), "{}", "org-seeds"));

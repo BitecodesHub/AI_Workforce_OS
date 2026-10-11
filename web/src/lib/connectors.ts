@@ -82,7 +82,14 @@ export function groupCapabilities<T extends CapabilityTool>(tools: readonly T[])
 
 /** A tool's name in plain words: 'list_issues' reads 'List issues'. */
 export function capabilityLabel(tool: Pick<CapabilityTool, 'name'>): string {
-  return sentenceCase(tool.name) || tool.name
+  return properNames(sentenceCase(tool.name) || tool.name)
+}
+
+/* Product names inside a tool name keep their own spelling: 'Connect number to ElevenLabs'. */
+const PROPER_NAMES: readonly [RegExp, string][] = [[/\belevenlabs\b/gi, 'ElevenLabs']]
+
+function properNames(label: string): string {
+  return PROPER_NAMES.reduce((text, [pattern, name]) => text.replace(pattern, name), label)
 }
 
 /* ---- Grants --------------------------------------------------------------------------------- */
@@ -251,6 +258,9 @@ const KNOWN_CATEGORIES: Record<string, string> = {
   sheets: 'files',
   stripe: 'finance',
   webhook: 'automation',
+  browser: 'productivity',
+  phone: 'voice',
+  twilio: 'voice',
 }
 
 /** The connector's category: the catalog's, else a known one for the server, else 'other'. */

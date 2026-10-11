@@ -43,7 +43,7 @@ class ConnectorCatalogTest {
     }
 
     @Test
-    @DisplayName("a connector says it can go live exactly when a live adapter exists, and every one but Voice has one")
+    @DisplayName("a connector says it can go live exactly when a live adapter exists, and only the built-in ones have none")
     void liveAvailableIsHonest() {
         for (McpServerAdapter server : servers) {
             ConnectorInfo info = catalog.find(server.server()).orElseThrow();
@@ -52,10 +52,14 @@ class ConnectorCatalogTest {
                     .isEqualTo(server instanceof LiveServerAdapter);
         }
         assertThat(servers.stream().filter(server -> !(server instanceof LiveServerAdapter)).map(McpServerAdapter::server))
-                .containsExactly("voice");
+                .containsExactlyInAnyOrder("voice", "browser", "phone");
         assertThat(catalog.all().stream().filter(info -> !info.liveAvailable()).map(ConnectorInfo::server))
-                .containsExactly("voice");
+                .containsExactlyInAnyOrder("voice", "browser", "phone");
         assertThat(catalog.find("voice").orElseThrow().authType()).isEqualTo("none");
+        assertThat(catalog.find("browser").orElseThrow().authType()).isEqualTo("none");
+        assertThat(catalog.find("phone").orElseThrow().authType()).isEqualTo("none");
+        assertThat(servers.stream().filter(McpServerAdapter::isBuiltIn).map(McpServerAdapter::server))
+                .containsExactlyInAnyOrder("browser", "phone");
     }
 
     @Test

@@ -1,5 +1,5 @@
-# @find: aws production compose, ec2 stack, docker compose prod, caddy https, sslip.io, ollama local model, images built on the server, 8 GB tuning, jvm heap 320m, maven memory cap, log rotation, AIWOS_IMAGE_TAG, deploy-status.json
-# @what: The production Docker Compose stack for one EC2 instance: Caddy (HTTPS) in front of the web client, seven services, PostgreSQL, Redis, Qdrant and a local Ollama model.
+# @find: aws production compose, browser runner container, headless chromium, ec2 stack, docker compose prod, caddy https, sslip.io, ollama local model, images built on the server, 8 GB tuning, jvm heap 320m, maven memory cap, log rotation, AIWOS_IMAGE_TAG, deploy-status.json
+# @what: The production Docker Compose stack for one EC2 instance: Caddy (HTTPS) in front of the web client, seven services, the browser runner, PostgreSQL, Redis, Qdrant and a local Ollama model.
 # @flow: Run on the server only through infra/aws/aiwos.sh, which supplies /opt/aiwos/.env, builds the images on the server tagged with the commit SHA (aiwos/<image>:<sha>) and starts them
 #
 # Based on infra/launcher/docker-compose.yml and built from the same Dockerfiles, tuned for one
@@ -35,7 +35,7 @@ x-service: &service
   logging: *logging
   networks: [aiwos]
   mem_limit: 768m
-  environment:
+  environment: &service_env
     # "production" refuses placeholder secrets and plain-http origins, and sends the refresh cookie
     # as Secure. Demo data cannot be loaded in production, so aiwos.sh sets "local" when the stack
     # was created with demo data on (see the deployment guide).
@@ -220,6 +220,37 @@ services:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/orchestrator-service:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: orchestrator-service, MAVEN_OPTS: *maven_opts}}
+    # Only the orchestrator talks to the browser runner, so only it gets the runner's secret.
+    environment:
+      <<: *service_env
+      AIWOS_BROWSER_RUNNER_URL: http://browser:8090
+      AIWOS_BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-}
+
+  # The built-in web browser: headless Chromium behind a small HTTP API, one page per run, at most
+  # two at once. Debian-based (Chromium does not run on Alpine), not published outside the Docker
+  # network, and every request a page makes goes through its own filtering proxy, which refuses
+  # private, loopback and metadata addresses. Chromium starts on the first browser step and is shut
+  # down after five idle minutes, so it costs about 60 MB at rest and 300-600 MB while in use.
+  # AIWOS_BROWSER_RUNNER_SECRET is generated into /opt/aiwos/.env by aiwos.sh; without it the
+  # runner refuses every request and the browser connector says it is not running.
+  browser:
+    image: ${AIWOS_IMAGE_PREFIX:-aiwos}/browser-runner:${AIWOS_IMAGE_TAG:-latest}
+    build:
+      context: ../browser-runner
+    restart: unless-stopped
+    logging: *logging
+    networks: [aiwos]
+    mem_limit: 700m
+    shm_size: 256m
+    environment:
+      BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-}
+      BROWSER_RUNNER_MAX_SESSIONS: "2"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8090/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   memory:
     <<: *service

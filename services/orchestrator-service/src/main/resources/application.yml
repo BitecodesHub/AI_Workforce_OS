@@ -1,4 +1,4 @@
-# @find: orchestrator application config, application.yml, spring settings, port, database url, flyway, model routing settings, chat queue, schedules, voice elevenlabs settings, knowledge service url, runtime tuning
+# @find: orchestrator application config, application.yml, spring settings, port, database url, flyway, model routing settings, chat queue, schedules, voice elevenlabs settings, browser runner url, browser runner secret, knowledge service url, runtime tuning
 # @what: Service-specific Spring configuration for the orchestrator (agents, goals, runs, approvals, chat, schedules, voice).
 # @flow: Imports platform-defaults.yml for shared settings; bound by OrchestratorApplication and the *Properties classes
 # Agents, goals, runs, approvals and model routing.
@@ -131,6 +131,12 @@ aiwos:
       max-characters: ${AIWOS_VOICE_ELEVENLABS_MAX_CHARACTERS:2500}
       timeout: ${AIWOS_VOICE_ELEVENLABS_TIMEOUT:PT30S}
       credential-ref: elevenlabs
+  # The built-in web browser: the browser runner sidecar (infra/browser-runner) and the secret it
+  # expects in X-Runner-Secret. Both empty (the default) turns the browser connector off: every
+  # call says the browser is not running. Locally: run the runner and set both variables.
+  browser:
+    runner-url: ${AIWOS_BROWSER_RUNNER_URL:}
+    runner-secret: ${AIWOS_BROWSER_RUNNER_SECRET:}
 
 springdoc:
   api-docs:

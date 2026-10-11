@@ -425,6 +425,10 @@ const SERVERS: Record<string, string> = {
   stripe: 'Stripe',
   zoom: 'Zoom',
   webhook: 'Webhook',
+  twilio: 'Twilio',
+  voice: 'Voice notes',
+  browser: 'Web browser',
+  phone: 'Phone calls',
   person: 'A person',
 }
 
@@ -496,7 +500,7 @@ export function toolLabel(qualified?: string | null): string {
   const at = dot > 0 ? dot : wire
   const width = dot > 0 ? 1 : 2
   if (at <= 0 || at + width >= qualified.length) return sentenceCase(qualified)
-  const tool = sentenceCase(qualified.slice(at + width)).toLowerCase()
+  const tool = sentenceCase(qualified.slice(at + width)).toLowerCase().replace(/\belevenlabs\b/g, 'ElevenLabs')
   return `${serverLabel(qualified.slice(0, at))} · ${tool}`
 }
 

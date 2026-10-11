@@ -63,16 +63,21 @@ class EveryToolThroughGatewayTest {
     @TestFactory
     @DisplayName("every tool runs through the gateway and does what its verb says")
     Stream<DynamicTest> everyTool() {
+        // The built-in browser and phone connectors have no practice twin; BrowserAdapterTest and
+        // PhoneAdapterTest cover them.
         return SandboxServerRegistry.definitions().values().stream()
                 .flatMap(List::stream)
+                .filter(tool -> !servers.get(tool.server()).isBuiltIn())
                 .map(tool -> DynamicTest.dynamicTest(tool.qualifiedName(), () -> exercise(tool)));
     }
 
     @Test
-    @DisplayName("the registry offers 20 connectors and 96 tools, all of them exercised above")
+    @DisplayName("the registry offers 23 connectors and 114 tools; all but the 13 built-in ones are exercised above")
     void inventory() {
-        assertThat(servers).hasSize(20);
-        assertThat(adapters.stream().mapToInt(adapter -> adapter.tools().size()).sum()).isEqualTo(96);
+        assertThat(servers).hasSize(23);
+        assertThat(adapters.stream().mapToInt(adapter -> adapter.tools().size()).sum()).isEqualTo(114);
+        assertThat(adapters.stream().filter(McpServerAdapter::isBuiltIn).mapToInt(a -> a.tools().size()).sum())
+                .isEqualTo(13);
     }
 
     // ---- The verbs -----------------------------------------------------------------------------
@@ -101,9 +106,21 @@ class EveryToolThroughGatewayTest {
             Map.entry("github.compare_branches", "{\"repo\":\"acme/website\",\"base\":\"main\",\"head\":\"fix-checkout-spacing\"}"),
             Map.entry("github.list_commits", "{\"repo\":\"acme/website\",\"ref\":\"main\",\"limit\":10}"));
 
+    /*
+     * Twilio's number tools buy, release and connect rather than create or delete records by id, so
+     * they get named numbers from the practice data and the same checks as the repository tools.
+     */
+    private static final Map<String, String> TWILIO_ARGS = Map.ofEntries(
+            Map.entry("twilio.list_numbers", "{\"limit\":10}"),
+            Map.entry("twilio.search_available_numbers", "{\"country_code\":\"AU\",\"area_code\":\"2\"}"),
+            Map.entry("twilio.buy_number", "{\"phone_number\":\"+61255550188\",\"country_code\":\"AU\"}"),
+            Map.entry("twilio.release_number", "{\"phone_number\":\"+61255550102\"}"),
+            Map.entry("twilio.connect_number_to_elevenlabs", "{\"phone_number\":\"+61255550101\",\"label\":\"Office\"}"));
+
     private void exerciseRepositoryTool(ToolDefinition tool) {
         String org = "org-" + UUID.randomUUID();
-        ObjectNode args = (ObjectNode) read(REPOSITORY_ARGS.get(tool.qualifiedName()));
+        String given = REPOSITORY_ARGS.getOrDefault(tool.qualifiedName(), TWILIO_ARGS.get(tool.qualifiedName()));
+        ObjectNode args = (ObjectNode) read(given);
 
         ToolResult result = approvedCall(org, tool, args);
         assertThat(result.status()).as(tool.qualifiedName() + ": " + result.summary()).isEqualTo(ToolResult.Status.SUCCEEDED);
@@ -120,7 +137,7 @@ class EveryToolThroughGatewayTest {
     }
 
     private void exercise(ToolDefinition tool) {
-        if (REPOSITORY_ARGS.containsKey(tool.qualifiedName())) {
+        if (REPOSITORY_ARGS.containsKey(tool.qualifiedName()) || TWILIO_ARGS.containsKey(tool.qualifiedName())) {
             exerciseRepositoryTool(tool);
             return;
         }
@@ -181,7 +198,12 @@ class EveryToolThroughGatewayTest {
     private ToolResult approvedCall(String org, ToolDefinition tool, ObjectNode args) {
         ToolInvocation invocation = invocation(org, tool, args.toString());
         ApprovalDecision decision = gateway.evaluate(invocation, grants(tool.server()), false);
-        if (tool.alwaysRequiresApproval()) {
+        // A tool that always asks by its side effect, or one whose adapter always asks for it
+        // (connecting a Twilio number to ElevenLabs).
+        boolean asks = tool.alwaysRequiresApproval()
+                || (TWILIO_ARGS.containsKey(tool.qualifiedName())
+                        && servers.get(tool.server()).approvalReason(invocation).isPresent());
+        if (asks) {
             assertThat(decision).as(tool.qualifiedName() + " waits for a person").isInstanceOf(ApprovalDecision.AwaitApproval.class);
             assertThat(((ApprovalDecision.AwaitApproval) decision).reason()).contains(tool.qualifiedName());
             ToolResult parked = gateway.invoke(invocation, decision, null).block();

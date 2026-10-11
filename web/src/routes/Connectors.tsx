@@ -58,6 +58,7 @@ import { can } from '../lib/session'
 import { useToast } from '../lib/toast'
 import { useRouter } from '../lib/router'
 import { useListFilter } from '../lib/useListFilter'
+import { cleanKey } from '../lib/keyFormats'
 
 /*
  * The apps and services agents act through.
@@ -498,7 +499,9 @@ function ConnectorCard({
         )}
 
         <div className="stack" style={{ gap: 'var(--space-3)', marginTop: 'auto' }}>
-          {!live && nothingToConnect && <p className="caption">Nothing to connect: it works without an account.</p>}
+          {!live && nothingToConnect && (
+            <p className="caption">{builtInNote(integration.setupSteps)}</p>
+          )}
           {!live && !nothingToConnect && <p className="caption">A live connection is not available for this connector.</p>}
           {live && !canConnect && integration.sandbox && (
             <p className="caption">An owner or admin can connect a live account.</p>
@@ -653,13 +656,13 @@ function VoiceCard() {
       try {
         const check = await api<{ verified: boolean; message: string | null }>('/api/voice/key/check', {
           method: 'POST',
-          body: { key: keyValue.trim() },
+          body: { key: cleanKey(keyValue) },
         })
         note = check.verified ? null : check.message
       } finally {
         setChecking(false)
       }
-      await storeCredential.mutateAsync({ ref: 'elevenlabs', kind: 'api_key', value: keyValue.trim() })
+      await storeCredential.mutateAsync({ ref: 'elevenlabs', kind: 'api_key', value: cleanKey(keyValue) })
       // Store credential refreshes its own queries; voice status and the voice list read this
       // same key and are not among them.
       client.invalidateQueries({ queryKey: ['voice'] })
@@ -687,7 +690,7 @@ function VoiceCard() {
               {status.data && <StatusTag kind="integration" status={keyStored ? 'connected' : 'disconnected'} />}
             </div>
             <p className="muted" style={{ marginTop: 'var(--space-2)' }}>
-              Lets people speak to Chat, read agents' replies aloud and record the voice notes an agent can leave.
+              Lets people speak to Chat, read agents' replies aloud, record the voice notes an agent can leave and place phone calls.
             </p>
           </div>
 
@@ -763,4 +766,14 @@ function VoiceCard() {
       </Dialog>
     </>
   )
+}
+
+/**
+ * What a built-in connector's card says at its foot: its first setup step when that says what it
+ * needs (Phone calls needs an ElevenLabs key and number), otherwise that there is nothing to connect.
+ */
+function builtInNote(steps: readonly string[] | null | undefined): string {
+  const first = steps?.[0]?.trim()
+  if (first && !first.startsWith('Nothing to connect')) return first
+  return 'Nothing to connect: it works without an account.'
 }

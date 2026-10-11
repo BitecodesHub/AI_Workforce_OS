@@ -24,6 +24,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import os.aiworkforce.llm.model.ToolSpec;
+import os.aiworkforce.mcp.builtin.BrowserAdapter;
+import os.aiworkforce.mcp.builtin.PhoneAdapter;
 import os.aiworkforce.mcp.live.AsanaAdapter;
 import os.aiworkforce.mcp.live.CalendarAdapter;
 import os.aiworkforce.mcp.live.ConfluenceAdapter;
@@ -41,12 +43,14 @@ import os.aiworkforce.mcp.live.SheetsAdapter;
 import os.aiworkforce.mcp.live.SlackAdapter;
 import os.aiworkforce.mcp.live.StripeAdapter;
 import os.aiworkforce.mcp.live.TeamsAdapter;
+import os.aiworkforce.mcp.live.TwilioAdapter;
 import os.aiworkforce.mcp.live.WebhookAdapter;
 import os.aiworkforce.mcp.live.ZendeskAdapter;
 import os.aiworkforce.mcp.live.ZoomAdapter;
 import os.aiworkforce.mcp.model.ToolDefinition;
 import os.aiworkforce.mcp.spi.McpServerAdapter;
 import os.aiworkforce.mcp.spi.TokenRefresher;
+import os.aiworkforce.mcp.spi.WorkspaceSecrets;
 
 /**
  * Every tool server, defined as data.
@@ -79,11 +83,22 @@ public class SandboxServerRegistry {
             ObjectMapper json,
             ObjectProvider<WebClient.Builder> http,
             ObjectProvider<TokenRefresher> refresher,
-            @Value("${aiwos.environment:local}") String environment) {
+            ObjectProvider<WorkspaceSecrets> secrets,
+            @Value("${aiwos.environment:local}") String environment,
+            @Value("${aiwos.browser.runner-url:}") String browserRunnerUrl,
+            @Value("${aiwos.browser.runner-secret:}") String browserRunnerSecret,
+            @Value("${aiwos.voice.elevenlabs.base-url:" + PhoneAdapter.BASE_URL + "}") String elevenLabsBaseUrl) {
         // A webhook to http://localhost is how the webhook connector is tested on a laptop. A
         // deployed environment refuses it, so a pasted URL cannot reach the platform's own ports.
         boolean allowLoopback = "local".equalsIgnoreCase(environment) || "test".equalsIgnoreCase(environment);
-        List<McpServerAdapter> servers = servers(json, http.getIfAvailable(WebClient::builder), allowLoopback);
+        // Looked up at call time, not now: the key store's client is built after the tool servers.
+        BuiltIns builtIns =
+                new BuiltIns(browserRunnerUrl, browserRunnerSecret, elevenLabsBaseUrl, secrets::getIfAvailable);
+        List<McpServerAdapter> servers =
+                servers(json, http.getIfAvailable(WebClient::builder), allowLoopback, builtIns);
+        if (builtIns.browserRunnerUrl() == null || builtIns.browserRunnerUrl().isBlank()) {
+            log.info("No browser runner is configured (aiwos.browser.runner-url); the web browser connector is off");
+        }
         servers.stream()
                 .filter(OAuthAdapter.class::isInstance)
                 .forEach(server -> ((OAuthAdapter) server).useRefresher(refresher::getIfAvailable));
@@ -103,6 +118,28 @@ public class SandboxServerRegistry {
      * workspace keeps working and the tool surface is the same either way.
      */
     public static List<McpServerAdapter> servers(ObjectMapper json, WebClient.Builder http, boolean allowLoopback) {
+        return servers(json, http, allowLoopback, BuiltIns.NONE);
+    }
+
+    /**
+     * Where the built-in connectors find what they need: the browser runner's address and shared
+     * secret, and ElevenLabs with the workspace's stored key.
+     *
+     * @param secrets supplies the key lookup at call time; may answer null where no store exists
+     */
+    public record BuiltIns(
+            String browserRunnerUrl,
+            String browserRunnerSecret,
+            String elevenLabsBaseUrl,
+            java.util.function.Supplier<WorkspaceSecrets> secrets) {
+
+        /** Nothing configured: the browser says it is off and phone calls say no key is stored. */
+        public static final BuiltIns NONE = new BuiltIns(null, null, null, () -> null);
+    }
+
+    // @find: build all connector adapters with built in browser and phone
+    public static List<McpServerAdapter> servers(
+            ObjectMapper json, WebClient.Builder http, boolean allowLoopback, BuiltIns builtIns) {
         Map<String, Map<String, List<ObjectNode>>> seeds = seeds(json);
         List<McpServerAdapter> servers = new ArrayList<>();
         definitions().forEach((server, tools) -> {
@@ -129,6 +166,12 @@ public class SandboxServerRegistry {
                         case "outlook" -> new OutlookAdapter(sandbox, json, http, OutlookAdapter.BASE_URL);
                         case "teams" -> new TeamsAdapter(sandbox, json, http, TeamsAdapter.BASE_URL);
                         case "salesforce" -> new SalesforceAdapter(sandbox, json, http, SalesforceAdapter.BASE_URL);
+                        case "twilio" -> new TwilioAdapter(sandbox, json, http, TwilioAdapter.BASE_URL)
+                                .useElevenLabs(http, builtIns.elevenLabsBaseUrl(), builtIns.secrets());
+                        case "browser" -> new BrowserAdapter(
+                                tools, json, http, builtIns.browserRunnerUrl(), builtIns.browserRunnerSecret());
+                        case "phone" -> new PhoneAdapter(
+                                tools, json, http, builtIns.elevenLabsBaseUrl(), builtIns.secrets());
                         default -> sandbox;
                     });
         });
@@ -159,6 +202,9 @@ public class SandboxServerRegistry {
         servers.put("stripe", stripeTools());
         servers.put("zoom", zoomTools());
         servers.put("webhook", webhookTools());
+        servers.put("twilio", twilioTools());
+        servers.put("browser", browserTools());
+        servers.put("phone", phoneTools());
         return servers;
     }
 
@@ -1185,5 +1231,211 @@ public class SandboxServerRegistry {
                         "list_events",
                         "List the events recently sent to the connected web address.",
                         schema(LIMIT)));
+    }
+
+    // @find: twilio tools, list_numbers, search_available_numbers, buy_number, release_number, connect_number_to_elevenlabs
+    private static List<ToolDefinition> twilioTools() {
+        // No scopes: an Account SID and Auth token reach the whole account. Buying costs money every
+        // month and releasing gives a number up for good, so both always wait for a person;
+        // connecting a number to ElevenLabs asks too (TwilioAdapter.approvalReason).
+        String number = str("phone_number", "the number in international format, for example +61255550101");
+        return List.of(
+                read(
+                        "twilio",
+                        "list_numbers",
+                        "List the phone numbers on the Twilio account, whether each can make voice calls, and"
+                                + " whether it is connected to ElevenLabs.",
+                        schema(LIMIT)),
+                read(
+                        "twilio",
+                        "search_available_numbers",
+                        "Find voice-capable numbers Twilio has available to buy in a country, optionally by area code"
+                                + " or digits the number contains.",
+                        schema(
+                                props(
+                                        str("country_code", "two letters, for example AU or US"),
+                                        str("area_code", "optional: digits only, for example 2 or 415"),
+                                        str("contains", "optional: digits the number should contain, for example 555"),
+                                        LIMIT),
+                                "country_code")),
+                new ToolDefinition(
+                        "twilio",
+                        "buy_number",
+                        "Buy a phone number on the Twilio account. It costs money every month, so a person approves"
+                                + " it first. Give country_code as well to be told the monthly cost.",
+                        schema(props(number, str("country_code", "optional: two letters, for the monthly cost")),
+                                "phone_number"),
+                        ToolSpec.SideEffect.OUTBOUND,
+                        List.of(),
+                        false,
+                        Duration.ofSeconds(30),
+                        5),
+                destructive(
+                        "twilio",
+                        "release_number",
+                        "Release a phone number from the Twilio account for good. A person approves it first.",
+                        schema(number, "phone_number")),
+                new ToolDefinition(
+                        "twilio",
+                        "connect_number_to_elevenlabs",
+                        "Connect a Twilio number to the workspace's ElevenLabs account so voice agents can call from"
+                                + " it, and optionally assign a voice agent to it. A person approves it first.",
+                        schema(
+                                props(
+                                        number,
+                                        str("label", "optional: a name for the number in ElevenLabs"),
+                                        str("agent", "optional: the voice agent's name or agent_id to assign")),
+                                "phone_number"),
+                        ToolSpec.SideEffect.WRITE,
+                        List.of(),
+                        false,
+                        Duration.ofSeconds(30),
+                        5));
+    }
+
+    // ---- Built in: the web browser and phone calls -----------------------------------------------
+
+    /* A browser call loads a page and takes a screenshot, so it gets longer than a plain API call. */
+    private static ToolDefinition browserTool(
+            String name, String description, String schema, ToolSpec.SideEffect sideEffect, boolean idempotent) {
+        return new ToolDefinition("browser", name, description, schema, sideEffect, List.of(), idempotent,
+                Duration.ofSeconds(45), 30);
+    }
+
+    // @find: browser tools, open_page, read_page, follow_link, fill_field, click_button, submit_form
+    private static List<ToolDefinition> browserTools() {
+        // No scopes: a built-in capability with no account behind it. Reading is free; clicking and
+        // submitting can send something to the site, so both always wait for a person.
+        return List.of(
+                browserTool(
+                        "open_page",
+                        "Open a public web page and read it. Returns the page title, address, visible text, links"
+                                + " and form fields. Only http and https addresses on the public internet can be"
+                                + " opened.",
+                        schema(str("url", "the full address, starting with https://"), "url"),
+                        ToolSpec.SideEffect.READ,
+                        true),
+                browserTool(
+                        "read_page",
+                        "Read the page that is open now again, for example after it has finished loading.",
+                        schema(""),
+                        ToolSpec.SideEffect.READ,
+                        true),
+                browserTool(
+                        "follow_link",
+                        "Follow a link on the open page by its visible text. Only real links are followed;"
+                                + " nothing is clicked or submitted.",
+                        schema(str("linkText", "the visible text of the link, as listed in links"), "linkText"),
+                        ToolSpec.SideEffect.READ,
+                        true),
+                browserTool(
+                        "fill_field",
+                        "Type a value into a form field on the open page, found by its label, name or placeholder."
+                                + " Nothing is sent until the form is submitted.",
+                        schema(
+                                props(
+                                        str("field", "the field's label, name or placeholder, as listed in fields"),
+                                        str("value", "what to type")),
+                                "field",
+                                "value"),
+                        ToolSpec.SideEffect.WRITE,
+                        true),
+                browserTool(
+                        "click_button",
+                        "Click a button on the open page by its visible text. A person approves every click"
+                                + " first, because a click can send or change something on the site.",
+                        schema(str("text", "the button's visible text"), "text"),
+                        ToolSpec.SideEffect.OUTBOUND,
+                        false),
+                browserTool(
+                        "submit_form",
+                        "Submit the form on the open page, with what was typed into it. A person approves every"
+                                + " submission first, because it sends what was typed to the site.",
+                        schema(str("field", "optional: a field in the form to submit, when the page has several")),
+                        ToolSpec.SideEffect.OUTBOUND,
+                        false));
+    }
+
+    // @find: phone tools, place_call, get_call, list_calls, voice agents, phone numbers
+    private static List<ToolDefinition> phoneTools() {
+        // No scopes: built in, using the workspace's stored ElevenLabs key. Creating or changing a
+        // voice agent is a write that asks a person first (PhoneAdapter.approvalReason).
+        return List.of(
+                read(
+                        "phone",
+                        "list_voice_agents",
+                        "List the ElevenLabs voice agents on the workspace's account, with their ids.",
+                        schema("")),
+                new ToolDefinition(
+                        "phone",
+                        "create_voice_agent",
+                        "Create an ElevenLabs voice agent that can speak on phone calls. A person approves it first.",
+                        schema(
+                                props(
+                                        str("name", "a short name for the agent"),
+                                        str("prompt", "how the agent should behave on calls"),
+                                        str("first_message", "optional: the first sentence it says"),
+                                        str("voice_id", "optional: an ElevenLabs voice id"),
+                                        str("language", "optional: a language code such as en")),
+                                "name",
+                                "prompt"),
+                        ToolSpec.SideEffect.WRITE,
+                        List.of(),
+                        false,
+                        Duration.ofSeconds(30),
+                        10),
+                new ToolDefinition(
+                        "phone",
+                        "update_voice_agent",
+                        "Change an ElevenLabs voice agent's name, prompt, first message, voice or language. A person"
+                                + " approves it first.",
+                        schema(
+                                props(
+                                        str("agent", "the agent's name or agent_id"),
+                                        str("name", "optional: a new name"),
+                                        str("prompt", "optional: new instructions"),
+                                        str("first_message", "optional: a new first sentence"),
+                                        str("voice_id", "optional: an ElevenLabs voice id"),
+                                        str("language", "optional: a language code such as en")),
+                                "agent"),
+                        ToolSpec.SideEffect.WRITE,
+                        List.of(),
+                        false,
+                        Duration.ofSeconds(30),
+                        10),
+                read(
+                        "phone",
+                        "list_phone_numbers",
+                        "List the phone numbers connected in ElevenLabs, and the voice agent assigned to each.",
+                        schema("")),
+                new ToolDefinition(
+                        "phone",
+                        "place_call",
+                        "Place a phone call through the workspace's ElevenLabs account. An AI voice agent calls the"
+                                + " number and talks to the person. A person approves every call first. Returns a"
+                                + " call_id to check later with get_call.",
+                        schema(
+                                props(
+                                        str("to_number", "the number in international format, for example +61299990000"),
+                                        str("agent", "optional: the voice agent's name or agent_id; the workspace caller by default"),
+                                        str("purpose", "what the call is for and what to find out, in plain words"),
+                                        str("first_message", "optional: the first sentence the caller says"),
+                                        str("from_number", "optional: which connected number to call from")),
+                                "to_number"),
+                        ToolSpec.SideEffect.OUTBOUND,
+                        List.of(),
+                        false,
+                        Duration.ofSeconds(45),
+                        5),
+                read(
+                        "phone",
+                        "get_call",
+                        "Check a call placed earlier: its status, length, summary and transcript.",
+                        schema(str("call_id", "the call_id place_call returned"), "call_id")),
+                read(
+                        "phone",
+                        "list_calls",
+                        "List recent calls, newest first: the workspace caller's, or one voice agent's.",
+                        schema(props(LIMIT, str("agent", "optional: a voice agent's name or agent_id")))));
     }
 }

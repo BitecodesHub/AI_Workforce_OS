@@ -139,7 +139,8 @@ public class ToolCredentialResolver {
     }
 
     private boolean liveCapable(String server) {
-        return gateway.adapter(server).map(adapter -> !adapter.isSandbox()).orElse(false);
+        // A built-in server (the web browser, phone calls) has nothing stored for it to look up.
+        return gateway.adapter(server).map(adapter -> !adapter.isSandbox() && !adapter.isBuiltIn()).orElse(false);
     }
 
     private CredentialResponse fetch(UUID orgId, String server) {

@@ -72,6 +72,7 @@ import os.aiworkforce.mcp.model.ToolResult;
 import os.aiworkforce.mcp.policy.ApprovalDecision;
 import os.aiworkforce.mcp.policy.ToolGateway;
 import os.aiworkforce.mcp.policy.ToolGrant;
+import os.aiworkforce.mcp.spi.McpServerAdapter;
 import os.aiworkforce.orchestrator.domain.Agent;
 import os.aiworkforce.orchestrator.domain.AgentToolGrant;
 import os.aiworkforce.orchestrator.domain.AgentVersion;
@@ -267,6 +268,14 @@ public class AgentRunner {
 
     void useScheduleTool(os.aiworkforce.orchestrator.schedule.AgentScheduleTool scheduleTool) {
         this.scheduleTool = scheduleTool;
+    }
+
+    /** Keeps the web browser's screenshots; absent only where a test builds the runner by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.browser.BrowserShotService browserShots;
+
+    void useBrowserShots(os.aiworkforce.orchestrator.browser.BrowserShotService browserShots) {
+        this.browserShots = browserShots;
     }
 
     /** Files attached to the chat message a run's goal came from; absent where a test builds the runner by hand. */
@@ -1084,6 +1093,7 @@ public class AgentRunner {
 
         Map<String, Object> detail = toolCallDetail(toolCallId, tool, result, startedAt, sideEffect, mode);
         captureVoiceClip(run, agent, parts[0], parts[1], invocation.argumentsJson(), result, detail);
+        captureBrowserShot(run, parts[0], toolCallId, result, detail);
         saveStep(run, "tool_call", detail);
         recordApprovalOutcome(approval, result.status().name() + ": " + secrets(result.summary()));
     }
@@ -1315,6 +1325,10 @@ public class AgentRunner {
 
     /** {@code live} when the server is a real connector and a credential was found, else {@code sandbox}. */
     private String modeOf(String server, String credential) {
+        // A built-in connector (the web browser, phone calls) has no practice twin: it is always real.
+        if (tools.adapter(server).map(McpServerAdapter::isBuiltIn).orElse(false)) {
+            return MODE_LIVE;
+        }
         boolean live = credential != null
                 && tools.adapter(server).map(adapter -> !adapter.isSandbox()).orElse(false);
         return live ? MODE_LIVE : MODE_SANDBOX;
@@ -1464,6 +1478,34 @@ public class AgentRunner {
             }
         } catch (RuntimeException e) {
             log.warn("Voice note could not be captured for run {}: {}", run.getId(), e.getMessage());
+        }
+    }
+
+    // @find: capture browser screenshot into run trace, live view, shotId in step detail
+    /**
+     * The web browser's screenshot of the page after this step is stored on its own and named in
+     * the step by {@code shotId} (with the page's {@code url} and {@code pageTitle}), so the trace
+     * and Chat's live view can show it. The picture itself never reaches the trace's JSON or the
+     * model: it travels only in the result's metadata. A failure here never fails the run.
+     */
+    private void captureBrowserShot(
+            Run run, String server, String toolCallId, ToolResult result, Map<String, Object> detail) {
+        if (!"browser".equals(server) || browserShots == null) {
+            return;
+        }
+        String url = result.metadata().get(os.aiworkforce.mcp.builtin.BrowserAdapter.PAGE_URL);
+        String title = result.metadata().get(os.aiworkforce.mcp.builtin.BrowserAdapter.PAGE_TITLE);
+        if (url != null && !url.isBlank()) {
+            detail.put("url", url);
+        }
+        if (title != null && !title.isBlank()) {
+            detail.put("pageTitle", title);
+        }
+        try {
+            browserShots.save(run.getOrgId(), run.getId(), toolCallId, result)
+                    .ifPresent(id -> detail.put("shotId", id.toString()));
+        } catch (RuntimeException e) {
+            log.warn("Browser screenshot could not be captured for run {}: {}", run.getId(), e.getMessage());
         }
     }
 
@@ -2542,6 +2584,7 @@ public class AgentRunner {
 
         Map<String, Object> detail = toolCallDetail(call.id(), call.name(), result, startedAt, sideEffect, mode);
         captureVoiceClip(run, agent, parts[0], parts[1], invocation.argumentsJson(), result, detail);
+        captureBrowserShot(run, parts[0], call.id(), result, detail);
         saveStep(run, "tool_call", detail);
 
         // What was saved is what the model is told, so a resumed run sees what this one did.

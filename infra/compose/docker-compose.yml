@@ -1,4 +1,4 @@
-# @find: docker compose, development stack, local stack, make up, postgres, redis, kafka, qdrant, services, gateway, prometheus, grafana, ports, healthchecks, environment variables
+# @find: docker compose, browser runner profile, development stack, local stack, make up, postgres, redis, kafka, qdrant, services, gateway, prometheus, grafana, ports, healthchecks, environment variables
 # @what: Docker Compose stack for development: databases, Redis, Kafka, Qdrant, the eight services and monitoring.
 # @flow: Started by make up / make down in the Makefile
 # The whole platform, locally, with no credentials configured.
@@ -173,6 +173,12 @@ services:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: orchestrator-service}}
     ports: ["8083:8080"]
+    # The web browser connector is off unless the "browser" profile runs and these two are set:
+    # COMPOSE_PROFILES=browser AIWOS_BROWSER_RUNNER_URL=http://browser:8090 make up
+    environment:
+      <<: *service-environment
+      AIWOS_BROWSER_RUNNER_URL: ${AIWOS_BROWSER_RUNNER_URL:-}
+      AIWOS_BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-local-browser-runner-secret}
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -201,6 +207,19 @@ services:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: analytics-service}}
     ports: ["8087:8080"]
+
+  # Headless Chromium for the built-in web browser connector. Off by default (it is the heaviest
+  # container here); start it with the "browser" profile when testing the browser.
+  browser:
+    profiles: ["browser"]
+    build: {context: ../browser-runner}
+    restart: unless-stopped
+    networks: [aiwos]
+    mem_limit: 700m
+    shm_size: 256m
+    environment:
+      BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-local-browser-runner-secret}
+    ports: ["8090:8090"]
 
   gateway:
     <<: *service-defaults

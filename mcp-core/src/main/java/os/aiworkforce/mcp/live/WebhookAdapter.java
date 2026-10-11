@@ -212,7 +212,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
         }
     }
 
-    static boolean isPrivate(InetAddress address) {
+    public static boolean isPrivate(InetAddress address) {
         if (address.isAnyLocalAddress()
                 || address.isLinkLocalAddress()
                 || address.isSiteLocalAddress()

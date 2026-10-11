@@ -54,9 +54,14 @@ public class VoiceService {
     public record StatusView(
             String provider, boolean keyStored, String tier, Integer charactersUsed, Integer characterLimit) {}
 
-    private record CachedVoices(List<VoiceView> voices, Instant fetchedAt) {
-        boolean isFresh() {
-            return Instant.now().isBefore(fetchedAt.plus(VOICES_CACHE_TTL));
+    /*
+     * Kept with a fingerprint of the key it was read with: after a key is replaced (another
+     * ElevenLabs account), the old account's voices must not be used, or every clip fails for the
+     * rest of the cache's life with a voice the new key does not have.
+     */
+    private record CachedVoices(List<VoiceView> voices, Instant fetchedAt, int keyFingerprint) {
+        boolean isFreshFor(String key) {
+            return keyFingerprint == key.hashCode() && Instant.now().isBefore(fetchedAt.plus(VOICES_CACHE_TTL));
         }
     }
 
@@ -79,6 +84,11 @@ public class VoiceService {
                         "value", "ElevenLabs did not accept this key. Check that it was copied in full and is still active.");
             }
             log.debug("ElevenLabs could not check a key: {}", e.getMessage());
+            // A key that works but cannot read the subscription, or whose quota is used up, is
+            // stored with ElevenLabs' own reason rather than a vague "could not confirm".
+            if (e.code() == ErrorCode.RATE_LIMITED || (e.getMessage() != null && e.getMessage().contains("permission"))) {
+                return new KeyCheck(false, e.getMessage() + " The key was stored as it is.");
+            }
             return new KeyCheck(false, "ElevenLabs could not confirm the key just now, so it was stored as it is.");
         }
     }
@@ -116,13 +126,13 @@ public class VoiceService {
             return List.of();
         }
         CachedVoices cached = voicesCache.get(orgId);
-        if (cached != null && cached.isFresh()) {
+        if (cached != null && cached.isFreshFor(key.get())) {
             return cached.voices();
         }
         List<VoiceView> fetched = client.voices(key.get()).stream()
                 .map(v -> new VoiceView(v.voiceId(), v.name(), v.category(), v.description(), v.previewUrl()))
                 .toList();
-        voicesCache.put(orgId, new CachedVoices(fetched, Instant.now()));
+        voicesCache.put(orgId, new CachedVoices(fetched, Instant.now(), key.get().hashCode()));
         return fetched;
     }
 

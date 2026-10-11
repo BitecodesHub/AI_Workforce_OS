@@ -3699,6 +3699,76 @@ input[type='checkbox'][role='switch']:checked::before {
   margin-bottom: var(--space-3);
 }
 
+/* The web browser's screenshot of a step: the page address, then the picture (a button that opens
+   it full size). The live view in Chat and the compact trace uses the smaller variant. */
+.browser-shot {
+  margin-top: var(--space-2);
+  max-width: 640px;
+}
+
+.browser-shot-compact {
+  max-width: 320px;
+}
+
+.browser-shot-url {
+  margin: 0 0 var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-shot-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.browser-shot-button:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.browser-shot-image,
+.browser-shot-full {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1280 / 800;
+  object-fit: cover;
+  object-position: top;
+}
+
+.browser-shot-full {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  object-fit: contain;
+}
+
+.browser-shot-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1280 / 800;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.browser-live {
+  margin-top: var(--space-3);
+}
+
+.browser-live-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
 /* ---- Workforce chat: queued messages ----
  * A message sent while an answer is still being worked on waits here, after the thread, until it
  * starts. It reads as not yet sent: a plain surface with a dashed edge rather than the filled
