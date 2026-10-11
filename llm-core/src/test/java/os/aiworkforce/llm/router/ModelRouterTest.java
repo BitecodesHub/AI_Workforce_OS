@@ -276,7 +276,6 @@ class ModelRouterTest {
 
         // Not retried within a call (a 404 does not pass on a repeat), but asked again on the next.
         assertThat(calls.get()).isEqualTo(2);
-        assertThat(registry.unavailable).isEmpty();
     }
 
     @Test
@@ -750,7 +749,6 @@ class ModelRouterTest {
 
         // A 402 is not retried within a call, and is asked again on the next call.
         assertThat(creditCalls.get()).isEqualTo(2);
-        assertThat(registry.causes).isEmpty();
         // An empty account is not a refused key: the key itself is left alone.
         assertThat(registry.rejected).isEmpty();
     }
@@ -1393,8 +1391,6 @@ class ModelRouterTest {
         private final Map<String, ModelSpec> models = new java.util.LinkedHashMap<>();
         private final java.util.Set<String> withoutCredential = new java.util.HashSet<>();
         private final java.util.Set<String> unreachableStore = new java.util.HashSet<>();
-        private final Map<String, String> unavailable = new java.util.LinkedHashMap<>();
-        private final Map<String, ProviderFailure> causes = new java.util.LinkedHashMap<>();
         /** Workspace/provider pairs whose key was refused, as the registry was told. */
         private final java.util.Set<String> rejected = new java.util.LinkedHashSet<>();
 
@@ -1449,27 +1445,12 @@ class ModelRouterTest {
 
         @Override
         public Optional<ModelSpec> model(String orgId, String providerId, String modelId) {
-            if (unavailable.containsKey(providerId + "/" + modelId)) {
-                return Optional.of(models.get(providerId + "/" + modelId).markUnavailableFor(Duration.ofHours(1)));
-            }
             return Optional.ofNullable(models.get(providerId + "/" + modelId));
         }
 
         @Override
         public List<ModelSpec> models(String orgId) {
             return List.copyOf(models.values());
-        }
-
-        @Override
-        public void markModelUnavailable(
-                String orgId,
-                String providerId,
-                String modelId,
-                ProviderFailure cause,
-                Duration duration,
-                String reason) {
-            unavailable.put(providerId + "/" + modelId, reason);
-            causes.put(orgId + "/" + providerId + "/" + modelId, cause);
         }
 
         @Override

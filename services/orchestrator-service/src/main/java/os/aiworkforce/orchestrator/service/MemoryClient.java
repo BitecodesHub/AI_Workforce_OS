@@ -54,7 +54,8 @@ public class MemoryClient {
      * only through the three factories below and read by AgentMemoryTool, which reports it to the model.
      *
      * @param note the stored note; null unless it was kept
-     * @param created whether the memory service reports a new note was created
+     * @param created the memory service's {@code created} flag: true for a new note, false when the same
+     *     note was already stored and only its date moved; false unless it was kept
      * @param refused why the note was not kept, in words for the model; null when it was kept
      * @param unavailable true when the memory service could not be asked or gave no usable answer
      */

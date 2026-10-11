@@ -1,9 +1,6 @@
-// @find: router, navigate, route params, page title, tab title, attention count, redirects, old address, useRouter, RouterProvider, setPageTitle, useDocumentTitle, redirectFor, match, links, history, scroll to hash
-// @what: The small in-house router: current path, navigation without reload, route parameters, tab title and old-address redirects.
-// @flow: Used by App.tsx, main.tsx and nearly every screen through useRouter.
-// @find: router, routes, navigation, page title, history, search params, useRouter, link, attention count in tab title, Back button, URL
-// @what: The console own small router: current path and query, navigation, page title and tab count.
-// @flow: Used by every page and by useListFilter and attention
+// @find: router, routes, navigate, navigation, route params, search params, page title, tab title, attention count, redirects, old address, useRouter, RouterProvider, setPageTitle, setAttentionCount, useDocumentTitle, redirectFor, match, links, history, Back button, scroll to hash, URL
+// @what: The console's small in-house router: current path and query, navigation without reload, route parameters, tab title with attention count, and old-address redirects.
+// @flow: Used by App.tsx, main.tsx, useListFilter, attention and nearly every screen through useRouter.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 

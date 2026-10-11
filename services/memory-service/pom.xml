@@ -18,9 +18,9 @@
   <artifactId>memory-service</artifactId>
   <name>Memory Service</name>
   <description>
-    Shared memory across agents and across tasks: working memory with a time to live,
-    append-only episodic memory, semantic pointers into the knowledge base, and scheduled
-    compaction. Every read is checked against the requesting agent grants.
+    Shared memory across agents and across tasks: append-only episodic memory with scheduled
+    retention, per-agent memories, and semantic pointers into the knowledge base. Every read is
+    checked against the requesting agent grants.
   </description>
 
   <dependencies>

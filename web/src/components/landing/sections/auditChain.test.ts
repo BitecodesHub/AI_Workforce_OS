@@ -246,17 +246,16 @@ describe('sections', () => {
     expect(within(approve as HTMLElement).getByText('Employee cannot approve what gets sent')).toBeInTheDocument()
   })
 
-  it('answers the buyer questions as native disclosures, without promising live connections', () => {
+  it('answers the buyer questions as native disclosures, saying who connects real accounts', () => {
     const { container } = render(createElement(Faq))
     const items = container.querySelectorAll('details')
     expect(items.length).toBeGreaterThanOrEqual(6)
-    const email = screen.getByText(/not connected to real mailboxes or calendars/)
+    const email = screen.getByText(/connect to your real accounts once an owner or admin sets them up/)
+    expect(email).toHaveTextContent(/^Yes\. Gmail, Google Calendar, Microsoft Outlook and the other connectors/)
     expect(email).toHaveTextContent(CONNECTOR_NOTICE)
-    // Says "not yet" once, and does not hint that some tools already connect for real.
-    expect(email.textContent?.match(/\byet\b/g)).toHaveLength(1)
-    expect(email).not.toHaveTextContent(/connect today|connect for real|\blive\b/i)
+    expect(email).not.toHaveTextContent(/not yet|practice data only/i)
     expect(container.textContent).not.toMatch(/permission code|approval:decide|MCP|Spring Boot/)
-    // No connector is named as working, and no demo account is promised.
+    // No demo account is promised, and the full connector list stays on the page for IT teams.
     expect(container.textContent).not.toMatch(/connectors for|demo account|Slack|GitHub/i)
   })
 

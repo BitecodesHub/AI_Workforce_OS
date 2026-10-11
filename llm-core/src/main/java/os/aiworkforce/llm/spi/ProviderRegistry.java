@@ -2,13 +2,11 @@
 // @what: Interface the router uses to look up which providers and models exist.
 package os.aiworkforce.llm.spi;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
 import os.aiworkforce.llm.model.ModelSpec;
 import os.aiworkforce.llm.model.ProviderDescriptor;
-import os.aiworkforce.llm.model.ProviderFailure;
 
 /**
  * Where the router looks up what providers and models exist.
@@ -35,24 +33,6 @@ public interface ProviderRegistry {
 
     /** Every enabled model, for the console and for building a default policy, as this workspace sees it. */
     List<ModelSpec> models(String orgId);
-
-    /**
-     * Sets a model aside for a while after a failure that will repeat until somebody acts.
-     *
-     * <p>Where the note lands depends on {@code cause}, because the failures mean different
-     * things. An account out of credit or quota is a fact about one workspace's account and must
-     * only ever set the model aside for that workspace. A retired model
-     * ({@link ProviderFailure#MODEL_NOT_FOUND}) is the same fact for every workspace, but one
-     * workspace's account can produce the same 404, so it is noted for that workspace first and
-     * may reach every workspace - briefly - only once more than one workspace has been told so.
-     *
-     * <p>Retiring a model is something vendors do on their own schedule, and the first the
-     * platform hears of it is a 404 on a request a person is waiting for. Marking it here keeps
-     * every later request from paying that round trip, and raises the notice an operator needs in
-     * order to change the policy.
-     */
-    void markModelUnavailable(
-            String orgId, String providerId, String modelId, ProviderFailure cause, Duration duration, String reason);
 
     /**
      * Records that a workspace's credential was rejected.

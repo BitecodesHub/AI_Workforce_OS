@@ -1,18 +1,13 @@
-// @find: episodic memory, record episode, recall episodes, compact episodes, episodes for run, purge expired, what do we already know, agent history
-// @what: Records, recalls, compacts and purges the permanent record of what agents did and decided.
+// @find: episodic memory, record episode, recall episodes, episodes for run, purge expired, what do we already know, agent history
+// @what: Records, recalls and purges the permanent record of what agents did and decided.
 // @flow: Called by InternalMemoryController, MemoryController and EpisodePurgeJob
 package os.aiworkforce.memory.service;
 
-import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,23 +19,13 @@ import os.aiworkforce.platform.context.RequestContext;
 /**
  * The permanent record of what agents have observed and decided.
  *
- * <p>Two operations matter. <b>Recall</b> answers "what do we already know about this?" before an
- * agent starts work, which is what stops it asking a colleague the same question twice a week.
- * <b>Compaction</b> keeps recall useful as the record grows: after a few thousand episodes, an
- * unfiltered recall returns more than fits in any context window, and the agent effectively
- * remembers nothing.
+ * <p><b>Recall</b> answers "what do we already know about this?" before an agent starts work,
+ * which is what stops it asking a colleague the same question twice a week. Recall is ordered by
+ * importance then recency and capped, so it stays within a context window as the record grows.
+ * Expired episodes are removed by {@link EpisodePurgeJob} through {@link #purgeExpired}.
  */
 @Service
 public class EpisodicMemory {
-
-    /** Logger for compaction progress. */
-    private static final Logger log = LoggerFactory.getLogger(EpisodicMemory.class);
-
-    /** Episodes below this importance are eligible to be folded into a summary. */
-    private static final int COMPACTION_IMPORTANCE_CEILING = 6;
-
-    /** How old an episode must be before compaction will touch it. */
-    private static final Duration COMPACTION_AGE = Duration.ofDays(30);
 
     private final Episodes episodes;
 
@@ -114,90 +99,6 @@ public class EpisodicMemory {
     }
 
     /**
-     * Folds old, low-importance episodes into one summary per agent.
-     *
-     * <p>A summary rather than a deletion, and it records which episodes it replaced. Deleting
-     * them outright would leave an agent confidently unaware that something happened; a summary
-     * that says "forty observations were folded" is at least honest about what was lost.
-     *
-     * <p>Decisions, handoffs and outcomes are never compacted, whatever their age: those are the
-     * ones somebody reconstructs an incident from.
-     *
-     * <p>Compacts one organisation's old, low-importance episodes. No controller or job in this service
-     * calls it today; it is available to a future scheduled or operator-triggered compaction.
-     *
-     * <p>Flow: select candidates older than the compaction age with importance below the ceiling, return 0 when
-     * fewer than two exist, group them by agent, and for each group of two or more save a summary episode
-     * that records the ids it supersedes, then flag the originals as compacted. Episodes with no agent are
-     * skipped. Side effects: inserts and updates in one transaction, so a failure leaves no partial
-     * compaction. Returns the number of episodes folded.
-     *
-     * @param orgId organisation scope
-     * @param batchSize maximum number of candidates examined in this call
-     */
-    @Transactional
-    // @find: compact episodes, summarise old episodes
-    public int compact(UUID orgId, int batchSize) {
-        Instant before = Instant.now().minus(COMPACTION_AGE);
-        List<Episode> candidates =
-                episodes.findCompactable(orgId, before, COMPACTION_IMPORTANCE_CEILING, PageRequest.of(0, batchSize));
-
-        if (candidates.size() < 2) {
-            return 0;
-        }
-
-        Map<UUID, List<Episode>> byAgent = candidates.stream()
-                .filter(episode -> episode.getAgentId() != null)
-                .collect(Collectors.groupingBy(Episode::getAgentId));
-
-        int compacted = 0;
-        for (Map.Entry<UUID, List<Episode>> entry : byAgent.entrySet()) {
-            List<Episode> group = entry.getValue();
-            if (group.size() < 2) {
-                continue;
-            }
-
-            Episode summary =
-                    Episode.of(orgId, entry.getKey(), "summary", summarise(group), COMPACTION_IMPORTANCE_CEILING);
-            summary.setOccurredAt(group.get(0).getOccurredAt());
-            summary.setSupersedes(group.stream().map(Episode::getId).toList());
-            summary.setDetail(Map.of(
-                    "episodeCount", group.size(),
-                    "from", group.get(0).getOccurredAt().toString(),
-                    "to", group.get(group.size() - 1).getOccurredAt().toString()));
-            episodes.save(summary);
-
-            // The originals are marked rather than deleted, so the summary can still be checked
-            // against what it replaced until the retention sweep removes them.
-            episodes.markCompacted(group.stream().map(Episode::getId).toList());
-            compacted += group.size();
-        }
-
-        if (compacted > 0) {
-            log.info("Compacted {} episode(s) for workspace {}", compacted, orgId);
-        }
-        return compacted;
-    }
-
-    /**
-     * A factual summary of the episodes being folded.
-     *
-     * <p>Written mechanically rather than by asking a model. A model-written summary of records
-     * the agent can no longer check is a confident invention waiting to be quoted back as fact.
-     */
-    private String summarise(List<Episode> group) {
-        Map<String, Long> byKind =
-                group.stream().collect(Collectors.groupingBy(Episode::getKind, Collectors.counting()));
-        List<String> parts = new ArrayList<>();
-        byKind.forEach((kind, count) -> parts.add(count + " " + kind + (count == 1 ? "" : "s")));
-        return "Between " + group.get(0).getOccurredAt() + " and "
-                + group.get(group.size() - 1).getOccurredAt() + ", "
-                + String.join(", ", parts)
-                + " were recorded and have been folded into this summary. "
-                + "Treat the detail as unavailable rather than as agreed.";
-    }
-
-    /**
      * Removes episodes past their retention date. Runs in small batches for the same reason.
      *
      * <p>Deletes episodes whose expiry has passed, at most {@code batchSize} per call. Called by
@@ -216,13 +117,3 @@ public class EpisodicMemory {
         return Math.min(10, Math.max(1, importance));
     }
 }
-
-// Week 1 update by LoveShah21
-
-// Week 2 update by LoveShah21
-
-// Week 3 update by LoveShah21
-
-// Week 4 update by LoveShah21
-
-// Week 5 update by LoveShah21

@@ -52,9 +52,9 @@ describe('connector facts', () => {
   })
 
 
-  it('give the home page a connector sentence that promises nothing live', () => {
-    expect(CONNECTOR_NOTICE).toMatch(/practice mode/)
-    expect(CONNECTOR_NOTICE).not.toMatch(/live|your account|connects? to/i)
+  it('give the home page a connector sentence that says unconnected tools send nothing real', () => {
+    expect(CONNECTOR_NOTICE).toMatch(/practice data/)
+    expect(CONNECTOR_NOTICE).toMatch(/nothing real is sent/)
   })
 
   it('join a list the way the sentences need', () => {

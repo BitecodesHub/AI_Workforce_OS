@@ -1,9 +1,6 @@
 // @find: model policy, routing policy, model routing, fallback chain, workspace default policy, per agent policy, exhausted behaviour, max attempts, deadline, compact on overflow, model_policies, ModelPolicyEntity, Models page
 // @what: Entity for an ordered list of models to try and what to do when all fail; null agent means workspace default.
 // @flow: Stored by ModelPolicies; read by the model router when a run calls a model.
-// @find: model policy, routing policy, model routing, fallback chain, workspace default policy, per agent policy, exhausted behaviour, max attempts, deadline, compact on overflow, model_policies, ModelPolicyEntity, Models page
-// @what: Entity for an ordered list of models to try and what to do when all fail; null agent means workspace default.
-// @flow: Stored by ModelPolicies; read by the model router when a run calls a model.
 package os.aiworkforce.orchestrator.domain;
 
 import java.util.ArrayList;
@@ -113,7 +110,6 @@ public class ModelPolicyEntity extends OrgScopedEntity {
         return candidates;
     }
 
-    // @find: replace routing chain candidates, reorder models in policy
     // @find: replace routing chain candidates, reorder models in policy
     /**
      * Replaces the chain. Rows are updated in place by position, extra rows added and surplus rows

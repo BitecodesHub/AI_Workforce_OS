@@ -74,28 +74,9 @@ public record ModelSpec(
         return needed <= contextWindowTokens;
     }
 
-    /** Whether the model is inside a temporary exclusion window set by {@link #markUnavailableFor}. */
+    /** Whether the model is inside a temporary exclusion window given by {@code unavailableUntilEpochMs}. */
     public boolean isCurrentlyUnavailable() {
         return unavailableUntilEpochMs != null && System.currentTimeMillis() < unavailableUntilEpochMs;
-    }
-
-    /** Marks the model unavailable for a period, after the provider said it does not exist. */
-    public ModelSpec markUnavailableFor(java.time.Duration duration) {
-        return new ModelSpec(
-                providerId,
-                modelId,
-                displayName,
-                contextWindowTokens,
-                maxOutputTokens,
-                supportsTools,
-                supportsJsonMode,
-                supportsStreaming,
-                supportsVision,
-                inputCostPerMillion,
-                cachedInputCostPerMillion,
-                outputCostPerMillion,
-                enabled,
-                System.currentTimeMillis() + duration.toMillis());
     }
 
     /** Estimated cost of a call before it is made, for the budget check. */

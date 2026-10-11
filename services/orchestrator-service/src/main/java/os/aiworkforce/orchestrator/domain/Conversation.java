@@ -1,9 +1,6 @@
 // @find: conversation, chat thread, new chat, chat list, conversation title, visibility, private conversation, workspace conversation, message count, last message preview, deciding routing, conversations table, Conversation entity, Chat page
 // @what: Entity for a chat thread between people and the workforce, with visibility, title and a message counter.
 // @flow: Stored by Conversations; participants in ConversationParticipant; per-user marks in ConversationMark.
-// @find: conversation, chat thread, new chat, chat list, conversation title, visibility, private conversation, workspace conversation, message count, last message preview, deciding routing, conversations table, Conversation entity, Chat page
-// @what: Entity for a chat thread between people and the workforce, with visibility, title and a message counter.
-// @flow: Stored by Conversations; participants in ConversationParticipant; per-user marks in ConversationMark.
 package os.aiworkforce.orchestrator.domain;
 
 import jakarta.persistence.Column;
@@ -56,14 +53,12 @@ public class Conversation extends OrgScopedEntity {
     }
 
     // @find: mark message routing in progress, deciding which agent
-    // @find: mark message routing in progress, deciding which agent
     /** Marks a message as being decided. */
     public void startDeciding(java.util.UUID messageId) {
         this.decidingSince = java.time.Instant.now();
         this.decidingMessageId = messageId;
     }
 
-    // @find: clear routing in progress mark
     // @find: clear routing in progress mark
     /** Clears the mark when it is this message's; true when it was. */
     public boolean finishDeciding(java.util.UUID messageId) {
@@ -105,13 +100,11 @@ public class Conversation extends OrgScopedEntity {
     }
 
     // @find: next message position in conversation
-    // @find: next message position in conversation
     /** The position the next message appended to this conversation will get. */
     public int nextPosition() {
         return messageCount;
     }
 
-    // @find: record appended message, update preview and count, bump last activity
     // @find: record appended message, update preview and count, bump last activity
     /** Records that one more message has just been appended, and what it previews as. */
     public void recordMessage(String preview) {

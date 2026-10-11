@@ -1,9 +1,6 @@
 // @find: conversations repository, list conversations, search conversations, find conversation, recent chats, Conversations
 // @what: Spring Data repository for Conversation rows, including title search.
 // @flow: Used by the chat service for the conversation list and search.
-// @find: conversations repository, list conversations, search conversations, find conversation, recent chats, Conversations
-// @what: Spring Data repository for Conversation rows, including title search.
-// @flow: Used by the chat service for the conversation list and search.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.Collection;
@@ -26,15 +23,12 @@ import os.aiworkforce.orchestrator.domain.Conversation;
 public interface Conversations extends JpaRepository<Conversation, UUID> {
 
     // @find: list conversations newest activity first
-    // @find: list conversations newest activity first
     /** Every conversation in the workspace, most recently active first - visible to anyone in it. */
     List<Conversation> findByOrgIdOrderByUpdatedAtDesc(UUID orgId, Pageable pageable);
 
     // @find: get conversation by id
-    // @find: get conversation by id
     Optional<Conversation> findByIdAndOrgId(UUID id, UUID orgId);
 
-    // @find: search conversations excluding archived or hidden
     // @find: search conversations excluding archived or hidden
     /**
      * The workspace's conversations, excluding a set of ids (pinned and archived, already listed
@@ -64,7 +58,6 @@ public interface Conversations extends JpaRepository<Conversation, UUID> {
             @Param("pattern") String pattern,
             Pageable page);
 
-    // @find: search conversations among given ids
     // @find: search conversations among given ids
     /** The same search as {@link #searchExcluding}, restricted to a fixed set of ids (pinned, needs-you, archived). */
     @Query(

@@ -6,7 +6,6 @@ package os.aiworkforce.knowledge.service;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -287,17 +286,5 @@ public class EmbeddingService {
         } catch (IllegalArgumentException e) {
             return null;
         }
-    }
-
-    // @find: explain embedding failure, embedding error message
-    /**
-     * Diagnostic detail for the ingestion screen when embedding is unavailable. Nothing in this
-     * service calls it at present.
-     *
-     * @return the failure's class name as {@code reason} and the fixed {@code service} name
-     *     {@code orchestrator}; it does not read the error's message
-     */
-    public Map<String, String> describeFailure(Throwable error) {
-        return Map.of("reason", error.getClass().getSimpleName(), "service", "orchestrator");
     }
 }

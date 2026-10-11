@@ -96,8 +96,9 @@ export const SANDBOX_MODEL = 'Offline sandbox model'
  * data. Voice notes, the web browser and phone calls are in the catalogue too but are built in,
  * with no account of their own, so they are not counted. Check both lists against the catalogue whenever it changes.
  *
- * The home page promises no live connection at all (see CONNECTOR_NOTICE); only the page for IT
- * teams names the live ones.
+ * The home page's FAQ names Gmail, Google Calendar and Microsoft Outlook as connecting to real
+ * accounts once an owner or admin sets them up, followed by CONNECTOR_NOTICE; the page for IT teams
+ * names every live connector.
  */
 /** Connectors that can reach a real account once an administrator adds a token or signs in, copied from mcp-core's ConnectorCatalog (liveAvailable). See the comment above for how the catalogue is mirrored; check this list against it whenever it changes. */
 export const LIVE_CONNECTORS = [
@@ -139,8 +140,8 @@ export const CONNECTOR_LABEL: Record<ConnectorId, string> = {
 /** Total number of counted connectors. */
 export const CONNECTOR_COUNT = LIVE_CONNECTORS.length + PRACTICE_CONNECTORS.length
 
-/** What the home page says about connectors: true of every install, and no promise of a live one. */
-export const CONNECTOR_NOTICE = 'Connectors run in practice mode in the demo; nothing real is sent.'
+/** What the home page says about connectors that nobody has set up yet: true of every install. */
+export const CONNECTOR_NOTICE = 'Until then they use practice data, so nothing real is sent.'
 
 /**
  * The tools the four demo assistants are given (orchestrator-service DemoAgentSeeder.java, from the

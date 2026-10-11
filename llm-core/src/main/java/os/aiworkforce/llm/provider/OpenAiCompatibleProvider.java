@@ -46,22 +46,21 @@ import os.aiworkforce.llm.model.ToolSpec;
  * headers, all of which come from the provider row. Writing four adapters for one protocol would
  * mean fixing every streaming and tool-accumulation bug four times.
  *
- * <p>The compatibility is close but not perfect, and the differences are handled here:
+ * <p>The compatibility is close but not perfect. The differences this class handles are:
  *
  * <ul>
- *   <li>Groq rejects {@code presence_penalty} with tools and reports throttling in its own
- *       headers.
- *   <li>NVIDIA NIM namespaces models as {@code vendor/model} and returns a different shape for a
- *       missing model.
  *   <li>OpenRouter wraps upstream failures in its own envelope, so a 200 response can still
- *       contain an error - which is caught below, because treating it as success returns an empty
- *       answer to the person.
+ *       contain an error. The body is checked for an {@code error} object, because treating it as
+ *       success returns an empty answer to the person.
+ *   <li>Groq's throttling message says {@code rate_limit_exceeded} and links to its billing page;
+ *       it is classified as a rate limit, not as an account out of credit.
+ *   <li>The retry delay is read from {@code Retry-After} and, when that is absent, from
+ *       {@code x-ratelimit-reset-requests}, which Groq and NVIDIA send instead.
+ *   <li>NVIDIA's retrieval embedding models need {@code input_type}, which is sent to NVIDIA only.
  * </ul>
  *
- * <p>Correction note: of the three differences above, only the OpenRouter 200-with-error case is
- * handled in this class. No {@code presence_penalty} is ever sent, so the Groq restriction does not
- * arise, and a missing NVIDIA model is recognised through the generic 404 and body classification.
- * Throttling headers are read from the standard and the {@code x-ratelimit-reset-requests} names.
+ * <p>A missing or retired model, from any of these providers, is recognised through the 404
+ * status and the error body, with no provider-specific branch.
  */
 @Component
 public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProvider {

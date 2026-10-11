@@ -1,9 +1,6 @@
 // @find: model policy candidate, routing chain, model fallback order, priority, candidate model, weight, temperature override, model_policy_candidates, ModelPolicyCandidate
 // @what: Entity for one model at a fixed position in a routing chain.
 // @flow: Owned by ModelPolicyEntity; read by the model router.
-// @find: model policy candidate, routing chain, model fallback order, priority, candidate model, weight, temperature override, model_policy_candidates, ModelPolicyCandidate
-// @what: Entity for one model at a fixed position in a routing chain.
-// @flow: Owned by ModelPolicyEntity; read by the model router.
 package os.aiworkforce.orchestrator.domain;
 
 import java.io.Serializable;
@@ -78,7 +75,6 @@ public class ModelPolicyCandidate {
     @Column(nullable = false)
     private int weight;
 
-    // @find: create policy candidate, add model to routing chain
     // @find: create policy candidate, add model to routing chain
     public static ModelPolicyCandidate of(UUID policyId, int position, String providerId, String modelId) {
         ModelPolicyCandidate candidate = new ModelPolicyCandidate();

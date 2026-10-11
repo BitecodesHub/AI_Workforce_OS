@@ -479,52 +479,6 @@ class ProviderIsolationTest {
     }
 
     @Test
-    @DisplayName("an earlier 404 that has lapsed does not count towards a platform-wide note")
-    void lapsedNotFoundDoesNotCount() {
-        availabilityRows.put(
-                new WorkspaceModelAvailability.Key(ORG_B, "openrouter", LLAMA),
-                new WorkspaceModelAvailability(
-                        ORG_B, "openrouter", LLAMA, Instant.now().minusSeconds(1), "MODEL_NOT_FOUND", "gone"));
-
-        registry.markModelUnavailable(
-                ORG_A.toString(), "openrouter", LLAMA, ProviderFailure.MODEL_NOT_FOUND, Duration.ofMinutes(15), "gone");
-
-        assertThat(modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil())
-                .isNull();
-    }
-
-    @Test
-    @DisplayName("a platform-wide 404 note never shortens a longer one already on the platform row")
-    void retiredModelNoteNeverShortensALongerOne() {
-        Instant operatorNote = Instant.now().plus(Duration.ofHours(3));
-        ReflectionTestUtils.setField(
-                modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)), "unavailableUntil", operatorNote);
-
-        registry.markModelUnavailable(
-                ORG_A.toString(), "openrouter", LLAMA, ProviderFailure.MODEL_NOT_FOUND, Duration.ofHours(6), "gone");
-        registry.markModelUnavailable(
-                ORG_B.toString(), "openrouter", LLAMA, ProviderFailure.MODEL_NOT_FOUND, Duration.ofHours(6), "gone");
-
-        assertThat(modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil())
-                .isEqualTo(operatorNote);
-    }
-
-    @Test
-    @DisplayName("an account failure with no workspace to name is never written platform-wide")
-    void accountFailureWithoutAWorkspaceIsNotPlatformWide() {
-        for (ProviderFailure cause : List.of(
-                ProviderFailure.INSUFFICIENT_CREDIT, ProviderFailure.QUOTA_EXHAUSTED, ProviderFailure.MODEL_NOT_FOUND)) {
-            registry.markModelUnavailable(null, "openrouter", LLAMA, cause, Duration.ofHours(6), "empty account");
-        }
-
-        assertThat(modelRows.get(new LlmModelEntity.Key("openrouter", LLAMA)).getUnavailableUntil())
-                .isNull();
-        assertThat(availabilityRows).isEmpty();
-        assertThat(registry.model(ORG_B.toString(), "openrouter", LLAMA).orElseThrow().isCurrentlyUnavailable())
-                .isFalse();
-    }
-
-    @Test
     @DisplayName("notes left from before are ignored: the model is offered and shown as available")
     void oldNotesAreIgnored() {
         Instant later = Instant.now().plus(Duration.ofHours(2));

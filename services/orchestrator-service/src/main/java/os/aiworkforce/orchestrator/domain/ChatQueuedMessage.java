@@ -1,9 +1,6 @@
 // @find: queued message, chat queue, message waiting, send while busy, edit queued message, cancel queued message, expire queued, chat_queued_messages, ChatQueuedMessage entity, Chat page queue
 // @what: Entity for a chat message sent while the conversation was busy, waiting its turn until it can start.
 // @flow: Stored by ChatQueuedMessages; drained by the chat queue worker; sender can edit or cancel.
-// @find: queued message, chat queue, message waiting, send while busy, edit queued message, cancel queued message, expire queued, chat_queued_messages, ChatQueuedMessage entity, Chat page queue
-// @what: Entity for a chat message sent while the conversation was busy, waiting its turn until it can start.
-// @flow: Stored by ChatQueuedMessages; drained by the chat queue worker; sender can edit or cancel.
 package os.aiworkforce.orchestrator.domain;
 
 import java.time.Instant;
@@ -85,7 +82,6 @@ public class ChatQueuedMessage implements Persistable<UUID> {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
-    // @find: create queued message, queue chat message
     // @find: create queued message, queue chat message
     public static ChatQueuedMessage of(
             UUID orgId,

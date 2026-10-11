@@ -87,7 +87,8 @@ public class ChatController {
      * @param knowledge workspace sources or documents chosen to ground this message, at most 20
      * @param repo a GitHub repository (optional branch and path) the work is about
      * @param skillId a skill whose playbook the run follows
-     * @param agentIds the agents to address; when absent the coordinator chooses
+     * @param agentIds agents to address, added to any @mentions in the text (ids not in the workspace
+     *     are ignored); when neither names an agent, the coordinator decides who takes the message
      */
     public record SendMessageRequest(
             @Size(max = 10_000) String text,

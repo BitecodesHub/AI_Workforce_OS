@@ -3,7 +3,6 @@
 // @flow: Called by ModelRouter and ProviderController
 package os.aiworkforce.orchestrator.service;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import os.aiworkforce.llm.model.ModelSpec;
 import os.aiworkforce.llm.model.ProviderDescriptor;
-import os.aiworkforce.llm.model.ProviderFailure;
 import os.aiworkforce.llm.spi.ProviderRegistry;
 import os.aiworkforce.orchestrator.domain.LlmModelEntity;
 import os.aiworkforce.orchestrator.domain.LlmProviderEntity;
@@ -51,7 +49,8 @@ import os.aiworkforce.orchestrator.repository.WorkspaceProviderSettings;
  *   <li><b>Credential status</b> is the workspace's own, defaulting to {@code unknown}: keys are
  *       stored per workspace, so one workspace's refused key says nothing about another's.
  *   <li><b>Model availability</b> is always "available". Notes that set a model aside after a
- *       failure are no longer written or read; see {@link #markModelUnavailable}.
+ *       failure are no longer written or read; old ones are ignored and can be cleared with
+ *       {@link #forgetNotes}.
  *   <li><b>Visibility</b>: a provider another workspace added for itself, and its models, are
  *       invisible here, not merely unusable.
  * </ul>
@@ -223,24 +222,6 @@ public class JpaProviderRegistry implements ProviderRegistry {
     @Transactional(readOnly = true)
     public List<ModelSpec> models(String orgId) {
         return workspaceModels(parse(orgId)).stream().map(this::toSpec).toList();
-    }
-
-    // @find: mark model unavailable, fallback to next model
-    /**
-     * Does nothing any more, on purpose. A model used to be set aside for minutes or hours after
-     * a 402, a 404 or an exhausted quota, and runs then failed with "no model available" long
-     * after somebody had topped the account up or enabled the model. Every call now asks every
-     * model again; the router keeps at most a few seconds' in-memory cool-off for overload.
-     */
-    @Override
-    public void markModelUnavailable(
-            String orgId,
-            String providerId,
-            String modelId,
-            ProviderFailure cause,
-            Duration duration,
-            String reason) {
-        log.debug("Not setting {}/{} aside for workspace {} ({}): models are always tried", providerId, modelId, orgId, cause);
     }
 
     // @find: forget unavailable note, reset model status

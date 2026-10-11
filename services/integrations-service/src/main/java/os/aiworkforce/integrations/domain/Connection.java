@@ -3,7 +3,6 @@
 // @flow: Stored through Connections repository; changed by ConnectorService and OAuthService
 package os.aiworkforce.integrations.domain;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -109,23 +108,6 @@ public class Connection extends OrgScopedEntity {
         return !reconnectRequired && ("connected".equals(status) || "sandbox".equals(status));
     }
 
-    /**
-     * Whether the token should be refreshed now.
-     *
-     * <p>Ahead of expiry, not at it. A token that lapses between the check and the call fails a
-     * person's action rather than a background job, and the failure looks like the integration
-     * being broken.
-     *
-     * <p>Pure check against the current time; changes nothing. Nothing in this module calls it at
-     * present, because {@code OAuthService} compares the expiry held in the decrypted tokens.
-     *
-     * @param margin how long before expiry the refresh should happen
-     * @return true when an expiry is known and it falls within the margin
-     */
-    public boolean needsRefresh(Duration margin) {
-        return tokenExpiresAt != null && tokenExpiresAt.minus(margin).isBefore(Instant.now());
-    }
-
     // @find: mark needs reconnect, expired sign in
     /**
      * A refresh that failed needs consent again, which is a different state from never connected.
@@ -139,26 +121,6 @@ public class Connection extends OrgScopedEntity {
         this.reconnectRequired = true;
         this.status = "error";
         this.lastError = reason;
-    }
-
-    /**
-     * Marks the connection as live after a successful sign-in, replacing the granted scopes and the
-     * expiry and clearing any earlier error or reconnect flag. It does not touch the stored credential.
-     * Nothing in this module calls it at present; sign-ins use {@link #connectWithOAuth}.
-     *
-     * @param granted the approved permissions
-     * @param accountLabel which account is connected
-     * @param expiresAt when the access token expires, or null
-     */
-    public void markConnected(List<String> granted, String accountLabel, Instant expiresAt) {
-        this.status = "connected";
-        this.sandbox = false;
-        this.grantedScopes = granted;
-        this.accountLabel = accountLabel;
-        this.tokenExpiresAt = expiresAt;
-        this.connectedAt = Instant.now();
-        this.reconnectRequired = false;
-        this.lastError = null;
     }
 
     // @find: connect with token, store pasted token, mark connected

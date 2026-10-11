@@ -23,8 +23,8 @@ import os.aiworkforce.memory.domain.Episode;
  */
 
 /**
- * Spring Data repository for {@link Episode} rows: run history, recent and searched recall,
- * compaction candidates and expiry deletion. Used by {@code EpisodicMemory}, which supplies the
+ * Spring Data repository for {@link Episode} rows: run history, recent and searched recall and
+ * expiry deletion. Used by {@code EpisodicMemory}, which supplies the
  * organisation scope and the transaction boundaries.
  */
 public interface Episodes extends JpaRepository<Episode, UUID> {
@@ -85,34 +85,6 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
             @Param("agentId") UUID agentId,
             @Param("query") String query,
             Pageable pageable);
-
-    /**
-     * Compaction candidates: uncompacted episodes older than {@code before} whose importance does not
-     * exceed {@code ceiling}, oldest first. Decisions, handoffs and outcomes are never offered, because
-     * they are the facts later runs rely on.
-     */
-    @Query(
-            """
-            select e from Episode e
-            where e.orgId = :orgId
-              and e.occurredAt < :before
-              and e.importance <= :ceiling
-              and e.compacted = false
-              and e.kind not in ('decision', 'handoff', 'outcome')
-            order by e.occurredAt
-            """)
-    List<Episode> findCompactable(
-            @Param("orgId") UUID orgId,
-            @Param("before") Instant before,
-            @Param("ceiling") int ceiling,
-            Pageable pageable);
-
-    /**
-     * Flags the given episodes as compacted so recall and further compaction skip them; returns the number of rows updated. Called by {@code EpisodicMemory} after a summary episode is written.
-     */
-    @Modifying
-    @Query("update Episode e set e.compacted = true where e.id in :ids")
-    int markCompacted(@Param("ids") List<UUID> ids);
 
     /**
      * Deletes up to {@code batch} episodes whose expiry is earlier than {@code now}, and returns the number

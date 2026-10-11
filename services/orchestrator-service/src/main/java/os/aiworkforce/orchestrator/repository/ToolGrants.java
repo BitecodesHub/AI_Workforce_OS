@@ -1,9 +1,6 @@
 // @find: tool grants repository, agent tool permissions, enabled grants of agent, grant for agent and server, ToolGrants
 // @what: Spring Data repository for AgentToolGrant rows.
 // @flow: Used by the agent service and run engine when building tools.
-// @find: tool grants repository, agent tool permissions, enabled grants of agent, grant for agent and server, ToolGrants
-// @what: Spring Data repository for AgentToolGrant rows.
-// @flow: Used by the agent service and run engine when building tools.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.List;
@@ -29,10 +26,8 @@ import os.aiworkforce.orchestrator.domain.AgentToolGrant;
 public interface ToolGrants extends JpaRepository<AgentToolGrant, UUID> {
 
     // @find: enabled tool grants of an agent
-    // @find: enabled tool grants of an agent
     List<AgentToolGrant> findByAgentIdAndEnabledTrue(UUID agentId);
 
-    // @find: tool grant for agent and server
     // @find: tool grant for agent and server
     Optional<AgentToolGrant> findByAgentIdAndServer(UUID agentId, String server);
 }

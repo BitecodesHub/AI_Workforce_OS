@@ -1,9 +1,6 @@
 // @find: message feedbacks repository, rate answer, thumbs up down upsert, withdraw rating, ratings for a run, MessageFeedbacks
 // @what: Spring Data repository for MessageFeedback rows with a race-safe upsert.
 // @flow: Used by the chat feedback endpoints and agent satisfaction figures.
-// @find: message feedbacks repository, rate answer, thumbs up down upsert, withdraw rating, ratings for a run, MessageFeedbacks
-// @what: Spring Data repository for MessageFeedback rows with a race-safe upsert.
-// @flow: Used by the chat feedback endpoints and agent satisfaction figures.
 package os.aiworkforce.orchestrator.repository;
 
 import java.util.List;
@@ -32,20 +29,16 @@ import os.aiworkforce.orchestrator.domain.MessageFeedback;
 public interface MessageFeedbacks extends JpaRepository<MessageFeedback, UUID> {
 
     // @find: my rating on a message
-    // @find: my rating on a message
     Optional<MessageFeedback> findByOrgIdAndMessageIdAndUserId(UUID orgId, UUID messageId, UUID userId);
 
-    // @find: my ratings in a conversation
     // @find: my ratings in a conversation
     /** What one person has rated in one conversation, for the thread to show beside each answer. */
     List<MessageFeedback> findByOrgIdAndConversationIdAndUserId(UUID orgId, UUID conversationId, UUID userId);
 
     // @find: ratings on a run
-    // @find: ratings on a run
     /** Every rating on the answers one run gave, newest change first, for its trace. */
     List<MessageFeedback> findByOrgIdAndRunIdOrderByUpdatedAtDesc(UUID orgId, UUID runId);
 
-    // @find: save thumbs up or down, rate answer
     // @find: save thumbs up or down, rate answer
     /**
      * Records a vote, or changes the one this person already cast on this answer. An atomic
@@ -80,7 +73,6 @@ public interface MessageFeedbacks extends JpaRepository<MessageFeedback, UUID> {
             @Param("rating") short rating,
             @Param("reason") String reason);
 
-    // @find: withdraw rating, remove thumbs
     // @find: withdraw rating, remove thumbs
     /** Withdraws one person's vote on one answer; 0 when there was none to withdraw. */
     @Modifying

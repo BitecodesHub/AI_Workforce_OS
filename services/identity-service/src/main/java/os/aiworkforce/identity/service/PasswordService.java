@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import os.aiworkforce.platform.config.PlatformProperties;
 import os.aiworkforce.platform.error.ApiException;
-import os.aiworkforce.platform.error.ErrorCode;
 
 /**
  * Hashes and checks passwords.
@@ -120,14 +119,5 @@ public class PasswordService {
      */
     public void wasteTime() {
         encoder.matches("not-a-real-password", timingHash);
-    }
-
-    /**
-     * An invalid-credentials {@link ApiException} with the standard message for that code.
-     * {@code AuthService} builds its own refusal with a fixed message instead, so nothing in this
-     * module currently calls this.
-     */
-    static ApiException invalidCredentials() {
-        return new ApiException(ErrorCode.INVALID_CREDENTIALS);
     }
 }

@@ -1,4 +1,4 @@
-// @find: knowledge base, knowledge, documents, sources, Qdrant, vector store, vector database, vector search, collection, upsert vectors, delete vectors, delete by document, delete by source, semantic search, search by meaning, reachable, health, QdrantClient
+// @find: knowledge base, knowledge, documents, sources, Qdrant, vector store, vector database, vector search, collection, upsert vectors, delete vectors, delete by document, delete by source, semantic search, search by meaning, QdrantClient
 // @what: REST client for the Qdrant vector database: creates collections, writes, searches and deletes vector points.
 // @flow: Called by IngestionService (write/delete), RetrievalService (search) and EmbeddingModelChange (removing old vectors).
 package os.aiworkforce.knowledge.service;
@@ -430,28 +430,5 @@ public class QdrantClient {
                 .bodyToMono(JsonNode.class)
                 .timeout(TIMEOUT)
                 .block();
-    }
-
-    // @find: is qdrant up, vector store health check
-    /**
-     * Checks the store's health endpoint with a five second limit. Nothing in this service calls it at
-     * present.
-     *
-     * @return true when the store answered; false on any failure, never an exception
-     */
-    public boolean isReachable() {
-        try {
-            return client.get()
-                            .uri("/healthz")
-                            .retrieve()
-                            .bodyToMono(String.class)
-                            .timeout(Duration.ofSeconds(5))
-                            .map(body -> true)
-                            .onErrorReturn(false)
-                            .block()
-                    == Boolean.TRUE;
-        } catch (RuntimeException e) {
-            return false;
-        }
     }
 }

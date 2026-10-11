@@ -3,15 +3,11 @@
 // @flow: Used by ConnectorService and OAuthService
 package os.aiworkforce.integrations.repository;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 import os.aiworkforce.integrations.domain.Connection;
 
@@ -46,28 +42,4 @@ public interface Connections extends JpaRepository<Connection, UUID> {
      * @return the connection, or empty when the connector was never connected
      */
     Optional<Connection> findByOrgIdAndServer(UUID orgId, String server);
-
-    /**
-     * Connections whose token is close to expiring.
-     *
-     * <p>Refreshed ahead of time by a background sweep, so a person's action never fails
-     * because a token lapsed a minute ago.
-     *
-     * <p>Matches connected rows that do not need a reconnect and whose token expiry is earlier than
-     * {@code before}. In this module nothing calls it yet: tokens are currently renewed on demand by
-     * {@code OAuthService.credentialFor}, so the query is available for a background sweep.
-     *
-     * @param before the expiry cutoff
-     * @param pageable limits how many rows one sweep takes
-     * @return the connections to refresh
-     */
-    @Query(
-            """
-            select c from Connection c
-            where c.status = 'connected'
-              and c.reconnectRequired = false
-              and c.tokenExpiresAt is not null
-              and c.tokenExpiresAt < :before
-            """)
-    List<Connection> findNeedingRefresh(@Param("before") Instant before, Pageable pageable);
 }

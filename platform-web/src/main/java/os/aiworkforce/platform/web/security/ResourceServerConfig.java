@@ -126,6 +126,11 @@ public class ResourceServerConfig {
     }
 
     /**
+     * The shortest gap, in milliseconds, between two fetches of the identity service's published keys.
+     */
+    static final long JWKS_MIN_FETCH_INTERVAL_MS = 5_000;
+
+    /**
      * Verifies tokens against the identity service's published keys.
      *
      * <p>Asymmetric signing means no other service holds a key that can mint a token: identity
@@ -136,16 +141,10 @@ public class ResourceServerConfig {
      * {@code NimbusJwtDecoder.withJwkSetUri}, because that builder defaults to RS256 and rejects
      * anything else with "no matching key(s) found" - a message that sends somebody looking for a
      * missing key when the algorithm is the actual problem.
-     */
-    /** The shortest gap between two fetches of the identity service's published keys. */
-    static final long JWKS_MIN_FETCH_INTERVAL_MS = 5_000;
-
-    /**
-     * The token decoder; the description above explains the design.
      *
      * <p>Reads the key-set address, cache times, issuer and audience from {@code PlatformProperties}.
      * Keys are fetched from identity over HTTP, cached, and refetched at most once per
-     * {@code JWKS_MIN_FETCH_INTERVAL_MS}; only ES256 signatures are accepted. Throws
+     * {@link #JWKS_MIN_FETCH_INTERVAL_MS}; only ES256 signatures are accepted. Throws
      * {@link IllegalStateException} at startup when the key-set address is not a valid URL.
      */
     @Bean

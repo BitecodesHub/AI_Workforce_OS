@@ -1,5 +1,5 @@
-// @find: tool gateway, approvals policy, approval gate, grants, scopes, rate limit, circuit breaker, per run call limit, audit, evaluate tool call, invoke tool, available tools for agent, connected servers, indeterminate, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
-// @what: The single path every tool call takes: checks grant, scope, arguments, approval, rate limit and circuit breaker, then runs the adapter.
+// @find: tool gateway, approvals policy, approval gate, grants, scopes, per run call limit, tool timeout, evaluate tool call, invoke tool, available tools for agent, connected servers, indeterminate, gmail, slack, github, jira, confluence, asana, zendesk, stripe, zoom, hubspot, linear, notion, salesforce, outlook, teams, calendar, drive, sheets, webhook
+// @what: The single path every tool call takes: checks grant, scope, arguments, per-run ceiling and approval, then runs the adapter under a timeout.
 // @flow: Called by the orchestrator and ConnectorService; calls McpServerAdapter.invoke and ArgumentValidator
 package os.aiworkforce.mcp.policy;
 
@@ -29,29 +29,30 @@ import os.aiworkforce.platform.resilience.ResiliencePresets;
  *
  * <p>There is exactly one of these on purpose. Governance that is applied per adapter is
  * governance that differs per vendor, and the difference is always discovered after something has
- * already been sent. The order below is fixed, and each step exists because skipping it produces
- * a specific, known failure:
+ * already been sent. {@link #evaluate} makes its checks in a fixed order, and each exists because
+ * skipping it produces a specific, known failure:
  *
  * <ol>
+ *   <li><b>Server and tool.</b> The server has a registered adapter and offers the tool.
  *   <li><b>Grant.</b> The agent may reach this server and this tool at all.
  *   <li><b>Scope.</b> The grant carries what the tool needs. A missing scope is reported by name,
  *       so an administrator knows what to add rather than guessing.
  *   <li><b>Arguments.</b> Validated against the tool's own schema, before anything leaves. A
  *       model that hallucinated a field should not discover that at the provider.
- *   <li><b>Approval.</b> Outbound and destructive actions always park, whatever the policy says.
- *   <li><b>Rate limit.</b> Per run and per minute, so one looping agent cannot exhaust a
- *       workspace's quota with a vendor.
- *   <li><b>Circuit breaker.</b> One failing server does not stall runs that use the others.
+ *   <li><b>Per-run ceiling.</b> The grant's {@code maxCallsPerRun}, counted across the whole run,
+ *       so one looping agent cannot call a tool without limit.
+ *   <li><b>Approval.</b> Outbound and destructive actions always park, whatever the policy says;
+ *       the grant, the workspace policy or the adapter (per call) can add a gate.
  * </ol>
  *
- * <p>Every outcome, including every refusal, produces an audit entry. A blocked call is exactly
- * the thing somebody will later need to prove did not happen.
+ * <p>{@link #invoke} then runs an evaluated call: it validates the arguments again, counts the
+ * call against the run, and calls the adapter under the tool's own timeout. A timeout or error is
+ * returned as a result, never thrown, and a timeout on a tool that is not idempotent is reported
+ * as indeterminate rather than failed.
  *
- * <p>Current scope, stated precisely: the gateway enforces the per-run ceiling on calls from the
- * grant and the timeout of each tool. The per-minute rate limit and the circuit breaker named above
- * are not applied in this class today ({@code resilience} is held but unused here). The audit
- * entry is written by the caller (the orchestrator and the connector service) from the decision and
- * the result this class returns; the gateway itself only logs.
+ * <p>The gateway logs each outcome but does not write audit entries: the callers (the orchestrator
+ * and the connector service) record the audit entry from the decision and the result returned
+ * here. The {@code ResiliencePresets} passed to the constructor is held but not used by this class.
  *
  * <p>Callers: the orchestrator ({@code evaluate}, then {@code invoke} after any approval) and the
  * connector service. Adapters are discovered as Spring beans at construction.
@@ -181,7 +182,7 @@ public class ToolGateway {
         return ApprovalDecision.PROCEED;
     }
 
-    // @find: run tool call, execute approved call, call connector, timeout indeterminate, rate limit
+    // @find: run tool call, execute approved call, call connector, timeout indeterminate
     /**
      * Runs a tool that has already been evaluated and, where needed, approved.
      *

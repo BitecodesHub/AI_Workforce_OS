@@ -210,7 +210,7 @@ Package root: `services/orchestrator-service/src/main/java/os/aiworkforce/orches
 |---|---|
 | `service/AgentMemoryService.java` | An agent's short notes: write, correct, pin, forget; refuses secrets; caps the count. |
 | `service/SecretGuard.java` | Rejects a note that looks like a password, key or card number. |
-| `service/EpisodicMemory.java`, `WorkingMemory.java`, `EpisodePurgeJob.java` | Run history episodes and their cleanup. |
+| `service/EpisodicMemory.java`, `EpisodePurgeJob.java` | Run history episodes and their cleanup. |
 | `web/AgentMemoryController.java` | `/api/memory/agents/{agentId}/memories` (people editing notes). |
 | `web/InternalAgentMemoryController.java` | `/internal/memory/agents/{agentId}/remember` and `/recall` (used by the orchestrator). |
 | `web/MemoryController.java`, `InternalMemoryController.java` | Episodes. |

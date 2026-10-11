@@ -1,18 +1,18 @@
-// @find: faq, frequently asked questions, buyer questions, limits answered, offline model, practice connectors, who may approve, Faq, #faq
+// @find: faq, frequently asked questions, buyer questions, limits answered, offline model, email and calendar, connectors, practice data, who may approve, Faq, #faq
 // @what: Plain-words questions and answers for buyers, built on native details elements.
 // @flow: Used by the home page
 import type { ReactElement } from 'react'
 import { Icon } from '../shared/Icon'
 import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
-import { CONNECTOR_NOTICE, PROVIDERS, listOf } from '../shared/landingFacts'
+import { CONNECTOR_LABEL, CONNECTOR_NOTICE, PROVIDERS, listOf } from '../shared/landingFacts'
 
 /*
  * The questions a buyer asks, answered plainly.
  *
- * This is where the page's limits live now: the offline model, the practice-mode connectors, what
- * happens without documents and who may approve. Each answer is true of the platform as it ships.
- * None promises a live connection to an outside account: email and calendar have none yet, and
- * which other tools can connect for real is the technical page's to state, not this one's (see
+ * This is where the page's limits live now: the offline model, how connectors reach real accounts,
+ * what happens without documents and who may approve. Each answer is true of the platform as it
+ * ships. Connectors reach a real account only once an owner or admin connects them, and use
+ * practice data until then; the full list of connectors is the technical page's to state (see
  * landingFacts). Nothing here mentions demo accounts either, since a site may not offer them.
  *
  * Native details elements, so each question opens with a click, Enter or Space, and a screen
@@ -43,7 +43,7 @@ const QUESTIONS: ReadonlyArray<{ q: string; a: string }> = [
   },
   {
     q: 'Does it work with our email and calendar?',
-    a: `Not yet. Email and calendar are not connected to real mailboxes or calendars; they work with practice data only. ${CONNECTOR_NOTICE} Your IT team will find the technical details on the page for IT teams.`,
+    a: `Yes. ${[CONNECTOR_LABEL.gmail, CONNECTOR_LABEL.calendar, CONNECTOR_LABEL.outlook].join(', ')} and the other connectors connect to your real accounts once an owner or admin sets them up. ${CONNECTOR_NOTICE} Your IT team will find the technical details on the page for IT teams.`,
   },
   {
     q: 'Who can see and approve things?',

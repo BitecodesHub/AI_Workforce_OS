@@ -1,9 +1,6 @@
 // @find: agent, AI employee, digital worker, workforce member, create agent, rename agent, archive agent, restore agent, agent status, fallback agent, voice, voiceId, agents table, Agents page, Agent entity
 // @what: Database entity for one AI employee (agent) in a workspace: key, name, category, status, current version, owner, voice.
 // @flow: Stored by Agents repository; configured by AgentVersion; used by Run and AgentToolGrant.
-// @find: agent, AI employee, digital worker, workforce member, create agent, rename agent, archive agent, restore agent, agent status, fallback agent, voice, voiceId, agents table, Agents page, Agent entity
-// @what: Database entity for one AI employee (agent) in a workspace: key, name, category, status, current version, owner, voice.
-// @flow: Stored by Agents repository; configured by AgentVersion; used by Run and AgentToolGrant.
 package os.aiworkforce.orchestrator.domain;
 
 import java.util.UUID;
