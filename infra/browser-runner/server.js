@@ -14,7 +14,11 @@ const HOST = process.env.BROWSER_RUNNER_HOST || '0.0.0.0'
 const SECRET = process.env.BROWSER_RUNNER_SECRET || ''
 const MAX_SESSIONS = Number(process.env.BROWSER_RUNNER_MAX_SESSIONS || 2)
 const SESSION_IDLE_MS = Number(process.env.BROWSER_RUNNER_SESSION_IDLE_MS || 2 * 60 * 1000)
-const BROWSER_IDLE_MS = Number(process.env.BROWSER_RUNNER_BROWSER_IDLE_MS || 5 * 60 * 1000)
+const BROWSER_IDLE_MS = Number(process.env.BROWSER_RUNNER_BROWSER_IDLE_MS || 10 * 60 * 1000)
+// A run that finds every page in use waits this long for one to free up, instead of being refused.
+const QUEUE_WAIT_MS = Number(process.env.BROWSER_RUNNER_QUEUE_WAIT_MS || 15 * 1000)
+// After the page's own content has arrived, at most this long for its pictures and late content.
+const SETTLE_MS = 2500
 const PAGE_TIMEOUT_MS = Number(process.env.BROWSER_RUNNER_PAGE_TIMEOUT_MS || 20 * 1000)
 const TEXT_LIMIT = 8000
 const LINK_LIMIT = 40
@@ -27,6 +31,9 @@ let launching = null
 let proxy = null
 let browserIdleSince = Date.now()
 const sessions = new Map()
+// Per run, the last address it had open: if Chromium restarts mid-run, the page is opened again.
+const lastPages = new Map()
+const LAST_PAGE_MS = 30 * 60 * 1000
 
 class Refusal extends Error {
   constructor(status, message) {
@@ -39,30 +46,61 @@ function log(message) {
   process.stdout.write(`${new Date().toISOString()} ${message}\n`)
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Resolves when PROMISE settles or after MS, whichever is first; never rejects. */
+function within(promise, ms) {
+  return Promise.race([Promise.resolve(promise).catch(() => {}), sleep(ms)])
+}
+
 // ---- Browser and sessions ---------------------------------------------------------------------
+
+const LAUNCH_ARGS = [
+  // Loopback is normally sent around a proxy; this sends it through, where it is refused.
+  '--proxy-bypass-list=<-loopback>',
+  '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+  '--disable-dev-shm-usage',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-background-networking',
+  '--disable-component-update',
+  '--disable-domain-reliability',
+  '--disable-client-side-phishing-detection',
+  '--disable-extensions',
+  '--disable-sync',
+  '--disable-gpu',
+  '--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication',
+  // Videos do not start on their own: they cost time and memory and the agent reads, not watches.
+  '--autoplay-policy=user-gesture-required',
+  '--mute-audio',
+  // Keeps memory bounded on a small server: at most three renderer processes.
+  '--renderer-process-limit=3',
+]
+
+async function launchOnce() {
+  return chromium.launch({
+    headless: true,
+    proxy: { server: `http://127.0.0.1:${proxy.port}` },
+    args: LAUNCH_ARGS,
+  })
+}
 
 async function ensureBrowser() {
   if (browser && browser.isConnected()) return browser
   if (launching) return launching
   launching = (async () => {
     if (!proxy) proxy = await startProxy({ onRefused: (host) => log(`refused a request to ${host}`) })
-    const launched = await chromium.launch({
-      headless: true,
-      proxy: { server: `http://127.0.0.1:${proxy.port}` },
-      args: [
-        // Loopback is normally sent around a proxy; this sends it through, where it is refused.
-        '--proxy-bypass-list=<-loopback>',
-        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-        '--disable-dev-shm-usage',
-        '--no-first-run',
-        '--disable-background-networking',
-        '--disable-extensions',
-        '--disable-sync',
-        '--mute-audio',
-      ],
+    // One retry: a launch can fail once while the previous Chromium is still exiting.
+    const launched = await launchOnce().catch(async (error) => {
+      log(`Chromium did not start (${String(error && error.message).split('\n')[0]}); trying again`)
+      await sleep(1000)
+      return launchOnce()
     })
     launched.on('disconnected', () => {
-      browser = null
+      if (browser === launched) {
+        log('Chromium stopped; the next step starts it again and reopens each run\'s page')
+        browser = null
+      }
       sessions.clear()
     })
     browser = launched
@@ -92,14 +130,21 @@ async function sessionFor(id, create) {
     return existing
   }
   if (!create) return null
-  if (sessions.size >= MAX_SESSIONS) {
-    // The longest idle page gives way if it has been left for a while; otherwise the runner is busy.
+  // Every page in use: the longest idle one gives way after 30 seconds unused; otherwise this run
+  // waits in line for a free page rather than being refused straight away.
+  const waitUntil = Date.now() + QUEUE_WAIT_MS
+  while (sessions.size >= MAX_SESSIONS) {
     const oldest = [...sessions.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0]
     if (oldest && Date.now() - oldest[1].lastUsed > 30 * 1000) {
       await closeSession(oldest[0])
-    } else {
+      break
+    }
+    if (Date.now() >= waitUntil) {
       throw new Refusal(429, 'The web browser is busy with other runs. Try again in a minute.')
     }
+    await sleep(250)
+    const appeared = sessions.get(id)
+    if (appeared) return appeared
   }
   const running = await ensureBrowser()
   const context = await running.newContext({
@@ -131,6 +176,9 @@ setInterval(async () => {
       await closeSession(id)
     }
   }
+  for (const [id, last] of lastPages) {
+    if (now - last.at > LAST_PAGE_MS) lastPages.delete(id)
+  }
   if (browser && sessions.size === 0 && now - browserIdleSince > BROWSER_IDLE_MS) {
     log('closing idle Chromium')
     const closing = browser
@@ -143,7 +191,8 @@ setInterval(async () => {
 
 async function snapshot(page, note) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {})
-  const facts = await page
+  // The text and the picture are taken at the same time.
+  const factsTaken = page
     .evaluate(
       ({ textLimit, linkLimit, fieldLimit }) => {
         const visible = (el) => {
@@ -186,7 +235,10 @@ async function snapshot(page, note) {
       { textLimit: TEXT_LIMIT, linkLimit: LINK_LIMIT, fieldLimit: FIELD_LIMIT },
     )
     .catch(() => ({ title: '', text: '', links: [], fields: [], buttons: [] }))
-  const image = await page.screenshot({ type: 'jpeg', quality: 60, timeout: 10000 }).catch(() => null)
+  const imageTaken = page
+    .screenshot({ type: 'jpeg', quality: 55, timeout: 8000, animations: 'disabled', caret: 'hide', scale: 'css' })
+    .catch(() => null)
+  const [facts, image] = await Promise.all([factsTaken, imageTaken])
   const answer = {
     url: page.url(),
     title: facts.title,
@@ -200,29 +252,92 @@ async function snapshot(page, note) {
   return answer
 }
 
+/** Network failures worth one more try: the connection dropped or the network changed. */
+const TRANSIENT = /ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_NETWORK_CHANGED|ERR_EMPTY_RESPONSE|ERR_HTTP2_PROTOCOL_ERROR|ERR_TIMED_OUT|ERR_SOCKET_NOT_CONNECTED/
+
+async function hasContent(page) {
+  return page
+    .evaluate(() => Boolean(document.body && document.body.innerText && document.body.innerText.trim().length > 40))
+    .catch(() => false)
+}
+
+/*
+ * Cookie and consent banners cover the page and its text. One is closed by choosing the option that
+ * shares the least ("Reject all" and its kin), never "Accept"; nothing else is clicked, and a page
+ * without one costs a fraction of a second.
+ */
+const REJECT_LABEL = /^(reject all|reject|decline all|decline|refuse all|only necessary|necessary only|use necessary cookies only|allow necessary only|continue without accepting)$/i
+
+async function dismissConsent(page) {
+  const frames = page.frames().slice(0, 6)
+  for (const frame of frames) {
+    // A quick look inside the frame first, so a page with no banner costs a few milliseconds.
+    const present = await within(
+      frame.evaluate((source) => {
+        const pattern = new RegExp(source, 'i')
+        return [...document.querySelectorAll('button, [role=button], input[type=button], input[type=submit]')].some(
+          (el) => pattern.test((el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()),
+        )
+      }, REJECT_LABEL.source),
+      300,
+    )
+    if (present !== true) continue
+    const button = frame.getByRole('button', { name: REJECT_LABEL }).first()
+    const visible = await within(button.isVisible(), 400)
+    if (visible === true) {
+      const clicked = await button.click({ timeout: 1500 }).then(() => true, () => false)
+      if (clicked) {
+        await within(page.waitForLoadState('domcontentloaded'), 1500)
+        return 'A cookie banner was closed by choosing to reject optional cookies.'
+      }
+    }
+  }
+  return null
+}
+
 async function navigate(page, raw) {
   const checked = await checkAndResolve(raw)
   if (!checked.ok) throw new Refusal(422, checked.reason)
-  try {
-    const response = await page.goto(checked.url.href, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS })
-    await page.waitForLoadState('load', { timeout: 5000 }).catch(() => {})
-    // A redirect that led somewhere private was refused by the proxy; say so plainly.
-    if (!checkUrl(page.url()).ok) {
-      await page.goto('about:blank').catch(() => {})
-      throw new Refusal(422, PRIVATE_MESSAGE)
+  const notes = []
+  let response = null
+  for (let attempt = 1; ; attempt++) {
+    try {
+      response = await page.goto(checked.url.href, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS })
+      break
+    } catch (error) {
+      const message = String(error && error.message ? error.message : error)
+      if (/ERR_TUNNEL_CONNECTION_FAILED|ERR_BLOCKED|403/.test(message)) throw new Refusal(422, PRIVATE_MESSAGE)
+      if (/ERR_NAME_NOT_RESOLVED/.test(message)) {
+        throw new Refusal(422, 'The address could not be found. Check that it is spelled correctly.')
+      }
+      if (/Timeout/i.test(message)) {
+        // A slow page that has shown something is read as it stands, rather than failing the step.
+        if (checkUrl(page.url()).ok && (await hasContent(page))) {
+          notes.push(`The page was still loading after ${Math.round(PAGE_TIMEOUT_MS / 1000)} seconds; this is what had loaded.`)
+          break
+        }
+        throw new Refusal(504, `The page did not finish loading within ${Math.round(PAGE_TIMEOUT_MS / 1000)} seconds.`)
+      }
+      if (attempt === 1 && TRANSIENT.test(message)) {
+        log(`retrying ${checked.url.host} after ${message.split('\n')[0]}`)
+        await sleep(500)
+        continue
+      }
+      throw new Refusal(502, 'The page could not be loaded.')
     }
-    if (response && response.status() >= 400) return `The site answered with status ${response.status()}.`
-    return null
-  } catch (error) {
-    if (error instanceof Refusal) throw error
-    const message = String(error && error.message ? error.message : error)
-    if (/ERR_TUNNEL_CONNECTION_FAILED|ERR_BLOCKED|403/.test(message)) throw new Refusal(422, PRIVATE_MESSAGE)
-    if (/Timeout/i.test(message)) throw new Refusal(504, 'The page did not finish loading within 20 seconds.')
-    if (/ERR_NAME_NOT_RESOLVED/.test(message)) {
-      throw new Refusal(422, 'The address could not be found. Check that it is spelled correctly.')
-    }
-    throw new Refusal(502, 'The page could not be loaded.')
   }
+  // Enough for pictures and late content, without waiting on pages that never go quiet.
+  await within(page.waitForLoadState('load'), SETTLE_MS)
+  await within(page.waitForLoadState('networkidle'), 500)
+  // A redirect that led somewhere private was refused by the proxy; say so plainly.
+  if (!checkUrl(page.url()).ok) {
+    await page.goto('about:blank').catch(() => {})
+    throw new Refusal(422, PRIVATE_MESSAGE)
+  }
+  const consent = await dismissConsent(page).catch(() => null)
+  if (consent) notes.push(consent)
+  if (response && response.status() >= 400) notes.unshift(`The site answered with status ${response.status()}.`)
+  return notes.length ? notes.join(' ') : null
 }
 
 function sameText(a, b) {
@@ -274,7 +389,27 @@ async function restore(session, state) {
 
 async function settle(page) {
   await page.waitForLoadState('domcontentloaded', { timeout: PAGE_TIMEOUT_MS }).catch(() => {})
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {})
+  await within(page.waitForLoadState('load'), SETTLE_MS)
+  await within(page.waitForLoadState('networkidle'), 500)
+}
+
+/**
+ * The run's open page. If there is none but the run had one (Chromium restarted, or the page was
+ * closed while idle), it is opened again at the same address, so the run carries on.
+ */
+async function pageFor(id) {
+  const session = await sessionFor(id, false)
+  if (session) return { session, note: null }
+  const last = lastPages.get(id)
+  if (!last) throw new Refusal(404, 'No page is open in this run. Open one first with open_page.')
+  const reopened = await sessionFor(id, true)
+  await navigate(reopened.page, last.url)
+  return { session: reopened, note: 'The page was opened again, so anything typed into it before was cleared.' }
+}
+
+function remember(id, page) {
+  const url = page.url()
+  if (checkUrl(url).ok) lastPages.set(id, { url, at: Date.now() })
 }
 
 const actions = {
@@ -285,14 +420,12 @@ const actions = {
   },
 
   async read(id) {
-    const session = await sessionFor(id, false)
-    if (!session) throw new Refusal(404, 'No page is open in this run. Open one first with open_page.')
-    return snapshot(session.page)
+    const { session, note } = await pageFor(id)
+    return snapshot(session.page, note)
   },
 
   async follow(id, body) {
-    const session = await sessionFor(id, false)
-    if (!session) throw new Refusal(404, 'No page is open in this run. Open one first with open_page.')
+    const { session } = await pageFor(id)
     const wanted = String(body.linkText || '').trim()
     if (!wanted) throw new Refusal(400, 'Say which link to follow, by its visible text.')
     const links = await session.page.$$eval('a[href]', (anchors) =>
@@ -307,9 +440,49 @@ const actions = {
     return snapshot(session.page, note)
   },
 
+  /*
+   * A search, and only a search: types the words into the site's search box and presses Enter. A box
+   * inside a form that posts (sends data rather than asking for a results page) is refused, so this
+   * can never send or change anything; that needs fill_field and submit_form, which ask first.
+   */
+  async search(id, body) {
+    const { session } = await pageFor(id)
+    const page = session.page
+    const query = String(body.query || '').trim()
+    if (!query) throw new Refusal(400, 'Say what to search for.')
+    let box = null
+    if (body.field) {
+      box = await findField(page, body.field)
+    } else {
+      const candidates = [
+        page.getByRole('searchbox'),
+        page.locator('input[type=search]'),
+        page.locator('input[name=q], input[name=query], input[name=search], input[name=search_query], input[name=s], input[name=k]'),
+        page.locator('input[aria-label*="search" i], input[placeholder*="search" i], textarea[aria-label*="search" i]'),
+      ]
+      for (const candidate of candidates) {
+        const first = candidate.first()
+        if ((await first.count()) > 0 && (await first.isVisible().catch(() => false))) {
+          box = first
+          break
+        }
+      }
+    }
+    if (!box) throw new Refusal(404, 'No search box is on this page. Open the site\'s search page, or its address with the search in it.')
+    const method = await box
+      .evaluate((el) => (el.form ? (el.form.getAttribute('method') || 'get').toLowerCase() : 'get'))
+      .catch(() => 'get')
+    if (method !== 'get') {
+      throw new Refusal(422, 'That box is part of a form that sends data, not a search. Use fill_field and submit_form, which ask a person first.')
+    }
+    await box.fill(query)
+    await box.press('Enter')
+    await settle(page)
+    return snapshot(page)
+  },
+
   async fill(id, body) {
-    const session = await sessionFor(id, false)
-    if (!session) throw new Refusal(404, 'No page is open in this run. Open one first with open_page.')
+    const { session } = await pageFor(id)
     await fill(session.page, body.field, body.value ?? '')
     return snapshot(session.page, 'Typed into the field. Nothing was sent.')
   },
@@ -397,7 +570,7 @@ function readBody(req) {
   })
 }
 
-const ROUTE = /^\/sessions\/([A-Za-z0-9-]{1,80})(?:\/(open|read|follow|fill|click|submit))?$/
+const ROUTE = /^\/sessions\/([A-Za-z0-9-]{1,80})(?:\/(open|read|follow|search|fill|click|submit))?$/
 
 const server = http.createServer(async (req, res) => {
   const path = (req.url || '').split('?')[0]
@@ -421,6 +594,7 @@ const server = http.createServer(async (req, res) => {
   const [, id, action] = match
   try {
     if (req.method === 'DELETE' && !action) {
+      lastPages.delete(id)
       await closeSession(id)
       send(res, 204)
       return
@@ -432,6 +606,8 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req)
     const started = Date.now()
     const answer = await actions[action](id, body)
+    const open = sessions.get(id)
+    if (open) remember(id, open.page)
     log(`${action} for ${id} in ${Date.now() - started} ms`)
     send(res, 200, answer)
   } catch (error) {
@@ -444,7 +620,8 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-server.requestTimeout = 60 * 1000
+server.requestTimeout = 90 * 1000
+server.keepAliveTimeout = 65 * 1000
 server.listen(PORT, HOST, () => {
   log(`Browser runner listening on ${HOST}:${PORT}${SECRET ? '' : ' (no secret set: every request is refused)'}`)
 })
@@ -457,4 +634,6 @@ async function shutdown() {
   process.exit(0)
 }
 process.on('SIGTERM', shutdown)
+// One failed page must never take the runner down with it.
+process.on('unhandledRejection', (error) => log(`unhandled: ${String(error && error.message ? error.message : error).split('\n')[0]}`))
 process.on('SIGINT', shutdown)

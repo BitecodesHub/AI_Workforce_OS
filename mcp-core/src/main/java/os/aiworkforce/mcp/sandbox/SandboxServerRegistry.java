@@ -1298,11 +1298,12 @@ public class SandboxServerRegistry {
     /* A browser call loads a page and takes a screenshot, so it gets longer than a plain API call. */
     private static ToolDefinition browserTool(
             String name, String description, String schema, ToolSpec.SideEffect sideEffect, boolean idempotent) {
+        // 75 s: a step may wait in line for the browser, load a slow page and settle it (BrowserAdapter).
         return new ToolDefinition("browser", name, description, schema, sideEffect, List.of(), idempotent,
-                Duration.ofSeconds(45), 30);
+                Duration.ofSeconds(75), 30);
     }
 
-    // @find: browser tools, open_page, read_page, follow_link, fill_field, click_button, submit_form
+    // @find: browser tools, open_page, read_page, follow_link, search_site, fill_field, click_button, submit_form
     private static List<ToolDefinition> browserTools() {
         // No scopes: a built-in capability with no account behind it. Reading is free; clicking and
         // submitting can send something to the site, so both always wait for a person.
@@ -1326,6 +1327,20 @@ public class SandboxServerRegistry {
                         "Follow a link on the open page by its visible text. Only real links are followed;"
                                 + " nothing is clicked or submitted.",
                         schema(str("linkText", "the visible text of the link, as listed in links"), "linkText"),
+                        ToolSpec.SideEffect.READ,
+                        true),
+                browserTool(
+                        "search_site",
+                        "Search the open site with its own search box, for example YouTube, Wikipedia or a shop."
+                                + " Types the words and runs the search, then returns the results page. Only a"
+                                + " search is run: a form that would send or change something is refused, so use"
+                                + " fill_field and submit_form for those.",
+                        schema(
+                                props(
+                                        str("query", "the words to search for"),
+                                        str("field", "optional: the search box's label or placeholder, when the"
+                                                + " page has more than one")),
+                                "query"),
                         ToolSpec.SideEffect.READ,
                         true),
                 browserTool(

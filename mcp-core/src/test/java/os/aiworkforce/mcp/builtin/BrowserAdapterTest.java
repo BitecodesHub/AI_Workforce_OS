@@ -77,13 +77,14 @@ class BrowserAdapterTest {
                 "open_page", ToolSpec.SideEffect.READ,
                 "read_page", ToolSpec.SideEffect.READ,
                 "follow_link", ToolSpec.SideEffect.READ,
+                "search_site", ToolSpec.SideEffect.READ,
                 "fill_field", ToolSpec.SideEffect.WRITE,
                 "click_button", ToolSpec.SideEffect.OUTBOUND,
                 "submit_form", ToolSpec.SideEffect.OUTBOUND));
         assertThat(tools).filteredOn(ToolDefinition::alwaysRequiresApproval)
                 .extracting(ToolDefinition::name)
                 .containsExactlyInAnyOrder("click_button", "submit_form");
-        assertThat(tools).allSatisfy(tool -> assertThat(tool.defaultTimeout()).isGreaterThan(Duration.ofSeconds(30)));
+        assertThat(tools).allSatisfy(tool -> assertThat(tool.defaultTimeout()).isGreaterThan(Duration.ofSeconds(70)));
         assertThat(adapter.isBuiltIn()).isTrue();
         assertThat(adapter.isSandbox()).isFalse();
     }
@@ -180,6 +181,30 @@ class BrowserAdapterTest {
 
     private ToolResult call(String tool, String arguments) {
         return adapter.invoke(invocation(tool, arguments), null).block(Duration.ofSeconds(20));
+    }
+
+    @Test
+    @DisplayName("search_site sends the words to the runner's search, which needs no approval")
+    void searchSite() {
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/search")).willReturn(okJson(PAGE)));
+
+        ToolResult result = call("search_site", "{\"query\":\"lofi music\"}");
+
+        assertThat(result.status()).isNotEqualTo(ToolResult.Status.FAILED);
+        runner.verify(postRequestedFor(urlEqualTo("/sessions/" + RUN + "/search"))
+                .withRequestBody(matchingJsonPath("$.query", equalTo("lofi music"))));
+    }
+
+    @Test
+    @DisplayName("only reading and typing are retried after a lost connection; a click or a submit never is")
+    void retriesOnlySafeSteps() {
+        assertThat(BrowserAdapter.repeatable("open")).isTrue();
+        assertThat(BrowserAdapter.repeatable("read")).isTrue();
+        assertThat(BrowserAdapter.repeatable("follow")).isTrue();
+        assertThat(BrowserAdapter.repeatable("fill")).isTrue();
+        assertThat(BrowserAdapter.repeatable("search")).isTrue();
+        assertThat(BrowserAdapter.repeatable("click")).isFalse();
+        assertThat(BrowserAdapter.repeatable("submit")).isFalse();
     }
 
     private static ToolInvocation invocation(String tool, String arguments) {

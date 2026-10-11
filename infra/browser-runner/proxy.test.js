@@ -42,3 +42,12 @@ test('CONNECT and plain requests to private or loopback addresses are refused', 
     await proxy.close()
   }
 })
+
+test('ad and tracking hosts are refused, with their subdomains, and ordinary sites are not', () => {
+  const { isBlockedHost } = require('./proxy')
+  assert.equal(isBlockedHost('www.google-analytics.com'), true)
+  assert.equal(isBlockedHost('stats.g.doubleclick.net'), true)
+  assert.equal(isBlockedHost('doubleclick.net.'), true)
+  assert.equal(isBlockedHost('en.wikipedia.org'), false)
+  assert.equal(isBlockedHost('notdoubleclick.net'), false)
+})

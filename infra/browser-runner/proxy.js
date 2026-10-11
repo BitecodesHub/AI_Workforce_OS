@@ -7,12 +7,83 @@ const http = require('node:http')
 const net = require('node:net')
 const { resolvePublic } = require('./guard')
 
+/*
+ * Ad and tracking hosts are refused outright: they are most of the requests on a heavy page and
+ * none of them changes what the agent reads, so pages load sooner and use less memory. Matched on
+ * the host and every parent domain.
+ */
+const BLOCKED_HOSTS = new Set([
+  'doubleclick.net',
+  'googlesyndication.com',
+  'googleadservices.com',
+  'google-analytics.com',
+  'googletagmanager.com',
+  'googletagservices.com',
+  'adservice.google.com',
+  'connect.facebook.net',
+  'scorecardresearch.com',
+  'hotjar.com',
+  'hotjar.io',
+  'segment.io',
+  'segment.com',
+  'mixpanel.com',
+  'amplitude.com',
+  'criteo.com',
+  'criteo.net',
+  'taboola.com',
+  'outbrain.com',
+  'adnxs.com',
+  'rubiconproject.com',
+  'pubmatic.com',
+  'quantserve.com',
+  'moatads.com',
+  'amazon-adsystem.com',
+  'ads-twitter.com',
+  'analytics.tiktok.com',
+  'bat.bing.com',
+  'clarity.ms',
+  'newrelic.com',
+  'nr-data.net',
+])
+
+function isBlockedHost(host) {
+  const name = String(host || '').toLowerCase().replace(/\.$/, '')
+  const parts = name.split('.')
+  for (let index = 0; index < parts.length - 1; index++) {
+    if (BLOCKED_HOSTS.has(parts.slice(index).join('.'))) return true
+  }
+  return false
+}
+
+/*
+ * Answers for the same host are kept for a minute (a refusal for ten seconds), so a page that asks
+ * one host for fifty files is resolved once. Safe against DNS rebinding: the proxy still dials only
+ * the address it checked.
+ */
+const ANSWER_MS = 60 * 1000
+const REFUSAL_MS = 10 * 1000
+const CACHE_LIMIT = 500
+
+function cachedResolver(lookup) {
+  const cache = new Map()
+  return async (host) => {
+    const key = String(host).toLowerCase()
+    const hit = cache.get(key)
+    if (hit && hit.expires > Date.now()) return hit.answer
+    const answer = await resolvePublic(key, lookup)
+    if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value)
+    cache.set(key, { answer, expires: Date.now() + (answer.ok ? ANSWER_MS : REFUSAL_MS) })
+    return answer
+  }
+}
+
 /**
  * Starts the proxy and resolves to {port, close}. Because the proxy resolves the name and dials
  * the IP it checked, a name that answers a public address to a check and a private one a moment
  * later (DNS rebinding) cannot slip through: Chromium never resolves names itself.
  */
 function startProxy({ lookup, onRefused = () => {} } = {}) {
+  const resolveHost = cachedResolver(lookup)
   const server = http.createServer(async (req, res) => {
     // Plain http: the request line carries the absolute address.
     let target
@@ -26,7 +97,11 @@ function startProxy({ lookup, onRefused = () => {} } = {}) {
       res.writeHead(403).end()
       return
     }
-    const resolved = await resolvePublic(target.hostname.replace(/^\[|\]$/g, ''), lookup)
+    if (isBlockedHost(target.hostname)) {
+      res.writeHead(403).end()
+      return
+    }
+    const resolved = await resolveHost(target.hostname.replace(/^\[|\]$/g, ''))
     if (!resolved.ok) {
       onRefused(target.hostname)
       res.writeHead(403, { 'content-type': 'text/plain' }).end('Refused by the browser runner.')
@@ -66,7 +141,11 @@ function startProxy({ lookup, onRefused = () => {} } = {}) {
       return
     }
     const [, host, port] = match
-    const resolved = await resolvePublic(host, lookup)
+    if (isBlockedHost(host)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
+      return
+    }
+    const resolved = await resolveHost(host)
     if (!resolved.ok) {
       onRefused(host)
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
@@ -90,4 +169,4 @@ function startProxy({ lookup, onRefused = () => {} } = {}) {
   })
 }
 
-module.exports = { startProxy }
+module.exports = { startProxy, isBlockedHost }

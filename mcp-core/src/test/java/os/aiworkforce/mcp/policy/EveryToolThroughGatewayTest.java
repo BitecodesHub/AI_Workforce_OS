@@ -72,12 +72,12 @@ class EveryToolThroughGatewayTest {
     }
 
     @Test
-    @DisplayName("the registry offers 23 connectors and 114 tools; all but the 13 built-in ones are exercised above")
+    @DisplayName("the registry offers 23 connectors and 115 tools; all but the 14 built-in ones are exercised above")
     void inventory() {
         assertThat(servers).hasSize(23);
-        assertThat(adapters.stream().mapToInt(adapter -> adapter.tools().size()).sum()).isEqualTo(114);
+        assertThat(adapters.stream().mapToInt(adapter -> adapter.tools().size()).sum()).isEqualTo(115);
         assertThat(adapters.stream().filter(McpServerAdapter::isBuiltIn).mapToInt(a -> a.tools().size()).sum())
-                .isEqualTo(13);
+                .isEqualTo(14);
     }
 
     // ---- The verbs -----------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,6 +23,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
 
 import os.aiworkforce.mcp.model.ToolDefinition;
 import os.aiworkforce.mcp.model.ToolInvocation;
@@ -59,11 +61,20 @@ public final class BrowserAdapter implements McpServerAdapter {
             "The web browser is not available on this server yet, so nothing was opened. It is a server setting,"
                     + " not something to switch on in Connectors: an owner or admin needs to check the server's"
                     + " browser runner.";
+    static final String TOO_SLOW =
+            "The web browser took too long, so the step was stopped. The page may be very slow; try again or try"
+                    + " another page.";
     static final String NOT_ANSWERING =
             "The web browser did not answer, so nothing was done. Try again in a minute.";
 
     private static final int MAX_ANSWER_BYTES = 8 * 1024 * 1024;
-    private static final Duration CALL_TIMEOUT = Duration.ofSeconds(40);
+    /*
+     * The runner may hold a step in line for up to 15 s while other runs use the browser, then load
+     * the page for up to 20 s and settle it for a few more; this leaves room for all of that.
+     */
+    private static final Duration CALL_TIMEOUT = Duration.ofSeconds(70);
+    /* The runner restarting (a deploy, or Chromium recovering) refuses connections for a moment. */
+    private static final Duration RECONNECT_DELAY = Duration.ofSeconds(2);
 
     private final List<ToolDefinition> tools;
     private final ObjectMapper json;
@@ -171,6 +182,13 @@ public final class BrowserAdapter implements McpServerAdapter {
                 action = "follow";
                 body.put("linkText", arguments.path("linkText").asText(""));
             }
+            case "search_site" -> {
+                action = "search";
+                body.put("query", arguments.path("query").asText(""));
+                if (arguments.hasNonNull("field")) {
+                    body.put("field", arguments.path("field").asText(""));
+                }
+            }
             case "fill_field" -> {
                 action = "fill";
                 body.put("field", arguments.path("field").asText(""));
@@ -203,17 +221,31 @@ public final class BrowserAdapter implements McpServerAdapter {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
+                // One more try when the runner could not be reached, for reading and typing only: a
+                // click or a submit is never sent twice, in case the first one did reach the page.
+                .retryWhen(Retry.fixedDelay(1, RECONNECT_DELAY)
+                        .filter(error -> error instanceof WebClientRequestException && repeatable(action))
+                        .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                 .timeout(CALL_TIMEOUT)
                 .map(answer -> {
                     remember(page, action, body, answer);
                     return result(action, answer, Duration.between(startedAt, Instant.now()));
                 })
                 .onErrorResume(WebClientResponseException.class, refused -> Mono.just(refusal(refused)))
+                .onErrorResume(TimeoutException.class, slow -> Mono.just(ToolResult.failed(TOO_SLOW)))
                 .onErrorResume(WebClientRequestException.class, down -> {
                     log.warn("The browser runner could not be reached for {}: {}", invocation.qualifiedName(),
                             down.getMessage());
                     return Mono.just(ToolResult.failed(NOT_ANSWERING));
                 });
+    }
+
+    /* Steps that change nothing outside the page may be retried; clicks and submits never are. */
+    static boolean repeatable(String action) {
+        return switch (action) {
+            case "open", "read", "follow", "search", "fill" -> true;
+            default -> false;
+        };
     }
 
     /* The runner answers a refusal with {"error": "<plain sentence>"}; that sentence is the result. */
