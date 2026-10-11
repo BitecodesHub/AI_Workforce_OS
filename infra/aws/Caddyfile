@@ -1,16 +1,24 @@
-# @find: caddy, https, tls, lets encrypt, sslip.io, automatic certificate, reverse proxy, hsts, http to https redirect, deploy-status.json
-# @what: The TLS edge of the AWS deployment: a Let's Encrypt certificate for the server's sslip.io name, the deploy status file, and a proxy to the web client's nginx.
-# @flow: aiwos.sh copies this file to /opt/aiwos/config/caddy/ (mounted by infra/aws/docker-compose.prod.yml) and reloads Caddy when it changes; AIWOS_PUBLIC_HOST comes from /opt/aiwos/.env
+# @find: caddy, https, tls, lets encrypt, sslip.io, custom domain, automatic certificate, reverse proxy, hsts, http to https redirect, deploy-status.json
+# @what: The TLS edge of the AWS deployment: a Let's Encrypt certificate for each served name (the sslip.io name and the custom domain), the deploy status file, and a proxy to the web client's nginx.
+# @flow: aiwos.sh copies this file to /opt/aiwos/config/caddy/ (mounted by infra/aws/docker-compose.prod.yml) and reloads Caddy when it changes; AIWOS_PUBLIC_HOST and AIWOS_ALT_HOSTS come from /opt/aiwos/.env
 #
-# AIWOS_PUBLIC_HOST is the Elastic IP written with dashes under sslip.io (3.104.1.2 becomes
-# 3-104-1-2.sslip.io), a public DNS name that resolves to that address, so Caddy can obtain a real
-# certificate with the HTTP-01 / TLS-ALPN challenge on ports 80 and 443 with no domain purchase.
+# One site block for every served name, which aiwos.sh works out on each update:
+#   - the Elastic IP written with dashes under sslip.io (3.104.1.2 becomes 3-104-1-2.sslip.io), a
+#     public DNS name that resolves to that address, so a certificate needs no domain purchase;
+#   - AIWOS_CUSTOM_DOMAIN from infra/aws/site.env, only once its A record points at this server
+#     (until then it is not listed, so no certificate is requested and the sslip.io site is
+#     unaffected).
+# AIWOS_PUBLIC_HOST is the primary name (the custom domain once it is live, else the sslip.io
+# name); AIWOS_ALT_HOSTS is the other one (empty while only the sslip.io name is served). Two
+# placeholders rather than one list: an older .env, or a Caddy container started before the list
+# existed, still yields a valid address.
+# Caddy obtains each certificate with the HTTP-01 / TLS-ALPN challenge on ports 80 and 443.
 {
 	# Behind nothing: Caddy is the edge. Admin API only inside the container.
 	admin localhost:2019
 }
 
-{$AIWOS_PUBLIC_HOST:localhost} {
+{$AIWOS_PUBLIC_HOST:localhost} {$AIWOS_ALT_HOSTS} {
 	encode zstd gzip
 
 	header {
@@ -19,7 +27,7 @@
 	}
 
 	# What the server last deployed and whether it worked, written by aiwos.sh (no secrets). Read by
-	# .github/workflows/deploy.yml to report whether a push went live.
+	# .github/workflows/deploy.yml to report whether a push went live. Served under every name.
 	handle /deploy-status.json {
 		root * /srv/status
 		header Cache-Control "no-store"
@@ -27,6 +35,11 @@
 	}
 
 	handle {
+		# The other names send people to the primary one. Temporary (307, method kept): the primary
+		# name can change back if the custom domain stops pointing here.
+		@other_name not host {$AIWOS_PUBLIC_HOST:localhost}
+		redir @other_name https://{$AIWOS_PUBLIC_HOST:localhost}{uri} 307
+
 		reverse_proxy web:80 {
 			# Agent runs and voice replies can take minutes and stream.
 			flush_interval -1
@@ -38,7 +51,7 @@
 	}
 }
 
-# Anyone who types the bare IP address is sent to the name the certificate is for.
+# Anyone who types the bare IP address is sent to the primary name.
 :80 {
 	redir https://{$AIWOS_PUBLIC_HOST:localhost}{uri} permanent
 }

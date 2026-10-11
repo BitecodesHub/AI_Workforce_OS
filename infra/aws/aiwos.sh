@@ -5,6 +5,7 @@
 #
 #   aiwos init                    write /opt/aiwos/.env (secrets made here with openssl, once) and
 #                                 the nginx and Caddy files; reapplies settings to a running stack
+#                                 (the served names are also re-checked on every update: site.env)
 #   aiwos install                 install /usr/bin/aiwos, the systemd timer and log rotation
 #   aiwos update [--force]        what the timer runs: deploy origin/<branch> if its SHA changed
 #   aiwos deploy SHA              build (if needed) and deploy one commit, with automatic rollback
@@ -12,7 +13,7 @@
 #                                 until a new commit is pushed
 #   aiwos status                  deploy status, containers, memory and disk
 #   aiwos logs [SERVICE...]       follow container logs (all services when none is named)
-#   aiwos url                     print the public address
+#   aiwos url                     print the public address (the custom domain once it is live)
 #
 # Runs as root. Each deploy builds the images on this server from the checked-out commit, one
 # service at a time, tags them aiwos/<image>:<sha>, starts them and waits for health; if the stack
@@ -20,6 +21,11 @@
 # images again. Images of the current and previous commit are kept. Runs never overlap (flock).
 # Logs: journalctl -u aiwos-update and /var/log/aiwos-deploy.log (rotated). The status file
 # served at https://<host>/deploy-status.json holds SHAs, times and results only, never secrets.
+#
+# Served names: the sslip.io name of the Elastic IP always, plus AIWOS_CUSTOM_DOMAIN from the
+# committed infra/aws/site.env once its DNS points at this server. Every update re-checks this (no
+# new commit needed): the custom domain then becomes the primary address, the sslip.io name
+# redirects to it, and only the containers whose settings changed are restarted (no build).
 
 set -euo pipefail
 
@@ -31,6 +37,11 @@ STATE_FILE="$AIWOS_HOME/deploy-state"
 STATUS_DIR="$AIWOS_HOME/status"
 STATUS_FILE="$STATUS_DIR/deploy-status.json"
 CADDY_DIR="$AIWOS_HOME/config/caddy"
+NGINX_DIR="$AIWOS_HOME/config/nginx"
+SITE_FILE="$REPO/infra/aws/site.env"
+# Consecutive failed lookups of a live custom domain before the sslip.io name becomes primary again
+# (one per 2-minute check), so a resolver hiccup does not restart the stack.
+DOMAIN_MISS_LIMIT="${AIWOS_DOMAIN_MISS_LIMIT:-3}"
 LOG_FILE="${AIWOS_LOG_FILE:-/var/log/aiwos-deploy.log}"
 LOCK_FILE="/run/aiwos-deploy.lock"
 COMPOSE_FILE="$REPO/infra/aws/docker-compose.prod.yml"
@@ -101,6 +112,8 @@ write_status() {
   chmod 755 "$STATUS_DIR"
   jq -n \
     --arg host "$(env_value AIWOS_PUBLIC_HOST)" \
+    --arg url "$(env_value AIWOS_PUBLIC_BASE_URL)" \
+    --arg alt "$(env_value AIWOS_ALT_HOSTS)" \
     --arg branch "$(env_value AIWOS_GIT_BRANCH)" \
     --arg current "$(state CURRENT_SHA)" \
     --arg previous "$(state PREVIOUS_SHA)" \
@@ -116,7 +129,8 @@ write_status() {
     --arg tls "$(state TLS_VALID)" \
     --arg updated "$(now)" \
     'def n: if . == "" then null else . end;
-     {host: ($host|n), branch: ($branch|n),
+     {host: ($host|n), public_url: ($url|n),
+      alt_hosts: ($alt | split(",") | map(select(. != ""))), branch: ($branch|n),
       current_sha: ($current|n), previous_sha: ($previous|n),
       skipped_sha: ($held|n),
       phase: (if $phase == "" then "idle" else $phase end),
@@ -181,6 +195,118 @@ sync_caddy_config() {
   fi
 }
 
+# ---- served names (sslip.io and the optional custom domain) -------------------------------------
+
+public_ip() {
+  [[ -f "$BOOTSTRAP_ENV" ]] || return 0
+  (
+    # shellcheck disable=SC1090
+    . "$BOOTSTRAP_ENV"
+    printf '%s' "${PUBLIC_IP:-}"
+  )
+}
+
+# resolves_to NAME IP: NAME has an A record for IP (system resolver, then a public one when dig is
+# installed, so a cached negative answer does not hold the domain back).
+resolves_to() {
+  local name="$1" ip="$2"
+  getent ahostsv4 "$name" 2>/dev/null | awk '{print $1}' | grep -qxF "$ip" && return 0
+  command -v dig >/dev/null 2>&1 || return 1
+  dig +short +time=3 +tries=1 A "$name" @1.1.1.1 2>/dev/null | grep -qxF "$ip"
+}
+
+# Works out the served names and writes them to .env (AIWOS_PUBLIC_HOST, AIWOS_ALT_HOSTS,
+# AIWOS_PUBLIC_BASE_URL, AIWOS_CORS_ORIGINS) and nginx's allow-list. The custom
+# domain is served only once it resolves to this server: until then Caddy is not asked for its
+# certificate, so a pending DNS change cannot affect the sslip.io site. Sets SITE_CHANGED.
+SITE_CHANGED=false
+render_site_config() {
+  local ip sslip domain primary alt="" cors misses key old new map
+  SITE_CHANGED=false
+  ip="$(public_ip)"
+  if [[ -z "$ip" ]]; then
+    log "PUBLIC_IP is not in $BOOTSTRAP_ENV; served names left as they are"
+    return 0
+  fi
+  sslip="$(printf '%s' "$ip" | tr '.' '-').sslip.io"
+  domain="$(kv_get "$SITE_FILE" AIWOS_CUSTOM_DOMAIN | tr -d " \t\r\"'" | tr '[:upper:]' '[:lower:]')"
+  if [[ -n "$domain" && ! "$domain" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]]; then
+    log "Ignoring AIWOS_CUSTOM_DOMAIN in site.env: \"$domain\" is not a host name"
+    domain=""
+  fi
+
+  primary="$sslip"
+  if [[ -n "$domain" && "$domain" != "$sslip" ]]; then
+    if resolves_to "$domain" "$ip"; then
+      primary="$domain"
+      [[ "$(state DOMAIN_MISSES)" == "" || "$(state DOMAIN_MISSES)" == 0 ]] || set_state DOMAIN_MISSES 0
+    elif [[ "$(env_value AIWOS_PUBLIC_HOST)" == "$domain" ]]; then
+      misses=$(($(state DOMAIN_MISSES || true) + 1))
+      set_state DOMAIN_MISSES "$misses"
+      if ((misses < DOMAIN_MISS_LIMIT)); then
+        primary="$domain"
+        log "$domain did not resolve to $ip (check $misses of $DOMAIN_MISS_LIMIT); still serving it"
+      else
+        log "$domain no longer resolves to $ip; https://$sslip is the primary address again"
+      fi
+    fi
+  fi
+  [[ "$primary" != "$sslip" ]] && alt="$sslip"
+  cors="https://$primary${alt:+,https://$alt}"
+
+  for key in AIWOS_PUBLIC_HOST AIWOS_ALT_HOSTS AIWOS_PUBLIC_BASE_URL AIWOS_CORS_ORIGINS; do
+    old="$(env_value "$key")"
+    case "$key" in
+      AIWOS_PUBLIC_HOST) new="$primary" ;;
+      AIWOS_ALT_HOSTS) new="$alt" ;;
+      AIWOS_PUBLIC_BASE_URL) new="https://$primary" ;;
+      AIWOS_CORS_ORIGINS) new="$cors" ;;
+    esac
+    # Present-but-empty and missing differ for compose's fallbacks, so the line is always written.
+    if [[ "$old" != "$new" ]] || ! grep -qE "^$key=" "$ENV_FILE" 2>/dev/null; then
+      set_env_value "$key" "$new"
+      SITE_CHANGED=true
+    fi
+  done
+
+  # nginx accepts these names (and only they, besides loopback and IPs); Caddy terminates TLS and
+  # says so in X-Forwarded-Proto.
+  mkdir -p "$NGINX_DIR"
+  map="$(printf '"%s" 1;\n' "$primary" ${alt:+"$alt"})"
+  if [[ "$(cat "$NGINX_DIR/hosts.map" 2>/dev/null)" != "$map" ]]; then
+    printf '%s\n' "$map" >"$NGINX_DIR/hosts.map.tmp"
+    mv -f "$NGINX_DIR/hosts.map.tmp" "$NGINX_DIR/hosts.map"
+    SITE_CHANGED=true
+  fi
+  [[ -f "$NGINX_DIR/proto.map" ]] || printf 'https https;\n' >"$NGINX_DIR/proto.map"
+  $SITE_CHANGED && log "Served names: https://$primary${alt:+ (also $alt, redirected)}"
+  return 0
+}
+
+# Applies changed names to the running stack without a build: compose recreates only the
+# containers whose settings changed (Caddy and the services reading AIWOS_PUBLIC_BASE_URL and
+# AIWOS_CORS_ORIGINS), then nginx reloads its allow-list (and the new containers' addresses).
+apply_site_config() {
+  local current
+  current="$(state CURRENT_SHA)"
+  [[ -n "$current" ]] || return 0
+  set_phase reconfiguring
+  load_env
+  export AIWOS_IMAGE_TAG="$current"
+  timeout "$HEALTH_TIMEOUT" \
+    docker compose --project-name aiwos --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build --remove-orphans >>"$LOG_FILE" 2>&1 \
+    || log "compose up returned an error while applying the new names; checking health"
+  compose exec -T web nginx -s reload >/dev/null 2>&1 || log "Could not reload nginx in web"
+  if wait_healthy "$((SECONDS + HEALTH_TIMEOUT))"; then
+    log "New names applied; https://$(env_value AIWOS_PUBLIC_HOST) is the primary address"
+  else
+    record_unhealthy
+    log "The stack was not healthy after applying the new names; see $LOG_FILE"
+  fi
+  set_state TLS_VALID "$(tls_valid)"
+  set_phase idle
+}
+
 cmd_init() {
   require_root init
   [[ -f "$BOOTSTRAP_ENV" ]] || die "$BOOTSTRAP_ENV is missing (written by the CloudFormation user data)"
@@ -193,8 +319,7 @@ cmd_init() {
   chmod 700 "$AIWOS_HOME"
   [[ -f "$ENV_FILE" ]] || write_secrets
 
-  local host demo local_model environment profiles
-  host="$(printf '%s' "$PUBLIC_IP" | tr '.' '-').sslip.io"
+  local demo local_model environment profiles
   demo=false
   is_true "${DEMO_DATA:-false}" && demo=true
   local_model=true
@@ -213,8 +338,6 @@ cmd_init() {
   set_env_value AIWOS_ECR_REGISTRY "${ECR_REGISTRY:-}"
   set_env_value AIWOS_CONFIG_DIR "$AIWOS_HOME/config"
   set_env_value AIWOS_STATUS_DIR "$STATUS_DIR"
-  set_env_value AIWOS_PUBLIC_HOST "$host"
-  set_env_value AIWOS_PUBLIC_BASE_URL "https://$host"
   set_env_value AIWOS_ENVIRONMENT "$environment"
   set_env_value AIWOS_DEMO_ENABLED "$demo"
   set_env_value AWS_REGION "$AWS_REGION"
@@ -225,16 +348,12 @@ cmd_init() {
   set_env_value AIWOS_OLLAMA_BASE_URL "http://ollama:11434/v1"
   set_env_value AIWOS_OLLAMA_MODEL "${OLLAMA_MODEL:-qwen2.5:1.5b-instruct}"
 
-  # nginx accepts the public name (and only it, besides loopback and IPs); Caddy terminates TLS and
-  # says so in X-Forwarded-Proto.
-  mkdir -p "$AIWOS_HOME/config/nginx"
-  printf '"%s" 1;\n' "$host" >"$AIWOS_HOME/config/nginx/hosts.map"
-  printf 'https https;\n' >"$AIWOS_HOME/config/nginx/proto.map"
+  render_site_config
   sync_caddy_config
   [[ -f "$STATE_FILE" ]] || set_state PHASE waiting_for_first_deploy
   write_status
 
-  log "Public address: https://$host (demo data: $demo, local model: $local_model)"
+  log "Public address: $(env_value AIWOS_PUBLIC_BASE_URL) (demo data: $demo, local model: $local_model)"
   # A running stack picks up changed settings now; on first boot the timer's first run starts it.
   if [[ -n "$(state CURRENT_SHA)" ]]; then
     load_env
@@ -367,6 +486,25 @@ images_present() {
   done
 }
 
+# A commit that changes only these paths (deployment settings and documents) reuses the live
+# commit's images under its own tag instead of building.
+CONFIG_ONLY_PATHS='^(infra/aws/(site\.env|Caddyfile|aiwos\.sh|cloudformation\.yaml)|docs/.*|\.github/.*|[^/]*\.md)$'
+
+reuse_images() {
+  local from="$1" to="$2" changed service image
+  [[ -n "$from" && "$from" != "$to" ]] || return 1
+  images_present "$from" || return 1
+  changed="$(git -C "$REPO" diff --name-only "$from" "$to" 2>/dev/null)" || return 1
+  if [[ -n "$changed" ]] && grep -qvE "$CONFIG_ONLY_PATHS" <<<"$changed"; then
+    return 1
+  fi
+  for service in $(build_services); do
+    image="aiwos/$(image_of "$service")"
+    docker tag "$image:$from" "$image:$to" || return 1
+  done
+  log "Only configuration changed since ${from:0:12}; reusing its images (no build)"
+}
+
 # Keeps the images of the current and previous commit; build cache is capped, not emptied, so the
 # next build stays incremental.
 prune_images() {
@@ -461,6 +599,7 @@ switch_to() {
   local sha="$1" deadline="$2"
   git -C "$REPO" checkout --quiet --force "$sha" || { log "Could not check out ${sha:0:12}"; return 1; }
   set_env_value AIWOS_IMAGE_TAG "$sha"
+  render_site_config
   load_env
   export AIWOS_IMAGE_TAG="$sha"
   sync_caddy_config
@@ -520,13 +659,14 @@ deploy_sha() {
   if $first && [[ -z "$(compose ps -q --status running caddy 2>/dev/null || true)" ]]; then
     compose up -d --no-deps caddy >>"$LOG_FILE" 2>&1 || log "Could not start Caddy early; status is served once the stack starts"
   fi
+  local reused=false paused_ollama=false
+  reuse_images "$current" "$target" && reused=true
   # The local model is only a fallback; pausing it frees about 1.5 GB for the build.
-  local paused_ollama=false
-  if [[ -n "$(compose ps -q --status running ollama 2>/dev/null || true)" ]]; then
+  if ! $reused && [[ -n "$(compose ps -q --status running ollama 2>/dev/null || true)" ]]; then
     compose stop ollama >/dev/null 2>&1 && paused_ollama=true && log "Paused ollama during the build"
   fi
 
-  if ! build_images "$target"; then
+  if ! $reused && ! build_images "$target"; then
     if [[ -n "$current" ]]; then
       git -C "$REPO" checkout --quiet --force "$current"
       export AIWOS_IMAGE_TAG="$current"
@@ -589,17 +729,22 @@ do_update() {
   current="$(state CURRENT_SHA)"
   skip="$(state SKIP_SHA)"
 
-  if [[ "$force" != true ]]; then
-    if [[ "$target" == "$current" ]]; then
-      write_status
-      return 0
+  # Nothing to deploy when the branch is at the live commit, or at a commit that already failed (or
+  # was rolled back by hand): that one is not retried until a new commit arrives or
+  # "aiwos update --force". With nothing live yet, the first deploy keeps retrying.
+  if [[ "$force" != true ]] && [[ "$target" == "$current" || (-n "$current" && "$target" == "$skip") ]]; then
+    # The served names still get re-checked (a DNS record may have just appeared), from the live
+    # checkout's site.env; a deploy does the same from the new commit's.
+    render_site_config
+    if $SITE_CHANGED && [[ -n "$current" ]]; then
+      sync_caddy_config
+      apply_site_config
+    elif [[ -n "$current" && "$(state TLS_VALID)" != true ]]; then
+      # A new name's certificate arrives a minute or so after the name is first served.
+      set_state TLS_VALID "$(tls_valid)"
     fi
-    # A commit that already failed (or was rolled back by hand) is not retried until a new commit
-    # arrives or "aiwos update --force". With nothing live yet, the first deploy keeps retrying.
-    if [[ -n "$current" && "$target" == "$skip" ]]; then
-      write_status
-      return 0
-    fi
+    write_status
+    return 0
   fi
   deploy_sha "$target" "new commit on $branch" || true
 }
@@ -647,7 +792,7 @@ cmd_logs() {
 }
 
 cmd_url() {
-  printf 'AIWOS_URL=https://%s\n' "$(env_value AIWOS_PUBLIC_HOST)"
+  printf 'AIWOS_URL=%s\n' "$(env_value AIWOS_PUBLIC_BASE_URL)"
 }
 
 case "${1:-}" in

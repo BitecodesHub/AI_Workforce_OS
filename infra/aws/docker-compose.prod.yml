@@ -13,7 +13,7 @@
 #   - The gateway is not on the browser's path (the web client's nginx routes each API prefix to
 #     its service), so it is the optional "gateway" profile.
 #   - Only Caddy publishes ports: 80 and 443, with a Let's Encrypt certificate for the server's
-#     sslip.io name. Nothing else is reachable from outside the Docker network. Caddy also serves
+#     sslip.io name and the custom domain of infra/aws/site.env once its DNS points here. Nothing else is reachable from outside the Docker network. Caddy also serves
 #     /deploy-status.json, which aiwos.sh writes (no secrets).
 #   - Images are built on the server, one service at a time, with the Maven and Node heaps capped
 #     (AIWOS_MAVEN_OPTS, AIWOS_NODE_OPTIONS) so a build fits beside the running stack and swap.
@@ -61,9 +61,9 @@ x-service: &service
     # Production refuses 1.0; nothing collects traces here anyway.
     AIWOS_TRACE_SAMPLE_RATIO: "0.1"
     AIWOS_JWKS_URI: http://identity:8080/.well-known/jwks.json
-    # One origin, over HTTPS: the browser, the API and the OAuth callback all use the server's
-    # sslip.io name.
-    AIWOS_CORS_ORIGINS: ${AIWOS_PUBLIC_BASE_URL:?set AIWOS_PUBLIC_BASE_URL in /opt/aiwos/.env}
+    # Every served name, over HTTPS (aiwos.sh writes them: the sslip.io name, plus the custom domain
+    # once it is live); the OAuth callback uses the primary one, AIWOS_PUBLIC_BASE_URL.
+    AIWOS_CORS_ORIGINS: ${AIWOS_CORS_ORIGINS:-${AIWOS_PUBLIC_BASE_URL:?set AIWOS_PUBLIC_BASE_URL in /opt/aiwos/.env}}
     AIWOS_PUBLIC_BASE_URL: ${AIWOS_PUBLIC_BASE_URL:?set AIWOS_PUBLIC_BASE_URL in /opt/aiwos/.env}
     AIWOS_URL_GATEWAY: http://gateway:8080
     AIWOS_URL_IDENTITY: http://identity:8080
@@ -119,6 +119,9 @@ services:
       - "443:443/udp"
     environment:
       AIWOS_PUBLIC_HOST: ${AIWOS_PUBLIC_HOST:?set AIWOS_PUBLIC_HOST in /opt/aiwos/.env}
+      # The other served name (the sslip.io one once the custom domain of infra/aws/site.env is
+      # primary); Caddy gets a certificate for each and redirects it to AIWOS_PUBLIC_HOST.
+      AIWOS_ALT_HOSTS: ${AIWOS_ALT_HOSTS:-}
     # Directories, not single files: aiwos.sh replaces the Caddyfile and the status file by rename,
     # which a single-file bind mount would never see.
     volumes:
@@ -256,7 +259,7 @@ services:
     logging: *logging
     networks: [aiwos]
     mem_limit: 128m
-    # The public host name for nginx's allow-list, and Caddy's X-Forwarded-Proto passed through;
+    # The public host names for nginx's allow-list, and Caddy's X-Forwarded-Proto passed through;
     # aiwos.sh writes both files (see the includes in infra/launcher/nginx.conf).
     volumes:
       - ${AIWOS_CONFIG_DIR:-./config}/nginx:/etc/nginx/aiwos:ro

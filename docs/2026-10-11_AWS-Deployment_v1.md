@@ -153,10 +153,32 @@ sslip.io is a public DNS service that answers that name with that address, so Ca
 obtains a Let's Encrypt certificate over ports 80 and 443. The address never changes while the stack
 exists. Typing the bare IP redirects to the name. If certificate issuance is ever rate-limited, Caddy
 retries and falls back to ZeroSSL on its own; a missing certificate never causes a rollback
-(`tls_certificate_valid` shows it). `nip.io` is an equivalent name service if needed (edit
-`AIWOS_PUBLIC_HOST` and `AIWOS_PUBLIC_BASE_URL` in `/opt/aiwos/.env` and
-`/opt/aiwos/config/nginx/hosts.map`, then run `sudo aiwos deploy <current_sha>`, which reuses
-the built images and restarts the containers with the new name).
+(`tls_certificate_valid` shows it).
+
+### Custom domain
+
+`infra/aws/site.env` (committed, not secret) names an optional custom domain:
+`AIWOS_CUSTOM_DOMAIN=ai-workforce.bitecodes.com`. To use one, add a DNS **A record** for it
+pointing at the Elastic IP, then commit the name in `site.env` (or leave it there and wait for DNS).
+
+- Every 2-minute update re-checks the names, with or without a new commit: `aiwos.sh` looks the
+  domain up (`getent`, plus `dig @1.1.1.1` when installed) and compares it with the Elastic IP.
+- While it does not resolve to this server, nothing changes: the domain is not given to Caddy, so no
+  certificate is requested and the sslip.io site is unaffected.
+- Once it resolves here, it becomes the primary address: `AIWOS_PUBLIC_HOST`,
+  `AIWOS_PUBLIC_BASE_URL` (OAuth callbacks) and `public_url` in `/deploy-status.json`. Caddy gets a
+  Let's Encrypt certificate for both names, and the sslip.io name answers with a temporary (307)
+  redirect to the domain, except `/deploy-status.json`, which both names serve (the GitHub
+  workflow can keep polling the sslip.io name). CORS and nginx's allow-list accept both names.
+- Applying the change restarts only what reads the names (Caddy and the seven services, for
+  `AIWOS_PUBLIC_BASE_URL` / `AIWOS_CORS_ORIGINS`) and reloads nginx; nothing is rebuilt. Expect a
+  few minutes while the services restart.
+- If the domain stops resolving here for 3 checks in a row (about 6 minutes), the sslip.io name
+  becomes primary again. Emptying `AIWOS_CUSTOM_DOMAIN` takes effect on the next deploy.
+- A commit that changes only `site.env`, `Caddyfile`, `aiwos.sh`, `cloudformation.yaml`, `docs/`,
+  `.github/` or top-level `*.md` files reuses the live images instead of building.
+- `/opt/aiwos/.env` keeps the rendered names; do not edit them by hand (the next update rewrites
+  them). `nip.io` instead of sslip.io would need a change to `render_site_config` in `aiwos.sh`.
 
 ## Signing in
 
@@ -245,6 +267,7 @@ ap-south-1 too, so after an upgrade the same template can be created there uncha
 - `infra/aws/cloudformation.yaml`: the stack.
 - `infra/aws/docker-compose.prod.yml`, `infra/aws/Caddyfile`: what runs on the server (Caddy also
   serves `/deploy-status.json`).
+- `infra/aws/site.env`: the optional custom domain (see "Custom domain").
 - `infra/aws/aiwos.sh`: first boot, the update loop (build, health check, rollback), manual deploy
   and rollback, status and logs.
 - `infra/launcher/services.Dockerfile`, `infra/launcher/web.Dockerfile`: shared with the launcher;
@@ -255,5 +278,8 @@ ap-south-1 too, so after an upgrade the same template can be created there uncha
 
 - Live link: https://13-55-126-54.sslip.io (stack `aiwos-prod`, ap-southeast-2, instance i-06120f7207f36f4ea, Elastic IP 13.55.126.54)
 - Deploy status: https://13-55-126-54.sslip.io/deploy-status.json
+- Custom domain: https://ai-workforce.bitecodes.com (A record to 13.55.126.54 at GoDaddy). It becomes
+  the primary address on the first update after the record resolves; the sslip.io link then
+  redirects to it.
 - Every push to `main` is picked up by the server within about 2 minutes, built, health-checked and rolled back automatically if unhealthy. GitHub's Deploy workflow reports whether the push went live (repository variable `AIWOS_PUBLIC_HOST`).
 - Demo data is off: the first person to register creates the first workspace.
