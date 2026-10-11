@@ -373,8 +373,8 @@
   /* colour-mix keeps a tag's tint locked to its own colour: a new category cannot arrive with a
      hand-picked background that sits slightly off the system. The text is the same colour
      darkened, because the raw category colours on their own tint failed WCAG AA contrast. */
-  background: color-mix(in srgb, var(--tag-colour) 13%, white);
-  color: color-mix(in srgb, var(--tag-colour) 70%, black);
+  background: color-mix(in srgb, var(--tag-colour) 13%, var(--mix-base));
+  color: color-mix(in srgb, var(--tag-colour) 70%, var(--mix-shade));
 }
 
 .tag-blue { --tag-colour: var(--blue); }
@@ -434,7 +434,7 @@
 
 .button-primary {
   background: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
 }
 
 .button-primary:hover:not(:disabled) {
@@ -670,7 +670,7 @@
 }
 
 .notice-success {
-  background: color-mix(in srgb, var(--green) 7%, white);
+  background: color-mix(in srgb, var(--green) 7%, var(--mix-base));
   border-color: color-mix(in srgb, var(--green) 20%, transparent);
   color: var(--green);
 }
@@ -722,10 +722,10 @@
 /* ---- Glass drawer, for canvas pages ------------------------------------------------------------ */
 
 .drawer {
-  background: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-drawer);
   padding: var(--space-6);
 }
@@ -733,7 +733,7 @@
 .drawer .stat-row {
   border: none;
   border-radius: var(--radius-glass-tile);
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.55));
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--surface) 90%, transparent), color-mix(in srgb, var(--surface) 55%, transparent));
 }
 
 /* ---- Assistant launcher ------------------------------------------------------------------------ */
@@ -750,7 +750,7 @@
   border: none;
   border-radius: var(--radius-pill);
   background: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
   font-size: var(--text-body);
   font-weight: var(--weight-emphasis);
   cursor: pointer;
@@ -913,10 +913,10 @@
   width: auto;
   height: 60px;
   border-radius: var(--radius-drawer);
-  background: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
 }
 
 .brand {
@@ -1003,7 +1003,7 @@
   padding: 0 5px;
   border-radius: var(--radius-pill);
   background: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: var(--weight-strong);
   line-height: 18px;
@@ -1292,7 +1292,7 @@ button.menu-item {
   z-index: 100;
   padding: var(--space-3) var(--space-5);
   background: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
   font-size: var(--text-body);
   font-weight: var(--weight-emphasis);
   border-radius: var(--radius-control);
@@ -1400,7 +1400,7 @@ button.menu-item {
 }
 
 .state-icon-danger {
-  background: color-mix(in srgb, var(--danger) 8%, white);
+  background: color-mix(in srgb, var(--danger) 8%, var(--mix-base));
   border-color: color-mix(in srgb, var(--danger) 16%, transparent);
   color: var(--danger);
 }
@@ -1412,7 +1412,7 @@ button.menu-item {
 }
 
 .button-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 7%, white);
+  background: color-mix(in srgb, var(--danger) 7%, var(--mix-base));
   border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
 }
 
@@ -2208,7 +2208,7 @@ button.menu-item {
 
 .orc-bar-running {
   background-color: var(--blue);
-  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.35) 0 6px, transparent 6px 12px);
+  background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--on-accent) 35%, transparent) 0 6px, transparent 6px 12px);
   background-size: 28px 100%;
   animation: orc-stripes 1s linear infinite;
 }
@@ -2605,9 +2605,9 @@ button.menu-item {
 /* ---- Agent avatar --------------------------------------------------------------------------- */
 
 .chat-avatar {
-  background: color-mix(in srgb, var(--chat-avatar-colour, var(--muted)) 16%, white);
+  background: color-mix(in srgb, var(--chat-avatar-colour, var(--muted)) 16%, var(--mix-base));
   /* Darkened like a Tag's text: the raw category colour on its own tint measured 2.7:1. */
-  color: color-mix(in srgb, var(--chat-avatar-colour, var(--muted)) 60%, black);
+  color: color-mix(in srgb, var(--chat-avatar-colour, var(--muted)) 60%, var(--mix-shade));
   flex: none;
 }
 
@@ -3048,7 +3048,7 @@ h5.md-heading {
   font-size: 0.92em;
   padding: 1px var(--space-2);
   border-radius: var(--radius-tag);
-  background: var(--paper);
+  background: var(--code-bg);
 }
 
 .md a {
@@ -3060,7 +3060,7 @@ h5.md-heading {
   margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-control-lg);
-  background: var(--paper);
+  background: var(--code-bg);
   overflow: hidden;
 }
 
@@ -3244,7 +3244,7 @@ input[type='checkbox'][role='switch']::before {
   height: 14px;
   border-radius: var(--radius-pill);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(26, 42, 74, 0.2);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-tint) 20%, transparent);
   transition: transform var(--transition);
 }
 
@@ -3846,4 +3846,80 @@ input[type='checkbox'][role='switch']:checked::before {
   flex-wrap: wrap;
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--line);
+}
+
+/* ---- Theme switch ---------------------------------------------------------------------------
+   System, Light and Dark as a segmented control: three native radios in a fieldset, so Tab and
+   the arrow keys work as they do on any radio group. The input stays in the page (visually
+   hidden, not display: none) so it keeps focus; the ring is drawn on its label. */
+.theme-switch {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.theme-switch-legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-emphasis);
+  color: var(--ink);
+}
+
+.theme-switch-options {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+}
+
+.theme-switch-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  min-height: 28px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.theme-switch-option:hover {
+  color: var(--ink);
+}
+
+.theme-switch-option input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.theme-switch-option:has(input:checked) {
+  /* The chosen option is told apart by its blue edge (3:1 and more against the track), not by
+     a fill alone: in dark, a surface on paper is too faint to carry the state by itself. */
+  background: var(--blue-light);
+  color: var(--blue);
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.theme-switch-option:has(input:focus-visible) {
+  outline: var(--focus-outline);
+  outline-offset: 1px;
+}
+
+/* In the account menu, the switch sits in a menu-item-sized slot. */
+.menu-theme {
+  padding: var(--space-2) var(--space-4) var(--space-3);
 }

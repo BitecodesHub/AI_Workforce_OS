@@ -15,6 +15,7 @@ import {
   Time,
 } from '../components/ui'
 import { BrowserNotificationsCard } from '../components/settings/BrowserNotificationsCard'
+import { ThemeCard } from '../components/settings/ThemeSetting'
 import { ApiError, describeApiError } from '../lib/api'
 import {
   NETWORK_ERROR_COPY,
@@ -413,6 +414,8 @@ export function Profile() {
       </div>
 
       <div style={{ marginTop: 'var(--space-5)' }}>
+        <ThemeCard />
+
         <BrowserNotificationsCard />
       </div>
     </div>

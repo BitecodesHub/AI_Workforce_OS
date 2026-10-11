@@ -442,7 +442,7 @@
 .lp-cite-marker[aria-pressed='true'] .lp-cite-marker-pill {
   background: var(--blue);
   border-color: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
 }
 
 /* Sources */
@@ -500,11 +500,11 @@
   padding-bottom: 3px;
   border: 1px solid var(--line);
   border-radius: var(--radius-tag);
-  background-color: var(--surface);
+  background-color: var(--on-accent);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--muted) 26%, white) 0 0),
-    linear-gradient(color-mix(in srgb, var(--muted) 26%, white) 0 0),
-    linear-gradient(color-mix(in srgb, var(--muted) 26%, white) 0 0);
+    linear-gradient(color-mix(in srgb, var(--muted) 26%, var(--mix-base)) 0 0),
+    linear-gradient(color-mix(in srgb, var(--muted) 26%, var(--mix-base)) 0 0),
+    linear-gradient(color-mix(in srgb, var(--muted) 26%, var(--mix-base)) 0 0);
   background-position:
     5px 6px,
     5px 11px,

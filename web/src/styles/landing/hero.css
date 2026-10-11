@@ -61,12 +61,12 @@
   background-color: var(--lp-glass-strong);
   -webkit-backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
   backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
-  border-color: rgba(210, 221, 238, 0.9);
+  border-color: color-mix(in srgb, var(--glass-line) 90%, transparent);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .lp-bar[data-solid='true'] .lp-bar-inner {
-    background-color: var(--surface);
+    background-color: var(--on-accent);
   }
 }
 
@@ -255,7 +255,7 @@
   color: var(--ink);
   text-decoration: none;
   background: var(--lp-glass-strong);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-pill);
   transition:
     border-color var(--lp-quick) ease,
@@ -409,7 +409,7 @@
   gap: 10px;
   min-width: 0;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(210, 221, 238, 0.9);
+  border-bottom: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
 }
 
 .lp-console-brand {
@@ -430,8 +430,8 @@
   gap: 2px;
   min-width: 0;
   padding: 3px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-pill);
 }
 
@@ -462,7 +462,7 @@
   padding: 0 4px;
   border-radius: var(--radius-pill);
   background: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
   font-size: 9px;
   font-weight: var(--weight-strong);
   line-height: 1;
@@ -496,8 +496,8 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   flex: none;
   margin: 0;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-tile);
 }
 
@@ -507,7 +507,7 @@
 }
 
 .lp-console-stat + .lp-console-stat {
-  border-left: 1px solid rgba(210, 221, 238, 0.9);
+  border-left: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
 }
 
 .lp-console-stat dt {
@@ -531,8 +531,8 @@
 .lp-console-activity {
   min-width: 0;
   padding: 10px 4px 2px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-tile);
 }
 
@@ -620,7 +620,7 @@
   row-gap: 2px;
   min-width: 0;
   padding: 8px 0;
-  border-top: 1px solid rgba(210, 221, 238, 0.7);
+  border-top: 1px solid color-mix(in srgb, var(--glass-line) 70%, transparent);
   font-family: var(--font-mono);
   font-size: 11.5px;
   font-weight: var(--weight-regular);
@@ -732,8 +732,8 @@
   align-self: stretch;
   margin: -4px 0 0;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(210, 221, 238, 0.7);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 70%, transparent);
   border-radius: var(--radius-control-lg);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -858,7 +858,7 @@
   }
 
   .lp-console-stat:nth-child(n + 3) {
-    border-top: 1px solid rgba(210, 221, 238, 0.9);
+    border-top: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   }
 
   .lp-console-stat {

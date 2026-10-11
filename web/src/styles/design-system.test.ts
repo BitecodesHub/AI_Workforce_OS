@@ -103,6 +103,56 @@ describe('type weights', () => {
   })
 })
 
+/*
+ * The dark theme. Every colour written as a literal in the light :root must be redrawn under
+ * :root[data-theme='dark'], or that colour would stay light on a dark page. Aliases (var(...))
+ * follow their target, so they need no dark value of their own.
+ */
+describe('dark theme', () => {
+  function block(selector: string): Map<string, string> {
+    const start = TOKENS.indexOf(`${selector} {`)
+    expect(start, `tokens.css has no ${selector} block`).toBeGreaterThanOrEqual(0)
+    const body = TOKENS.slice(start, TOKENS.indexOf('\n}', start)).replace(/\/\*[\s\S]*?\*\//g, '')
+    return new Map([...body.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]))
+  }
+  const COLOUR = /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|\b(white|black)\b/i
+  const light = block(':root')
+  const dark = block(":root[data-theme='dark']")
+
+  it('defines a dark value for every colour token defined in light', () => {
+    const colours = [...light].filter(([, value]) => COLOUR.test(value)).map(([name]) => name)
+    expect(colours.length).toBeGreaterThan(30)
+    for (const name of colours) expect(dark.has(name), `${name} has no dark value`).toBe(true)
+  })
+
+  it('redraws every colour it touches, and touches nothing that is not a colour', () => {
+    for (const [name, value] of dark) {
+      expect(light.has(name), `${name} is dark-only`).toBe(true)
+      expect(COLOUR.test(value), `${name}: ${value} is not a colour`).toBe(true)
+      expect(value, `${name} is unchanged in dark`).not.toBe(light.get(name))
+    }
+  })
+
+  it('sets color-scheme for both themes', () => {
+    expect(TOKENS).toMatch(/:root \{\s*color-scheme: light;/)
+    expect(TOKENS).toMatch(/:root\[data-theme='dark'\] \{\s*color-scheme: dark;/)
+  })
+
+  it('keeps every literal colour in tokens.css: stylesheets mix tokens, never white, black or rgba', () => {
+    const files = walk(join(SRC, 'styles'), ['.css'])
+      .concat(walk(join(SRC, 'components'), ['.css']))
+      .filter((file) => !file.endsWith('tokens.css'))
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        // A mask is alpha, not colour: its black means "fully shown" in either theme.
+        .replace(/mask-image:[^;]+;/g, '')
+      const raw = source.match(/rgba?\([^)]*\)|hsla?\([^)]*\)|#[0-9a-fA-F]{3,8}\b|(?<![\w-])(white|black)(?![\w-])/g) ?? []
+      expect(raw, `${file} has a literal colour: ${raw.join(', ')}`).toHaveLength(0)
+    }
+  })
+})
+
 describe('components', () => {
   it('draws every border from --line (or --line-strong, for form controls)', () => {
     const borders = [...COMPONENTS.matchAll(/border(?:-\w+)?:\s*1px solid ([^;]+);/g)].map((m) => m[1]!.trim())
@@ -110,7 +160,7 @@ describe('components', () => {
     for (const border of borders) {
       const allowed =
         (border.includes('var(--line)') || border.includes('var(--line-strong)')) ||
-        border.includes('rgba(210, 221, 238') ||
+        border.includes('var(--glass-line)') ||
         border === 'transparent'
       expect(allowed, `border "${border}" is not --line`).toBe(true)
     }
@@ -181,7 +231,7 @@ describe('screens', () => {
 
 /*
  * The public page has its own stylesheets, which components.css's checks never see. These hold
- * them to the same rules: borders from --line or the glass rgba, radii from the token families,
+ * them to the same rules: borders from --line or --glass-line, radii from the token families,
  * no raw hex, and keyframe names that cannot collide with the console's.
  */
 describe('landing styles', () => {
@@ -207,7 +257,7 @@ describe('landing styles', () => {
     for (const border of borders) {
       const allowed =
         (border.includes('var(--line)') || border.includes('var(--line-strong)')) ||
-        border.includes('rgba(210, 221, 238') ||
+        border.includes('var(--glass-line)') ||
         border === 'transparent'
       expect(allowed, `border "${border}" is not --line`).toBe(true)
     }
@@ -256,7 +306,7 @@ describe('polish styles', () => {
       for (const m of source.matchAll(/border(?:-\w+)?:\s*1px solid ([^;]+);/g)) {
         const border = m[1]!.trim()
         expect(
-          (border.includes('var(--line)') || border.includes('var(--line-strong)')) || border.includes('rgba(210, 221, 238') || border === 'transparent',
+          (border.includes('var(--line)') || border.includes('var(--line-strong)')) || border.includes('var(--glass-line)') || border === 'transparent',
           `${file} border "${border}" is not --line`,
         ).toBe(true)
       }

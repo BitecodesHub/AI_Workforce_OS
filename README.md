@@ -81,6 +81,11 @@ both are real and both have been run this way.
 
 ## Architecture
 
+Diagrams and a plain-language walkthrough are in
+[`docs/2026-10-11_Architecture_v1.md`](docs/2026-10-11_Architecture_v1.md). Progress, remaining
+work and each team member's area are in the project report,
+[`docs/2026-10-11_Project-Documentation_v1.pdf`](docs/2026-10-11_Project-Documentation_v1.pdf).
+
 Eight independently deployable Spring Boot applications. Each owns its database schema and its
 migration history and never reads another service's tables.
 

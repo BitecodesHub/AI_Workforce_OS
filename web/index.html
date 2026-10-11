@@ -7,6 +7,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Applies the theme before the first paint, so a dark-theme visitor never sees a white flash.
+      Mirrors src/lib/theme.ts (key 'aiwos.theme'; System unless Light or Dark is stored), and
+      theme.test.ts runs this exact script. Its sha256 is allowed by the Content-Security-Policy
+      in infra/launcher/nginx.conf: change one character here and update that hash too (the test
+      says so if they disagree).
+    -->
+    <script>(function(){var s;try{s=localStorage.getItem('aiwos.theme')}catch(e){}var d=s==='dark'||(s!=='light'&&!!window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var t=d?'dark':'light';var r=document.documentElement;r.setAttribute('data-theme',t);r.style.colorScheme=t})()</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
     <title>AI Workforce OS</title>
     <meta name="description" content="AI assistants that do routine work and ask before anything is sent." />

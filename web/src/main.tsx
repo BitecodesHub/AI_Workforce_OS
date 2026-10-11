@@ -13,6 +13,7 @@ import { App } from './App'
 import { RouterProvider } from './lib/router'
 import { ToastProvider } from './lib/toast'
 import { ApiError } from './lib/api'
+import { startThemeSync } from './lib/theme'
 import { ErrorBoundary, clearReloadFlagWhenSettled, logRenderError, reloadOnce } from './components/ui/ErrorBoundary'
 
 /*
@@ -43,6 +44,9 @@ window.addEventListener('vite:preloadError', (event) => {
   if (reloadOnce()) event.preventDefault()
 })
 clearReloadFlagWhenSettled()
+
+// index.html set the theme before first paint; this keeps it following the system and other tabs.
+startThemeSync()
 
 /*
  * Every render failure is logged in one place, with the path it happened on: those an error

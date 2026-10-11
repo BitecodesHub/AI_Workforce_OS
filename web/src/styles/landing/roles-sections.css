@@ -122,11 +122,11 @@
 }
 
 .lp-audit-entry[data-altered='true'] {
-  border-color: color-mix(in srgb, var(--warning-ink) 30%, white);
+  border-color: color-mix(in srgb, var(--warning-ink) 30%, var(--mix-base));
 }
 
 .lp-audit-entry[data-broken='true'] {
-  border-color: color-mix(in srgb, var(--danger) 30%, white);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--mix-base));
 }
 
 /* The connector between two entries: a 2px line drawn with a background, then the link icon. */
@@ -204,7 +204,7 @@
 }
 
 .lp-audit-chip[data-bad='true'] {
-  border-color: color-mix(in srgb, var(--danger) 35%, white);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--mix-base));
   background: var(--lp-bad-bg);
   color: var(--danger);
 }
@@ -306,7 +306,7 @@
 
 .lp-roles-tab[aria-selected='true'] {
   border-color: var(--border-hover);
-  background: color-mix(in srgb, var(--blue-light) 70%, white);
+  background: color-mix(in srgb, var(--blue-light) 70%, var(--mix-base));
 }
 
 /* A shape cue for the selected tab, so colour is not the only signal. */
@@ -642,7 +642,7 @@
 /* Green text is deepened slightly towards ink so it keeps 4.5:1 on its tint at 9px. */
 .lp-roles-code[data-diff='added'] {
   border-color: transparent;
-  background: color-mix(in srgb, var(--green) 12%, white);
+  background: color-mix(in srgb, var(--green) 12%, var(--mix-base));
   color: color-mix(in srgb, var(--green) 80%, var(--ink));
 }
 
@@ -702,7 +702,7 @@
 
 .lp-roles-swatch[data-diff='added'] {
   border-color: transparent;
-  background: color-mix(in srgb, var(--green) 12%, white);
+  background: color-mix(in srgb, var(--green) 12%, var(--mix-base));
   color: color-mix(in srgb, var(--green) 80%, var(--ink));
 }
 
@@ -979,7 +979,7 @@
   padding: 56px 32px;
   text-align: center;
   border-radius: var(--radius-card);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 6%, white), var(--lp-glass));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 6%, var(--mix-base)), var(--lp-glass));
 }
 
 .lp-cta .eyebrow {

@@ -293,8 +293,8 @@
   border-radius: var(--radius-pill);
   font-size: var(--text-caption);
   font-weight: var(--weight-strong);
-  background: color-mix(in srgb, var(--role-colour, var(--muted)) 14%, white);
-  color: color-mix(in srgb, var(--role-colour, var(--muted)) 62%, black);
+  background: color-mix(in srgb, var(--role-colour, var(--muted)) 14%, var(--mix-base));
+  color: color-mix(in srgb, var(--role-colour, var(--muted)) 62%, var(--mix-shade));
 }
 
 .auth-role-name {
@@ -394,9 +394,9 @@
   width: min(100%, 380px);
   padding: var(--space-5);
   background: var(--surface);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-tile);
-  box-shadow: 0 22px 44px -24px rgba(26, 42, 74, 0.28);
+  box-shadow: 0 22px 44px -24px color-mix(in srgb, var(--shadow-tint) 28%, transparent);
 }
 
 .auth-glimpse-head {
@@ -471,7 +471,7 @@
 }
 
 .auth-glimpse-button-primary {
-  color: var(--surface);
+  color: var(--on-accent);
   background: var(--blue);
   border-color: transparent;
 }
@@ -501,7 +501,7 @@
   height: 32px;
   color: var(--blue);
   background: var(--surface);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-control);
 }
 
@@ -594,7 +594,7 @@
   margin-top: 1px;
   border-radius: var(--radius-pill);
   color: var(--green);
-  background: color-mix(in srgb, var(--green) 12%, white);
+  background: color-mix(in srgb, var(--green) 12%, var(--mix-base));
 }
 
 /* Back on the left and the way forward on the right, on every step. */
@@ -630,7 +630,7 @@
   margin: 0 auto var(--space-4);
   border-radius: var(--radius-pill);
   color: var(--green);
-  background: color-mix(in srgb, var(--green) 12%, white);
+  background: color-mix(in srgb, var(--green) 12%, var(--mix-base));
 }
 
 /* ---- Stepper ------------------------------------------------------------------------------ */
@@ -710,7 +710,7 @@
 }
 
 .auth-step[data-state='done'] .auth-step-dot {
-  color: var(--surface);
+  color: var(--on-accent);
   background: var(--blue);
   border-color: var(--blue);
 }

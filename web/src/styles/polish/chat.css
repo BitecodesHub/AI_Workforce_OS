@@ -1355,7 +1355,7 @@
   border: none;
   border-radius: var(--radius-pill);
   background: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
@@ -1384,7 +1384,7 @@
 
 .chat-send[aria-busy] {
   background: var(--blue);
-  color: var(--surface);
+  color: var(--on-accent);
   cursor: progress;
 }
 

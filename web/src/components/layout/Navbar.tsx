@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Brand } from './Brand'
 import { IconButton } from '../ui'
+import { ThemeSwitch } from '../settings/ThemeSetting'
 import { can, clearSession, initials as initialsOf, profile } from '../../lib/session'
 import { roleLabel } from '../../lib/labels'
 import { isGuideHidden, setGuideHidden } from '../../lib/onboarding'
@@ -350,6 +351,10 @@ export function Navbar({ currentPath = '/', glass = false }: { currentPath?: str
                     <span className="menu-item-note">The guide on the Command Map</span>
                   </a>
                 )}
+              </div>
+
+              <div className="menu-group menu-theme">
+                <ThemeSwitch />
               </div>
 
               <div className="menu-group">

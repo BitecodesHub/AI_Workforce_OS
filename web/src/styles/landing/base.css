@@ -13,8 +13,8 @@
  * for less motion sees every end state at once. Everything ambient pauses under
  * .lp[data-ambient='paused'].
  *
- * Colour. No raw hex values: tokens, color-mix over tokens, and the two white and blue-grey rgba
- * families only. Borders are drawn from --line or the blue-grey glass rgba, written literally.
+ * Colour. No raw hex or rgba values: tokens and color-mix over tokens only, so the dark theme
+ * redraws the page. Glass is --surface at an alpha; borders are --line or --glass-line.
  *
  * Ownership. Owners consume these classes and never redefine them. These pseudo-elements are
  * reserved for this file: .lp-glass::before, .lp-demo::before, .lp-spot::after, .lp-sheen::after,
@@ -42,11 +42,11 @@
   --lp-text-copy: 14px;
 
   /* Surfaces */
-  --lp-glass-strong: rgba(255, 255, 255, 0.9);
-  --lp-glass: rgba(255, 255, 255, 0.8);
-  --lp-glass-soft: rgba(255, 255, 255, 0.62);
+  --lp-glass-strong: color-mix(in srgb, var(--surface) 90%, transparent);
+  --lp-glass: color-mix(in srgb, var(--surface) 80%, transparent);
+  --lp-glass-soft: color-mix(in srgb, var(--surface) 62%, transparent);
   --lp-glass-blur: 18px;
-  --lp-frost: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(255, 255, 255, 0.86));
+  --lp-frost: linear-gradient(180deg, color-mix(in srgb, var(--surface) 97%, transparent), color-mix(in srgb, var(--surface) 86%, transparent));
   --lp-inset-fill: color-mix(in srgb, var(--paper) 78%, var(--blue-light));
 
   /* Light */
@@ -60,8 +60,8 @@
   --lp-tint-08: color-mix(in srgb, var(--blue) 8%, transparent);
   --lp-tint-12: color-mix(in srgb, var(--blue) 12%, transparent);
   --lp-bezel: color-mix(in srgb, var(--blue) 45%, transparent);
-  --lp-ok-bg: color-mix(in srgb, var(--green) 9%, white);
-  --lp-bad-bg: color-mix(in srgb, var(--danger) 8%, white);
+  --lp-ok-bg: color-mix(in srgb, var(--green) 9%, var(--mix-base));
+  --lp-bad-bg: color-mix(in srgb, var(--danger) 8%, var(--mix-base));
 
   /* Motion: neither curve overshoots, so nothing bounces. */
   --lp-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -325,7 +325,7 @@
   background: linear-gradient(180deg, var(--lp-glass-strong), var(--lp-glass));
   -webkit-backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
   backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-card);
 }
 
@@ -341,8 +341,8 @@
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.95) 30%,
-    rgba(255, 255, 255, 0.95) 70%,
+    color-mix(in srgb, var(--highlight) 95%, transparent) 30%,
+    color-mix(in srgb, var(--highlight) 95%, transparent) 70%,
     transparent
   );
 }
@@ -361,7 +361,7 @@
 
 .lp-inset {
   background: var(--lp-inset-fill);
-  border: 1px solid rgba(210, 221, 238, 0.7);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 70%, transparent);
   border-radius: var(--radius-tile);
   padding: 16px;
   min-width: 0;
@@ -412,7 +412,7 @@
   gap: 8px;
   max-width: 100%;
   background: var(--lp-glass-strong);
-  border: 1px solid rgba(210, 221, 238, 0.7);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 70%, transparent);
   border-radius: var(--radius-pill);
   padding: 6px 12px;
   font-size: 12px;
@@ -455,7 +455,7 @@
   background: var(--lp-glass-strong);
   -webkit-backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
   backdrop-filter: blur(var(--lp-glass-blur)) saturate(1.4);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
   border-radius: var(--radius-pill);
 }
 
@@ -468,7 +468,7 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
-  box-shadow: 0 8px 18px -12px rgba(26, 42, 74, 0.4);
+  box-shadow: 0 8px 18px -12px color-mix(in srgb, var(--shadow-tint) 40%, transparent);
   transform: translateX(calc(var(--lp-stage-active, 0) * (100% + 4px)));
   pointer-events: none;
 }
@@ -707,7 +707,7 @@
   margin-top: 8px;
   padding: 14px 16px;
   background: var(--lp-inset-fill);
-  border: 1px solid rgba(210, 221, 238, 0.7);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 70%, transparent);
   border-radius: var(--radius-tile);
 }
 
@@ -742,7 +742,7 @@
   font-weight: var(--weight-medium);
   color: var(--blue);
   background: var(--surface);
-  border: 1px solid rgba(210, 221, 238, 0.9);
+  border: 1px solid color-mix(in srgb, var(--glass-line) 90%, transparent);
 }
 
 .lp-demo-body {
@@ -822,7 +822,7 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--highlight) 35%, transparent) 50%, transparent 70%);
   transform: translateX(-120%);
 }
 
