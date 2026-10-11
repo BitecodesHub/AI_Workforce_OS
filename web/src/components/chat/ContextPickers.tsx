@@ -390,20 +390,29 @@ function RepoDetail({
   const sameRepo = current && current.owner === repo.owner && current.name === repo.name ? current : null
   const [branch, setBranch] = useState<string>(sameRepo?.branch ?? repo.defaultBranch ?? '')
   const [path, setPath] = useState<string>(sameRepo?.path ?? '')
+  const [filter, setFilter] = useState('')
+  // The folder being browsed; `path` is what gets attached, which may be a file inside it.
+  const [folder, setFolder] = useState<string | null>(normalisePath(sameRepo?.path ?? null))
   const branches = useGitHubBranches(repo.fullName)
-  const browsePath = normalisePath(path)
+  const browsePath = folder
   const tree = useGitHubTree(repo.fullName, branch || null, browsePath)
   const branchId = useId()
   const pathId = useId()
 
   const branchOptions = Array.from(new Set([repo.defaultBranch, ...(branches.data?.branches ?? [])].filter(Boolean)))
-  const folders = (tree.data?.entries ?? []).filter((entry) => entry.type === 'dir')
+  // Everything directly in the folder (the server lists it in full), narrowed by the filter box.
+  const entries = (tree.data?.entries ?? []).filter((entry) => matches(filter, entry.path.split('/').pop()))
+  const browse = (next: string) => {
+    setPath(next)
+    setFolder(normalisePath(next))
+    setFilter('')
+  }
   const parent = browsePath && browsePath.includes('/') ? browsePath.slice(0, browsePath.lastIndexOf('/')) : null
   const choice: RepoChoice = {
     owner: repo.owner,
     name: repo.name,
     branch: branch || null,
-    path: browsePath,
+    path: normalisePath(path),
   }
 
   return (
@@ -446,27 +455,54 @@ function RepoDetail({
           />
         </label>
         {tree.data?.available && (
-          <ul className="plus-tree" aria-label="Folders">
-            {browsePath && (
-              <li>
-                <button type="button" className="plus-tree-row" onClick={() => setPath(parent ?? '')}>
-                  .. <span className="muted">up one folder</span>
-                </button>
-              </li>
-            )}
-            {folders.slice(0, 100).map((entry) => {
-              // Paths come back in full; the row shows the last part.
-              const name = entry.path.split('/').pop() ?? entry.path
-              return (
-                <li key={entry.path}>
-                  <button type="button" className="plus-tree-row" onClick={() => setPath(entry.path)}>
-                    {name}/
+          <>
+            <input
+              type="search"
+              className="plus-search-input"
+              aria-label="Filter this folder"
+              placeholder={`Filter ${browsePath ?? 'the top folder'}`}
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+            <ul className="plus-tree" aria-label={`Contents of ${browsePath ?? repo.fullName}`}>
+              {browsePath && (
+                <li>
+                  <button type="button" className="plus-tree-row" onClick={() => browse(parent ?? '')}>
+                    .. <span className="muted">up one folder</span>
                   </button>
                 </li>
-              )
-            })}
-            {folders.length === 0 && <li className="caption muted plus-tree-empty">No folders here</li>}
-          </ul>
+              )}
+              {entries.slice(0, 500).map((entry) => {
+                // Paths come back in full; the row shows the last part. A folder opens; a file is chosen.
+                const name = entry.path.split('/').pop() ?? entry.path
+                const dir = entry.type === 'dir'
+                return (
+                  <li key={entry.path}>
+                    <button
+                      type="button"
+                      className="plus-tree-row"
+                      data-kind={dir ? 'dir' : 'file'}
+                      aria-pressed={!dir ? normalisePath(path) === entry.path : undefined}
+                      onClick={() => (dir ? browse(entry.path) : setPath(entry.path))}
+                    >
+                      {dir ? `${name}/` : name}
+                    </button>
+                  </li>
+                )
+              })}
+              {entries.length === 0 && !tree.isFetching && (
+                <li className="caption muted plus-tree-empty">{filter ? `Nothing here matches "${filter}"` : 'This folder is empty'}</li>
+              )}
+              {entries.length > 500 && (
+                <li className="caption muted plus-tree-empty">Showing 500 of {entries.length}. Filter to find the rest.</li>
+              )}
+            </ul>
+          </>
+        )}
+        {tree.isError && (
+          <p className="caption plus-preview" role="alert">
+            {describeApiError(tree.error)}
+          </p>
         )}
         {tree.isFetching && <Loading label="Reading folders" />}
         <p className="caption muted plus-preview" aria-live="polite">

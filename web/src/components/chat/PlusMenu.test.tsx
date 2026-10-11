@@ -16,6 +16,10 @@ import { plusMenuPosition } from './PlusMenu'
  * with the message as `context`; a skill alone is enough to send.
  */
 
+const trees = vi.hoisted(() => ({
+  byPath: {} as Record<string, { path: string; type: string }[]>,
+}))
+
 const repos = vi.hoisted(() => ({
   value: {
     data: { connected: true, message: null, repos: [] as unknown[] },
@@ -67,7 +71,10 @@ vi.mock('../../lib/skillQueries', async (importOriginal) => {
 vi.mock('../../lib/chatContextQueries', () => ({
   useGitHubRepos: () => repos.value,
   useGitHubBranches: () => ({ data: { branches: ['main', 'dev'] } }),
-  useGitHubTree: () => ({ data: { available: false, entries: [] }, isFetching: false }),
+  useGitHubTree: (_repo: string | null, _ref: string | null, path: string | null) => {
+    const entries = trees.byPath[path ?? '']
+    return { data: entries ? { available: true, entries } : { available: false, entries: [] }, isFetching: false, isError: false }
+  },
 }))
 
 vi.mock('../../lib/queries', async (importOriginal) => {
@@ -139,6 +146,7 @@ const field = () => screen.getByRole('textbox', { name: 'Message the workforce' 
 const send = () => screen.getByRole('button', { name: 'Send' })
 
 beforeEach(() => {
+  trees.byPath = {}
   vi.stubGlobal('fetch', () => Promise.reject(new Error('No network in tests')))
   repos.value = {
     data: {
@@ -358,5 +366,45 @@ describe('the + menu', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     expect((screen.getByLabelText('Instruction') as HTMLTextAreaElement).value).toBe('Summarise new support tickets')
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Summarise new support tickets')
+  })
+
+  it('browses a large folder in full, filters it, and attaches a file inside it', async () => {
+    trees.byPath = {
+      '': [
+        { path: 'docs', type: 'dir' },
+        { path: 'web', type: 'dir' },
+        { path: 'README.md', type: 'file' },
+      ],
+      web: [
+        { path: 'web/src', type: 'dir' },
+        ...Array.from({ length: 120 }, (_, i) => ({ path: `web/file${i}.ts`, type: 'file' })),
+        { path: 'web/package.json', type: 'file' },
+      ],
+    }
+    const onSend = renderComposer()
+    fireEvent.click(plus())
+    fireEvent.click(screen.getByRole('menuitem', { name: /Attach a repository/ }))
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'GitHub repositories' }), { key: 'Enter' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'web/' }))
+    const list = screen.getByRole('list', { name: 'Contents of web' })
+    expect(within(list).getAllByRole('button')).toHaveLength(1 + 1 + 121) // up, src/, every file
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter this folder' }), { target: { value: 'package' } })
+    expect(within(list).getAllByRole('button').map((b) => b.textContent)).toEqual(['.. up one folder', 'package.json'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'package.json' }))
+    expect(screen.getByText('acme/website@main/web/package.json')).toBeTruthy()
+    // Choosing a file keeps the folder listed rather than trying to open the file as one.
+    expect(screen.getByRole('list', { name: 'Contents of web' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Attach repository' }))
+    fireEvent.change(field(), { target: { value: 'Explain this file' } })
+    await act(async () => {
+      fireEvent.click(send())
+    })
+    expect(onSend).toHaveBeenCalledWith('Explain this file', [], [], {
+      knowledge: [],
+      repo: { owner: 'acme', name: 'website', branch: 'main', path: 'web/package.json' },
+      skill: null,
+    })
   })
 })

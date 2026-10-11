@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -327,5 +328,49 @@ class CoordinatorContextTest {
         assertThat(back.skillId()).isEqualTo(skillId);
         assertThat(stored.toString()).doesNotContain("instructions");
         assertThat(context.covers(source, UUID.randomUUID())).isTrue();
+    }
+
+    @Test
+    @DisplayName("rerouting keeps the request's skill, repository, chosen documents and files")
+    void rerouteKeepsContext() {
+        AttachmentService attachments = mock(AttachmentService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(coordinator, "attachmentService", attachments);
+        SkillLookup.ResolvedSkill skill = skill(null);
+        UUID source = UUID.randomUUID();
+        UUID doc = UUID.randomUUID();
+        KnowledgeClient.Passage passage = new KnowledgeClient.Passage(
+                UUID.randomUUID(), doc, source, "Refund policy", null, 1, null, "Refunds within 30 days.", 0.9);
+        when(knowledge.search(eq(ORG), anyString(), eq("Bearer x"), eq(List.of(source)), anyInt()))
+                .thenReturn(Optional.of(new KnowledgeClient.SearchResult(List.of(passage), true, false)));
+
+        CoordinatorService.SendOutcome outcome = coordinator.send(
+                ORG,
+                conversation.getId(),
+                "Summarise refunds for the site",
+                List.of(research.getId()),
+                null,
+                MessageContext.of(
+                        List.of(new MessageContext.KnowledgeRef(source, doc, "Refund policy")),
+                        new MessageContext.RepoRef("acme", "website", "main", null),
+                        skill.id()),
+                "Bearer x");
+        List<ChatMessage> thread = outcome.messages();
+        ChatMessage routing = thread.stream().filter(m -> "routing".equals(m.getKind())).findFirst().orElseThrow();
+        when(messages.findByIdAndConversationId(routing.getId(), conversation.getId())).thenReturn(Optional.of(routing));
+        when(messages.findByConversationIdOrderByPosition(conversation.getId())).thenReturn(thread);
+
+        coordinator.reroute(ORG, conversation.getId(), routing.getId(), support.getId());
+
+        ArgumentCaptor<GoalService.NewGoal> specs = ArgumentCaptor.forClass(GoalService.NewGoal.class);
+        verify(goalService, times(2)).createGoal(eq(ORG), specs.capture(), eq(true));
+        GoalService.NewTask rerouted = specs.getAllValues().get(1).tasks().getFirst();
+        assertThat(rerouted.agentId()).isEqualTo(support.getId());
+        assertThat(rerouted.instruction())
+                .contains("Summarise refunds for the site")
+                .contains("## Skill to follow: Weekly status report")
+                .contains("GitHub repository acme/website on branch main")
+                .contains("## Documents the person chose")
+                .contains("Refunds within 30 days.");
+        verify(attachments).followReroute(eq(ORG), eq(conversation.getId()), any(), anyInt(), any());
     }
 }

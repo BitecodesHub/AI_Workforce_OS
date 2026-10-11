@@ -41,8 +41,7 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
  * attach something that does not exist. With no live connection the answer says so
  * ({@code connected: false}) and the composer points the person at Connectors.
  *
- * <p>Folders come from the connector's {@code list_tree} tool when it offers one; without it the
- * answer is {@code available: false} and the person types a path instead.
+ * <p>Folders are read one at a time by {@link GitHubFolderReader}, so a large folder lists in full.
  */
 @RestController
 @RequestMapping("/api/conversations/context/github")
@@ -60,11 +59,14 @@ public class GitHubContextController {
     private final ToolCredentialResolver credentials;
     private final ToolGateway tools;
     private final ObjectMapper json;
+    private final GitHubFolderReader folders;
 
-    public GitHubContextController(ToolCredentialResolver credentials, ToolGateway tools, ObjectMapper json) {
+    public GitHubContextController(
+            ToolCredentialResolver credentials, ToolGateway tools, ObjectMapper json, GitHubFolderReader folders) {
         this.credentials = credentials;
         this.tools = tools;
         this.json = json;
+        this.folders = folders;
     }
 
     /**
@@ -129,73 +131,32 @@ public class GitHubContextController {
             @RequestParam(required = false) String path) {
         UUID orgId = orgId();
         String token = requireConnected(orgId);
-        boolean offered = tools.adapter(SERVER)
-                .flatMap(adapter -> adapter.tool("list_tree"))
-                .isPresent();
-        if (!offered) {
-            return new Tree(false, List.of());
+        String trimmedRef = ref == null || ref.isBlank() ? null : ref.trim();
+        if (trimmedRef != null && !REF.matcher(trimmedRef).matches()) {
+            throw ApiException.validation("ref", "The branch name has characters that cannot be used.");
         }
-        Map<String, Object> arguments = new LinkedHashMap<>();
-        arguments.put("repo", checkRepo(repo));
-        if (ref != null && !ref.isBlank()) {
-            if (!REF.matcher(ref).matches()) {
-                throw ApiException.validation("ref", "The branch name has characters that cannot be used.");
-            }
-            arguments.put("ref", ref);
-        }
+        String folder = null;
         if (path != null && !path.isBlank()) {
             String trimmed = path.replaceAll("^/+|/+$", "");
             if (!trimmed.isEmpty()) {
                 if (!PATH.matcher(trimmed).matches() || trimmed.contains("..")) {
                     throw ApiException.validation("path", "The path has characters that cannot be used.");
                 }
-                arguments.put("path", trimmed);
+                folder = trimmed;
             }
         }
-        JsonNode result = call(orgId, "list_tree", arguments, token);
-        JsonNode items = result.has("items") ? result.path("items") : result.path("entries");
-        return new Tree(true, directChildren(items, (String) arguments.get("path")));
+        try {
+            GitHubFolderReader.Folder listed = folders.list(token, checkRepo(repo), trimmedRef, folder);
+            return new Tree(true, listed.entries());
+        } catch (org.springframework.web.reactive.function.client.WebClientResponseException.NotFound missing) {
+            throw ApiException.validation("path", "That folder is not in the repository on this branch.");
+        } catch (ApiException refused) {
+            throw refused;
+        } catch (RuntimeException e) {
+            log.warn("Reading a GitHub folder for the repo picker failed in workspace {}: {}", orgId, e.toString());
+            throw new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, "GitHub did not answer. Try again in a moment.");
+        }
     }
-
-    // @find: direct children of a folder from a recursive tree
-    /**
-     * The files and folders directly inside {@code folder} (the root when null), with full paths,
-     * folders first. The connector's tree may be recursive and may be cut short, so a folder is
-     * also recognised from any deeper path that runs through it.
-     */
-    static List<Map<String, Object>> directChildren(JsonNode items, String folder) {
-        String prefix = folder == null || folder.isBlank() ? "" : folder + "/";
-        Map<String, String> children = new java.util.TreeMap<>();
-        items.forEach(item -> {
-            String full = item.path("path").asText(item.path("name").asText(""));
-            if (full.isEmpty() || !full.startsWith(prefix) || full.length() == prefix.length()) {
-                return;
-            }
-            String rest = full.substring(prefix.length());
-            int slash = rest.indexOf('/');
-            if (slash >= 0) {
-                children.put(prefix + rest.substring(0, slash), "dir");
-            } else {
-                String type = item.path("type").asText("file");
-                children.merge(prefix + rest, "tree".equals(type) || "dir".equals(type) ? "dir" : "file",
-                        (existing, incoming) -> "dir".equals(existing) ? existing : incoming);
-            }
-        });
-        List<Map<String, Object>> entries = new ArrayList<>();
-        children.entrySet().stream()
-                .sorted(java.util.Comparator.comparing((Map.Entry<String, String> e) -> !"dir".equals(e.getValue()))
-                        .thenComparing(Map.Entry::getKey))
-                .limit(200)
-                .forEach(e -> {
-                    Map<String, Object> entry = new LinkedHashMap<>();
-                    entry.put("path", e.getKey());
-                    entry.put("type", e.getValue());
-                    entries.add(entry);
-                });
-        return entries;
-    }
-
-
 
     private String requireConnected(UUID orgId) {
         ToolCredentialResolver.Lookup lookup = credentials.resolve(orgId, SERVER);

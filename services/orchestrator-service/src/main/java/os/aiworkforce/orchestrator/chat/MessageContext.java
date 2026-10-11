@@ -229,6 +229,21 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
         }
     }
 
+    // @find: message context from a sent message, reroute keeps context
+    /** The context back from what a sent message records ({@link #detail()}), for a reroute. */
+    @SuppressWarnings("unchecked")
+    public static MessageContext fromDetail(Map<?, ?> detail) {
+        if (detail == null || detail.isEmpty()) {
+            return NONE;
+        }
+        Map<String, Object> stored = new LinkedHashMap<>();
+        detail.forEach((key, value) -> stored.put(String.valueOf(key), value));
+        if (stored.get("skill") instanceof Map<?, ?> skill && skill.get("id") != null) {
+            stored.put("skillId", skill.get("id").toString());
+        }
+        return fromStored(stored);
+    }
+
     // @find: message context shown on the user message, context chips in thread
     /** What the person's message shows of it in the thread: labels, never the skill's text. */
     public Map<String, Object> detail() {

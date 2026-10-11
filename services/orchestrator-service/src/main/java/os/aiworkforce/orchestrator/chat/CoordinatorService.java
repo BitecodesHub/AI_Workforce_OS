@@ -1683,7 +1683,10 @@ public class CoordinatorService {
                 ThreadContext.of(chronological, nameMap(workspaceAgents), Map.of(), requesterIdFromContext()),
                 passages,
                 false);
-        String instruction = withPreamble(background, agent.getId(), requestText);
+        // What the "+" menu attached to the request - its skill, repository and chosen documents -
+        // goes with it to the agent now taking it, as it would have to the first one.
+        MessageContext context = contextOfRequest(orgId, conversationId, target);
+        String instruction = withPreamble(background, agent.getId(), requestText + ContextPrompt.block(context));
 
         GoalService.NewTask task =
                 new GoalService.NewTask(agent.getId(), truncateAtWord(requestText, 60), instruction, List.of());
@@ -1739,6 +1742,26 @@ public class CoordinatorService {
                 progressDetail,
                 goal.getId()));
         return created;
+    }
+
+    /**
+     * The context of the person's message a routing message answered: the nearest earlier message
+     * of theirs, with its skill looked up again (one deleted since is left out).
+     */
+    private MessageContext contextOfRequest(UUID orgId, UUID conversationId, ChatMessage routingMessage) {
+        List<ChatMessage> ordered = messages.findByConversationIdOrderByPosition(conversationId);
+        for (int i = ordered.size() - 1; i >= 0; i--) {
+            ChatMessage candidate = ordered.get(i);
+            if (candidate.getPosition() >= routingMessage.getPosition()) {
+                continue;
+            }
+            if ("user".equals(candidate.getAuthorKind())) {
+                Object shown = candidate.getDetail() == null ? null : candidate.getDetail().get("context");
+                MessageContext context = shown instanceof Map<?, ?> m ? MessageContext.fromDetail(m) : MessageContext.NONE;
+                return resolveSkill(orgId, context, false);
+            }
+        }
+        return MessageContext.NONE;
     }
 
     private List<ChatMessage> reroutesOf(UUID conversationId, int afterPosition, UUID messageId) {
