@@ -83,7 +83,7 @@ class ScheduleControllerTest {
         when(service.list(ORG)).thenReturn(List.of(schedule));
         when(agents.findById(schedule.getAgentId())).thenReturn(Optional.of(agent));
 
-        List<ScheduleController.ScheduleView> views = controller.list();
+        List<ScheduleController.ScheduleView> views = controller.list(null);
 
         assertThat(views).hasSize(1);
         assertThat(views.get(0).agentName()).isEqualTo("Priya");
@@ -105,6 +105,19 @@ class ScheduleControllerTest {
         assertThat(response.nextRuns()).containsExactly(Instant.EPOCH);
     }
 
+    // @find: test list schedules of one agent, schedule controller
+    @Test
+    @DisplayName("the list can be narrowed to one agent's schedules")
+    void listsOneAgentsSchedules() {
+        Schedule schedule = schedule();
+        when(service.listForAgent(ORG, schedule.getAgentId())).thenReturn(List.of(schedule));
+
+        List<ScheduleController.ScheduleView> views = controller.list(schedule.getAgentId());
+
+        assertThat(views).extracting(ScheduleController.ScheduleView::id).containsExactly(schedule.getId());
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.never()).list(ORG);
+    }
+
     // @find: test runs are slim and paged, schedule controller
     @Test
     @DisplayName("a schedule's runs come back as slim rows, a page at a time, with no tasks")
@@ -118,12 +131,14 @@ class ScheduleControllerTest {
         goal.setScheduleId(schedule.getId());
         PageRequest asked = PageRequest.of(2, 20);
         when(service.runs(ORG, schedule.getId(), asked)).thenReturn(new PageImpl<>(List.of(goal), asked, 61));
+        when(service.runCounts(ORG, schedule.getId())).thenReturn(new ScheduleService.RunCounts(61, 50, 9, 1, 1));
 
         ScheduleController.ScheduleRunsPage page = controller.runs(schedule.getId(), 2, 20);
 
         assertThat(page.runs())
                 .containsExactly(new ScheduleController.ScheduleRunView(
-                        goal.getId(), schedule.getName(), "completed", null, null));
+                        goal.getId(), schedule.getName(), "completed", null, null, null, null));
+        assertThat(page.counts()).isEqualTo(new ScheduleController.ScheduleRunCounts(61, 50, 9, 1, 1));
         assertThat(page.page()).isEqualTo(2);
         assertThat(page.size()).isEqualTo(20);
         assertThat(page.total()).isEqualTo(61);
@@ -138,6 +153,7 @@ class ScheduleControllerTest {
         ArgumentCaptor<Pageable> asked = ArgumentCaptor.forClass(Pageable.class);
         when(service.runs(eq(ORG), eq(schedule.getId()), asked.capture()))
                 .thenAnswer(call -> new PageImpl<Goal>(List.of(), call.getArgument(2), 0));
+        when(service.runCounts(eq(ORG), eq(schedule.getId()))).thenReturn(new ScheduleService.RunCounts(0, 0, 0, 0, 0));
 
         controller.runs(schedule.getId(), -3, 5_000);
         controller.runs(schedule.getId(), 0, 0);
@@ -192,7 +208,7 @@ class ScheduleControllerTest {
         Schedule active = schedule();
         when(service.list(ORG)).thenReturn(List.of(done, pausedOnce, active));
 
-        List<ScheduleController.ScheduleView> views = controller.list();
+        List<ScheduleController.ScheduleView> views = controller.list(null);
 
         assertThat(views).extracting(ScheduleController.ScheduleView::state).containsExactly("done", "paused", "active");
         assertThat(views).extracting(ScheduleController.ScheduleView::completed).containsExactly(true, false, false);
@@ -207,7 +223,7 @@ class ScheduleControllerTest {
         schedule.setRequestedBy(ownerId);
         when(service.list(ORG)).thenReturn(List.of(schedule));
 
-        assertThat(controller.list().get(0).createdBy()).isEqualTo(ownerId);
+        assertThat(controller.list(null).get(0).createdBy()).isEqualTo(ownerId);
     }
 
     // @find: test pause delegates, schedule controller

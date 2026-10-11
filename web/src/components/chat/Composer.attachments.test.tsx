@@ -2,7 +2,7 @@
 // @what: Automated tests for Composer.attachments.
 // @flow: Run with the web test runner; covers Composer.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AttachmentView } from '../../lib/attachments'
@@ -10,7 +10,7 @@ import type { Agent } from '../../lib/queries'
 import { Composer } from './Composer'
 
 /*
- * Files in the composer: the paperclip, a drop on the chat panel and a paste each add chips; Send
+ * Files in the composer: "Upload files" in the + menu, a drop on the chat panel and a paste each add chips; Send
  * waits for uploads, then works with files alone; a file Chat cannot read shows its reason and is
  * never sent; and answering a question turns attaching off.
  */
@@ -89,16 +89,25 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Unmounted first: the + popover is portalled into the body, so clearing the body under a
+  // mounted tree would pull its node out from under React.
+  cleanup()
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
 
 describe('Composer attachments', () => {
-  it('attaches with the paperclip, waits for the upload, then sends files alone', async () => {
+  it('attaches from Upload files in the + menu, waits for the upload, then sends files alone', async () => {
     const onSend = vi.fn(async () => true)
     renderComposer(onSend)
 
-    expect(screen.getByRole('button', { name: 'Attach files' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Add to message' }))
+    const upload = screen.getByRole('menuitem', { name: /Upload files/ })
+    const input = screen.getByTestId('chat-attach-input') as HTMLInputElement
+    const picker = vi.spyOn(input, 'click')
+    fireEvent.click(upload)
+    expect(picker).toHaveBeenCalled()
+    expect(screen.queryByRole('menu')).toBeNull()
     fireEvent.change(screen.getByTestId('chat-attach-input'), { target: { files: [pdf('q3.pdf')] } })
 
     expect(screen.getByRole('list', { name: 'Attached files' }).textContent).toContain('q3.pdf')
@@ -165,8 +174,13 @@ describe('Composer attachments', () => {
     expect((sendButton() as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('turns attaching off while the box answers a question', () => {
+  it('turns attaching off while the box answers a question, but still offers choosing an agent', () => {
     renderComposer(vi.fn(async () => true), { questionId: 'q1', agentName: 'HR', agentId: 'a1', auto: false })
-    expect((screen.getByRole('button', { name: 'Attach files' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Add to message' }))
+    for (const name of [/Upload files/, /Add from Knowledge/, /Attach a repository/, /Use a skill/, /Schedule this/]) {
+      expect((screen.getByRole('menuitem', { name }) as HTMLButtonElement).disabled).toBe(true)
+    }
+    expect((screen.getByRole('menuitem', { name: /Choose an agent/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByTestId('chat-attach-input') as HTMLInputElement).disabled).toBe(true)
   })
 })

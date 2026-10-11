@@ -120,15 +120,33 @@ public class KnowledgeClient {
 
     // @find: search knowledge for a question, find passages
     public Optional<SearchResult> search(UUID orgId, String query, String authorizationHeader) {
+        return search(orgId, query, authorizationHeader, null, DEFAULT_LIMIT);
+    }
+
+    /**
+     * As {@link #search(UUID, String, String)}, narrowed to the sources a person chose for a message.
+     *
+     * @param sourceIds the sources to search; null or empty for every one the person may read
+     * @param limit how many passages at most
+     */
+    // @find: search chosen sources, knowledge attached to a chat message
+    public Optional<SearchResult> search(
+            UUID orgId, String query, String authorizationHeader, List<UUID> sourceIds, int limit) {
         if (authorizationHeader == null || authorizationHeader.isBlank()) {
             return Optional.empty();
+        }
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("query", truncate(query));
+        body.put("limit", limit);
+        if (sourceIds != null && !sourceIds.isEmpty()) {
+            body.put("sourceIds", sourceIds.stream().map(UUID::toString).toList());
         }
         try {
             SearchResult result = client.post()
                     .uri("/api/knowledge/search")
                     .header("Authorization", authorizationHeader)
                     .header("X-Workspace-Id", orgId.toString())
-                    .bodyValue(Map.of("query", truncate(query), "limit", DEFAULT_LIMIT))
+                    .bodyValue(body)
                     .retrieve()
                     .bodyToMono(SearchResult.class)
                     .timeout(Duration.ofSeconds(10))
@@ -185,6 +203,12 @@ public class KnowledgeClient {
     // @find: search knowledge for an agent, agent-specific sources
     public AgentSearch searchFor(
             UUID orgId, UUID requestedBy, String query, int limit, UUID agentId, UUID runId) {
+        return searchFor(orgId, requestedBy, query, limit, agentId, runId, null);
+    }
+
+    /** As {@link #searchFor(UUID, UUID, String, int, UUID, UUID)}, narrowed to these sources when given. */
+    public AgentSearch searchFor(
+            UUID orgId, UUID requestedBy, String query, int limit, UUID agentId, UUID runId, List<UUID> sourceIds) {
         if (tokens == null || requestedBy == null) {
             return AgentSearch.failed(Failure.NOT_ALLOWED);
         }
@@ -197,6 +221,9 @@ public class KnowledgeClient {
             }
             if (runId != null) {
                 body.put("runId", runId.toString());
+            }
+            if (sourceIds != null && !sourceIds.isEmpty()) {
+                body.put("sourceIds", sourceIds.stream().map(UUID::toString).toList());
             }
             SearchResult result = client.post()
                     .uri("/internal/knowledge/search")

@@ -32,8 +32,8 @@
       {"id": "38", "number": 38, "repo": "acme/website", "title": "Broken link in the privacy policy", "state": "closed", "labels": ["bug"], "author": "alex"}
     ],
     "pulls": [
-      {"id": "43", "number": 43, "repo": "acme/website", "title": "Fix checkout button spacing on small screens", "author": "sam", "draft": false, "state": "open"},
-      {"id": "44", "number": 44, "repo": "acme/website", "title": "Upgrade the payment library to version 5", "author": "taylor", "draft": true, "state": "open"}
+      {"id": "43", "number": 43, "repo": "acme/website", "title": "Fix checkout button spacing on small screens", "author": "sam", "draft": false, "state": "open", "head": "fix-checkout-spacing", "base": "main"},
+      {"id": "44", "number": 44, "repo": "acme/website", "title": "Upgrade the payment library to version 5", "author": "taylor", "draft": true, "state": "open", "head": "upgrade-payments", "base": "main"}
     ],
     "repos": [
       {"id": "acme/website", "name": "website", "owner": "acme", "private": false, "description": "The public marketing site and checkout", "defaultBranch": "main"},
@@ -41,13 +41,28 @@
     ],
     "branches": [
       {"id": "main", "name": "main", "repo": "acme/website", "protected": true},
-      {"id": "fix-checkout-spacing", "name": "fix-checkout-spacing", "repo": "acme/website", "protected": false}
+      {"id": "fix-checkout-spacing", "name": "fix-checkout-spacing", "repo": "acme/website", "protected": false},
+      {"id": "upgrade-payments", "name": "upgrade-payments", "repo": "acme/website", "protected": false}
     ],
     "comments": [
       {"id": "comment_9001", "repo": "acme/website", "issue": "41", "author": "morgan", "body": "Seen on an iPhone SE as well."}
     ],
     "files": [
-      {"id": "file_7001", "repo": "acme/website", "path": "README.md", "type": "file", "content": "# Acme website\n\nRun npm install, then npm run dev."}
+      {"id": "file_7001", "repo": "acme/website", "path": "README.md", "type": "file", "content": "# Acme website\n\nThe public marketing site and checkout for Acme.\n\n## Getting started\n\nRun npm install, then npm run dev. See docs/getting-started.md for the full steps.\n"},
+      {"id": "file_7002", "repo": "acme/website", "path": "docs/getting-started.md", "type": "file", "content": "# Getting started\n\nThis guide walks you through running the Acme website on your own computer.\n\n## What you need\n\n- Node.js 20 or later\n- A GitHub acount with access to acme/website\n\n## Steps\n\n1. Clone the repository.\n2. Run npm install to instal the dependencies.\n3. Run npm run dev and open http://localhost:3000 in your browser.\n\nIf the page does not load, check that nothing else is useing port 3000.\n"},
+      {"id": "file_7003", "repo": "acme/website", "path": "docs/faq.md", "type": "file", "content": "# Frequently asked questions\n\n## How do I change my password?\n\nOpen Settings, choose Security, and follow the steps. You will recieve an email to confirm the change.\n\n## Can I pay by invoice?\n\nYes. Business customers can pay by invoice; contact our accounts team to set it up.\n\n## Where is my order?\n\nYou can track your order from the Orders page. Delivery usualy takes three to five business days.\n"},
+      {"id": "file_7004", "repo": "acme/website", "path": "package.json", "type": "file", "content": "{\n  \"name\": \"acme-website\",\n  \"version\": \"2.14.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"dev\": \"node src/index.js\",\n    \"test\": \"node --test\"\n  },\n  \"dependencies\": {\n    \"payments-sdk\": \"^4.2.0\"\n  }\n}\n"},
+      {"id": "file_7005", "repo": "acme/website", "path": "src/index.js", "type": "file", "content": "const http = require('http');\n\nconst port = process.env.PORT || 3000;\n\nhttp\n  .createServer((req, res) => {\n    res.writeHead(200, { 'Content-Type': 'text/html' });\n    res.end('<h1>Acme</h1>');\n  })\n  .listen(port, () => console.log(`Acme website on http://localhost:${port}`));\n"},
+      {"id": "file_7006", "repo": "acme/website", "path": "src/styles/checkout.css", "type": "file", "content": ".checkout-button {\n  margin: 8px 0;\n  padding: 12px 24px;\n}\n"},
+      {"id": "file_7007", "repo": "acme/website", "path": "src/styles/checkout.css", "type": "file", "branch": "fix-checkout-spacing", "content": ".checkout-button {\n  margin: 8px 0 24px;\n  padding: 12px 24px;\n}\n\n@media (max-width: 375px) {\n  .checkout-button {\n    width: 100%;\n  }\n}\n"},
+      {"id": "file_7008", "repo": "acme/website", "path": "package.json", "type": "file", "branch": "upgrade-payments", "content": "{\n  \"name\": \"acme-website\",\n  \"version\": \"2.14.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"dev\": \"node src/index.js\",\n    \"test\": \"node --test\"\n  },\n  \"dependencies\": {\n    \"payments-sdk\": \"^5.0.0\"\n  }\n}\n"},
+      {"id": "file_7101", "repo": "acme/mobile-app", "path": "README.md", "type": "file", "content": "# Acme mobile app\n\nThe iOS and Android app. Open the project in Xcode or Android Studio to build it.\n"}
+    ],
+    "commits": [
+      {"id": "3f1c2a9b7e4d5c6a8b9f0e1d2c3b4a5968778695", "sha": "3f1c2a9b7e4d5c6a8b9f0e1d2c3b4a5968778695", "repo": "acme/website", "message": "Initial commit", "author": "morgan", "date": "2026-09-01T09:00:00Z", "files": ["README.md", "docs/getting-started.md", "package.json", "src/index.js", "src/styles/checkout.css"]},
+      {"id": "8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b", "sha": "8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b", "repo": "acme/website", "message": "Add the FAQ page", "author": "alex", "date": "2026-09-20T14:30:00Z", "files": ["docs/faq.md"]},
+      {"id": "c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3", "sha": "c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3", "repo": "acme/website", "branch": "fix-checkout-spacing", "message": "Fix checkout button spacing on small screens", "author": "sam", "date": "2026-10-03T10:15:00Z", "files": ["src/styles/checkout.css"]},
+      {"id": "e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0", "sha": "e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0", "repo": "acme/website", "branch": "upgrade-payments", "message": "Upgrade the payment library to version 5", "author": "taylor", "date": "2026-10-06T16:45:00Z", "files": ["package.json"]}
     ]
   },
   "jira": {

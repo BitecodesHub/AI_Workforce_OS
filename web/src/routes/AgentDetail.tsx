@@ -1,5 +1,5 @@
 // @find: agent detail, edit agent, agent page, edit description, edit instructions, system prompt, temperature, pause agent, resume agent, agent connectors, grant connector, agent routing, model for agent, revisions, restore revision, voice, agent runs, give task, /agents/:id, AgentDetail
-// @what: The single agent page: its description, instructions, connected tools, model routing, revision history, voice and recent runs, with pause, resume and edit actions.
+// @what: The single agent page: its description, instructions, connected tools, model routing, revision history, voice, recent runs and scheduled tasks, with pause, resume and edit actions.
 // @flow: Routed from App.tsx at /agents/:id; opened from the cards on Agents.tsx
 import { useMemo, useRef, useState } from 'react'
 import {
@@ -30,6 +30,7 @@ import { AgentStatusButton } from '../components/agents/AgentStatusButton'
 import { AgentDocumentsCard } from '../components/agents/AgentDocumentsCard'
 import { AgentMemoryCard } from '../components/agents/AgentMemoryCard'
 import { RetireAgentCard } from '../components/agents/RetireAgentCard'
+import { AgentSchedulesCard } from '../components/schedules/AgentSchedulesCard'
 import { PolicyEditor } from '../components/routing/PolicyEditor'
 import { CapabilityList } from '../components/connectors/CapabilityList'
 import { GrantDialog } from '../components/connectors/GrantDialog'
@@ -84,8 +85,11 @@ const RECENT_RUNS = 10
 const PROMPT_MAX = 20_000
 const GOALS_MAX = 4_000
 const MIN_STEPS = 1
-const MAX_STEPS = 50
+const MAX_STEPS = 200
 const DEFAULT_STEPS = 12
+const MIN_RUN_MINUTES = 1
+const MAX_RUN_MINUTES = 120
+const DEFAULT_RUN_MINUTES = 60
 const MIN_TEMPERATURE = 0
 const MAX_TEMPERATURE = 2
 /* From AgentController.DescriptionRequest. */
@@ -95,6 +99,7 @@ const FIELD_LABELS: Record<string, string> = {
   systemPrompt: 'Instructions',
   goals: 'Goals',
   maxSteps: 'Step limit per run',
+  maxRunMinutes: 'Time limit per run',
   temperature: 'Temperature',
   description: 'What it does',
 }
@@ -230,6 +235,15 @@ function parseSteps(value: string): number | null | false {
   return steps >= MIN_STEPS && steps <= MAX_STEPS ? steps : false
 }
 
+/** The time limit as typed, in minutes: null for empty (the platform default), a number, or false when invalid. */
+function parseRunMinutes(value: string): number | null | false {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  if (!/^\d+$/.test(trimmed)) return false
+  const minutes = Number(trimmed)
+  return minutes >= MIN_RUN_MINUTES && minutes <= MAX_RUN_MINUTES ? minutes : false
+}
+
 /** The temperature as typed: null for empty (the model's default), a number, or false when it is out of range. */
 // @find: parse temperature, agent temperature field validation
 export function parseTemperature(value: string): number | null | false {
@@ -257,6 +271,7 @@ function EditInstructionsForm({
   const [goals, setGoals] = useState(agent.goals ?? '')
   const [maxSteps, setMaxSteps] = useState(agent.maxSteps == null ? '' : String(agent.maxSteps))
   const [temperature, setTemperature] = useState(agent.temperature == null ? '' : String(agent.temperature))
+  const [runMinutes, setRunMinutes] = useState(agent.maxRunMinutes == null ? '' : String(agent.maxRunMinutes))
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   /** A server's complaint about a field goes once the field is changed. */
@@ -273,7 +288,10 @@ function EditInstructionsForm({
   const stepsProblem = steps === false ? `Enter a whole number from ${MIN_STEPS} to ${MAX_STEPS}, or leave it empty.` : null
   const heat = parseTemperature(temperature)
   const heatProblem = heat === false ? `Enter a number from ${MIN_TEMPERATURE} to ${MAX_TEMPERATURE}, such as 0.3, or leave it empty.` : null
-  const invalid = steps === false || heat === false || systemPrompt.trim() === ''
+  const minutes = parseRunMinutes(runMinutes)
+  const minutesProblem =
+    minutes === false ? `Enter a whole number of minutes from ${MIN_RUN_MINUTES} to ${MAX_RUN_MINUTES}, or leave it empty.` : null
+  const invalid = steps === false || heat === false || minutes === false || systemPrompt.trim() === ''
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -288,6 +306,7 @@ function EditInstructionsForm({
         systemPrompt,
         goals,
         maxSteps: steps,
+        maxRunMinutes: minutes,
         temperature: heat,
         maxOutputTokens: agent.maxOutputTokens ?? null,
       })
@@ -350,6 +369,23 @@ function EditInstructionsForm({
           placeholder={String(DEFAULT_STEPS)}
           hint={`From ${MIN_STEPS} to ${MAX_STEPS}. Leave it empty to use the default of ${DEFAULT_STEPS}. A run stops when it reaches the limit.`}
           error={fieldErrors.maxSteps ?? stepsProblem}
+        />
+        <Input
+          label="Time limit per run"
+          optional
+          type="number"
+          inputMode="numeric"
+          min={MIN_RUN_MINUTES}
+          max={MAX_RUN_MINUTES}
+          step={1}
+          value={runMinutes}
+          onChange={(e) => {
+            setRunMinutes(e.target.value)
+            clearError('maxRunMinutes')
+          }}
+          placeholder={String(DEFAULT_RUN_MINUTES)}
+          hint={`Minutes of work, from ${MIN_RUN_MINUTES} to ${MAX_RUN_MINUTES}. Leave it empty for the default of ${DEFAULT_RUN_MINUTES}. Time spent waiting for an approval or an answer does not count. Long runs keep their progress in the trace.`}
+          error={fieldErrors.maxRunMinutes ?? minutesProblem}
         />
         <Input
           label="Temperature"
@@ -1362,6 +1398,13 @@ export function AgentDetail({ id }: { id: string }) {
               <div style={{ marginTop: 'var(--space-6)' }}>
                 <AgentRuns agentId={agent.id} onGiveTask={canGiveTask ? () => setTaskDialogOpen(true) : undefined} />
               </div>
+
+              {/* Schedules are read with task:read; a role without it would only get an error here. */}
+              {can('task:read') && (
+                <div style={{ marginTop: 'var(--space-6)' }}>
+                  <AgentSchedulesCard key={`schedules-${agent.id}`} agentId={agent.id} agentName={agent.name} />
+                </div>
+              )}
 
               <div style={{ marginTop: 'var(--space-6)' }}>
                 <Card as="section">

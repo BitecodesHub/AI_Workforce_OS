@@ -137,8 +137,23 @@ public class AgentController {
             // 0 to 2, the range every supported provider accepts; null means the model's default.
             @DecimalMin("0") @DecimalMax("2") BigDecimal temperature,
             @Min(1) Integer maxOutputTokens,
-            // 1 to 50; null means the default. A limit below 1 would fail every run before its first step.
-            @Min(1) @Max(50) Integer maxSteps) {}
+            // 1 to 200; null means the default. A limit below 1 would fail every run before its first step.
+            @Min(1) @Max(MAX_STEPS_LIMIT) Integer maxSteps,
+            // 1 to 120 minutes of work per run; null means the platform default.
+            @Min(1) @Max(MAX_RUN_MINUTES_LIMIT) Integer maxRunMinutes) {
+
+        /** The request as it was before a run's time limit could be set. */
+        public UpdateConfigurationRequest(
+                String systemPrompt, String goals, BigDecimal temperature, Integer maxOutputTokens, Integer maxSteps) {
+            this(systemPrompt, goals, temperature, maxOutputTokens, maxSteps, null);
+        }
+    }
+
+    /** The most steps one run may be given: enough for a long task, with the time limit as the other bound. */
+    static final int MAX_STEPS_LIMIT = 200;
+
+    /** The longest one run may be allowed to work, in minutes. */
+    static final int MAX_RUN_MINUTES_LIMIT = 120;
 
     static final int DEFAULT_MAX_STEPS = 12;
 
@@ -159,6 +174,7 @@ public class AgentController {
             Integer maxSteps,
             BigDecimal temperature,
             Integer maxOutputTokens,
+            Integer maxRunMinutes,
             boolean sealed,
             List<GrantView> grants,
             String summary,
@@ -210,6 +226,7 @@ public class AgentController {
                 version == null ? null : version.getMaxSteps(),
                 version == null ? null : version.getTemperature(),
                 version == null ? null : version.getMaxOutputTokens(),
+                version == null ? null : version.getMaxRunMinutes(),
                 version != null && version.isSealed(),
                 grantViews,
                 version == null ? null : summarise(version.getSystemPrompt()),
@@ -276,6 +293,10 @@ public class AgentController {
                 request.temperature(),
                 request.maxOutputTokens(),
                 request.maxSteps() == null ? DEFAULT_MAX_STEPS : request.maxSteps());
+        if (request.maxRunMinutes() != null) {
+            version.setMaxRunMinutes(request.maxRunMinutes());
+            version = versions.save(version);
+        }
         agent.setCurrentVersionId(version.getId());
         agents.save(agent);
 

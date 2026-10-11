@@ -40,6 +40,7 @@ const Approvals = lazy(() => import('./routes/Approvals').then((m) => ({ default
 const Chat = lazy(() => import('./routes/Chat').then((m) => ({ default: m.Chat })))
 const Orchestrator = lazy(() => import('./routes/Orchestrator').then((m) => ({ default: m.Orchestrator })))
 const Schedules = lazy(() => import('./routes/Schedules').then((m) => ({ default: m.Schedules })))
+const Skills = lazy(() => import('./routes/Skills').then((m) => ({ default: m.Skills })))
 const Knowledge = lazy(() => import('./routes/Knowledge').then((m) => ({ default: m.Knowledge })))
 const SourceDetail = lazy(() => import('./routes/SourceDetail').then((m) => ({ default: m.SourceDetail })))
 const Connectors = lazy(() => import('./routes/Connectors').then((m) => ({ default: m.Connectors })))
@@ -81,6 +82,7 @@ const PRIVATE: Array<[string, RouteMeta]> = [
   ['/agents/:id', { permission: 'agent:read', screen: (p) => <AgentDetail id={p.id!} /> }],
   ['/tasks', { permission: 'task:read', screen: () => <Tasks /> }],
   ['/schedules', { permission: 'task:read', screen: () => <Schedules /> }],
+  ['/skills', { permission: 'chat:use', screen: () => <Skills /> }],
   ['/runs', { permission: 'run:read', screen: () => <Runs /> }],
   ['/runs/:id', { permission: 'run:read', screen: (p) => <RunDetail id={p.id!} /> }],
   ['/orchestrator', { permission: 'run:read', screen: () => <Orchestrator /> }],
@@ -357,6 +359,7 @@ function titleFor(pattern: string): string {
     '/agents/:id': 'Agent',
     '/tasks': 'Tasks',
     '/schedules': 'Schedules',
+    '/skills': 'Skills',
     '/runs': 'Runs',
     '/runs/:id': 'Run',
     '/orchestrator': 'Orchestrator',

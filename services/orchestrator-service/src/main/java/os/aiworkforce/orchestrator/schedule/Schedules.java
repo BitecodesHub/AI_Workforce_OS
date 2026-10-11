@@ -25,6 +25,9 @@ public interface Schedules extends JpaRepository<Schedule, UUID> {
 
     Optional<Schedule> findByIdAndOrgId(UUID id, UUID orgId);
 
+    /** Every schedule in a workspace given to one agent, by name. */
+    List<Schedule> findByOrgIdAndAgentIdOrderByNameAsc(UUID orgId, UUID agentId);
+
     /** Every schedule in a workspace that fires as this person, enabled or not. */
     List<Schedule> findByOrgIdAndRequestedBy(UUID orgId, UUID requestedBy);
 

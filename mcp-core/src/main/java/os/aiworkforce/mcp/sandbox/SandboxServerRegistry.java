@@ -163,7 +163,7 @@ public class SandboxServerRegistry {
     }
 
     /* Practice records by server and collection, read once from the classpath. */
-    private static Map<String, Map<String, List<ObjectNode>>> seeds(ObjectMapper json) {
+    static Map<String, Map<String, List<ObjectNode>>> seeds(ObjectMapper json) {
         Map<String, Map<String, List<ObjectNode>>> seeds = new LinkedHashMap<>();
         try (InputStream in = SandboxServerRegistry.class.getResourceAsStream(SEEDS)) {
             if (in == null) {
@@ -470,6 +470,19 @@ public class SandboxServerRegistry {
                         "repo:write"),
                 read(
                         "github",
+                        "list_tree",
+                        "List every file and folder in a repository at a branch, tag or commit. Start here to find"
+                                + " which files to read; use path to look inside one folder. Very large repositories"
+                                + " are cut short at 1000 entries, and the result says so.",
+                        schema(
+                                props(
+                                        repo,
+                                        str("ref", "a branch, tag or commit; the default branch when left out"),
+                                        str("path", "only entries inside this folder, for example docs")),
+                                "repo"),
+                        "repo:read"),
+                read(
+                        "github",
                         "get_file",
                         "Read a file, or list a folder, in a repository.",
                         schema(
@@ -480,10 +493,26 @@ public class SandboxServerRegistry {
                                 "repo",
                                 "path"),
                         "repo:read"),
+                read(
+                        "github",
+                        "get_files",
+                        "Read up to " + MAX_GITHUB_PATHS + " files at once. Each comes back with its contents, or with"
+                                + " missing true when there is no file at that path; it fails only when none exist.",
+                        schema(
+                                props(
+                                        repo,
+                                        "\"paths\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"minItems\":1,"
+                                                + "\"maxItems\":" + MAX_GITHUB_PATHS + ",\"description\":\"file paths,"
+                                                + " for example README.md and docs/faq.md\"}",
+                                        str("ref", "a branch, tag or commit; the default branch when left out")),
+                                "repo",
+                                "paths"),
+                        "repo:read"),
                 write(
                         "github",
                         "save_file",
-                        "Create a file, or replace a file's contents, as one commit.",
+                        "Create a file, or replace a file's contents, as one commit. To change several files"
+                                + " together, use commit_files instead.",
                         schema(
                                 props(
                                         repo,
@@ -494,8 +523,100 @@ public class SandboxServerRegistry {
                                 "repo",
                                 "path",
                                 "content"),
-                        "repo:write"));
+                        "repo:write"),
+                // Deleting a file on a shared branch loses work the agent cannot see, so a person
+                // approves it. commit_files refuses deletions on the default branch for the same reason.
+                destructive(
+                        "github",
+                        "delete_file",
+                        "Delete one file from a branch, as one commit. A person approves it first.",
+                        schema(
+                                props(
+                                        repo,
+                                        str("path", "for example docs/old-page.md"),
+                                        str("message", "the commit message"),
+                                        str("branch", "the default branch when left out")),
+                                "repo",
+                                "path"),
+                        "repo:write"),
+                write(
+                        "github",
+                        "rename_file",
+                        "Move or rename one file on a branch, as one commit, keeping its contents. Refused when a"
+                                + " file already exists at the new path.",
+                        schema(
+                                props(
+                                        repo,
+                                        str("from", "the file's current path, for example docs/faq.md"),
+                                        str("to", "the new path, for example docs/help/faq.md"),
+                                        str("branch", "the default branch when left out"),
+                                        str("message", "the commit message")),
+                                "repo",
+                                "from",
+                                "to"),
+                        "repo:write"),
+                write(
+                        "github",
+                        "commit_files",
+                        "Change many files in one commit on a branch. Use this to make every edit for a task on a"
+                                + " new branch, then open a pull request with create_pull. The branch is created from"
+                                + " from, or from the default branch, when it does not exist yet. Each entry in files"
+                                + " holds a path and the file's whole new contents; deletions lists paths to remove."
+                                + " Deletions on the default branch are refused: use a branch and a pull request, or"
+                                + " delete_file, which asks a person.",
+                        schema(
+                                props(
+                                        repo,
+                                        str("branch", "the branch to commit to, for example docs/fix-typos; created"
+                                                + " when it does not exist"),
+                                        str("from", "the branch a new branch starts from; the default branch when"
+                                                + " left out"),
+                                        str("message", "the commit message"),
+                                        "\"files\":{\"type\":\"array\",\"maxItems\":" + MAX_GITHUB_CHANGES
+                                                + ",\"description\":\"files to create or replace, each with its whole"
+                                                + " new contents\",\"items\":{\"type\":\"object\",\"properties\":"
+                                                + "{\"path\":{\"type\":\"string\"},\"content\":{\"type\":\"string\"}},"
+                                                + "\"required\":[\"path\",\"content\"]}}",
+                                        strings("deletions", "paths of files to delete; refused on the default"
+                                                + " branch")),
+                                "repo",
+                                "branch",
+                                "message"),
+                        "repo:write"),
+                read(
+                        "github",
+                        "compare_branches",
+                        "Compare two branches: how many commits head is ahead of or behind base, those commits,"
+                                + " and the files that differ. Use it to check a branch before opening or merging a"
+                                + " pull request.",
+                        schema(
+                                props(
+                                        repo,
+                                        str("base", "the branch to compare against, usually the default branch"),
+                                        str("head", "the branch with the changes")),
+                                "repo",
+                                "base",
+                                "head"),
+                        "repo:read"),
+                read(
+                        "github",
+                        "list_commits",
+                        "List recent commits on a branch, newest first, optionally only those that touched a path.",
+                        schema(
+                                props(
+                                        repo,
+                                        str("ref", "a branch, tag or commit; the default branch when left out"),
+                                        str("path", "only commits that changed this file or folder"),
+                                        LIMIT),
+                                "repo"),
+                        "repo:read"));
     }
+
+    /** At most this many paths in one github get_files call. */
+    public static final int MAX_GITHUB_PATHS = 20;
+
+    /** At most this many file changes (writes and deletions together) in one github commit_files call. */
+    public static final int MAX_GITHUB_CHANGES = 100;
 
     private static List<ToolDefinition> jiraTools() {
         return List.of(

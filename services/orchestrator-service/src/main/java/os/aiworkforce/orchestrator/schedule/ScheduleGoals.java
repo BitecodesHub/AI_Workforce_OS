@@ -31,4 +31,13 @@ public interface ScheduleGoals extends JpaRepository<Goal, UUID> {
     Page<Goal> findByOrgIdAndScheduleIdOrderByCreatedAtDesc(UUID orgId, UUID scheduleId, Pageable pageable);
 
     Optional<Goal> findFirstByScheduleIdOrderByCreatedAtDesc(UUID scheduleId);
+
+    /** How many of a schedule's goals ended in each status, as {@code [status, count]} pairs. */
+    // @find: count schedule runs by status, schedule success and failure counts
+    @org.springframework.data.jpa.repository.Query(
+            "select g.status, count(g) from Goal g where g.orgId = :orgId and g.scheduleId = :scheduleId"
+                    + " group by g.status")
+    List<Object[]> countByStatus(
+            @org.springframework.data.repository.query.Param("orgId") UUID orgId,
+            @org.springframework.data.repository.query.Param("scheduleId") UUID scheduleId);
 }

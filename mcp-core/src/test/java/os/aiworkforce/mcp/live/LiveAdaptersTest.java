@@ -72,6 +72,75 @@ class LiveAdaptersTest {
         assertThat(content.path("items").path(0).path("id").asText()).isEqualTo("7");
     }
 
+    // @find: test github default branch writes need approval, live adapter
+    @Test
+    @DisplayName("GitHub: a file write with no branch, or to main or master, needs approval; another branch does not")
+    void githubDefaultBranchWritesNeedApproval() {
+        GitHubAdapter github = new GitHubAdapter(sandbox("github"), json, WebClient.builder(), provider.baseUrl());
+        for (String tool : new String[] {"save_file", "delete_file", "rename_file", "commit_files"}) {
+            assertThat(github.approvalReason(invocation("github", tool, "{\"repo\":\"acme/web\"}"))).isPresent();
+            assertThat(github.approvalReason(invocation("github", tool, "{\"repo\":\"acme/web\",\"branch\":\"main\"}")))
+                    .contains("Write straight to the default branch main of acme/web using github." + tool);
+            assertThat(github.approvalReason(invocation("github", tool, "{\"repo\":\"acme/web\",\"branch\":\"master\"}")))
+                    .isPresent();
+            assertThat(github.approvalReason(invocation("github", tool, "{\"repo\":\"acme/web\",\"branch\":\"docs/fix\"}")))
+                    .isEmpty();
+        }
+        assertThat(github.approvalReason(invocation("github", "create_issue", "{\"repo\":\"acme/web\"}"))).isEmpty();
+        assertThat(provider.getAllServeEvents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("GitHub: a branch found to be the default only when GitHub is asked is refused, and the next call asks first")
+    void githubLearnedDefaultBranchNeedsApproval() {
+        provider.stubFor(get("/repos/acme/website").willReturn(okJson("{\"default_branch\":\"trunk\"}")));
+        GitHubAdapter github = new GitHubAdapter(sandbox("github"), json, WebClient.builder(), provider.baseUrl());
+        String args = "{\"repo\":\"acme/website\",\"branch\":\"trunk\",\"message\":\"Tidy\","
+                + "\"files\":[{\"path\":\"a.md\",\"content\":\"A\"}],\"deletions\":[\"docs/faq.md\"]}";
+        assertThat(github.approvalReason(invocation("github", "commit_files", args))).isEmpty();
+
+        ToolResult refused = github.invoke(invocation("github", "commit_files", args), TOKEN).block();
+
+        assertThat(refused.status()).isEqualTo(ToolResult.Status.FAILED);
+        assertThat(refused.summary()).contains("trunk is the default branch of acme/website").contains("approval");
+        // Only the repository was read: nothing was written.
+        assertThat(provider.getAllServeEvents()).hasSize(1);
+        // Now known: the same call is held for a person, and main is no longer taken for the default.
+        assertThat(github.approvalReason(invocation("github", "commit_files", args)))
+                .contains("Write straight to the default branch trunk of acme/website using github.commit_files");
+        assertThat(github.approvalReason(invocation("github", "save_file",
+                        "{\"repo\":\"acme/website\",\"branch\":\"main\"}")))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("GitHub: commit_files checks every path and the size of the work before any request")
+    void githubCommitValidatesFirst() {
+        GitHubAdapter github = new GitHubAdapter(sandbox("github"), json, WebClient.builder(), provider.baseUrl());
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i <= SandboxServerRegistry.MAX_GITHUB_CHANGES; i++) {
+            many.append(i == 0 ? "" : ",").append("{\"path\":\"f").append(i).append(".md\",\"content\":\"x\"}");
+        }
+        String[][] cases = {
+            {"{\"repo\":\"acme/website\",\"branch\":\"b\",\"message\":\"M\"}", "Say what to change"},
+            {"{\"repo\":\"acme/website\",\"branch\":\"b\",\"message\":\"M\",\"files\":[{\"path\":\"../x\",\"content\":\"y\"}]}",
+                "must be a file or folder"},
+            {"{\"repo\":\"acme/website\",\"branch\":\"b\",\"message\":\"M\",\"files\":[{\"path\":\"a\"}]}",
+                "needs a path and its whole new content"},
+            {"{\"repo\":\"acme/website\",\"branch\":\"b\",\"message\":\"M\",\"files\":[{\"path\":\"a\",\"content\":\"y\"}],"
+                    + "\"deletions\":[\"a\"]}", "in both files and deletions"},
+            {"{\"repo\":\"acme/website\",\"branch\":\"b\",\"message\":\"M\",\"files\":[" + many + "]}", "at most"},
+            {"{\"repo\":\"acme/website\",\"paths\":[]}", "paths are needed"},
+        };
+        for (String[] row : cases) {
+            String tool = row[0].contains("paths") ? "get_files" : "commit_files";
+            ToolResult refused = github.invoke(invocation("github", tool, row[0]), TOKEN).block();
+            assertThat(refused.status()).as(row[0]).isEqualTo(ToolResult.Status.FAILED);
+            assertThat(refused.summary()).as(row[0]).contains(row[1]);
+        }
+        assertThat(provider.getAllServeEvents()).isEmpty();
+    }
+
     @Test
     @DisplayName("GitHub: a rejected token is a plain failure that never repeats the token")
     void githubRejected() {

@@ -71,6 +71,11 @@ public class ChatQueuedMessage implements Persistable<UUID> {
     @Column(nullable = false)
     private Map<String, Object> actor = Map.of();
 
+    /** What the "+" menu attached besides files (MessageContext.toStored()); null when nothing. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "context")
+    private Map<String, Object> context;
+
     @Column(nullable = false)
     private String status = QUEUED;
 
@@ -150,6 +155,14 @@ public class ChatQueuedMessage implements Persistable<UUID> {
         return attachmentIds == null
                 ? List.of()
                 : attachmentIds.stream().map(UUID::fromString).toList();
+    }
+
+    public Map<String, Object> getContext() {
+        return context;
+    }
+
+    public void setContext(Map<String, Object> context) {
+        this.context = context == null || context.isEmpty() ? null : context;
     }
 
     public Map<String, Object> getActor() {

@@ -60,6 +60,15 @@ public interface McpServerAdapter {
                 .toList();
     }
 
+    /**
+     * Why this one call needs a person's approval although its tool, in general, does not - a
+     * file write that lands straight on a repository's default branch, say. Empty for most calls.
+     * Decided without contacting the provider: the gateway asks before anything is spent.
+     */
+    default Optional<String> approvalReason(ToolInvocation invocation) {
+        return Optional.empty();
+    }
+
     default Optional<ToolDefinition> tool(String name) {
         return tools().stream().filter(tool -> tool.name().equals(name)).findFirst();
     }

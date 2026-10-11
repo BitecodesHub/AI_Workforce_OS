@@ -139,6 +139,22 @@ public class CoordinatorService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ChatQueueRunner queueRunner;
 
+    /** Saves a schedule asked for in words; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.schedule.ScheduleRequests scheduleRequests;
+
+    void useScheduleRequests(os.aiworkforce.orchestrator.schedule.ScheduleRequests scheduleRequests) {
+        this.scheduleRequests = scheduleRequests;
+    }
+
+    /** The skills a message may name; absent only where a test builds this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SkillLookup skillLookup;
+
+    void useSkills(SkillLookup skillLookup) {
+        this.skillLookup = skillLookup;
+    }
+
     void useQueue(
             ChatQueue chatQueue,
             os.aiworkforce.orchestrator.repository.ChatQueuedMessages queued,
@@ -210,18 +226,28 @@ public class CoordinatorService {
      *     in the order it reads them, with the text it reads - and the ones shown as its sources
      * @param uncovered whether the request leans on the workspace's documents and none covers it
      */
-    record Background(ThreadContext.History history, List<Map<String, Object>> passages, boolean uncovered) {
+    record Background(
+            ThreadContext.History history, List<Map<String, Object>> passages, boolean uncovered, String contextBlock) {
+
+        Background(ThreadContext.History history, List<Map<String, Object>> passages, boolean uncovered) {
+            this(history, passages, uncovered, "");
+        }
 
         static Background of(ThreadContext.History history) {
             return new Background(history, List.of(), false);
         }
 
         Background withPassages(List<Map<String, Object>> used) {
-            return new Background(history, List.copyOf(used), false);
+            return new Background(history, List.copyOf(used), false, contextBlock);
         }
 
         Background withoutCoverage() {
-            return new Background(history, List.of(), true);
+            return new Background(history, List.of(), true, contextBlock);
+        }
+
+        /** The same background with what a message's "+" attachments add to every task (ContextPrompt). */
+        Background withContextBlock(String block) {
+            return new Background(history, passages, uncovered, block == null ? "" : block);
         }
 
         boolean isEmpty() {
@@ -237,7 +263,7 @@ public class CoordinatorService {
      */
     static Background withFiles(Background background, boolean withFiles) {
         return withFiles && background.uncovered()
-                ? new Background(background.history(), background.passages(), false)
+                ? new Background(background.history(), background.passages(), false, background.contextBlock())
                 : background;
     }
 
@@ -322,9 +348,29 @@ public class CoordinatorService {
             List<UUID> explicitAgentIds,
             List<UUID> attachmentIds,
             String authorizationHeader) {
+        return send(orgId, conversationId, typed, explicitAgentIds, attachmentIds, MessageContext.NONE, authorizationHeader);
+    }
+
+    /**
+     * As {@link #send(UUID, UUID, String, List, List, String)}, with what the composer's "+" menu
+     * attached: documents to ground it, a repository to work on and a skill to follow (see {@link
+     * MessageContext}). A message with any of them is always work for an agent, as one with files is.
+     */
+    // @find: send message with knowledge, repo or skill attached
+    public SendOutcome send(
+            UUID orgId,
+            UUID conversationId,
+            String typed,
+            List<UUID> explicitAgentIds,
+            List<UUID> attachmentIds,
+            MessageContext attached,
+            String authorizationHeader) {
         generalEmployee.ensure(orgId);
         UUID requesterId = requesterIdFromContext();
-        String written = typed == null ? "" : typed;
+        MessageContext context = resolveSkill(orgId, attached == null ? MessageContext.NONE : attached, true);
+        String written = typed == null || typed.isBlank()
+                ? (context.skill() != null ? "Run the " + context.skill().name() + " skill." : typed == null ? "" : typed)
+                : typed;
         List<ChatAttachments.Row> files = new ArrayList<>();
 
         // Phase 1: record what the person said, so it is never lost to anything that follows.
@@ -349,11 +395,16 @@ public class CoordinatorService {
                                 explicitAgentIds,
                                 files.stream().map(ChatAttachments.Row::id).toList(),
                                 ChatQueue.snapshot(RequestContext.actor().orElse(null)));
+                waiting.setContext(context.toStored());
                 return new Recorded(null, queued.save(waiting));
             }
-            Map<String, Object> detail = files.isEmpty()
-                    ? Map.of()
-                    : Map.of("attachments", AttachmentService.detailOf(files));
+            Map<String, Object> detail = new LinkedHashMap<>();
+            if (!files.isEmpty()) {
+                detail.put("attachments", AttachmentService.detailOf(files));
+            }
+            if (!context.isEmpty()) {
+                detail.put("context", context.detail());
+            }
             ChatMessage m = appender.append(c, "user", requesterId, null, "text", written, detail, null);
             if (!files.isEmpty()) {
                 // Written now rather than at commit: the files are tied to the message by a key the
@@ -373,8 +424,35 @@ public class CoordinatorService {
             return new SendOutcome(List.of(), recorded.queued());
         }
         return new SendOutcome(
-                process(orgId, conversationId, recorded.message(), written, files, explicitAgentIds, authorizationHeader),
+                process(
+                        orgId,
+                        conversationId,
+                        recorded.message(),
+                        written,
+                        files,
+                        explicitAgentIds,
+                        context,
+                        authorizationHeader),
                 null);
+    }
+
+    /**
+     * The context with its skill looked up. A skill that is gone is refused when the person is
+     * sending ({@code strict}), and quietly left out for a message that waited in the queue.
+     */
+    private MessageContext resolveSkill(UUID orgId, MessageContext context, boolean strict) {
+        if (context.skillId() == null) {
+            return context;
+        }
+        Optional<SkillLookup.ResolvedSkill> found =
+                skillLookup == null ? Optional.empty() : skillLookup.find(orgId, context.skillId());
+        if (found.isPresent()) {
+            return context.withSkill(found.get());
+        }
+        if (strict) {
+            throw ApiException.validation("skillId", "That skill no longer exists. Choose another one.");
+        }
+        return MessageContext.of(context.knowledge(), context.repo(), null);
     }
 
     /**
@@ -389,6 +467,7 @@ public class CoordinatorService {
             String written,
             List<ChatAttachments.Row> files,
             List<UUID> explicitAgentIds,
+            MessageContext context,
             String authorizationHeader) {
         UUID requesterId = requesterIdFromContext();
         String text = AttachmentService.requestWithNames(written, files);
@@ -406,7 +485,8 @@ public class CoordinatorService {
                         explicitAgentIds,
                         authorizationHeader,
                         requesterId,
-                        withFiles);
+                        withFiles,
+                        context);
             } catch (RuntimeException e) {
                 log.warn("Could not decide what to do with a chat message in conversation {}", conversationId, e);
                 decision = new ErrorDecision(
@@ -481,7 +561,8 @@ public class CoordinatorService {
             String written,
             List<ChatAttachments.Row> files,
             List<UUID> agentIds,
-            Actor actor) {}
+            Actor actor,
+            MessageContext context) {}
 
     /**
      * Starts the oldest waiting message of a conversation when it has no work in progress. Called
@@ -587,6 +668,10 @@ public class CoordinatorService {
         if (!files.isEmpty()) {
             detail.put("attachments", AttachmentService.detailOf(files));
         }
+        MessageContext context = resolveSkill(orgId, MessageContext.fromStored(q.getContext()), false);
+        if (!context.isEmpty()) {
+            detail.put("context", context.detail());
+        }
         detail.put("fromQueue", true);
         ChatMessage m = appender.append(c, "user", q.getAuthorId(), null, "text", q.getText(), detail, null);
         if (!files.isEmpty()) {
@@ -595,7 +680,7 @@ public class CoordinatorService {
         }
         c.startDeciding(m.getId());
         conversations.save(c);
-        return new Claimed(m, q.getText(), files, q.getAgentIds(), actor);
+        return new Claimed(m, q.getText(), files, q.getAgentIds(), actor, context);
     }
 
     /** Decides and starts a claimed message as the person who sent it. */
@@ -611,6 +696,7 @@ public class CoordinatorService {
                         claimed.written(),
                         claimed.files(),
                         claimed.agentIds(),
+                        claimed.context(),
                         null));
     }
 
@@ -653,7 +739,8 @@ public class CoordinatorService {
             List<UUID> explicitAgentIds,
             String authorizationHeader,
             UUID requesterId,
-            boolean withFiles) {
+            boolean withFiles,
+            MessageContext context) {
         List<Agent> workspaceAgents = agents.findByOrgIdOrderByName(orgId);
         Agent fallback = generalEmployee.activeIn(workspaceAgents).orElse(null);
         Actor actor = RequestContext.actor().orElse(null);
@@ -672,7 +759,28 @@ public class CoordinatorService {
 
         List<ChatMessage> chronological = earlierMessages(conversationId, userMessage);
         Background background = Background.of(
-                ThreadContext.of(chronological, nameMap(workspaceAgents), Map.of(), requesterId));
+                        ThreadContext.of(chronological, nameMap(workspaceAgents), Map.of(), requesterId))
+                .withContextBlock(ContextPrompt.block(context));
+
+        if (chosen.isEmpty() && context != null && context.forcesWork()) {
+            // Nobody mentioned: the skill's default agent takes it, or - for repository work - an
+            // agent that can read GitHub. Otherwise it is routed as usual below.
+            Optional<ContextAgent> preferred = contextAgent(context, workspaceAgents);
+            if (preferred.isPresent()) {
+                Agent agent = preferred.get().agent();
+                return buildWorkDecision(
+                        workspaceAgents,
+                        requesterId,
+                        conversationId,
+                        List.of(new Step(agent, text, false)),
+                        "rules",
+                        List.of(),
+                        preferred.get().reason(),
+                        List.of(),
+                        text,
+                        contextBackground(background, orgId, text, chronological, authorizationHeader, context, withFiles));
+            }
+        }
 
         if (!chosen.isEmpty()) {
             Agent paused =
@@ -683,6 +791,14 @@ public class CoordinatorService {
                         : paused.getName()
                                 + " is paused, so nothing was started. Resume it in Agents, or choose someone else.";
                 return new ChoiceDecision(reason, pausedMentionAlternatives(fallback, workspaceAgents), text);
+            }
+            // "@Research every Monday at 9am summarise competitor news" sets up a schedule for
+            // Research instead of starting the work now.
+            if (!withFiles && chosen.size() == 1 && (context == null || !context.forcesWork())) {
+                Optional<Decision> scheduled = mentionSchedule(orgId, chosen.getFirst(), mention.text());
+                if (scheduled.isPresent()) {
+                    return scheduled.get();
+                }
             }
             // The label for each agent's task; what each reads is the message as it was written.
             String part = mention.text().isBlank() ? text : mention.text();
@@ -698,10 +814,10 @@ public class CoordinatorService {
                     mentionReason(chosen),
                     List.of(),
                     text,
-                    withFiles(withDocuments(background, orgId, part, chronological, authorizationHeader), withFiles));
+                    contextBackground(background, orgId, part, chronological, authorizationHeader, context, withFiles));
         }
 
-        if (withFiles) {
+        if (withFiles || (context != null && context.forcesWork())) {
             return decideWork(
                     orgId,
                     workspaceAgents,
@@ -710,7 +826,7 @@ public class CoordinatorService {
                     conversationId,
                     text,
                     chronological,
-                    withFiles(withDocuments(background, orgId, text, chronological, authorizationHeader), true));
+                    contextBackground(background, orgId, text, chronological, authorizationHeader, context, true));
         }
 
         ZoneId zone = zones.zoneFor(orgId);
@@ -865,7 +981,8 @@ public class CoordinatorService {
             List<ChatMessage> chronological,
             String authorizationHeader,
             Background background) {
-        ParsedSchedule parsed = schedulePreviewer.tryParse(text, zone, now).orElse(null);
+        os.aiworkforce.orchestrator.schedule.ScheduleExtractor.Extraction found = extractionOf(text, zone, now);
+        ParsedSchedule parsed = found == null ? null : found.parsed();
         if (parsed == null) {
             return decideWork(
                     orgId,
@@ -879,7 +996,14 @@ public class CoordinatorService {
         }
         // What every run of the schedule is asked to do, exactly as the person wrote it apart from
         // the timing phrase. Whatever the router writes below only names the schedule.
-        String instruction = IntentDetector.withoutTimingPhrase(text);
+        String instruction = found.instruction();
+        // "remind HR tomorrow at 3pm to send onboarding emails" names its agent itself.
+        Optional<os.aiworkforce.orchestrator.schedule.ScheduleRequests.Target> named =
+                os.aiworkforce.orchestrator.schedule.ScheduleRequests.reminderTarget(instruction, workspaceAgents);
+        if (named.isPresent()) {
+            return scheduleDecision(
+                    named.get().agent(), parsed, found.phrase(), named.get().instruction(), zone, now);
+        }
 
         Agent agent;
         String label;
@@ -914,7 +1038,7 @@ public class CoordinatorService {
                 .map(Instant::toString)
                 .toList();
         Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("text", text);
+        detail.put("text", found.phrase());
         detail.put("kind", parsed.kind());
         detail.put("cron", parsed.cron());
         detail.put("runAt", parsed.runAt() == null ? null : parsed.runAt().toString());
@@ -928,6 +1052,92 @@ public class CoordinatorService {
 
         String content = "A schedule for " + agent.getName() + ": " + parsed.description();
         return new ScheduleDecision(content, detail);
+    }
+
+    /**
+     * The schedule in a message: the whole message when it is nothing but a timing phrase, else the
+     * phrase written inside the sentence, with the rest as the instruction. Null when there is none.
+     */
+    private os.aiworkforce.orchestrator.schedule.ScheduleExtractor.Extraction extractionOf(
+            String text, ZoneId zone, Instant now) {
+        Optional<ParsedSchedule> whole = ScheduleParser.tryParse(text, zone, now);
+        if (whole.isEmpty()) {
+            Optional<os.aiworkforce.orchestrator.schedule.ScheduleExtractor.Extraction> inside =
+                    os.aiworkforce.orchestrator.schedule.ScheduleExtractor.extract(text, zone, now);
+            if (inside.isPresent() && !inside.get().instruction().isBlank()) {
+                return inside.get();
+            }
+        }
+        // A whole-message phrase, or whatever the previewer reads (a test's own reading included).
+        Optional<ParsedSchedule> read = whole.isPresent() ? whole : schedulePreviewer.tryParse(text, zone, now);
+        return read.map(parsed -> new os.aiworkforce.orchestrator.schedule.ScheduleExtractor.Extraction(
+                        parsed, text.strip(), IntentDetector.withoutTimingPhrase(text)))
+                .orElse(null);
+    }
+
+    /** A schedule for the one agent a message mentions, when the rest of it is a timing phrase plus work. */
+    private Optional<Decision> mentionSchedule(UUID orgId, Agent agent, String withoutMention) {
+        if (withoutMention == null || withoutMention.isBlank() || withoutMention.strip().endsWith("?")) {
+            return Optional.empty();
+        }
+        ZoneId zone = zones.zoneFor(orgId);
+        Instant now = Instant.now();
+        return os.aiworkforce.orchestrator.schedule.ScheduleExtractor.extract(withoutMention, zone, now)
+                .filter(found -> !found.instruction().isBlank())
+                .map(found -> scheduleDecision(agent, found.parsed(), found.phrase(), found.instruction(), zone, now));
+    }
+
+    private Decision scheduleDecision(
+            Agent agent, ParsedSchedule parsed, String phrase, String instruction, ZoneId zone, Instant now) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("text", phrase);
+        detail.put("kind", parsed.kind());
+        detail.put("cron", parsed.cron());
+        detail.put("runAt", parsed.runAt() == null ? null : parsed.runAt().toString());
+        detail.put("description", parsed.description());
+        detail.put("timezone", zone.getId());
+        detail.put(
+                "nextRuns",
+                ScheduleParser.nextRuns(parsed, zone, now, 5).stream()
+                        .map(Instant::toString)
+                        .toList());
+        detail.put("agentId", agent.getId().toString());
+        detail.put("agentName", agent.getName());
+        detail.put("instruction", instruction);
+        detail.put("name", os.aiworkforce.orchestrator.schedule.ScheduleRequests.nameFor(instruction));
+        return new ScheduleDecision("A schedule for " + agent.getName() + ": " + parsed.description(), detail);
+    }
+
+    /**
+     * Saves the schedule a message asked for when its sender may create work, and confirms it in
+     * words with its next run; otherwise, or when it cannot be saved, leaves the suggestion card
+     * with its "Create schedule" button.
+     */
+    private List<ChatMessage> applySchedule(UUID orgId, UUID conversationId, ScheduleDecision decision) {
+        Actor actor = RequestContext.actor().orElse(null);
+        Map<String, Object> detail = decision.detail();
+        if (scheduleRequests != null && actor != null && actor.hasPermission(Permission.Codes.TASK_CREATE)) {
+            try {
+                Agent agent = agents.findByIdAndOrgId(UUID.fromString(String.valueOf(detail.get("agentId"))), orgId)
+                        .orElse(null);
+                if (agent != null) {
+                    os.aiworkforce.orchestrator.schedule.ScheduleRequests.Confirmation saved = scheduleRequests.create(
+                            orgId, agent, String.valueOf(detail.get("instruction")), String.valueOf(detail.get("text")));
+                    return applySimple(orgId, conversationId, "schedule_suggestion", saved.content(), saved.detail());
+                }
+            } catch (ApiException refused) {
+                log.info("A schedule from chat could not be saved in conversation {}: {}", conversationId, refused.getMessage());
+                Map<String, Object> withReason = new LinkedHashMap<>(detail);
+                withReason.put("reason", refused.getMessage());
+                return applySimple(
+                        orgId,
+                        conversationId,
+                        "schedule_suggestion",
+                        decision.content() + ". It was not saved: " + refused.getMessage(),
+                        withReason);
+            }
+        }
+        return applySimple(orgId, conversationId, "schedule_suggestion", decision.content(), detail);
     }
 
     /**
@@ -1022,6 +1232,101 @@ public class CoordinatorService {
         return found == null ? Optional.empty() : Optional.ofNullable(found.result());
     }
 
+    /** An agent a message's context points at, and the routing sentence that says why. */
+    private record ContextAgent(Agent agent, String reason) {}
+
+    // @find: skill default agent routing, repository work goes to agent with GitHub
+    /**
+     * Who takes a message nobody mentioned, from what is attached to it: the skill's default agent
+     * when it is active, else - for a repository - an active agent granted GitHub, a specialist
+     * before General Employee. Empty leaves the message to be routed as usual.
+     */
+    private Optional<ContextAgent> contextAgent(MessageContext context, List<Agent> workspaceAgents) {
+        if (context.skill() != null && context.skill().defaultAgentId() != null) {
+            Agent named = agentById(workspaceAgents, context.skill().defaultAgentId());
+            if (named != null && named.isActive()) {
+                return Optional.of(new ContextAgent(
+                        named,
+                        "The " + context.skill().name() + " skill goes to " + named.getName() + "."));
+            }
+        }
+        if (context.repo() != null) {
+            Map<UUID, List<String>> servers = toolServersByAgent(workspaceAgents);
+            return workspaceAgents.stream()
+                    .filter(Agent::isActive)
+                    .filter(agent -> servers.getOrDefault(agent.getId(), List.of()).contains("github"))
+                    .sorted(java.util.Comparator.comparing(Agent::isFallback))
+                    .findFirst()
+                    .map(agent -> new ContextAgent(
+                            agent,
+                            agent.getName() + " can read GitHub, so " + agent.getName() + " is taking the work on "
+                                    + context.repo().fullName() + "."));
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The background for a message, given what is attached to it: documents the person chose are
+     * searched on their own; otherwise the workspace's documents are, as for any request.
+     */
+    private Background contextBackground(
+            Background background,
+            UUID orgId,
+            String text,
+            List<ChatMessage> chronological,
+            String authorization,
+            MessageContext context,
+            boolean withFiles) {
+        if (context != null && !context.knowledge().isEmpty()) {
+            return withChosenDocuments(background, orgId, text, chronological, authorization, context);
+        }
+        boolean attached = withFiles || (context != null && context.forcesWork());
+        return withFiles(withDocuments(background, orgId, text, chronological, authorization), attached);
+    }
+
+    // @find: search only chosen documents, knowledge attached from the plus menu
+    /**
+     * The background with passages from the documents the person chose, and only those. The person
+     * picked them, so what matches is used without the relevance cut a workspace-wide search gets;
+     * when the request's words find nothing, the documents' own titles are searched instead, so
+     * the agent still reads from them.
+     */
+    private Background withChosenDocuments(
+            Background background,
+            UUID orgId,
+            String text,
+            List<ChatMessage> chronological,
+            String authorization,
+            MessageContext context) {
+        List<KnowledgeClient.Passage> found = chosenPassages(orgId, searchQueryFor(text, chronological), authorization, context);
+        if (found.isEmpty() && !context.titles().isEmpty()) {
+            found = chosenPassages(orgId, String.join(" ", context.titles()), authorization, context);
+        }
+        return found.isEmpty() ? background : background.withPassages(usedPassages(found));
+    }
+
+    private List<KnowledgeClient.Passage> chosenPassages(
+            UUID orgId, String query, String authorization, MessageContext context) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        Optional<KnowledgeClient.SearchResult> result;
+        if (authorization != null && !authorization.isBlank()) {
+            result = knowledge.search(orgId, query, authorization, context.sourceIds(), 20);
+        } else {
+            UUID requester = requesterIdFromContext();
+            KnowledgeClient.AgentSearch search = requester == null
+                    ? null
+                    : knowledge.searchFor(orgId, requester, query, 20, null, null, context.sourceIds());
+            result = search == null ? Optional.empty() : Optional.ofNullable(search.result());
+        }
+        return result.filter(KnowledgeClient.SearchResult::grounded)
+                .map(search -> search.passages().stream()
+                        .filter(p -> context.covers(p.sourceId(), p.documentId()))
+                        .toList())
+                .orElse(List.of());
+    }
+
     /**
      * The background with the workspace's documents searched for what bears on a piece of work, so
      * that an agent given "Draft a reply using our refund policy" reads the policy rather than
@@ -1082,7 +1387,8 @@ public class CoordinatorService {
         List<GoalService.NewTask> tasks = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
             Step step = steps.get(i);
-            String body = labelledParts ? GoalService.chainStepInstruction(requestText, step.part()) : requestText;
+            String body = (labelledParts ? GoalService.chainStepInstruction(requestText, step.part()) : requestText)
+                    + background.contextBlock();
             String instruction = i == 0 ? withPreamble(background, step.agent().getId(), body) : body;
             if (step.fallback() || step.agent().isFallback()) {
                 instruction = instruction + colleagueBlock(workspaceAgents, step.agent());
@@ -1150,8 +1456,7 @@ public class CoordinatorService {
         return switch (decision) {
             case WorkDecision w -> applyWork(orgId, conversationId, w);
             case ChoiceDecision c -> applyChoice(orgId, conversationId, c);
-            case ScheduleDecision s ->
-                applySimple(orgId, conversationId, "schedule_suggestion", s.content(), s.detail());
+            case ScheduleDecision s -> applySchedule(orgId, conversationId, s);
             case DocumentsDecision d -> applySimple(orgId, conversationId, "documents", d.content(), d.detail());
             case ErrorDecision e ->
                 applySimple(orgId, conversationId, "error", e.content(), errorDetail(e.content(), e.requestText()));

@@ -146,6 +146,12 @@ public class ToolGateway {
         if (tool.alwaysRequiresApproval() || grant.requireApproval() || policyRequiresApproval) {
             return new ApprovalDecision.AwaitApproval(describe(tool, invocation), "approval:decide");
         }
+        // Some calls of an otherwise free tool need a person: the adapter says which, per call.
+        Optional<String> perCall =
+                adapter.approvalReason(invocation.withArguments(validator.normalise(tool, invocation.argumentsJson())));
+        if (perCall.isPresent()) {
+            return new ApprovalDecision.AwaitApproval(perCall.get(), "approval:decide");
+        }
 
         return ApprovalDecision.PROCEED;
     }

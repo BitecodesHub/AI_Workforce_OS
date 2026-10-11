@@ -40,6 +40,7 @@ const routes: Record<string, string> = {
   '/api/conversations': ORCHESTRATOR,
   '/api/orchestrator': ORCHESTRATOR,
   '/api/schedules': ORCHESTRATOR,
+  '/api/skills': ORCHESTRATOR,
   '/api/voice': ORCHESTRATOR,
   '/api/memory': MEMORY,
   '/api/knowledge': KNOWLEDGE,

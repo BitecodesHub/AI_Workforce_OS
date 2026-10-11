@@ -213,7 +213,7 @@ class AgentGrantControllerTest {
 
     private static AgentController.AgentDetail detail() {
         return new AgentController.AgentDetail(
-                AGENT, "support", "Support", "support", "active", 1, "You help.", "", 12, null, null, false, List.of(),
+                AGENT, "support", "Support", "support", "active", 1, "You help.", "", 12, null, null, null, false, List.of(),
                 "You help.", null, List.of(), null, false);
     }
 }

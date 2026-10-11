@@ -151,6 +151,23 @@ public class AgentRunner {
     static final String LAST_STEP_NOTE = "This is your last step. Give your best complete answer now and say what is"
             + " unfinished; any tool you call will not be run.";
     static final String CONTINUE_REQUEST = "Continue exactly where you stopped.";
+    static final String TIME_NOTE = "This run is close to its time limit. Finish with your best complete answer now and"
+            + " say what is unfinished; only call a tool if essential.";
+
+    /**
+     * Past this many estimated tokens a long run's history is summarised before the next model call,
+     * whatever the model's own window: a 200-step run would otherwise send its whole transcript,
+     * at full price and growing latency, on every turn until the window itself overflowed.
+     */
+    static final int LONG_RUN_TOKEN_BUDGET = 60_000;
+
+    /** What the summarised history aims for: the compactor fills 55% of the window it is given. */
+    private static final ModelSpec LONG_RUN_WINDOW = new ModelSpec(
+            "platform", "long-run-budget", "Long run budget", 64_000, 4_096, true, false, false, false,
+            java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, true, null);
+
+    private static final os.aiworkforce.llm.router.TranscriptCompactor COMPACTOR =
+            new os.aiworkforce.llm.router.TranscriptCompactor();
     static final String CUT_SHORT_REASON = "The model's answer was cut short by the output limit.";
     static final String REPEATED_READ_NOTE = "You already have this result; use it or change approach.";
     static final String REPEATED_CALL_BLOCKED = "Repeated identical call; change approach or finish.";
@@ -240,6 +257,18 @@ public class AgentRunner {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private AgentMemoryTool agentMemory;
 
+    /**
+     * Setting up work for later; absent only where a test builds the runner by hand. Lazy, because
+     * schedules fire goals and goals start runs: the two would otherwise need each other to exist.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private os.aiworkforce.orchestrator.schedule.AgentScheduleTool scheduleTool;
+
+    void useScheduleTool(os.aiworkforce.orchestrator.schedule.AgentScheduleTool scheduleTool) {
+        this.scheduleTool = scheduleTool;
+    }
+
     /** Files attached to the chat message a run's goal came from; absent where a test builds the runner by hand. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ChatAttachments chatAttachments;
@@ -296,6 +325,26 @@ public class AgentRunner {
         this.redactor = redactor;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    /** How long a run may keep working when its agent sets no limit of its own; {@code aiwos.runs.max-duration}. */
+    private Duration defaultMaxRunDuration = Duration.ofMinutes(60);
+
+    @Autowired
+    void setDefaultMaxRunDuration(@Value("${aiwos.runs.max-duration:PT60M}") Duration duration) {
+        if (duration != null && !duration.isNegative() && !duration.isZero()) {
+            this.defaultMaxRunDuration = duration;
+        }
+    }
+
+    /** The working time one run of this revision is allowed: its own limit, or the platform's. */
+    Duration timeLimitOf(AgentVersion version) {
+        return timeLimitOf(version, defaultMaxRunDuration);
+    }
+
+    static Duration timeLimitOf(AgentVersion version, Duration platformDefault) {
+        Integer minutes = version.getMaxRunMinutes();
+        return minutes == null || minutes < 1 ? platformDefault : Duration.ofMinutes(Math.min(minutes, 120));
     }
 
     @Autowired
@@ -1580,6 +1629,9 @@ public class AgentRunner {
             specs.add(AgentMemoryTool.REMEMBER_SPEC);
             specs.add(AgentMemoryTool.RECALL_SPEC);
         }
+        if (scheduleTool != null) {
+            specs.add(os.aiworkforce.orchestrator.schedule.AgentScheduleTool.SPEC);
+        }
 
         ModelRouter.CallContext context = new ModelRouter.CallContext(
                 run.getOrgId().toString(), agent.getId().toString(), run.getId().toString());
@@ -1599,6 +1651,10 @@ public class AgentRunner {
         int continuations = 0;
         // Whether the model has already been asked, once, to make a call it wrote out as text properly.
         boolean reprompted = false;
+        // Working time is bounded as well as steps, measured from when this stretch of work began:
+        // a run parked for a person's approval or answer does not use up its time while it waits.
+        Instant drivenSince = Instant.now();
+        Duration timeLimit = timeLimitOf(version);
 
         while (run.getStepCount() < version.getMaxSteps()) {
             // Read fresh before every model call, not just once: a person can cancel this run from
@@ -1611,6 +1667,13 @@ public class AgentRunner {
                 log.info("Run {} stopped cooperatively: it is now {}", run.getId(), currentStatus);
                 return steppedBack(run, currentStatus);
             }
+            Duration worked = Duration.between(drivenSince, Instant.now());
+            if (worked.compareTo(timeLimit) >= 0) {
+                return failTimeLimit(
+                        run, timeLimit, cutOff.length() > 0 ? cutOff.toString() : lastAssistantText(conversation));
+            }
+            boolean timeNearlyUp = worked.compareTo(timeLimit.multipliedBy(9).dividedBy(10)) >= 0;
+            boolean trimmed = compactLongHistory(conversation, cutOff.length() > 0);
 
             // Only the ask tool or the document search on offer is not a reason to insist on a
             // model that calls tools: one that cannot simply answers without them, and the
@@ -1620,7 +1683,9 @@ public class AgentRunner {
             boolean needsToolSupport =
                     !gatewaySpecs.isEmpty() || ask.everAsked() || conversationHasToolCalls(conversation);
             ChatRequest request = ChatRequest.builder()
-                    .messages(messagesFor(conversation, version.getMaxSteps() - run.getStepCount(), cutOff))
+                    .messages(withTimeNote(
+                            messagesFor(conversation, version.getMaxSteps() - run.getStepCount(), cutOff),
+                            timeNearlyUp && version.getMaxSteps() - run.getStepCount() > 2))
                     .tools(specs)
                     // Must come after tools(), which sets it from whether any tool is offered.
                     .requireToolSupport(needsToolSupport)
@@ -1651,8 +1716,8 @@ public class AgentRunner {
             // When the router had to shorten the conversation to get this answer, this loop keeps
             // the shortened one: otherwise every later turn would overflow and be shortened again
             // from scratch. The trace is untouched, so a resumed run rebuilds the whole of it.
-            boolean compacted = response.wasCompacted();
-            if (compacted) {
+            boolean compacted = response.wasCompacted() || trimmed;
+            if (response.wasCompacted()) {
                 adoptCompaction(conversation, response.compactedConversation(), cutOff.length() > 0);
             }
 
@@ -1905,7 +1970,7 @@ public class AgentRunner {
         ChatMessage first = kept.getFirst();
         if (first.role() == ChatMessage.Role.SYSTEM && first.content() != null) {
             String content = first.content();
-            for (String note : List.of(WRAP_UP_NOTE, LAST_STEP_NOTE)) {
+            for (String note : List.of(WRAP_UP_NOTE, LAST_STEP_NOTE, TIME_NOTE)) {
                 if (content.endsWith("\n\n" + note)) {
                     kept.set(0, ChatMessage.system(content.substring(0, content.length() - note.length() - 2)));
                     break;
@@ -2020,7 +2085,8 @@ public class AgentRunner {
             }
             boolean allowed = available.stream().anyMatch(tool -> tool.qualifiedName().equals(name))
                     || (KnowledgeSearchTool.NAME.equals(name) && documentsOffered)
-                    || (AskPersonTool.NAME.equals(name) && ask.allowed());
+                    || (AskPersonTool.NAME.equals(name) && ask.allowed())
+                    || os.aiworkforce.orchestrator.schedule.AgentScheduleTool.NAME.equals(name);
             return allowed ? new ToolCall("written", name, argumentsJson) : null;
         }
 
@@ -2086,6 +2152,67 @@ public class AgentRunner {
     private Outcome failCutShort(Run run, String partial) {
         saveStep(run, "error", Map.of("code", TaskProgress.OUTPUT_LIMIT, "detail", CUT_SHORT_REASON));
         return finish(run, "failed", CUT_SHORT_REASON, hasText(partial) ? partial : null);
+    }
+
+    /**
+     * Ends a run that used all its working time, keeping whatever answer it last gave. Recorded
+     * under the step limit's code: to the person both mean the same thing - the agent ran out of
+     * room before it finished - and both are answered the same way, with Try again or a larger limit.
+     */
+    private Outcome failTimeLimit(Run run, Duration limit, String partial) {
+        String reason = "The agent reached its time limit of " + limit.toMinutes() + " minute"
+                + (limit.toMinutes() == 1 ? "" : "s") + " without finishing.";
+        saveStep(run, "error", Map.of("code", TaskProgress.STEP_LIMIT, "detail", reason));
+        return finish(run, "failed", reason, hasText(partial) ? partial : null);
+    }
+
+    /** The model's most recent words, the best partial answer a run cut off by time has. */
+    static String lastAssistantText(List<ChatMessage> conversation) {
+        for (int i = conversation.size() - 1; i >= 0; i--) {
+            ChatMessage message = conversation.get(i);
+            if (message.role() == ChatMessage.Role.ASSISTANT && message.content() != null
+                    && !message.content().isBlank()) {
+                return message.content();
+            }
+        }
+        return null;
+    }
+
+    /** The messages with the time-limit note added to the system prompt, when the run is close to it. */
+    static List<ChatMessage> withTimeNote(List<ChatMessage> messages, boolean add) {
+        if (!add || messages.isEmpty() || messages.getFirst().role() != ChatMessage.Role.SYSTEM) {
+            return messages;
+        }
+        List<ChatMessage> noted = new ArrayList<>(messages);
+        ChatMessage system = noted.getFirst();
+        noted.set(0, ChatMessage.system((system.content() == null ? "" : system.content()) + "\n\n" + TIME_NOTE));
+        return List.copyOf(noted);
+    }
+
+    // @find: compact long run history, long running agent context, summarise old turns
+    /**
+     * Summarises a long run's earlier turns once its history passes {@link #LONG_RUN_TOKEN_BUDGET},
+     * keeping the system prompt, the original request and the latest turns, with the same rules the
+     * router uses when a window overflows. Not while an answer cut off by the output limit is being
+     * continued: that continuation must see exactly what it is continuing.
+     *
+     * @return whether the history was shortened
+     */
+    static boolean compactLongHistory(List<ChatMessage> conversation, boolean continuing) {
+        if (continuing || conversation.size() < 8) {
+            return false;
+        }
+        ChatRequest whole = ChatRequest.builder().messages(List.copyOf(conversation)).build();
+        if (os.aiworkforce.llm.model.TokenEstimate.forRequest(whole) <= LONG_RUN_TOKEN_BUDGET) {
+            return false;
+        }
+        ChatRequest shorter = COMPACTOR.compact(whole, LONG_RUN_WINDOW);
+        if (shorter == null) {
+            return false;
+        }
+        conversation.clear();
+        conversation.addAll(shorter.messages());
+        return true;
     }
 
     /** Ends a run that used all its steps, keeping whatever answer the last turn gave. */
@@ -2291,6 +2418,9 @@ public class AgentRunner {
         }
         if (AgentMemoryTool.isMemoryTool(call.name())) {
             return useMemory(run, agent, call, history);
+        }
+        if (os.aiworkforce.orchestrator.schedule.AgentScheduleTool.NAME.equals(call.name())) {
+            return createSchedule(run, agent, call, history, lookups.origin());
         }
 
         String[] parts = call.name().split("\\.", 2);
@@ -2998,6 +3128,47 @@ public class AgentRunner {
     }
 
     /**
+     * An agent setting up work for later with {@code schedule.create}. Saved as the person the run
+     * is for and recorded as an ordinary tool step with the confirmation, so the trace and the
+     * answer say exactly what was scheduled and when it next runs. Not held for approval: it
+     * creates nothing outside the workspace, and the schedule can be paused or deleted like any
+     * other. An identical call made again is answered from the first rather than making a second.
+     */
+    private ToolOutcome createSchedule(Run run, Agent agent, ToolCall call, CallHistory history, Supplier<Origin> origin) {
+        if (scheduleTool == null) {
+            return failCall(run, call, "Scheduling is not available.");
+        }
+        String key = callKey(call.name(), call.argumentsJson());
+        long timesSeen = history.timesSeen(key);
+        if (timesSeen > 0) {
+            return repeatedCall(run, call, history, key, READ, timesSeen);
+        }
+        Instant startedAt = Instant.now();
+        Origin from = origin.get();
+        os.aiworkforce.orchestrator.schedule.AgentScheduleTool.Made made;
+        try {
+            made = scheduleTool.create(
+                    run.getOrgId(), agent, from.requester(), from.scheduleName() != null, call.argumentsJson());
+        } catch (os.aiworkforce.orchestrator.schedule.AgentScheduleTool.Refused refused) {
+            return failCall(run, call, refused.getMessage());
+        }
+        String modelContent = os.aiworkforce.orchestrator.schedule.AgentScheduleTool.modelText(made);
+        ToolResult result = ToolResult.succeeded(modelContent, made.sentence(), Duration.ZERO);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("toolCallId", call.id());
+        detail.put("tool", call.name());
+        detail.put("sideEffect", "WRITE");
+        detail.put("scheduleId", made.schedule().getId().toString());
+        detail.put("summary", made.sentence());
+        detail.put("status", result.status().name());
+        detail.put("durationMs", Duration.between(startedAt, Instant.now()).toMillis());
+        detail.put("modelContent", capForModel(modelContent));
+        saveStep(run, "tool_call", detail);
+        history.remember(key, result.status().name(), capForModel(modelContent), false, null);
+        return ToolOutcome.ran(result, capForModel(modelContent));
+    }
+
+    /**
      * Puts what the agent remembers about the request at the end of a new run's first message and
      * records it as a {@code memory_read} step, so a run that parks and resumes is rebuilt with
      * the same first message and the trace shows what the agent started out knowing. Does nothing
@@ -3540,6 +3711,12 @@ public class AgentRunner {
         if (!abilities.isEmpty()) {
             prompt.append("- What your connected services let you do: ").append(abilities).append('\n');
         }
+        if (hasTool(agent, "github", "commit_files")) {
+            prompt.append(REPOSITORY_GUIDANCE);
+        }
+        if (scheduleTool != null) {
+            prompt.append(SCHEDULE_GUIDANCE);
+        }
         if (askAllowed) {
             prompt.append(
                     """
@@ -3568,6 +3745,39 @@ public class AgentRunner {
         }
         prompt.append("- Write in plain, declarative sentences. No exclamation marks.\n");
         return prompt.toString();
+    }
+
+    /** How an agent with the repository tools changes code: read, plan, one commit on a branch, a pull request. */
+    static final String REPOSITORY_GUIDANCE =
+            """
+            - Changing a repository: first read its layout with github__list_tree (use path to narrow it) and \
+            read the files you will change with github__get_files, several at once. Plan every change, then \
+            make them all in one commit with github__commit_files on a new branch named for the work, such as \
+            docs/fix-typos (it is created from the default branch when it does not exist), with a clear commit \
+            message; put deletions in its deletions list. Then open a pull request with github__create_pull \
+            from that branch, describing what changed and why. Never commit to the default branch unless the \
+            person explicitly asks. Merging (github__merge_pull) and deleting files with github__delete_file wait \
+            for a person's approval. Give every file its complete new contents, never a placeholder or a \
+            summary, and change only what the request needs. In your answer, list the files changed and give \
+            the pull request's link.
+            """;
+
+    /** When to set work up for later rather than doing it now. */
+    static final String SCHEDULE_GUIDANCE =
+            """
+            - When the person asks for something to happen later or regularly ("every Monday at 9am", \
+            "tomorrow at 3pm", "remind HR to ..."), set it up with the schedule__create tool instead of doing \
+            it now, then confirm in one sentence what will happen and when it next runs, as the tool's result says.
+            """;
+
+    /** Whether one of this agent's granted tools is {@code server.name}; false when grants cannot be read. */
+    private boolean hasTool(Agent agent, String server, String name) {
+        try {
+            return tools.availableTools(loadGrants(agent.getId())).stream()
+                    .anyMatch(tool -> server.equals(tool.server()) && name.equals(tool.name()));
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
     }
 
     /**

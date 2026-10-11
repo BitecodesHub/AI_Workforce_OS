@@ -1,7 +1,7 @@
 // @find: schedule run history, schedule runs, transfer schedule owner, change schedule owner, pagination, load more runs, GET /api/schedules/{id}/runs, PUT /api/schedules/{id}/owner, Schedules page, history dialog
 // @what: Reads a schedule's run history a page at a time and hands a schedule to another member.
 // @flow: Used by components/schedules/ScheduleHistoryDialog.tsx and routes/Schedules.tsx; rules in lib/schedules.ts.
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import type { QueryOptions, Schedule } from './queries'
 
@@ -18,6 +18,18 @@ export type ScheduleRun = {
   status: string
   createdAt: string | null
   completedAt: string | null
+  /** The latest run of the goal's first task, for a link to its trace at /runs/{runId}. */
+  runId?: string | null
+  taskId?: string | null
+}
+
+/** How a schedule's runs have gone, across all of them rather than one page. */
+export type ScheduleRunCounts = {
+  total: number
+  succeeded: number
+  failed: number
+  cancelled: number
+  active: number
 }
 
 /** One page of GET /api/schedules/{id}/runs, newest first. */
@@ -28,6 +40,8 @@ export type ScheduleRunsPage = {
   /** How many runs the schedule has started in all. */
   total: number
   hasMore: boolean
+  /** Outcomes across every run; absent from an older server. */
+  counts?: ScheduleRunCounts | null
 }
 
 /** Runs shown per page; the server allows up to 100. */
@@ -37,6 +51,8 @@ const runRow = (run: ScheduleRun): ScheduleRun => ({
   ...run,
   createdAt: run.createdAt ?? null,
   completedAt: run.completedAt ?? null,
+  runId: run.runId ?? null,
+  taskId: run.taskId ?? null,
 })
 
 // @find: next page of runs, load older runs, schedule history paging
@@ -76,6 +92,22 @@ export function useScheduleRunPages(id: string, options: QueryOptions = {}) {
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => nextRunsPage(lastPage),
+    enabled: Boolean(id) && (options.enabled ?? true),
+  })
+}
+
+/** Runs the agent page shows for an expanded schedule before pointing at the full history. */
+export const RECENT_SCHEDULE_RUNS = 5
+
+// @find: recent schedule runs, last five runs of a schedule, schedule run counts; route: GET /api/schedules/{id}/runs?page=0&size=5; used by: Agent detail page scheduled tasks
+/** A schedule's most recent runs and its overall counts (task:read), asked for only when `enabled`. */
+export function useRecentScheduleRuns(id: string, options: QueryOptions = {}) {
+  return useQuery({
+    queryKey: ['schedules', id, 'runs', 'recent'],
+    queryFn: async ({ signal }) => {
+      const page = await api<ScheduleRunsPage>(`/api/schedules/${id}/runs?page=0&size=${RECENT_SCHEDULE_RUNS}`, { signal })
+      return { ...page, runs: page.runs.map(runRow), counts: page.counts ?? null }
+    },
     enabled: Boolean(id) && (options.enabled ?? true),
   })
 }

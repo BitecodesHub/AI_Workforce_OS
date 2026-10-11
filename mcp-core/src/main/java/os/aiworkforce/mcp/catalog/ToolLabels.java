@@ -35,7 +35,8 @@ public final class ToolLabels {
             Map.entry("repo", "repository"),
             Map.entry("repos", "repositories"),
             Map.entry("pr", "pull request"),
-            Map.entry("prs", "pull requests"));
+            Map.entry("prs", "pull requests"),
+            Map.entry("tree", "files and folders"));
 
     /* Verbs that read better as another word. */
     private static final Map<String, String> VERBS = Map.of("get", "read", "search", "search");
@@ -43,7 +44,7 @@ public final class ToolLabels {
     /* Verbs whose single object takes an article: "create an issue", not "create issue". */
     private static final Set<String> TAKES_ARTICLE = Set.of(
             "create", "draft", "send", "post", "add", "get", "save", "update", "delete", "remove", "archive",
-            "cancel", "refund", "merge", "schedule", "append", "reply", "read");
+            "cancel", "refund", "merge", "schedule", "append", "reply", "read", "rename");
 
     /* The tools the platform itself offers every agent, which are not on any connector. */
     private static final Map<String, String> INTERNAL = Map.of(

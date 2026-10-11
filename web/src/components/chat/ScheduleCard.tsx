@@ -22,15 +22,18 @@ export function ScheduleCard({ message }: { message: ChatMessage }) {
   const [error, setError] = useState<string | null>(null)
   const canCreate = can('task:create')
 
+  // A schedule chat already saved names itself; an older suggestion is matched by what it does.
   const saved = (schedulesQuery.data ?? []).find(
     (schedule) =>
-      schedule.agentId === detail.agentId &&
+      (detail.scheduleId !== undefined && schedule.id === detail.scheduleId) ||
+      (schedule.agentId === detail.agentId &&
       schedule.instruction === detail.instruction &&
       schedule.cron === (detail.cron ?? null) &&
-      schedule.runAt === (detail.runAt ?? null),
+      schedule.runAt === (detail.runAt ?? null)),
   )
   const alreadySaved =
     created ||
+    detail.scheduleId !== undefined ||
     readStored(`chat.schedule.${message.id}`, false, (v): v is boolean => typeof v === 'boolean') ||
     saved !== undefined
   // The saved schedule's state, read by the same rule as the Schedules screen: a one-off that has
@@ -59,8 +62,8 @@ export function ScheduleCard({ message }: { message: ChatMessage }) {
 
   return (
     <Card as="article" className="chat-schedule-card">
-      <Eyebrow as="h2">Schedule</Eyebrow>
-      <p>{detail.description ?? message.content}</p>
+      <Eyebrow as="h2">{detail.scheduleId ? 'Scheduled' : 'Schedule'}</Eyebrow>
+      <p>{detail.scheduleId ? message.content : (detail.description ?? message.content)}</p>
       <dl className="chat-schedule-facts">
         {detail.agentName && (
           <div>
@@ -102,6 +105,11 @@ export function ScheduleCard({ message }: { message: ChatMessage }) {
           <p className="caption row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             <span>Saved as a schedule.</span>
             {savedLabel && <Tag tone={savedLabel.tone}>{savedLabel.label}</Tag>}
+            {detail.agentId && (
+              <a className="link" href={`/agents/${detail.agentId}`}>
+                {detail.agentName ? `See it on ${detail.agentName}` : 'See it on the agent'}
+              </a>
+            )}
             <a className="link" href="/schedules">
               Open Schedules
             </a>

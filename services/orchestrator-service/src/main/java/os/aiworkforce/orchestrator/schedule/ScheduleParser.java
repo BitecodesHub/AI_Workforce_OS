@@ -108,7 +108,8 @@ public final class ScheduleParser {
 
     // ---- Time-of-day -----------------------------------------------------------------------
 
-    private static final Pattern TIME = Pattern.compile("(?i)^(noon|midnight|(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?)$");
+    private static final Pattern TIME =
+            Pattern.compile("(?i)^(noon|midnight|(\\d{1,2})(?:[:.](\\d{2}))?\\s*(am|pm|a\\.m\\.?|p\\.m\\.?)?)$");
 
     private static LocalTime parseTime(String token) {
         Matcher m = TIME.matcher(token.strip());
@@ -124,7 +125,7 @@ public final class ScheduleParser {
         }
         int hour = Integer.parseInt(m.group(2));
         int minute = m.group(3) == null ? 0 : Integer.parseInt(m.group(3));
-        String ampm = m.group(4) == null ? null : m.group(4).toLowerCase(Locale.ROOT);
+        String ampm = m.group(4) == null ? null : m.group(4).toLowerCase(Locale.ROOT).replace(".", "");
         if (ampm == null) {
             if (hour == 24) {
                 hour = 0;
@@ -182,7 +183,7 @@ public final class ScheduleParser {
             throw invalid();
         }
         String original = text.strip();
-        String lower = original.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").strip();
+        String lower = normalise(original.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").strip());
 
         Optional<ParsedSchedule> isoInstant = tryIsoInstant(original, zone, now);
         if (isoInstant.isPresent()) {
@@ -234,6 +235,49 @@ public final class ScheduleParser {
             cursor = next;
         }
         return runs;
+    }
+
+    // ---- Everyday phrasing, rewritten into the shapes below -----------------------------------
+
+    /** A time with am or pm, the only bare number confidently read as a time of day. */
+    private static final String CLOCK = "\\d{1,2}(?:[:.]\\d{2})?\\s*(?:am|pm|a\\.m\\.?|p\\.m\\.?)";
+
+    private static final Pattern TIME_FIRST =
+            Pattern.compile("^at\\s+(" + CLOCK + "|\\d{1,2}[:.]\\d{2}|noon|midnight)\\s+(.+)$");
+    private static final Pattern MISSING_AT = Pattern.compile("(?<!\\bat)(?<=[a-z0-9])\\s+(" + CLOCK + ")$");
+
+    /**
+     * Rewrites the ways people commonly say a time into the shapes the patterns below read, without
+     * widening what any of them accept: "at 3pm tomorrow" is "tomorrow at 3pm", "every monday 9am"
+     * is "every monday at 9am", "in 30 mins" is "in 30 minutes", "tonight at 8pm" is "today at 8pm".
+     */
+    // @find: normalise schedule phrase, time first, missing at, mins hrs, tonight, tomorrow morning
+    static String normalise(String lower) {
+        String text = lower.replaceAll("[.,;:!?]+$", "").strip();
+        text = text.replaceAll("^each\\s+", "every ");
+        text = text.replaceAll("\\beveryday\\b", "every day");
+        text = text.replaceAll("\\b(\\d+)\\s*(?:mins?|minutes?)\\b", "$1 minutes");
+        text = text.replaceAll("\\b(\\d+)\\s*(?:hrs?|hours?)\\b", "$1 hours");
+        text = text.replaceAll("^in\\s+half\\s+an\\s+hour$", "in 30 minutes");
+        text = text.replaceAll("^in\\s+an?\\s+hour$", "in 1 hours");
+        text = text.replaceAll("^in\\s+a\\s+minute$", "in 1 minutes");
+        text = text.replaceAll("^in\\s+(\\d+)\\s+minutes$", "in $1 minutes");
+        text = text.replaceAll("\\btonight\\b", "today");
+        text = text.replaceAll("\\b(today|tomorrow)\\s+morning$", "$1 at 9am");
+        text = text.replaceAll("\\b(today|tomorrow)\\s+afternoon$", "$1 at 2pm");
+        text = text.replaceAll("\\b(today|tomorrow)\\s+evening$", "$1 at 6pm");
+        text = text.replaceAll("^this\\s+(morning)$", "today at 9am");
+        text = text.replaceAll("^this\\s+(afternoon)$", "today at 2pm");
+        text = text.replaceAll("^this\\s+(evening)$", "today at 6pm");
+        Matcher timeFirst = TIME_FIRST.matcher(text);
+        if (timeFirst.matches() && !timeFirst.group(2).startsWith("at ")) {
+            text = timeFirst.group(2) + " at " + timeFirst.group(1);
+        }
+        Matcher missingAt = MISSING_AT.matcher(text);
+        if (missingAt.find() && !text.startsWith("in ")) {
+            text = text.substring(0, missingAt.start()) + " at " + missingAt.group(1);
+        }
+        return text.replaceAll("\\s+", " ").strip();
     }
 
     private static ApiException invalid() {
@@ -530,8 +574,41 @@ public final class ScheduleParser {
     private static final Pattern ON_DAY_MONTH =
             Pattern.compile("^on\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+([a-z]+)(?:\\s+(\\d{4}))?(?:\\s+at\\s+(.+))?$");
 
+    private static final Pattern AT_TIME_ONLY = Pattern.compile("^at\\s+(.+)$");
+    private static final Pattern ON_WEEKDAY =
+            Pattern.compile("^(?:(on|next|this|on\\s+next|on\\s+this)\\s+)?([a-z]+)(?:\\s+at\\s+(.+))?$");
+
     private static Optional<ParsedSchedule> tryOnce(String lower, ZoneId zone, Instant now) {
         Matcher m;
+
+        if ((m = AT_TIME_ONLY.matcher(lower)).matches()) {
+            // "at 3pm": today when that is still ahead, otherwise tomorrow. A bare number such as
+            // "at 5" is refused: it is as often a count as a time.
+            String token = m.group(1).strip();
+            if (!token.matches(CLOCK) && !token.matches("\\d{1,2}[:.]\\d{2}|noon|midnight")) {
+                return Optional.empty();
+            }
+            LocalTime time = parseTime(token);
+            LocalDate today = LocalDate.ofInstant(now, zone);
+            Instant runAt = ZonedDateTime.of(today, time, zone).toInstant();
+            if (!runAt.isAfter(now)) {
+                runAt = ZonedDateTime.of(today.plusDays(1), time, zone).toInstant();
+            }
+            return Optional.of(once(runAt, zone));
+        }
+        if ((m = ON_WEEKDAY.matcher(lower)).matches() && DAY_ABBREVIATION.containsKey(m.group(2))) {
+            java.time.DayOfWeek day = java.time.DayOfWeek.of(DAY_ORDER.get(DAY_ABBREVIATION.get(m.group(2))) + 1);
+            LocalTime time = timeOrDefault(m.group(3));
+            boolean next = m.group(1) != null && m.group(1).contains("next");
+            LocalDate today = LocalDate.ofInstant(now, zone);
+            LocalDate date = today.with(java.time.temporal.TemporalAdjusters.nextOrSame(day));
+            Instant runAt = ZonedDateTime.of(date, time, zone).toInstant();
+            if (next || !runAt.isAfter(now)) {
+                date = today.with(java.time.temporal.TemporalAdjusters.next(day));
+                runAt = ZonedDateTime.of(date, time, zone).toInstant();
+            }
+            return Optional.of(once(runAt, zone));
+        }
 
         if ((m = IN_DURATION.matcher(lower)).matches()) {
             long n = Long.parseLong(m.group(1));

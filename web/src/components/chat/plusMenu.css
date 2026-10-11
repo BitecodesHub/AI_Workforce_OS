@@ -1,0 +1,431 @@
+/*
+ * @find: plus menu styles, composer + popover css, picker lists, context chips css
+ * @what: Styles for the composer's "+" button, its popover and lists, and the context chips.
+ * @flow: Used by PlusMenu, ContextPickers and ContextChips.
+ */
+/*
+ * Held to the design-system rules: borders from --line, radii from the token scale, colours from
+ * tokens only. The popover floats, so it carries the same raised shadow as every other menu.
+ */
+
+.plus-trigger[data-active] {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+.plus-menu {
+  z-index: 1000;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: min(480px, calc(100dvh - 16px));
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: plus-pop var(--transition-slow, 160ms) ease-out;
+  transform-origin: bottom left;
+}
+
+.plus-menu[data-placement='below'] {
+  transform-origin: top left;
+}
+
+@keyframes plus-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plus-menu {
+    animation: none;
+  }
+}
+
+.plus-menu-root {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.plus-menu-separator {
+  height: 1px;
+  margin: var(--space-1) calc(var(--space-2) * -1);
+  background: var(--line);
+}
+
+.plus-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.plus-row:hover:not(:disabled),
+.plus-row:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.plus-row:focus-visible {
+  border-color: var(--line);
+}
+
+.plus-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.plus-row-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--icon-ink);
+}
+
+.plus-row-text,
+.plus-option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.plus-row-label,
+.plus-option-label {
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plus-row-note,
+.plus-option-note {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plus-row-chevron {
+  flex: none;
+  color: var(--muted);
+}
+
+/* ---- Lists inside the popover ------------------------------------------------------------- */
+
+.plus-picker-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-2);
+}
+
+.plus-picker-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-strong);
+  font-size: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plus-back,
+.plus-done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-caption);
+}
+
+.plus-back {
+  width: 28px;
+  height: 28px;
+}
+
+.plus-done {
+  padding: var(--space-1) var(--space-3);
+  min-height: 28px;
+}
+
+.plus-back:hover,
+.plus-done:hover {
+  background: var(--surface-hover);
+}
+
+.plus-search {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.plus-search-input,
+.plus-select {
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-body);
+}
+
+.plus-search-input:focus-visible,
+.plus-select:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.plus-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: 300px;
+}
+
+.plus-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.plus-option[data-active] {
+  background: var(--surface-hover);
+}
+
+.plus-option[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.plus-option-icon {
+  flex: none;
+  display: inline-flex;
+}
+
+.plus-option-check {
+  flex: none;
+  display: inline-flex;
+  color: var(--blue);
+}
+
+.plus-option-drill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.plus-option-drill:hover {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.plus-list-empty,
+.plus-state {
+  margin: 0;
+  padding: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plus-state.stack {
+  align-items: flex-start;
+}
+
+.plus-footnote {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  border-top: 1px solid var(--line);
+}
+
+.plus-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-1) var(--space-1);
+  overflow-y: auto;
+}
+
+.plus-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.plus-tree {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.plus-tree-row {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-caption);
+}
+
+.plus-tree-row:hover,
+.plus-tree-row:focus-visible {
+  background: var(--surface-hover);
+}
+
+.plus-tree-empty {
+  padding: var(--space-1) var(--space-2);
+}
+
+.plus-preview {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plus-attach {
+  align-self: flex-end;
+}
+
+/* ---- Chips ---------------------------------------------------------------------------------- */
+
+.chat-context-chips {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chat-context-chips[data-align='end'] {
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.chat-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: min(320px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.chat-context-chip[data-kind='skill'] {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+.chat-context-chip-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--icon-ink);
+}
+
+.chat-context-chip[data-kind='skill'] .chat-context-chip-icon {
+  color: inherit;
+}
+
+.chat-context-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-context-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-context-chip button:hover {
+  background: var(--surface-hover);
+}
+
+@media (pointer: coarse) {
+  .chat-context-chip button {
+    width: 28px;
+    height: 28px;
+  }
+  .plus-row {
+    min-height: 52px;
+  }
+}
+
+@media (max-width: 480px) {
+  .plus-menu {
+    width: calc(100vw - 16px);
+  }
+}

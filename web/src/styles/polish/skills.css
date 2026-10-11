@@ -1,0 +1,92 @@
+/*
+ * @find: skills page styles, skill card, skills grid, skill connector chips, skill instructions box
+ * @what: Layout for the Skills page cards and the skill editor's connector chips.
+ * @flow: Used by routes/Skills.tsx and components/skills/SkillEditorDialog.tsx; imported by polish/index.css
+ */
+
+/* ---- Skills page ------------------------------------------------------------------------------
+ * Cards in a grid that falls to one column on a phone; min() lets a card shrink below its usual
+ * width instead of pushing the page sideways at 375px.
+ */
+.skills-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  gap: var(--space-5);
+}
+
+.skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.skill-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.skill-card-title {
+  margin: 0;
+  font-size: var(--text-h2);
+  font-weight: var(--weight-strong);
+  overflow-wrap: anywhere;
+}
+
+.skill-card-description {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.skill-card-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.skill-card-facts > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.skill-card-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.skill-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.skill-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+/* ---- Skill editor --------------------------------------------------------------------------- */
+.skill-connector-chips {
+  flex-wrap: wrap;
+}
+
+.skill-instructions {
+  min-height: 160px;
+  resize: vertical;
+}

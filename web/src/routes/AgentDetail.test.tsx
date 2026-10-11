@@ -4,6 +4,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { formatDateTimeIn } from '../lib/format'
 import { RouterProvider } from '../lib/router'
 import { clearSession, saveSession } from '../lib/session'
 import { ToastProvider } from '../lib/toast'
@@ -132,6 +133,44 @@ let agent: Record<string, unknown>
 let permissions: string[]
 let outcomes: Array<Record<string, unknown>> | null
 let policy: Record<string, unknown>
+let schedules: Array<Record<string, unknown>>
+
+const WEEKLY = {
+  id: 's-weekly',
+  name: 'Weekly contract summary',
+  agentId: 'a-legal',
+  agentName: 'Legal',
+  instruction: 'Summarise the contracts reviewed this week',
+  kind: 'recurring',
+  cron: '0 0 9 * * MON',
+  runAt: null,
+  timezone: 'Australia/Melbourne',
+  description: 'Every Monday at 9:00 am',
+  enabled: true,
+  overlapPolicy: 'skip',
+  nextRunAt: '2026-10-11T22:00:00Z',
+  lastRunAt: '2026-10-04T22:00:00Z',
+  lastStatus: 'completed',
+  lastGoalId: 'g-12',
+  consecutiveFailures: 0,
+  pausedReason: null,
+  createdBy: 'user-2',
+  createdAt: '2026-09-01T00:00:00Z',
+  state: 'active',
+  completed: false,
+}
+
+const WEEKLY_RUNS = {
+  runs: [
+    { id: 'g-12', title: 'Weekly contract summary', status: 'completed', createdAt: '2026-10-04T22:00:00Z', completedAt: '2026-10-04T22:03:00Z', runId: 'run-12', taskId: 't-12' },
+    { id: 'g-11', title: 'Weekly contract summary', status: 'failed', createdAt: '2026-09-27T22:00:00Z', completedAt: '2026-09-27T22:01:00Z', runId: null, taskId: null },
+  ],
+  page: 0,
+  size: 5,
+  total: 12,
+  hasMore: true,
+  counts: { total: 12, succeeded: 10, failed: 2, cancelled: 0, active: 0 },
+}
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -143,6 +182,7 @@ beforeEach(() => {
   permissions = ['agent:read', 'run:read']
   outcomes = [{ agentId: 'a-legal', runs: 14, finishedRuns: 12, completed: 9, failed: 3, enoughRuns: true, successRate: 0.75, totalCost: 2.5 }]
   policy = NO_POLICY
+  schedules = [WEEKLY]
   vi.stubGlobal('scrollTo', vi.fn())
   vi.stubGlobal(
     'fetch',
@@ -163,8 +203,11 @@ beforeEach(() => {
         if (path === '/api/credentials') return json(200, [{ ref: 'provider:groq', kind: 'api_key', present: true }])
         if (path === '/api/users') return json(200, [{ userId: 'user-2', displayName: 'Maya Manager', email: 'maya@example.test', role: 'admin', status: 'active' }])
         if (path === '/api/runs') return json(200, [])
+        if (path === '/api/schedules') return json(200, schedules)
+        if (path === '/api/schedules/s-weekly/runs') return json(200, WEEKLY_RUNS)
         return json(404, { code: 'not_found', detail: 'Not here.' })
       }
+      if (method === 'POST' && path === '/api/schedules/s-weekly/pause') return json(200, { ...WEEKLY, enabled: false, state: 'paused' })
       if (method === 'POST' && path === '/api/agents/a-legal/pause') return json(200, { ...agent, status: 'paused' })
       if (method === 'POST' && path === '/api/agents/a-legal/resume') return json(200, { ...agent, status: 'active' })
       if (method === 'PUT' && path === '/api/agents/a-legal/configuration') return json(200, { ...agent, revision: 4 })
@@ -610,9 +653,27 @@ describe('editing the configuration', () => {
       systemPrompt: 'You review contracts. Revision three.',
       goals: 'Keep every contract reviewed.',
       maxSteps: 12,
+      maxRunMinutes: null,
       temperature: 0.7,
       maxOutputTokens: 2000,
     })
+  })
+
+  it('saves a time limit per run and refuses one over 120 minutes', async () => {
+    permissions = ['agent:read', 'agent:update']
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit instructions' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Change how Legal works' })
+    const field = within(dialog).getByLabelText(/Time limit per run/)
+    fireEvent.change(field, { target: { value: '121' } })
+    expect(within(dialog).getByText(/whole number of minutes from 1 to 120/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Save instructions' })).toBeDisabled()
+    fireEvent.change(field, { target: { value: '90' } })
+    fireEvent.change(within(dialog).getByLabelText(/Step limit per run/), { target: { value: '150' } })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save instructions' }))
+    })
+    expect(writes()[0]?.body).toMatchObject({ maxSteps: 150, maxRunMinutes: 90 })
   })
 
   it('refuses a temperature outside 0 to 2 beside the field', async () => {
@@ -631,5 +692,97 @@ describe('voice', () => {
     await open()
     expect(screen.queryByRole('heading', { name: 'Voice' })).not.toBeInTheDocument()
     expect(calls.some((call) => call.url.startsWith('/api/voice'))).toBe(false)
+  })
+})
+
+describe('scheduled tasks', () => {
+  const section = () => screen.getByRole('heading', { name: 'Scheduled tasks' }).closest('section') as HTMLElement
+
+  it('lists the agent\'s schedules with when they run, the next run in their own timezone, state and owner', async () => {
+    permissions = ['agent:read', 'task:read', 'member:read']
+    await open()
+
+    expect(await screen.findByRole('button', { name: 'Weekly contract summary' })).toBeInTheDocument()
+    expect(calls.some((call) => call.method === 'GET' && call.url === '/api/schedules?agentId=a-legal')).toBe(true)
+    const card = section()
+    expect(within(card).getByText('Every Monday at 9:00 am')).toBeInTheDocument()
+    expect(within(card).getByText('(Australia/Melbourne)')).toBeInTheDocument()
+    expect(within(card).getByText(formatDateTimeIn('2026-10-11T22:00:00Z', 'Australia/Melbourne'))).toBeInTheDocument()
+    expect(within(card).getByText('Active')).toBeInTheDocument()
+    expect(await within(card).findByText('Maya Manager')).toBeInTheDocument()
+  })
+
+  it('fetches the run history only when a schedule is opened, then shows its counts and a link to each trace', async () => {
+    permissions = ['agent:read', 'task:read']
+    await open()
+    const toggle = await screen.findByRole('button', { name: 'Weekly contract summary' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(calls.some((call) => call.url.startsWith('/api/schedules/s-weekly/runs'))).toBe(false)
+
+    fireEvent.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '') as HTMLElement
+    expect(await within(panel).findByText('Times run')).toBeInTheDocument()
+    expect(calls.some((call) => call.url === '/api/schedules/s-weekly/runs?page=0&size=5')).toBe(true)
+    const counts = (dt: string) => within(panel).getByText(dt, { selector: 'dt' }).nextElementSibling?.textContent
+    expect(counts('Times run')).toBe('12')
+    expect(counts('Succeeded')).toBe('10')
+    expect(counts('Failed')).toBe('2')
+    expect(within(panel).getByText('Last 2 runs')).toBeInTheDocument()
+    expect(within(panel).getByRole('link', { name: 'View trace of Weekly contract summary' })).toHaveAttribute('href', '/runs/run-12')
+    // A run with no trace yet points at its goal instead.
+    expect(within(panel).getByRole('link', { name: 'Open Weekly contract summary in Tasks' })).toHaveAttribute('href', '/tasks?goal=g-11')
+    expect(within(panel).getByRole('button', { name: 'Open full history' })).toBeInTheDocument()
+  })
+
+  it('offers no actions to a role that can only read schedules, nor on another member\'s schedule without task:cancel', async () => {
+    permissions = ['agent:read', 'task:read']
+    await open()
+    await screen.findByRole('button', { name: 'Weekly contract summary' })
+    expect(screen.queryByRole('button', { name: /Pause Weekly/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Run Weekly/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Delete Weekly/ })).not.toBeInTheDocument()
+  })
+
+  it('hides actions from someone who can start work but does not own the schedule', async () => {
+    permissions = ['agent:read', 'task:read', 'task:create']
+    await open()
+    await screen.findByRole('button', { name: 'Weekly contract summary' })
+    expect(screen.queryByRole('button', { name: /Pause Weekly/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Edit Weekly/ })).not.toBeInTheDocument()
+  })
+
+  it('pauses the owner\'s own schedule and says so', async () => {
+    permissions = ['agent:read', 'task:read', 'task:create']
+    schedules = [{ ...WEEKLY, createdBy: 'user-1' }]
+    await open()
+    const card = section()
+    expect(await within(card).findByText('You')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Run Weekly contract summary now' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Edit Weekly contract summary' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Delete Weekly contract summary' })).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(within(card).getByRole('button', { name: 'Pause Weekly contract summary' }))
+    })
+
+    expect(writes()).toEqual([{ method: 'POST', url: '/api/schedules/s-weekly/pause', body: null }])
+    expect(await screen.findByText('Weekly contract summary is paused')).toBeInTheDocument()
+  })
+
+  it('points to Schedules and Chat when the agent has nothing scheduled', async () => {
+    permissions = ['agent:read', 'task:read']
+    schedules = []
+    await open()
+    expect(await screen.findByRole('heading', { name: 'Nothing scheduled' })).toBeInTheDocument()
+    expect(within(section()).getByRole('link', { name: 'Schedules' })).toHaveAttribute('href', '/schedules')
+    expect(within(section()).getByText(/@Legal every Monday at 9am/)).toBeInTheDocument()
+  })
+
+  it('is not shown, nor asked for, without task:read', async () => {
+    await open()
+    expect(screen.queryByRole('heading', { name: 'Scheduled tasks' })).not.toBeInTheDocument()
+    expect(calls.some((call) => call.url.startsWith('/api/schedules'))).toBe(false)
   })
 })

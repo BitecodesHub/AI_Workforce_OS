@@ -69,15 +69,61 @@ class EveryToolThroughGatewayTest {
     }
 
     @Test
-    @DisplayName("the registry offers 20 connectors and 89 tools, all of them exercised above")
+    @DisplayName("the registry offers 20 connectors and 96 tools, all of them exercised above")
     void inventory() {
         assertThat(servers).hasSize(20);
-        assertThat(adapters.stream().mapToInt(adapter -> adapter.tools().size()).sum()).isEqualTo(89);
+        assertThat(adapters.stream().mapToInt(adapter -> adapter.tools().size()).sum()).isEqualTo(96);
     }
 
     // ---- The verbs -----------------------------------------------------------------------------
 
+    /*
+     * GitHub's repository tools work on branches, files and commits rather than records with ids,
+     * so the record checks below do not fit them. Each gets arguments that name real practice
+     * files and branches, and is checked for what it is: a read returns something, a write says it
+     * stayed in the sandbox, and anything destructive waits for a person.
+     */
+    private static final Map<String, String> REPOSITORY_ARGS = Map.ofEntries(
+            Map.entry("github.list_branches", "{\"repo\":\"acme/website\"}"),
+            Map.entry("github.create_branch", "{\"repo\":\"acme/website\",\"branch\":\"docs/new-page\",\"from\":\"main\"}"),
+            Map.entry("github.list_tree", "{\"repo\":\"acme/website\",\"ref\":\"main\",\"path\":\"docs\"}"),
+            Map.entry("github.get_file", "{\"repo\":\"acme/website\",\"path\":\"README.md\",\"ref\":\"main\"}"),
+            Map.entry("github.get_files", "{\"repo\":\"acme/website\",\"paths\":[\"README.md\",\"docs/faq.md\"]}"),
+            Map.entry("github.save_file", "{\"repo\":\"acme/website\",\"path\":\"docs/notes.md\",\"content\":\"Notes\","
+                    + "\"message\":\"Add notes\",\"branch\":\"fix-checkout-spacing\"}"),
+            Map.entry("github.delete_file", "{\"repo\":\"acme/website\",\"path\":\"docs/faq.md\",\"message\":\"Remove\","
+                    + "\"branch\":\"fix-checkout-spacing\"}"),
+            Map.entry("github.rename_file", "{\"repo\":\"acme/website\",\"from\":\"docs/faq.md\",\"to\":\"docs/help.md\","
+                    + "\"branch\":\"fix-checkout-spacing\",\"message\":\"Rename\"}"),
+            Map.entry("github.commit_files", "{\"repo\":\"acme/website\",\"branch\":\"docs/fix-typos\",\"from\":\"main\","
+                    + "\"message\":\"Fix typos\",\"files\":[{\"path\":\"docs/faq.md\",\"content\":\"Fixed\"}],"
+                    + "\"deletions\":[\"docs/getting-started.md\"]}"),
+            Map.entry("github.compare_branches", "{\"repo\":\"acme/website\",\"base\":\"main\",\"head\":\"fix-checkout-spacing\"}"),
+            Map.entry("github.list_commits", "{\"repo\":\"acme/website\",\"ref\":\"main\",\"limit\":10}"));
+
+    private void exerciseRepositoryTool(ToolDefinition tool) {
+        String org = "org-" + UUID.randomUUID();
+        ObjectNode args = (ObjectNode) read(REPOSITORY_ARGS.get(tool.qualifiedName()));
+
+        ToolResult result = approvedCall(org, tool, args);
+        assertThat(result.status()).as(tool.qualifiedName() + ": " + result.summary()).isEqualTo(ToolResult.Status.SUCCEEDED);
+        assertPlain(tool, result.summary());
+        JsonNode content = read(result.contentJson());
+        if (tool.sideEffect() == ToolSpec.SideEffect.READ) {
+            assertThat(content.has("count") ? content.path("count").asInt() : content.path("ahead").asInt())
+                    .as(tool.qualifiedName() + " returns something").isPositive();
+        } else {
+            assertThat(result.summary()).contains("Nothing left this machine");
+            assertThat(content.path("sandbox").asBoolean()).isTrue();
+        }
+        assertValidationIsPlain(org, tool, args);
+    }
+
     private void exercise(ToolDefinition tool) {
+        if (REPOSITORY_ARGS.containsKey(tool.qualifiedName())) {
+            exerciseRepositoryTool(tool);
+            return;
+        }
         String org = "org-" + UUID.randomUUID();
         String verb = verbOf(tool);
         ObjectNode args = validArgs(tool);
@@ -387,6 +433,26 @@ class EveryToolThroughGatewayTest {
             }
         }
         return json.missingNode();
+    }
+
+    // @find: test gateway holds github default branch writes for approval
+    @Test
+    @DisplayName("the gateway holds a GitHub file write to the default branch for approval, and lets one to a branch through")
+    void defaultBranchWritesAreHeld() {
+        ToolDefinition save = servers.get("github").tool("save_file").orElseThrow();
+        String base = "\"repo\":\"acme/website\",\"path\":\"docs/faq.md\",\"content\":\"Fixed\"";
+
+        ApprovalDecision onDefault = gateway.evaluate(invocation("org-1", save, "{" + base + "}"), grants("github"), false);
+        ApprovalDecision onMain =
+                gateway.evaluate(invocation("org-1", save, "{" + base + ",\"branch\":\"main\"}"), grants("github"), false);
+        ApprovalDecision onBranch = gateway.evaluate(
+                invocation("org-1", save, "{" + base + ",\"branch\":\"docs/fix-typos\"}"), grants("github"), false);
+
+        assertThat(onDefault).isInstanceOf(ApprovalDecision.AwaitApproval.class);
+        assertThat(((ApprovalDecision.AwaitApproval) onDefault).reason())
+                .isEqualTo("Write straight to the default branch of acme/website using github.save_file");
+        assertThat(onMain).isInstanceOf(ApprovalDecision.AwaitApproval.class);
+        assertThat(onBranch).isEqualTo(ApprovalDecision.PROCEED);
     }
 
     private List<ToolGrant> grants(String server) {

@@ -78,15 +78,33 @@ public class ChatController {
     public record CreateConversationRequest(@Size(max = 200) String title) {}
 
     /**
-     * @param text what the person wrote; may be empty when files are attached
+     * @param text what the person wrote; may be empty when files are attached or a skill is chosen
      * @param attachmentIds files uploaded for this message (see {@link AttachmentController}), at most 10
+     * @param knowledge workspace sources or documents chosen to ground this message, at most 20
+     * @param repo a GitHub repository (optional branch and path) the work is about
+     * @param skillId a skill whose playbook the run follows
      */
     public record SendMessageRequest(
-            @Size(max = 10_000) String text, List<UUID> agentIds, @Size(max = 10) List<UUID> attachmentIds) {
+            @Size(max = 10_000) String text,
+            List<UUID> agentIds,
+            @Size(max = 10) List<UUID> attachmentIds,
+            @Size(max = 20) List<MessageContext.KnowledgeRef> knowledge,
+            MessageContext.RepoRef repo,
+            UUID skillId) {
 
         /** The shape before files could be attached. */
         public SendMessageRequest(String text, List<UUID> agentIds) {
             this(text, agentIds, null);
+        }
+
+        /** The shape before the "+" menu could attach knowledge, a repository or a skill. */
+        public SendMessageRequest(String text, List<UUID> agentIds, List<UUID> attachmentIds) {
+            this(text, agentIds, attachmentIds, null, null, null);
+        }
+
+        /** What was attached besides files, checked. */
+        public MessageContext context() {
+            return MessageContext.of(knowledge, repo, skillId);
         }
     }
 
@@ -292,11 +310,18 @@ public class ChatController {
     public MessagesResult send(
             @PathVariable UUID id, @Valid @RequestBody SendMessageRequest request, HttpServletRequest httpRequest) {
         List<UUID> attachmentIds = request.attachmentIds() == null ? List.of() : request.attachmentIds();
-        if ((request.text() == null || request.text().isBlank()) && attachmentIds.isEmpty()) {
+        MessageContext context = request.context();
+        if ((request.text() == null || request.text().isBlank()) && attachmentIds.isEmpty() && context.skillId() == null) {
             throw os.aiworkforce.platform.error.ApiException.validation("text", "must not be blank");
         }
         CoordinatorService.SendOutcome outcome = coordinator.send(
-                orgId(), id, request.text(), request.agentIds(), attachmentIds, httpRequest.getHeader("Authorization"));
+                orgId(),
+                id,
+                request.text(),
+                request.agentIds(),
+                attachmentIds,
+                context,
+                httpRequest.getHeader("Authorization"));
         if (outcome.queued() != null && chatQueue != null) {
             return new MessagesResult(
                     List.of(),

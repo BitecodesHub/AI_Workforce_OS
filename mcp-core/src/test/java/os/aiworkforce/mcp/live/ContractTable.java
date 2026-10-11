@@ -444,6 +444,141 @@ final class ContractTable {
                                 .answer("{\"content\":{\"path\":\"notes.md\",\"sha\":\"n2\"},\"commit\":{\"sha\":\"c2\"}}"))
                 .says("Updated notes.md in acme/web on GitHub.").has("/id", "notes.md"));
 
+        all.add(tool("github", "list_tree", "{\"repo\":\"acme/web\"}")
+                .calls(
+                        GET("/repos/acme/web").answer("{\"default_branch\":\"main\"}"),
+                        GET("/repos/acme/web/git/trees/main").q("recursive", "1")
+                                .answer("{\"sha\":\"t1\",\"truncated\":false,\"tree\":["
+                                        + "{\"path\":\"docs\",\"type\":\"tree\",\"sha\":\"d1\"},"
+                                        + "{\"path\":\"docs/a.md\",\"type\":\"blob\",\"size\":5,\"sha\":\"b1\"}]}"))
+                .says("Listed 2 file(s) and folder(s) in acme/web at main on GitHub.")
+                .has("/items/0/type", "dir").has("/items/1/path", "docs/a.md").has("/truncated", "false"));
+        all.add(tool("github", "list_tree", "one folder at a ref", "{\"repo\":\"acme/web\",\"ref\":\"dev\",\"path\":\"docs\"}")
+                .calls(GET("/repos/acme/web/git/trees/dev").q("recursive", "1")
+                        .answer("{\"sha\":\"t1\",\"truncated\":true,\"tree\":["
+                                + "{\"path\":\"docs\",\"type\":\"tree\",\"sha\":\"d1\"},"
+                                + "{\"path\":\"docs/a.md\",\"type\":\"blob\",\"size\":5,\"sha\":\"b1\"},"
+                                + "{\"path\":\"src/x.js\",\"type\":\"blob\",\"size\":9,\"sha\":\"b2\"}]}"))
+                .says("Listed 1 file(s) and folder(s) in docs in acme/web at dev on GitHub. The list was cut short")
+                .has("/items/0/path", "docs/a.md").has("/truncated", "true").has("/count", "1"));
+        all.add(tool("github", "get_files", "{\"repo\":\"acme/web\",\"paths\":[\"README.md\",\"docs/a.md\"]}")
+                .calls(
+                        GET("/repos/acme/web/contents/README.md")
+                                .answer("{\"type\":\"file\",\"path\":\"README.md\",\"size\":5,\"encoding\":\"base64\","
+                                        + "\"content\":\"SGVsbG8=\"}"),
+                        GET("/repos/acme/web/contents/docs/a.md")
+                                .answer("{\"type\":\"file\",\"path\":\"docs/a.md\",\"size\":2,\"encoding\":\"base64\","
+                                        + "\"content\":\"SGk=\"}"))
+                .says("Read 2 of 2 file(s) from acme/web on GitHub.")
+                .has("/items/0/content", "Hello").has("/items/1/content", "Hi"));
+        all.add(tool("github", "get_files", "one of them missing",
+                        "{\"repo\":\"acme/web\",\"paths\":[\"README.md\",\"docs/gone.md\"],\"ref\":\"dev\"}")
+                .calls(
+                        GET("/repos/acme/web/contents/README.md").q("ref", "dev")
+                                .answer("{\"type\":\"file\",\"path\":\"README.md\",\"size\":5,\"encoding\":\"base64\","
+                                        + "\"content\":\"SGVsbG8=\"}"),
+                        GET("/repos/acme/web/contents/docs/gone.md").q("ref", "dev")
+                                .answer(404, "{\"message\":\"Not Found\"}"))
+                .says("Read 1 of 2 file(s) from acme/web on GitHub. Not found: docs/gone.md.")
+                .has("/items/0/content", "Hello").has("/items/1/missing", "true").has("/items/1/path", "docs/gone.md"));
+        all.add(tool("github", "delete_file", "{\"repo\":\"acme/web\",\"path\":\"docs/old.md\",\"branch\":\"dev\"}")
+                .calls(
+                        GET("/repos/acme/web/contents/docs/old.md").q("ref", "dev")
+                                .answer("{\"type\":\"file\",\"path\":\"docs/old.md\",\"sha\":\"s1\"}"),
+                        DELETE("/repos/acme/web/contents/docs/old.md")
+                                .json("{\"message\":\"Delete docs/old.md\",\"sha\":\"s1\",\"branch\":\"dev\"}")
+                                .answer("{\"content\":null,\"commit\":{\"sha\":\"c9\","
+                                        + "\"html_url\":\"https://github.com/acme/web/commit/c9\"}}"))
+                .says("Deleted docs/old.md from acme/web on the branch dev on GitHub.")
+                .has("/deleted", "true").has("/commit", "c9"));
+        all.add(tool("github", "rename_file",
+                        "{\"repo\":\"acme/web\",\"from\":\"docs/faq.md\",\"to\":\"docs/help/faq.md\",\"branch\":\"dev\"}")
+                .calls(
+                        GET("/repos/acme/web/git/ref/heads/dev").answer("{\"object\":{\"sha\":\"p1\"}}"),
+                        GET("/repos/acme/web/git/commits/p1").answer("{\"sha\":\"p1\",\"tree\":{\"sha\":\"t1\"}}"),
+                        GET("/repos/acme/web/contents/docs/faq.md").q("ref", "dev")
+                                .answer("{\"type\":\"file\",\"path\":\"docs/faq.md\",\"sha\":\"b1\"}"),
+                        GET("/repos/acme/web/contents/docs/help/faq.md").q("ref", "dev")
+                                .answer(404, "{\"message\":\"Not Found\"}"),
+                        POST("/repos/acme/web/git/trees")
+                                .json("{\"base_tree\":\"t1\",\"tree\":["
+                                        + "{\"path\":\"docs/help/faq.md\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"b1\"},"
+                                        + "{\"path\":\"docs/faq.md\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":null}]}")
+                                .answer(201, "{\"sha\":\"t2\"}"),
+                        POST("/repos/acme/web/git/commits")
+                                .json("{\"message\":\"Rename docs/faq.md to docs/help/faq.md\",\"tree\":\"t2\","
+                                        + "\"parents\":[\"p1\"]}")
+                                .answer(201, "{\"sha\":\"c2\",\"html_url\":\"https://github.com/acme/web/commit/c2\"}"),
+                        PATCH("/repos/acme/web/git/refs/heads/dev").json("{\"sha\":\"c2\",\"force\":false}")
+                                .answer("{\"ref\":\"refs/heads/dev\",\"object\":{\"sha\":\"c2\"}}"))
+                .says("Renamed docs/faq.md to docs/help/faq.md in acme/web on the branch dev on GitHub.")
+                .has("/commit", "c2").has("/to", "docs/help/faq.md"));
+        all.add(tool("github", "commit_files",
+                        "{\"repo\":\"acme/web\",\"branch\":\"docs/typos\",\"message\":\"Fix typos\",\"files\":["
+                                + "{\"path\":\"docs/faq.md\",\"content\":\"Fixed\"},{\"path\":\"README.md\",\"content\":\"Hi\"}],"
+                                + "\"deletions\":[\"docs/old.md\"]}")
+                .calls(
+                        GET("/repos/acme/web").answer("{\"default_branch\":\"main\"}"),
+                        GET("/repos/acme/web/git/ref/heads/docs/typos").answer("{\"object\":{\"sha\":\"p1\"}}"),
+                        GET("/repos/acme/web/git/commits/p1").answer("{\"sha\":\"p1\",\"tree\":{\"sha\":\"t1\"}}"),
+                        POST("/repos/acme/web/git/blobs").match("Fixed")
+                                .json("{\"content\":\"Fixed\",\"encoding\":\"utf-8\"}").answer(201, "{\"sha\":\"b1\"}"),
+                        POST("/repos/acme/web/git/blobs").match("\"Hi\"")
+                                .json("{\"content\":\"Hi\",\"encoding\":\"utf-8\"}").answer(201, "{\"sha\":\"b2\"}"),
+                        POST("/repos/acme/web/git/trees")
+                                .json("{\"base_tree\":\"t1\",\"tree\":["
+                                        + "{\"path\":\"docs/faq.md\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"b1\"},"
+                                        + "{\"path\":\"README.md\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"b2\"},"
+                                        + "{\"path\":\"docs/old.md\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":null}]}")
+                                .answer(201, "{\"sha\":\"t2\"}"),
+                        POST("/repos/acme/web/git/commits")
+                                .json("{\"message\":\"Fix typos\",\"tree\":\"t2\",\"parents\":[\"p1\"]}")
+                                .answer(201, "{\"sha\":\"c3\",\"html_url\":\"https://github.com/acme/web/commit/c3\"}"),
+                        PATCH("/repos/acme/web/git/refs/heads/docs/typos").json("{\"sha\":\"c3\",\"force\":false}")
+                                .answer("{\"ref\":\"refs/heads/docs/typos\",\"object\":{\"sha\":\"c3\"}}"))
+                .says("Committed 3 file change(s) to the branch docs/typos in acme/web on GitHub.")
+                .has("/commit", "c3").has("/created", "false").has("/changed", "2").has("/deleted", "1"));
+        all.add(tool("github", "commit_files", "creating the branch",
+                        "{\"repo\":\"acme/web\",\"branch\":\"feature/x\",\"from\":\"dev\",\"message\":\"Start\","
+                                + "\"files\":[{\"path\":\"a.txt\",\"content\":\"A\"}]}")
+                .calls(
+                        GET("/repos/acme/web").answer("{\"default_branch\":\"main\"}"),
+                        GET("/repos/acme/web/git/ref/heads/feature/x").answer(404, "{\"message\":\"Not Found\"}"),
+                        GET("/repos/acme/web/git/ref/heads/dev").answer("{\"object\":{\"sha\":\"p0\"}}"),
+                        GET("/repos/acme/web/git/commits/p0").answer("{\"sha\":\"p0\",\"tree\":{\"sha\":\"t0\"}}"),
+                        POST("/repos/acme/web/git/blobs").json("{\"content\":\"A\",\"encoding\":\"utf-8\"}")
+                                .answer(201, "{\"sha\":\"b1\"}"),
+                        POST("/repos/acme/web/git/trees")
+                                .json("{\"base_tree\":\"t0\",\"tree\":["
+                                        + "{\"path\":\"a.txt\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"b1\"}]}")
+                                .answer(201, "{\"sha\":\"t1\"}"),
+                        POST("/repos/acme/web/git/commits")
+                                .json("{\"message\":\"Start\",\"tree\":\"t1\",\"parents\":[\"p0\"]}")
+                                .answer(201, "{\"sha\":\"c1\",\"html_url\":\"https://github.com/acme/web/commit/c1\"}"),
+                        POST("/repos/acme/web/git/refs").json("{\"ref\":\"refs/heads/feature/x\",\"sha\":\"c1\"}")
+                                .answer(201, "{\"ref\":\"refs/heads/feature/x\",\"object\":{\"sha\":\"c1\"}}"))
+                .says("Committed 1 file change(s) to the branch feature/x in acme/web on GitHub."
+                        + " The branch was created from dev.")
+                .has("/created", "true").has("/from", "dev").has("/commit", "c1"));
+        all.add(tool("github", "compare_branches", "{\"repo\":\"acme/web\",\"base\":\"main\",\"head\":\"feature/x\"}")
+                .calls(GET("/repos/acme/web/compare/main...feature/x")
+                        .answer("{\"status\":\"ahead\",\"ahead_by\":1,\"behind_by\":0,"
+                                + "\"html_url\":\"https://github.com/acme/web/compare/main...feature/x\","
+                                + "\"commits\":[{\"sha\":\"c1\",\"commit\":{\"message\":\"Start\","
+                                + "\"author\":{\"name\":\"Kim\",\"date\":\"2026-10-01T00:00:00Z\"}},\"author\":{\"login\":\"kim\"}}],"
+                                + "\"files\":[{\"filename\":\"a.txt\",\"status\":\"added\",\"additions\":1,\"deletions\":0}]}"))
+                .says("Compared feature/x with main in acme/web on GitHub: 1 commit(s) ahead, 0 behind, 1 file(s) changed.")
+                .has("/status", "ahead").has("/ahead", "1").has("/commits/0/author", "kim").has("/files/0/path", "a.txt"));
+        all.add(tool("github", "list_commits", "{\"repo\":\"acme/web\"}")
+                .calls(GET("/repos/acme/web/commits").q("per_page", "20")
+                        .answer("[{\"sha\":\"c1\",\"commit\":{\"message\":\"Start\",\"author\":{\"name\":\"Kim\"}}}]"))
+                .says("Read 1 commit(s) from acme/web on GitHub.").has("/items/0/sha", "c1").has("/items/0/author", "Kim"));
+        all.add(tool("github", "list_commits", "on a branch, for one path",
+                        "{\"repo\":\"acme/web\",\"ref\":\"dev\",\"path\":\"docs/faq.md\",\"limit\":5}")
+                .calls(GET("/repos/acme/web/commits").q("per_page", "5").q("sha", "dev").q("path", "docs/faq.md")
+                        .answer("[{\"sha\":\"c2\",\"commit\":{\"message\":\"Fix typo\"},\"author\":{\"login\":\"sam\"}}]"))
+                .says("Read 1 commit(s) from acme/web on GitHub.").has("/items/0/author", "sam"));
+
         // Slack
         String channels = "{\"ok\":true,\"channels\":[{\"id\":\"C0123456789\",\"name\":\"general\",\"num_members\":4,"
                 + "\"is_member\":true}]}";

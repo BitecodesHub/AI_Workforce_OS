@@ -14,6 +14,9 @@ import { ThreadHeader } from '../components/chat/ThreadHeader'
 import { WelcomeScreen } from '../components/chat/WelcomeScreen'
 import { WorkPanel } from '../components/chat/WorkPanel'
 import { WorkStrip } from '../components/chat/WorkStrip'
+import { contextPayload, draftSkillFromConversation, EMPTY_CONTEXT } from '../components/chat/composerContext'
+import type { ComposerContext, SkillChoice } from '../components/chat/composerContext'
+import { SkillEditorDialog } from '../components/skills/SkillEditorDialog'
 import {
   activeGoals,
   autoAnswerTarget,
@@ -65,6 +68,7 @@ import type { Agent, BoardGoal, ChatMessage, ConversationPage, MessagesPage, Que
 import { usePersistentState } from '../lib/persist'
 import { useRouter } from '../lib/router'
 import { can, profile } from '../lib/session'
+import { canManageSkills, useSkill } from '../lib/skillQueries'
 import { useToast } from '../lib/toast'
 import { useNow } from '../lib/useNow'
 import { useSpeaker } from '../lib/voice'
@@ -155,8 +159,13 @@ export function Chat() {
   )
   const me = profile()?.userId ?? null
   const canCreateWork = can('task:create')
+  const mayManageSkills = canManageSkills(can)
 
   const selectedId = search.get('c')
+  // "Use in chat" on the Skills page: /chat?skill=<id> attaches that skill to the composer once.
+  const skillParam = search.get('skill')
+  const skillFromLink = useSkill(skillParam, { enabled: Boolean(skillParam) })
+  const [seenSkillParam, setSeenSkillParam] = useState<string | null>(null)
   const goalDeepLink = search.get('goal')
 
   const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -198,6 +207,7 @@ export function Chat() {
     text: string
     agentIds: string[]
     attachmentIds?: string[]
+    context?: ComposerContext
     reason: string
   } | null>(null)
   const [reroutingId, setReroutingId] = useState<string | null>(null)
@@ -205,7 +215,25 @@ export function Chat() {
   const [announcement, setAnnouncement] = useState('')
   const [replyChoice, setReplyChoice] = useState<{ questionId: string; agentName: string; agentId: string } | null>(null)
   const [dismissedIds, setDismissedIds] = useState<ReadonlySet<string>>(new Set())
-  const [prefill, setPrefill] = useState<{ token: number; text: string } | null>(null)
+  const [prefill, setPrefill] = useState<{ token: number; text: string; context?: ComposerContext } | null>(null)
+  const [skillRequest, setSkillRequest] = useState<{ token: number; skill: SkillChoice } | null>(null)
+  const [skillDraft, setSkillDraft] = useState<ReturnType<typeof draftSkillFromConversation> | null>(null)
+  if (skillParam && skillFromLink.data && skillParam !== seenSkillParam) {
+    const linked = skillFromLink.data
+    setSeenSkillParam(skillParam)
+    setSkillRequest((current) => ({
+      token: (current?.token ?? 0) + 1,
+      skill: { id: linked.id, name: linked.name, defaultAgentId: linked.defaultAgentId, defaultAgentName: linked.defaultAgentName },
+    }))
+  }
+  useEffect(() => {
+    if (!skillParam || seenSkillParam !== skillParam) return
+    // Applied: the link's parameter goes, so a reload or a shared URL does not attach it again.
+    const rest = new URLSearchParams(search)
+    rest.delete('skill')
+    const query = rest.toString()
+    navigate(query ? `/chat?${query}` : '/chat', { replace: true })
+  }, [skillParam, seenSkillParam, search, navigate])
   const [mentionRequest, setMentionRequest] = useState<{ token: number; agent: Agent } | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -454,7 +482,12 @@ export function Chat() {
     }
   }
 
-  async function handleSend(text: string, agentIds: string[], attachmentIds: string[] = []): Promise<boolean> {
+  async function handleSend(
+    text: string,
+    agentIds: string[],
+    attachmentIds: string[] = [],
+    context?: ComposerContext,
+  ): Promise<boolean> {
     if (unavailable) return false
     const question = replyTo ? questions.find((q) => q.id === replyTo.questionId) : undefined
     if (replyTo && !question) {
@@ -494,7 +527,13 @@ export function Chat() {
     setFailedSend(null)
     setPending({
       token,
-      text: text || (attachmentIds.length === 1 ? 'Sending 1 file' : `Sending ${attachmentIds.length} files`),
+      text:
+        text ||
+        (context?.skill
+          ? `Run the ${context.skill.name} skill.`
+          : attachmentIds.length === 1
+            ? 'Sending 1 file'
+            : `Sending ${attachmentIds.length} files`),
       mentioned: agentIds.map((id) => agentNames[id]?.name).filter((n): n is string => Boolean(n)),
       afterPosition: selectedId ? newestPosition(messages) : -1,
       // An earlier message still being routed holds the conversation too, so this one will wait.
@@ -507,6 +546,8 @@ export function Chat() {
       const agentIdsField = {
         ...(agentIds.length > 0 ? { agentIds } : {}),
         ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+        // Documents, a repository and a skill from the "+" menu; nothing when none was attached.
+        ...contextPayload(context),
       }
       let conversationId = selectedId
       if (conversationId) {
@@ -532,7 +573,7 @@ export function Chat() {
       await client.invalidateQueries({ queryKey: ['conversations', conversationId] })
       return true
     } catch (error) {
-      setFailedSend({ text, agentIds, attachmentIds, reason: describeApiError(error) })
+      setFailedSend({ text, agentIds, attachmentIds, ...(context ? { context } : {}), reason: describeApiError(error) })
       setAnnouncement('Your message could not be sent.')
       return false
     } finally {
@@ -886,6 +927,17 @@ export function Chat() {
             }}
             onSetVisibility={(visibility) => void handleVisibility(visibility)}
             onAddPeople={() => setAddPeopleOpen(true)}
+            {...(mayManageSkills && conversation
+              ? {
+                  onCreateSkill: () =>
+                    setSkillDraft(
+                      draftSkillFromConversation(
+                        conversation.title,
+                        messages.filter((m) => m.authorKind === 'user').map((m) => m.content),
+                      ),
+                    ),
+                }
+              : {})}
             speaker={speaker}
             detailsMode={detailsMode}
             onDetailsMode={(mode) => {
@@ -976,10 +1028,11 @@ export function Chat() {
                     variant="outline"
                     onClick={() => {
                       const again = failedSend
-                      void handleSend(again.text, again.agentIds, again.attachmentIds ?? []).then((sent) => {
+                      void handleSend(again.text, again.agentIds, again.attachmentIds ?? [], again.context).then((sent) => {
                         // The failed words were also put back in the message box; once they have
                         // gone this way, leaving them there would invite sending them twice.
-                        if (sent && retryLeftInBox(inputRef.current?.value, again.text)) setPrefill({ token: Date.now(), text: '' })
+                        if (sent && retryLeftInBox(inputRef.current?.value, again.text))
+                          setPrefill({ token: Date.now(), text: '', context: EMPTY_CONTEXT })
                       })
                     }}
                   >
@@ -1020,6 +1073,8 @@ export function Chat() {
               dropZoneRef={mainRef}
               {...(prefill ? { prefill } : {})}
               {...(mentionRequest ? { mention: mentionRequest } : {})}
+              {...(skillRequest ? { skillRequest } : {})}
+              canSchedule={canCreateWork}
               {...(unavailable
                 ? { disabled: true, readOnlyNote: 'Nothing can be sent here. Start a new conversation instead.' }
                 : !canCreateWork
@@ -1045,6 +1100,19 @@ export function Chat() {
       </DetailsContext.Provider>
 
       <AddPeopleDialog open={addPeopleOpen} conversationId={selectedId} onClose={() => setAddPeopleOpen(false)} />
+      <SkillEditorDialog
+        open={skillDraft !== null}
+        initial={skillDraft}
+        onClose={() => setSkillDraft(null)}
+        onSaved={(saved) => {
+          setSkillDraft(null)
+          toast.success(`Skill "${saved.name}" saved. It is attached to your next message.`)
+          setSkillRequest((current) => ({
+            token: (current?.token ?? 0) + 1,
+            skill: { id: saved.id, name: saved.name, defaultAgentId: saved.defaultAgentId, defaultAgentName: saved.defaultAgentName },
+          }))
+        }}
+      />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} groups={chatShortcutGroups()} />
 
       <ConfirmDialog

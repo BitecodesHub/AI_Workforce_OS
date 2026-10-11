@@ -87,6 +87,9 @@ public class SandboxServerAdapter implements McpServerAdapter {
      * sandbox is for demonstration and tests, and persisting it would invite it being trusted. */
     private final Map<String, Map<String, List<ObjectNode>>> store = new ConcurrentHashMap<>();
 
+    /* GitHub's branches, files and commits, which a list of records cannot model; null elsewhere. */
+    private final GitHubSandboxRepos repositories;
+
     public SandboxServerAdapter(String server, List<ToolDefinition> tools, ObjectMapper json) {
         this(server, tools, json, Map.of());
     }
@@ -104,6 +107,7 @@ public class SandboxServerAdapter implements McpServerAdapter {
         (seeds == null ? Map.<String, List<ObjectNode>>of() : seeds)
                 .forEach((collection, records) -> normalised.put(singular(collection), List.copyOf(records)));
         this.seeds = Map.copyOf(normalised);
+        this.repositories = "github".equals(server) ? new GitHubSandboxRepos(json, this.seeds) : null;
     }
 
     @Override
@@ -119,6 +123,14 @@ public class SandboxServerAdapter implements McpServerAdapter {
     @Override
     public boolean isSandbox() {
         return true;
+    }
+
+    @Override
+    public java.util.Optional<String> approvalReason(ToolInvocation invocation) {
+        if (repositories == null) {
+            return java.util.Optional.empty();
+        }
+        return repositories.approvalReason(invocation.orgId(), invocation.tool(), parse(invocation.argumentsJson()));
     }
 
     // @find: sandbox health check, always healthy
@@ -152,6 +164,11 @@ public class SandboxServerAdapter implements McpServerAdapter {
         }
 
         String tool = invocation.tool();
+        if (repositories != null && GitHubSandboxRepos.TOOLS.contains(tool)) {
+            log.debug("Sandbox {} handled {} for org {}", server, invocation.qualifiedName(), invocation.orgId());
+            return repositories.run(invocation.orgId(), invocation.agentId(), tool, raw.isObject() ? raw
+                    : json.createObjectNode(), name -> createdRepo(invocation.orgId(), name));
+        }
         String verb = verbOf(tool);
         // list_issues and create_issue share one collection, so what one call creates the next
         // call lists, and the seeded records answer both.
@@ -314,7 +331,13 @@ public class SandboxServerAdapter implements McpServerAdapter {
                 }
                 result.setAll(match.deepCopy());
                 result.put("sandbox", true);
-                summary = "refund".equals(verb)
+                // A merged pull request brings its branch's changes into the base branch.
+                String merged = repositories != null && "merge".equals(verb) && "pull".equals(collection)
+                        ? repositories.merge(invocation.orgId(), match.deepCopy(), name -> createdRepo(invocation.orgId(), name))
+                        : null;
+                summary = merged != null
+                        ? "Marked one pull record as merged in the sandbox. " + merged + " Nothing left this machine."
+                        : "refund".equals(verb)
                         ? "Marked one payment as refunded in the sandbox. No money moved."
                         : "Marked one " + collection + " record as " + STATUS_AFTER.get(verb)
                                 + " in the sandbox. Nothing left this machine.";
@@ -355,6 +378,27 @@ public class SandboxServerAdapter implements McpServerAdapter {
             }
         }
         return null;
+    }
+
+    /* A repository the generic store recorded (create_repo or a seed), by its owner/name id. */
+    private ObjectNode createdRepo(String orgId, String name) {
+        List<ObjectNode> repos = records(orgId, "repo");
+        synchronized (repos) {
+            return repos.stream()
+                    .filter(record -> name.equals(record.path("id").asText()) || sameRepo(record, name))
+                    .findFirst()
+                    .map(ObjectNode::deepCopy)
+                    .orElse(null);
+        }
+    }
+
+    /* A repository create_repo recorded: its name, and its owner when one was given. */
+    private static boolean sameRepo(ObjectNode record, String fullName) {
+        int slash = fullName.indexOf('/');
+        String name = record.path("name").asText("").trim().replaceAll("\\s+", "-");
+        String owner = record.path("owner").asText("");
+        return slash > 0 && !name.isEmpty() && name.equals(fullName.substring(slash + 1))
+                && (owner.isEmpty() || owner.equals(fullName.substring(0, slash)));
     }
 
     /* The record already saved at the same path in the same repository, if there is one. */

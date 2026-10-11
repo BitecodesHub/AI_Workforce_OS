@@ -3730,3 +3730,120 @@ input[type='checkbox'][role='switch']:checked::before {
 .chat-queued-status {
   text-align: right;
 }
+
+/* ---- Scheduled tasks on an agent's page ------------------------------------------------------------
+ * Each schedule is a row with a disclosure for its run history. The facts wrap into as many columns
+ * as fit, so a phone shows them stacked and a laptop side by side.
+ */
+.agent-schedules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.agent-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--line);
+}
+
+.agent-schedule:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.agent-schedule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.agent-schedule-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-emphasis);
+  min-width: 0;
+}
+
+.agent-schedule-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: var(--space-1) 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.agent-schedule-toggle:hover {
+  color: var(--blue);
+}
+
+.agent-schedule-meta,
+.agent-schedule-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+}
+
+.agent-schedule-meta dt,
+.agent-schedule-counts dt {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.agent-schedule-meta dd,
+.agent-schedule-counts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-schedule-actions {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.agent-schedule-panel {
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+}
+
+.agent-schedule-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.agent-schedule-subheading {
+  margin: 0;
+  font-weight: var(--weight-medium);
+}
+
+.agent-schedule-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.agent-schedule-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}

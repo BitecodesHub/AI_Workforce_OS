@@ -71,6 +71,8 @@ export type AgentDetail = Agent & {
   systemPrompt: string | null
   goals: string | null
   maxSteps: number | null
+  /** Minutes of work one run may take; null means the platform default (60). */
+  maxRunMinutes?: number | null
   /** Null means the model's own default; kept when the instructions are saved again. */
   temperature?: number | null
   maxOutputTokens?: number | null
@@ -413,6 +415,10 @@ export type ChatMessageDetail = {
   sandbox?: boolean
   /** On an answer: a tool in its run succeeded against practice data, not a real account. */
   practiceData?: boolean
+  /** On a schedule_suggestion: the schedule chat already created, when the sender could create one. */
+  scheduleId?: string
+  /** On a schedule_suggestion: when the created schedule first runs. */
+  nextRunAt?: string | null
 }
 
 export type ChatMessage = {
@@ -1857,6 +1863,20 @@ export const useSchedules = (options: QueryOptions = {}) =>
     enabled: options.enabled ?? true,
   })
 
+// @find: agent schedules, schedules of one agent, scheduled tasks on agent page; route: GET /api/schedules?agentId; used by: Agent detail page
+/**
+ * The schedules that hand work to one agent (task:read), refreshed every 30 seconds. Keyed under
+ * ['schedules'], so every schedule mutation that refreshes the list refreshes this one too.
+ */
+export const useAgentSchedules = (agentId: string, options: QueryOptions = {}) =>
+  useQuery({
+    queryKey: ['schedules', 'agent', agentId],
+    queryFn: async ({ signal }) =>
+      (await api<Schedule[]>(`/api/schedules?agentId=${encodeURIComponent(agentId)}`, { signal })).map(scheduleRow),
+    refetchInterval: 30_000,
+    enabled: Boolean(agentId) && (options.enabled ?? true),
+  })
+
 // @find: preview schedule from plain English; route: POST /api/schedules/preview; used by: Schedules page create dialog
 /** Reads a plain-English phrase back as a schedule, without saving anything (task:read). */
 export function useSchedulePreview() {
@@ -2169,6 +2189,7 @@ export function useUpdateAgent(id: string) {
       systemPrompt: string
       goals: string
       maxSteps?: number | null
+      maxRunMinutes?: number | null
       temperature?: number | null
       maxOutputTokens?: number | null
     }) => agentRow(await api<Agent>(`/api/agents/${id}/configuration`, { method: 'PUT', body: input })),

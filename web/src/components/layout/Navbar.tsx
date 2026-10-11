@@ -55,6 +55,7 @@ const MENU_GROUPS = [
       { label: 'Runs', href: '/runs', note: 'Every run, with its step-by-step trace', needs: 'run:read' },
       { label: 'Tasks', href: '/tasks', note: 'Goals and the tasks they break into', needs: 'task:read' },
       { label: 'Schedules', href: '/schedules', note: 'Work that runs on its own timetable', needs: 'task:read' },
+      { label: 'Skills', href: '/skills', note: 'Reusable playbooks to apply to a chat message', needs: 'chat:use' },
       { label: 'Approvals', href: '/approvals', note: 'Actions waiting on a decision', needs: 'approval:read' },
     ],
   },

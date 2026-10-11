@@ -6,6 +6,8 @@ import { CopyButton } from '../ui/CopyButton'
 import { sentAttachmentsOf } from '../../lib/attachments'
 import type { ChatMessage } from '../../lib/queries'
 import { AttachmentCards } from './AttachmentCards'
+import { sentContextOf } from './composerContext'
+import { SentContextChips } from './ContextChips'
 
 const CLAMP_LINES = 12
 
@@ -24,6 +26,7 @@ export function UserBubble({
 }) {
   const [expanded, setExpanded] = useState(false)
   const files = sentAttachmentsOf(message)
+  const attached = sentContextOf(message.detail as Record<string, unknown> | null)
   const hasText = message.content.trim().length > 0
   const lines = message.content.split('\n').length
   const clampable = lines > CLAMP_LINES
@@ -32,6 +35,7 @@ export function UserBubble({
     <div className="chat-bubble-row chat-bubble-row-user">
       <div className="stack" style={{ gap: 'var(--space-1)', alignItems: 'flex-end' }}>
         {!grouped && !author.isMe && <span className="caption chat-bubble-author">{author.name}</span>}
+        {attached && <SentContextChips context={attached} />}
         {files.length > 0 && <AttachmentCards attachments={files} align="end" />}
         {hasText && (
         <div className={`chat-bubble chat-bubble-user${grouped ? ' chat-bubble-grouped' : ''}`}>

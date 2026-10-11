@@ -20,6 +20,12 @@ public interface SchedulePreviewer {
 
     Optional<ParsedSchedule> tryParse(String text, ZoneId zone, Instant now);
 
-    /** Delegates to the real parser. What every caller outside a test uses. */
-    SchedulePreviewer DEFAULT = ScheduleParser::tryParse;
+    /**
+     * Delegates to the real parser, and failing a whole-message schedule, to the phrase written
+     * inside the sentence ("every Monday at 9am summarise competitor news"). What every caller
+     * outside a test uses.
+     */
+    SchedulePreviewer DEFAULT = (text, zone, now) -> ScheduleParser.tryParse(text, zone, now)
+            .or(() -> os.aiworkforce.orchestrator.schedule.ScheduleExtractor.extract(text, zone, now)
+                    .map(os.aiworkforce.orchestrator.schedule.ScheduleExtractor.Extraction::parsed));
 }

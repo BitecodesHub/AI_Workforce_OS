@@ -30,8 +30,9 @@ public final class IntentDetector {
 
     /** Words and phrases that mark a sentence as naming a recurrence or a time, not just an action. */
     private static final Pattern TIMING_MARKER =
-            Pattern.compile("(?i)\\b(every|each|daily|weekly|monthly|tomorrow|today)\\b|\\bat\\s+\\d|\\bin\\s+\\d+\\s*"
-                    + "(minute|minutes|hour|hours)\\b");
+            Pattern.compile("(?i)\\b(every|each|daily|weekly|monthly|hourly|everyday|tomorrow|today|tonight)\\b"
+                    + "|\\bat\\s+\\d|\\bin\\s+(\\d+|an?|half\\s+an)\\s*(minute|minutes|mins?|hour|hours|hrs?|day|days)\\b"
+                    + "|\\b(on|next|this)\\s+(mon|tue|wed|thu|fri|sat|sun)[a-z]*\\b");
 
     private static final Set<String> QUESTION_STARTERS =
             Set.of("what", "who", "where", "when", "why", "how", "which", "does", "do", "is", "are", "can");
@@ -98,7 +99,8 @@ public final class IntentDetector {
         if (text == null || text.isBlank()) {
             return Intent.WORK;
         }
-        if (hasTimingMarker(text) && previewer.tryParse(text, zone, now).isPresent()) {
+        // A question about a time ("what happened today at 3pm?") asks for an answer, not a schedule.
+        if (hasTimingMarker(text) && !text.strip().endsWith("?") && previewer.tryParse(text, zone, now).isPresent()) {
             return Intent.SCHEDULE;
         }
         if (looksLikeDocuments(text)) {

@@ -91,6 +91,7 @@ export function ThreadHeader({
   onDelete,
   onSetVisibility,
   onAddPeople,
+  onCreateSkill,
   speaker,
   detailsMode,
   onDetailsMode,
@@ -114,6 +115,8 @@ export function ThreadHeader({
   onDelete: () => void
   onSetVisibility?: (visibility: 'private' | 'workspace') => void
   onAddPeople?: () => void
+  /** Opens the skill editor with a draft made from this conversation's requests. */
+  onCreateSkill?: () => void
   speaker: ReturnType<typeof useSpeaker>
   detailsMode: DetailsMode
   onDetailsMode: (mode: DetailsMode) => void
@@ -247,6 +250,9 @@ export function ThreadHeader({
                   { id: 'pin', label: conversation?.pinned ? 'Unpin' : 'Pin', onSelect: onTogglePin, disabled: !usable },
                   { id: 'copy-link', label: 'Copy link', onSelect: onCopyLink, disabled: !usable },
                   { id: 'copy-conversation', label: 'Copy conversation', onSelect: onCopyConversation, disabled: !usable },
+                  ...(onCreateSkill
+                    ? [{ id: 'create-skill', label: 'Create skill from this conversation', onSelect: onCreateSkill, disabled: !usable }]
+                    : []),
                 ]),
             ...(canShare && (conversation?.visibility ?? 'workspace') === 'private' && onSetVisibility
               ? [{ id: 'share', label: 'Share with workspace', onSelect: () => onSetVisibility('workspace') }]

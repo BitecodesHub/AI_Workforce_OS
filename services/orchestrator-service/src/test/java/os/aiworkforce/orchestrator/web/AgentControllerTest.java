@@ -123,17 +123,34 @@ class AgentControllerTest {
     }
 
     @Test
-    @DisplayName("a step limit must be between 1 and 50, and may be left out")
+    @DisplayName("a step limit must be between 1 and 200, and may be left out")
     void stepLimitBounds() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             Validator validator = factory.getValidator();
             assertThat(validator.validate(configuration(0))).isNotEmpty();
             assertThat(validator.validate(configuration(-3))).isNotEmpty();
-            assertThat(validator.validate(configuration(51))).isNotEmpty();
+            assertThat(validator.validate(configuration(201))).isNotEmpty();
             assertThat(validator.validate(configuration(1))).isEmpty();
-            assertThat(validator.validate(configuration(50))).isEmpty();
+            assertThat(validator.validate(configuration(200))).isEmpty();
             assertThat(validator.validate(configuration(null))).isEmpty();
         }
+    }
+
+    @Test
+    @DisplayName("a run's time limit must be between 1 and 120 minutes, and may be left out")
+    void runTimeLimitBounds() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertThat(validator.validate(withMinutes(0))).isNotEmpty();
+            assertThat(validator.validate(withMinutes(121))).isNotEmpty();
+            assertThat(validator.validate(withMinutes(1))).isEmpty();
+            assertThat(validator.validate(withMinutes(120))).isEmpty();
+            assertThat(validator.validate(withMinutes(null))).isEmpty();
+        }
+    }
+
+    private static AgentController.UpdateConfigurationRequest withMinutes(Integer minutes) {
+        return new AgentController.UpdateConfigurationRequest("You answer questions.", "", null, null, 150, minutes);
     }
 
     @Test

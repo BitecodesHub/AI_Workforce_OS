@@ -66,6 +66,10 @@ public class AgentVersion {
     @Column(name = "max_steps", nullable = false)
     private int maxSteps = 12;
 
+    /** How long one run may keep working, in minutes; null for the platform default. */
+    @Column(name = "max_run_minutes")
+    private Integer maxRunMinutes;
+
     @Column(nullable = false)
     private boolean sealed;
 
@@ -158,6 +162,14 @@ public class AgentVersion {
 
     public void setMaxSteps(int maxSteps) {
         this.maxSteps = maxSteps;
+    }
+
+    public Integer getMaxRunMinutes() {
+        return maxRunMinutes;
+    }
+
+    public void setMaxRunMinutes(Integer maxRunMinutes) {
+        this.maxRunMinutes = maxRunMinutes;
     }
 
     public boolean isSealed() {

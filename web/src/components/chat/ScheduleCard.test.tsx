@@ -68,11 +68,11 @@ function stubSchedules(rows: Schedule[]) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(rows)))
 }
 
-function renderCard() {
+function renderCard(message: ChatMessage = suggestion) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <ScheduleCard message={suggestion} />
+      <ScheduleCard message={message} />
     </QueryClientProvider>,
   )
 }
@@ -115,5 +115,19 @@ describe('ScheduleCard', () => {
     renderCard()
 
     expect(await screen.findByRole('button', { name: 'Create schedule' })).toBeInTheDocument()
+  })
+
+  it('confirms a schedule chat already saved, in words, with a link to the agent and no create button', async () => {
+    stubSchedules([saved({})])
+    renderCard({
+      ...suggestion,
+      content: 'Scheduled. Hana will send the offsite agenda once, on Thu 1 Oct 2026 at 3:00 pm (Australia/Melbourne).',
+      detail: { ...suggestion.detail, scheduleId: 'sched-1', nextRunAt: '2026-10-01T05:00:00Z' },
+    })
+
+    expect(screen.getByText(/Scheduled. Hana will send the offsite agenda/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'See it on Hana' })).toHaveAttribute('href', '/agents/agent-1')
+    expect(screen.queryByRole('button', { name: 'Create schedule' })).toBeNull()
+    expect(await screen.findByText('Active')).toBeInTheDocument()
   })
 })

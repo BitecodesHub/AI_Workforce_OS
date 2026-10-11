@@ -3434,6 +3434,117 @@ class AgentRunnerTest {
         return approval.getId();
     }
 
+    // ---- Long-running agents ------------------------------------------------------------------
+
+    // @find: test run time limit, long running agent, agent runner
+    @Test
+    @DisplayName("a run that uses up its working time ends with a clear time-limit reason, keeping what it said")
+    void runTimeLimit() {
+        runner.setDefaultMaxRunDuration(Duration.ofMillis(30));
+        when(steps.highestPosition(any())).thenReturn(-1);
+        when(router.route(any(), any(), any()))
+                .thenReturn(
+                        toolCallAnswer("call_1", "voice.create_voice_note", "{\"text\":\"Hello there.\"}"),
+                        answer("Never reached."));
+        when(tools.invoke(any(), any(), any()))
+                .thenReturn(Mono.just(ToolResult.succeeded("{\"ok\":true}", "Saved.", Duration.ZERO))
+                        .delayElement(Duration.ofMillis(80)));
+
+        AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        assertThat(outcome.status()).isEqualTo("failed");
+        ArgumentCaptor<RunStep> saved = ArgumentCaptor.forClass(RunStep.class);
+        verify(steps, atLeastOnce()).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .filteredOn(step -> "error".equals(step.getKind()))
+                .extracting(step -> String.valueOf(step.getDetail().get("detail")))
+                .anyMatch(detail -> detail.contains("time limit"));
+        verify(router, org.mockito.Mockito.times(1)).route(any(), any(), any());
+    }
+
+    // @find: test run time limit of a revision, agent runner
+    @Test
+    @DisplayName("a revision's own time limit wins over the platform default, and is held to 120 minutes")
+    void timeLimitOfRevision() {
+        AgentVersion revision = new AgentVersion();
+        assertThat(AgentRunner.timeLimitOf(revision, Duration.ofMinutes(60))).isEqualTo(Duration.ofMinutes(60));
+        revision.setMaxRunMinutes(90);
+        assertThat(AgentRunner.timeLimitOf(revision, Duration.ofMinutes(60))).isEqualTo(Duration.ofMinutes(90));
+        revision.setMaxRunMinutes(500);
+        assertThat(AgentRunner.timeLimitOf(revision, Duration.ofMinutes(60))).isEqualTo(Duration.ofMinutes(120));
+    }
+
+    // @find: test long history compaction, long running agent, agent runner
+    @Test
+    @DisplayName("a long run's history is summarised past the budget, keeping the system prompt and latest turns")
+    void longHistoryIsCompacted() {
+        List<ChatMessage> conversation = new ArrayList<>();
+        conversation.add(ChatMessage.system("You are Research."));
+        conversation.add(ChatMessage.user("Request: research the market"));
+        for (int i = 0; i < 40; i++) {
+            conversation.add(ChatMessage.assistant("Step " + i + " " + "finding ".repeat(1_000)));
+            conversation.add(ChatMessage.user("Go on " + i));
+        }
+        conversation.add(ChatMessage.assistant("The latest turn"));
+
+        boolean compacted = AgentRunner.compactLongHistory(conversation, false);
+
+        assertThat(compacted).isTrue();
+        assertThat(conversation.getFirst().content()).isEqualTo("You are Research.");
+        assertThat(conversation.getLast().content()).isEqualTo("The latest turn");
+        assertThat(os.aiworkforce.llm.model.TokenEstimate.forRequest(
+                        os.aiworkforce.llm.model.ChatRequest.builder().messages(conversation).build()))
+                .isLessThanOrEqualTo(AgentRunner.LONG_RUN_TOKEN_BUDGET);
+        // A short history, or one being continued, is left exactly as it is.
+        List<ChatMessage> shortOne = new ArrayList<>(List.of(ChatMessage.system("s"), ChatMessage.user("u")));
+        assertThat(AgentRunner.compactLongHistory(shortOne, false)).isFalse();
+        assertThat(AgentRunner.compactLongHistory(conversation, true)).isFalse();
+    }
+
+    // @find: test time note near the limit, agent runner
+    @Test
+    @DisplayName("near the time limit the agent is told to wrap up, and its last words are the partial answer")
+    void timeNoteAndPartial() {
+        List<ChatMessage> messages = List.of(ChatMessage.system("Prompt"), ChatMessage.user("Do it"));
+        assertThat(AgentRunner.withTimeNote(messages, true).getFirst().content()).endsWith(AgentRunner.TIME_NOTE);
+        assertThat(AgentRunner.withTimeNote(messages, false)).isEqualTo(messages);
+        assertThat(AgentRunner.lastAssistantText(List.of(
+                        ChatMessage.assistant("first"), ChatMessage.user("u"), ChatMessage.assistant(" "))))
+                .isEqualTo("first");
+    }
+
+    // @find: test schedule create tool from a run, agent runner
+    @Test
+    @DisplayName("schedule.create is answered by the platform and recorded with its confirmation")
+    void scheduleCreateTool() throws Exception {
+        os.aiworkforce.orchestrator.schedule.AgentScheduleTool scheduleTool =
+                mock(os.aiworkforce.orchestrator.schedule.AgentScheduleTool.class);
+        runner.useScheduleTool(scheduleTool);
+        os.aiworkforce.orchestrator.schedule.Schedule schedule = new os.aiworkforce.orchestrator.schedule.Schedule();
+        schedule.setId(UUID.randomUUID());
+        when(scheduleTool.create(eq(ORG), any(), any(), eq(false), any()))
+                .thenReturn(new os.aiworkforce.orchestrator.schedule.AgentScheduleTool.Made(
+                        schedule, "Research", "Scheduled. Research will check the news every day at 9:00 am (UTC)."));
+        when(steps.highestPosition(any())).thenReturn(-1);
+        when(router.route(any(), any(), any()))
+                .thenReturn(
+                        toolCallAnswer("call_1", "schedule.create", "{\"when\":\"every day\",\"instruction\":\"check the news\"}"),
+                        answer("Done. It runs every day at 9am."));
+
+        AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        assertThat(outcome.status()).isEqualTo("completed");
+        verify(tools, never()).invoke(any(), any(), any());
+        ArgumentCaptor<RunStep> saved = ArgumentCaptor.forClass(RunStep.class);
+        verify(steps, atLeastOnce()).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .filteredOn(step -> "tool_call".equals(step.getKind()))
+                .extracting(step -> step.getDetail().get("summary"), step -> step.getDetail().get("scheduleId"))
+                .containsExactly(tuple(
+                        "Scheduled. Research will check the news every day at 9:00 am (UTC).",
+                        schedule.getId().toString()));
+    }
+
     private static ChatResponse answer(String content) {
         return new ChatResponse(
                 content,

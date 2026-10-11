@@ -452,6 +452,55 @@ class CoordinatorServiceTest {
         verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
+    // @find: test mention with timing becomes a saved schedule, coordinator service
+    @Test
+    @DisplayName("@Research every Monday at 9am ... saves a schedule for Research and confirms it, starting no work now")
+    void mentionWithTimingSavesSchedule() {
+        os.aiworkforce.orchestrator.schedule.ScheduleRequests requests =
+                mock(os.aiworkforce.orchestrator.schedule.ScheduleRequests.class);
+        coordinator.useScheduleRequests(requests);
+        os.aiworkforce.orchestrator.schedule.Schedule saved = new os.aiworkforce.orchestrator.schedule.Schedule();
+        saved.setId(UUID.randomUUID());
+        when(requests.create(eq(ORG), eq(research), eq("summarise competitor news"), eq("every Monday at 9am")))
+                .thenReturn(new os.aiworkforce.orchestrator.schedule.ScheduleRequests.Confirmation(
+                        saved,
+                        "Scheduled. Research will summarise competitor news every Monday at 9:00 am.",
+                        Map.of("scheduleId", saved.getId().toString())));
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "@Research every Monday at 9am summarise competitor news", null, null);
+
+        ChatMessage confirmation = created.get(created.size() - 1);
+        assertThat(confirmation.getKind()).isEqualTo("schedule_suggestion");
+        assertThat(confirmation.getContent()).startsWith("Scheduled. Research will summarise competitor news");
+        assertThat(confirmation.getDetail()).containsEntry("scheduleId", saved.getId().toString());
+        verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    // @find: test remind agent tomorrow becomes a schedule for that agent, coordinator service
+    @Test
+    @DisplayName("remind HR tomorrow at 3pm to ... is a one-off schedule for HR, whatever the router would pick")
+    void reminderNamesItsAgent() {
+        Agent hr = agentRow("hr", "HR");
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, hr));
+        when(agents.findByIdAndOrgId(hr.getId(), ORG)).thenReturn(Optional.of(hr));
+        when(schedulePreviewer.tryParse(any(), any(), any()))
+                .thenAnswer(call -> SchedulePreviewer.DEFAULT.tryParse(
+                        call.getArgument(0), call.getArgument(1), call.getArgument(2)));
+
+        List<ChatMessage> created = coordinator.handleMessage(
+                ORG, conversation.getId(), "remind HR tomorrow at 3pm to send onboarding emails", null, null);
+
+        ChatMessage suggestion = created.get(created.size() - 1);
+        assertThat(suggestion.getKind()).isEqualTo("schedule_suggestion");
+        assertThat(suggestion.getDetail())
+                .containsEntry("agentId", hr.getId().toString())
+                .containsEntry("kind", "once")
+                .containsEntry("text", "tomorrow at 3pm")
+                .containsEntry("instruction", "Send onboarding emails");
+        verify(goalService, never()).createGoal(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
     // @find: test refused goal becomes error message, coordinator service
     @Test
     @DisplayName("a goal the engine refuses at validation time becomes an honest error message")

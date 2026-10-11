@@ -58,6 +58,13 @@ public class ScheduleController {
     private final ScheduleService service;
     private final Agents agents;
 
+    /** Reads which run traced each fired goal; absent only where a test builds this controller by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.repository.Tasks tasks;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.repository.Runs runs;
+
     public ScheduleController(ScheduleService service, Agents agents) {
         this.service = service;
         this.agents = agents;
@@ -115,11 +122,22 @@ public class ScheduleController {
             String state,
             boolean completed) {}
 
-    /** One goal a schedule fired, as its history lists it: no tasks, which that list never shows. */
-    public record ScheduleRunView(UUID id, String title, String status, Instant createdAt, Instant completedAt) {}
+    /**
+     * One goal a schedule fired, as its history lists it: no tasks, which that list never shows.
+     *
+     * @param runId the latest run of the goal's first task, whose trace shows what the agent did;
+     *     null while nothing has started yet
+     * @param taskId that task
+     */
+    public record ScheduleRunView(
+            UUID id, String title, String status, Instant createdAt, Instant completedAt, UUID runId, UUID taskId) {}
+
+    /** How every run of a schedule ended so far, counted across all pages. */
+    public record ScheduleRunCounts(long total, long succeeded, long failed, long cancelled, long active) {}
 
     /** One page of a schedule's history, newest first, and whether an older page follows. */
-    public record ScheduleRunsPage(List<ScheduleRunView> runs, int page, int size, long total, boolean hasMore) {}
+    public record ScheduleRunsPage(
+            List<ScheduleRunView> runs, int page, int size, long total, boolean hasMore, ScheduleRunCounts counts) {}
 
     // @find: preview schedule text, check when it will run, POST /api/schedules/preview
     @PostMapping("/preview")
@@ -140,8 +158,9 @@ public class ScheduleController {
     @GetMapping
     @RequiresPermission(Permission.Codes.TASK_READ)
     @Operation(summary = "Every schedule in this workspace")
-    public List<ScheduleView> list() {
-        return service.list(orgId()).stream().map(this::toView).toList();
+    public List<ScheduleView> list(@RequestParam(required = false) UUID agentId) {
+        List<Schedule> found = agentId == null ? service.list(orgId()) : service.listForAgent(orgId(), agentId);
+        return found.stream().map(this::toView).toList();
     }
 
     // @find: create schedule, new schedule, POST /api/schedules, New schedule dialog
@@ -229,12 +248,43 @@ public class ScheduleController {
             @RequestParam(defaultValue = "" + DEFAULT_RUNS_PAGE) int size) {
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_RUNS_PAGE));
         Page<Goal> goals = service.runs(orgId(), scheduleId, pageable);
+        ScheduleService.RunCounts counts = service.runCounts(orgId(), scheduleId);
+        java.util.Map<UUID, UUID[]> traces = tracesOf(goals.getContent());
         return new ScheduleRunsPage(
-                goals.getContent().stream().map(ScheduleController::toRunView).toList(),
+                goals.getContent().stream()
+                        .map(goal -> toRunView(goal, traces.get(goal.getId())))
+                        .toList(),
                 goals.getNumber(),
                 goals.getSize(),
                 goals.getTotalElements(),
-                goals.hasNext());
+                goals.hasNext(),
+                new ScheduleRunCounts(
+                        counts.total(), counts.succeeded(), counts.failed(), counts.cancelled(), counts.active()));
+    }
+
+    /**
+     * For each goal, its first task and that task's latest run, in two queries for the whole page
+     * rather than two per goal.
+     */
+    private java.util.Map<UUID, UUID[]> tracesOf(List<Goal> goals) {
+        java.util.Map<UUID, UUID[]> traces = new java.util.HashMap<>();
+        if (tasks == null || runs == null || goals.isEmpty()) {
+            return traces;
+        }
+        java.util.Map<UUID, UUID> firstTaskOfGoal = new java.util.HashMap<>();
+        for (os.aiworkforce.orchestrator.domain.Task task :
+                tasks.findByGoalIdInOrderByPositionAsc(goals.stream().map(Goal::getId).toList())) {
+            firstTaskOfGoal.putIfAbsent(task.getGoalId(), task.getId());
+        }
+        java.util.Map<UUID, UUID> latestRunOfTask = new java.util.HashMap<>();
+        if (!firstTaskOfGoal.isEmpty()) {
+            for (os.aiworkforce.orchestrator.domain.Run run :
+                    runs.findByTaskIdInOrderByTaskIdAscStartedAtDesc(firstTaskOfGoal.values())) {
+                latestRunOfTask.putIfAbsent(run.getTaskId(), run.getId());
+            }
+        }
+        firstTaskOfGoal.forEach((goalId, taskId) -> traces.put(goalId, new UUID[] {taskId, latestRunOfTask.get(taskId)}));
+        return traces;
     }
 
     private ScheduleView toView(Schedule schedule) {
@@ -273,9 +323,15 @@ public class ScheduleController {
         return schedule.isEnabled() ? "active" : "paused";
     }
 
-    private static ScheduleRunView toRunView(Goal goal) {
+    private static ScheduleRunView toRunView(Goal goal, UUID[] trace) {
         return new ScheduleRunView(
-                goal.getId(), goal.getTitle(), goal.getStatus(), goal.getCreatedAt(), goal.getCompletedAt());
+                goal.getId(),
+                goal.getTitle(),
+                goal.getStatus(),
+                goal.getCreatedAt(),
+                goal.getCompletedAt(),
+                trace == null ? null : trace[1],
+                trace == null ? null : trace[0]);
     }
 
     private static UUID orgId() {

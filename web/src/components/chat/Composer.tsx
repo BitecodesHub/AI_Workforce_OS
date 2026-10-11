@@ -1,12 +1,10 @@
 // @find: message box, composer, write message, send message, mention agent, @mention, draft, attach files, paste image, answer question, Send button, chat input, POST message
-// @what: Where a chat message is written: text box, @mention popover, attachments, saved draft and send.
-// @flow: Used by the Chat page; uses useAttachments, useDropAndPaste, AttachButton.
+// @what: Where a chat message is written: text box, @mention popover, the "+" menu (files, knowledge, repository, skill, schedule, agent), saved draft and send.
+// @flow: Used by the Chat page; uses useAttachments, useDropAndPaste, PlusMenu, ContextChips, ScheduleThisDialog.
 import { useEffect, useId, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, KeyboardEvent, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { IconButton, Spinner, Tag } from '../ui'
-import { AgentAvatar } from '../ui/AgentAvatar'
-import { MenuButton } from '../ui/Menu'
 import { nameList } from '../../lib/format'
 import { CATEGORY_LABEL } from '../../lib/labels'
 import { extractMentions, findMentionQuery, matchAgents } from '../../lib/mentions'
@@ -14,8 +12,12 @@ import { readStored, writeStored } from '../../lib/persist'
 import type { Agent } from '../../lib/queries'
 import { useVoiceInput } from '../../lib/voice'
 import { draftKey as scopedDraftKey, removeLegacyDrafts, sendsAsNewRequest } from './chatModel'
-import { AttachButton } from './AttachButton'
 import { AttachmentChips, AttachmentDropOverlay } from './AttachmentChips'
+import { EMPTY_CONTEXT, hasContext } from './composerContext'
+import type { ComposerContext, SkillChoice } from './composerContext'
+import { ContextChips } from './ContextChips'
+import { PlusMenu } from './PlusMenu'
+import { ScheduleThisDialog } from './ScheduleThisDialog'
 import { useAttachments } from './useAttachments'
 import { filesFromPaste, useFileDrop } from './useDropAndPaste'
 
@@ -38,10 +40,15 @@ import { filesFromPaste, useFileDrop } from './useDropAndPaste'
  * The unsent draft is kept per person and per conversation (`chat.draft.<user>.<conversation>`),
  * so somebody signing in after someone else on the same browser never sees their text.
  *
- * Files attach three ways - the paperclip, a drop anywhere on `dropZoneRef` (the chat panel), or a
- * paste into the box - and upload at once, shown as chips above the text (useAttachments). A
- * message may be files alone. Sending waits for uploads to finish; files that failed are never sent.
- * Answering a question takes text only, so attaching is off while the box answers one.
+ * Files attach three ways - "Upload files" in the "+" menu, a drop anywhere on `dropZoneRef` (the
+ * chat panel), or a paste into the box - and upload at once, shown as chips above the text
+ * (useAttachments). A message may be files alone. Sending waits for uploads to finish; files that
+ * failed are never sent. Answering a question takes text only, so attaching is off while the box
+ * answers one.
+ *
+ * The "+" menu also attaches workspace documents, a GitHub repository and a skill (composerContext),
+ * shown as chips with the files and sent with the message; a skill alone is enough to send. It can
+ * turn the message into a schedule instead, and choose an agent (typing @ still works).
  */
 
 const COUNT_WARNING_AT = 8_000
@@ -97,12 +104,14 @@ export function Composer({
   prefill,
   mention,
   dropZoneRef,
+  skillRequest,
+  canSchedule = true,
 }: {
   /** The person writing, whose drafts these are. */
   userId: string | null
   conversationId: string | null
   agents: Agent[]
-  onSend: (text: string, agentIds: string[], attachmentIds: string[]) => Promise<boolean>
+  onSend: (text: string, agentIds: string[], attachmentIds: string[], context?: ComposerContext) => Promise<boolean>
   sending: boolean
   replyTo: ReplyTarget | null
   onClearReply: () => void
@@ -111,12 +120,17 @@ export function Composer({
   readOnlyNote?: string
   /** Nothing can be sent here (a conversation that could not be opened); `readOnlyNote` says why. */
   disabled?: boolean
-  /** "Edit and send again" (B1.5): a new token puts `text` into the box, replacing the draft. */
-  prefill?: { token: number; text: string } | null
+  /** "Edit and send again" (B1.5): a new token puts `text` into the box, replacing the draft;
+      `context`, when given, replaces what the "+" menu attached. */
+  prefill?: { token: number; text: string; context?: ComposerContext } | null
   /** An agent chosen outside the composer (the welcome screen): a new token adds it as a mention. */
   mention?: { token: number; agent: Agent } | null
   /** Where dropped files are caught (the chat panel); the composer itself when not given. */
   dropZoneRef?: RefObject<HTMLElement | null>
+  /** A skill chosen outside the composer (/chat?skill=...): a new token attaches it. */
+  skillRequest?: { token: number; skill: SkillChoice } | null
+  /** Whether this person may create schedules ("Schedule this"). */
+  canSchedule?: boolean
 }) {
   const draftKey = scopedDraftKey(userId ?? 'anonymous', conversationId)
   const [text, setText] = useState(() => readStored(draftKey, '', (v): v is string => typeof v === 'string'))
@@ -125,6 +139,9 @@ export function Composer({
   const [seenDraftKey, setSeenDraftKey] = useState(draftKey)
   const [seenPrefillToken, setSeenPrefillToken] = useState(prefill?.token ?? null)
   const [seenMentionToken, setSeenMentionToken] = useState(mention?.token ?? null)
+  const [context, setContext] = useState<ComposerContext>(EMPTY_CONTEXT)
+  const [seenSkillToken, setSeenSkillToken] = useState<number | null>(null)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
   // A fixed id: the page's "Skip to message box" link targets it, and there is one composer per page.
   const fieldId = 'chat-composer-input'
   const listboxId = useId()
@@ -139,6 +156,7 @@ export function Composer({
     setText(readStored(draftKey, '', (v): v is string => typeof v === 'string'))
     setMentioned([])
     setPopover(null)
+    setContext(EMPTY_CONTEXT)
   }
 
   // "Edit and send again" (B1.5): the same render-time pattern puts the text into the box.
@@ -147,12 +165,19 @@ export function Composer({
     setText(prefill.text)
     setMentioned([])
     setPopover(null)
+    if (prefill.context) setContext(prefill.context)
   }
 
   // A mention chosen on the welcome screen, by the same render-time pattern.
   if (mention && mention.token !== seenMentionToken) {
     setSeenMentionToken(mention.token)
     setMentioned((current) => (current.some((existing) => existing.id === mention.agent.id) ? current : [...current, mention.agent]))
+  }
+
+  // A skill chosen elsewhere (the Skills page's "Use in chat"), by the same render-time pattern.
+  if (skillRequest && skillRequest.token !== seenSkillToken) {
+    setSeenSkillToken(skillRequest.token)
+    setContext((current) => ({ ...current, skill: skillRequest.skill }))
   }
 
   useEffect(() => {
@@ -186,7 +211,11 @@ export function Composer({
   const overLimit = trimmedLength > COUNT_MAX
   const hasFiles = attachments.readyIds.length > 0
   const canSend =
-    (text.trim().length > 0 || hasFiles) && !attachments.uploading && !sending && !overLimit && !disabled
+    (text.trim().length > 0 || hasFiles || (context.skill !== null && !replyTo)) &&
+    !attachments.uploading &&
+    !sending &&
+    !overLimit &&
+    !disabled
 
   // Who this message is addressed to so far: chips, and mentions typed by hand.
   const addressedIds = Array.from(new Set([...mentioned.map((agent) => agent.id), ...extractMentions(text, agents)]))
@@ -251,7 +280,15 @@ export function Composer({
   async function submit() {
     const trimmed = text.trim()
     const attachmentIds = answering ? [] : attachments.readyIds
-    if ((!trimmed && attachmentIds.length === 0) || attachments.uploading || sending || overLimit || disabled) return
+    const sentContext = answering ? EMPTY_CONTEXT : context
+    if (
+      (!trimmed && attachmentIds.length === 0 && !sentContext.skill) ||
+      attachments.uploading ||
+      sending ||
+      overLimit ||
+      disabled
+    )
+      return
     const extra = extractMentions(trimmed, agents)
     const ids = Array.from(new Set([...mentioned.map((agent) => agent.id), ...extra]))
     // Snapshot, then clear straight away (B1.7): the field must never sit full while the request
@@ -259,6 +296,7 @@ export function Composer({
     setText('')
     setMentioned([])
     setPopover(null)
+    if (hasContext(sentContext)) setContext(EMPTY_CONTEXT)
     writeStored(draftKey, '')
     requestAnimationFrame(() => {
       if (inputRef.current) {
@@ -269,12 +307,15 @@ export function Composer({
     // Files leave the box with the text. A send that fails is offered again with them by Chat.tsx's
     // "Try again", which keeps their ids; they stay stored for a day either way.
     if (attachmentIds.length > 0) attachments.clear()
-    const ok = await onSend(trimmed, ids, attachmentIds)
+    const ok = hasContext(sentContext)
+      ? await onSend(trimmed, ids, attachmentIds, sentContext)
+      : await onSend(trimmed, ids, attachmentIds)
     if (!ok) {
       // Only restore into an empty box: a person who kept typing after sending must never have
       // their new text overwritten by the failed one.
       setText((current) => (current === '' ? trimmed : current))
       setMentioned((current) => (current.length === 0 ? mentioned : current))
+      setContext((current) => (hasContext(current) ? current : sentContext))
     }
     inputRef.current?.focus()
   }
@@ -333,7 +374,12 @@ export function Composer({
       ? 'Listening, using ElevenLabs'
       : "Listening, using your browser's speech recognition"
     : micLabel
-  const placeholder = answering ? 'Type your answer, or choose an option above' : 'Ask for anything, or type @ to choose an agent'
+  const placeholder = answering
+    ? 'Type your answer, or choose an option above'
+    : context.skill
+      ? `Add details for ${context.skill.name}, or just send`
+      : 'Ask for anything, or type @ to choose an agent'
+  const scheduleAgentId = mentioned[0]?.id ?? context.skill?.defaultAgentId ?? null
 
   return (
     <div className="chat-composer" ref={rootRef}>
@@ -387,6 +433,8 @@ export function Composer({
           ))}
         </ul>
       )}
+
+      {!answering && <ContextChips context={context} onChange={setContext} />}
 
       <AttachmentChips
         items={attachments.items}
@@ -452,20 +500,18 @@ export function Composer({
         />
         <div className="chat-composer-footer row">
           <div className="chat-composer-tools">
-            {!disabled && <AttachButton onFiles={attachments.add} disabled={!canAttach} />}
             {!disabled && (
-              <MenuButton
-                className="chat-agent-picker"
-                label="Choose an agent"
-                trigger="icon"
-                icon={<span aria-hidden="true">@</span>}
-                items={orderedAgents.map((agent) => ({
-                  id: agent.id,
-                  label: agent.name,
-                  icon: <AgentAvatar name={agent.name} category={agent.category} fallback={agent.fallback ?? false} size="sm" />,
-                  note: agent.fallback ? 'Default' : (CATEGORY_LABEL[agent.category] ?? agent.category),
-                  onSelect: () => addMentionFromPicker(agent),
-                }))}
+              <PlusMenu
+                context={context}
+                onContextChange={setContext}
+                onFiles={attachments.add}
+                agents={orderedAgents}
+                mentionedIds={mentioned.map((agent) => agent.id)}
+                onMention={addMentionFromPicker}
+                onSchedule={() => setScheduleOpen(true)}
+                attachDisabled={!canAttach}
+                canSchedule={canSchedule}
+                onChosen={() => requestAnimationFrame(() => inputRef.current?.focus())}
               />
             )}
             {voice.supported && !disabled && (
@@ -511,6 +557,21 @@ export function Composer({
           </div>
         </div>
       </div>
+      {!disabled && (
+        <ScheduleThisDialog
+          open={scheduleOpen}
+          onClose={() => {
+            setScheduleOpen(false)
+            requestAnimationFrame(() => inputRef.current?.focus())
+          }}
+          text={text}
+          preferredAgentId={scheduleAgentId}
+          onCreated={() => {
+            setText('')
+            writeStored(draftKey, '')
+          }}
+        />
+      )}
     </div>
   )
 }

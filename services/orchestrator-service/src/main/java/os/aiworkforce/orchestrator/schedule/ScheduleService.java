@@ -119,6 +119,48 @@ public class ScheduleService {
         return schedules.findByOrgIdOrderByNameAsc(orgId);
     }
 
+    /** Every schedule given to one agent, by name; empty for an agent with none or from another workspace. */
+    // @find: list schedules of one agent, agent detail scheduled tasks
+    @Transactional(readOnly = true)
+    public List<Schedule> listForAgent(UUID orgId, UUID agentId) {
+        return schedules.findByOrgIdAndAgentIdOrderByNameAsc(orgId, agentId);
+    }
+
+    /**
+     * How a schedule's runs ended so far: every goal it fired, counted by outcome.
+     *
+     * @param total every goal it started
+     * @param succeeded goals that completed
+     * @param failed goals that failed
+     * @param cancelled goals someone stopped
+     * @param active goals still under way
+     */
+    public record RunCounts(long total, long succeeded, long failed, long cancelled, long active) {}
+
+    // @find: schedule run counts, how many times a schedule ran, success and failure counts
+    @Transactional(readOnly = true)
+    public RunCounts runCounts(UUID orgId, UUID id) {
+        get(orgId, id);
+        long total = 0;
+        long succeeded = 0;
+        long failed = 0;
+        long cancelled = 0;
+        for (Object[] row : scheduleGoals.countByStatus(orgId, id)) {
+            String status = String.valueOf(row[0]);
+            long count = ((Number) row[1]).longValue();
+            total += count;
+            switch (status) {
+                case "completed" -> succeeded += count;
+                case "failed" -> failed += count;
+                case "cancelled" -> cancelled += count;
+                default -> {
+                    // planning, running, waiting: still under way
+                }
+            }
+        }
+        return new RunCounts(total, succeeded, failed, cancelled, total - succeeded - failed - cancelled);
+    }
+
     // @find: get one schedule
     @Transactional(readOnly = true)
     public Schedule get(UUID orgId, UUID id) {

@@ -247,13 +247,16 @@ describe('Approvals, the queue', () => {
 
     renderPage()
 
-    expect(await screen.findByText('Showing 50 of 51 waiting')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    // Fifty cards take a while to render when the whole suite runs in parallel, so every wait here
+    // is on the outcome itself with a budget sized for a loaded machine, never on the default second.
+    const slow = { timeout: 10_000 }
+    expect(await screen.findByText('Showing 50 of 51 waiting', {}, slow)).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }, slow))
 
-    expect(await screen.findByRole('heading', { name: 'The last one' })).toBeInTheDocument()
-    expect(requests.some((request) => request.url.includes('page=1'))).toBe(true)
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull())
-  })
+    await waitFor(() => expect(requests.some((request) => request.url.includes('page=1'))).toBe(true), slow)
+    expect(await screen.findByRole('heading', { name: 'The last one' }, slow)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull(), slow)
+  }, 30_000)
 })
 
 describe('Approvals, similar requests', () => {

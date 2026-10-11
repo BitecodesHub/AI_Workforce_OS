@@ -2,7 +2,7 @@
 // @what: Automated tests for ThreadHeader.
 // @flow: Run with the web test runner; covers ThreadHeader.
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Conversation } from '../../lib/queries'
 import type { useSpeaker } from '../../lib/voice'
 import { ThreadHeader } from './ThreadHeader'
@@ -30,7 +30,12 @@ const CONVERSATION: Conversation = {
 
 const speaker = { provider: 'none', muted: true, setMuted: () => {} } as unknown as ReturnType<typeof useSpeaker>
 
-function renderHeader(props: { title: string; conversation: Conversation | null; unavailable?: boolean }) {
+function renderHeader(props: {
+  title: string
+  conversation: Conversation | null
+  unavailable?: boolean
+  onCreateSkill?: () => void
+}) {
   render(
     <ThreadHeader
       eyebrow="Chat"
@@ -45,6 +50,7 @@ function renderHeader(props: { title: string; conversation: Conversation | null;
       onCopyConversation={() => {}}
       onSetVisibility={() => {}}
       onAddPeople={() => {}}
+      {...(props.onCreateSkill ? { onCreateSkill: props.onCreateSkill } : {})}
       onDelete={() => {}}
       speaker={speaker}
       detailsMode="auto"
@@ -92,5 +98,17 @@ describe('ThreadHeader', () => {
       expect(items).not.toContain(label)
     }
     expect(items).toContain('Keyboard shortcuts')
+  })
+
+  it('offers "Create skill from this conversation" only when the page allows it', () => {
+    const onCreateSkill = vi.fn()
+    renderHeader({ title: 'Q3 quotes', conversation: CONVERSATION, onCreateSkill })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Create skill from this conversation' }))
+    expect(onCreateSkill).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the skill action out for someone who cannot manage skills', () => {
+    renderHeader({ title: 'Q3 quotes', conversation: CONVERSATION })
+    expect(menuItems()).not.toContain('Create skill from this conversation')
   })
 })
