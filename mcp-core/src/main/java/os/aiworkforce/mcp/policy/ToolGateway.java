@@ -144,7 +144,7 @@ public class ToolGateway {
         // The tool's own nature outranks the policy. A workspace can add a gate; it cannot
         // remove the one on sending or deleting.
         if (tool.alwaysRequiresApproval() || grant.requireApproval() || policyRequiresApproval) {
-            return new ApprovalDecision.AwaitApproval(describe(tool, invocation), "approval:decide");
+            return new ApprovalDecision.AwaitApproval(describe(adapter, tool, invocation), "approval:decide");
         }
         // Some calls of an otherwise free tool need a person: the adapter says which, per call.
         Optional<String> perCall =
@@ -270,13 +270,21 @@ public class ToolGateway {
         return false;
     }
 
-    private String describe(ToolDefinition tool, ToolInvocation invocation) {
-        return switch (tool.sideEffect()) {
+    private String describe(McpServerAdapter adapter, ToolDefinition tool, ToolInvocation invocation) {
+        String what = switch (tool.sideEffect()) {
             case OUTBOUND -> "Send something outside the workspace using " + tool.qualifiedName();
             case DESTRUCTIVE -> "Permanently remove something using " + tool.qualifiedName();
             case WRITE -> "Change workspace data using " + tool.qualifiedName();
             case READ -> "Read data using " + tool.qualifiedName();
         };
+        // What the arguments alone do not show the approver, such as the page a browser submit acts on.
+        Optional<String> detail;
+        try {
+            detail = adapter.approvalDetail(invocation).map(String::strip).filter(text -> !text.isEmpty());
+        } catch (RuntimeException e) {
+            detail = Optional.empty();
+        }
+        return detail.map(text -> what + ". " + text).orElse(what);
     }
 
     private boolean exceedsRunLimit(ToolInvocation invocation, ToolGrant grant) {

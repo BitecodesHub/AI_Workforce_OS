@@ -113,6 +113,11 @@ public final class TwilioAdapter extends LiveServerAdapter {
                 .map(answer -> answer.path("friendly_name").asText("Twilio account " + account.sid()));
     }
 
+    @Override
+    public boolean asksEveryCall(String tool) {
+        return "connect_number_to_elevenlabs".equals(tool);
+    }
+
     // @find: connect number to ElevenLabs asks first
     @Override
     public Optional<String> approvalReason(ToolInvocation invocation) {

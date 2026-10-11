@@ -307,7 +307,7 @@ public class IntegrationController {
     private ConnectionView view(String server, Connection connection, java.util.Set<String> apps) {
         List<ToolView> tools = gateway.adapter(server)
                 .map(adapter -> adapter.tools().stream()
-                        .map(IntegrationController::toView)
+                        .map(tool -> toView(tool, adapter.asksEveryCall(tool.name())))
                         .toList())
                 .orElse(List.of());
         ConnectorInfo info = catalog.find(server)
@@ -375,14 +375,15 @@ public class IntegrationController {
                 .orElse(null);
     }
 
-    private static ToolView toView(ToolDefinition tool) {
+    /* "Always asks" covers a send or a delete, and a tool whose adapter asks for every call of it. */
+    private static ToolView toView(ToolDefinition tool, boolean asksEveryCall) {
         return new ToolView(
                 tool.name(),
                 tool.qualifiedName(),
                 tool.description(),
                 tool.sideEffect().name(),
                 tool.requiredScopes(),
-                tool.alwaysRequiresApproval());
+                tool.alwaysRequiresApproval() || asksEveryCall);
     }
 
     private static UUID orgId() {

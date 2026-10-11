@@ -55,11 +55,35 @@ class BuiltInToolsGatewayTest {
         assertThat(decide("browser", "read_page", "{}")).isEqualTo(ApprovalDecision.PROCEED);
         assertThat(decide("browser", "follow_link", "{\"linkText\":\"More\"}")).isEqualTo(ApprovalDecision.PROCEED);
         assertThat(decide("browser", "fill_field", "{\"field\":\"q\",\"value\":\"x\"}")).isEqualTo(ApprovalDecision.PROCEED);
+        assertThat(decide("browser", "search_site", "{\"query\":\"lofi music\"}")).isEqualTo(ApprovalDecision.PROCEED);
         assertThat(decide("phone", "get_call", "{\"call_id\":\"conv_1\"}")).isEqualTo(ApprovalDecision.PROCEED);
         assertThat(decide("phone", "list_voice_agents", "{}")).isEqualTo(ApprovalDecision.PROCEED);
         assertThat(decide("twilio", "list_numbers", "{}")).isEqualTo(ApprovalDecision.PROCEED);
         assertThat(decide("twilio", "search_available_numbers", "{\"country_code\":\"AU\"}")).isEqualTo(ApprovalDecision.PROCEED);
         assertThat(decide("browser", "open_page", "{}")).isInstanceOf(ApprovalDecision.Invalid.class);
+    }
+
+    @Test
+    @DisplayName("a browser submit's approval says which page it acts on, since its own arguments are empty")
+    void submitApprovalNamesThePage() {
+        assertThat(decide("browser", "submit_form", "{}"))
+                .isInstanceOfSatisfying(ApprovalDecision.AwaitApproval.class, await -> assertThat(await.reason())
+                        .isEqualTo("Send something outside the workspace using browser.submit_form. Submits the form"
+                                + " on the open page. Nothing was typed into the page."));
+        assertThat(decide("phone", "place_call", "{\"to_number\":\"+61299990000\",\"purpose\":\"Check a booking\"}"))
+                .isInstanceOfSatisfying(ApprovalDecision.AwaitApproval.class, await -> assertThat(await.reason())
+                        .isEqualTo("Send something outside the workspace using phone.place_call"));
+    }
+
+    @Test
+    @DisplayName("the tools whose every call asks first say so, so the Connectors page can mark them; reads do not")
+    void asksEveryCallMatchesTheGate() {
+        assertThat(gateway.adapter("phone").orElseThrow().asksEveryCall("create_voice_agent")).isTrue();
+        assertThat(gateway.adapter("phone").orElseThrow().asksEveryCall("update_voice_agent")).isTrue();
+        assertThat(gateway.adapter("twilio").orElseThrow().asksEveryCall("connect_number_to_elevenlabs")).isTrue();
+        assertThat(gateway.adapter("phone").orElseThrow().asksEveryCall("list_voice_agents")).isFalse();
+        assertThat(gateway.adapter("twilio").orElseThrow().asksEveryCall("list_numbers")).isFalse();
+        assertThat(gateway.adapter("browser").orElseThrow().asksEveryCall("fill_field")).isFalse();
     }
 
     private ApprovalDecision decide(String server, String tool, String arguments) {

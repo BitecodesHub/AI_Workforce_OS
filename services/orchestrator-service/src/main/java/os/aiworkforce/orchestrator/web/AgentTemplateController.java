@@ -100,7 +100,12 @@ public class AgentTemplateController {
         for (int attempt = 1; created == null; attempt++) {
             try {
                 created = agentController.create(new AgentController.CreateAgentRequest(
-                        chosen, template.name(), template.category(), template.prompt(), null, template.description()));
+                        chosen,
+                        nameFor(template.name(), chosen, template.key()),
+                        template.category(),
+                        template.prompt(),
+                        null,
+                        template.description()));
             } catch (ApiException taken) {
                 // Somebody took the key between looking and creating; try the next one.
                 if (taken.code() != ErrorCode.ALREADY_EXISTS || attempt >= MAX_KEY_ATTEMPTS) {
@@ -129,6 +134,18 @@ public class AgentTemplateController {
             candidate = base + "-" + suffix;
         }
         return candidate;
+    }
+
+    /**
+     * The name to go with a key: the template's own for the bare key, and "Research 2" for
+     * {@code research-2}, so a second copy is not a second "Research" in Chat, in routing notes and
+     * in the mention list, where two agents of one name cannot be told apart.
+     */
+    static String nameFor(String templateName, String key, String base) {
+        if (key.length() > base.length() + 1 && key.startsWith(base + "-")) {
+            return templateName + " " + key.substring(base.length() + 1);
+        }
+        return templateName;
     }
 
     /** The suffix after the one {@code taken} already carries: {@code hr} to 2, {@code hr-2} to 3. */

@@ -94,7 +94,7 @@ export function PayloadPreview({ payload, actionClass }: { payload: string; acti
                 </div>
               )}
               {parsed.known.length === 0 && parsed.other.length === 0 && (
-                <p className="muted">This action carries no further details.</p>
+                <p className="muted">The request has no fields of its own. Its summary above says what it does.</p>
               )}
             </div>
           </div>

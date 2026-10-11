@@ -1251,7 +1251,7 @@ export function Members() {
             </Notice>
             <InviteLink url={resetLink.url} inputId={resetLinkId} label="Password reset link" />
             <p className="caption">
-              The link works once and expires in 30 minutes, <Time iso={resetLink.expiresAt} />.
+              The link works once and expires <Time iso={resetLink.expiresAt} />.
             </p>
           </div>
         ) : (

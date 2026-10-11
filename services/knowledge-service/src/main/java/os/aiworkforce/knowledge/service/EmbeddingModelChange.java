@@ -189,7 +189,7 @@ public class EmbeddingModelChange {
                 choice.searchesByMeaning() ? passages : 0,
                 0,
                 choice.searchesByMeaning()
-                        ? "Re-indexing " + passages + " passage(s) for search by meaning."
+                        ? "Re-indexing " + passages(passages) + " for search by meaning."
                         : "Switching to keyword search only.",
                 Instant.now(),
                 null);
@@ -265,7 +265,7 @@ public class EmbeddingModelChange {
                     first.passagesTotal(),
                     passagesDone.get(),
                     choice.searchesByMeaning()
-                            ? "All " + passagesDone.get() + " passage(s) can be searched by meaning with "
+                            ? "All " + passages(passagesDone.get()) + " can be searched by meaning with "
                                     + choice.model() + "."
                             : "Documents are searched by keyword only.",
                     first.startedAt(),
@@ -274,6 +274,11 @@ public class EmbeddingModelChange {
         running.remove(orgId);
         save(orgId, last);
         log.info("Re-indexing for workspace {} {}: {}", orgId, last.state(), last.message());
+    }
+
+    /** "1 passage", "22 passages". */
+    static String passages(int count) {
+        return count + (count == 1 ? " passage" : " passages");
     }
 
     private static Progress step(Progress first, int sourcesDone, int passagesDone, String message) {
@@ -285,7 +290,7 @@ public class EmbeddingModelChange {
                 Math.min(passagesDone, first.passagesTotal()),
                 message == null
                         ? "Re-indexing: " + Math.min(passagesDone, first.passagesTotal()) + " of "
-                                + first.passagesTotal() + " passage(s) done."
+                                + passages(first.passagesTotal()) + " done."
                         : message,
                 first.startedAt(),
                 null);

@@ -116,6 +116,16 @@ function toAssistants(name = 'Acme Operations') {
 }
 
 describe('the steps', () => {
+  it('asks for a missing password plainly, and counts the characters of a short one', async () => {
+    await open()
+    next()
+    expect(screen.getByText('Choose a password of at least 12 characters.')).toBeInTheDocument()
+    expect(screen.queryByText(/This one has 0/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'short' } })
+    next()
+    expect(screen.getByText('Use at least 12 characters. This one has 5.')).toBeInTheDocument()
+  })
+
   it('asks for a time zone, not working hours, from the browser’s own list, and shows no web address', async () => {
     await open()
     fillAccount()

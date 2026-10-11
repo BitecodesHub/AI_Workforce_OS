@@ -16,11 +16,22 @@ import {
   useEmbeddingStatus,
   useResumeReindex,
 } from '../../lib/embeddingQueries'
-import type { EmbeddingStatus } from '../../lib/embeddingQueries'
-import { formatCount } from '../../lib/format'
+import type { EmbeddingProgress, EmbeddingStatus } from '../../lib/embeddingQueries'
+import { formatCount, formatRelative } from '../../lib/format'
 import { embeddingProviderLabel } from '../../lib/labels'
 import { can } from '../../lib/session'
 import { useToast } from '../../lib/toast'
+
+// @find: doneSentence, last re-index finished, when re-indexing finished
+/**
+ * The last re-index's closing sentence, dated: it was written when that re-index finished, so its
+ * passage count is of that moment and can differ from today's count after documents change.
+ */
+export function doneSentence(progress: Pick<EmbeddingProgress, 'message' | 'finishedAt'>, now: number = Date.now()): string {
+  const message = progress.message ?? ''
+  if (!progress.finishedAt) return message
+  return `Last re-index, ${formatRelative(progress.finishedAt, now)}: ${message}`
+}
 
 // @find: currentSearchSentence, current search sentence, embedding model, embeddings settings, search by meaning, vector search
 /** The sentence that says how documents are searched now. */
@@ -105,7 +116,7 @@ export function EmbeddingSettingsCard() {
       )}
       {!running && progress.state === 'done' && progress.message && (
         <p className="caption" style={{ marginTop: 'var(--space-2)' }}>
-          {progress.message}
+          {doneSentence(progress)}
         </p>
       )}
       {!running && (progress.state === 'failed' || progress.state === 'interrupted') && (

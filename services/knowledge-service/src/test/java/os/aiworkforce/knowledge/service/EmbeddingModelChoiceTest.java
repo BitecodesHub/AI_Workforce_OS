@@ -40,6 +40,13 @@ class EmbeddingModelChoiceTest {
     private final EmbeddingModelChange change = new EmbeddingModelChange(settings, embeddings, ingestion, sources, vectors);
 
     @Test
+    @DisplayName("progress messages count passages in words: one passage, many passages")
+    void passagesAreCountedInWords() {
+        assertThat(EmbeddingModelChange.passages(1)).isEqualTo("1 passage");
+        assertThat(EmbeddingModelChange.passages(22)).isEqualTo("22 passages");
+    }
+
+    @Test
     @DisplayName("collections are named per model, so two models of one width never share a collection")
     void collectionPerModel() {
         String a = QdrantClient.collectionFor("aiwos", org, "nvidia", "nvidia/nemotron-3-embed-1b", 2048);

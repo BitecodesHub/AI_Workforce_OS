@@ -215,7 +215,9 @@ export function CreateWorkspace() {
       else if (!/^[^\s@]+@[^\s@]+$/.test(email.trim())) {
         errors.email = 'Enter a full email address, such as priya@example.com.'
       }
-      if (password.length < MIN_PASSWORD) {
+      if (!password) {
+        errors.password = `Choose a password of at least ${MIN_PASSWORD} characters.`
+      } else if (password.length < MIN_PASSWORD) {
         errors.password = `Use at least ${MIN_PASSWORD} characters. This one has ${password.length}.`
       }
     }

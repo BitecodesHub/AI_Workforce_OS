@@ -208,7 +208,9 @@ export function AcceptInvite() {
 
     const errors: Partial<Record<FieldName, string>> = {}
     if (!displayName.trim()) errors.displayName = 'Enter your name.'
-    if (password.length < MIN_PASSWORD) {
+    if (!password) {
+      errors.password = `Choose a password of at least ${MIN_PASSWORD} characters.`
+    } else if (password.length < MIN_PASSWORD) {
       errors.password = `Use at least ${MIN_PASSWORD} characters. This one has ${password.length}.`
     }
     if (confirmPassword !== password) errors.confirm = MISMATCH
@@ -290,7 +292,7 @@ export function AcceptInvite() {
         {token && done && (
           <>
             <Notice tone="success" live>
-              Your account is set up and you have been added to the workspace as {done.email}.
+              Your account, {done.email}, is set up and has joined the workspace with the role you were invited with.
             </Notice>
             <Button
               className="auth-submit"

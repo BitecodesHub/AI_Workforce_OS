@@ -107,6 +107,11 @@ public final class PhoneAdapter implements McpServerAdapter {
         return Mono.just(true);
     }
 
+    @Override
+    public boolean asksEveryCall(String tool) {
+        return ASKS_FIRST.contains(tool);
+    }
+
     // @find: voice agent changes ask first, approval for create or update voice agent
     @Override
     public Optional<String> approvalReason(ToolInvocation invocation) {

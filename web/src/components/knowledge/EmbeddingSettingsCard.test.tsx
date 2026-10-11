@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearSession, saveSession } from '../../lib/session'
 import { ToastProvider } from '../../lib/toast'
 import { groupByProvider, optionValue, parseOptionValue, progressShare } from '../../lib/embeddingQueries'
-import { EmbeddingSettingsCard } from './EmbeddingSettingsCard'
+import { EmbeddingSettingsCard, doneSentence } from './EmbeddingSettingsCard'
 
 /*
  * Choosing the embedding model on the Knowledge page: the live list of embedding models, what is
@@ -180,5 +180,17 @@ describe('embedding helpers', () => {
     expect(progressShare({ state: 'running', sourcesTotal: 1, sourcesDone: 0, passagesTotal: 20, passagesDone: 5 })).toBe(0.25)
     expect(progressShare({ state: 'done', sourcesTotal: 0, sourcesDone: 0, passagesTotal: 0, passagesDone: 0 })).toBe(1)
     expect(groupByProvider(MODELS.models).map((group) => group.providerName)).toEqual(['NVIDIA NIM', 'OpenRouter'])
+  })
+})
+
+describe('doneSentence', () => {
+  it('dates the last re-index, since its passage count is of that moment', () => {
+    const now = Date.parse('2026-10-11T12:00:00Z')
+    expect(
+      doneSentence({ message: 'All 22 passages can be searched by meaning with m.', finishedAt: '2026-10-11T09:00:00Z' }, now),
+    ).toBe('Last re-index, 3 hours ago: All 22 passages can be searched by meaning with m.')
+    expect(doneSentence({ message: 'Documents are searched by keyword only.', finishedAt: null }, now)).toBe(
+      'Documents are searched by keyword only.',
+    )
   })
 })

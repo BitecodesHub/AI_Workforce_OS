@@ -100,6 +100,10 @@ describe('AcceptInvite', () => {
     await act(async () => {})
     const heading = screen.getByRole('heading', { level: 1, name: 'You are in' })
     expect(heading).toHaveFocus()
+    // The address is named as the account, not as if it were the role the person joined with.
+    expect(
+      screen.getByText('Your account, new@example.test, is set up and has joined the workspace with the role you were invited with.'),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue to sign in' })).toBeInTheDocument()
   })
 

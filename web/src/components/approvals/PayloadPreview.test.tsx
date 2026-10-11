@@ -138,7 +138,7 @@ describe('PayloadPreview', () => {
   it('says so when an action carries no details, rather than showing an empty box', () => {
     render(<PayloadPreview payload={'{}'} actionClass="OUTBOUND" />)
 
-    expect(screen.getByText('This action carries no further details.')).toBeInTheDocument()
+    expect(screen.getByText('The request has no fields of its own. Its summary above says what it does.')).toBeInTheDocument()
   })
 
   it('reads a sandbox Slack post as a message and its channel', () => {

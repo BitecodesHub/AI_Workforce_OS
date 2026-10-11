@@ -191,8 +191,28 @@ class BrowserAdapterTest {
         ToolResult result = call("search_site", "{\"query\":\"lofi music\"}");
 
         assertThat(result.status()).isNotEqualTo(ToolResult.Status.FAILED);
+        assertThat(result.summary()).isEqualTo("Searched the site; the page is now Example Domain (https://example.com/).");
         runner.verify(postRequestedFor(urlEqualTo("/sessions/" + RUN + "/search"))
                 .withRequestBody(matchingJsonPath("$.query", equalTo("lofi music"))));
+    }
+
+    @Test
+    @DisplayName("an approval for a submit or a click names the page and what was typed, since its arguments are empty")
+    void approvalDetailNamesPageAndTypedValues() {
+        runner.stubFor(post(urlPathMatching("/sessions/.*/(open|fill)")).willReturn(okJson(PAGE)));
+
+        assertThat(adapter.approvalDetail(invocation("submit_form", "{}")))
+                .contains("Submits the form on the open page. Nothing was typed into the page.");
+
+        call("open_page", "{\"url\":\"https://example.com\"}");
+        call("fill_field", "{\"field\":\"Search\",\"value\":\"Alan Turing\"}");
+
+        assertThat(adapter.approvalDetail(invocation("submit_form", "{}")))
+                .contains("Submits the form on https://example.com/, sending what was typed: Search = \"Alan Turing\".");
+        assertThat(adapter.approvalDetail(invocation("click_button", "{\"text\":\"Go\"}")))
+                .contains("Clicks the button \"Go\" on https://example.com/, sending what was typed:"
+                        + " Search = \"Alan Turing\".");
+        assertThat(adapter.approvalDetail(invocation("open_page", "{\"url\":\"https://example.com\"}"))).isEmpty();
     }
 
     @Test

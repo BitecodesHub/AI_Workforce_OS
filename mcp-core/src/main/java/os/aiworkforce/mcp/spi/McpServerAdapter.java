@@ -69,6 +69,25 @@ public interface McpServerAdapter {
         return Optional.empty();
     }
 
+    /**
+     * Whether {@link #approvalReason} asks a person for every call of this tool, whatever its
+     * arguments, although its side-effect class alone would not: creating a voice agent, say. The
+     * Connectors page and the grant dialog then mark it "asks first" like a send or a delete.
+     */
+    default boolean asksEveryCall(String tool) {
+        return false;
+    }
+
+    /**
+     * What a person approving this call needs to know that its arguments do not show, as one plain
+     * sentence - for the web browser, the page a click or a submit acts on and what was typed into
+     * it, since a submit's own arguments are empty. Added to the approval's summary. Empty for most
+     * calls.
+     */
+    default Optional<String> approvalDetail(ToolInvocation invocation) {
+        return Optional.empty();
+    }
+
     default Optional<ToolDefinition> tool(String name) {
         return tools().stream().filter(tool -> tool.name().equals(name)).findFirst();
     }

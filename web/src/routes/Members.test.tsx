@@ -201,7 +201,9 @@ describe('Members as an administrator', () => {
 
     const link = screen.getByLabelText('Password reset link')
     expect(link).toHaveValue(`${window.location.origin}/sign-in?reset=reset-token`)
-    expect(screen.getByText(/expires in 30 minutes/)).toBeInTheDocument()
+    // The time is said once, not "in 30 minutes, in 30 minutes".
+    const expiry = screen.getByText((_, element) => element?.tagName === 'P' && /^The link works once and expires/.test(element.textContent ?? ''))
+    expect(expiry.textContent).toBe('The link works once and expires in 30 minutes.')
     expect(screen.getAllByRole('button', { name: 'Copy link' }).length).toBeGreaterThan(0)
   })
 })

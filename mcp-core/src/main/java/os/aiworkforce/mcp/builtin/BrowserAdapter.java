@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 
@@ -315,6 +316,7 @@ public final class BrowserAdapter implements McpServerAdapter {
             case "open" -> "Opened " + page + ".";
             case "read" -> "Read " + page + ".";
             case "follow" -> "Followed a link to " + page + ".";
+            case "search" -> "Searched the site; the page is now " + page + ".";
             case "fill" -> "Typed into a field on " + page + ". Nothing was sent.";
             case "click" -> "Clicked a button; the page is now " + page + ".";
             case "submit" -> "Submitted the form; the page is now " + page + ".";
@@ -334,6 +336,57 @@ public final class BrowserAdapter implements McpServerAdapter {
             text = "{}";
         }
         return new ToolResult(ToolResult.Status.SUCCEEDED, text, summary, took, metadata);
+    }
+
+    // @find: browser approval detail, what a click or submit will send, page and typed values for approver
+    /**
+     * For a click or a submit, the page it acts on and what was typed into that page, so the person
+     * approving it sees what would reach the site: a submit's own arguments are usually empty.
+     */
+    @Override
+    public Optional<String> approvalDetail(ToolInvocation invocation) {
+        boolean click = "click_button".equals(invocation.tool());
+        if (!click && !"submit_form".equals(invocation.tool())) {
+            return Optional.empty();
+        }
+        PageState page = pages.get(sessionOf(invocation));
+        String url = null;
+        List<ObjectNode> fills = List.of();
+        if (page != null) {
+            synchronized (page) {
+                url = page.url;
+                fills = List.copyOf(page.fills);
+            }
+        }
+        StringBuilder text = new StringBuilder();
+        if (click) {
+            String button = "";
+            try {
+                button = json.readTree(invocation.argumentsJson()).path("text").asText("").strip();
+            } catch (Exception ignored) {
+                // Unreadable arguments: the sentence names no button.
+            }
+            text.append(button.isEmpty() ? "Clicks a button" : "Clicks the button \"" + clip(button) + "\"");
+        } else {
+            text.append("Submits the form");
+        }
+        text.append(url == null || url.isBlank() ? " on the open page" : " on " + clip(url));
+        if (fills.isEmpty()) {
+            text.append(". Nothing was typed into the page.");
+        } else {
+            text.append(", sending what was typed: ");
+            List<String> typed = new ArrayList<>();
+            for (ObjectNode fill : fills) {
+                typed.add(clip(fill.path("field").asText("a field")) + " = \"" + clip(fill.path("value").asText("")) + "\"");
+            }
+            text.append(String.join("; ", typed)).append('.');
+        }
+        return Optional.of(text.toString());
+    }
+
+    private static String clip(String value) {
+        String flat = value.replaceAll("\\s+", " ").strip();
+        return flat.length() <= 200 ? flat : flat.substring(0, 199) + "…";
     }
 
     // @find: close browser session when run ends

@@ -149,9 +149,14 @@ class AgentTemplateControllerTest {
     @DisplayName("a key already taken gets -2, then -3, so adding twice never fails")
     void aKeyClashGetsASuffix() {
         takenKeys.add("hr");
-        assertThat(controller.create("hr").agent().key()).isEqualTo("hr-2");
-        assertThat(controller.create("hr").agent().key()).isEqualTo("hr-3");
-        assertThat(controller.create("engineering-manager").agent().key()).isEqualTo("engineering-manager");
+        AgentController.AgentView second = controller.create("hr").agent();
+        assertThat(second.key()).isEqualTo("hr-2");
+        // Named after its key, so it is not a second "HR" in Chat and in the mention list.
+        assertThat(second.name()).isEqualTo("HR 2");
+        assertThat(controller.create("hr").agent().name()).isEqualTo("HR 3");
+        AgentController.AgentView first = controller.create("engineering-manager").agent();
+        assertThat(first.key()).isEqualTo("engineering-manager");
+        assertThat(first.name()).isEqualTo("Engineering Manager");
     }
 
     @Test
