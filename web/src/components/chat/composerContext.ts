@@ -49,6 +49,7 @@ export type ContextPayload = {
   skillId?: string
 }
 
+/** True when the context carries at least one attachment (knowledge, repository or skill); tolerates null and undefined. */
 export function hasContext(context: ComposerContext | null | undefined): boolean {
   return Boolean(context && (context.knowledge.length > 0 || context.repo || context.skill))
 }
@@ -69,6 +70,7 @@ export function contextPayload(context: ComposerContext | null | undefined): Con
 const sameKnowledge = (a: KnowledgeChoice, b: Pick<KnowledgeChoice, 'sourceId' | 'documentId'>) =>
   a.sourceId === b.sourceId && a.documentId === b.documentId
 
+/** True when the exact source or document is already in the context's knowledge list. */
 export function isKnowledgeChosen(
   context: ComposerContext,
   choice: Pick<KnowledgeChoice, 'sourceId' | 'documentId'>,

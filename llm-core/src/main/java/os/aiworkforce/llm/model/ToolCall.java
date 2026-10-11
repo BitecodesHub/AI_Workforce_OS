@@ -18,6 +18,7 @@ import java.util.Objects;
  */
 public record ToolCall(String id, String name, String argumentsJson) {
 
+    /** Requires an id and a name; absent arguments become an empty JSON object. */
     public ToolCall {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(name, "name");

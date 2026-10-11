@@ -23,7 +23,7 @@ import { filesFromPaste, useFileDrop } from './useDropAndPaste'
 
 /*
  * Where a message is written (B1.7): the textarea itself, its @mention popover, the chips for
- * agents chosen that way, and the @, mic and round send buttons beneath it, all in one rounded box. It also answers the
+ * agents chosen that way, and the "+" menu, mic and round send buttons beneath it, all in one rounded box. It also answers the
  * conversation's open question when one is targeted (D-14): Chat.tsx decides which question that
  * is and hands it down as `replyTo`, and this file only changes its placeholder, its send label
  * and what Esc does.
@@ -54,6 +54,7 @@ import { filesFromPaste, useFileDrop } from './useDropAndPaste'
 const COUNT_WARNING_AT = 8_000
 const COUNT_MAX = 10_000
 
+/** Grows the textarea to fit its content up to the CSS max-height, then switches to scrolling. */
 function autosize(el: HTMLTextAreaElement) {
   el.style.height = 'auto'
   const maxHeight = parseFloat(window.getComputedStyle(el).maxHeight) || 240
@@ -62,6 +63,7 @@ function autosize(el: HTMLTextAreaElement) {
   el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden'
 }
 
+/** Returns a copy of the agent list with the fallback (General Employee) agent moved to the front. */
 function sortGeneralFirst<T extends { fallback?: boolean }>(list: readonly T[]): T[] {
   const index = list.findIndex((item) => item.fallback)
   if (index <= 0) return [...list]
@@ -74,6 +76,7 @@ function sortGeneralFirst<T extends { fallback?: boolean }>(list: readonly T[]):
 /** Drafts kept before they were per person, removed once per page load. */
 let legacyDraftsCleared = false
 
+/** Removes drafts saved before drafts were keyed per person, at most once per page load; storage errors are ignored. */
 function clearLegacyDrafts() {
   if (legacyDraftsCleared) return
   legacyDraftsCleared = true
@@ -89,6 +92,25 @@ type Popover = { query: string; start: number; caret: number; activeIndex: numbe
 type ReplyTarget = { questionId: string; agentName: string; agentId: string | null; auto: boolean }
 
 // @find: Composer, composer, message box, composer, write message, send message
+/**
+ * The message box of the Chat page: text area, @mention popover, chips, "+" menu, mic and send button.
+ * Props: userId and conversationId (together they key the saved draft), agents (for mentions), onSend
+ * (resolves true on success; on false the text, mentions and context are restored into an empty box),
+ * sending, replyTo and onClearReply (the open question being answered), lastUserText (Up arrow in an empty
+ * box recalls it), inputRef (owned by the page so shortcuts can focus it), readOnlyNote and disabled,
+ * prefill, mention and skillRequest (each applied once per new token), dropZoneRef and canSchedule.
+ * Flow: typing runs findMentionQuery and opens the popover (arrows, Enter or Tab choose, Escape closes);
+ * a chosen agent becomes a chip and is sent as an agent id. Enter sends and Shift+Enter inserts a new
+ * line, ignoring Enter that confirms an IME composition. submit() snapshots and clears the box at once,
+ * hands the text, agent ids, ready attachment ids and context to onSend, and restores them on failure.
+ * State and effects: the draft is read from storage when the key changes (adjusted during render, not in
+ * an effect) and written back 300 ms after typing stops; the textarea is autosized on every change;
+ * native drag listeners are attached to the drop zone while attaching is allowed; the voice hook
+ * appends recognised speech to the text. A count appears from 8,000 characters and sending is blocked
+ * above 10,000. Sending is blocked while uploads run or while sending.
+ * Children: AttachmentChips, ContextChips, PlusMenu, ScheduleThisDialog and an AttachmentDropOverlay
+ * rendered into the drop zone with a portal.
+ */
 export function Composer({
   userId,
   conversationId,

@@ -37,11 +37,19 @@ public class AuditClient {
     private final WebClient client;
     private final InternalTokenProvider tokens;
 
+    /**
+     * Builds a client for the analytics service.
+     *
+     * @param builder Spring's shared WebClient builder
+     * @param properties platform configuration: analytics service URL
+     * @param tokens mints the service token for each call
+     */
     public AuditClient(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         this.client = builder.baseUrl(properties.services().analytics()).build();
         this.tokens = tokens;
     }
 
+    // The wire shape of one audit entry as analytics-service's /internal/audit-events expects it.
     private record AuditEventRequest(
             UUID orgId,
             String actorId,
@@ -57,6 +65,19 @@ public class AuditClient {
     /**
      * Records one entry. Never throws: see the class-level note on why a delivery failure here
      * must not propagate to the caller.
+     *
+     * <p>Posts the entry with a 5 second timeout and a service token minted from the current
+     * request context, while the entry itself names the {@code actor} passed in. A null detail is
+     * sent as an empty object. Side effect: one row is written by analytics-service. On any failure
+     * (including a null actor) a warning is logged and the method returns normally.
+     *
+     * @param orgId the workspace the action happened in
+     * @param actor who did it, including the person behind a non-human actor
+     * @param action what happened, for example {@code "run.completed"}
+     * @param resourceType the kind of thing acted on
+     * @param resourceId the id of the thing acted on
+     * @param outcome how it ended
+     * @param detail extra facts for the entry; may be null
      */
     public void record(
             UUID orgId,

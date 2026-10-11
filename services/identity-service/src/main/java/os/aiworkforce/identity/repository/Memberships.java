@@ -19,8 +19,18 @@ import os.aiworkforce.identity.domain.Membership;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for {@link Membership} rows, the link between a person, a workspace and a role.
+ *
+ * <p>Used by {@code AuthService} (scope resolution at sign-in and refresh), {@code GrantGuard},
+ * {@code MemberController}, {@code InternalMembershipController} and {@code PasswordResetService}.
+ */
 public interface Memberships extends JpaRepository<Membership, UUID> {
 
+    /**
+     * The membership of one person in one workspace, whatever its status. At most one row exists,
+     * because of the unique index on user and workspace. Empty if the person never joined.
+     */
     Optional<Membership> findByUserIdAndOrgId(UUID userId, UUID orgId);
 
     /** The person's membership in the workspace, only while it is active. */
@@ -28,8 +38,16 @@ public interface Memberships extends JpaRepository<Membership, UUID> {
         return findByUserIdAndOrgId(userId, orgId).filter(Membership::isActive);
     }
 
+    /**
+     * Every membership a person holds with the given status, across workspaces. Callers pass
+     * {@code "active"} to learn which workspaces a person can currently enter.
+     */
     List<Membership> findByUserIdAndStatus(UUID userId, String status);
 
+    /**
+     * Every membership in one workspace with the given status. The member list passes
+     * {@code "active"}.
+     */
     List<Membership> findByOrgIdAndStatus(UUID orgId, String status);
 
     /**

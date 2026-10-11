@@ -48,6 +48,7 @@ import os.aiworkforce.llm.bedrock.BedrockCredentials;
 @Service
 public class BedrockRegionFinder {
 
+    /** Logger; records only counts and the chosen region, never a credential. */
     private static final Logger log = LoggerFactory.getLogger(BedrockRegionFinder.class);
 
     /** How long one region's model list may take. */
@@ -104,18 +105,26 @@ public class BedrockRegionFinder {
      * @param modelCount text models the region lists for this account; null when the list could not be read
      * @param message plain words, safe to show; never what AWS said
      */
+    /** What one region came to, as the console shows it. */
     public record RegionResult(String region, Status status, Integer modelCount, String message) {}
 
     /**
      * @param best the region to choose, or null when none accepted the credential
      */
+    /** The whole answer: the best region, every region's result (best first) and one plain sentence summing it up. */
     public record Finding(String best, List<RegionResult> regions, String message) {}
 
     /** The two calls the finder makes. Behind an interface so it is tested without a network. */
     public interface Transport {
+        /**
+         * Sends one signed request and returns the status and body whatever the status; {@code body} may be null or empty.
+         *
+         * @throws IOException when the region could not be reached or did not answer in time
+         */
         ModelListHttp.Response send(String method, URI uri, Map<String, String> headers, byte[] body, Duration timeout)
                 throws IOException;
 
+        /** The real transport on the JDK client with a short connect timeout and no redirects, so a signed request is never replayed elsewhere. */
         static Transport jdk() {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(4))
@@ -145,17 +154,23 @@ public class BedrockRegionFinder {
         }
     }
 
+    /** Reads AWS response bodies. */
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Sends the signed requests. */
     private final Transport transport;
+    /** Time source for request signing. */
     private final Clock clock;
+    /** The regions this finder may ask. */
     private final List<String> regions;
 
+    /** Builds the finder with the real transport, the system clock and every known region; used by Spring. */
     @Autowired
     public BedrockRegionFinder() {
         this(Transport.jdk(), Clock.systemUTC(), REGIONS);
     }
 
+    /** Builds a finder with its own transport, clock and region list, so tests need no network. */
     BedrockRegionFinder(Transport transport, Clock clock, List<String> regions) {
         this.transport = transport;
         this.clock = clock;
@@ -164,6 +179,12 @@ public class BedrockRegionFinder {
 
     /**
      * Asks every region, then sends the one-token call to the best few that accepted.
+     *
+     * <p>Flow: asks every region of the credential's AWS partition in parallel on virtual threads,
+     * each bounded by a timeout, then calls up to {@link #CALL_LIMIT} accepting regions, and ranks
+     * the results. Makes outbound HTTP calls only; nothing is stored. A slow or failing region
+     * becomes {@code unreachable} rather than failing the search, so this does not throw for
+     * network trouble.
      *
      * @param credentials parsed and checked already; its own region is the one preferred
      */
@@ -239,6 +260,14 @@ public class BedrockRegionFinder {
     /** One region's list: whether the credential is accepted there, and what it may run. */
     record Listed(String region, Status status, Integer modelCount, List<String> onDemandModels) {}
 
+    /**
+     * Asks one region for its text-model list with a signed GET; an HTTP call to AWS.
+     *
+     * <p>A 2xx answer means the credential is accepted and yields the models available on demand. A 403
+     * access-denied that does not name the credential itself still counts as accepted (the credential
+     * works, it just may not list models). Other 400, 401 and 403 answers mean refused; a network
+     * failure, timeout or any other status means unreachable. Never throws for these cases.
+     */
     Listed list(BedrockCredentials credentials, String region) {
         URI uri = URI.create(BedrockCredentials.controlEndpoint(region) + "/foundation-models?byOutputModality=TEXT");
         BedrockCredentials inRegion = inRegion(credentials, region);
@@ -282,7 +311,13 @@ public class BedrockRegionFinder {
         return new Listed(region, Status.unreachable, null, List.of());
     }
 
-    /** The one-token call, on the first small model the region offers on demand. */
+    /**
+     * Sends one Converse call with a one-token limit on a small model the region offers; an HTTP call to AWS.
+     *
+     * <p>2xx means ready. A refusal that names the credential means refused. Other 400, 403 and 404
+     * answers mean the credential works but model access is not on. Anything else, including a network
+     * failure, leaves the region as it was listed. Never throws for these cases.
+     */
     Listed call(BedrockCredentials credentials, Listed listed) {
         String model = probeModel(listed.onDemandModels());
         URI uri = URI.create(BedrockCredentials.runtimeEndpoint(listed.region()) + "/model/" + AwsSigV4.encode(model) + "/converse");
@@ -315,6 +350,7 @@ public class BedrockRegionFinder {
         return listed;
     }
 
+    /** The model to spend the one token on: the first of {@link #PROBE_MODELS} the region offers, otherwise a small Nova, Meta or Mistral model, otherwise the first listed. */
     static String probeModel(List<String> onDemand) {
         for (String preferred : PROBE_MODELS) {
             if (onDemand.contains(preferred)) {
@@ -335,6 +371,7 @@ public class BedrockRegionFinder {
                 || lower.contains("invalid");
     }
 
+    /** The AWS error type from a response body, without any namespace or detail suffix; empty when the body cannot be read. */
     private static String errorType(ModelListHttp.Response response) {
         try {
             JsonNode node = JSON.readTree(response.body() == null ? "" : response.body());
@@ -348,6 +385,7 @@ public class BedrockRegionFinder {
         }
     }
 
+    /** The plain sentence shown for a region; never contains what AWS said. */
     static String sentence(Listed entry) {
         return switch (entry.status()) {
             case ready -> "Works, and a model answered.";
@@ -368,6 +406,7 @@ public class BedrockRegionFinder {
                 .thenComparingInt(entry -> regions.indexOf(entry.region()));
     }
 
+    /** Orders the final results: by status rank, then the chosen region, then the preferred regions, then the usual order. */
     private Comparator<RegionResult> resultOrder(String chosen) {
         return Comparator.<RegionResult>comparingInt(result -> rank(result.status()))
                 .thenComparingInt(result -> result.region().equals(chosen) ? 0 : 1)
@@ -375,6 +414,7 @@ public class BedrockRegionFinder {
                 .thenComparingInt(result -> regions.indexOf(result.region()));
     }
 
+    /** Sort rank of a status: working regions first, refused last. */
     private static int rank(Status status) {
         return switch (status) {
             case ready -> 0;
@@ -385,15 +425,18 @@ public class BedrockRegionFinder {
         };
     }
 
+    /** Position of a region in {@link #PREFERRED}, or after them all. */
     private static int preference(String region) {
         int index = PREFERRED.indexOf(region);
         return index < 0 ? PREFERRED.size() : index;
     }
 
+    /** A copy of the credential aimed at another region. */
     private static BedrockCredentials inRegion(BedrockCredentials keys, String region) {
         return new BedrockCredentials(keys.accessKeyId(), keys.secretAccessKey(), keys.sessionToken(), keys.apiKey(), region);
     }
 
+    /** Waits for a result up to the limit; on a timeout, interruption or failure it cancels the call and returns the fallback. */
     private static <T> T await(CompletableFuture<T> future, Duration limit, T fallback) {
         try {
             return future.get(limit.toMillis(), TimeUnit.MILLISECONDS);

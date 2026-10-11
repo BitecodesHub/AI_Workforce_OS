@@ -16,8 +16,10 @@ import type { AgentId, ToolServer } from '../shared/landingFacts'
  * "gated" is true when at least one tool the agent holds on that server waits for a person.
  */
 
+/** One grant: the tool server, the plain sentence about it, and gated, true when at least one tool the agent holds there waits for a person. */
 export type AgentGrant = { server: ToolServer; sentence: string; gated: boolean }
 
+/** The grants of each demo agent (hr, eng, research, support), in display order. See the header for the sources these sentences are checked against. */
 export const AGENT_GRANTS: Record<AgentId, ReadonlyArray<AgentGrant>> = {
   hr: [
     { server: 'gmail', sentence: 'Reads and drafts emails on its own. Sending one waits for approval.', gated: true },

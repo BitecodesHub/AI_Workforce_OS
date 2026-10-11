@@ -42,6 +42,11 @@ public record RoutingPolicy(
         DEGRADE_TO_SANDBOX
     }
 
+    /**
+     * Normalises the policy: a missing candidate list becomes empty, a missing exhausted behaviour
+     * becomes {@link ExhaustedBehaviour#FAIL_CLOSED}, and fewer than one attempt is raised to one so
+     * that every candidate is tried at least once.
+     */
     public RoutingPolicy {
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
         exhausted = exhausted == null ? ExhaustedBehaviour.FAIL_CLOSED : exhausted;
@@ -50,10 +55,16 @@ public record RoutingPolicy(
         }
     }
 
+    /**
+     * A policy with the platform defaults: fail closed, two attempts per candidate, a five minute
+     * overall deadline and compaction on overflow. Used by {@code ModelRouter} when an agent has no
+     * policy of its own.
+     */
     public static RoutingPolicy of(List<Candidate> candidates) {
         return new RoutingPolicy(candidates, ExhaustedBehaviour.FAIL_CLOSED, 2, Duration.ofMinutes(5), true);
     }
 
+    /** Whether there is no candidate to try, in which case the router has nothing to route to. */
     public boolean isEmpty() {
         return candidates.isEmpty();
     }
@@ -70,15 +81,18 @@ public record RoutingPolicy(
     public record Candidate(
             String providerId, String modelId, Double temperature, Integer maxOutputTokens, int weight) {
 
+        /** Rejects a candidate that names no provider or no model. */
         public Candidate {
             Objects.requireNonNull(providerId, "providerId");
             Objects.requireNonNull(modelId, "modelId");
         }
 
+        /** A candidate with no overrides and the lowest weight. */
         public static Candidate of(String providerId, String modelId) {
             return new Candidate(providerId, modelId, null, null, 0);
         }
 
+        /** A stable {@code provider/model} identifier, used for circuit breaker and log keys. */
         public String key() {
             return providerId + "/" + modelId;
         }

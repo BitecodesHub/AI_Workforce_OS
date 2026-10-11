@@ -24,6 +24,10 @@ public class AuditVerification {
     private final AuditEvents events;
     private final AuditChain chain;
 
+    /**
+     * Creates the service over the events repository (row access) and the chain checker (hash
+     * rules).
+     */
     public AuditVerification(AuditEvents events, AuditChain chain) {
         this.events = events;
         this.chain = chain;
@@ -35,6 +39,13 @@ public class AuditVerification {
         return verifyChain(AuditChain.chainKeyFor(orgId));
     }
 
+    /**
+     * Verifies one chain by key, from its first entry to its newest. Pages rows from the repository in
+     * sequence order and hands them to {@link AuditChain#verify}; read-only, with no transaction held across
+     * pages. Returns the verification result, which reports whether the chain is intact and where it broke if not.
+     *
+     * @param chainKey a workspace chain key (see {@link AuditChain#chainKeyFor}) or the platform chain key
+     */
     public AuditChain.Verification verifyChain(String chainKey) {
         return chain.verify(
                 chainKey,

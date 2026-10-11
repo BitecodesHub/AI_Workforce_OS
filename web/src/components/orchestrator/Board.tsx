@@ -34,6 +34,7 @@ import { requesterLabel } from './shared'
  */
 
 /** The columns still in flight. Finished sits below them, folded away until asked for. */
+/** Constants of the board: the in-flight columns, the status choices and their labels, and how many cards a column shows before "Show all N". */
 const ACTIVE_COLUMNS: BoardColumn[] = ['queued', 'working', 'needs_you']
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 const STATUS_OPTIONS: CardStatusKey[] = ['queued', 'held', 'working', 'needs_you', 'finished', 'failed']
@@ -48,6 +49,25 @@ const STATUS_LABEL: Record<CardStatusKey, string> = {
 const CARDS_PER_COLUMN = 8
 
 // @find: orchestrator board component, goals board, board or list
+/**
+ * The Orchestrator's goal board, as a column board or a list, with search and facet filtering.
+ * Props: board (the board payload), cards (the goals prepared for display, see layout.ts), view and group
+ * (board or list, and how the list is grouped; both live in the URL), selectedAgentId and onSelectAgent,
+ * onOpenGoal (opens GoalSheet), changedIds (cards to highlight after a live update), onCardMoved
+ * (reports a card that changed column, for keeping focus), onNewGoal (offered from the empty state when the
+ * viewer may start a goal) and doneToday (the "Done today" toggle).
+ * Data flow: no queries of its own except useMemberDirectory (requester names, when the viewer may read
+ * members). useListFilter provides the free-text search (title, agent, requester) and the source, status and
+ * requester facets; the agent filter is applied on top. Filter state and view or group changes are written to
+ * the URL with replace navigations (withParams reads the live URL so changes made in the same event
+ * combine); Clear all resets search, facets and agent in one navigation.
+ * Rendering: an empty board shows an EmptyState; otherwise BoardToolbar and then either BoardColumns (queued,
+ * working and needs-you columns side by side, with Finished folded below) or BoardList. Each column shows
+ * eight cards before "Show all"; the expansion resets when the filter changes. A search or filter holds
+ * Finished open. "Show empty" and the Finished fold persist in localStorage (orc.board.showEmpty,
+ * orc.board.finishedOpen). The container gets j, k and arrow-key navigation (useBoardKeyboard) and keeps
+ * focus on a card that moves between columns (useKeepCardFocus).
+ */
 export function OrchestratorBoard({
   board,
   cards,
@@ -387,6 +407,12 @@ function FinishedDisclosure({
   )
 }
 
+/**
+ * One goal as a button card: title, status tag (the current task's status, else the goal's), a meta line
+ * (agent, source, requester, timing, cost), step progress with chain dots for multi-step goals, a queue note
+ * with the position when queued, and a failure caption naming the failed step. data-card-id lets keyboard
+ * navigation and focus keeping find it; data-changed marks a live update; aria-current marks the open goal.
+ */
 function BoardGoalCard({
   card,
   now,
@@ -456,6 +482,7 @@ function BoardGoalCard({
   )
 }
 
+/** For a failed card, "Stopped at step N: reason" with the reason cut to 90 words; null otherwise. */
 function failureCaption(card: BoardCard): string | null {
   if (card.statusKey !== 'failed' || !card.task?.failureReason) return null
   const ordered = [...card.goal.tasks].sort((a, b) => a.position - b.position)
@@ -464,6 +491,7 @@ function failureCaption(card: BoardCard): string | null {
   return `Stopped at step ${step}: ${truncateWords(card.task.failureReason, 90)}`
 }
 
+/** Elapsed time text for the card's current task: running time, the finished duration, or empty before it starts. */
 function timingFor(card: BoardCard, now: number): string {
   const { task } = card
   if (!task) return ''
@@ -475,6 +503,7 @@ function timingFor(card: BoardCard, now: number): string {
   return ''
 }
 
+/** One dot per task of a multi-step goal, filled for completed tasks; renders nothing for a single task. Decorative. */
 function ChainDots({ goal }: { goal: BoardCard['goal'] }) {
   const tasks = [...goal.tasks].sort((a, b) => a.position - b.position)
   if (tasks.length <= 1) return null

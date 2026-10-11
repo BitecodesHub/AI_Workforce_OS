@@ -13,10 +13,13 @@
  * browser build cannot be tested or relied on. Times are shown in the viewer's own time zone.
  */
 
+/** The locale every date, number and list is formatted in (Australian English). */
 export const LOCALE = 'en-AU'
 
+/** The placeholder (em dash) shown where a value is missing. */
 const EMPTY = '—'
 
+/** Abbreviated month names, composed by hand so output does not depend on the browser's ICU data. */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const SECOND = 1000
@@ -28,14 +31,17 @@ const SECOND = 1000
  */
 const CLOCK_SKEW_MS = 10 * SECOND
 
+/** Parses an ISO timestamp; returns null for a missing or invalid value. */
 function parse(iso: string | null | undefined): Date | null {
   if (!iso) return null
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+/** Zero-pads a number to two digits. */
 const pad2 = (value: number) => String(value).padStart(2, '0')
 
+/** A count with its unit, pluralised by adding s: "1 minute", "5 minutes". */
 function countedUnit(count: number, unit: string): string {
   return `${count} ${unit}${count === 1 ? '' : 's'}`
 }
@@ -48,10 +54,12 @@ export function plural(n: number, one: string, many: string): string {
 
 /* ---- Dates and times ------------------------------------------------------------------------- */
 
+/** Date as "27 Sep 2026", in the browser's local time zone. */
 function datePart(date: Date): string {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`
 }
 
+/** Time as "3:04 pm" (twelve-hour clock, lower-case am or pm), in local time. */
 function timePart(date: Date): string {
   const hours = date.getHours()
   const hour12 = hours % 12 === 0 ? 12 : hours % 12
@@ -291,6 +299,7 @@ export function formatCompactTokens(n?: number | null): string {
   return `${sign}${Number(value.toPrecision(3))}${units[unit]}`
 }
 
+/** Inserts commas between groups of three digits in a string of digits. */
 function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }

@@ -34,8 +34,10 @@ import { CitedAnswerDemo } from '../answer/CitedAnswerDemo'
  */
 
 /** One tab: which demo, and what its tab is called on this page. */
+/** One tab: which demo it opens and what the tab is called on this page. */
 export type StageItem = { id: DemoArea; name: string }
 
+/** Maps each demo area to its tab icon and a render function that takes the voice (the failover and audit demos have only one voice). */
 const REGISTRY: Record<DemoArea, { icon: IconName; render: (voice: DemoVoice) => ReactElement }> = {
   approval: { icon: 'gate', render: (voice) => <ApprovalDemo voice={voice} /> },
   failover: { icon: 'route', render: () => <FailoverDemo /> },
@@ -44,6 +46,7 @@ const REGISTRY: Record<DemoArea, { icon: IconName; render: (voice: DemoVoice) =>
 }
 
 /** All four, as the page for IT teams shows them. */
+/** All four demos in order, as the page for IT teams shows them. */
 export const TECHNICAL_ITEMS: readonly StageItem[] = [
   { id: 'approval', name: 'Approval gate' },
   { id: 'failover', name: 'Model routing' },
@@ -51,11 +54,13 @@ export const TECHNICAL_ITEMS: readonly StageItem[] = [
   { id: 'cited', name: 'Cited answers' },
 ]
 
+/** Props: items (which demos and in which order; default all four) and voice (technical or plain). */
 export type DemoStageProps = {
   items?: readonly StageItem[]
   voice?: DemoVoice
 }
 
+/** The demo area named by the URL hash if it is one of the items, else null; null outside a browser. */
 function demoFromHash(items: readonly StageItem[]): DemoArea | null {
   if (typeof window === 'undefined') return null
   const id = decodeURIComponent(window.location.hash.slice(1))
@@ -63,6 +68,10 @@ function demoFromHash(items: readonly StageItem[]): DemoArea | null {
 }
 
 // @find: DemoStage component, demo tabs
+/**
+ * One row of tabs over a single stage that shows one working demo at a time. Pages choose which demos and which voice (the home page shows two in plain words).
+ * Behaviour: ARIA tabs with automatic activation: arrow keys, Home and End move between tabs, only the selected tab is in the Tab order. The initial tab comes from the URL hash, else the first item. A demo that is not showing is hidden, not unmounted, so each keeps its state and anchor id (#approval, #failover, #audit, #cited); each demo's autoplay waits until its tab is open and on screen. The stage listens for the lp:reveal event (announced by useInPageLink before it scrolls) and opens the named demo synchronously (flushSync), so the scroll lands on a laid-out panel, and for hashchange. A moving highlight is positioned with CSS variables for the count, active index, column and row. Rendered by the Landing and Trust routes.
+ */
 export function DemoStage({ items = TECHNICAL_ITEMS, voice = 'technical' }: DemoStageProps): ReactElement {
   const [selected, setSelected] = useState<DemoArea>(() => demoFromHash(items) ?? items[0]!.id)
   const tabRefs = useRef<Partial<Record<DemoArea, HTMLButtonElement | null>>>({})

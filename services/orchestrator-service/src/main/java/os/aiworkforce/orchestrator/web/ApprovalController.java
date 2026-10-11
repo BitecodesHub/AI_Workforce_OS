@@ -40,14 +40,17 @@ import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 
 /**
- * The approvals queue, and the record of what was decided.
+ * REST endpoints for the approvals queue: listing, counting, reading and deciding approvals,
+ * bulk decisions, and the workspace's four-eyes setting.
  *
- * <p>Approving hands the run back to its agent at once rather than waiting for a scheduler to
- * notice, because the person who just approved something is still watching the screen. The
- * decision is answered as soon as it is recorded: the approved call and the rest of the run carry
- * on in the background, and the run's own page shows them as they happen. Carrying the run on
- * inside this request would hold the approver for as long as the agent took, past the gateway's
- * one-minute limit, and report a failure for an approval that had succeeded.
+ * <p>Called by the web app Approvals page. Decisions are recorded by {@link ApprovalService};
+ * this controller then hands the run back to {@link RunExecutor} so the agent carries on at once,
+ * rather than waiting for a scheduler to notice, because the person who just approved something
+ * is still watching the screen. The decision is answered as soon as it is recorded: the approved
+ * call and the rest of the run carry on in the background, and the run's own page shows them as
+ * they happen. Carrying the run on inside this request would hold the approver for as long as the
+ * agent took, past the gateway's one-minute limit, and report a failure for an approval that had
+ * succeeded.
  */
 @RestController
 @RequestMapping("/api/approvals")
@@ -63,6 +66,7 @@ public class ApprovalController {
     private final RunExecutor executor;
     private final Runs runs;
 
+    /** Receives the approval service, the executor that resumes runs, and the run repository used to report run status. */
     public ApprovalController(ApprovalService approvals, RunExecutor executor, Runs runs) {
         this.approvals = approvals;
         this.executor = executor;
@@ -107,11 +111,13 @@ public class ApprovalController {
             /** What happened when it was carried out, once it was. */
             String outcome) {}
 
+    /** The number of approvals waiting, and how many of those the caller could decide. */
     public record CountView(int pending, int canDecide) {}
 
     /** How strictly the person who asked for work is kept from approving it: off, destructive or all. */
     public record SettingsView(String requesterCannotApprove) {}
 
+    /** The body of a request to change the four-eyes rule. */
     public record UpdateSettingsRequest(@NotBlank @Size(max = 20) String requesterCannotApprove) {}
 
     /**
@@ -137,8 +143,10 @@ public class ApprovalController {
         }
     }
 
+    /** The outcome of one decision: the approval's new status and the status of its run. */
     public record DecisionResult(UUID approvalId, String status, String runStatus) {}
 
+    /** A bulk decision: the approvals to decide, the common answer and an optional note. */
     public record BulkDecisionRequest(
             @NotEmpty @Size(max = MAX_BULK) List<UUID> ids, boolean approved, @Size(max = 1_000) String note) {}
 
@@ -152,8 +160,16 @@ public class ApprovalController {
      */
     public record BulkItemResult(UUID id, String result, String status, String message) {}
 
+    /** The per-approval results of a bulk decision, in request order. */
     public record BulkDecisionResult(List<BulkItemResult> results) {}
 
+    /**
+     * Lists approvals.
+     *
+     * <p>Route {@code GET /api/approvals}; requires APPROVAL_READ. Delegates the query to
+     * {@link ApprovalService#list} and decorates each row with goal context and whether the caller
+     * can decide it.
+     */
     @GetMapping
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
     @Operation(
@@ -172,6 +188,7 @@ public class ApprovalController {
         return views(found);
     }
 
+    /** Counts waiting approvals for the caller; route {@code GET /api/approvals/count}; requires APPROVAL_READ. */
     // @find: approval count, pending badge, GET /api/approvals/count
     @GetMapping("/count")
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
@@ -181,6 +198,7 @@ public class ApprovalController {
         return new CountView(counts.pending(), counts.canDecide());
     }
 
+    /** Reads the workspace's four-eyes rule name; route {@code GET /api/approvals/settings}; requires APPROVAL_READ. */
     // @find: get approval settings, GET /api/approvals/settings
     @GetMapping("/settings")
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
@@ -189,6 +207,12 @@ public class ApprovalController {
         return new SettingsView(approvals.requesterRuleName(orgId()));
     }
 
+    /**
+     * Changes the four-eyes rule (off, destructive or all).
+     *
+     * <p>Route {@code PUT /api/approvals/settings}; requires WORKSPACE_UPDATE. The service validates
+     * the value, stores it and audits the change, attributed to the caller.
+     */
     // @find: update approval settings, four-eyes rule, PUT /api/approvals/settings
     @PutMapping("/settings")
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
@@ -198,6 +222,7 @@ public class ApprovalController {
                 approvals.setRequesterRule(orgId(), request.requesterCannotApprove(), RequestContext.requireActor()));
     }
 
+    /** Returns one approval, waiting or decided; route {@code GET /api/approvals/{approvalId}}; requires APPROVAL_READ. Not found when it is absent or in another workspace. */
     // @find: get approval, GET /api/approvals/{approvalId}
     @GetMapping("/{approvalId}")
     @RequiresPermission(Permission.Codes.APPROVAL_READ)
@@ -206,6 +231,17 @@ public class ApprovalController {
         return views(List.of(approvals.get(orgId(), approvalId))).get(0);
     }
 
+    /**
+     * Approves, rejects or sends back one approval.
+     *
+     * <p>Route {@code POST /api/approvals/{approvalId}/decision}; requires APPROVAL_DECIDE. Records
+     * the decision through {@link ApprovalService} (which enforces expiry, double decision and the
+     * four-eyes rule), then, for an approval or a send-back that keeps the run alive, submits the run
+     * to {@link RunExecutor} to resume in the background as the caller. A rejection stops the run and
+     * is not resumed. The response reports the approval's status and the run's status, showing
+     * {@code running} when the run was still parked on the approval just decided. Service errors
+     * (already decided, expired, forbidden, not found) are returned unchanged.
+     */
     // @find: approve or reject, send back, POST /api/approvals/{approvalId}/decision
     @PostMapping("/{approvalId}/decision")
     @RequiresPermission(Permission.Codes.APPROVAL_DECIDE)
@@ -268,6 +304,7 @@ public class ApprovalController {
         return new BulkDecisionResult(results);
     }
 
+    /** Decides one approval for a bulk request, turning a refusal into a per-item result rather than an error. */
     private BulkItemResult decideOne(UUID orgId, Actor actor, UUID id, boolean approved, String note) {
         try {
             Approval approval = approvals.decide(orgId, id, approved, note);
@@ -280,6 +317,7 @@ public class ApprovalController {
         }
     }
 
+    /** Maps a refusal code to the bulk result word; any code not listed reads as forbidden. */
     private static String resultFor(ErrorCode code) {
         return switch (code) {
             case APPROVAL_ALREADY_DECIDED -> "already_decided";
@@ -290,6 +328,7 @@ public class ApprovalController {
         };
     }
 
+    /** The approval status carried in a refusal's details, or expired for an expiry; null when none is given. */
     private static String statusOf(ApiException refused) {
         if (refused.code() == ErrorCode.APPROVAL_EXPIRED) {
             return "expired";
@@ -297,6 +336,7 @@ public class ApprovalController {
         return refused.details().get("status") instanceof String text ? text : null;
     }
 
+    /** Converts approvals to views, loading goal context in one call and the caller's permission per row. */
     private List<ApprovalView> views(List<Approval> found) {
         Actor actor = RequestContext.requireActor();
         Map<UUID, ApprovalService.Context> context = approvals.contextFor(found);
@@ -308,6 +348,7 @@ public class ApprovalController {
                 .toList();
     }
 
+    /** Builds one approval view from the row, its goal context and the caller's ability to decide it. */
     private static ApprovalView toView(Approval approval, ApprovalService.Context context, boolean canDecide) {
         return new ApprovalView(
                 approval.getId(),
@@ -333,6 +374,7 @@ public class ApprovalController {
                 approval.getOutcome());
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

@@ -19,12 +19,22 @@ import os.aiworkforce.identity.domain.SigningKey;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for {@link SigningKey} rows, keyed by key identifier.
+ *
+ * <p>Used only by {@code SigningKeyStore}, which loads, creates and rotates the keys that sign
+ * access tokens.
+ */
 public interface SigningKeys extends JpaRepository<SigningKey, String> {
 
     /** The key that signs now. A unique partial index guarantees there is at most one. */
     @Query("select k from SigningKey k where k.status = 'active'")
     Optional<SigningKey> findActive();
 
+    /**
+     * Every key whose status is in the given set. {@code SigningKeyStore} asks for active and
+     * retiring keys, which are the ones verifiers must be offered.
+     */
     List<SigningKey> findByStatusIn(Collection<String> statuses);
 
     /**

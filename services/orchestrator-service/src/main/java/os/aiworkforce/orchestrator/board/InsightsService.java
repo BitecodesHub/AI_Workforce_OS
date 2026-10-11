@@ -76,9 +76,12 @@ public class InsightsService {
     /** What every figure derived from the administrator's inputs is called, wherever it is shown. */
     public static final String VALUE_LABEL = "Estimate from your inputs (current values)";
 
+    /** Run statuses that mean a run has ended. */
     static final List<String> TERMINAL = List.of("completed", "failed", "cancelled", "abandoned");
 
+    /** Most failure reasons listed. */
     private static final int FAILURE_REASONS = 5;
+    /** Failure reasons are cut to this many characters before grouping. */
     private static final int REASON_CHARS = 200;
 
     /**
@@ -105,6 +108,7 @@ public class InsightsService {
                         and u.provider_id <> 'sandbox' and u.outcome = 'SUCCEEDED'))
             """;
 
+    /** SQL: goals that finished in the window, counted by UTC day, source and outcome. */
     private static final String GOALS_BY_DAY_AND_SOURCE =
             """
             select to_char(date_trunc('day', completed_at at time zone 'UTC'), 'YYYY-MM-DD') as day,
@@ -115,6 +119,7 @@ public class InsightsService {
             group by 1, 2, 3
             """;
 
+    /** SQL: completed and failed tasks finished in the window, and how many of them needed exactly one run. */
     private static final String TASK_OUTCOMES =
             """
             select t.status, count(*) as n,
@@ -142,6 +147,7 @@ public class InsightsService {
                          and u.provider_id <> 'sandbox' and coalesce(m.free, false) = false))
             """;
 
+    /** SQL: runs started in the window grouped by agent and status, with cost and counts of priced, unpriced, sandbox-only and free runs. */
     private static final String RUNS_BY_AGENT_AND_STATUS =
             """
             with flagged as (
@@ -163,6 +169,7 @@ public class InsightsService {
             """
                     .formatted(SANDBOX_ONLY, FREE_ONLY);
 
+    /** SQL: recorded model spend per UTC day from the usage table. */
     private static final String SPEND_BY_DAY =
             """
             select to_char(date_trunc('day', occurred_at at time zone 'UTC'), 'YYYY-MM-DD') as day,
@@ -192,6 +199,7 @@ public class InsightsService {
             """
                     .formatted(SANDBOX_ONLY, FREE_ONLY);
 
+    /** SQL: approvals raised in the window, by agent and status. */
     private static final String APPROVALS_BY_AGENT_AND_STATUS =
             """
             select agent_id, status, count(*) as n
@@ -210,6 +218,7 @@ public class InsightsService {
               and status in ('approved', 'rejected') and decided_at is not null
             """;
 
+    /** SQL: questions raised in the window, how many were answered and the median seconds to answer. */
     private static final String QUESTIONS =
             """
             select count(*) as asked,
@@ -220,6 +229,7 @@ public class InsightsService {
             where org_id = ? and created_at >= ? and created_at < ?
             """;
 
+    /** SQL: the most common failure reasons of failed or abandoned runs. */
     private static final String FAILURE_REASON_ROWS =
             """
             select left(failure_reason, %d) as reason, count(*) as n
@@ -245,6 +255,7 @@ public class InsightsService {
             """
                     .formatted(SANDBOX_ONLY_TASK);
 
+    /** SQL: every agent of the workspace with the time it last started a run. */
     private static final String AGENT_ROWS =
             """
             select a.id, a.name, a.category, a.status,
@@ -255,6 +266,7 @@ public class InsightsService {
             order by a.name
             """;
 
+    /** SQL: thumbs up and thumbs down given to each agent's chat answers in the window. */
     private static final String SATISFACTION_BY_AGENT =
             """
             select agent_id,
@@ -265,15 +277,20 @@ public class InsightsService {
             group by agent_id
             """;
 
+    /** Runs the grouped SQL; every query is scoped to the workspace first. */
     private final JdbcTemplate jdbc;
+    /** Holds the administrator's hourly rate and minutes-per-task inputs. */
     private final RuntimeConfigStore settings;
+    /** Source of the current time; replaced in tests. */
     private final Clock clock;
 
+    /** Builds the service with the system UTC clock; used by Spring. */
     @Autowired
     public InsightsService(JdbcTemplate jdbc, RuntimeConfigStore settings) {
         this(jdbc, settings, Clock.systemUTC());
     }
 
+    /** Builds the service with a given clock, so tests can fix the time. */
     InsightsService(JdbcTemplate jdbc, RuntimeConfigStore settings, Clock clock) {
         this.jdbc = jdbc;
         this.settings = settings;
@@ -296,6 +313,7 @@ public class InsightsService {
             this.days = days;
         }
 
+        /** The wire key of the span: {@code 7d}, {@code 30d} or {@code 90d}. */
         public String key() {
             return key;
         }
@@ -322,6 +340,7 @@ public class InsightsService {
      */
     record Window(String key, int days, Instant from, Instant to, Instant previousFrom, Instant previousTo) {
 
+        /** The window for a span ending at {@code now}, with the previous window of equal length. */
         static Window of(Span span, Instant now) {
             Instant from = now.truncatedTo(ChronoUnit.DAYS).minus(span.days - 1L, ChronoUnit.DAYS);
             Duration length = Duration.ofDays(span.days);
@@ -341,8 +360,10 @@ public class InsightsService {
 
     // ---- What the client receives ------------------------------------------------------------
 
+    /** Completed and failed goals for one source (chat, schedule and so on). */
     public record SourceCount(String source, long completed, long failed) {}
 
+    /** Completed and failed goals on one UTC day. */
     public record DayCount(String day, long completed, long failed) {}
 
     /** Goals that finished in the window. A goal a person stopped is counted apart from the rest. */
@@ -377,6 +398,7 @@ public class InsightsService {
             long unpriced,
             long sandboxOnly) {}
 
+    /** Model spend on one UTC day. */
     public record DayCost(String day, BigDecimal cost) {}
 
     /**
@@ -411,8 +433,10 @@ public class InsightsService {
             Long medianDecisionSeconds,
             Long p90DecisionSeconds) {}
 
+    /** Questions agents asked people: counts, the rate per 100 runs (absent with no runs) and the median seconds to an answer (absent with none). */
     public record QuestionFigures(long asked, long answered, BigDecimal per100Runs, Long medianAnswerSeconds) {}
 
+    /** A failure reason, cut to a short length, and how many runs ended with it. */
     public record FailureReason(String reason, long count) {}
 
     /**
@@ -439,6 +463,7 @@ public class InsightsService {
     /** A figure now and in the previous window; the change is absent where either side is. */
     public record Delta(BigDecimal current, BigDecimal previous, BigDecimal change, BigDecimal changePercent) {}
 
+    /** The workspace response: the window and the previous window, every figure group, the top failure reasons, the value estimate (when inputs exist) and the change against the previous window. */
     public record Insights(
             String window,
             Instant from,
@@ -504,6 +529,7 @@ public class InsightsService {
             BigDecimal hoursReturned,
             long freeRuns) {}
 
+    /** The per-agent response: one row per agent for the window. {@code hourlyRate} is the administrator's input and is removed by the controller for readers without {@code analytics:read}. */
     public record AgentInsights(
             String window,
             Instant from,
@@ -516,15 +542,25 @@ public class InsightsService {
     /** The administrator's inputs for the worth of the work. */
     public record ValueInputs(BigDecimal hourlyRate, Map<UUID, Integer> minutesPerTask) {
 
+        /** Copies the minutes map and treats null as empty, so the record is immutable. */
         public ValueInputs {
             minutesPerTask = minutesPerTask == null ? Map.of() : Map.copyOf(minutesPerTask);
         }
 
+        /** No inputs entered. */
         public static final ValueInputs NONE = new ValueInputs(null, Map.of());
     }
 
     // ---- Reading ---------------------------------------------------------------------------
 
+    /**
+     * The workspace's figures for a window and the previous window; called by {@code InsightsController}. Read only.
+     *
+     * <p>Runs the grouped queries once for each of the two windows (day series and failure reasons are
+     * produced for the current window only) and derives the deltas.
+     *
+     * @throws ApiException validation failure when {@code windowKey} is not 7d, 30d or 90d
+     */
     // @find: workspace insights, analytics figures for a window
     @Transactional(readOnly = true)
     public Insights insights(UUID orgId, String windowKey) {
@@ -550,6 +586,14 @@ public class InsightsService {
                 deltas(current, previous));
     }
 
+    /**
+     * One row per agent for a window; called by {@code InsightsController}. Read only.
+     *
+     * <p>Combines the run groups, rejected approvals, chat ratings and finished tasks per agent with the
+     * administrator's estimates. An agent with nothing in the window still has a row.
+     *
+     * @throws ApiException validation failure when {@code windowKey} is not 7d, 30d or 90d
+     */
     // @find: agent insights, per-agent rows for a window
     @Transactional(readOnly = true)
     public AgentInsights agents(UUID orgId, String windowKey) {
@@ -631,6 +675,7 @@ public class InsightsService {
 
     // ---- One window ------------------------------------------------------------------------
 
+    /** All the figures for one window, before they are shaped into the response. */
     private record Figures(
             GoalFigures goals,
             TaskFigures tasks,
@@ -642,16 +687,20 @@ public class InsightsService {
             ValueFigures value) {}
 
     /** One agent's runs in one status: how many, what they cost, and how many were priced, unpriced or sandbox. */
+    /** One agent's runs in one status: how many, what they cost, and how many were priced, unpriced, sandbox-only or free. */
     record RunGroup(
             UUID agentId, String status, long n, BigDecimal cost, long priced, long unpriced, long sandbox, long free) {
 
+        /** Convenience form with no free runs, for callers written before free runs were counted. */
         RunGroup(UUID agentId, String status, long n, BigDecimal cost, long priced, long unpriced, long sandbox) {
             this(agentId, status, n, cost, priced, unpriced, sandbox, 0);
         }
     }
 
+    /** Approvals of one agent in one status. */
     private record ApprovalGroup(UUID agentId, String status, long n) {}
 
+    /** Gathers every figure for one window with a handful of grouped queries. {@code days} is null for the previous window, which has no day series; {@code detail} adds failure reasons. */
     private Figures figures(UUID orgId, Instant fromInstant, Instant toInstant, ValueInputs inputs, Window days, boolean detail) {
         Timestamp from = ts(fromInstant);
         Timestamp to = ts(toInstant);
@@ -668,6 +717,7 @@ public class InsightsService {
                 valueFigures(inputs, completedTasksByAgent(orgId, from, to), costByAgent(runGroups)));
     }
 
+    /** Goal outcomes by source and, when {@code days} is given, by day, with quiet days shown as zero. */
     private GoalFigures goalFigures(UUID orgId, Timestamp from, Timestamp to, Window days) {
         long completed = 0;
         long failed = 0;
@@ -712,6 +762,7 @@ public class InsightsService {
         return new GoalFigures(completed, failed, cancelled, sources, perDay);
     }
 
+    /** Task success rate and the share completed without a retry. */
     private TaskFigures taskFigures(UUID orgId, Timestamp from, Timestamp to) {
         long completed = 0;
         long failed = 0;
@@ -732,6 +783,7 @@ public class InsightsService {
         return new TaskFigures(completed, failed, ratio(completed, completed + failed), singleRun, ratio(singleRun, completed));
     }
 
+    /** Runs started in the window, grouped by agent and status. */
     private List<RunGroup> runGroups(UUID orgId, Timestamp from, Timestamp to) {
         return jdbc.query(
                 RUNS_BY_AGENT_AND_STATUS,
@@ -749,6 +801,7 @@ public class InsightsService {
                 to);
     }
 
+    /** Totals the run groups: every started run, those ended by status, those still active, plus unpriced and sandbox-only counts of ended runs. */
     private static RunFigures runFigures(List<RunGroup> groups) {
         Map<String, Long> byStatus = new LinkedHashMap<>();
         TERMINAL.forEach(status -> byStatus.put(status, 0L));
@@ -768,6 +821,7 @@ public class InsightsService {
         return new RunFigures(total, finished, total - finished, byStatus, unpriced, sandbox);
     }
 
+    /** Spend figures: total and per-day cost from the usage table, spend on runs that did not complete, and the average cost of completed goals whose work was fully priced. */
     private SpendFigures spendFigures(
             UUID orgId, Timestamp from, Timestamp to, List<RunGroup> runGroups, RunFigures runs, Window days) {
         BigDecimal total = BigDecimal.ZERO;
@@ -816,6 +870,7 @@ public class InsightsService {
         return new SpendFigures(total, perDay, perGoal, costed, unpricedGoals, sandboxGoals, wasted, runs.unpriced(), BASIS);
     }
 
+    /** Approvals raised in the window, grouped by agent and status. */
     private List<ApprovalGroup> approvalGroups(UUID orgId, Timestamp from, Timestamp to) {
         return jdbc.query(
                 APPROVALS_BY_AGENT_AND_STATUS,
@@ -825,6 +880,7 @@ public class InsightsService {
                 to);
     }
 
+    /** Approval counts by outcome and the median and 90th percentile seconds a person took to decide. */
     private ApprovalFigures approvalFigures(UUID orgId, Timestamp from, Timestamp to) {
         Map<String, Long> byStatus = new HashMap<>();
         long raised = 0;
@@ -852,6 +908,7 @@ public class InsightsService {
                 seconds[1]);
     }
 
+    /** Question counts and the rate per 100 started runs. */
     private QuestionFigures questionFigures(UUID orgId, Timestamp from, Timestamp to, long runsStarted) {
         return jdbc.query(
                         QUESTIONS,
@@ -869,11 +926,13 @@ public class InsightsService {
                 .getFirst();
     }
 
+    /** The most common reasons runs failed in the window. */
     private List<FailureReason> failureReasons(UUID orgId, Timestamp from, Timestamp to) {
         return jdbc.query(
                 FAILURE_REASON_ROWS, (rs, index) -> new FailureReason(rs.getString("reason"), rs.getLong("n")), orgId, from, to);
     }
 
+    /** Completed tasks per agent in the window, leaving out work the offline sandbox answered. */
     private Map<UUID, Long> completedTasksByAgent(UUID orgId, Timestamp from, Timestamp to) {
         Map<UUID, Long> counts = new HashMap<>();
         jdbc.query(
@@ -887,6 +946,7 @@ public class InsightsService {
         return counts;
     }
 
+    /** Total run cost per agent. */
     private static Map<UUID, BigDecimal> costByAgent(List<RunGroup> groups) {
         Map<UUID, BigDecimal> costs = new HashMap<>();
         for (RunGroup group : groups) {
@@ -932,6 +992,12 @@ public class InsightsService {
                 net);
     }
 
+    /**
+     * Builds one agent's row from its run groups.
+     *
+     * <p>Applies the rules in the class description: no success rate under {@value #MIN_FINISHED_RUNS}
+     * finished runs, and a total cost of null (unknown) rather than zero when only unpriced work exists.
+     */
     static AgentRow agentRow(
             UUID agentId,
             String name,
@@ -1014,6 +1080,7 @@ public class InsightsService {
                 free);
     }
 
+    /** The headline changes between the current and previous window, keyed by figure name. */
     private static Map<String, Delta> deltas(Figures current, Figures previous) {
         Map<String, Delta> deltas = new LinkedHashMap<>();
         deltas.put("goalsCompleted", delta(current.goals().completed(), previous.goals().completed()));
@@ -1034,6 +1101,7 @@ public class InsightsService {
         return deltas;
     }
 
+    /** The change between two counts. */
     private static Delta delta(long current, long previous) {
         return delta(BigDecimal.valueOf(current), BigDecimal.valueOf(previous));
     }
@@ -1058,14 +1126,17 @@ public class InsightsService {
         return whole <= 0 ? null : BigDecimal.valueOf(part).divide(BigDecimal.valueOf(whole), 4, RoundingMode.HALF_UP);
     }
 
+    /** Rounds a number of seconds to a whole number; null stays null. */
     private static Long seconds(BigDecimal value) {
         return value == null ? null : value.setScale(0, RoundingMode.HALF_UP).longValue();
     }
 
+    /** Widens a nullable count to a decimal. */
     private static BigDecimal toDecimal(Long value) {
         return value == null ? null : BigDecimal.valueOf(value);
     }
 
+    /** Converts an instant for use as a SQL parameter. */
     private static Timestamp ts(Instant instant) {
         return Timestamp.from(instant);
     }

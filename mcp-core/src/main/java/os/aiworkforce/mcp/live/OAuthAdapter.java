@@ -37,14 +37,18 @@ import os.aiworkforce.mcp.spi.TokenRefresher;
  */
 public abstract class OAuthAdapter extends LiveServerAdapter {
 
+    /** A calendar date in ISO form, with no time. */
     private static final Pattern DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+    /** A date-time that already ends in Z or a numeric offset. */
     private static final Pattern HAS_ZONE = Pattern.compile(".*(Z|[+-]\\d{2}:?\\d{2})$");
 
+    /** Passes the shared collaborators to {@link LiveServerAdapter}; subclasses supply the vendor name and API base URL. */
     protected OAuthAdapter(
             SandboxServerAdapter sandbox, String vendor, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, vendor, json, http, baseUrl);
     }
 
+    /** Late-bound connection store; volatile because it is wired after construction. */
     private volatile Supplier<TokenRefresher> refresher = () -> null;
 
     /** Wires the connection store in; looked up on first use so start-up order does not matter. */
@@ -57,6 +61,12 @@ public abstract class OAuthAdapter extends LiveServerAdapter {
         return vendor() + " needs to be reconnected by an administrator.";
     }
 
+    /**
+     * Called by {@link LiveServerAdapter} after a 401. Asks the connection store for a new access token
+     * (a call to the vendor's token endpoint made by the integrations service). When none can be obtained,
+     * marks the connection as needing reconnection and fails with {@link #reconnectMessage()}. Emits nothing
+     * when no store is wired, so the original 401 stands.
+     */
     @Override
     protected Mono<String> renewFor(ToolInvocation invocation, String credential) {
         TokenRefresher store = refresher.get();
@@ -69,6 +79,10 @@ public abstract class OAuthAdapter extends LiveServerAdapter {
                         .then(Mono.<String>error(new VendorException(reconnectMessage())))));
     }
 
+    /**
+     * Called when the retry with the renewed token is rejected too. Marks the connection as needing
+     * reconnection and fails with {@link #reconnectMessage()}. No-op when no store is wired.
+     */
     @Override
     protected Mono<Void> rejectedAfterRenewal(ToolInvocation invocation, String credential) {
         TokenRefresher store = refresher.get();
@@ -78,16 +92,19 @@ public abstract class OAuthAdapter extends LiveServerAdapter {
         return reconnect(store, invocation).then(Mono.error(new VendorException(reconnectMessage())));
     }
 
+    /** Flags the connection for reconnection in the store; a failure of the store itself is swallowed. */
     private Mono<Void> reconnect(TokenRefresher store, ToolInvocation invocation) {
         return store.markReconnectRequired(invocation.orgId(), invocation.server(), reconnectMessage())
                 .onErrorResume(error -> Mono.empty());
     }
 
+    /** Sends the access token as a standard bearer credential. */
     @Override
     protected void authorize(HttpHeaders headers, String token) {
         headers.setBearerAuth(token);
     }
 
+    /** Turns a 401 into the reconnect sentence; every other status keeps the shared wording. */
     @Override
     protected String describe(WebClientResponseException response) {
         if (response.getStatusCode().value() == 401) {
@@ -109,7 +126,7 @@ public abstract class OAuthAdapter extends LiveServerAdapter {
         return value;
     }
 
-    /** The addresses in a comma or semicolon separated list. */
+    /** The addresses in a comma or semicolon separated list. Refuses line breaks and an empty list with a {@link VendorException}. */
     protected static List<String> recipients(String to) {
         List<String> addresses = new ArrayList<>();
         for (String part : noLineBreaks("recipient", to).split("[,;]")) {
@@ -124,6 +141,7 @@ public abstract class OAuthAdapter extends LiveServerAdapter {
         return addresses;
     }
 
+    /** True for a plain calendar date such as 2026-10-11, false for a date-time. */
     protected static boolean isDate(String value) {
         return DATE.matcher(value).matches();
     }
@@ -133,19 +151,26 @@ public abstract class OAuthAdapter extends LiveServerAdapter {
         return isDate(value) ? value + "T00:00:00Z" : withZone(value);
     }
 
+    /** A date becomes the last second of that day in UTC; a date-time without an offset is taken as UTC. */
     protected static String endOf(String value) {
         return isDate(value) ? value + "T23:59:59Z" : withZone(value);
     }
 
+    /** Appends Z to a date-time that carries no zone or offset. */
     protected static String withZone(String value) {
         return HAS_ZONE.matcher(value).matches() ? value : value + "Z";
     }
 
+    /** Today's date in UTC, as an ISO date. */
     protected static String today() {
         return LocalDate.now(java.time.ZoneOffset.UTC).toString();
     }
 
-    /** The values of a "values" argument as text cells. */
+    /**
+     * The values of a "values" argument as text cells, one per column. Non-text values are kept as their JSON text.
+     *
+     * @throws VendorException when the argument is missing, not an array or empty
+     */
     protected List<String> cells(JsonNode arguments, String field) {
         JsonNode values = arguments.get(field);
         if (values == null || !values.isArray() || values.isEmpty()) {
@@ -178,6 +203,7 @@ public abstract class OAuthAdapter extends LiveServerAdapter {
                 .strip();
     }
 
+    /** Truncates text to at most {@code max} characters, without any marker. */
     protected static String cap(String text, int max) {
         return text.length() <= max ? text : text.substring(0, max);
     }

@@ -29,6 +29,9 @@ const DEFAULT_LIFETIME_MS = 4500
 const ACTION_LIFETIME_MS = 8000
 
 // @find: toast provider, toast container
+/**
+ * Holds the toast list and renders the toast region. Toasts: at most four at once (older ones drop); success and info dismiss themselves after 4.5 seconds (8 seconds when they carry an action) while errors stay until dismissed; errors are announced assertively (role alert), others politely (role status). An action button runs its callback and dismisses the toast. Mounted once in main.tsx.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
@@ -89,6 +92,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 // @find: use toast, show success or error message
+/**
+ * Returns success, error and info functions that show a toast: (message, options) where options may carry an action label and callback. Outside a provider they do nothing.
+ */
 export function useToast() {
   const push = useContext(ToastContext)
   return {

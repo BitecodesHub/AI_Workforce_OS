@@ -15,9 +15,13 @@
 # Caddy obtains each certificate with the HTTP-01 / TLS-ALPN challenge on ports 80 and 443.
 {
 	# Behind nothing: Caddy is the edge. Admin API only inside the container.
+	# Global options block.
 	admin localhost:2019
 }
 
+# Main site block: terminates TLS for every served name, compresses responses and adds HSTS.
+# It has two routes: the public deploy status file, and everything else (redirect from the
+# alternative name, otherwise a proxy to the web container).
 {$AIWOS_PUBLIC_HOST:localhost} {$AIWOS_ALT_HOSTS} {
 	encode zstd gzip
 

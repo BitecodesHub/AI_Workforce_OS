@@ -22,14 +22,26 @@ import os.aiworkforce.knowledge.domain.Document;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Documents of the knowledge base. Used by {@code IngestionService}, {@code KnowledgeController}
+ * and {@code AgentKnowledgeController}. Every method works on one source or one workspace, and
+ * callers pass the workspace explicitly where a document is looked up by its own identifier.
+ */
 public interface Documents extends JpaRepository<Document, UUID> {
 
+    /**
+     * The document a source holds under a name (its external id, which is the file name), or empty.
+     * Ingestion uses it to find the document that a re-upload replaces.
+     */
     Optional<Document> findBySourceIdAndExternalId(UUID sourceId, String externalId);
 
+    /** Every document of a source, including skipped and tombstoned ones, ordered by title. */
     List<Document> findBySourceIdOrderByTitle(UUID sourceId);
 
+    /** A document by identifier within a workspace, or empty; a document of another workspace is never returned. */
     Optional<Document> findByIdAndOrgId(UUID id, UUID orgId);
 
+    /** Whether a source already holds a document under that name, used to find a free name when keeping both versions. */
     boolean existsBySourceIdAndExternalId(UUID sourceId, String externalId);
 
     /** Erases every document of a source. Their passages are deleted first, by the caller. */

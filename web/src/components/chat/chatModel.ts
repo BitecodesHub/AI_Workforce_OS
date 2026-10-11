@@ -257,6 +257,7 @@ export function passageLink(
   return null
 }
 
+/** One-sentence description of a routing decision by mode: mention, manual, fallback, or the default "Sent to ...". */
 function routingLine(message: ChatMessage, agentNames: Record<string, { name: string }>): string {
   const detail = message.detail
   const names = (detail.agents ?? []).map((agent) => agentNames[agent.id]?.name ?? agent.name)

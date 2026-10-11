@@ -14,6 +14,10 @@
 
 name: aiwos
 
+# Defaults shared by the application services: restart policy, network, the common
+# environment (sandbox-friendly local settings and service addresses) and the dependency on
+# PostgreSQL and Redis. Each service merges this with <<: *service-defaults and adds its own
+# build and published port.
 x-service-defaults: &service-defaults
   restart: unless-stopped
   networks: [aiwos]
@@ -50,6 +54,7 @@ x-service-defaults: &service-defaults
 services:
   # ---- Infrastructure ------------------------------------------------------------------------
 
+  # Role: relational database shared by the services, published on 5432 for local tools.
   postgres:
     image: postgres:17.11-alpine
     networks: [aiwos]
@@ -76,6 +81,7 @@ services:
       - -c
       - shared_buffers=256MB
 
+  # Role: cache and rate-limit store, published on 6379.
   redis:
     image: redis:7.4.11-alpine
     networks: [aiwos]
@@ -98,6 +104,7 @@ services:
       timeout: 3s
       retries: 10
 
+  # Role: vector database for the knowledge service, published on 6333.
   qdrant:
     image: qdrant/qdrant:v1.19.1
     networks: [aiwos]
@@ -135,6 +142,8 @@ services:
       retries: 12
       start_period: 20s
 
+  # Role: metrics store; scrapes the services using ../prometheus/prometheus.yml and loads the
+  # alert rules from ../prometheus/rules.
   prometheus:
     image: prom/prometheus:v3.5.0
     networks: [aiwos]
@@ -144,6 +153,8 @@ services:
       - ../prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
 
+  # Role: dashboards, provisioned from ../grafana with Prometheus as the data source; anonymous
+  # viewing is on for convenience in development only.
   grafana:
     image: grafana/grafana:12.1.0
     networks: [aiwos]
@@ -159,16 +170,20 @@ services:
 
   # ---- Platform services ---------------------------------------------------------------------
 
+  # Role: sign-in, users and roles (host port 8081).
   identity:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: identity-service}}
     ports: ["8081:8080"]
 
+  # Role: workspaces, organisations, invitations and stored credentials (host port 8082).
   organisation:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: org-service}}
     ports: ["8082:8080"]
 
+  # Role: agents, runs, approvals, model routing, chat and schedules (host port 8083); also waits
+  # for the Kafka-compatible broker.
   orchestrator:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: orchestrator-service}}
@@ -184,11 +199,13 @@ services:
       redis: {condition: service_healthy}
       redpanda: {condition: service_healthy}
 
+  # Role: the memory service (host port 8084).
   memory:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: memory-service}}
     ports: ["8084:8080"]
 
+  # Role: documents and sources, searched through Qdrant (host port 8085).
   knowledge:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: knowledge-service}}
@@ -198,11 +215,13 @@ services:
       redis: {condition: service_healthy}
       qdrant: {condition: service_started}
 
+  # Role: connectors and OAuth to outside systems (host port 8086).
   integrations:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: integrations-service}}
     ports: ["8086:8080"]
 
+  # Role: usage analytics and the audit trail (host port 8087).
   analytics:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: analytics-service}}
@@ -221,6 +240,7 @@ services:
       BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-local-browser-runner-secret}
     ports: ["8090:8090"]
 
+  # Role: API gateway with rate limiting through Redis (host port 8080).
   gateway:
     <<: *service-defaults
     build: {context: ../.., dockerfile: infra/Dockerfile, args: {SERVICE: gateway}}

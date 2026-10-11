@@ -188,6 +188,7 @@ export const CONSOLE_AREAS: ReadonlyArray<{ label: string; code: string | null }
   { label: 'Analytics', code: 'analytics:read' },
 ]
 
+/** True when the role holds every one of the permission codes. */
 export function holdsAll(role: RoleId, codes: readonly string[]): boolean {
   const held = ROLE_CODES[role]
   return codes.every((code) => held.has(code))

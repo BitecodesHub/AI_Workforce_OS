@@ -73,20 +73,32 @@ public class Session extends BaseEntity {
     @Column(name = "org_id")
     private UUID orgId;
 
+    /**
+     * Whether this token can still be exchanged: not revoked, not already used and not expired.
+     */
     public boolean isUsable() {
         return revokedAt == null && usedAt == null && expiresAt.isAfter(Instant.now());
     }
 
+    /**
+     * Whether this token was already used once. Presenting such a token again is the reuse signal
+     * that leads to revoking its whole family.
+     */
     public boolean isReplayed() {
         return usedAt != null;
     }
 
     // @find: refresh token used, retire refresh token
+    /** Retires this link, stamping the use time. Called when it is exchanged for a new one. */
     public void markUsed() {
         this.usedAt = Instant.now();
     }
 
     // @find: revoke session, sign out
+    /**
+     * Revokes this session with a reason, unless it is already revoked. The first revocation wins,
+     * so the original time and reason are never overwritten. The caller saves the entity.
+     */
     public void revoke(String reason) {
         if (revokedAt == null) {
             revokedAt = Instant.now();

@@ -68,7 +68,10 @@ public interface GoalLifecycleListener {
      * A schedule that paused itself, as the schedule package reports it. Plain values rather than
      * the schedule itself, so this package never depends on that one.
      *
+     * @param orgId the workspace the schedule belongs to
+     * @param scheduleId the schedule that paused
      * @param ownerId the person the schedule works for, or null for one nobody owns
+     * @param reason why it paused, written for a person to read
      * @param failures how many runs in a row failed
      */
     record SchedulePause(UUID orgId, UUID scheduleId, UUID ownerId, String reason, int failures) {}

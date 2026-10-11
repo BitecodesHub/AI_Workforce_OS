@@ -20,6 +20,9 @@
 
 name: aiwos-app
 
+# Defaults shared by the eight application services: restart policy, network, the common
+# environment (database, cache, secrets, service addresses), a readiness health check and the
+# dependency on the data stores. Each service merges this with <<: *service.
 x-service: &service
   restart: unless-stopped
   networks: [aiwos]
@@ -72,11 +75,16 @@ x-service: &service
     redis: {condition: service_healthy}
     qdrant: {condition: service_started}
 
+# Build settings shared by the backend images: the repository root as the context and the
+# launcher Dockerfile, which compiles everything once. Each service adds its SERVICE argument.
 x-build: &build
   context: ../..
   dockerfile: infra/launcher/services.Dockerfile
 
+# Services. Data stores first, then the application services, the optional browser runner and
+# finally the web client, which is the only one published on the host.
 services:
+  # Role: relational database shared by the services; its data lives in the postgres-data volume.
   postgres:
     image: postgres:17.11-alpine
     restart: unless-stopped
@@ -95,6 +103,7 @@ services:
       timeout: 3s
       retries: 20
 
+  # Role: cache and rate-limit store, capped at 256 MB and persisted in the redis-data volume.
   redis:
     image: redis:7.4.11-alpine
     restart: unless-stopped
@@ -107,22 +116,27 @@ services:
       timeout: 3s
       retries: 20
 
+  # Role: vector database for the knowledge service, persisted in the qdrant-data volume.
   qdrant:
     image: qdrant/qdrant:v1.19.1
     restart: unless-stopped
     networks: [aiwos]
     volumes: [qdrant-data:/qdrant/storage]
 
+  # Role: sign-in, users and roles; also publishes the signing keys the other services verify.
   identity:
     <<: *service
     image: aiwos-app/identity-service
     build: {<<: *build, args: {SERVICE: identity-service}}
 
+  # Role: workspaces, organisations, invitations and stored credentials.
   organisation:
     <<: *service
     image: aiwos-app/org-service
     build: {<<: *build, args: {SERVICE: org-service}}
 
+  # Role: agents, runs, approvals, model routing, chat and schedules; the only service that calls
+  # the browser runner.
   orchestrator:
     <<: *service
     image: aiwos-app/orchestrator-service
@@ -146,31 +160,39 @@ services:
     environment:
       BROWSER_RUNNER_SECRET: ${AIWOS_BROWSER_RUNNER_SECRET:-local-browser-runner-secret}
 
+  # Role: the memory service (what agents remember between runs).
   memory:
     <<: *service
     image: aiwos-app/memory-service
     build: {<<: *build, args: {SERVICE: memory-service}}
 
+  # Role: the knowledge service (documents and sources, searched through Qdrant).
   knowledge:
     <<: *service
     image: aiwos-app/knowledge-service
     build: {<<: *build, args: {SERVICE: knowledge-service}}
 
+  # Role: connectors and OAuth to outside systems.
   integrations:
     <<: *service
     image: aiwos-app/integrations-service
     build: {<<: *build, args: {SERVICE: integrations-service}}
 
+  # Role: usage analytics and the audit trail.
   analytics:
     <<: *service
     image: aiwos-app/analytics-service
     build: {<<: *build, args: {SERVICE: analytics-service}}
 
+  # Role: API gateway (with rate limiting through Redis). The web client reaches the services
+  # through nginx instead, so nothing here depends on it.
   gateway:
     <<: *service
     image: aiwos-app/gateway
     build: {<<: *build, args: {SERVICE: gateway}}
 
+  # Role: nginx serving the web client and proxying each API prefix to its service. Published on
+  # the host only, and only after every business service is healthy.
   web:
     image: aiwos-app/web
     build:

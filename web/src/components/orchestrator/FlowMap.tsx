@@ -20,6 +20,7 @@ import { useMemberDirectory } from './useMemberDirectory'
  * rather than a list: a glance says who is busy, who is waiting on a decision, and who is idle.
  */
 
+/** The state an agent node can be in on the map, in precedence order: paused, retired, running, asking, waiting, idle. */
 export type NodeStatus = 'running' | 'asking' | 'waiting' | 'paused' | 'retired' | 'idle'
 
 /** The same status precedence and wording AgentsStrip's rows use, so a name reads the same way in
@@ -54,6 +55,7 @@ export function workforceSummary(agents: readonly BoardAgent[]): string {
 }
 
 // @find: node status label text
+/** Plain-words label for a node status, used in accessible names, the tooltip and the screen reader list. */
 export function nodeStatusLabel(status: NodeStatus): string {
   switch (status) {
     case 'running':
@@ -71,9 +73,24 @@ export function nodeStatusLabel(status: NodeStatus): string {
   }
 }
 
+/** Keys that move focus between agent nodes. */
 const MOVE_KEYS = new Set(['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'])
 
 // @find: flow map component, agents ring hub
+/**
+ * Live map of the coordinator and every agent, rendered in the Orchestrator above the board.
+ * Props: board (agents and goals), selectedAgentId and onSelectAgent (an agent node filters the board to that
+ * agent; selecting the same node again clears it) and onOpenGoal (a line between nodes opens its goal).
+ * Geometry comes from layout.ts: ringLayout places agents on a ring around the hub, flowEdges derives one line
+ * per goal moving between agents, edgePath and tooltipPlacement draw and place them. Active lines carry an
+ * animated dot unless the viewer prefers reduced motion (useReducedMotion). Each agent node is a focusable
+ * role="button" with a roving tab stop (arrow keys, Home and End move, Enter or Space selects, Escape clears
+ * the selection); its ring shows running, asking or waiting status, a pause glyph shows paused, and a badge
+ * counts queued tasks. Hovering or focusing a node shows a tooltip with the agent's current task, requester
+ * and step (currentTaskFor, requesterLabel through useMemberDirectory). A visually hidden list repeats the
+ * same information as buttons for assistive technology, and a compact key explains the colours.
+ * On a narrow screen the canvas has a fixed minimum width and scrolls sideways, opening centred on the hub.
+ */
 export function FlowMap({
   board,
   selectedAgentId,

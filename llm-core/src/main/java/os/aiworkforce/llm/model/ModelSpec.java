@@ -45,6 +45,7 @@ public record ModelSpec(
         boolean enabled,
         Long unavailableUntilEpochMs) {
 
+    /** Validates the identifiers and the context window, which every router sizing check relies on. */
     public ModelSpec {
         Objects.requireNonNull(providerId, "providerId");
         Objects.requireNonNull(modelId, "modelId");
@@ -53,6 +54,7 @@ public record ModelSpec(
         }
     }
 
+    /** The unique key {@code providerId/modelId}, used for circuit breakers, cooldowns and traces. */
     public String key() {
         return providerId + "/" + modelId;
     }
@@ -72,6 +74,7 @@ public record ModelSpec(
         return needed <= contextWindowTokens;
     }
 
+    /** Whether the model is inside a temporary exclusion window set by {@link #markUnavailableFor}. */
     public boolean isCurrentlyUnavailable() {
         return unavailableUntilEpochMs != null && System.currentTimeMillis() < unavailableUntilEpochMs;
     }

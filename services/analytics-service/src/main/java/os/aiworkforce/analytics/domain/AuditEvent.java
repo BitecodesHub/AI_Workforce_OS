@@ -53,10 +53,15 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 @Table(name = "audit_events")
 public class AuditEvent implements Persistable<UUID> {
 
+    /** Application-assigned time-ordered identifier, stable before the row is saved. */
     @Id
     @Column(nullable = false, updatable = false)
     private UUID id = UuidV7.generate();
 
+    /**
+     * Workspace the entry belongs to; null for platform-level events, which join the platform
+     * chain.
+     */
     @Column(name = "org_id", updatable = false)
     private UUID orgId;
 
@@ -72,40 +77,57 @@ public class AuditEvent implements Persistable<UUID> {
     @Column(name = "sequence", nullable = false, updatable = false, insertable = false)
     private long sequence;
 
+    /** Who or what acted: a person, an agent or a service identifier. */
     @Column(name = "actor_id", nullable = false, updatable = false)
     private String actorId;
 
+    /** The kind of actor, such as user, agent or service. */
     @Column(name = "actor_kind", nullable = false, updatable = false)
     private String actorKind;
 
+    /** The person an agent or service acted for, when there was one. */
     @Column(name = "on_behalf_of", updatable = false)
     private String onBehalfOf;
 
+    /** Action code such as {@code member.role_change}. */
     @Column(nullable = false, updatable = false)
     private String action;
 
+    /** Kind of thing acted on. */
     @Column(name = "resource_type", nullable = false, updatable = false)
     private String resourceType;
 
+    /** The specific thing acted on, when there is one. */
     @Column(name = "resource_id", updatable = false)
     private String resourceId;
 
+    /** succeeded, failed, denied or locked. */
     @Column(nullable = false, updatable = false)
     private String outcome;
 
+    /** Free-form structured context, covered by the entry hash in canonical form; never null. */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, updatable = false)
     private Map<String, Object> detail = Map.of();
 
+    /** Identifier of the request that caused the action, for correlating with logs. */
     @Column(name = "request_id", updatable = false)
     private String requestId;
 
+    /**
+     * When the action happened, truncated to microseconds so the stored value matches the hashed
+     * one.
+     */
     @Column(name = "occurred_at", nullable = false, updatable = false)
     private Instant occurredAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
+    /** Hash of the previous entry of the same chain; null for the first entry. */
     @Column(name = "previous_hash", updatable = false)
     private String previousHash;
 
+    /**
+     * Digest of this entry, computed by AuditChain from the covered fields and the previous hash.
+     */
     @Column(name = "entry_hash", nullable = false, updatable = false)
     private String entryHash;
 
@@ -121,25 +143,40 @@ public class AuditEvent implements Persistable<UUID> {
     @Column(name = "event_uuid", updatable = false)
     private UUID eventUuid;
 
+    /**
+     * Not persisted: true until the entity has been inserted or loaded, which is what {@link
+     * #isNew} reports to Spring Data.
+     */
     @Transient
     private boolean fresh = true;
 
+    /** Returns the identifier; part of the {@link Persistable} contract. */
     @Override
     public UUID getId() {
         return id;
     }
 
+    /**
+     * Part of the {@link Persistable} contract: true until the entity has been persisted or
+     * loaded, so Spring Data inserts it instead of merging it.
+     */
     @Override
     public boolean isNew() {
         return fresh;
     }
 
+    /** Lifecycle callback run after an insert or a load; flips the entity to not new. */
     @PostPersist
     @PostLoad
     void markStored() {
         fresh = false;
     }
 
+    /**
+     * Accessors and mutators below expose the fields documented above. The sequence has no setter
+     * because only the database assigns it. Setters do not validate; AuditAppender sets every
+     * field before the single insert.
+     */
     public UUID getOrgId() {
         return orgId;
     }

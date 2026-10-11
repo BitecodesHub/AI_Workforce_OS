@@ -13,4 +13,11 @@ import os.aiworkforce.identity.domain.PermissionRecord;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for {@link PermissionRecord} rows, keyed by permission code.
+ *
+ * <p>Used only by {@code PermissionSeeder}, which reads and writes the rows at startup. Only the
+ * inherited finders are used. The console's permission list is served from the build's registry,
+ * not from this table.
+ */
 public interface Permissions extends JpaRepository<PermissionRecord, String> {}

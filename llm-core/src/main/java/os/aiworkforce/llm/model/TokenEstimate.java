@@ -25,6 +25,7 @@ public final class TokenEstimate {
 
     private TokenEstimate() {}
 
+    /** Pessimistic token count for one string; zero for null or empty, otherwise at least one. */
     public static int forText(String text) {
         if (text == null || text.isEmpty()) {
             return 0;

@@ -32,6 +32,9 @@ function skillSearchText(skill: Skill, connectorName: (id: string) => string): s
 }
 
 // @find: skill card, one skill, skill actions
+/**
+ * One skill as a card: name, a Ready-made tag for built-in skills, its description, the agent it defaults to ("Routed as usual" when none), and the connectors it needs. Everyone gets Use in chat, a link to /chat?skill=<id> that attaches it to the composer. People who can manage skills also get Edit, Duplicate (shows a busy state while copying) and Delete.
+ */
 function SkillCard({
   skill,
   canManage,
@@ -111,6 +114,10 @@ function SkillCard({
 }
 
 // @find: Skills component, skills page, /skills
+/**
+ * The Skills page (route /skills, permission chat:use): reusable playbooks applied to chat messages from the composer's + menu.
+ * Reads the skills (useSkills) and, with integration:read, connector names for the required-connector tags. Search runs over name, description, default agent, required connectors and the ready-made flag. Anyone who can chat sees the list; managing (New skill, Edit, Duplicate, Delete) needs the permission checked by canManageSkills. Duplicate creates a copy through useDuplicateSkill, toasts, and opens it in the editor; Delete asks for confirmation, calls useDeleteSkill and toasts, with failures shown in the dialog or as a toast. The empty state differs for people who cannot create skills.
+ */
 export function Skills() {
   const canManage = canManageSkills(can)
   const toast = useToast()

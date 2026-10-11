@@ -24,6 +24,7 @@ import os.aiworkforce.orchestrator.domain.WorkspaceModelAvailability;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/** Spring Data repository for WorkspaceModelAvailability rows. */
 public interface WorkspaceModelAvailabilities
         extends JpaRepository<WorkspaceModelAvailability, WorkspaceModelAvailability.Key> {
 

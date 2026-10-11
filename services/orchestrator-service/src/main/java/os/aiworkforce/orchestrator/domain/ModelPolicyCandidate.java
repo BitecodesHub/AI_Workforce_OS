@@ -24,6 +24,7 @@ import jakarta.persistence.Table;
 @IdClass(ModelPolicyCandidate.Key.class)
 public class ModelPolicyCandidate {
 
+    /** Composite primary key of a candidate: the policy it belongs to and its position in the routing chain. */
     @Embeddable
     public static class Key implements Serializable {
         private UUID policyId;

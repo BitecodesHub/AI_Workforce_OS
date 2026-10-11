@@ -93,6 +93,10 @@ public class MemberController {
     private final WebClient organisationClient;
     private final AuditClient audit;
 
+    /**
+     * Wires the repositories, the grant guard, the orchestrator client, the token service and the audit
+     * client, and builds a client for the organisation service from its configured base URL.
+     */
     public MemberController(
             Users users,
             Memberships memberships,
@@ -114,6 +118,11 @@ public class MemberController {
         this.audit = audit;
     }
 
+    /**
+     * One member as the Members page shows them. The role is its name, or "unknown" when the role row
+     * is missing. {@code lastSignInAt} is the account's last sign-in, which is global rather than
+     * per workspace.
+     */
     public record MemberView(
             UUID userId,
             String displayName,
@@ -123,20 +132,35 @@ public class MemberController {
             Instant joinedAt,
             Instant lastSignInAt) {}
 
+    /**
+     * The signed-in account as the interface needs it: identity, the name of the role in scope (null
+     * when there is no workspace) and the permission codes the token carries, planned ones left out.
+     */
     public record MeView(UUID userId, String displayName, String email, String role, List<String> permissions) {}
 
     /**
      * One workspace the signed-in person belongs to, for choosing which to open.
      *
+     * @param orgId the workspace
+     * @param role the name of the role the person holds there
      * @param name null when the organisation service could not be asked; the workspace is still
      *     listed, because leaving it out would hide a membership the person really holds
      */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record WorkspaceView(UUID orgId, String name, String role) {}
 
+    /**
+     * Request body for {@link #updateRole}: the name of the role to give, which must be available to the workspace.
+     */
     public record UpdateRoleRequest(@NotBlank String roleName) {}
 
     // @find: list members, team members, GET /api/users
+    /**
+     * GET {@code /api/users}. Requires {@code member:read}.
+     *
+     * <p>Lists the active members of the caller's workspace with their role names, sorted by display
+     * name. Reads only. A membership whose user row is missing is left out.
+     */
     @GetMapping
     @RequiresPermission(Permission.Codes.MEMBER_READ)
     @Operation(summary = "Members of this workspace and the role each holds")
@@ -174,6 +198,12 @@ public class MemberController {
      * registered, or removed from its only one - carries no permissions at all, and is exactly the
      * account that most needs to know who it is signed in as. It reveals only the caller's own
      * account.
+     */
+    /**
+     * GET {@code /api/users/me}. Open to any signed-in person; no permission code.
+     *
+     * <p>Returns the caller's own account, role name and permission codes. Reads only; a service or
+     * agent token is refused.
      */
     @GetMapping("/me")
     @Operation(summary = "The signed-in account")
@@ -237,6 +267,18 @@ public class MemberController {
     }
 
     // @find: change member role, update role, PUT /api/users/{userId}/role
+    /**
+     * PUT {@code /api/users/{userId}/role}. Requires {@code member:update}.
+     *
+     * <p>Flow: finds the active membership and the named role; asks {@link GrantGuard} whether the
+     * caller may take away the current role and give the new one; for a change to the caller's own
+     * role, refuses any widening; refuses to move the last owner out of the owner role; saves the new
+     * role and writes a {@code member.role_change} audit record, all in one transaction.
+     *
+     * <p>Returns the updated member. The person sees the change at their next token refresh.
+     *
+     * @throws ApiException not found, validation (unknown role), permission denied, or last owner protected
+     */
     @PutMapping("/{userId}/role")
     @RequiresPermission(Permission.Codes.MEMBER_UPDATE)
     @Transactional
@@ -294,6 +336,14 @@ public class MemberController {
     }
 
     // @find: remove member, DELETE /api/users/{userId}
+    /**
+     * DELETE {@code /api/users/{userId}}. Requires {@code member:remove}.
+     *
+     * <p>Marks the membership removed rather than deleting it, after the {@link GrantGuard} check and
+     * the last-owner check, and writes a {@code member.remove} audit record. Once the transaction has
+     * committed, tells the orchestrator to pause the person's schedules. Returns 204; removing a
+     * member who is already removed is a quiet no-op. A person who never belonged gives not found.
+     */
     @DeleteMapping("/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.MEMBER_REMOVE)
@@ -377,6 +427,13 @@ public class MemberController {
         }
     }
 
+    /**
+     * Asks the organisation service for one workspace's name.
+     *
+     * <p>Calls its internal workspace endpoint with a service token, within
+     * {@link #WORKSPACE_LOOKUP_TIMEOUT}. Completes empty when the response has no string name; errors
+     * propagate to the caller, which logs them and omits the name.
+     */
     private Mono<String> workspaceName(UUID orgId, String personId) {
         return Mono.fromCallable(() -> serviceToken(orgId, personId))
                 .flatMap(token -> organisationClient

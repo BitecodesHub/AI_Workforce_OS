@@ -7,6 +7,8 @@
 # how services are packaged is made once rather than in eight nearly identical files that drift.
 
 # ---- Build -----------------------------------------------------------------------------------
+# Stage build: compiles the platform libraries and the chosen service with Maven, then expands
+# the layered jar. Nothing from this stage ships except the extracted layers.
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
 
@@ -45,6 +47,8 @@ RUN mkdir -p /extracted && cd /extracted && \
     java -Djarmode=layertools -jar /workspace/services/${SERVICE}/target/${SERVICE}.jar extract
 
 # ---- Run -------------------------------------------------------------------------------------
+# Stage runtime: a small JRE image that runs the extracted jar as a non-root user, with a
+# readiness health check. This is the image that is deployed.
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
 # A non-root user, and a read-only filesystem apart from /tmp. A container that cannot write to

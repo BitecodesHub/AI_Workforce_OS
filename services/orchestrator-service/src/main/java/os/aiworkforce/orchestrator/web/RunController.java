@@ -41,7 +41,8 @@ import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 
 /**
- * Runs and their traces.
+ * REST endpoints for runs and their traces: list, read, trace, questions and cancel. Called by the
+ * Runs page and the run trace view; stopping goes through {@link GoalService}.
  *
  * <p>The trace endpoint returns every step including the model attempts that failed. That is the
  * screen a person uses to decide whether to trust an answer, so leaving the failures out would
@@ -56,6 +57,7 @@ public class RunController {
     static final Set<String> RUN_STATUSES =
             Set.of("running", "waiting_approval", "waiting_input", "completed", "failed", "cancelled", "abandoned");
 
+    /** The reason recorded on a run that a person stopped, written to be read on the trace. */
     static final String RUN_STOPPED = "A person stopped this run before it finished.";
 
     private final Runs runs;
@@ -76,6 +78,7 @@ public class RunController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ConversationAccess access;
 
+    /** Receives the run, step, task and goal repositories, the question service, and the goal service used to stop a run. */
     public RunController(
             Runs runs, RunSteps steps, Tasks tasks, Goals goals, QuestionService questions, GoalService goalService) {
         this.runs = runs;
@@ -86,6 +89,7 @@ public class RunController {
         this.goalService = goalService;
     }
 
+    /** A run as a person reads it, with its goal, requester and how its cost is to be understood. */
     public record RunView(
             UUID id,
             UUID agentId,
@@ -109,6 +113,7 @@ public class RunController {
              */
             String pricing) {}
 
+    /** One step of a run's trace: its kind, detail document, the model that produced it, token counts and duration. */
     public record StepView(
             UUID id,
             int position,
@@ -121,6 +126,13 @@ public class RunController {
             long durationMs,
             Instant occurredAt) {}
 
+    /**
+     * Lists runs, newest first, optionally filtered by status and agent.
+     *
+     * <p>Route {@code GET /api/runs}; requires RUN_READ. The filter and the hiding of runs from other
+     * people's private conversations run in the database query. Fails with a validation error for an
+     * unknown status.
+     */
     // @find: list runs, GET /api/runs
     /**
      * Recent runs, newest first, optionally narrowed by status and agent.
@@ -172,6 +184,7 @@ public class RunController {
         return toViews(visible);
     }
 
+    /** Returns one run; route {@code GET /api/runs/{runId}}; requires RUN_READ. Not found when absent or hidden. */
     // @find: get run, GET /api/runs/{runId}
     @GetMapping("/{runId}")
     @RequiresPermission(Permission.Codes.RUN_READ)
@@ -181,6 +194,7 @@ public class RunController {
         return toViews(List.of(run)).getFirst();
     }
 
+    /** Returns every step of a run, including failed model attempts, in order; route {@code GET /api/runs/{runId}/steps}; requires RUN_READ. */
     // @find: run trace, steps, GET /api/runs/{runId}/steps
     @GetMapping("/{runId}/steps")
     @RequiresPermission(Permission.Codes.RUN_READ)
@@ -192,6 +206,7 @@ public class RunController {
                 .toList();
     }
 
+    /** Returns the questions the run asked, oldest first; route {@code GET /api/runs/{runId}/questions}; requires RUN_READ. */
     // @find: run questions, GET /api/runs/{runId}/questions
     @GetMapping("/{runId}/questions")
     @RequiresPermission(Permission.Codes.RUN_READ)
@@ -202,6 +217,13 @@ public class RunController {
         return questions.views(questions.forRun(orgId, runId), RequestContext.requireActor());
     }
 
+    /**
+     * Stops a run in progress.
+     *
+     * <p>Route {@code POST /api/runs/{runId}/cancel}; requires RUN_CANCEL. {@link GoalService#stopRun}
+     * locks the run, marks it cancelled with a plain reason and withdraws any approval or question it
+     * was waiting on. Returns the refreshed run; service errors (not found, already finished) pass through.
+     */
     // @find: cancel run, stop run, POST /api/runs/{runId}/cancel
     @PostMapping("/{runId}/cancel")
     @RequiresPermission(Permission.Codes.RUN_CANCEL)
@@ -281,6 +303,7 @@ public class RunController {
         return views;
     }
 
+    /** Maps a stored step to its view. */
     private static StepView toStepView(RunStep step) {
         return new StepView(
                 step.getId(),
@@ -295,6 +318,7 @@ public class RunController {
                 step.getOccurredAt());
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

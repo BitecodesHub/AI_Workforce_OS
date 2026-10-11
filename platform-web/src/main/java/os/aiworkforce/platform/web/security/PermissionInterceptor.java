@@ -33,6 +33,22 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
 @Component
 public class PermissionInterceptor implements HandlerInterceptor {
 
+    /**
+     * Checks the permission before a controller method runs.
+     *
+     * <p>Flow: ignores handlers that are not controller methods (static resources, error pages); finds
+     * {@link RequiresPermission} on the method, falling back to the controller class; stops here when
+     * there is none. Otherwise it reads the actor from {@code RequestContext}, requires a workspace
+     * unless the annotation allows none, and tests the listed codes with all-of or any-of semantics
+     * according to the annotation's mode.
+     *
+     * <p>Failure: throws {@link ApiException} with {@code ORGANISATION_MISMATCH} when no workspace is
+     * selected, or {@code PERMISSION_DENIED} (with the required codes and mode in the details) when the
+     * check fails. {@code RequestContext.requireActor()} rejects an unauthenticated request. The global
+     * exception handler turns each into the matching HTTP status. No data is written.
+     *
+     * @return {@code true} so that the request continues; a refusal is thrown, never returned
+     */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         if (!(handler instanceof HandlerMethod method)) {

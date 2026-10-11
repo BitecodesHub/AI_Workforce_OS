@@ -9,8 +9,10 @@ import { api } from './api'
  * meaning as well as by keyword, and the progress of re-indexing every source after it changes.
  */
 
+/** Lifecycle of a re-index: idle, running, done, failed, or interrupted (for example by a restart). */
 export type EmbeddingProgressState = 'idle' | 'running' | 'done' | 'failed' | 'interrupted'
 
+/** Re-index progress counted in sources and passages, with timestamps and a plain message. */
 export type EmbeddingProgress = {
   state: EmbeddingProgressState
   sourcesTotal: number
@@ -23,6 +25,7 @@ export type EmbeddingProgress = {
   finishedAt?: string | null
 }
 
+/** The search set-up in force: provider, model, vector size, search mode and re-index progress. */
 export type EmbeddingStatus = {
   provider: string
   model: string
@@ -31,6 +34,7 @@ export type EmbeddingStatus = {
   progress: EmbeddingProgress
 }
 
+/** A model offered for meaning-based search, with its provider, price and context length. */
 export type EmbeddingOption = {
   providerId: string
   providerName: string
@@ -42,15 +46,22 @@ export type EmbeddingOption = {
   pricingNote: string | null
 }
 
+/** The embedding models available to pick from, with explanatory notes. */
 export type EmbeddingCatalogue = { models: EmbeddingOption[]; notes: string[] }
 
 /** The value a picker option carries: provider and model together, as both are needed. */
 export const KEYWORD_ONLY_VALUE = 'sandbox'
 
+/**
+ * Encodes a provider and model as the single value of a picker option ("provider::model"); the keyword-only choice is just "sandbox".
+ */
 export function optionValue(providerId: string, modelId: string): string {
   return providerId === KEYWORD_ONLY_VALUE ? KEYWORD_ONLY_VALUE : `${providerId}::${modelId}`
 }
 
+/**
+ * Inverse of optionValue: splits a picker value back into provider id and model id (null for keyword-only or malformed values).
+ */
 export function parseOptionValue(value: string): { providerId: string; modelId: string | null } {
   if (value === KEYWORD_ONLY_VALUE) return { providerId: KEYWORD_ONLY_VALUE, modelId: null }
   const at = value.indexOf('::')
@@ -80,6 +91,9 @@ export function groupByProvider(models: readonly EmbeddingOption[]): { providerN
 }
 
 // @find: embedding status, re-index progress; route: GET /api/knowledge/embedding; used by: Knowledge page (EmbeddingSettingsCard), setup checklist
+/**
+ * Query for the workspace's search set-up and re-index progress (GET /api/knowledge/embedding, key ['knowledge','embedding']). Polls every two seconds while a re-index is running so the progress bar moves, and stops otherwise. Used by the Knowledge page and the setup checklist; pass enabled false when the person may not read it.
+ */
 export function useEmbeddingStatus(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['knowledge', 'embedding'],

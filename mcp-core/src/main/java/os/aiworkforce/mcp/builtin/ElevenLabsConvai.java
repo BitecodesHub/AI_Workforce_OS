@@ -22,15 +22,22 @@ import reactor.core.publisher.Mono;
  */
 public final class ElevenLabsConvai {
 
+    /** Production endpoint; a different base URL may be passed to the constructor, for tests. */
     public static final String BASE_URL = "https://api.elevenlabs.io";
+    /** Header that carries the workspace key on every request. */
     static final String KEY_HEADER = "xi-api-key";
 
     /** The workspace's own caller, made the first time a call needs one. */
     public static final String CALLER_NAME = "AI Workforce caller";
 
+    /** Builds request bodies. */
     private final ObjectMapper json;
     private final WebClient http;
 
+    /**
+     * Builds the client. A null or blank base URL means the production endpoint. The key is
+     * not stored here; every method takes it as an argument.
+     */
     public ElevenLabsConvai(ObjectMapper json, WebClient.Builder http, String baseUrl) {
         this.json = json;
         this.http = http.clone().baseUrl(baseUrl == null || baseUrl.isBlank() ? BASE_URL : baseUrl).build();
@@ -42,7 +49,10 @@ public final class ElevenLabsConvai {
     // ---- Phone numbers ------------------------------------------------------------------------
 
     // @find: list ElevenLabs phone numbers
-    /** The phone numbers on the ElevenLabs account, in its own order. */
+    /**
+     * The phone numbers on the ElevenLabs account, in its own order. Read-only HTTP call; a non-array
+     * reply gives an empty list and an HTTP error status surfaces as an error in the {@code Mono}.
+     */
     public Mono<List<JsonNode>> phoneNumbers(String key) {
         return http.get()
                 .uri("/v1/convai/phone-numbers")
@@ -58,7 +68,10 @@ public final class ElevenLabsConvai {
                 });
     }
 
-    /** A number that can make calls: the one asked for when given, otherwise the first. */
+    /**
+     * A number that can make calls: the one asked for when given, otherwise the first. A match is by
+     * phone number or by ElevenLabs id. Numbers that cannot place calls are skipped. Pure.
+     */
     public static Optional<JsonNode> outboundNumber(List<JsonNode> numbers, String wanted) {
         String normalised = wanted == null ? "" : PhoneNumbers.normalise(wanted);
         for (JsonNode number : numbers) {
@@ -75,7 +88,11 @@ public final class ElevenLabsConvai {
     }
 
     // @find: import Twilio number into ElevenLabs
-    /** Imports a Twilio number; answers its new ElevenLabs phone_number_id. */
+    /**
+     * Imports a Twilio number; answers its new ElevenLabs phone_number_id. A write to the account that
+     * hands the Twilio account SID and token to ElevenLabs, so the Twilio connector asks a person first.
+     * HTTP errors surface in the {@code Mono}; the credentials are never logged here.
+     */
     public Mono<String> importTwilioNumber(String key, String phoneNumber, String label, String accountSid, String authToken) {
         ObjectNode body = json.createObjectNode();
         body.put("phone_number", phoneNumber);
@@ -94,6 +111,11 @@ public final class ElevenLabsConvai {
     }
 
     // @find: assign ElevenLabs agent to phone number
+    /**
+     * Points a phone number at an agent so inbound calls reach it. A write to the ElevenLabs account.
+     * Called by the Twilio connector after an import. An HTTP error status surfaces as an error in the
+     * returned {@code Mono}; an empty reply becomes an empty object.
+     */
     public Mono<JsonNode> assignAgent(String key, String phoneNumberId, String agentId) {
         return http.patch()
                 .uri("/v1/convai/phone-numbers/{id}", phoneNumberId)
@@ -108,6 +130,10 @@ public final class ElevenLabsConvai {
     // ---- Agents -------------------------------------------------------------------------------
 
     // @find: list ElevenLabs voice agents
+    /**
+     * Lists up to 100 agents, optionally filtered by a search text. Read-only call to the agents
+     * endpoint. Entries without an agent id are skipped. HTTP errors surface in the {@code Mono}.
+     */
     public Mono<List<Agent>> agents(String key, String search) {
         return http.get()
                 .uri(uri -> {
@@ -157,6 +183,8 @@ public final class ElevenLabsConvai {
     /**
      * Makes an agent that lets each call set its own prompt and first message, so one agent can
      * serve many purposes without being edited between calls. Answers the new agent_id.
+     * A write to the account (the agent is created once and reused); HTTP errors surface in the
+     * {@code Mono}. Callers treat creating an agent as something a person approves.
      */
     public Mono<String> createAgent(
             String key, String name, String prompt, String firstMessage, String voiceId, String language) {
@@ -187,7 +215,10 @@ public final class ElevenLabsConvai {
     }
 
     // @find: update ElevenLabs voice agent
-    /** Changes only what is given; null leaves a setting as it is. */
+    /**
+     * Changes only what is given; null leaves a setting as it is. A write to the account that changes
+     * how every later call with this agent behaves. HTTP errors surface in the {@code Mono}.
+     */
     public Mono<JsonNode> updateAgent(
             String key, String agentId, String name, String prompt, String firstMessage, String voiceId, String language) {
         ObjectNode body = json.createObjectNode();
@@ -231,6 +262,10 @@ public final class ElevenLabsConvai {
      * Starts an outbound call from {@code number} with {@code agentId}. The endpoint follows the
      * number's provider: Twilio numbers through the Twilio endpoint, SIP trunk numbers through the
      * SIP one. Prompt and first message are per-call overrides and are left out when null.
+     *
+     * <p>Outbound side effect: this call rings a real telephone and may cost money, so the phone
+     * connector always asks a person first and checks the number with {@link PhoneNumbers} before
+     * reaching here. It is not retried. HTTP errors surface in the {@code Mono}.
      */
     public Mono<JsonNode> outboundCall(
             String key, String agentId, JsonNode number, String to, String prompt, String firstMessage) {
@@ -260,6 +295,10 @@ public final class ElevenLabsConvai {
     }
 
     // @find: ElevenLabs conversation details, call transcript
+    /**
+     * One conversation with its transcript and status, by id. Read-only; used to report how a call
+     * went. HTTP errors surface in the {@code Mono}.
+     */
     public Mono<JsonNode> conversation(String key, String id) {
         return http.get()
                 .uri("/v1/convai/conversations/{id}", id)
@@ -269,6 +308,10 @@ public final class ElevenLabsConvai {
     }
 
     // @find: list ElevenLabs conversations
+    /**
+     * Recent conversations, newest first as ElevenLabs orders them, up to {@code limit}, optionally
+     * for one agent. Read-only. HTTP errors surface in the {@code Mono}.
+     */
     public Mono<JsonNode> conversations(String key, String agentId, int limit) {
         return http.get()
                 .uri(uri -> {

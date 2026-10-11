@@ -39,6 +39,7 @@ public @interface RequiresPermission {
      */
     boolean allowWithoutOrganisation() default false;
 
+    /** How several listed permissions combine: {@code ANY} passes when the caller holds at least one, {@code ALL} requires every one. */
     enum Mode {
         ANY,
         ALL

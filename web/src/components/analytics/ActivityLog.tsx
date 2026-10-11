@@ -27,6 +27,7 @@ import { can } from '../../lib/session'
 
 const isAuditOutcome = (value: string): value is AuditOutcome => Object.hasOwn(OUTCOME_LABEL, value)
 
+/** Maps an audit outcome string to a tag tone and label; an unknown outcome falls back to a neutral sentence-cased label. */
 function outcomeWords(outcome: string): { tone: TagTone; label: string } {
   return isAuditOutcome(outcome)
     ? { tone: OUTCOME_TONE[outcome], label: OUTCOME_LABEL[outcome] }
@@ -36,6 +37,13 @@ function outcomeWords(outcome: string): { tone: TagTone; label: string } {
 /** The audit log filtered to one action, found by the same words this table shows. */
 const auditSearchHref = (label: string) => `/audit?q=${encodeURIComponent(label)}`
 
+/**
+ * Body of the activity log: summary tiles, the outcome tags and the per-action table for one AnalyticsSummary.
+ * Flow: counts the denied and failed outcomes for the two link tiles. When the viewer holds audit:read, the
+ * tiles and each action link to /audit with a matching query or outcome filter; otherwise the same figures
+ * render as plain text. The empty outcomes case reads "No audit entries in this window". Rendered by
+ * ActivityLogBody once the query has data.
+ */
 function Summary({ data }: { data: AnalyticsSummary }) {
   const canReadAudit = can('audit:read')
   const denied = data.byOutcome.find((row) => row.outcome === 'denied')?.count ?? 0
@@ -125,6 +133,11 @@ function Summary({ data }: { data: AnalyticsSummary }) {
   )
 }
 
+/**
+ * Loads the analytics summary with useAnalytics and renders Summary through QueryState (permission analytics:read).
+ * It shows the loading, error and forbidden states and an empty state when there are no audit events. It is
+ * mounted only while the panel is open, so a collapsed panel makes no request for its own sake.
+ */
 function ActivityLogBody() {
   const analytics = useAnalytics()
   return (
@@ -149,6 +162,11 @@ function ActivityLogBody() {
 }
 
 // @find: ActivityLog, audit trail panel, Analytics page activity
+/**
+ * Collapsible Analytics card for the audit log counts, folded away by default.
+ * The open state is remembered per browser with useCollapsed under "analytics.activity-log". The body
+ * (ActivityLogBody) is mounted only when open. Rendered on the Analytics page; takes no props.
+ */
 export function ActivityLog() {
   const [open, toggle] = useCollapsed('analytics.activity-log', false)
   return (

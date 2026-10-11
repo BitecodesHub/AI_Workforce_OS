@@ -24,6 +24,7 @@ import java.util.Optional;
  */
 public final class AgentTemplates {
 
+    // Not instantiable: a static catalogue.
     private AgentTemplates() {}
 
     /** What an assistant may use on one connector. Applied only by the demo seeder. */
@@ -48,6 +49,7 @@ public final class AgentTemplates {
             List<String> suggestedConnectors,
             List<Grant> demoGrants) {}
 
+    // The catalogue itself, in console order. Keep each entry in the shape the console's drift test reads (see the class comment).
     private static final List<Template> ALL = List.of(
             new Template(
                     "hr",
@@ -144,6 +146,12 @@ public final class AgentTemplates {
     }
 
     // @find: find template by key
+    /**
+     * Looks a template up by key. Used by the template controller when a person adds an assistant.
+     *
+     * @param key the template key, for example {@code "hr"}; null is allowed
+     * @return the matching template, or empty for a null or unknown key
+     */
     public static Optional<Template> find(String key) {
         if (key == null) {
             return Optional.empty();

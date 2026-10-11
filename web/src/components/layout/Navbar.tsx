@@ -90,6 +90,24 @@ function holds(href: string, currentPath: string): boolean {
 }
 
 // @find: navbar, top navigation, gear menu, account menu, sign out, approvals bell, hide guide
+/**
+ * Primary navigation bar rendered by the app shell on every signed-in screen.
+ * Props: currentPath (the router path, used for aria-current and to light the matching pill) and glass (a
+ * translucent style for pages with a hero behind it).
+ * Data: useApprovals (enabled only for viewers holding approval:read) and useQuestions({ status: pending,
+ * mine: true }) (enabled for run:read) give the bell badge, which counts approvals waiting plus the viewer's
+ * own pending questions and caps its display at 99+. The signed-in person comes from profile() in the session.
+ * Renders: the Brand; a capsule of up to six destinations filtered by permission (NAV_ITEMS); the bell, a
+ * link to /approvals; a gear disclosure grouping the other screens by purpose (MENU_GROUPS, also filtered by
+ * permission, and lit when the current page is one of them); an account disclosure with the identity, the
+ * profile link, "Show getting started" when the guide is hidden, the ThemeSwitch and Sign out; and a menu
+ * toggle that opens the capsule as a dropdown on phones.
+ * Behaviour: only one panel is open at a time; a panel closes on an outside press, on Escape (returning
+ * focus to its trigger) and when focus leaves it. Sign out posts to /api/auth/sign-out so the server clears the
+ * refresh cookie, then clears the local session and navigates to /sign-in?signedOut=1 even if the request
+ * fails. "Show getting started" un-hides the guide (lib/onboarding) and, when already on the Command Map,
+ * scrolls to the top and focuses the page heading instead of adding a history entry.
+ */
 export function Navbar({ currentPath = '/', glass = false }: { currentPath?: string; glass?: boolean }) {
   // Who is signed in comes from the session, never from a default. A hard-coded name here made
   // every demo account appear to be the same person.

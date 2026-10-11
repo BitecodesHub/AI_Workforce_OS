@@ -40,6 +40,11 @@ public class PasswordService {
      */
     private final String timingHash;
 
+    /**
+     * Builds the Argon2id encoder from the configured cost parameters and reads the minimum password
+     * length. Also hashes one random value up front, which {@link #wasteTime} later verifies against
+     * so that its cost matches a real check.
+     */
     public PasswordService(PlatformProperties properties) {
         PlatformProperties.Argon2 argon2 = properties.security().argon2();
         this.encoder = new Argon2PasswordEncoder(
@@ -53,6 +58,14 @@ public class PasswordService {
     }
 
     // @find: hash password, argon2
+    /**
+     * Hashes a new password after validating it.
+     *
+     * <p>Validation rejects a null or blank password, one shorter than the configured minimum and one
+     * longer than 256 characters, each as a validation {@link ApiException} naming the field
+     * {@code password}. The result embeds its own parameters and salt. Called when a password is
+     * registered, changed or reset, and when seeding demo accounts.
+     */
     public String hash(String rawPassword) {
         validate(rawPassword);
         return encoder.encode(rawPassword);
@@ -79,6 +92,10 @@ public class PasswordService {
         return storedHash != null && encoder.upgradeEncoding(storedHash);
     }
 
+    /**
+     * Enforces the password policy for {@link #hash}: not blank, at least the configured minimum
+     * length and at most 256 characters. Throws a validation {@link ApiException} otherwise.
+     */
     private void validate(String rawPassword) {
         if (rawPassword == null || WHITESPACE_ONLY.matcher(rawPassword).matches()) {
             throw ApiException.validation("password", "must not be empty");
@@ -105,6 +122,11 @@ public class PasswordService {
         encoder.matches("not-a-real-password", timingHash);
     }
 
+    /**
+     * An invalid-credentials {@link ApiException} with the standard message for that code.
+     * {@code AuthService} builds its own refusal with a fixed message instead, so nothing in this
+     * module currently calls this.
+     */
     static ApiException invalidCredentials() {
         return new ApiException(ErrorCode.INVALID_CREDENTIALS);
     }

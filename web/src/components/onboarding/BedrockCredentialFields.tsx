@@ -24,6 +24,7 @@ import { RegionCombobox, type RegionNote } from './RegionCombobox'
  * secret field is a password field and nothing here keeps a copy.
  */
 
+/** Props: the Bedrock provider id (for Find my region), the form value and its change handler, field errors from the service and a disabled flag. */
 type Props = {
   /** The Bedrock provider's id, for "Find my region". */
   providerId: string
@@ -35,6 +36,7 @@ type Props = {
 }
 
 /** The tag a region gets in the list once "Find my region" has looked at it. */
+/** Tag shown beside a region once Find my region has looked at it; an unreachable region gets none. */
 const NOTE: Record<RegionStatus, RegionNote | null> = {
   ready: { text: 'Works', tone: 'good' },
   accepted: { text: 'Key accepted', tone: 'good' },
@@ -44,6 +46,7 @@ const NOTE: Record<RegionStatus, RegionNote | null> = {
 }
 
 // @find: regionNotes, region availability notes
+/** Turns a RegionFinding into the per-region tags the RegionCombobox displays. */
 export function regionNotes(finding: RegionFinding | null): Record<string, RegionNote> {
   const notes: Record<string, RegionNote> = {}
   for (const result of finding?.regions ?? []) {
@@ -57,6 +60,7 @@ export function regionNotes(finding: RegionFinding | null): Record<string, Regio
  * Where a pasted value really belongs: an access key ID pasted as an API key (or the other way
  * round) switches the sign-in, rather than failing later with "credentials refused".
  */
+/** Puts a pasted value in the right field: an access key ID pasted as an API key (or the reverse) switches the sign-in method and explains why, instead of failing later. */
 function placePaste(form: BedrockForm, field: 'apiKey' | 'accessKeyId', raw: string): { form: BedrockForm; moved: string | null } {
   const value = cleanKey(raw)
   const seen = recogniseKey(value)
@@ -76,6 +80,7 @@ function placePaste(form: BedrockForm, field: 'apiKey' | 'accessKeyId', raw: str
 }
 
 /** A sentence when a pasted key belongs to another provider altogether. */
+/** Returns a sentence when a pasted key clearly belongs to another provider, otherwise null. */
 function otherProvider(value: string): string | null {
   const seen = recogniseKey(value)
   if (!seen || seen.providers.includes('bedrock')) return null
@@ -83,6 +88,15 @@ function otherProvider(value: string): string | null {
 }
 
 // @find: BedrockCredentialFields, bedrock keys, region, find my region
+/**
+ * Fields for connecting AWS Bedrock inside ConnectModelDialog: a sign-in choice (Bedrock API key or AWS
+ * access key), the matching secret fields (password inputs, nothing retained here), a region picker
+ * (RegionCombobox) and setup guidance links. Pasting normalises the value (cleanKey) and may switch the
+ * sign-in method (placePaste), with a notice. "Find my region" calls useFindBedrockRegion with the credential
+ * and tags each region (works, key accepted, no model access, not accepted), selecting the best one.
+ * State is held by the dialog through form and onChange; this component keeps only the notices and the
+ * region finding.
+ */
 export function BedrockCredentialFields({ providerId, form, onChange, fieldErrors = {}, disabled }: Props) {
   const set = <K extends keyof BedrockForm>(key: K, value: BedrockForm[K]) => onChange({ ...form, [key]: value })
   const secretProps = { autoComplete: 'off', spellCheck: false, disabled } as const

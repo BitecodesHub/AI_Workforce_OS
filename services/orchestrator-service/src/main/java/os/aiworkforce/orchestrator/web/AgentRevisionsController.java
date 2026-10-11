@@ -56,6 +56,7 @@ public class AgentRevisionsController {
     private final Agents agents;
     private final AgentVersions versions;
 
+    /** Receives the agent and version repositories used to build the history. */
     public AgentRevisionsController(Agents agents, AgentVersions versions) {
         this.agents = agents;
         this.versions = versions;
@@ -89,6 +90,15 @@ public class AgentRevisionsController {
             Integer maxOutputTokens,
             int maxSteps) {}
 
+    /**
+     * Lists the agent's revisions, newest first, each with the fields that changed from the one
+     * before it.
+     *
+     * <p>Route {@code GET /api/agents/{agentId}/revisions}; requires AGENT_READ. Reads the versions
+     * through {@link AgentVersions}, returns at most {@code MAX_REVISIONS}, and marks the revision
+     * the agent currently works from. Fails with not found when the agent is absent or in another
+     * workspace.
+     */
     // @find: agent revision history, GET /api/agents/{agentId}/revisions
     @GetMapping("/{agentId}/revisions")
     @RequiresPermission(Permission.Codes.AGENT_READ)
@@ -108,6 +118,7 @@ public class AgentRevisionsController {
         return views;
     }
 
+    /** Builds one revision view from a version and the version before it (null for the first). */
     static RevisionView toView(AgentVersion version, AgentVersion before, boolean current) {
         return new RevisionView(
                 version.getId(),
@@ -149,6 +160,7 @@ public class AgentRevisionsController {
         return List.copyOf(changed);
     }
 
+    /** Treats a missing goals value as empty, so the two compare as equal. */
     private static String blankToEmpty(String text) {
         return text == null ? "" : text;
     }

@@ -77,6 +77,7 @@ public class PasswordResetService {
     private final PasswordService passwords;
     private final GrantGuard grants;
 
+    /** Wires the repositories, the password hasher and the grant guard this service uses. */
     public PasswordResetService(
             PasswordResetTokens tokens,
             Users users,
@@ -95,6 +96,9 @@ public class PasswordResetService {
     }
 
     /**
+     * The result of {@link #createLink}: the path to hand over and when it stops working. The raw
+     * token appears only here, in the path, and is never stored.
+     *
      * @param url the path to give the person, relative to the console's own address
      * @param expiresAt when the link stops working
      */
@@ -105,6 +109,14 @@ public class PasswordResetService {
      * Creates a reset link for a member of the caller's workspace.
      *
      * <p>Creating one closes any earlier link for the same person, so only the newest works.
+     *
+     * <p>Flow: checks the caller is a person signed in to a workspace and is not the target; checks
+     * the target has exactly one active membership, in the caller's workspace; applies the owner
+     * rule and {@link GrantGuard#assertCanManage}; closes open links; saves a new link holding the
+     * hash of a fresh token; logs the event.
+     *
+     * @return the link path and its expiry, thirty minutes after creation
+     * @throws ApiException when any check fails (permission denied, self action, or member not found)
      */
     @Transactional
     public ResetLink createLink(Actor caller, UUID targetUserId) {
@@ -167,6 +179,13 @@ public class PasswordResetService {
      *
      * <p>Does not roll back on a refusal: a link refused because the rules no longer allow it is
      * closed by that refusal, and the closure must stay closed.
+     *
+     * <p>Flow: finds the link by token hash; refuses a used or expired one; re-checks the rules
+     * with {@link #noLongerAllowed}; hashes the new password, then claims the link atomically so
+     * only one of two simultaneous requests wins; saves the new password and revokes every session.
+     *
+     * @throws ApiException a validation error for an empty token or a weak password, not found for
+     *     an unknown token, and a conflict with the same wording for a used, expired or withdrawn link
      */
     @Transactional(noRollbackFor = ApiException.class)
     public void redeem(String rawToken, String newPassword) {
@@ -263,6 +282,10 @@ public class PasswordResetService {
                         reason == null ? "-" : '"' + reason + '"');
     }
 
+    /**
+     * A new random token: 32 bytes from a {@link SecureRandom}, URL-safe Base64 without padding.
+     * The raw value goes to the administrator once; only its hash is stored.
+     */
     private static String generateToken() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);

@@ -41,21 +41,41 @@ public class InternalAgentMemoryController {
 
     private final AgentMemoryService memories;
 
+    /** Creates the controller over the agent memory service. */
     public InternalAgentMemoryController(AgentMemoryService memories) {
         this.memories = memories;
     }
 
+    /**
+     * Request body for remember: optional kind, required content up to {@link
+     * AgentMemory#MAX_CONTENT} characters, and the run in which the agent learned it, when known.
+     */
     public record RememberRequest(
             @Size(max = 20) String kind, @NotBlank @Size(max = AgentMemory.MAX_CONTENT) String content, UUID runId) {}
 
-    /** @param created false when the same note was already there */
+    /**
+     * Response of remember: the stored note and whether it is new.
+     *
+     * @param created false when the same note was already there
+     */
     public record Remembered(AgentMemoryController.MemoryView memory, boolean created) {}
 
+    /**
+     * Request body for recall: an optional free-text query (up to 500 characters) and an optional
+     * note limit, 8 when absent.
+     */
     public record RecallRequest(@Size(max = 500) String query, Integer limit) {}
 
+    /** Response of recall: the notes that bear on the query, pinned ones first. */
     public record Recalled(List<AgentMemoryController.MemoryView> memories) {}
 
     // @find: POST /internal/memory/agents/{agentId}/remember, remember, endpoint, internal agent memory
+    /**
+     * Route: POST /internal/memory/agents/{agentId}/remember. Permission: service token only (users and
+     * API keys are refused). Keeps a note with source agent, authored by the calling service, and returns it
+     * with status 201. Side effect: one insert, or an update of the date when the note already exists.
+     * Validation and cap failures are as for the person-facing add endpoint.
+     */
     @PostMapping("/remember")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Internal: keep a note for an agent")
@@ -67,6 +87,11 @@ public class InternalAgentMemoryController {
     }
 
     // @find: POST /internal/memory/agents/{agentId}/recall, recall, endpoint, internal agent memory
+    /**
+     * Route: POST /internal/memory/agents/{agentId}/recall. Permission: service token only. Returns the
+     * notes relevant to the query (default limit 8) and counts each as recalled, which is a write to
+     * those notes.
+     */
     @PostMapping("/recall")
     @Operation(summary = "Internal: the notes that bear on a query, for one agent")
     public Recalled recall(@PathVariable UUID agentId, @Valid @RequestBody RecallRequest request) {
@@ -77,6 +102,10 @@ public class InternalAgentMemoryController {
                 .toList());
     }
 
+    /**
+     * Returns the caller when it is a service, and throws PERMISSION_DENIED when it is a person or
+     * an API key.
+     */
     private static Actor serviceOnly() {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() == Actor.Kind.USER || actor.kind() == Actor.Kind.API_KEY) {
@@ -85,6 +114,7 @@ public class InternalAgentMemoryController {
         return actor;
     }
 
+    /** Reads the workspace id from the authenticated service token. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

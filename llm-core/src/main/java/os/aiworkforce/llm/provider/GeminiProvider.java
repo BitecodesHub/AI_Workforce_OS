@@ -1,6 +1,6 @@
 // @find: model router, LLM, model providers, Google Gemini, Generative Language API, roles, function calls, embeddings, GeminiProvider
-// @what: Adapter for Google's Gemini API, including embeddings.
-// @flow: Registered as a ChatProvider; called by ModelRouter.
+// @what: Adapter for Google's Gemini Generative Language API: contents and parts, function calls, safety block detection, streaming, batch embeddings and failure classification.
+// @flow: Spring ChatProvider of kind GEMINI; ModelRouter calls complete/stream/healthCheck and knowledge-service calls embed; WebClient posts to :generateContent, :streamGenerateContent and :batchEmbedContents with the key in a header; errors are translated to a classified ProviderException for the router.
 package os.aiworkforce.llm.provider;
 
 import java.time.Duration;
@@ -56,18 +56,33 @@ public class GeminiProvider implements ChatProvider {
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper json;
 
+    /**
+     * Creates the adapter with the shared reactive client builder and JSON mapper supplied by Spring.
+     * No network activity happens here; a client is built per call.
+     */
     public GeminiProvider(WebClient.Builder webClientBuilder, ObjectMapper json) {
         this.webClientBuilder = webClientBuilder;
         this.json = json;
     }
 
     @Override
+    /**
+     * Identifies this adapter to the provider registry, which selects it for provider rows of kind
+     * {@code GEMINI}. Image parts are not sent by this adapter.
+     */
     public ProviderDescriptor.Kind kind() {
         return ProviderDescriptor.Kind.GEMINI;
     }
 
     // @find: call Gemini, chat completion
     @Override
+    /**
+     * Sends one request to {@code :generateContent}.
+     *
+     * <p>Flow: called by the model router; builds the body, applies the request deadline (120 seconds by
+     * default), parses the first candidate into text and function calls, and maps any failure to a
+     * classified {@link ProviderException}. One HTTP call; retries and failover belong to the router.
+     */
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         Instant startedAt = Instant.now();
@@ -84,6 +99,14 @@ public class GeminiProvider implements ChatProvider {
 
     // @find: stream Gemini answer
     @Override
+    /**
+     * Streams from {@code :streamGenerateContent} with server-sent events ({@code alt=sse}).
+     *
+     * <p>Text parts are emitted as they arrive; function calls and the finish reason are held in a
+     * {@code StreamState} and emitted, with a terminal chunk, when the stream ends. A stream with no
+     * finish reason ends as {@code INCOMPLETE}, which lets the router retry without streaming. Unlike
+     * {@link #complete}, a blocked prompt is not detected in the stream and yields an empty answer.
+     */
     public Flux<ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         StreamState state = new StreamState();
@@ -103,6 +126,13 @@ public class GeminiProvider implements ChatProvider {
 
     // @find: Gemini embeddings, knowledge base embeddings
     @Override
+    /**
+     * Embeds the texts with one {@code :batchEmbedContents} call.
+     *
+     * <p>Vectors are returned in response order. No purpose is sent, so queries and passages are embedded
+     * alike, and no explicit deadline is set. The number of vectors is not checked against the number of
+     * inputs. Used by knowledge-service. Failures are classified by {@link #translate}.
+     */
     public Mono<List<float[]>> embed(
             ProviderDescriptor provider, ModelSpec model, List<String> inputs, String credential) {
         ObjectNode body = json.createObjectNode();
@@ -135,6 +165,10 @@ public class GeminiProvider implements ChatProvider {
 
     // @find: check Gemini key works
     @Override
+    /**
+     * Checks the key with {@code GET /v1beta/models} and a ten second deadline. Never fails: any error
+     * reports {@code false}.
+     */
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         return client(provider, credential)
                 .get()
@@ -146,6 +180,15 @@ public class GeminiProvider implements ChatProvider {
                 .onErrorResume(error -> Mono.just(false));
     }
 
+    /**
+     * Builds the request body shared by chat and streaming.
+     *
+     * <p>The system prompt becomes {@code systemInstruction}; tool results become user-role
+     * {@code functionResponse} parts; assistant tool calls become {@code functionCall} parts. Output
+     * limit, temperature, stop sequences, JSON mode and tool declarations are sent only when the request
+     * and the model allow them. An unreadable schema or argument text is replaced by an empty one rather
+     * than failing the request.
+     */
     private ObjectNode buildBody(ModelSpec model, ChatRequest request) {
         ObjectNode body = json.createObjectNode();
 
@@ -228,6 +271,13 @@ public class GeminiProvider implements ChatProvider {
         return body;
     }
 
+    /**
+     * Converts a response into a {@link ChatResponse}.
+     *
+     * <p>Raises {@code CONTENT_FILTERED} for a blocked prompt (checked first) or a safety finish, and
+     * {@code MALFORMED_RESPONSE} when no candidate exists. Gemini returns no tool call identifiers, so
+     * they are generated as {@code call_N}.
+     */
     private ChatResponse parse(ProviderDescriptor provider, ModelSpec model, JsonNode node, Instant startedAt) {
         // Checked before the candidates: a blocked prompt yields a 200 with none at all.
         String blockReason = node.path("promptFeedback").path("blockReason").asText(null);
@@ -296,6 +346,7 @@ public class GeminiProvider implements ChatProvider {
                 Map.of());
     }
 
+    // Maps Gemini finish reasons to {@link FinishReason}; the presence of tool calls always wins.
     private FinishReason mapFinishReason(String raw, boolean hasToolCalls) {
         if (hasToolCalls) {
             return FinishReason.TOOL_CALLS;
@@ -311,12 +362,16 @@ public class GeminiProvider implements ChatProvider {
         };
     }
 
+    /**
+     * Accumulates function calls, the finish reason and usage across the chunks of one streamed answer.
+     */
     private static final class StreamState {
         private final List<ToolCall> calls = new ArrayList<>();
         private FinishReason finishReason;
         private TokenUsage usage = TokenUsage.NONE;
         private boolean drained;
 
+        // Emits, once only, the collected tool calls followed by the terminal chunk.
         List<ChatChunk> drain() {
             if (drained) {
                 return List.of();
@@ -331,6 +386,11 @@ public class GeminiProvider implements ChatProvider {
         }
     }
 
+    /**
+     * Interprets one streamed chunk: emits its text, records function calls, the finish reason and usage
+     * (when it carries a candidate token count). An unreadable chunk is skipped so that the rest of the
+     * answer survives.
+     */
     private Flux<ChatChunk> handleChunk(String line, StreamState state) {
         if (line == null || line.isBlank()) {
             return Flux.empty();
@@ -384,6 +444,14 @@ public class GeminiProvider implements ChatProvider {
         return builder.build();
     }
 
+    /**
+     * Turns anything thrown into a classified {@link ProviderException}, which the router uses to retry,
+     * fail over or stop.
+     *
+     * <p>Timeouts and connection errors are distinguished; HTTP statuses map to failure classes, with
+     * body text used to tell an invalid key, an oversized prompt and a billing or quota problem from
+     * ordinary rejection or throttling. No Retry-After value is read. Anything else becomes {@code UNKNOWN}.
+     */
     private Throwable translate(ProviderDescriptor provider, ModelSpec model, Throwable error) {
         if (error instanceof ProviderException) {
             return error;
@@ -459,6 +527,7 @@ public class GeminiProvider implements ChatProvider {
                 error);
     }
 
+    // Caps the raw provider body kept in a failure, because bodies can quote the prompt.
     private static String truncate(String value) {
         if (value == null) {
             return null;

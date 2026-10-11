@@ -129,6 +129,9 @@ function QuestionsWaiting() {
 /* ---- The queue ------------------------------------------------------------------------------------ */
 
 // @find: pending approvals queue, approve request, reject request, decide, comment, payload, expires, POST /api/approvals/:id/decision
+/**
+ * The Waiting tab: requests an agent is blocked on, soonest to expire first, paged with Show more. Each card shows what will be sent or removed (the payload), the agent, the goal and when it expires. With approval:decide a person can Approve, Reject (with an optional reason) or Send back (request changes, with a note the agent must address), each through useDecideApproval; identical requests are grouped and can be decided together through useDecideApprovals, with a summary toast. A person cannot decide their own agent's request where the workspace rule forbids it (canDecide comes from the server). Decided cards leave the queue at once and focus moves to the neighbouring card. A deep link #approval-<id> pages through the queue until the card is found; if it is not there, the request is looked up and the page says whether it was decided, withdrawn or expired. Search and agent filter state live in the address.
+ */
 function PendingQueue() {
   const toast = useToast()
   const { hash } = useRouter()
@@ -550,6 +553,9 @@ function PendingQueue() {
 /* ---- The history ---------------------------------------------------------------------------------- */
 
 // @find: decided approvals history, who approved, past decisions, rejected list
+/**
+ * The Decided tab: past decisions (approved, rejected, expired and so on) newest first, paged, with who decided and their note. The agent and outcome are filtered by the server (?agent= and ?outcome= in the address) and the search runs over the loaded entries. A deep link #approval-<id> pages through the history until the card is found. Failures loading more are reported by toast.
+ */
 function DecidedHistory() {
   const toast = useToast()
   const { search, hash } = useRouter()
@@ -696,6 +702,10 @@ function DecidedHistory() {
 /* ---- The page ------------------------------------------------------------------------------------- */
 
 // @find: Approvals component, approvals page, approve or reject, waiting and decided tabs, /approvals
+/**
+ * The Approvals page (route /approvals, permission approval:read).
+ * Header, then the questions agents have asked (answered inline), a note that an undecided request expires and stops its run (nothing is sent because a deadline passed), a notice when the person's role can read but not decide, and a Waiting or Decided switch whose choice lives in the address (?tab=decided). The Waiting tab shows PendingQueue with a count of pending requests; the Decided tab shows DecidedHistory.
+ */
 export function Approvals() {
   const { search, navigate } = useRouter()
   const canRead = can('approval:read')

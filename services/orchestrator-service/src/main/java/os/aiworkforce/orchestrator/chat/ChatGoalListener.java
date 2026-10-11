@@ -45,21 +45,29 @@ public class ChatGoalListener implements GoalLifecycleListener {
 
     private static final Logger log = LoggerFactory.getLogger(ChatGoalListener.class);
 
+    /** The failure text shown when a task failed without recording a reason. */
     private static final String DEFAULT_FAILURE_REASON = "The agent did not complete this task.";
     /** A question is never posted twice: this many of the newest messages are checked for its id first. */
     private static final int DUPLICATE_CHECK_WINDOW = 50;
 
+    /** The only writer of chat messages; used for every message this listener adds. */
     private final ChatAppender appender;
 
     /** Starts the next queued message once work ends; absent only where a test builds this by hand. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ChatQueueRunner queueRunner;
+    /** Read to check whether a question has already been posted. */
     private final ChatMessages messages;
+    /** Read to find the latest run of a task, for the links in a message. */
     private final Runs runs;
+    /** Read to find whether a run used the sandbox, used practice data or ended in an error code. */
     private final RunSteps steps;
+    /** Read for an agent's name in the retry notice. */
     private final Agents agents;
+    /** Parses the questions a run stored as JSON. */
     private final ObjectMapper json;
 
+    /** Creates the listener over the appender and the repositories it reads. */
     public ChatGoalListener(
             ChatAppender appender, ChatMessages messages, Runs runs, RunSteps steps, Agents agents, ObjectMapper json) {
         this.appender = appender;
@@ -70,6 +78,17 @@ public class ChatGoalListener implements GoalLifecycleListener {
         this.json = json;
     }
 
+    /**
+     * Posts the outcome of a finished task into the conversation that started the goal.
+     *
+     * <p>Called after the task's status change has committed, in a transaction of its own. A completed
+     * task becomes an agent {@code answer} message carrying the task, run and agent ids and flags for
+     * sandbox and practice data; a failed task becomes an {@code error} message with the reason, an error
+     * code from the run when there is one, and any partial answer; a cancelled task becomes a system
+     * {@code notice}. Skipped tasks add nothing. Goals with no conversation are ignored. Finally the
+     * conversation's queue is looked at once this transaction commits. Writes go through {@link
+     * ChatAppender}, which locks the conversation row.
+     */
     // @find: task finished, agent answer appears in chat, task completed or failed message
     @Override
     @Transactional
@@ -142,6 +161,10 @@ public class ChatGoalListener implements GoalLifecycleListener {
         lookAtQueue(goal.getOrgId(), conversationId);
     }
 
+    /**
+     * Looks at the conversation's queue when a whole goal has finished, so the next waiting message
+     * can start. Adds no message of its own; goals without a conversation are ignored.
+     */
     // @find: goal finished, final summary message in chat
     @Override
     public void onGoalFinished(Goal goal) {
@@ -150,7 +173,12 @@ public class ChatGoalListener implements GoalLifecycleListener {
         }
     }
 
-    /** Once this commits, the conversation's next waiting message may start. */
+    /**
+     * Once this commits, the conversation's next waiting message may start.
+     *
+     * <p>Schedules {@link ChatQueueRunner#drainSoon} for after the surrounding transaction commits;
+     * does nothing when no runner is wired or an id is missing.
+     */
     private void lookAtQueue(UUID orgId, UUID conversationId) {
         if (queueRunner == null || orgId == null || conversationId == null) {
             return;
@@ -160,7 +188,11 @@ public class ChatGoalListener implements GoalLifecycleListener {
                 () -> runner.drainSoon(orgId, conversationId));
     }
 
-    /** "Stopped. <why>", without saying it twice when the reason already starts "Stopped from the chat." */
+    /**
+     * "Stopped. <why>", without saying it twice when the reason already starts "Stopped from the chat."
+     *
+     * <p>With no reason the text is just {@code "Stopped."}. Pure; used by {@link #onGoalCancelled}.
+     */
     static String stoppedText(String reason) {
         if (reason == null || reason.isBlank()) {
             return "Stopped.";
@@ -169,6 +201,13 @@ public class ChatGoalListener implements GoalLifecycleListener {
         return why.regionMatches(true, 0, "Stopped", 0, "Stopped".length()) ? why : "Stopped. " + why;
     }
 
+    /**
+     * Posts a system notice that a goal was stopped, then looks at the queue.
+     *
+     * <p>Called after the cancellation commits, in a transaction of its own. Nothing is posted when the
+     * reason is the conversation-deleted marker, because the conversation is about to disappear and a
+     * write to it mid-delete could race the deletion.
+     */
     // @find: goal cancelled, stopped work message in chat
     @Override
     @Transactional
@@ -189,6 +228,12 @@ public class ChatGoalListener implements GoalLifecycleListener {
         lookAtQueue(goal.getOrgId(), goal.getConversationId());
     }
 
+    /**
+     * Posts a system notice that work is being retried from a given step.
+     *
+     * <p>Called after the retry commits, in a transaction of its own. The notice names the step number
+     * and the agent. Ignored when the goal has no conversation or no task is given.
+     */
     // @find: goal retried, retry message in chat
     @Override
     @Transactional
@@ -205,6 +250,15 @@ public class ChatGoalListener implements GoalLifecycleListener {
         appendAs("system", goal, goal.getConversationId(), null, "notice", content, detail);
     }
 
+    /**
+     * Posts the question an agent asked as a {@code question} message in its conversation.
+     *
+     * <p>Called after the question is stored, in a transaction of its own. Locks the conversation, skips
+     * the post when the same question id is already among the newest messages, and otherwise appends one
+     * agent message whose content is the first question and whose detail carries the ids, the question
+     * headers and the expiry time. Does nothing when the question has no conversation or the
+     * conversation no longer exists. Unreadable stored questions are logged and give an empty message.
+     */
     // @find: question asked, agent asks the person in chat, run question
     @Override
     @Transactional
@@ -255,6 +309,9 @@ public class ChatGoalListener implements GoalLifecycleListener {
                                 .equals(String.valueOf(m.getDetail().get("questionId"))));
     }
 
+    /**
+     * The questions stored on a run question; malformed JSON is logged as a warning and yields an empty list.
+     */
     private List<Map<String, Object>> readQuestions(RunQuestion question) {
         try {
             return json.readValue(question.getQuestionsJson(), new TypeReference<List<Map<String, Object>>>() {});
@@ -264,6 +321,7 @@ public class ChatGoalListener implements GoalLifecycleListener {
         }
     }
 
+    /** The code of the run's last error step, or null when the run has none. */
     private String errorCodeFor(UUID runId) {
         if (runId == null) {
             return null;
@@ -274,6 +332,7 @@ public class ChatGoalListener implements GoalLifecycleListener {
                 .orElse(null);
     }
 
+    /** The agent's name, or {@code the agent} when it is unknown or deleted. */
     private String agentNameFor(UUID agentId) {
         if (agentId == null) {
             return "the agent";
@@ -281,6 +340,12 @@ public class ChatGoalListener implements GoalLifecycleListener {
         return agents.findById(agentId).map(Agent::getName).orElse("the agent");
     }
 
+    /**
+     * Locks the conversation and appends one message tied to the goal.
+     *
+     * <p>Quietly does nothing when the conversation no longer exists. Runs inside the caller's
+     * transaction.
+     */
     private void appendAs(
             String authorKind,
             Goal goal,

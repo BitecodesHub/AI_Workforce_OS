@@ -25,6 +25,11 @@ import os.aiworkforce.platform.web.PlatformWeb;
 @ConfigurationPropertiesScan(basePackageClasses = {KnowledgeApplication.class, PlatformCore.class, PlatformWeb.class})
 public class KnowledgeApplication {
 
+    /**
+     * Starts the application. The component scan covers this package and the shared platform packages.
+     *
+     * @param args the command line arguments, passed to Spring Boot
+     */
     public static void main(String[] args) {
         SpringApplication.run(KnowledgeApplication.class, args);
     }

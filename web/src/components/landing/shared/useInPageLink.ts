@@ -19,6 +19,7 @@ import { REVEAL_EVENT, type RevealDetail } from './revealEvent'
  */
 
 // @find: useInPageLink hook, anchor scroll
+/** Returns a click handler for links such as href="#roles". It scrolls to the target (smoothly unless the visitor prefers reduced motion), records the hash with pushState and moves keyboard focus to the target (made programmatically focusable if needed, never in the tab order). Before scrolling it dispatches the lp:reveal event with the target id, so a hidden demo's tab can open synchronously. Scrolling is done here, never with scroll-behavior on html, which would also animate the router's scroll to the top of each screen. Anything it cannot handle (a modified click, a non-hash link, a missing target) is left to the browser. */
 export function useInPageLink(): (event: MouseEvent<HTMLAnchorElement>) => void {
   const { reduced } = useLandingMotion()
 

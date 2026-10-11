@@ -30,6 +30,10 @@ public record ToolGrant(
         Integer maxCallsPerRun,
         boolean enabled) {
 
+    /**
+     * Compact constructor. Requires the agent and server and copies the lists; empty means all tools
+     * and no scopes respectively.
+     */
     public ToolGrant {
         Objects.requireNonNull(agentId, "agentId");
         Objects.requireNonNull(server, "server");
@@ -42,10 +46,12 @@ public record ToolGrant(
         return enabled && (allowedTools.isEmpty() || allowedTools.contains(tool));
     }
 
+    /** Whether the grant carries every scope a tool requires. */
     public boolean hasScopes(List<String> required) {
         return scopes.containsAll(required);
     }
 
+    /** The required scopes the grant lacks, in order, for the message shown when a call is blocked. */
     public List<String> missingScopes(List<String> required) {
         return required.stream().filter(scope -> !scopes.contains(scope)).toList();
     }

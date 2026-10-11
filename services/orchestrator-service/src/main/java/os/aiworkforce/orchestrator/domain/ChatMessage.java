@@ -119,6 +119,7 @@ public class ChatMessage implements Persistable<UUID> {
         return isNew;
     }
 
+    /** Clears the new-row flag once the row has been saved or loaded, so later saves are treated as updates. */
     @PostPersist
     @PostLoad
     void markPersisted() {

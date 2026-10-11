@@ -1,6 +1,6 @@
 // @find: notion, pages, workspace, search pages, get page, create page, update page, archive page, blocks, integration token, live adapter, real API, docs, wiki
 // @what: Live Notion connector: runs notion__ tools (search, get, create, update, archive pages) against the Notion API with an integration token.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "notion"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke; each tool makes one or two calls to api.notion.com; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -27,15 +27,27 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  *
  * <p>An integration only sees the pages that were shared with it, so "not found" usually means
  * the page was never connected to the integration rather than that it does not exist.
+ *
+ * <p>Used by the tool gateway when a workspace has stored a Notion integration secret. search_pages and
+ * get_page are read tools; create_page and update_page are write tools (a person is asked first when
+ * the workspace policy says so); archive_page is destructive and always asks a person first.
+ * update_page only appends text to the end of a page.
+ *
+ * <p>Failures: a missing argument or an id that is not a page id becomes a plain failed result; HTTP
+ * errors are described by the base class. Nothing is retried, so a dropped connection on a write is
+ * reported as indeterminate.
  */
 public final class NotionAdapter extends LiveServerAdapter {
 
+    /** The production Notion API address; tests pass another base URL to the constructor. */
     public static final String BASE_URL = "https://api.notion.com/v1";
+    /** The Notion API version sent with every request. */
     private static final String VERSION = "2022-06-28";
 
     /* A page id with or without dashes, also when it is the tail of a page's web address. */
     private static final Pattern PAGE_ID = Pattern.compile(
             "([0-9a-fA-F]{8})-?([0-9a-fA-F]{4})-?([0-9a-fA-F]{4})-?([0-9a-fA-F]{4})-?([0-9a-fA-F]{12})");
+    /** The block types whose text is returned by get_page; other blocks are left out. */
     private static final Set<String> TEXT_BLOCKS = Set.of(
             "paragraph",
             "heading_1",
@@ -47,8 +59,10 @@ public final class NotionAdapter extends LiveServerAdapter {
             "quote",
             "callout",
             "toggle");
+    /** The most characters Notion accepts in one text object; longer text is split into blocks. */
     private static final int BLOCK_TEXT_LIMIT = 2000;
 
+    /** Registers the five Notion tools. The sandbox supplies the tool definitions. */
     public NotionAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Notion", json, http, baseUrl);
         on("search_pages", this::searchPages);
@@ -58,12 +72,14 @@ public final class NotionAdapter extends LiveServerAdapter {
         on("archive_page", this::archivePage);
     }
 
+    /** Sends the integration secret as a bearer token together with the API version header. */
     @Override
     protected void authorize(HttpHeaders headers, String token) {
         headers.setBearerAuth(token);
         headers.set("Notion-Version", VERSION);
     }
 
+    /** Connection check: GET the integration bot user; answers the workspace name. */
     @Override
     protected Mono<String> whoAmI(String token) {
         return get(token, "/users/me").map(user -> {
@@ -73,6 +89,7 @@ public final class NotionAdapter extends LiveServerAdapter {
     }
 
     // @find: Notion search pages, tool notion__search_pages, live Notion call
+    /** Read tool. POST a search limited to pages, at most 50. It lists only pages shared with the integration. */
     private Mono<ToolResult> searchPages(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         String query = text(arguments, "query");
@@ -89,6 +106,10 @@ public final class NotionAdapter extends LiveServerAdapter {
     }
 
     // @find: Notion get page, tool notion__get_page, live Notion call
+    /**
+     * Read tool. Two calls made together: the page properties and the first 100 blocks. The answer
+     * holds the title and the text of the supported block types; later blocks are not returned.
+     */
     private Mono<ToolResult> getPage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = pageId(required(arguments, "id"));
         return get(token, "/pages/{id}", id)
@@ -101,6 +122,11 @@ public final class NotionAdapter extends LiveServerAdapter {
     }
 
     // @find: Notion create page, tool notion__create_page, live Notion call
+    /**
+     * Write tool. POST a new page under a parent page, with optional text content. Not idempotent: a
+     * dropped connection is reported as indeterminate and is not repeated. A parent that was not shared
+     * with the integration fails with a plain not-found message.
+     */
     private Mono<ToolResult> createPage(ToolInvocation invocation, JsonNode arguments, String token) {
         String parent = pageId(required(arguments, "parentId"));
         String title = required(arguments, "title");
@@ -116,6 +142,10 @@ public final class NotionAdapter extends LiveServerAdapter {
     }
 
     // @find: Notion update page, tool notion__update_page, live Notion call
+    /**
+     * Write tool. PATCH new paragraphs onto the end of a page; existing content is never changed or
+     * removed. Not idempotent: repeating it adds the text twice, so it is never repeated automatically.
+     */
     private Mono<ToolResult> updatePage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = pageId(required(arguments, "id"));
         ObjectNode body = json.createObjectNode();
@@ -129,6 +159,10 @@ public final class NotionAdapter extends LiveServerAdapter {
     }
 
     // @find: Notion archive page, tool notion__archive_page, live Notion call
+    /**
+     * Destructive tool; a person always approves it first. PATCH the page as archived, which moves it
+     * to the Notion trash, from where it can be restored.
+     */
     private Mono<ToolResult> archivePage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = pageId(required(arguments, "id"));
         ObjectNode body = json.createObjectNode();
@@ -140,6 +174,7 @@ public final class NotionAdapter extends LiveServerAdapter {
         });
     }
 
+    /** Maps a Notion page to the plain shape the tools return: id, title, address and last edit time. */
     private ObjectNode page(JsonNode page) {
         ObjectNode item = json.createObjectNode();
         item.put("id", page.path("id").asText());
@@ -150,6 +185,7 @@ public final class NotionAdapter extends LiveServerAdapter {
     }
 
     /* The title lives in whichever property has type "title"; its name varies by database. */
+    /** The page title taken from whichever property has the title type. */
     private static String title(JsonNode page) {
         StringBuilder title = new StringBuilder();
         page.path("properties").forEach(property -> {
@@ -160,6 +196,7 @@ public final class NotionAdapter extends LiveServerAdapter {
         return title.isEmpty() ? "Untitled" : title.toString();
     }
 
+    /** Flattens supported blocks into text lines, one per block, with a dash before list and to-do items. */
     private static String text(JsonNode blocks) {
         List<String> lines = new ArrayList<>();
         blocks.forEach(block -> {
@@ -175,6 +212,10 @@ public final class NotionAdapter extends LiveServerAdapter {
         return String.join("\n", lines);
     }
 
+    /**
+     * Builds paragraph blocks from text, one per blank-line separated block, each cut into pieces of at
+     * most 2000 characters. At most 100 blocks are produced, as Notion allows; any text beyond that is dropped.
+     */
     private ArrayNode paragraphs(String content) {
         ArrayNode children = json.createArrayNode();
         for (String paragraph : content.split("\\n\\s*\\n")) {
@@ -191,12 +232,17 @@ public final class NotionAdapter extends LiveServerAdapter {
         return children;
     }
 
+    /** Wraps text in the rich text structure Notion expects. */
     private ArrayNode richText(String content) {
         ArrayNode parts = json.createArrayNode();
         parts.addObject().put("type", "text").putObject("text").put("content", content);
         return parts;
     }
 
+    /**
+     * Extracts a page id from an id or a page address, with or without dashes, and returns it in the
+     * dashed lower case form. Refuses text that holds no id, before any call is made.
+     */
     private static String pageId(String raw) {
         Matcher match = PAGE_ID.matcher(raw);
         String found = null;

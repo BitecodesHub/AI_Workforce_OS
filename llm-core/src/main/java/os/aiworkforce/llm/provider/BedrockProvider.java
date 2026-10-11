@@ -1,6 +1,6 @@
 // @find: model router, LLM, model providers, Amazon Bedrock, AWS, Converse API, InvokeModel embeddings, Titan, Cohere embed, SigV4, API key, region, tool use, retries, error classification, BedrockProvider
-// @what: Adapter for Amazon Bedrock chat (Converse) and embeddings (InvokeModel), signed or bearer-authenticated.
-// @flow: Uses AwsSigV4 and BedrockCredentials; called by ModelRouter and knowledge-service embeddings.
+// @what: Adapter for Amazon Bedrock chat (Converse API, regional fallback, non-streaming) and embeddings (InvokeModel for Titan and Cohere), authenticated by SigV4 signature, API key or ambient AWS credentials, with detailed failure classification.
+// @flow: Spring ChatProvider of kind BEDROCK; ModelRouter calls complete/stream/healthCheck and knowledge-service calls embed; credentials resolved from stored JSON, environment or AwsDefaultCredentials, requests signed by BedrockCredentials and AwsSigV4 and sent by WebClient; errors classified by classify() into ProviderFailure for the router.
 package os.aiworkforce.llm.provider;
 
 import java.net.URI;
@@ -72,6 +72,11 @@ import os.aiworkforce.llm.spi.ChatProvider;
  * inference profile" are a model this account cannot use, so the router moves on to the next
  * candidate; an expired or unrecognised token is a refused key. The exception's message is this
  * adapter's own plain sentence; what AWS said is kept, truncated, only for the trace.
+ *
+ * <p>Scope notes: chat tries every region of a region-less credential in order, while embeddings use
+ * only the first region. Streaming is emulated, not real ({@link #supportsStreaming()} is false).
+ * Used by the model router, by knowledge-service embeddings and by the model listing code through
+ * {@link #ambientCredentials()}.
  */
 @Component
 public class BedrockProvider implements ChatProvider {
@@ -114,11 +119,19 @@ public class BedrockProvider implements ChatProvider {
      */
     private final AwsDefaultCredentials ambient;
 
+    /**
+     * Production constructor used by Spring: reads the real process environment and the system UTC clock,
+     * then delegates so that the optional ambient AWS credential chain is created when enabled.
+     */
     @Autowired
     public BedrockProvider(WebClient.Builder webClientBuilder, ObjectMapper json) {
         this(webClientBuilder, json, System.getenv(), Clock.systemUTC());
     }
 
+    /**
+     * Test-friendly constructor with an injectable environment and clock. Creates the ambient credential
+     * source only when {@code AIWOS_BEDROCK_USE_DEFAULT_CREDENTIALS} is enabled in that environment.
+     */
     BedrockProvider(WebClient.Builder webClientBuilder, ObjectMapper json, Map<String, String> environment, Clock clock) {
         this(
                 webClientBuilder,
@@ -128,6 +141,9 @@ public class BedrockProvider implements ChatProvider {
                 AwsDefaultCredentials.enabled(environment) ? AwsDefaultCredentials.fromEnvironment(environment, clock) : null);
     }
 
+    /**
+     * Full constructor that also takes the ambient credential source, which tests may replace or leave null.
+     */
     BedrockProvider(
             WebClient.Builder webClientBuilder,
             ObjectMapper json,
@@ -168,16 +184,27 @@ public class BedrockProvider implements ChatProvider {
     }
 
     @Override
+    /**
+     * Identifies this adapter to the provider registry, which selects it for provider rows of kind
+     * {@code BEDROCK}.
+     */
     public ProviderDescriptor.Kind kind() {
         return ProviderDescriptor.Kind.BEDROCK;
     }
 
     @Override
+    /**
+     * Bedrock Converse takes inline images as {@code image} blocks with raw bytes.
+     */
     public boolean sendsImages() {
         return true;
     }
 
     @Override
+    /**
+     * Reports false: ConverseStream uses AWS binary event framing, which is not implemented, so the router
+     * should treat this provider as non-streaming. {@link #stream} nevertheless works by wrapping one call.
+     */
     public boolean supportsStreaming() {
         return false;
     }
@@ -186,6 +213,15 @@ public class BedrockProvider implements ChatProvider {
 
     // @find: call Bedrock chat, Converse
     @Override
+    /**
+     * Sends one chat request through the Converse API.
+     *
+     * <p>Flow: called by the model router; resolves the credential (stored JSON, environment, or ambient
+     * chain), builds the Converse body once, then calls {@link #attempt} for the first region. The body is
+     * signed per call by {@link BedrockCredentials}. Failures are classified by {@link #translate};
+     * credential problems fail without any network call. Retries and failover between models belong to
+     * the router; only the regional walk below happens here.
+     */
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         BedrockCredentials credentials;
@@ -210,6 +246,9 @@ public class BedrockProvider implements ChatProvider {
      * One region, then the next only for failures that are about that region. A credential with a
      * region has exactly one; this walk is for the older credential shape that named none.
      */
+    // Calls one region and, on a regional failure (region unavailable, overloaded, model not found, server
+    // error), recurses into the next region while any remain. Other failures end the walk. Each failure is
+    // logged and recorded in {@code failures}.
     private Mono<ChatResponse> attempt(
             ProviderDescriptor provider,
             ModelSpec model,
@@ -243,6 +282,10 @@ public class BedrockProvider implements ChatProvider {
 
     // @find: stream Bedrock answer
     @Override
+    /**
+     * Emulates streaming: performs one {@link #complete} call and emits the whole answer as a text chunk,
+     * an optional tool-call chunk and a terminal chunk. Failure behaviour is that of {@link #complete}.
+     */
     public Flux<ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         // ConverseStream answers in AWS's binary event-stream framing, which gives the router
@@ -263,6 +306,11 @@ public class BedrockProvider implements ChatProvider {
 
     // @find: check Bedrock credentials work
     @Override
+    /**
+     * Checks the credential with a signed {@code GET /foundation-models} on the control endpoint of the
+     * first region, with a ten second deadline. Free of charge and never failing: only 401 and 403 and
+     * network errors report {@code false}; a missing credential reports {@code false} without any call.
+     */
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         BedrockCredentials credentials;
         try {
@@ -287,7 +335,16 @@ public class BedrockProvider implements ChatProvider {
                         && response.getStatusCode().value() != 403));
     }
 
-    /** The Converse request body. Package-private so the mapping is tested without a network. */
+    /**
+     * The Converse request body. Package-private so the mapping is tested without a network.
+     *
+     * <p>Maps the neutral conversation to alternating user and assistant turns (merging consecutive
+     * same-role turns and adding an opening user turn when needed), images and tool use to Converse
+     * blocks, and tool names through {@code names}. When the request offers no tools, earlier tool
+     * calls and results are rewritten as plain text, because Converse refuses tool blocks without a
+     * tool configuration. Output tokens are capped at the model limit with a default of 4096, and at
+     * most four stop sequences are sent.
+     */
     ObjectNode converseBody(ModelSpec model, ChatRequest request, ToolNameMap names) {
         ObjectNode body = json.createObjectNode();
         boolean tools = request.usesTools() && model.supportsTools();
@@ -403,8 +460,17 @@ public class BedrockProvider implements ChatProvider {
         return body;
     }
 
+    // One role-tagged message under construction, so that consecutive same-role turns can be merged.
     private record Turn(String role, ArrayNode blocks) {}
 
+    /**
+     * Converts a Converse response into a {@link ChatResponse}. Package-private for tests.
+     *
+     * <p>Text and {@code toolUse} blocks are collected; reasoning content is deliberately ignored. A guardrail
+     * or content filter stop raises {@code CONTENT_FILTERED}; a response without a message raises
+     * {@code MALFORMED_RESPONSE}. Prompt tokens include cache reads and writes. The region that answered
+     * is returned in the response metadata.
+     */
     ChatResponse parse(
             ProviderDescriptor provider,
             ModelSpec model,
@@ -472,6 +538,7 @@ public class BedrockProvider implements ChatProvider {
                 Map.of("region", region));
     }
 
+    // Maps Converse stop reasons to {@link FinishReason}; the presence of tool calls always wins.
     static FinishReason mapStopReason(String raw, boolean hasToolCalls) {
         if (hasToolCalls) {
             return FinishReason.TOOL_CALLS;
@@ -493,6 +560,10 @@ public class BedrockProvider implements ChatProvider {
 
     // @find: Bedrock embeddings, knowledge base embeddings
     @Override
+    /**
+     * Embeds texts as passages, the default purpose for knowledge base ingestion; delegates to the
+     * overload that takes a purpose.
+     */
     public Mono<List<float[]>> embed(
             ProviderDescriptor provider, ModelSpec model, List<String> inputs, String credential) {
         return embed(provider, model, inputs, credential, EmbeddingPurpose.PASSAGE);
@@ -547,6 +618,7 @@ public class BedrockProvider implements ChatProvider {
         return call.onErrorMap(error -> translate(provider, model, error));
     }
 
+    // Titan request: one text, normalised output for v2. A blank text is replaced by a space.
     ObjectNode titanBody(String text, boolean v2) {
         ObjectNode body = json.createObjectNode();
         body.put("inputText", text == null || text.isBlank() ? " " : text);
@@ -556,6 +628,8 @@ public class BedrockProvider implements ChatProvider {
         return body;
     }
 
+    // Cohere request: a batch of texts, search_query or search_document by purpose, server-side truncation,
+    // client-side cut to the v3 character limit, and explicit float output for v4.
     ObjectNode cohereBody(List<String> texts, EmbeddingPurpose purpose, boolean v3) {
         ObjectNode body = json.createObjectNode();
         ArrayNode list = body.putArray("texts");
@@ -571,6 +645,7 @@ public class BedrockProvider implements ChatProvider {
         return body;
     }
 
+    // Reads one Titan embedding or raises {@code MALFORMED_RESPONSE}.
     private float[] titanVector(ProviderDescriptor provider, ModelSpec model, JsonNode node) {
         JsonNode vector = node.path("embedding");
         if (!vector.isArray() || vector.isEmpty()) {
@@ -579,6 +654,7 @@ public class BedrockProvider implements ChatProvider {
         return floats(vector);
     }
 
+    // Reads a Cohere batch, accepting both response shapes, and checks the count against the batch size.
     private List<float[]> cohereVectors(ProviderDescriptor provider, ModelSpec model, JsonNode node, int expected) {
         JsonNode embeddings = node.path("embeddings");
         // v3 answers {"embeddings": [[...]]}; with embedding_types, {"embeddings": {"float": [[...]]}}.
@@ -591,6 +667,7 @@ public class BedrockProvider implements ChatProvider {
         return out;
     }
 
+    // Copies a JSON number array into a float array.
     private static float[] floats(JsonNode vector) {
         float[] out = new float[vector.size()];
         for (int i = 0; i < out.length; i++) {
@@ -599,6 +676,7 @@ public class BedrockProvider implements ChatProvider {
         return out;
     }
 
+    // Builds a {@code MALFORMED_RESPONSE} failure for a 200 answer that could not be used.
     private static ProviderException malformed(ProviderDescriptor provider, ModelSpec model, String message) {
         return new ProviderException(
                 ProviderFailure.MALFORMED_RESPONSE, provider.id(), model.modelId(), message, 200, null, null, null);
@@ -606,6 +684,13 @@ public class BedrockProvider implements ChatProvider {
 
     // ---- Transport ----------------------------------------------------------------------------
 
+    /**
+     * Signs and sends one POST, returning the JSON answer.
+     *
+     * <p>The signature is computed lazily at subscription time, over the exact bytes sent and with the
+     * current clock, so a resubscription is signed afresh. The credential is re-targeted to the region
+     * being called. Errors are returned raw and classified by the callers.
+     */
     private Mono<JsonNode> post(URI uri, byte[] body, BedrockCredentials credentials, String region) {
         BedrockCredentials inRegion = credentials.region() != null && credentials.region().equals(region)
                 ? credentials
@@ -629,6 +714,7 @@ public class BedrockProvider implements ChatProvider {
         });
     }
 
+    // Serialises a body to bytes; the signature must cover exactly these bytes.
     private byte[] bytes(JsonNode node) {
         try {
             return json.writeValueAsBytes(node);
@@ -637,6 +723,11 @@ public class BedrockProvider implements ChatProvider {
         }
     }
 
+    /**
+     * Resolves the credential for one call, in order: the stored JSON credential; when none is stored,
+     * the ambient AWS chain, then the environment. Throws {@code AUTHENTICATION_FAILED} (or
+     * {@code NETWORK_ERROR} when the ambient chain failed transiently) so that the caller fails fast.
+     */
     private BedrockCredentials credentials(String credential) {
         if (credential == null || credential.isBlank()) {
             if (ambient != null) {
@@ -664,6 +755,8 @@ public class BedrockProvider implements ChatProvider {
         }
     }
 
+    // The regions to try: the credential's own region if it has one, otherwise the provider row's list,
+    // otherwise the default region.
     private static List<String> regions(ProviderDescriptor provider, BedrockCredentials credentials) {
         if (credentials.region() != null) {
             return List.of(credentials.region());
@@ -677,15 +770,18 @@ public class BedrockProvider implements ChatProvider {
         return base.isEmpty() ? BedrockCredentials.runtimeEndpoint(region) : stripSlash(base);
     }
 
+    // As {@link #runtimeBase}, for the control plane (model listing).
     private static String controlBase(ProviderDescriptor provider, String region) {
         String base = provider.baseUrl() == null ? "" : provider.baseUrl().strip();
         return base.isEmpty() ? BedrockCredentials.controlEndpoint(region) : stripSlash(base);
     }
 
+    // Removes one trailing slash so paths can be appended.
     private static String stripSlash(String value) {
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 
+    // Maps an image media type to a Converse format name, or null when Bedrock cannot take it.
     private static String imageFormat(String mediaType) {
         if (mediaType == null) {
             return null;
@@ -699,6 +795,7 @@ public class BedrockProvider implements ChatProvider {
         };
     }
 
+    // Parses text as a JSON object, returning an empty object when it is blank, not an object, or unreadable.
     private JsonNode objectOf(String jsonText) {
         try {
             JsonNode node = jsonText == null || jsonText.isBlank() ? null : json.readTree(jsonText);
@@ -710,6 +807,14 @@ public class BedrockProvider implements ChatProvider {
 
     // ---- Failures -----------------------------------------------------------------------------
 
+    /**
+     * Turns anything thrown into a classified {@link ProviderException}, which the router uses to retry,
+     * fail over or stop.
+     *
+     * <p>Timeouts and connection errors are distinguished; HTTP errors are classified by {@link #classify}
+     * from the AWS error type, status and message. The exception message is this adapter's own sentence;
+     * the raw AWS body is truncated and kept only for traces. Retry-After is read as whole seconds.
+     */
     ProviderException translate(ProviderDescriptor provider, ModelSpec model, Throwable error) {
         if (error instanceof ProviderException already) {
             return already;
@@ -822,6 +927,8 @@ public class BedrockProvider implements ChatProvider {
         };
     }
 
+    // Classifies an access-denied message: expired or refused credentials, a model not enabled for the account
+    // (the router moves on), or missing IAM permission.
     private static Classified accessDenied(String lower) {
         if (lower.contains("expired")) {
             return new Classified(ProviderFailure.AUTHENTICATION_FAILED, KEY_EXPIRED);
@@ -839,6 +946,8 @@ public class BedrockProvider implements ChatProvider {
         return new Classified(ProviderFailure.AUTHORISATION_FAILED, IAM_DENIED);
     }
 
+    // Classifies a validation message: expired token, inference profile needed, unknown model, no tool support,
+    // answer length too large, context too long, or a generally malformed request.
     private static Classified validation(String lower) {
         if (lower.contains("security token") && lower.contains("expired")) {
             return new Classified(ProviderFailure.AUTHENTICATION_FAILED, KEY_EXPIRED);
@@ -888,6 +997,7 @@ public class BedrockProvider implements ChatProvider {
         return raw.strip();
     }
 
+    // Reads {@code message} (or {@code Message}) from an AWS error body; falls back to the raw body.
     static String errorMessage(String body) {
         if (body == null || body.isBlank()) {
             return "";
@@ -901,6 +1011,7 @@ public class BedrockProvider implements ChatProvider {
         }
     }
 
+    // Caps the raw body kept in a failure, because bodies can quote the prompt.
     private static String truncate(String value) {
         if (value == null) {
             return null;
@@ -920,6 +1031,7 @@ public class BedrockProvider implements ChatProvider {
         private final Map<String, String> toPlatform = new HashMap<>();
         private final Map<String, String> toWire = new HashMap<>();
 
+        // Returns the Bedrock-safe name for a platform tool name and remembers the mapping.
         String wire(String name) {
             String platform = name == null ? "" : name;
             return toWire.computeIfAbsent(platform, key -> {
@@ -938,11 +1050,13 @@ public class BedrockProvider implements ChatProvider {
             });
         }
 
+        // Returns the platform name for a name Bedrock sent back, falling back to the generic conversion.
         String platform(String wire) {
             String known = toPlatform.get(wire);
             return known != null ? known : ToolNames.fromWire(wire);
         }
 
+        // SHA-256 digest used for the shortening suffix; a fixed value if the algorithm is unavailable.
         private static byte[] sha(String value) {
             try {
                 return java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));

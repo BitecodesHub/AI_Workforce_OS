@@ -21,11 +21,19 @@ import { useToast } from '../../lib/toast'
  *    provider to approve. The secret values are never shown again once saved.
  */
 
+/** Shared vertical spacing style for the dialog bodies. */
 const STACK = { gap: 'var(--space-5)' } as const
 
 /**
  * Where a refused save is shown: under the fields it names, and for the whole dialog only what
  * belongs to none of them. Focus goes to the first field with a problem.
+ */
+/**
+ * Hook that tracks where a refused save is shown: inline per field (inline) or for the whole dialog (error).
+ * local() records problems found before sending and focuses the first invalid field; failed() maps an
+ * ApiError onto the fields it names, via placeFieldProblems, and leaves only unplaced failures for the
+ * dialog; edited(key) clears one field's problem when the person retypes it; fail() and clear() set or reset
+ * the dialog-level state. Used by TokenDialog and SignInDialog.
  */
 function useFieldProblems(formRef: React.RefObject<HTMLFormElement | null>) {
   const [inline, setInline] = useState<Record<string, string>>({})
@@ -75,6 +83,11 @@ function useFieldProblems(formRef: React.RefObject<HTMLFormElement | null>) {
 }
 
 // @find: ConnectDialog, connect dialog, connect connector, add connector, connect account, token
+/**
+ * Dialog to connect a connector to a live account. Chooses the flow from the catalogue entry: usesSignIn
+ * gives SignInDialog (an OAuth provider), otherwise TokenDialog (a token, address or several credential
+ * fields). Props: open, the integration and onClose. Rendered by the Connectors page.
+ */
 export function ConnectDialog({
   open,
   integration,
@@ -91,6 +104,7 @@ export function ConnectDialog({
   )
 }
 
+/** Link to the provider's own instructions, opened in a new tab; renders nothing without an address. */
 function DocsLink({ url, name }: { url: string | null; name: string }) {
   if (!url) return null
   return (
@@ -103,6 +117,7 @@ function DocsLink({ url, name }: { url: string | null; name: string }) {
   )
 }
 
+/** Numbered list of setup steps under a heading; renders nothing for an empty list. */
 function OrderedSteps({ heading, steps }: { heading: string; steps: string[] }) {
   if (steps.length === 0) return null
   return (
@@ -122,6 +137,16 @@ function OrderedSteps({ heading, steps }: { heading: string; steps: string[] }) 
 
 /* ---- Token, address ----------------------------------------------------------------------------- */
 
+/**
+ * Connect or replace a connector that uses a token, a web address or several credential fields.
+ * Flow: builds one field per declared credential field, or a single box named by the token label; secret
+ * fields use PasswordInput. On submit it cleans pasted secrets (cleanKey), checks web addresses
+ * (webAddressProblem) and calls useConnectIntegration with either `fields` (two or more fields) or a
+ * single `token`. The server validates the credential with the provider before saving. Success shows a
+ * toast naming the account and closes; failures are placed on the fields they name or in the dialog.
+ * While replacing an existing live credential the wording changes. Inline format hints come from
+ * keyMismatch and accountSidProblem. The dialog cannot be dismissed while saving.
+ */
 function TokenDialog({ open, integration, onClose }: { open: boolean; integration: Integration; onClose: () => void }) {
   const toast = useToast()
   const connect = useConnectIntegration()
@@ -250,6 +275,16 @@ function TokenDialog({ open, integration, onClose }: { open: boolean; integratio
 
 /* ---- Sign in through a provider ---------------------------------------------------------------- */
 
+/**
+ * Connect a connector that signs in through an OAuth provider, in two steps inside one dialog.
+ * Step 1 (app): register the app once per workspace and provider. Reads useOAuthApp (client ID, whether a
+ * secret is stored, provider settings and redirect address with a copy button) and saves with
+ * useSaveOAuthApp; a blank secret keeps the stored one. Step 2 (connect): useStartOAuth returns the
+ * provider's authorize address, which must be https, and goToProvider sends the browser there; the user
+ * returns through the callback. A configured app opens directly on step 2, with a link back to the app
+ * settings. Shows the requested scopes and a warning when permissions are missing. Reconnecting changes
+ * the wording. Buttons are disabled while saving or redirecting.
+ */
 function SignInDialog({
   open,
   integration,

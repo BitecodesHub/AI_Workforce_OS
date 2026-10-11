@@ -118,6 +118,15 @@ function RequestInFull({ item, startOpen }: { item: ApprovalItem; startOpen: boo
   )
 }
 
+/**
+ * Body of the bulk confirmation, mounted by BulkDialog for one chosen group and mode.
+ * State: the set of ticked request ids (all of them for a rejection; for an approval the destructive ones
+ * start unticked), the optional rejection note (rejections only, capped at NOTE_MAX) and a flag for the
+ * "tick at least one" message. Confirming with nothing ticked shows that message and sends nothing;
+ * otherwise it calls onConfirm with the ticked ids and the trimmed note. Each request is listed with a
+ * checkbox and a RequestInFull collapsible. Loading and server errors come from the parent through the
+ * ConfirmDialog's loading and error props.
+ */
 function BulkDialogBody({
   target,
   onClose,

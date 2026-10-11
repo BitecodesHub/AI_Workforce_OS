@@ -56,6 +56,7 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 @Service
 public class ScheduleService {
 
+    /** Logger for schedule lifecycle events. */
     private static final Logger log = LoggerFactory.getLogger(ScheduleService.class);
 
     /** Shown on every schedule paused because the person it runs as left the workspace. */
@@ -64,6 +65,7 @@ public class ScheduleService {
     /** Shown on every schedule Stop everything paused, so nobody mistakes it for a failure. */
     public static final String STOPPED_EVERYTHING_REASON = "Paused when all agent work was stopped.";
 
+    /** Resource type recorded on every audit entry this service writes. */
     private static final String RESOURCE = "schedule";
 
     private final Schedules schedules;
@@ -73,6 +75,7 @@ public class ScheduleService {
     private final ScheduleZoneLookup zones;
     private final AuditClient audit;
 
+    /** Builds the service; used by Spring. Collaborators: schedule and goal repositories, agents, the goal service that starts work, the zone lookup and the audit client. */
     public ScheduleService(
             Schedules schedules,
             ScheduleGoals scheduleGoals,
@@ -88,9 +91,18 @@ public class ScheduleService {
         this.audit = audit;
     }
 
+    /** A phrase as read for a preview: kind, cron or single run time, description, the zone used and the next few run times. */
     public record PreviewResult(
             String kind, String cron, Instant runAt, String description, String timezone, List<Instant> nextRuns) {}
 
+    /**
+     * Reads a schedule phrase without saving anything; called by {@code ScheduleController.preview}.
+     *
+     * <p>Uses the override zone when supplied, otherwise the workspace zone, and lists the next five runs.
+     * No writes or audit.
+     *
+     * @throws ApiException when the phrase cannot be read or the zone id is not recognised
+     */
     // @find: preview schedule, when will it run
     @Transactional(readOnly = true)
     public PreviewResult preview(UUID orgId, String text, String timezoneOverride) {
@@ -102,6 +114,7 @@ public class ScheduleService {
                 parsed.kind(), parsed.cron(), parsed.runAt(), parsed.description(), zone.getId(), nextRuns);
     }
 
+    /** The zone to read times in: a valid override when given, otherwise the workspace zone (which falls back to UTC). */
     private ZoneId resolveZone(UUID orgId, String timezoneOverride) {
         if (timezoneOverride == null || timezoneOverride.isBlank()) {
             return zones.zoneFor(orgId);
@@ -113,6 +126,7 @@ public class ScheduleService {
         }
     }
 
+    /** Every schedule in a workspace, by name. */
     // @find: list schedules
     @Transactional(readOnly = true)
     public List<Schedule> list(UUID orgId) {
@@ -137,6 +151,13 @@ public class ScheduleService {
      */
     public record RunCounts(long total, long succeeded, long failed, long cancelled, long active) {}
 
+    /**
+     * Counts the goals a schedule fired by outcome, using one grouped query.
+     *
+     * <p>Anything other than completed, failed or cancelled counts as active.
+     *
+     * @throws ApiException not found when the schedule is not in the workspace
+     */
     // @find: schedule run counts, how many times a schedule ran, success and failure counts
     @Transactional(readOnly = true)
     public RunCounts runCounts(UUID orgId, UUID id) {
@@ -161,6 +182,11 @@ public class ScheduleService {
         return new RunCounts(total, succeeded, failed, cancelled, total - succeeded - failed - cancelled);
     }
 
+    /**
+     * One schedule of the workspace.
+     *
+     * @throws ApiException not found when it does not exist in this workspace
+     */
     // @find: get one schedule
     @Transactional(readOnly = true)
     public Schedule get(UUID orgId, UUID id) {
@@ -189,6 +215,7 @@ public class ScheduleService {
         }
     }
 
+    /** Whether the actor is the person the schedule runs as. */
     private static boolean isOwner(Schedule schedule, Actor actor) {
         return actor != null
                 && schedule.getRequestedBy() != null
@@ -206,6 +233,15 @@ public class ScheduleService {
 
     // ---- Creating and changing ------------------------------------------------------------------
 
+    /**
+     * Creates a schedule that runs as the person in the request context (or the platform when none).
+     *
+     * <p>Flow: requires an active agent, reads the phrase in the workspace zone, saves the row with its
+     * first run time, then records a {@code schedule.create} audit entry after commit. Called by the
+     * controller and by {@link ScheduleRequests}. The instruction is audited only as a fingerprint.
+     *
+     * @throws ApiException not found or invalid when the agent is missing or paused, or the phrase cannot be read
+     */
     // @find: create schedule, new schedule
     @Transactional
     public Schedule create(UUID orgId, String name, UUID agentId, String instruction, String text) {
@@ -337,6 +373,11 @@ public class ScheduleService {
     /**
      * Hands a schedule to another person, who it then fires as. Needs {@code task:cancel}: an owner
      * cannot give their own work away to somebody, only someone who can manage everyone's can.
+     *
+     * <p>Does nothing when the person already owns it. Otherwise saves, clears any owner-left note and
+     * records a {@code schedule.owner_change} audit entry after commit.
+     *
+     * @throws ApiException permission denied without {@code task:cancel}, or invalid when no person is named
      */
     // @find: change schedule owner
     @Transactional
@@ -369,6 +410,7 @@ public class ScheduleService {
         }
     }
 
+    /** Copies a parsed phrase onto the schedule and sets its next run time; the caller saves. */
     private void applyParsed(Schedule schedule, ParsedSchedule parsed, ZoneId zone, Instant now) {
         schedule.setKind(parsed.kind());
         schedule.setCron(parsed.cron());
@@ -378,6 +420,7 @@ public class ScheduleService {
         schedule.setNextRunAt(nextRunAtOf(parsed, zone, now));
     }
 
+    /** The next time a parsed schedule fires after {@code now}: its single time for a one-off, otherwise the next cron match (null when there is none). */
     private static Instant nextRunAtOf(ParsedSchedule parsed, ZoneId zone, Instant now) {
         if ("once".equals(parsed.kind())) {
             return parsed.runAt();
@@ -387,6 +430,7 @@ public class ScheduleService {
                 .orElse(null);
     }
 
+    /** The agent in this workspace, which must exist and be active; refused otherwise. */
     private Agent requireActiveAgent(UUID orgId, UUID agentId) {
         Agent agent =
                 agents.findByIdAndOrgId(agentId, orgId).orElseThrow(() -> ApiException.notFound("agent", agentId));
@@ -548,6 +592,10 @@ public class ScheduleService {
         return schedule;
     }
 
+    /**
+     * Deletes a schedule. Open to its owner or anyone with {@code task:cancel}; records a
+     * {@code schedule.delete} audit entry after commit.
+     */
     // @find: delete schedule
     @Transactional
     public void delete(UUID orgId, UUID id, Actor actor) {
@@ -612,6 +660,7 @@ public class ScheduleService {
         return processed;
     }
 
+    /** Handles one due schedule: fires it as its owner unless the overlap policy says to skip, then always moves its next run forward. */
     private void processDue(Schedule schedule, Instant now) {
         boolean skipThisOccurrence = "skip".equals(schedule.getOverlapPolicy()) && lastGoalStillActive(schedule);
         if (skipThisOccurrence) {
@@ -623,6 +672,7 @@ public class ScheduleService {
         advance(schedule, now);
     }
 
+    /** Whether the most recent goal this schedule started has not yet finished. */
     private boolean lastGoalStillActive(Schedule schedule) {
         return scheduleGoals
                 .findFirstByScheduleIdOrderByCreatedAtDesc(schedule.getId())
@@ -630,6 +680,7 @@ public class ScheduleService {
                 .orElse(false);
     }
 
+    /** Moves a schedule past this occurrence: a one-off is disabled and its next run cleared, a recurring one gets its next cron time. Saves the row. */
     private void advance(Schedule schedule, Instant now) {
         if ("once".equals(schedule.getKind())) {
             schedule.setEnabled(false);
@@ -640,11 +691,13 @@ public class ScheduleService {
         schedules.save(schedule);
     }
 
+    /** Rebuilds the parsed form from the stored columns. */
     private static ParsedSchedule asParsed(Schedule schedule) {
         return new ParsedSchedule(
                 schedule.getKind(), schedule.getCron(), schedule.getRunAt(), schedule.getDescription());
     }
 
+    /** The schedule's stored zone, falling back to UTC when it cannot be read. */
     private static ZoneId zoneOf(Schedule schedule) {
         try {
             return ZoneId.of(schedule.getTimezone());
@@ -702,6 +755,7 @@ public class ScheduleService {
                 orgId, recordedAs, action, RESOURCE, scheduleId.toString(), "succeeded", frozen));
     }
 
+    /** Adds the previous and new owner to an audit detail map, using {@code none} for a missing owner. */
     private static void putOwners(Map<String, Object> detail, UUID previousOwner, UUID owner) {
         detail.put("previousOwner", previousOwner == null ? "none" : previousOwner.toString());
         detail.put("owner", owner == null ? "none" : owner.toString());
@@ -721,6 +775,7 @@ public class ScheduleService {
         }
     }
 
+    /** Parses an identifier, returning null for null or a value that is not a UUID. */
     private static UUID parseUuidOrNull(String value) {
         try {
             return value == null ? null : UUID.fromString(value);

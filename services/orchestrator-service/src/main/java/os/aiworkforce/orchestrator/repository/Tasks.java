@@ -29,6 +29,11 @@ import os.aiworkforce.orchestrator.domain.Task;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for Task rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface Tasks extends JpaRepository<Task, UUID> {
 
     // @find: list tasks of a goal

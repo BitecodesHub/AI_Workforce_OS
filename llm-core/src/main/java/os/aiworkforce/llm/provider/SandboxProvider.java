@@ -1,6 +1,6 @@
 // @find: model router, LLM, model providers, sandbox, offline model, demo mode, deterministic answers, no API key, free, keyword-only embeddings, asks a person once, SandboxProvider
-// @what: Offline model that answers the same way every time, so the platform runs with no external provider.
-// @flow: Used by ModelRouter as the fallback and by tests.
+// @what: Offline deterministic model with on-demand fault injection, sample ask-person and tool calls, and pseudo-embeddings, so the platform runs end to end with no external provider.
+// @flow: Spring ChatProvider of kind SANDBOX; ModelRouter calls complete/stream/embed/healthCheck and uses it as the offline fallback; fault markers raise ProviderException to exercise router failover; also used by tests.
 package os.aiworkforce.llm.provider;
 
 import java.nio.charset.StandardCharsets;
@@ -67,17 +67,32 @@ public class SandboxProvider implements ChatProvider {
 
     private final ObjectMapper json;
 
+    /**
+     * Creates the sandbox with the shared JSON mapper, used to build sample tool arguments and answers.
+     * It has no network dependency and needs no credential.
+     */
     public SandboxProvider(ObjectMapper json) {
         this.json = json;
     }
 
     @Override
+    /**
+     * Identifies this adapter to the provider registry, which selects it for provider rows of kind
+     * {@code SANDBOX}.
+     */
     public ProviderDescriptor.Kind kind() {
         return ProviderDescriptor.Kind.SANDBOX;
     }
 
     // @find: sandbox answer
     @Override
+    /**
+     * Produces a deterministic answer with no external call.
+     *
+     * <p>Flow: called by the model router; first raises any fault requested by a {@code [[fault:NAME]]}
+     * marker in the prompt, then builds the answer in {@link #answer}. A fixed 120 millisecond delay is
+     * applied so that interfaces see realistic latency. The credential is ignored.
+     */
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         return Mono.fromCallable(() -> {
@@ -91,6 +106,10 @@ public class SandboxProvider implements ChatProvider {
 
     // @find: sandbox streamed answer
     @Override
+    /**
+     * Streams the same deterministic answer word by word, 18 milliseconds apart, followed by any tool call
+     * and a terminal chunk. A requested fault is raised as an error signal before any chunk is emitted.
+     */
     public Flux<ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         return Mono.fromCallable(() -> {
@@ -114,6 +133,11 @@ public class SandboxProvider implements ChatProvider {
 
     // @find: sandbox embeddings, keyword only
     @Override
+    /**
+     * Returns deterministic 1536-dimension unit vectors derived from a digest of each text. The vectors
+     * carry no meaning, so similarity search over them is not useful; the knowledge pipeline is still
+     * exercised in full. Used by knowledge-service when no real embedding provider is configured.
+     */
     public Mono<List<float[]>> embed(
             ProviderDescriptor provider, ModelSpec model, List<String> inputs, String credential) {
         // Deterministic pseudo-embeddings. Nearby text does not produce nearby vectors, so
@@ -125,12 +149,24 @@ public class SandboxProvider implements ChatProvider {
 
     // @find: sandbox always healthy
     @Override
+    /**
+     * Always healthy, because nothing external is involved.
+     */
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         return Mono.just(true);
     }
 
     // ---- Answering -----------------------------------------------------------------------
 
+    /**
+     * Builds the answer for a request, seeded from a digest of the conversation.
+     *
+     * <p>Order of decisions: call the ask-person tool when an ask marker is present and no answer has been
+     * received yet; otherwise, when tools are on offer, call one of them (never the ask or memory tools)
+     * on about half of requests; otherwise return prose, or sample JSON in JSON mode. The finish reason is
+     * {@code LENGTH} when the estimated size exceeds the output limit. Metadata marks the answer as
+     * coming from the sandbox.
+     */
     private ChatResponse answer(ProviderDescriptor provider, ModelSpec model, ChatRequest request) {
         Random random = new Random(seedOf(request));
         String lastUserText = lastUserMessage(request);
@@ -189,6 +225,7 @@ public class SandboxProvider implements ChatProvider {
                 Map.of("sandbox", "true"));
     }
 
+    // A response consisting of one tool call, with no text and a {@code TOOL_CALLS} finish.
     private ChatResponse toolCallResponse(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, ToolCall call) {
         return new ChatResponse(
@@ -302,6 +339,7 @@ public class SandboxProvider implements ChatProvider {
         return text.toString().strip();
     }
 
+    // JSON-mode answer: a fixed object that names the sandbox as its source, with a placeholder message.
     private String sampleJson(String question) {
         try {
             return json.writeValueAsString(Map.of(
@@ -353,6 +391,7 @@ public class SandboxProvider implements ChatProvider {
         }
     }
 
+    // Token usage from the request's own prompt estimate and the given completion size.
     private TokenUsage usageFor(ChatRequest request, int completionTokens) {
         return TokenUsage.of(request.estimatedPromptTokens(), completionTokens);
     }
@@ -400,6 +439,7 @@ public class SandboxProvider implements ChatProvider {
 
     // ---- Determinism ---------------------------------------------------------------------
 
+    // Seed derived from every role and message text, so an identical conversation gives an identical answer.
     private long seedOf(ChatRequest request) {
         String material = request.messages().stream()
                 .map(message -> message.role() + ":" + message.content())
@@ -407,6 +447,7 @@ public class SandboxProvider implements ChatProvider {
         return digest(material);
     }
 
+    // Gaussian vector seeded from the text digest and normalised to unit length.
     private float[] pseudoEmbedding(String text) {
         Random random = new Random(digest(text));
         float[] vector = new float[1536];
@@ -424,6 +465,7 @@ public class SandboxProvider implements ChatProvider {
         return vector;
     }
 
+    // First eight bytes of a SHA-256 digest as a long; falls back to the hash code if SHA-256 is unavailable.
     private static long digest(String material) {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(material.getBytes(StandardCharsets.UTF_8));
@@ -451,8 +493,10 @@ public class SandboxProvider implements ChatProvider {
         return rest.isBlank() ? message : rest;
     }
 
+    // Marker that chat places before the actual request when it prefixes earlier turns.
     private static final String REQUEST_MARKER = "\nRequest:\n";
 
+    // The text of the most recent user message, or null when there is none.
     private static String lastUserMessage(ChatRequest request) {
         return request.messages().reversed().stream()
                 .filter(message -> message.role() == ChatMessage.Role.USER)

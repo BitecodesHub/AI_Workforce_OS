@@ -32,6 +32,7 @@ public class VoiceClipService {
     private final VoiceClips clips;
     private final ObjectMapper json;
 
+    /** Creates the service with the voice service, the clip repository and the JSON mapper used to read tool arguments. */
     public VoiceClipService(VoiceService voice, VoiceClips clips, ObjectMapper json) {
         this.voice = voice;
         this.clips = clips;
@@ -80,6 +81,7 @@ public class VoiceClipService {
         }
     }
 
+    /** Reads the {@code text} field from the tool call arguments; returns null when the arguments are absent or not valid JSON. */
     private String textFrom(String argumentsJson) {
         try {
             JsonNode node = json.readTree(argumentsJson == null ? "{}" : argumentsJson);

@@ -54,6 +54,10 @@ import { useNow } from '../lib/useNow'
 const LIVE_ACTIVITY_ROWS = 8
 
 // @find: CommandMap component, home dashboard, overview page, sandbox notice, connect your AI button, /
+/**
+ * The Command Map (route /, the first screen after signing in; no route permission, each part checks its own).
+ * Header links (Chat with chat:use, Orchestrator with run:read, Connectors with integration:read) and, with task:create, a Give an agent a task button that opens the task dialog (which opens the new run or goal itself). Sections in order: approvals waiting (approval:read), the setup banner, the routing status (which model agents really answer on; provider:read, with a Connect your AI dialog for provider:manage), the getting-started guide, and the recent runs behind QueryState (permission run:read; empty state differs for people who can create tasks). A signed-out visit to "/" shows the public home page instead (see App).
+ */
 export function CommandMap() {
   const runsQuery = useRuns()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
@@ -290,6 +294,9 @@ function WeekFigures() {
 }
 
 // @find: recent runs list on the home page
+/**
+ * The live activity list: the latest eight runs (the full list is on the Runs page) with agent, status, what started each run, start time and duration, refreshing its clock every 15 seconds. Task titles link to the goal when the person holds task:read. A link leads to all runs.
+ */
 function RecentRuns({ runs }: { runs: Run[] }) {
   const agentsQuery = useAgents()
   const agents = useAgentNames()

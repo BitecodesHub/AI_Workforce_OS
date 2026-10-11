@@ -35,15 +35,36 @@ import os.aiworkforce.platform.context.RequestContext;
 @Component
 public class JwtActorConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
+    /**
+     * Claim holding the workspace id the token was issued for. The other claim names below are the
+     * contract with the identity service that signs the tokens.
+     */
     public static final String CLAIM_ORG = "org";
+    /** Claim holding the name of the member's role. */
     public static final String CLAIM_ROLE = "role";
+    /** Claim holding the permission codes, as a list or a space-separated string. */
     public static final String CLAIM_PERMISSIONS = "perms";
+    /** Claim holding the role's permission version at issue time. */
     public static final String CLAIM_PERMISSION_VERSION = "pv";
+    /** Claim naming the kind of actor: user, api key, agent or system. */
     public static final String CLAIM_KIND = "kind";
+    /** Claim naming the person an agent or key acts for. */
     public static final String CLAIM_ON_BEHALF_OF = "obo";
+    /** Claim holding the sign-in session id. */
     public static final String CLAIM_SESSION = "sid";
+    /** Claim holding the agent id when the actor is an agent. */
     public static final String CLAIM_AGENT = "agent";
 
+    /**
+     * Builds the {@link Actor} from the verified token's claims, publishes it with
+     * {@code RequestContext.setActor} and puts the actor and workspace ids in the logging context.
+     * Returns the Spring Security authentication, whose authorities are the permissions prefixed
+     * {@code PERM_}.
+     *
+     * <p>Called by Spring Security once per request, after the signature and expiry have been checked.
+     * No database or network call is made. A missing or malformed claim yields a safe default rather
+     * than an error.
+     */
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Set<String> permissions = readPermissions(jwt);
@@ -68,6 +89,10 @@ public class JwtActorConverter implements Converter<Jwt, AbstractAuthenticationT
         return new JwtAuthenticationToken(jwt, toAuthorities(permissions), actor.id());
     }
 
+    /**
+     * Maps the {@code kind} claim to an actor kind; a missing or unknown value is treated as an
+     * ordinary user, the least privileged reading.
+     */
     private static Actor.Kind readKind(Jwt jwt) {
         String kind = jwt.getClaimAsString(CLAIM_KIND);
         if (kind == null) {
@@ -81,6 +106,10 @@ public class JwtActorConverter implements Converter<Jwt, AbstractAuthenticationT
         };
     }
 
+    /**
+     * Reads the permission codes from the token, accepting either a list or one space-separated
+     * string. No claim gives an empty set, which grants nothing.
+     */
     private static Set<String> readPermissions(Jwt jwt) {
         Object raw = jwt.getClaim(CLAIM_PERMISSIONS);
         if (raw instanceof Collection<?> collection) {
@@ -93,6 +122,7 @@ public class JwtActorConverter implements Converter<Jwt, AbstractAuthenticationT
         return Set.of();
     }
 
+    /** Reads the permission version, or zero when the claim is missing or not a number. */
     private static long readVersion(Jwt jwt) {
         Object raw = jwt.getClaim(CLAIM_PERMISSION_VERSION);
         return raw instanceof Number number ? number.longValue() : 0L;

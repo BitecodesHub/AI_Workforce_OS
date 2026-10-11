@@ -30,9 +30,11 @@ public class Credential extends OrgScopedEntity {
     @Column(nullable = false)
     private String kind = "api_key";
 
+    /** The sealed value: an envelope produced by the encryption service, never plaintext. */
     @Column(name = "encrypted_value", nullable = false, columnDefinition = "text")
     private String encryptedValue;
 
+    /** Truncated digest of the plaintext, used to show that a credential is set and to tell two apart. */
     @Column(nullable = false)
     private String fingerprint;
 
@@ -40,23 +42,32 @@ public class Credential extends OrgScopedEntity {
     @Column(name = "key_id", nullable = false)
     private String keyId;
 
+    /** When the credential stops being valid, or {@code null} when it does not expire. */
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    /** When the credential was last read for a call. Updated by {@code Credentials.recordUse}. */
     @Column(name = "last_used_at")
     private Instant lastUsedAt;
 
+    /** When the stored value was last replaced; set automatically by {@link #setEncryptedValue}. */
     @Column(name = "rotated_at")
     private Instant rotatedAt;
 
+    /** Whether an expiry time is set and has passed. A credential with no expiry never expires. */
     public boolean hasExpired() {
         return expiresAt != null && expiresAt.isBefore(Instant.now());
     }
 
+    /**
+     * Stamps the in-memory last-used time. Persisting it through a normal save is subject to the
+     * version check; concurrent readers use {@code Credentials.recordUse} instead.
+     */
     public void markUsed() {
         this.lastUsedAt = Instant.now();
     }
 
+    /** Returns the reference. The accessors below for ref, kind, fingerprint, key id and expiry are plain. */
     public String getRef() {
         return ref;
     }
@@ -77,6 +88,7 @@ public class Credential extends OrgScopedEntity {
         return encryptedValue;
     }
 
+    /** Replaces the sealed value and records the replacement time as the rotation time. */
     public void setEncryptedValue(String encryptedValue) {
         this.encryptedValue = encryptedValue;
         this.rotatedAt = Instant.now();
@@ -106,6 +118,10 @@ public class Credential extends OrgScopedEntity {
         this.expiresAt = expiresAt;
     }
 
+    /**
+     * Returns the last-used time. Read-only: it changes only through {@code markUsed} or {@code
+     * Credentials.recordUse}.
+     */
     public Instant getLastUsedAt() {
         return lastUsedAt;
     }

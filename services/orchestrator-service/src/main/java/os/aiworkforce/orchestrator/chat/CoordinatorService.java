@@ -1,6 +1,6 @@
 // @find: coordinator, chat coordinator, handle message, send message, route message to agent, @mention, schedule from chat, answer from documents, queue, reroute, stop goal, retry goal, CoordinatorService, goal creation from chat
 // @what: Reads one chat message and decides what the workforce does: route to agents, set up a schedule, answer from documents, queue or ask for a choice.
-// @flow: Called by ChatController and ChatQueueRunner; uses MentionParser, IntentDetector, ModelRouterPlanner, RuleRouter, KnowledgeClient and the goal engine.
+// @flow: Called by ChatController (send, reroute, stop, retry, answer from documents) and ChatQueueRunner (waiting messages); decides with MentionParser, IntentDetector, ModelRouterPlanner, RuleRouter and KnowledgeClient, then creates the goal through GoalService and records replies through ChatAppender.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;
@@ -70,16 +70,29 @@ import os.aiworkforce.platform.rbac.Permission;
  * so that "now send it" has something to send, and the passages from the workspace's documents
  * that bear on it - searched for every request that is work or names an agent, and recorded on the
  * routing message so the answer can show them as its sources.
+ *
+ * <p>Called by {@code ChatController} for every chat action (send, reroute, stop, retry, answer from
+ * documents) and by {@code ChatQueueRunner} for messages that waited. It writes through
+ * {@link ChatAppender}, which serialises appends on the conversation lock, and creates goals only
+ * through {@link GoalService}. Callers must hold an authenticated {@link RequestContext} actor,
+ * except where a method says a queued message is started as its stored sender.
  */
 @Service
 public class CoordinatorService {
 
+    /** Logger for decisions that fall back to an error reply and for queue anomalies. */
     private static final Logger log = LoggerFactory.getLogger(CoordinatorService.class);
 
+    /**
+     * Reply when a question for the documents cannot be searched and the sender may not fall back to an agent.
+     */
     static final String DOCUMENTS_UNAVAILABLE = "Document search is unavailable right now.";
+    /** Routing reason shown when two agents score equally and the person must choose. */
     static final String TIE_MESSAGE = "Two agents fit this equally well. Choose one.";
+    /** Routing reason shown when no specialist matches and General Employee is paused. */
     static final String NO_MATCH_MESSAGE =
             "No specialist matched this and General Employee is paused. Choose an agent, or mention one with @.";
+    /** Routing reason shown when the workspace has no active agents at all. */
     static final String NO_AGENTS_MESSAGE =
             "This workspace has no active agents. Add one in Agents, or resume General Employee.";
 
@@ -100,8 +113,11 @@ public class CoordinatorService {
      */
     static final String RESTRICTED_NOTE =
             " Some are in restricted documents, which only people who manage knowledge can read; search them in Knowledge.";
+    /** The most colleagues listed to General Employee in {@link #colleagueBlock}. */
     private static final int MAX_COLLEAGUES = 6;
+    /** The longest summary of one colleague in {@link #colleagueBlock}. */
     private static final int MAX_COLLEAGUE_SUMMARY_CHARS = 120;
+    /** Matches the first sentence of an agent prompt, used as its one-line summary. */
     private static final Pattern FIRST_SENTENCE = Pattern.compile("^(.+?[.!?])(?=\\s|$)");
 
     private final Conversations conversations;
@@ -143,6 +159,7 @@ public class CoordinatorService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.schedule.ScheduleRequests scheduleRequests;
 
+    /** Test hook: supplies the schedule saver when the service is built by hand. */
     void useScheduleRequests(os.aiworkforce.orchestrator.schedule.ScheduleRequests scheduleRequests) {
         this.scheduleRequests = scheduleRequests;
     }
@@ -151,10 +168,12 @@ public class CoordinatorService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SkillLookup skillLookup;
 
+    /** Test hook: supplies the skill lookup when the service is built by hand. */
     void useSkills(SkillLookup skillLookup) {
         this.skillLookup = skillLookup;
     }
 
+    /** Test hook: supplies the queue collaborators when the service is built by hand. */
     void useQueue(
             ChatQueue chatQueue,
             os.aiworkforce.orchestrator.repository.ChatQueuedMessages queued,
@@ -173,12 +192,18 @@ public class CoordinatorService {
         return conversation;
     }
 
+    /**
+     * Throws "not found" when the current actor may not read the conversation; skipped when no access checker is wired (tests).
+     */
     private void requireReadable(Conversation conversation) {
         if (access != null && !access.canRead(conversation, RequestContext.requireActor())) {
             throw ApiException.notFound("conversation", conversation.getId());
         }
     }
 
+    /**
+     * Wires the collaborators and builds the {@link TransactionTemplate} used for the separate transactions of each phase. Optional collaborators are field-injected above.
+     */
     public CoordinatorService(
             Conversations conversations,
             ChatMessages messages,
@@ -229,18 +254,22 @@ public class CoordinatorService {
     record Background(
             ThreadContext.History history, List<Map<String, Object>> passages, boolean uncovered, String contextBlock) {
 
+        /** A background with no attachment block. */
         Background(ThreadContext.History history, List<Map<String, Object>> passages, boolean uncovered) {
             this(history, passages, uncovered, "");
         }
 
+        /** A background holding only the conversation history, with no passages and no coverage note. */
         static Background of(ThreadContext.History history) {
             return new Background(history, List.of(), false);
         }
 
+        /** A copy carrying the passages the agent is given; clears the "uncovered" flag. */
         Background withPassages(List<Map<String, Object>> used) {
             return new Background(history, List.copyOf(used), false, contextBlock);
         }
 
+        /** A copy flagged as leaning on documents that none covers; drops any passages. */
         Background withoutCoverage() {
             return new Background(history, List.of(), true, contextBlock);
         }
@@ -250,6 +279,9 @@ public class CoordinatorService {
             return new Background(history, passages, uncovered, block == null ? "" : block);
         }
 
+        /**
+         * True when there is nothing to put ahead of a request. The attachment block is not counted, as it is appended to the request itself.
+         */
         boolean isEmpty() {
             return history.isEmpty() && passages.isEmpty() && !uncovered;
         }
@@ -272,9 +304,15 @@ public class CoordinatorService {
 
     // ---- Decisions --------------------------------------------------------------------------
 
+    /**
+     * What the deciding phase concluded, to be acted on in the last phase by {@link #apply}. Holds no database state, so it can be built with no transaction open.
+     */
     private sealed interface Decision
             permits WorkDecision, ChoiceDecision, ScheduleDecision, DocumentsDecision, ErrorDecision {}
 
+    /**
+     * Route work to agents: the validated goal specification, the steps for the routing message, how they were chosen ({@code mode}) and the sources recorded on it.
+     */
     private record WorkDecision(
             GoalService.NewGoal spec,
             List<Step> steps,
@@ -286,11 +324,16 @@ public class CoordinatorService {
             List<Map<String, Object>> passages)
             implements Decision {}
 
+    /**
+     * No agent can be picked automatically (tie, no match, paused mention); the person is offered the alternatives.
+     */
     private record ChoiceDecision(String reason, List<Map<String, Object>> alternatives, String requestText)
             implements Decision {}
 
+    /** A schedule read from the message, held as message content and detail for {@link #applySchedule}. */
     private record ScheduleDecision(String content, Map<String, Object> detail) implements Decision {}
 
+    /** The passages found for a question the person can only read about, shown as a documents message. */
     private record DocumentsDecision(String content, Map<String, Object> detail) implements Decision {}
 
     /**
@@ -301,6 +344,9 @@ public class CoordinatorService {
 
     // ---- Sending a message --------------------------------------------------------------------
 
+    /**
+     * Sends a message with no files; the same as {@link #handleMessage(UUID, UUID, String, List, List, String)} with an empty attachment list.
+     */
     // @find: handle message, process chat message, route and start work
     public List<ChatMessage> handleMessage(
             UUID orgId, UUID conversationId, String text, List<UUID> explicitAgentIds, String authorizationHeader) {
@@ -332,6 +378,9 @@ public class CoordinatorService {
      */
     public record SendOutcome(List<ChatMessage> messages, os.aiworkforce.orchestrator.domain.ChatQueuedMessage queued) {}
 
+    /**
+     * Outcome of phase one of {@link #send}: exactly one of the two is set, the stored message or the queued one.
+     */
     private record Recorded(ChatMessage message, os.aiworkforce.orchestrator.domain.ChatQueuedMessage queued) {}
 
     /**
@@ -547,6 +596,9 @@ public class CoordinatorService {
         });
     }
 
+    /**
+     * Asks the queue runner to look again for a waiting message in the conversation; does nothing when no runner is wired.
+     */
     private void drainSoon(UUID orgId, UUID conversationId) {
         if (queueRunner != null) {
             queueRunner.drainSoon(orgId, conversationId);
@@ -722,15 +774,26 @@ public class CoordinatorService {
         }
     }
 
+    /** Error text when work is started in a conversation that already has some. */
     static final String BUSY_MESSAGE =
             "An answer is still being worked on in this conversation. Wait for it to finish or stop it first.";
 
+    /**
+     * Runs the body in a new transaction of its own and returns its result; a runtime exception rolls it back.
+     */
     private <T> T inTransaction(Supplier<T> body) {
         return tx.execute(status -> body.get());
     }
 
     // ---- Deciding ------------------------------------------------------------------------------
 
+    /**
+     * Phase two: decides what to do with a message, with no transaction open.
+     *
+     * <p>Order of precedence: a context that forces work (skill or repository) with no mention goes to its preferred agent; a mention goes to the named agents (a paused one produces a choice, a single mention with a timing phrase becomes a schedule); files or forced work are routed as work; otherwise {@link IntentDetector} picks schedule, documents or work. Reads agents, earlier messages and may call the model planner and the knowledge service; writes nothing.
+     *
+     * @return the decision to apply; a runtime failure is left to the caller, which turns it into an error reply
+     */
     private Decision decide(
             UUID orgId,
             UUID conversationId,
@@ -883,6 +946,9 @@ public class CoordinatorService {
         };
     }
 
+    /**
+     * Routes a request that is work: the model planner is asked first, then {@link RuleRouter}. Returns a choice when the rules cannot separate agents, a short follow-up to whoever gave the last answer, or the General Employee fallback when nothing matches. Builds the goal through {@link #buildWorkDecision}; creates nothing itself.
+     */
     private Decision decideWork(
             UUID orgId,
             List<Agent> workspaceAgents,
@@ -969,6 +1035,9 @@ public class CoordinatorService {
                 background);
     }
 
+    /**
+     * Turns a message that names a time into a schedule suggestion for one agent: a reminder naming its agent, else the first step of the planner or rule route. Falls back to {@link #decideWork} when no schedule can be read or no agent is found. Writes nothing; the schedule is saved by {@link #applySchedule}.
+     */
     private Decision decideSchedule(
             UUID orgId,
             UUID conversationId,
@@ -1087,6 +1156,9 @@ public class CoordinatorService {
                 .map(found -> scheduleDecision(agent, found.parsed(), found.phrase(), found.instruction(), zone, now));
     }
 
+    /**
+     * Builds the schedule suggestion card (text, cron or run time, next five runs, agent and instruction) for the chosen agent.
+     */
     private Decision scheduleDecision(
             Agent agent, ParsedSchedule parsed, String phrase, String instruction, ZoneId zone, Instant now) {
         Map<String, Object> detail = new LinkedHashMap<>();
@@ -1305,6 +1377,9 @@ public class CoordinatorService {
         return found.isEmpty() ? background : background.withPassages(usedPassages(found));
     }
 
+    /**
+     * Searches only the documents the person chose, as them (their header, else a token naming them). Returns the grounded passages inside the chosen sources and documents; empty when the query is blank or the search cannot run.
+     */
     private List<KnowledgeClient.Passage> chosenPassages(
             UUID orgId, String query, String authorization, MessageContext context) {
         if (query == null || query.isBlank()) {
@@ -1452,6 +1527,9 @@ public class CoordinatorService {
 
     // ---- Acting on a decision ------------------------------------------------------------------
 
+    /**
+     * Phase three dispatcher: acts on the decision in the caller's transaction and returns the messages it added.
+     */
     private List<ChatMessage> apply(UUID orgId, UUID conversationId, Decision decision) {
         return switch (decision) {
             case WorkDecision w -> applyWork(orgId, conversationId, w);
@@ -1463,6 +1541,9 @@ public class CoordinatorService {
         };
     }
 
+    /**
+     * Creates the goal (which starts its first task once the transaction commits), then appends the routing message, with the sources used, and a progress message, both linked to the goal. Failure from {@link GoalService#createGoal} propagates and is reported by {@link #process}.
+     */
     private List<ChatMessage> applyWork(UUID orgId, UUID conversationId, WorkDecision decision) {
         Goal goal = goalService.createGoal(orgId, decision.spec(), true);
         Conversation c = appender.lock(orgId, conversationId)
@@ -1504,6 +1585,9 @@ public class CoordinatorService {
         return created;
     }
 
+    /**
+     * Appends a routing message that needs a choice and lists the alternatives; no goal is created. The person answers through {@link #reroute}.
+     */
     private List<ChatMessage> applyChoice(UUID orgId, UUID conversationId, ChoiceDecision decision) {
         Conversation c = appender.lock(orgId, conversationId)
                 .orElseThrow(() -> ApiException.notFound("conversation", conversationId));
@@ -1518,6 +1602,9 @@ public class CoordinatorService {
         return List.of(appender.append(c, "coordinator", null, null, "routing", decision.reason(), detail, null));
     }
 
+    /**
+     * Appends one coordinator message of the given kind (for example "error", "documents" or "schedule_suggestion") under the conversation lock.
+     */
     private List<ChatMessage> applySimple(
             UUID orgId, UUID conversationId, String kind, String content, Map<String, Object> detail) {
         Conversation c = appender.lock(orgId, conversationId)
@@ -1612,6 +1699,7 @@ public class CoordinatorService {
         return "Something went wrong starting this work, so nothing was started. Try again.";
     }
 
+    /** Upper-cases the first character; an empty text is returned as it is. */
     private static String capitalise(String text) {
         return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
     }
@@ -1764,6 +1852,7 @@ public class CoordinatorService {
         return MessageContext.NONE;
     }
 
+    /** The routing messages after the given position that were made by rerouting the given message; used to detect a choice already made. */
     private List<ChatMessage> reroutesOf(UUID conversationId, int afterPosition, UUID messageId) {
         return messages
                 .findByConversationIdAndPositionGreaterThanOrderByPosition(conversationId, afterPosition)
@@ -1799,6 +1888,9 @@ public class CoordinatorService {
 
     // ---- Stop and retry from chat (A3.7) ---------------------------------------------------------
 
+    /**
+     * Stops a goal of this conversation from the chat. Permission: the person who asked for the work, or one who may cancel work (see {@link GoalService#requireCanStop}). Cancels the goal and its open tasks; throws "not found" for another conversation's goal, and the goal service refuses a goal that has already finished.
+     */
     // @find: stop goal from chat, cancel work
     @Transactional
     public GoalActionResult stopGoal(UUID orgId, UUID conversationId, UUID goalId) {
@@ -1811,6 +1903,9 @@ public class CoordinatorService {
         return new GoalActionResult(goalId, "cancelled", null);
     }
 
+    /**
+     * Retries a goal of this conversation from the chat, refusing while other work is in progress there. Delegates to {@link GoalService#retry}, which checks the caller's authority, and returns the new status and the task the run resumes from.
+     */
     // @find: retry goal from chat, run again
     @Transactional
     public GoalActionResult retryGoal(UUID orgId, UUID conversationId, UUID goalId) {
@@ -1823,6 +1918,7 @@ public class CoordinatorService {
                 goalId, result.goal().getStatus(), result.fromTask().getId());
     }
 
+    /** The goal, when it belongs to the organisation and the conversation; otherwise "not found", so another conversation's goal is not confirmed. */
     private Goal goalForConversation(UUID orgId, UUID conversationId, UUID goalId) {
         Goal goal = goals.findByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId));
         if (!conversationId.equals(goal.getConversationId())) {
@@ -1833,6 +1929,9 @@ public class CoordinatorService {
 
     // ---- Answer from documents (A3.9) -------------------------------------------------------------
 
+    /**
+     * Starts an answer from the passages a documents message found: validates that the message is a grounded documents message, picks the given agent (else General Employee), builds an instruction with {@link DocumentsPrompt}, and creates a goal with a routing message and a progress message. Refuses while other work is in progress, when no agent is available, and when an answer was already started from the same message (conflict).
+     */
     // @find: answer from documents, Answer from these passages, grounded answer
     @SuppressWarnings("unchecked")
     @Transactional
@@ -1953,6 +2052,7 @@ public class CoordinatorService {
         return kept;
     }
 
+    /** Agent names by id, for labelling turns in the thread. */
     private static Map<UUID, String> nameMap(List<Agent> workspaceAgents) {
         Map<UUID, String> names = new LinkedHashMap<>();
         for (Agent agent : workspaceAgents) {
@@ -1961,6 +2061,7 @@ public class CoordinatorService {
         return names;
     }
 
+    /** The agent that gave the most recent answer in the conversation, or null when it is not in the workspace or there is none. */
     private static Agent lastAnswerAgent(List<ChatMessage> chronological, List<Agent> workspaceAgents) {
         for (int i = chronological.size() - 1; i >= 0; i--) {
             ChatMessage m = chronological.get(i);
@@ -1981,6 +2082,7 @@ public class CoordinatorService {
                     + "|\\b(knowledge base|our documents|the documents|the docs|uploaded|on file)\\b",
             Pattern.CASE_INSENSITIVE);
 
+    /** True when the request reads as a question to be told something, which documents may answer. */
     static boolean looksInformational(String text) {
         return text != null && INFORMATIONAL.matcher(text).find();
     }
@@ -2008,6 +2110,7 @@ public class CoordinatorService {
     private static final Pattern DOCUMENTS_WORDS =
             Pattern.compile("\\b(knowledge base|documents?|docs|uploaded|on file)\\b", Pattern.CASE_INSENSITIVE);
 
+    /** True when the text names documents or a knowledge base. */
     private static boolean mentionsDocuments(String text) {
         return DOCUMENTS_WORDS.matcher(text).find();
     }
@@ -2104,6 +2207,7 @@ public class CoordinatorService {
         return thread;
     }
 
+    /** Lists the workspace's other active agents to General Employee, so that it can point the person to the right one; empty when there are none. */
     private String colleagueBlock(List<Agent> workspaceAgents, Agent fallbackAgent) {
         List<Agent> specialists = workspaceAgents.stream()
                 .filter(Agent::isActive)
@@ -2121,6 +2225,7 @@ public class CoordinatorService {
                 + ". Point the person to the right one when a request is really theirs.";
     }
 
+    /** The first sentence of an agent's current system prompt, or empty when it has no version. */
     private String summaryOf(Agent agent) {
         if (agent.getCurrentVersionId() == null) {
             return "";
@@ -2130,6 +2235,7 @@ public class CoordinatorService {
                 .orElse("");
     }
 
+    /** The first sentence of a prompt on one line, or the whole text when no sentence end is found. */
     private static String firstSentence(String prompt) {
         if (prompt == null) {
             return "";
@@ -2142,6 +2248,7 @@ public class CoordinatorService {
         return sentence.find() ? sentence.group(1) : text;
     }
 
+    /** Up to four alternatives offered when a mentioned agent is paused: General Employee first, then active agents. */
     private static List<Map<String, Object>> pausedMentionAlternatives(Agent fallback, List<Agent> workspaceAgents) {
         List<Agent> ordered = new ArrayList<>();
         if (fallback != null) {
@@ -2155,6 +2262,7 @@ public class CoordinatorService {
         return ordered.stream().limit(4).map(a -> scoredAgentMap(a, 0)).toList();
     }
 
+    /** One alternative as stored on a routing message: id, name and score. */
     private static Map<String, Object> scoredAgentMap(Agent agent, int score) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", agent.getId().toString());
@@ -2163,10 +2271,12 @@ public class CoordinatorService {
         return m;
     }
 
+    /** The rule router's scored agents as stored alternatives. */
     private static List<Map<String, Object>> scoredList(List<RuleRouter.ScoredAgent> scored) {
         return scored.stream().map(s -> scoredAgentMap(s.agent(), s.score())).toList();
     }
 
+    /** The sentence shown for a routing result that needs a choice. */
     private static String choiceReasonFor(RuleRouter.Reason reason) {
         return switch (reason) {
             case TIE -> TIE_MESSAGE;
@@ -2175,6 +2285,7 @@ public class CoordinatorService {
         };
     }
 
+    /** The tool servers each agent has an enabled grant for; one query per agent. Used to prefer agents that hold the right integration. */
     private Map<UUID, List<String>> toolServersByAgent(List<Agent> workspaceAgents) {
         Map<UUID, List<String>> byAgent = new LinkedHashMap<>();
         for (Agent agent : workspaceAgents) {
@@ -2188,6 +2299,7 @@ public class CoordinatorService {
         return byAgent;
     }
 
+    /** The agent with the id, or null. */
     private static Agent agentById(List<Agent> agents, UUID agentId) {
         return agents.stream()
                 .filter(agent -> agent.getId().equals(agentId))
@@ -2195,6 +2307,7 @@ public class CoordinatorService {
                 .orElse(null);
     }
 
+    /** The routing reason for mentioned agents. */
     private static String mentionReason(List<Agent> chosen) {
         if (chosen.size() == 1) {
             return "You mentioned @" + chosen.getFirst().getName() + ".";
@@ -2203,6 +2316,7 @@ public class CoordinatorService {
                 + ".";
     }
 
+    /** The routing reason for a rule match, quoting the matched words per agent. */
     private static String ruleReason(List<RuleRouter.Routed> steps) {
         return steps.stream()
                 .map(step -> {
@@ -2213,6 +2327,7 @@ public class CoordinatorService {
                 .collect(Collectors.joining(" "));
     }
 
+    /** The distinct matched words across all steps, in order. */
     private static List<String> flattenMatched(List<RuleRouter.Routed> steps) {
         List<String> matched = new ArrayList<>();
         for (RuleRouter.Routed step : steps) {
@@ -2232,6 +2347,7 @@ public class CoordinatorService {
                 .orElse(null);
     }
 
+    /** Parses an id, returning null for null or a non-id value. */
     private static UUID parseUuidOrNull(String value) {
         try {
             return value == null ? null : UUID.fromString(value);

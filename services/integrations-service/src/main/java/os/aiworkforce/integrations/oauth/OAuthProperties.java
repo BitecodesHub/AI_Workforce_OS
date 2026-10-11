@@ -22,8 +22,17 @@ public record OAuthProperties(
         @DefaultValue("10m") Duration stateTtl,
         @DefaultValue("2m") Duration refreshMargin) {
 
+    /**
+     * The path providers redirect to after consent. It is served by {@code OAuthController} and is
+     * also the path the browser-binding cookie is restricted to.
+     */
     public static final String CALLBACK_PATH = "/api/oauth/callback";
 
+    /**
+     * The public base address with surrounding whitespace and any trailing slashes removed.
+     *
+     * @return the cleaned base address, or an empty string when none is configured
+     */
     public String baseUrl() {
         String base = publicBaseUrl == null ? "" : publicBaseUrl.strip();
         while (base.endsWith("/")) {
@@ -32,6 +41,12 @@ public record OAuthProperties(
         return base;
     }
 
+    /**
+     * The redirect address to register with each provider and to send in every authorization and token
+     * request: the cleaned base address plus {@link #CALLBACK_PATH}.
+     *
+     * @return the full redirect address
+     */
     public String redirectUri() {
         return baseUrl() + CALLBACK_PATH;
     }

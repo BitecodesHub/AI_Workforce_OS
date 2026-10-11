@@ -47,10 +47,23 @@ public class AttachmentController {
 
     private final AttachmentService attachments;
 
+    /**
+     * Creates the controller with the service that holds all attachment rules; the controller only translates HTTP.
+     */
     public AttachmentController(AttachmentService attachments) {
         this.attachments = attachments;
     }
 
+    /**
+     * Uploads one file, optionally into an existing conversation.
+     *
+     * <p>Route: {@code POST /api/conversations/attachments} (multipart, part {@code file}, optional
+     * {@code conversationId}). Permission: {@code CHAT_USE}. Returns 201 with the stored attachment's
+     * view. {@link AttachmentService#upload} detects the type, extracts text and stores the row; with no
+     * conversation id the file stays a draft until its first message binds it. An unreadable upload fails
+     * with {@code MALFORMED_REQUEST}; refusals of type, size or count come from the service as {@link
+     * ApiException}.
+     */
     // @find: upload attachment, attach file before chat exists, POST /api/conversations/attachments, composer paperclip
     @PostMapping(value = "/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
@@ -62,6 +75,13 @@ public class AttachmentController {
         return attachments.upload(orgId(), RequestContext.requireActor(), conversationId, file.getOriginalFilename(), bytes(file));
     }
 
+    /**
+     * Uploads one file into a named conversation.
+     *
+     * <p>Route: {@code POST /api/conversations/{id}/attachments} (multipart, part {@code file}).
+     * Permission: {@code CHAT_USE}. Returns 201 with the attachment's view. Behaves as {@link #upload},
+     * except that the conversation is fixed by the path and its access rules are applied by the service.
+     */
     // @find: upload attachment to a conversation, attach file, POST /api/conversations/{id}/attachments
     @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
@@ -71,6 +91,12 @@ public class AttachmentController {
         return attachments.upload(orgId(), RequestContext.requireActor(), id, file.getOriginalFilename(), bytes(file));
     }
 
+    /**
+     * Returns the details of one attachment without its bytes.
+     *
+     * <p>Route: {@code GET /api/conversations/attachments/{attachmentId}}. Permission: {@code CHAT_USE}.
+     * The service refuses anyone who may not see the file.
+     */
     // @find: get attachment details, attachment chip, GET /api/conversations/attachments/{id}
     @GetMapping("/attachments/{attachmentId}")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -104,6 +130,12 @@ public class AttachmentController {
                 .body(file.content());
     }
 
+    /**
+     * Removes an attachment that has not been sent.
+     *
+     * <p>Route: {@code DELETE /api/conversations/attachments/{attachmentId}}. Permission: {@code
+     * CHAT_USE}. Returns 204. The service decides whether the file may be deleted.
+     */
     // @find: delete attachment, remove attached file, DELETE /api/conversations/attachments/{id}
     @DeleteMapping("/attachments/{attachmentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -113,6 +145,13 @@ public class AttachmentController {
         attachments.delete(orgId(), RequestContext.requireActor(), attachmentId);
     }
 
+    /**
+     * Saves an attached file into the workspace knowledge base.
+     *
+     * <p>Route: {@code POST /api/conversations/attachments/{attachmentId}/knowledge}. Permission: {@code
+     * CHAT_USE}. The caller's own {@code Authorization} header is forwarded, so the knowledge service
+     * applies the caller's rights. Returns the {@link AttachmentService.Saved} result.
+     */
     // @find: save attachment to knowledge base, add chat file to documents, POST /api/conversations/attachments/{id}/knowledge
     @PostMapping("/attachments/{attachmentId}/knowledge")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -134,6 +173,7 @@ public class AttachmentController {
         }
     }
 
+    /** Reads the uploaded bytes into memory; an I/O failure becomes a {@code MALFORMED_REQUEST} error. */
     private static byte[] bytes(MultipartFile file) {
         try {
             return file.getBytes();
@@ -142,6 +182,7 @@ public class AttachmentController {
         }
     }
 
+    /** The workspace of the current request, taken from the request context. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

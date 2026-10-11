@@ -48,7 +48,14 @@ public record AuditProperties(
         @NotNull @DefaultValue("PT60S") Duration lease,
         @NotNull @DefaultValue("PT5S") Duration sendTimeout) {
 
-    /** How long to wait after a row's {@code failedAttempts}-th failure. */
+    /**
+     * How long to wait after a row's {@code failedAttempts}-th failure.
+     *
+     * <p>Below {@code maxAttempts} the wait doubles from {@code initialBackoff} and is capped at
+     * {@code maxBackoff}; at or above it the row is parked and the wait is {@code parkedRetry}.
+     * Called by {@code AuditOutboxRelay} after a failed delivery to decide when the row is due again.
+     * Pure calculation, no side effects.
+     */
     public Duration backoffAfter(int failedAttempts) {
         if (failedAttempts >= maxAttempts) {
             return parkedRetry;

@@ -34,6 +34,7 @@ public class AskPersonTool {
     /** Sent to providers as {@code person__ask_question}. */
     public static final String NAME = "person.ask_question";
 
+    // The description and schema are what the model sees. The schema is loose on purpose; parse() holds the real limits.
     static final String DESCRIPTION = "Ask the person you are working for a question, and wait for their answer. "
             + "Use it only when you truly cannot proceed with a reasonable default and the work cannot be done well "
             + "without information only they have, such as which of several things they mean, who it is for, or a "
@@ -61,8 +62,10 @@ public class AskPersonTool {
             """
                     .strip();
 
+    // READ, because asking changes nothing; the run parks until QuestionService has the answer.
     public static final ToolSpec SPEC = new ToolSpec(NAME, DESCRIPTION, SCHEMA, ToolSpec.SideEffect.READ);
 
+    // The limits parse() enforces, which match the figures in the description and schema.
     static final int MAX_QUESTIONS = 4;
     static final int MIN_OPTIONS = 2;
     static final int MAX_OPTIONS = 4;
@@ -88,8 +91,12 @@ public class AskPersonTool {
         }
     }
 
+    // Used only to read the model's arguments.
     private final ObjectMapper json;
 
+    /**
+     * @param json used to read the model's arguments
+     */
     public AskPersonTool(ObjectMapper json) {
         this.json = json;
     }
@@ -126,6 +133,14 @@ public class AskPersonTool {
         return new Ask(List.copyOf(parsed));
     }
 
+    /**
+     * Validates one question and its options. Over-long headers and option descriptions are shortened at a word;
+     * a " (recommended)" label suffix is turned into the recommended flag; an explicit {@code recommended}
+     * index wins over the suffix. The recommended option is moved to the front. Anything else out of limits is refused.
+     *
+     * @param id the generated id, {@code q1} to {@code q4}
+     * @throws Invalid with a sentence for the model naming what to change
+     */
     private static Question parseQuestion(String id, JsonNode node) throws Invalid {
         if (!node.isObject()) {
             throw new Invalid("Each question must be an object with a header, a question and options.");
@@ -213,6 +228,7 @@ public class AskPersonTool {
         return new Question(id, header, question, multiSelect, List.copyOf(ordered));
     }
 
+    /** The named field as trimmed text; empty when it is missing or null. */
     private static String text(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value == null || value.isNull() ? "" : value.asText("").strip();

@@ -18,6 +18,7 @@ import type { BoardCard, CardStatusKey } from './layout'
  * a link to a page a person is refused would be a dead end, so everyone else gets the figure alone.
  */
 
+/** One figure of the strip as a toggle button (aria-pressed) with label, value and an optional note; tone marks attention or danger. */
 function Figure({
   label,
   value,
@@ -43,6 +44,17 @@ function Figure({
 }
 
 // @find: summary strip component, status tiles and counts
+/**
+ * Strip of five figures above the board that double as filters.
+ * Working, Needs you, Queued and Failed today are toggles: the first three call onToggleStatus with the matching
+ * status key and the counts come from the cards the board draws (countCards), so a press shows exactly the
+ * number read; Failed today uses the board's own count from local midnight and its press (onToggleFailedToday)
+ * widens the window to today. Notes mention direct runs and the waiting questions and approvals (the latter
+ * come from the live board so the inbox never disagrees). Spend today is a link to /analytics#budget for
+ * viewers holding analytics:read and plain text otherwise; a value under one cent reads "Under US$0.01" with
+ * the exact figure as a title. Props: cards, stats, questionCount, approvalCount, status (the pressed set),
+ * onToggleStatus, isToday, onToggleFailedToday.
+ */
 export function SummaryStrip({
   cards,
   stats,

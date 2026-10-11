@@ -53,6 +53,7 @@ public final class ToolLabels {
             "memory.recall", "Recall what it remembered",
             "knowledge.search", "Search the workspace's documents");
 
+    /** Catalog used only to turn a server name into its display name. */
     private static final ConnectorCatalog CATALOG = new ConnectorCatalog();
 
     /* Every qualified name the platform knows, so a dotted "gmail.send_message" is recognised but
@@ -76,7 +77,13 @@ public final class ToolLabels {
                     + "\\s*(?:[:\u2013\u2014]|\\s-)\\s+(\\S)");
 
     // @find: label for a tool, create an issue in GitHub
-    /** "Create an issue in GitHub". */
+    /**
+     * "Create an issue in GitHub".
+     *
+     * <p>Builds the plain label for a tool, for approval wording, run traces and answers. Platform
+     * tools such as {@code memory.remember} use their fixed label; others become the tool phrase plus
+     * the service name. A null server or tool gives "an action". Pure; no side effects.
+     */
     public static String label(String server, String tool) {
         if (server == null || tool == null) {
             return "an action";
@@ -88,7 +95,13 @@ public final class ToolLabels {
         return capitalised(phrase(tool)) + " in " + serverName(server);
     }
 
-    /** "create an issue": the tool's name as an action, lower case. */
+    /**
+     * "create an issue": the tool's name as an action, lower case.
+     *
+     * <p>Turns a snake_case tool name into a lower case action phrase. Expands abbreviations such as
+     * {@code pr} through the noun table, maps the verb, and inserts an article for a single object
+     * after a verb in the article set. A name with no words is returned unchanged.
+     */
     public static String phrase(String tool) {
         String[] words = tool.toLowerCase(Locale.ROOT).split("_+");
         if (words.length == 0 || words[0].isEmpty()) {
@@ -112,7 +125,10 @@ public final class ToolLabels {
         return phrase.append(' ').append(object).toString();
     }
 
-    /** "GitHub" for github; the server's own name, capitalised, when the catalog has no entry. */
+    /**
+     * "GitHub" for github; the server's own name, capitalised, when the catalog has no entry.
+     * The name comes from the connector catalog.
+     */
     public static String serverName(String server) {
         return CATALOG.find(server).map(ConnectorInfo::displayName).orElseGet(() -> capitalised(server));
     }
@@ -122,6 +138,10 @@ public final class ToolLabels {
      * The text with every internal tool name a person could see replaced by its plain label. A line
      * that only names a tool before describing it keeps the description. Text with no tool name in
      * it is returned unchanged.
+     *
+     * <p>Entry point for display code. Flow: return early when there is nothing tool-like; rewrite
+     * lines of the form "name: description" to keep only the description; then replace remaining
+     * wire names and known dotted names with labels. Pure; never throws for a null or empty text.
      */
     public static String humanise(String text) {
         if (text == null || text.isEmpty() || (!text.contains("__") && !mentionsDotted(text))) {
@@ -142,6 +162,10 @@ public final class ToolLabels {
         return replace(DOTTED, result, false);
     }
 
+    /**
+     * Replaces each match of one pattern with its label. A wire name is always a tool; a dotted name
+     * only when it is in the known set. The label is lower-cased mid-sentence.
+     */
     private static String replace(Pattern pattern, String text, boolean wire) {
         Matcher matcher = pattern.matcher(text);
         StringBuilder out = new StringBuilder();
@@ -165,6 +189,9 @@ public final class ToolLabels {
         return out.toString();
     }
 
+    /**
+     * Whether the match at the given position begins a sentence or list item, which decides capitalisation.
+     */
     private static boolean startsSentence(String text, int at) {
         int i = at - 1;
         while (i >= 0 && (text.charAt(i) == ' ' || text.charAt(i) == '`' || text.charAt(i) == '*')) {
@@ -178,6 +205,7 @@ public final class ToolLabels {
                 || before == '!' || before == '?';
     }
 
+    /** Whether the text contains a dotted name that is a known tool, used to skip work on ordinary text. */
     private static boolean mentionsDotted(String text) {
         Matcher matcher = DOTTED.matcher(text);
         while (matcher.find()) {
@@ -188,6 +216,7 @@ public final class ToolLabels {
         return false;
     }
 
+    /** Collects every qualified tool name from the platform tools and the sandbox registry definitions. */
     private static Set<String> known() {
         Set<String> names = new HashSet<>(INTERNAL.keySet());
         Map<String, List<ToolDefinition>> definitions = new HashMap<>(SandboxServerRegistry.definitions());
@@ -195,6 +224,7 @@ public final class ToolLabels {
         return Set.copyOf(names);
     }
 
+    /** Upper-cases the first character; empty for null or empty text. */
     private static String capitalised(String text) {
         return text == null || text.isEmpty() ? "" : Character.toUpperCase(text.charAt(0)) + text.substring(1);
     }

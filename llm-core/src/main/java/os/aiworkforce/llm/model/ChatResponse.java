@@ -42,6 +42,7 @@ public record ChatResponse(
         Map<String, String> providerMetadata,
         List<ChatMessage> compactedConversation) {
 
+    /** Requires a finish reason and normalises the optional fields to empty values. */
     public ChatResponse {
         Objects.requireNonNull(finishReason, "finishReason");
         toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
@@ -65,10 +66,12 @@ public record ChatResponse(
         this(content, toolCalls, finishReason, usage, provider, model, latency, attempts, providerMetadata, null);
     }
 
+    /** Whether the model asked for tools to be run before it continues. */
     public boolean hasToolCalls() {
         return !toolCalls.isEmpty();
     }
 
+    /** Whether generation was cut short, so the content is incomplete. */
     public boolean isTruncated() {
         return finishReason.isTruncated();
     }

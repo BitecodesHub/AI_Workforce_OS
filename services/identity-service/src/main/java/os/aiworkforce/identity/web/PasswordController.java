@@ -57,22 +57,34 @@ public class PasswordController {
     private final PasswordResetService resets;
     private final AuditClient audit;
 
+    /** Wires the authentication and reset services and the audit client. */
     public PasswordController(AuthService auth, PasswordResetService resets, AuditClient audit) {
         this.auth = auth;
         this.resets = resets;
         this.audit = audit;
     }
 
+    /**
+     * Request body for {@link #changePassword}. The new password must be 12 to 256 characters; both
+     * fields must be present.
+     */
     public record ChangePasswordRequest(
             @NotBlank @Size(max = 256) String currentPassword, @NotBlank @Size(min = 12, max = 256) String newPassword) {}
 
     /**
+     * Response body for {@link #createResetLink}: the one-time link, shown once to the administrator.
+     *
      * @param url where the person chooses a new password, relative to the console's address
      * @param expiresAt when the link stops working
      */
     public record ResetLinkResponse(String url, Instant expiresAt) {}
 
     // @find: list my sessions, signed in devices, GET /api/users/me/sessions
+    /**
+     * GET {@code /api/users/me/sessions}. Needs a person's token but no permission code.
+     *
+     * <p>Returns the caller's signed-in devices, with the caller's own device marked as current.
+     */
     @GetMapping("/me/sessions")
     @Operation(summary = "The devices the signed-in account is signed in on")
     public List<AuthService.SessionSummary> sessions() {
@@ -81,6 +93,12 @@ public class PasswordController {
     }
 
     // @find: end session, sign out device, DELETE /api/users/me/sessions/{familyId}
+    /**
+     * DELETE {@code /api/users/me/sessions/{familyId}}. Needs a person's token but no permission code.
+     *
+     * <p>Revokes one of the caller's devices and returns 204. A family that is not theirs gives a
+     * not-found error.
+     */
     @DeleteMapping("/me/sessions/{familyId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Sign one device out")
@@ -90,6 +108,13 @@ public class PasswordController {
     }
 
     // @find: change my password, PUT /api/users/me/password
+    /**
+     * PUT {@code /api/users/me/password}. Needs a person's token but no permission code.
+     *
+     * <p>Changes the caller's password after checking the current one, revokes every other device
+     * and returns 204. A wrong current password counts towards lockout and is audited by
+     * {@link AuthService#changePassword}.
+     */
     @PutMapping("/me/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Change the signed-in account's password and sign out its other devices")
@@ -100,6 +125,14 @@ public class PasswordController {
     }
 
     // @find: create password reset link, POST /api/users/{userId}/password-reset-link
+    /**
+     * POST {@code /api/users/{userId}/password-reset-link}. Requires {@code member:update}.
+     *
+     * <p>Creates a one-time link through {@link PasswordResetService#createLink}, which enforces the
+     * workspace and owner rules, then writes an {@code auth.password_reset_link.create} audit
+     * record in the same transaction. Returns 201 with the link path and expiry. The raw link is
+     * not recorded in the audit entry.
+     */
     @PostMapping("/{userId}/password-reset-link")
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.MEMBER_UPDATE)
@@ -113,6 +146,10 @@ public class PasswordController {
         return new ResetLinkResponse(link.url(), link.expiresAt());
     }
 
+    /**
+     * The caller of the current request, which must be a person. A service or agent token is refused
+     * with permission denied.
+     */
     private static Actor requirePerson() {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() != Actor.Kind.USER) {

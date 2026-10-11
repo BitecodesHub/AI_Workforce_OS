@@ -17,23 +17,32 @@ import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
  *
  * <p>The row is what makes the signed state single use. It is marked used the moment the callback
  * claims it, in one conditional update, so two requests carrying the same state cannot both win.
+ *
+ * <p>Created by {@code OAuthService.start}, read by {@code OAuthService.callback} and claimed
+ * through {@code OAuthStates.claim}. Expired rows are removed by {@code OAuthStates.deleteExpired}.
+ * The accessors below are plain getters and setters for the columns.
  */
 @Entity
 @Table(name = "oauth_states")
 public class OAuthState extends OrgScopedEntity {
 
+    /** The person who opened the consent screen; null when the actor was not a person. The callback requires it to match the signed state. */
     @Column(name = "user_id")
     private UUID userId;
 
+    /** The connector key the sign-in is for, for example {@code gmail}. */
     @Column(nullable = false)
     private String server;
 
+    /** The PKCE code verifier, encrypted for the workspace. Decrypted by the callback to redeem the authorization code. */
     @Column(name = "verifier_ref", nullable = false, columnDefinition = "text")
     private String verifierRef;
 
+    /** When the state stops being accepted, set from the configured state lifetime. */
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
+    /** When the state was claimed by a callback; null while it is still unused. */
     @Column(name = "used_at")
     private Instant usedAt;
 

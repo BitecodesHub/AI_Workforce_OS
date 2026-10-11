@@ -44,12 +44,34 @@ public class JpaUsageRecorder implements UsageRecorder {
     private final Usage usage;
     private final WorkspaceProviderSettings settings;
 
+    /**
+     * Wires the usage and provider-settings repositories.
+     *
+     * @param usage where usage rows are written
+     * @param settings where a provider key's rejected state is cleared
+     */
     public JpaUsageRecorder(Usage usage, WorkspaceProviderSettings settings) {
         this.usage = usage;
         this.settings = settings;
     }
 
     // @find: record model attempt usage and cost
+    /**
+     * Stores one row for a router attempt, whether it succeeded, failed or was skipped, and clears a
+     * stale key rejection when the attempt succeeded.
+     *
+     * <p>Runs in its own transaction, so the row survives a rollback of the run. Side effects: one
+     * insert into the usage table and, for a successful attempt, a conditional update of the
+     * workspace's provider settings (logged when it changes something). Throws if the ids are not
+     * valid UUIDs or the database refuses the write; the router, not this class, decides what a
+     * failed write means.
+     *
+     * @param orgId the workspace id as text
+     * @param agentId the agent id as text; null when there is none
+     * @param runId the run id as text; null when there is none
+     * @param attempt what the router tried and how it ended
+     * @param cost the cost of the attempt in the platform's unit
+     */
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String orgId, String agentId, String runId, AttemptRecord attempt, BigDecimal cost) {

@@ -31,15 +31,34 @@ import os.aiworkforce.integrations.oauth.OAuthService;
 @Tag(name = "Integrations")
 public class OAuthController {
 
+    /** Name of the cookie that binds a sign-in to the browser that started it. Set by {@code IntegrationController.oauthStart} and cleared by {@link #callback}. */
     public static final String COOKIE = "aiwos_oauth";
 
+    /** The service that validates the callback and stores the tokens. */
     private final OAuthService oauth;
 
+    /** Creates the controller with the OAuth service it delegates to. */
     public OAuthController(OAuthService oauth) {
         this.oauth = oauth;
     }
 
     // @find: oauth callback endpoint, GET /api/oauth/callback
+    /**
+     * Handles {@code GET /api/oauth/callback}, the address each provider redirects the browser to.
+     *
+     * <p>Permission: none, because the redirect carries no bearer token; trust comes from the signed
+     * state and the browser cookie, which {@code OAuthService.callback} verifies. Flow: delegates to
+     * that method (which exchanges the code, stores the encrypted tokens and writes an audit entry
+     * on success), then clears the cookie.
+     *
+     * <p>Response: always {@code 302} to the console address the service returned, a success or an
+     * error page, with {@code no-store} caching and no referrer. It does not throw for a bad sign-in.
+     *
+     * @param code the authorization code, absent when the provider reported an error
+     * @param state the signed state issued by {@code start}
+     * @param error the provider's error code, for example when the person declined
+     * @param nonce the browser-binding cookie value, absent when the cookie was not sent
+     */
     @GetMapping(OAuthProperties.CALLBACK_PATH)
     @Operation(summary = "OAuth redirect target: exchanges the code and returns the browser to the console")
     public ResponseEntity<Void> callback(

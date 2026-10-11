@@ -21,13 +21,17 @@ import os.aiworkforce.mcp.catalog.CredentialField;
  */
 public final class OAuthProviders {
 
+    /** Provider ids, also used as keys in the stored app settings. */
     public static final String GOOGLE = "google";
     public static final String MICROSOFT = "microsoft";
     public static final String SALESFORCE = "salesforce";
 
+    /** Common prefix of Google scope names. */
     private static final String G = "https://www.googleapis.com/auth/";
 
+    /** Providers by id, filled once by the static block. */
     private static final Map<String, OAuthProvider> PROVIDERS = new LinkedHashMap<>();
+    /** Connector name to provider id, so one registered app serves several connectors. */
     private static final Map<String, String> PROVIDER_OF_SERVER = new LinkedHashMap<>();
 
     static {
@@ -120,12 +124,15 @@ public final class OAuthProviders {
         PROVIDER_OF_SERVER.put("salesforce", SALESFORCE);
     }
 
+    /** Not instantiable. */
     private OAuthProviders() {}
 
+    /** Adds a provider to the table. */
     private static void register(OAuthProvider provider) {
         PROVIDERS.put(provider.id(), provider);
     }
 
+    /** The provider with this id, or empty. */
     public static Optional<OAuthProvider> byId(String id) {
         return Optional.ofNullable(PROVIDERS.get(id));
     }
@@ -136,6 +143,7 @@ public final class OAuthProviders {
         return Optional.ofNullable(PROVIDER_OF_SERVER.get(server)).map(PROVIDERS::get);
     }
 
+    /** Every provider, as an immutable copy. */
     public static Map<String, OAuthProvider> all() {
         return Map.copyOf(PROVIDERS);
     }

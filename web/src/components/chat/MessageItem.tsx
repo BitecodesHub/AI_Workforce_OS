@@ -23,6 +23,7 @@ import { choiceMadeFor, goalHasAnswer, messageAuthor, resendText, routingMessage
  * so a goal's step count moving redraws that goal's cards and not the whole conversation.
  */
 
+/** Props for one thread item: the message, whether it continues a run from the same author (grouped), whether it is the latest answer, its goal when known, the thread-wide questions, messages, agent and member lookups, the viewer id, the speaker (text to speech), ids of freshly arrived messages (announced to assistive technology) and the callbacks the cards raise (reroute, ask again, edit and resend, reply in own words, stop, retry, answer from documents). */
 export type MessageItemProps = {
   message: ChatMessage
   grouped: boolean
@@ -50,6 +51,10 @@ export type MessageItemProps = {
   onAnswerFromDocuments: (messageId: string) => void
 }
 
+/**
+ * Switch over message.kind that renders the card for the item.
+ * text: UserBubble for a person's message, otherwise NoticeLine. routing: RoutingCard (settled once the goal has an answer or is no longer active). documents: DocumentsCard. progress: ProgressCard for its goal, nothing when the goal is not known. answer: AnswerBubble. schedule_suggestion: ScheduleCard. error: ErrorCard with the request text found by resendText. question: QuestionMessage with the matching RunQuestion. notice: NoticeLine. An unknown kind renders nothing. Pure dispatch with no state; every action is passed through as a callback.
+ */
 function MessageItemInner({
   message,
   grouped,
@@ -172,4 +177,5 @@ function MessageItemInner({
 }
 
 // @find: MessageItem, message item, thread item, message kind, render message, answer
+/** Memoised MessageItemInner, so a poll that changes nothing for this item does not redraw it. */
 export const MessageItem = memo(MessageItemInner)

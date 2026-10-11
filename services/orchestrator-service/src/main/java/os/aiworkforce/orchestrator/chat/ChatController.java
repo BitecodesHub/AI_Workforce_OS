@@ -1,6 +1,6 @@
 // @find: chat, conversations, messages, send message, create conversation, rename, pin, archive, delete conversation, participants, visibility, queue, reroute, stop goal, retry goal, ChatController, /api/conversations, Chat page
 // @what: REST API for conversations and their messages: list, create, read, rename, pin, archive, share, send, queue, reroute, stop and retry.
-// @flow: Called by the Chat page; delegates to ConversationQueries, ConversationAdmin and CoordinatorService.
+// @flow: Called by the Chat page; delegates to ConversationQueries for reads, ConversationAdmin for changes, CoordinatorService for sending and goal actions, and ChatQueue for waiting messages.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;
@@ -64,6 +64,7 @@ public class ChatController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ChatQueue chatQueue;
 
+    /** Wires the repositories and services the endpoints delegate to. */
     public ChatController(
             Conversations conversations,
             ConversationQueries queries,
@@ -75,14 +76,18 @@ public class ChatController {
         this.coordinator = coordinator;
     }
 
+    /** Body for starting a conversation; the title is optional and may be left empty to be named later. */
     public record CreateConversationRequest(@Size(max = 200) String title) {}
 
     /**
+     * The body of a send: the words, the optional agents to address, and everything attached.
+     *
      * @param text what the person wrote; may be empty when files are attached or a skill is chosen
      * @param attachmentIds files uploaded for this message (see {@link AttachmentController}), at most 10
      * @param knowledge workspace sources or documents chosen to ground this message, at most 20
      * @param repo a GitHub repository (optional branch and path) the work is about
      * @param skillId a skill whose playbook the run follows
+     * @param agentIds the agents to address; when absent the coordinator chooses
      */
     public record SendMessageRequest(
             @Size(max = 10_000) String text,
@@ -108,21 +113,30 @@ public class ChatController {
         }
     }
 
+    /** Body for sending a routed message's work to a different agent. */
     public record RerouteRequest(@NotNull UUID agentId) {}
 
+    /** Body for renaming a conversation. */
     public record RenameRequest(@NotBlank @Size(max = 200) String title) {}
 
+    /** Body for marking a conversation read up to a message position. */
     public record ReadRequest(@Min(0) int position) {}
 
+    /** Body for changing who can read a conversation ({@code private} or {@code workspace}). */
     public record VisibilityRequest(@NotBlank String visibility) {}
 
+    /** Body for adding people (user ids, one to 50) to a conversation. */
     public record ParticipantsRequest(@NotNull @Size(min = 1, max = 50) List<String> userIds) {}
 
+    /** The people added to a conversation, besides its creator. */
     public record ParticipantsResult(List<String> userIds) {}
 
+    /** Body for answering a documents card; the agent is optional and the default agent is used when absent. */
     public record AnswerFromDocumentsRequest(UUID agentId) {}
 
     /**
+     * The messages a send, reroute or similar action created, or the one message that was queued instead.
+     *
      * @param queued the message as it waits its turn, when the conversation already had work in
      *     progress and nothing was added to the thread yet; null otherwise
      */
@@ -133,8 +147,15 @@ public class ChatController {
         }
     }
 
+    /** Body for changing the text of a message waiting in the queue. */
     public record EditQueuedRequest(@Size(max = 10_000) String text) {}
 
+    /**
+     * Lists the conversations of this workspace for the caller: pinned, needing the caller, and the rest, with optional search and scope.
+     *
+     * <p>Route: GET /api/conversations. Permission: chat:use.
+     * Response: a {@link ConversationQueries.ConversationPage}. Read-only; a validation error when {@code q} or {@code scope} is invalid.
+     */
     // @find: list conversations, search chats, GET /api/conversations, chat sidebar
     @GetMapping
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -148,6 +169,12 @@ public class ChatController {
         return queries.list(orgId(), RequestContext.requireActor(), q, scope, page, size);
     }
 
+    /**
+     * Creates an empty conversation owned by the caller, with the workspace's default visibility.
+     *
+     * <p>Route: POST /api/conversations. Permission: chat:use.
+     * Response: 201 with the new {@link ConversationQueries.ConversationView}. Writes one conversation row.
+     */
     // @find: create conversation, new chat, POST /api/conversations
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -169,6 +196,9 @@ public class ChatController {
      * questions changed since that moment, which is what an open thread polls for instead of
      * reading the whole window again (see {@link ConversationQueries#detail}).
      *
+     * <p>Route: GET /api/conversations/{id}. Permission: chat:use. Response: a {@link ConversationQueries.ConversationDetail}.
+     * Read-only; not found when the caller cannot read the conversation.
+     *
      * @param after the position of the newest message the reader already holds
      * @param since the {@code generatedAt} of the response the reader last merged
      */
@@ -187,11 +217,17 @@ public class ChatController {
                 orgId(), RequestContext.requireActor(), id, limit, after == null ? null : Math.max(after, -1), since);
     }
 
-    /** The whole recent window of a conversation, for callers inside the package. */
+    /** The whole recent window of a conversation, for callers inside the package; not itself a route. */
     ConversationQueries.ConversationDetail get(UUID id, int limit) {
         return get(id, limit, null, null);
     }
 
+    /**
+     * Returns an older page of messages before the given position.
+     *
+     * <p>Route: GET /api/conversations/{id}/messages. Permission: chat:use.
+     * Response: a {@link ConversationQueries.MessagesPage}. Read-only; not found when the caller cannot read the conversation.
+     */
     // @find: earlier messages, load older messages, GET /api/conversations/{id}/messages
     @GetMapping("/{id}/messages")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -203,6 +239,12 @@ public class ChatController {
         return queries.messagesPage(orgId(), RequestContext.requireActor(), id, before, limit);
     }
 
+    /**
+     * Renames a conversation through {@link ConversationAdmin}.
+     *
+     * <p>Route: PATCH /api/conversations/{id}. Permission: chat:use.
+     * Response: the updated view. Only its creator or a holder of workspace:update may rename it.
+     */
     // @find: rename conversation, change chat title, PATCH /api/conversations/{id}
     @PatchMapping("/{id}")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -212,6 +254,12 @@ public class ChatController {
         return admin.rename(orgId(), RequestContext.requireActor(), id, request.title());
     }
 
+    /**
+     * Makes a conversation private or shared with the whole workspace.
+     *
+     * <p>Route: PUT /api/conversations/{id}/visibility. Permission: chat:use.
+     * Response: the updated view. Only its creator or a holder of chat:read_all may change it. Writes an audit entry when the visibility actually changes.
+     */
     // @find: set conversation visibility, private or workspace chat, PUT /api/conversations/{id}/visibility
     @PutMapping("/{id}/visibility")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -221,6 +269,12 @@ public class ChatController {
         return admin.setVisibility(orgId(), RequestContext.requireActor(), id, request.visibility());
     }
 
+    /**
+     * Lists the people added to a conversation.
+     *
+     * <p>Route: GET /api/conversations/{id}/participants. Permission: chat:use.
+     * Response: a {@link ParticipantsResult}. Anyone who can read the conversation may list them.
+     */
     // @find: list conversation participants, who is in this chat, GET /api/conversations/{id}/participants
     @GetMapping("/{id}/participants")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -229,6 +283,12 @@ public class ChatController {
         return new ParticipantsResult(admin.participantIds(orgId(), RequestContext.requireActor(), id));
     }
 
+    /**
+     * Adds people so they can read a private conversation.
+     *
+     * <p>Route: POST /api/conversations/{id}/participants. Permission: chat:use.
+     * Response: the full participant list after the change. Only the conversation's creator or a holder of chat:read_all may do this. Writes participant rows and an audit entry through {@link ConversationAdmin}.
+     */
     // @find: add participants to conversation, share chat with people, POST /api/conversations/{id}/participants
     @PostMapping("/{id}/participants")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -239,6 +299,12 @@ public class ChatController {
                 admin.addParticipants(orgId(), RequestContext.requireActor(), id, request.userIds()));
     }
 
+    /**
+     * Removes one person from a conversation.
+     *
+     * <p>Route: DELETE /api/conversations/{id}/participants/{userId}. Permission: chat:use.
+     * Response: 204 with no body. Only the conversation's creator or a holder of chat:read_all may do this; deletes the participant row.
+     */
     // @find: remove participant from conversation, DELETE /api/conversations/{id}/participants/{userId}
     @DeleteMapping("/{id}/participants/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -248,6 +314,12 @@ public class ChatController {
         admin.removeParticipant(orgId(), RequestContext.requireActor(), id, userId);
     }
 
+    /**
+     * Pins a conversation in the caller's own list only; other people are unaffected.
+     *
+     * <p>Route: PUT /api/conversations/{id}/pin. Permission: chat:use.
+     * Response: 204 with no body. Writes the caller's conversation mark; refused to a caller with no person behind them.
+     */
     // @find: pin conversation, PUT /api/conversations/{id}/pin
     @PutMapping("/{id}/pin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -257,6 +329,12 @@ public class ChatController {
         admin.pin(orgId(), RequestContext.requireActor(), id);
     }
 
+    /**
+     * Removes the caller's pin.
+     *
+     * <p>Route: DELETE /api/conversations/{id}/pin. Permission: chat:use.
+     * Response: 204 with no body. Writes the caller's conversation mark.
+     */
     // @find: unpin conversation, DELETE /api/conversations/{id}/pin
     @DeleteMapping("/{id}/pin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -266,6 +344,12 @@ public class ChatController {
         admin.unpin(orgId(), RequestContext.requireActor(), id);
     }
 
+    /**
+     * Archives a conversation out of the caller's own list only.
+     *
+     * <p>Route: PUT /api/conversations/{id}/archive. Permission: chat:use.
+     * Response: 204 with no body. Writes the caller's conversation mark.
+     */
     // @find: archive conversation, PUT /api/conversations/{id}/archive
     @PutMapping("/{id}/archive")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -275,6 +359,12 @@ public class ChatController {
         admin.archive(orgId(), RequestContext.requireActor(), id);
     }
 
+    /**
+     * Returns an archived conversation to the caller's list.
+     *
+     * <p>Route: DELETE /api/conversations/{id}/archive. Permission: chat:use.
+     * Response: 204 with no body. Writes the caller's conversation mark.
+     */
     // @find: unarchive conversation, DELETE /api/conversations/{id}/archive
     @DeleteMapping("/{id}/archive")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -284,6 +374,12 @@ public class ChatController {
         admin.unarchive(orgId(), RequestContext.requireActor(), id);
     }
 
+    /**
+     * Records how far the caller has read, which drives the unread marker.
+     *
+     * <p>Route: PUT /api/conversations/{id}/read. Permission: chat:use.
+     * Response: 204 with no body. Writes the caller's conversation mark; a caller with no person behind them is ignored without error.
+     */
     // @find: mark conversation read, unread marker, PUT /api/conversations/{id}/read
     @PutMapping("/{id}/read")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -293,6 +389,12 @@ public class ChatController {
         admin.markRead(orgId(), RequestContext.requireActor(), id, request.position());
     }
 
+    /**
+     * Deletes a conversation after stopping its active work.
+     *
+     * <p>Route: DELETE /api/conversations/{id}. Permission: chat:use.
+     * Response: 204 with no body. Only its creator or a holder of workspace:update may delete it; refused with a conflict while somebody else's work is running unless the caller holds task:cancel. Cancels active goals, detaches goals and questions, and writes an audit entry after commit, all in {@link ConversationAdmin}.
+     */
     // @find: delete conversation, remove chat, DELETE /api/conversations/{id}
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -302,6 +404,13 @@ public class ChatController {
         admin.delete(orgId(), RequestContext.requireActor(), id);
     }
 
+    /**
+     * Sends a message into a conversation. The coordinator records it, routes it, and creates its reply before this returns; if the conversation already has work in progress the message is queued instead.
+     *
+     * <p>Route: POST /api/conversations/{id}/messages. Permission: chat:use.
+     * Response: 202 with the created messages, or with the queued message and no messages when it had to wait.
+     * Validation error when the text is blank and there are neither files nor a skill. May start a goal, call the model, and write messages.
+     */
     // @find: send message, post chat message, ask the workforce, POST /api/conversations/{id}/messages
     @PostMapping("/{id}/messages")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -333,6 +442,12 @@ public class ChatController {
         return toResult(outcome.messages());
     }
 
+    /**
+     * Changes the text of a message waiting its turn.
+     *
+     * <p>Route: PATCH /api/conversations/{id}/queue/{queuedId}. Permission: chat:use.
+     * Response: the updated queued message. Not found when the queue is not wired.
+     */
     // @find: edit queued message, change waiting message, PATCH /api/conversations/{id}/queue/{queuedId}
     @PatchMapping("/{id}/queue/{queuedId}")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -342,6 +457,12 @@ public class ChatController {
         return requireQueue().edit(orgId(), id, queuedId, request.text(), RequestContext.requireActor());
     }
 
+    /**
+     * Cancels a message waiting its turn.
+     *
+     * <p>Route: DELETE /api/conversations/{id}/queue/{queuedId}. Permission: chat:use.
+     * Response: 204 with no body.
+     */
     // @find: cancel queued message, remove waiting message, DELETE /api/conversations/{id}/queue/{queuedId}
     @DeleteMapping("/{id}/queue/{queuedId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -351,6 +472,12 @@ public class ChatController {
         requireQueue().cancel(orgId(), id, queuedId, RequestContext.requireActor());
     }
 
+    /**
+     * Stops the work in progress and starts the waiting message immediately, through {@link CoordinatorService}.
+     *
+     * <p>Route: POST /api/conversations/{id}/queue/{queuedId}/start-now. Permission: chat:use.
+     * Response: 202 with the messages created. Stops running work as a side effect.
+     */
     // @find: start queued message now, Start now anyway, POST /api/conversations/{id}/queue/{queuedId}/start-now
     @PostMapping("/{id}/queue/{queuedId}/start-now")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -360,6 +487,7 @@ public class ChatController {
         return toResult(coordinator.startQueuedNow(orgId(), id, queuedId).messages());
     }
 
+    /** The queue, or a not-found error when it is not wired. */
     private ChatQueue requireQueue() {
         if (chatQueue == null) {
             throw os.aiworkforce.platform.error.ApiException.notFound("queue", "chat");
@@ -367,6 +495,12 @@ public class ChatController {
         return chatQueue;
     }
 
+    /**
+     * Sends a routing message's work to a different agent instead.
+     *
+     * <p>Route: POST /api/conversations/{id}/messages/{messageId}/reroute. Permission: chat:use.
+     * Response: the messages created. Starts a goal through {@link CoordinatorService}.
+     */
     // @find: reroute message to another agent, choose agent, POST /api/conversations/{id}/messages/{messageId}/reroute
     @PostMapping("/{id}/messages/{messageId}/reroute")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -376,6 +510,12 @@ public class ChatController {
         return toResult(coordinator.reroute(orgId(), id, messageId, request.agentId()));
     }
 
+    /**
+     * Asks an agent to answer from the passages on a documents card and nothing else.
+     *
+     * <p>Route: POST /api/conversations/{id}/messages/{messageId}/answer-from-documents. Permission: chat:use and task:create (both required).
+     * Response: 202 with the messages created. Starts a goal through {@link CoordinatorService}.
+     */
     // @find: answer from documents, Answer from these passages, POST /api/conversations/{id}/messages/{messageId}/answer-from-documents
     @PostMapping("/{id}/messages/{messageId}/answer-from-documents")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -391,6 +531,12 @@ public class ChatController {
         return toResult(coordinator.answerFromDocuments(orgId(), id, messageId, agentId));
     }
 
+    /**
+     * Stops the work a chat message started.
+     *
+     * <p>Route: POST /api/conversations/{id}/goals/{goalId}/stop. Permission: chat:use.
+     * Response: a {@link CoordinatorService.GoalActionResult}. Cancels the goal's active runs.
+     */
     // @find: stop goal from chat, cancel running work, POST /api/conversations/{id}/goals/{goalId}/stop
     @PostMapping("/{id}/goals/{goalId}/stop")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -399,6 +545,12 @@ public class ChatController {
         return coordinator.stopGoal(orgId(), id, goalId);
     }
 
+    /**
+     * Retries a goal from the step that did not finish.
+     *
+     * <p>Route: POST /api/conversations/{id}/goals/{goalId}/retry. Permission: chat:use and task:create (both required).
+     * Response: a {@link CoordinatorService.GoalActionResult}. Starts new runs.
+     */
     // @find: retry goal from chat, run again, POST /api/conversations/{id}/goals/{goalId}/retry
     @PostMapping("/{id}/goals/{goalId}/retry")
     @RequiresPermission(
@@ -409,10 +561,12 @@ public class ChatController {
         return coordinator.retryGoal(orgId(), id, goalId);
     }
 
+    /** Wraps created messages as a send response with nothing queued. */
     private static MessagesResult toResult(List<ChatMessage> created) {
         return new MessagesResult(created.stream().map(ChatController::toView).toList());
     }
 
+    /** Copies a stored message into its view record. */
     private static ConversationQueries.ChatMessageView toView(ChatMessage message) {
         return new ConversationQueries.ChatMessageView(
                 message.getId(),
@@ -427,6 +581,7 @@ public class ChatController {
                 message.getCreatedAt());
     }
 
+    /** The caller's workspace id from the request context. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

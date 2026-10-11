@@ -18,9 +18,19 @@ import { profile } from '../../lib/session'
  * give are offered (lib/memberQueries.ts: grantableRoles).
  */
 
+/** Loose email shape check (something, an at sign, something, a dot, something); the server remains the authority. */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // @find: invite teammate inline, invite member form, email and role, InviteInline, setup invite step
+/**
+ * Inline form on the setup page that invites a person by email and role and shows the invitation link.
+ * Data: useRoles lists the roles; grantableRoles limits the choices to those the signed-in person may give,
+ * and the role defaults to "employee", else the first offered. Submitting validates the address locally, then
+ * calls useInviteMember(orgId, email, role) with the workspace id from the session profile. Success shows the
+ * invited address and role and a CopyButton for the invitation link (absoluteLink of acceptUrl), noting the
+ * link is not shown again; a missing link is explained. Server errors appear at the email field or in a warning
+ * Notice. State: email, role choice, field and general errors and the created invitation.
+ */
 export function InviteInline() {
   const me = profile()
   const orgId = me?.workspaceId ?? ''

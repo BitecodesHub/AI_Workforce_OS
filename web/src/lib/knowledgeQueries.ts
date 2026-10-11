@@ -88,6 +88,9 @@ export function useUpdateSource(sourceId: string) {
 /** A passage a search found. The shared Passage type predates sourceId, which says where it lives. */
 export type FoundPassage = Passage & { sourceId: string | null }
 
+/**
+ * Result of trying a search: the passages found, whether the answer was grounded in any, and whether only keyword search ran.
+ */
 export type SearchOutcome = {
   passages: FoundPassage[]
   /** False when nothing matched, which is an answer rather than a failure. */
@@ -241,6 +244,7 @@ export function findClashes(files: readonly { name: string }[], existingTitles: 
   return clashes
 }
 
+/** One file to send and the name-clash mode to send it with. */
 export type PlannedUpload<F> = { file: F; mode: UploadMode }
 
 /**
@@ -271,6 +275,9 @@ export function planUploads<F extends { name: string }>(
 }
 
 // @find: upload document, add file to source, replace or keep both; route: POST /api/sources/{id}/documents; used by: Source detail page, setup QuickUpload
+/**
+ * Mutation that uploads one file to a source (POST /api/sources/{id}/documents, multipart with file and mode). On success it refetches the source list and that source. Used by the Source detail page and the setup quick upload; permission knowledge:source_manage is enforced by the server.
+ */
 export function useUploadKnowledgeDocument(sourceId: string) {
   const client = useQueryClient()
   return useMutation({

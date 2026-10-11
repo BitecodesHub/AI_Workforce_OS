@@ -43,6 +43,7 @@ public class ElevenLabsClient {
     private final RestClient client;
     private final VoiceProperties properties;
 
+    /** Creates the client over the pre-configured ElevenLabs HTTP client and the voice properties. */
     public ElevenLabsClient(RestClient elevenLabsRestClient, VoiceProperties properties) {
         this.client = elevenLabsRestClient;
         this.properties = properties;
@@ -178,19 +179,23 @@ public class ElevenLabsClient {
         }
     }
 
+    /** Maps a transport or HTTP failure to the upstream-unavailable error returned to the caller. */
     private ApiException unavailable(RestClientException e) {
         return new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, "ElevenLabs is unavailable.", e);
     }
 
+    /** Request body of the text-to-speech call. */
     private record SpeechRequest(
             String text,
             @JsonProperty("model_id") String modelId,
             @JsonProperty("voice_settings") VoiceSettings voiceSettings) {}
 
+    /** Voice tuning sent with each speech request: stability and similarity boost, with the defaults used by this service. */
     private record VoiceSettings(double stability, @JsonProperty("similarity_boost") double similarityBoost) {
         static final VoiceSettings DEFAULT = new VoiceSettings(0.5, 0.75);
     }
 
+    /** One voice as ElevenLabs lists it. */
     public record VoiceDto(
             @JsonProperty("voice_id") String voiceId,
             String name,
@@ -198,10 +203,13 @@ public class ElevenLabsClient {
             String description,
             @JsonProperty("preview_url") String previewUrl) {}
 
+    /** Response envelope of the voices listing. */
     private record VoicesResponse(List<VoiceDto> voices) {}
 
+    /** Response of the speech-to-text call. */
     private record TranscriptionResponse(String text) {}
 
+    /** The account's plan and character usage, as ElevenLabs reports it. */
     public record Subscription(
             String tier,
             @JsonProperty("character_count") Integer characterCount,

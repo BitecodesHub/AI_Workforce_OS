@@ -50,20 +50,32 @@ FIRST_HEALTH_TIMEOUT="${AIWOS_FIRST_HEALTH_TIMEOUT:-1800}"
 CORE_SERVICES="identity organisation orchestrator memory knowledge integrations analytics web caddy"
 APP_SERVICES="identity organisation orchestrator memory knowledge integrations analytics web browser"
 
+# log MESSAGE...
+#   Purpose:   prints a UTC-timestamped line and appends it to LOG_FILE.
+#   Changes:   LOG_FILE only; a log file that cannot be written is ignored. Cannot fail.
 log() {
   local line
   line="[aiwos $(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*"
   printf '%s\n' "$line"
   printf '%s\n' "$line" >>"$LOG_FILE" 2>/dev/null || true
 }
+# die MESSAGE...: logs the message as an error and ends the whole script with status 1.
 die() { log "ERROR: $*"; exit 1; }
+# now: prints the current UTC time in ISO 8601 form; used for state and status timestamps.
 now() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
+# require_root COMMAND: ends the script through die unless it runs as root; COMMAND only names the hint.
 require_root() { [[ $EUID -eq 0 ]] || die "Run as root: sudo aiwos $*"; }
 
+# compose ARGS...
+#   Purpose:   runs docker compose for the aiwos project with the server .env and the production file.
+#   Changes:   whatever the compose subcommand changes. Returns the compose exit status.
 compose() {
   docker compose --project-name aiwos --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+# is_true VALUE
+#   Purpose:   tests a boolean-like setting; 1, true, yes and on (any case) are true.
+#   Changes:   nothing. Returns 0 for true and 1 for anything else, including empty.
 is_true() {
   case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
     1 | true | yes | on) return 0 ;;
@@ -73,11 +85,19 @@ is_true() {
 
 # ---- small KEY=VALUE files (.env and the deploy state) ------------------------------------------
 
+# kv_get FILE KEY
+#   Purpose:   prints the last value of KEY in a KEY=VALUE file.
+#   Changes:   nothing. A missing file or key prints an empty line; never fails.
 kv_get() {
   grep -E "^$2=" "$1" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
 }
 
 # Replaces KEY's line, or appends it, through a temporary file so a crash never leaves half a file.
+# kv_set FILE KEY VALUE
+#   Arguments: $1 the file (created with mode 600 when missing), $2 the key, $3 the value;
+#              newlines in the value are turned into spaces.
+#   Changes:   rewrites FILE with mode 600. A write error stops the script (set -e) and leaves
+#              the original file intact.
 kv_set() {
   local file="$1" key="$2" value="$3" tmp="$1.tmp"
   value="$(printf '%s' "$value" | tr '\n' ' ')"
@@ -92,11 +112,16 @@ kv_set() {
   mv -f "$tmp" "$file"
 }
 
+# env_value KEY and set_env_value KEY VALUE read and write the server .env; state KEY and set_state KEY VALUE do the same for the deploy state file.
 env_value() { kv_get "$ENV_FILE" "$1"; }
 set_env_value() { kv_set "$ENV_FILE" "$1" "$2"; }
 state() { kv_get "$STATE_FILE" "$1"; }
 set_state() { kv_set "$STATE_FILE" "$1" "$2"; }
 
+# load_env
+#   Purpose:   exports every setting of the server .env into this shell for compose and the builds.
+#   Changes:   the environment of this process only.
+#   Failure:   ends the script through die when the file does not exist.
 load_env() {
   [[ -f "$ENV_FILE" ]] || die "$ENV_FILE does not exist; run: aiwos init"
   set -a
@@ -107,6 +132,11 @@ load_env() {
 
 # ---- status file (public: SHAs, times and results only) ----------------------------------------
 
+# write_status
+#   Purpose:   publishes the deploy state as JSON for https://<host>/deploy-status.json.
+#   Changes:   writes STATUS_FILE (mode 644) through a temporary file and creates STATUS_DIR.
+#              It holds SHAs, times and results only, never secrets.
+#   Failure:   a jq or write error stops the script (set -e); the previous file stays in place.
 write_status() {
   mkdir -p "$STATUS_DIR"
   chmod 755 "$STATUS_DIR"
@@ -144,6 +174,9 @@ write_status() {
 }
 
 # Records the end of an attempt. Results: deployed, build_failed, rolled_back, rollback_failed, failed.
+# finish_attempt RESULT MESSAGE
+#   Changes:   the ATTEMPT_* and PHASE entries of the state file, the status file and the log.
+#   Failure:   never fails on its own account.
 finish_attempt() {
   set_state ATTEMPT_RESULT "$1"
   set_state ATTEMPT_MESSAGE "$2"
@@ -153,6 +186,9 @@ finish_attempt() {
   log "Result: $1 - $2"
 }
 
+# set_phase PHASE
+#   Purpose:   records the current deploy phase (building, starting, rolling_back, reconfiguring, idle).
+#   Changes:   the state file and the published status file.
 set_phase() {
   set_state PHASE "$1"
   write_status
@@ -160,6 +196,11 @@ set_phase() {
 
 # ---- init and install ---------------------------------------------------------------------------
 
+# write_secrets
+#   Purpose:   creates the server .env with freshly generated secrets, once per server.
+#   Changes:   writes ENV_FILE with mode 600 (umask 077) through a temporary file. Callers invoke
+#              it only when the file is absent, so existing secrets are never replaced.
+#   Failure:   an openssl or write error stops the script (set -e); no partial file is left in place.
 write_secrets() {
   (
     umask 077
@@ -183,6 +224,9 @@ EOF
 
 # The browser runner's shared secret, added to an existing .env on the first deploy that needs it
 # (servers set up before the browser existed have none), and never rewritten.
+# ensure_browser_secret
+#   Changes:   adds AIWOS_BROWSER_RUNNER_SECRET to ENV_FILE when it is missing or empty.
+#   Failure:   does nothing when the file does not exist; other errors stop the script.
 ensure_browser_secret() {
   [[ -f "$ENV_FILE" ]] || return 0
   if [[ -z "$(env_value AIWOS_BROWSER_RUNNER_SECRET)" ]]; then
@@ -194,6 +238,10 @@ ensure_browser_secret() {
 
 # Caddy reads its file from a mounted directory; copied on every deploy so a changed Caddyfile in the
 # repository takes effect (reloaded without a restart when Caddy is running).
+# sync_caddy_config
+#   Changes:   replaces CADDY_DIR/Caddyfile when the repository copy differs, then reloads a running
+#              Caddy, or restarts it when the reload fails.
+#   Failure:   a reload or restart error is ignored; a copy error stops the script (set -e).
 sync_caddy_config() {
   mkdir -p "$CADDY_DIR"
   if ! cmp -s "$REPO/infra/aws/Caddyfile" "$CADDY_DIR/Caddyfile"; then
@@ -209,6 +257,9 @@ sync_caddy_config() {
 
 # ---- served names (sslip.io and the optional custom domain) -------------------------------------
 
+# public_ip
+#   Purpose:   prints the server's Elastic IP from bootstrap.env, or nothing when that file is absent.
+#   Changes:   nothing; the file is read in a subshell.
 public_ip() {
   [[ -f "$BOOTSTRAP_ENV" ]] || return 0
   (
@@ -220,6 +271,9 @@ public_ip() {
 
 # resolves_to NAME IP: NAME has an A record for IP (system resolver, then a public one when dig is
 # installed, so a cached negative answer does not hold the domain back).
+# resolves_to NAME IP
+#   Arguments: $1 the host name, $2 the expected IPv4 address.
+#   Changes:   nothing. Returns 0 when NAME resolves to IP, 1 otherwise.
 resolves_to() {
   local name="$1" ip="$2"
   getent ahostsv4 "$name" 2>/dev/null | awk '{print $1}' | grep -qxF "$ip" && return 0
@@ -231,6 +285,13 @@ resolves_to() {
 # AIWOS_PUBLIC_BASE_URL, AIWOS_CORS_ORIGINS) and nginx's allow-list. The custom
 # domain is served only once it resolves to this server: until then Caddy is not asked for its
 # certificate, so a pending DNS change cannot affect the sslip.io site. Sets SITE_CHANGED.
+# render_site_config
+#   Arguments: none. Reads site.env, bootstrap.env and DNS.
+#   Changes:   AIWOS_PUBLIC_HOST, AIWOS_ALT_HOSTS, AIWOS_PUBLIC_BASE_URL and AIWOS_CORS_ORIGINS in
+#              ENV_FILE, NGINX_DIR/hosts.map and proto.map, DOMAIN_MISSES in the state file, and
+#              the SITE_CHANGED flag, which is true when any of them changed.
+#   Failure:   returns 0 without changes when the public IP is unknown; an invalid custom domain
+#              is logged and ignored; write errors stop the script (set -e).
 SITE_CHANGED=false
 render_site_config() {
   local ip sslip domain primary alt="" cors misses key old new map
@@ -298,6 +359,11 @@ render_site_config() {
 # Applies changed names to the running stack without a build: compose recreates only the
 # containers whose settings changed (Caddy and the services reading AIWOS_PUBLIC_BASE_URL and
 # AIWOS_CORS_ORIGINS), then nginx reloads its allow-list (and the new containers' addresses).
+# apply_site_config
+#   Changes:   runs compose up without a build, reloads nginx, and updates the phase, TLS state and
+#              log. Does nothing when no commit is live yet.
+#   Failure:   a compose or nginx error is logged, then health decides; an unhealthy stack is
+#              recorded with record_unhealthy but is not rolled back.
 apply_site_config() {
   local current
   current="$(state CURRENT_SHA)"
@@ -319,6 +385,12 @@ apply_site_config() {
   set_phase idle
 }
 
+# cmd_init
+#   Purpose:   the init command; prepares /opt/aiwos on first boot and reapplies settings later.
+#   Changes:   AIWOS_HOME, ENV_FILE (secrets only when it is new, settings every time), the
+#              served-name and Caddy files, the state and status files, and a running stack.
+#   Failure:   ends with an error when not root or when bootstrap.env, PUBLIC_IP or AWS_REGION
+#              is missing.
 cmd_init() {
   require_root init
   [[ -f "$BOOTSTRAP_ENV" ]] || die "$BOOTSTRAP_ENV is missing (written by the CloudFormation user data)"
@@ -373,6 +445,9 @@ cmd_init() {
   fi
 }
 
+# install_self
+#   Changes:   replaces /usr/bin/aiwos with this script from the checked-out repository.
+#   Failure:   a copy error stops the script (set -e).
 install_self() {
   # In /usr/bin, so "sudo aiwos" works from a Session Manager shell (sudo's path leaves out
   # /usr/local/bin). Replaced by rename: a running copy keeps reading its old file.
@@ -380,6 +455,14 @@ install_self() {
   mv -f /usr/bin/aiwos.tmp /usr/bin/aiwos
 }
 
+# install_units
+#   Purpose:   installs the systemd service and timer that run "aiwos update" every 2 minutes,
+#              and the log rotation rule for LOG_FILE.
+#   Changes:   three files under /etc, then reloads systemd and enables the timer. Existing
+#              unit files are overwritten with the same content (the heredocs below are quoted,
+#              so nothing is expanded, except in the logrotate file).
+#   Failure:   a write or systemctl error stops the script (set -e), except the enable step,
+#              whose output is discarded.
 install_units() {
   cat >/etc/systemd/system/aiwos-update.service <<'EOF'
 [Unit]
@@ -427,6 +510,10 @@ EOF
   systemctl enable --now aiwos-update.timer >/dev/null 2>&1
 }
 
+# cmd_install
+#   Changes:   installs jq and logrotate when missing, creates LOG_FILE, and runs install_self
+#              and install_units.
+#   Failure:   ends with an error when not root; a failed dnf install stops the script.
 cmd_install() {
   require_root install
   command -v jq >/dev/null || dnf install -y jq
@@ -442,6 +529,9 @@ cmd_install() {
 
 # with_lock nowait|wait COMMAND...: one deploy at a time. The timer's run gives up quietly when a
 # manual command holds the lock; a manual command waits for the timer's run to finish.
+# Arguments: $1 the mode, nowait or wait, then the command to run. Holds the lock on file
+# descriptor 9 until the process exits. In nowait mode a busy lock returns 0 without running
+# the command; wait mode blocks.
 with_lock() {
   local mode="$1"
   shift
@@ -456,6 +546,9 @@ with_lock() {
 
 # ---- images -------------------------------------------------------------------------------------
 
+# image_of SERVICE
+#   Purpose:   maps a compose service name to its image name (aiwos/<name>:<sha>).
+#   Changes:   nothing; prints the name.
 image_of() {
   case "$1" in
     organisation) echo org-service ;;
@@ -465,6 +558,9 @@ image_of() {
   esac
 }
 
+# build_services
+#   Purpose:   prints the services to build; the gateway is added when its compose profile is on.
+#   Changes:   nothing.
 build_services() {
   local services="$APP_SERVICES"
   [[ ",$(env_value COMPOSE_PROFILES)," == *",gateway,"* ]] && services="$services gateway"
@@ -474,6 +570,9 @@ build_services() {
 # One service at a time, so only one build runs beside the live stack. The Maven stage of
 # services.Dockerfile does not depend on the service, so BuildKit compiles the backend once and the
 # other six backend images reuse it from the cache.
+# Arguments: $1 the commit SHA used as the image tag.
+# Changes:   Docker images and the build output in LOG_FILE. Images that already exist are skipped.
+# Failure:   prints the last 40 log lines and returns 1 at the first service that fails to build.
 build_images() {
   local sha="$1" service image
   export DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain AIWOS_IMAGE_TAG="$sha"
@@ -492,6 +591,9 @@ build_images() {
   done
 }
 
+# images_present SHA
+#   Purpose:   tests whether every service image exists for commit SHA.
+#   Changes:   nothing. Returns 0 when all exist and 1 when any is missing.
 images_present() {
   local sha="$1" service
   for service in $(build_services); do
@@ -503,6 +605,11 @@ images_present() {
 # commit's images under its own tag instead of building.
 CONFIG_ONLY_PATHS='^(infra/aws/(site\.env|Caddyfile|aiwos\.sh|cloudformation\.yaml)|docs/.*|\.github/.*|[^/]*\.md)$'
 
+# reuse_images FROM TO
+#   Arguments: $1 the live commit, $2 the commit about to be deployed.
+#   Changes:   adds the tag TO to each image of commit FROM.
+#   Failure:   returns 1, so the caller builds, when FROM is empty or equal to TO, when its images
+#              are missing, when the diff cannot be read, or when any other path changed.
 reuse_images() {
   local from="$1" to="$2" changed service image
   [[ -n "$from" && "$from" != "$to" ]] || return 1
@@ -520,6 +627,9 @@ reuse_images() {
 
 # Keeps the images of the current and previous commit; build cache is capped, not emptied, so the
 # next build stays incremental.
+# Arguments: $1 and $2, the two commit tags to keep.
+# Changes:   removes other aiwos images, dangling images and build cache beyond 6 GB.
+# Failure:   never fails; errors are ignored.
 prune_images() {
   local keep1="$1" keep2="$2" ref tag
   docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^aiwos/' | while read -r ref; do
@@ -533,6 +643,9 @@ prune_images() {
 }
 
 # Optional (CreateEcrRepositories=true): an off-instance copy of each deployed image.
+# Arguments: $1 the deployed commit SHA.
+# Changes:   pushes copies of the images to ECR and removes the temporary registry tags.
+# Failure:   never fails the deploy; sign-in and push problems are only logged.
 ecr_copy() {
   local sha="$1" registry service image
   registry="$(env_value AIWOS_ECR_REGISTRY)"
@@ -554,6 +667,10 @@ ecr_copy() {
 
 # ---- health -------------------------------------------------------------------------------------
 
+# edge_ok
+#   Purpose:   tests the full path through Caddy on this machine: the web client and the identity
+#              key set behind nginx.
+#   Changes:   nothing. Returns 0 when both answer, 1 otherwise.
 edge_ok() {
   local host jwks
   host="$(env_value AIWOS_PUBLIC_HOST)"
@@ -564,6 +681,10 @@ edge_ok() {
   [[ "$jwks" == *'"keys"'* ]]
 }
 
+# tls_valid
+#   Purpose:   prints true when the public host answers over HTTPS with a certificate that curl
+#              accepts, otherwise false.
+#   Changes:   nothing.
 tls_valid() {
   local host
   host="$(env_value AIWOS_PUBLIC_HOST)"
@@ -574,6 +695,11 @@ tls_valid() {
   fi
 }
 
+# wait_healthy DEADLINE
+#   Arguments: $1 a time limit expressed in $SECONDS.
+#   Changes:   writes progress to the log about once a minute.
+#   Failure:   returns 1 once the deadline passes with any core service not healthy or the edge
+#              check failing; returns 0 as soon as all are healthy.
 wait_healthy() {
   local deadline="$1" pending service id state last_report=0
   while ((SECONDS < deadline)); do
@@ -608,6 +734,9 @@ wait_healthy() {
 }
 
 # Starts SHA's images with SHA's compose file and waits until DEADLINE (in $SECONDS).
+# Arguments: $1 the commit SHA, $2 the deadline in $SECONDS.
+# Changes:   checks out the commit, updates AIWOS_IMAGE_TAG and the site files, and runs compose up.
+# Failure:   returns 1 when the checkout fails or the stack is not healthy in time.
 switch_to() {
   local sha="$1" deadline="$2"
   git -C "$REPO" checkout --quiet --force "$sha" || { log "Could not check out ${sha:0:12}"; return 1; }
@@ -625,6 +754,9 @@ switch_to() {
   wait_healthy "$deadline"
 }
 
+# record_unhealthy
+#   Purpose:   saves diagnostics after a failed health check.
+#   Changes:   appends compose ps and the last 30 log lines of each core service to LOG_FILE.
 record_unhealthy() {
   {
     echo "---- compose ps at $(now)"
@@ -639,6 +771,10 @@ record_unhealthy() {
 
 # ---- deploy -------------------------------------------------------------------------------------
 
+# resolve_sha REF
+#   Purpose:   prints the full commit SHA for a branch, tag or abbreviated SHA.
+#   Changes:   may run git fetch when the reference is unknown locally.
+#   Failure:   ends the script through die with "Unknown commit" when it cannot be resolved.
 resolve_sha() {
   local ref="$1"
   if ! git -C "$REPO" cat-file -e "$ref^{commit}" 2>/dev/null; then
@@ -648,6 +784,12 @@ resolve_sha() {
 }
 
 # deploy_sha SHA REASON: build, start, health check, and roll back to the current commit on failure.
+# Arguments: $1 the target SHA, $2 a reason shown in the status file.
+# Changes:   the state and status files, Docker images and containers, the git checkout and
+#            the log. Pauses ollama during a build. On success it keeps only the current and
+#            previous images and refreshes the installed script and units.
+# Failure:   returns 1 after recording build_failed, failed, rolled_back or rollback_failed in the
+#            status file; the target is then held in SKIP_SHA so the timer does not retry it.
 deploy_sha() {
   local target="$1" reason="$2" current previous deadline timeout first=false
   load_env
@@ -729,6 +871,11 @@ deploy_sha() {
   return 1
 }
 
+# do_update FORCE
+#   Purpose:   the update command; deploys the tip of the configured branch when it is new.
+#   Arguments: $1 true to deploy even a commit that is live or already failed.
+#   Changes:   LAST_CHECK_AT, the served names, and (through deploy_sha) the whole stack.
+#   Failure:   ends through die when git fetch fails; a failed deploy is recorded, not fatal.
 do_update() {
   local force="$1" branch target current skip
   load_env
@@ -763,12 +910,20 @@ do_update() {
   deploy_sha "$target" "new commit on $branch" || true
 }
 
+# do_deploy REF
+#   Purpose:   the deploy command; deploys one named commit through deploy_sha.
+#   Failure:   ends through die when REF cannot be resolved.
 do_deploy() {
   local sha
   sha="$(resolve_sha "$1")"
   deploy_sha "$sha" "manual deploy"
 }
 
+# do_rollback [REF]
+#   Purpose:   the rollback command; deploys the previous commit, or REF, and holds there.
+#   Changes:   through deploy_sha, and SKIP_SHA, which stops the timer redeploying the commit
+#              that was rolled away from.
+#   Failure:   ends through die when there is nothing to go back to or the target is already live.
 do_rollback() {
   local target="${1:-}" current
   load_env
@@ -787,6 +942,9 @@ do_rollback() {
 
 # ---- commands -----------------------------------------------------------------------------------
 
+# cmd_status
+#   Purpose:   prints the status file, compose ps, the next timer run, memory and disk usage.
+#   Changes:   nothing. Needs the server .env; ends through die when it is missing.
 cmd_status() {
   if [[ -f "$STATUS_FILE" ]]; then
     jq . "$STATUS_FILE"
@@ -800,11 +958,17 @@ cmd_status() {
   df -h / | tail -n 1
 }
 
+# cmd_logs [SERVICE...]
+#   Purpose:   follows the last 200 log lines of the named services, or of all of them.
+#   Changes:   nothing; runs until interrupted.
 cmd_logs() {
   load_env
   compose logs --tail 200 -f "$@"
 }
 
+# cmd_url
+#   Purpose:   prints AIWOS_URL=<public address> for scripts and the CloudFormation output.
+#   Changes:   nothing.
 cmd_url() {
   printf 'AIWOS_URL=%s\n' "$(env_value AIWOS_PUBLIC_BASE_URL)"
 }

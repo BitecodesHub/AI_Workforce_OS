@@ -189,6 +189,9 @@ function currentOwnerSentence(ownerName: string): string {
 }
 
 // @find: transfer schedule owner dialog, change who owns a schedule
+/**
+ * Dialog for handing a schedule to another member (permission checked by canTransferSchedule; the server enforces it too). Candidates are members, other than the current owner, whose roles are allowed to own schedules (members need member:read, roles need role:read to be listed). Each opening starts blank. Confirming calls useTransferScheduleOwner, toasts that the schedule now runs as the chosen member, and closes; a failure shows in the dialog. Cannot be closed while saving.
+ */
 function TransferOwnerDialog({
   schedule,
   ownerName,
@@ -286,6 +289,9 @@ function TransferOwnerDialog({
 }
 
 // @find: empty schedules state, create first schedule
+/**
+ * The empty state when there are no schedules, with a Create schedule button for people who hold task:create.
+ */
 function EmptySchedules({ canCreate, onCreate }: { canCreate: boolean; onCreate: () => void }) {
   return (
     <Card as="section">
@@ -315,6 +321,10 @@ function EmptySchedules({ canCreate, onCreate }: { canCreate: boolean; onCreate:
 }
 
 // @find: Schedules component, schedules page, create schedule, POST /api/schedules, /schedules
+/**
+ * The Schedules page (route /schedules, permission task:read).
+ * Lists schedules (useSchedules inside ScheduleListCard) with name, when, next run, last run, who it runs as and per-row actions: run now, pause, resume, edit, transfer and delete, each offered only when the person may manage that schedule (its owner or someone who can cancel work, and task:create for changes). Selecting a name opens the run history dialog; Create opens the schedule form dialog (which echoes the timetable in plain English before saving); transfer opens TransferOwnerDialog; delete asks for confirmation, calls useDeleteSchedule, toasts and reports failures inside the dialog. Owner names come from a member directory that falls back to "Former member" or "Someone" when a person cannot be resolved.
+ */
 export function Schedules() {
   const canCreate = can('task:create')
   const canTransfer = canTransferSchedule(can)

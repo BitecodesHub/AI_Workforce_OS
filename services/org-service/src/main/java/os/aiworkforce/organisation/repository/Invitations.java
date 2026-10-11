@@ -18,12 +18,25 @@ import os.aiworkforce.organisation.domain.Invitation;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Workspace invitations. Used by {@code InvitationService}; Spring Data generates the
+ * implementation. Lookups by workspace keep one workspace's invitations apart from another's.
+ */
 public interface Invitations extends JpaRepository<Invitation, UUID> {
 
+    /**
+     * The invitation whose stored token hash matches. The raw token is never stored, so the caller
+     * hashes the presented token first. Used when a person redeems an invitation, before any workspace is known.
+     */
     Optional<Invitation> findByTokenHash(String tokenHash);
 
+    /** All invitations of a workspace, newest first, for the administration list. */
     List<Invitation> findByOrgIdOrderByCreatedAtDesc(UUID orgId);
 
+    /**
+     * The invitation for an address in a workspace with the given status, ignoring letter case. Used
+     * to find an existing pending invitation so a second one is not created for the same person.
+     */
     Optional<Invitation> findByOrgIdAndEmailIgnoreCaseAndStatus(UUID orgId, String email, String status);
 
     /** One invitation, only if it belongs to the workspace named in the path. */

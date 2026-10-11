@@ -73,8 +73,11 @@ public class NotificationService implements GoalLifecycleListener {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
+    /** Event name: an approval is waiting for a decision. */
     public static final String APPROVAL_RAISED = "approvalRaised";
+    /** Event name: an approval expired undecided. */
     public static final String APPROVAL_EXPIRED = "approvalExpired";
+    /** Event name: a schedule paused itself after repeated failures. */
     public static final String SCHEDULE_PAUSED = "schedulePaused";
     /** What the Send test button sends; never offered as a subscription. */
     public static final String TEST = "test";
@@ -114,16 +117,28 @@ public class NotificationService implements GoalLifecycleListener {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
-    /** What a workspace has set up, as the settings page reads it. The secret is never part of it. */
+    /**
+     * What a workspace has set up, as the settings page reads it. The secret is never part of it.
+     * Returned by {@link #settings} to NotificationSettingsController.
+     */
     public record Settings(String webhookUrl, boolean hasSecret, List<String> events) {}
 
-    /** How the Send test button went, in terms a person can act on. */
+    /**
+     * How the Send test button went, in terms a person can act on. {@code statusCode} is null when
+     * nothing answered. Returned by {@link #sendTest} to NotificationSettingsController.
+     */
     public record TestResult(boolean delivered, Integer statusCode, String message) {}
 
-    /** The message as the receiver gets it: a sentence and a link, and nothing the agent was doing. */
+    /**
+     * The message as the receiver gets it: a sentence and a link, and nothing the agent was doing.
+     * Serialised to JSON as the webhook body; built by {@link #publish} and {@link #sendTest}.
+     */
     record Message(String event, UUID workspaceId, String summary, String link) {}
 
-    /** Posts a body to an address and says what status answered; anything that is not an answer throws. */
+    /**
+     * Posts a body to an address and says what status answered; anything that is not an answer throws.
+     * The production implementation is {@link HttpSender}; tests supply their own.
+     */
     @FunctionalInterface
     interface Sender {
         int post(URI target, String body, String signature) throws IOException, InterruptedException;
@@ -139,6 +154,11 @@ public class NotificationService implements GoalLifecycleListener {
     private final List<Duration> retryDelays;
     private final ExecutorService ownExecutor;
 
+    /**
+     * Production constructor. Wires the real HTTP sender and a virtual-thread executor, enables the
+     * strict address rules in a deployed environment, and works out the base of the links in each
+     * message. Registers the three workspace settings with the runtime configuration service.
+     */
     @Autowired
     public NotificationService(
             RuntimeConfigService config,
@@ -171,6 +191,7 @@ public class NotificationService implements GoalLifecycleListener {
         this(config, encryption, json, strict, linkBase, sender, executor, retryDelays, false);
     }
 
+    // Shared constructor: stores the collaborators, registers the settings, and remembers an executor it must shut down.
     private NotificationService(
             RuntimeConfigService config,
             EnvelopeEncryptionService encryption,
@@ -193,6 +214,7 @@ public class NotificationService implements GoalLifecycleListener {
         config.register(List.of(WEBHOOK_URL, WEBHOOK_SECRET, EVENT_LIST));
     }
 
+    /** Stops the executor, but only when this service created it. Called by Spring at shutdown. */
     @PreDestroy
     void shutdown() {
         if (ownExecutor != null) {
@@ -200,6 +222,7 @@ public class NotificationService implements GoalLifecycleListener {
         }
     }
 
+    // The base of links in messages: the configured URL, else the first allowed web origin, without a trailing slash.
     private static String linkBase(String configured, PlatformProperties properties) {
         String base = configured;
         if (base == null || base.isBlank()) {
@@ -216,7 +239,10 @@ public class NotificationService implements GoalLifecycleListener {
     // ---- Settings -----------------------------------------------------------------------------
 
     // @find: get notification settings
-    /** What this workspace has set up. */
+    /**
+     * What this workspace has set up. Read-only: reads the three settings and reports whether a
+     * secret exists, never its value. Called by NotificationSettingsController.
+     */
     public Settings settings(UUID orgId) {
         String org = orgId.toString();
         return new Settings(
@@ -225,7 +251,7 @@ public class NotificationService implements GoalLifecycleListener {
                 eventsOf(config.getString(EVENT_LIST, org)));
     }
 
-    /** How a change to the secret is described afterwards, for the audit entry. */
+    /** How a change to the secret is described afterwards, for the audit entry. Returned by {@link #update}. */
     public enum SecretChange {
         KEPT,
         SET,
@@ -235,6 +261,11 @@ public class NotificationService implements GoalLifecycleListener {
     // @find: update notification webhook and events
     /**
      * Saves a workspace's webhook.
+     *
+     * <p>Validates first (address rules, known events, secret length) and throws a validation
+     * {@link ApiException} on any problem, before anything is written. Then writes the workspace
+     * settings; the secret is stored encrypted. Called by NotificationSettingsController, which
+     * records the audit entry from the result.
      *
      * @param webhookUrl where messages go; empty turns notifications off and removes the secret
      * @param secret a new secret to sign with; null keeps the one already stored, empty removes it
@@ -284,6 +315,7 @@ public class NotificationService implements GoalLifecycleListener {
         return change;
     }
 
+    // Parses the stored comma-separated events, dropping unknown and repeated names.
     private static List<String> eventsOf(String stored) {
         List<String> events = new ArrayList<>();
         if (stored != null) {
@@ -303,6 +335,9 @@ public class NotificationService implements GoalLifecycleListener {
     /**
      * Sends one test message now and says how it went, so a person setting this up learns at once
      * whether it works. One attempt, no retries: the person is waiting for the answer.
+     *
+     * <p>Makes a real HTTP call to the saved address. Never throws: every failure is turned into a
+     * {@link TestResult} with a plain explanation. Called by NotificationSettingsController.
      */
     public TestResult sendTest(UUID orgId) {
         String org = orgId.toString();
@@ -354,6 +389,7 @@ public class NotificationService implements GoalLifecycleListener {
         return "sha256=" + hmacHex(secret, body);
     }
 
+    /** Lower-case hex HMAC-SHA256 of {@code body} under {@code secret}; used to sign each message. */
     static String hmacHex(String secret, String body) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -369,7 +405,10 @@ public class NotificationService implements GoalLifecycleListener {
         }
     }
 
-    /** Hands a message to a thread of its own, and never throws into the caller. */
+    /**
+     * Hands a message to a thread of its own, and never throws into the caller.
+     * Called by the lifecycle callbacks below; a queueing failure is logged at WARN.
+     */
     private void publish(UUID orgId, String event, String summary, String path) {
         Message message = new Message(event, orgId, summary, link(path));
         try {
@@ -379,7 +418,13 @@ public class NotificationService implements GoalLifecycleListener {
         }
     }
 
-    /** Sends a message if the workspace asked to hear it, trying twice more after a failure. */
+    /**
+     * Sends a message if the workspace asked to hear it, trying twice more after a failure.
+     *
+     * <p>Runs on the delivery thread. Does nothing when no address is saved or the event is not
+     * subscribed. Makes HTTP calls, sleeping between attempts. An address that fails the checks is
+     * not retried. A message that never arrives is logged at WARN and dropped.
+     */
     void deliver(UUID orgId, Message message) {
         String failure = "no attempt was made";
         int attempts = 0;
@@ -425,12 +470,14 @@ public class NotificationService implements GoalLifecycleListener {
                 failure);
     }
 
+    // Sleeps for the delay unless it is zero or negative.
     private static void sleep(Duration delay) throws InterruptedException {
         if (!delay.isZero() && !delay.isNegative()) {
             Thread.sleep(delay);
         }
     }
 
+    // An absolute link into the app for the given path.
     private String link(String path) {
         return linkBase + path;
     }
@@ -438,6 +485,7 @@ public class NotificationService implements GoalLifecycleListener {
     // ---- What the engine announces --------------------------------------------------------------
 
     // @find: notify approval raised
+    /** Queues an "approval raised" message with a link to that approval. Called after the raise commits. */
     @Override
     public void onApprovalRaised(Goal goal, Task task, Approval approval) {
         publish(
@@ -448,6 +496,7 @@ public class NotificationService implements GoalLifecycleListener {
     }
 
     // @find: notify approval expired
+    /** Queues an "approval expired" message with a link to the decided list. Called by the expiry sweep. */
     @Override
     public void onApprovalExpired(Goal goal, Task task, Approval approval) {
         publish(
@@ -458,6 +507,7 @@ public class NotificationService implements GoalLifecycleListener {
     }
 
     // @find: notify schedule paused
+    /** Queues a "schedule paused" message stating the number of failed runs. Called when a schedule pauses itself. */
     @Override
     public void onSchedulePaused(SchedulePause pause) {
         publish(
@@ -532,6 +582,7 @@ public class NotificationService implements GoalLifecycleListener {
         return uri;
     }
 
+    /** True for any address that lies inside a network: loopback, link-local, private, multicast, carrier-grade or unique-local. */
     static boolean isInternal(InetAddress address) {
         if (address.isAnyLocalAddress()
                 || address.isLoopbackAddress()
@@ -564,6 +615,7 @@ public class NotificationService implements GoalLifecycleListener {
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
 
+        /** Sends the body with an optional signature header and returns the HTTP status; the reply body is discarded. */
         @Override
         public int post(URI target, String body, String signature) throws IOException, InterruptedException {
             HttpRequest.Builder request = HttpRequest.newBuilder(target)

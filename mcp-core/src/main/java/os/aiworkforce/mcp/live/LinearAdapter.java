@@ -1,6 +1,6 @@
 // @find: linear, issues, tickets, teams, list issues, get issue, create issue, update issue, GraphQL, API key, live adapter, real API, engineering
 // @what: Live Linear connector: runs linear__ tools (list, get, create, update issues) against the Linear GraphQL API with an API key.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "linear"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke; every tool is one or two POSTs of a GraphQL document to api.linear.app/graphql; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -26,14 +26,25 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  *
  * <p>GraphQL reports most failures as an {@code errors} array beside a 200, so every answer is
  * checked for one before its data is used.
+ *
+ * <p>Used by the tool gateway when a workspace has stored a Linear API key. list_issues and get_issue
+ * are read tools; create_issue and update_issue are write tools, so a person is asked first when the
+ * workspace policy says so. There is no destructive or outbound tool: issues are never deleted.
+ *
+ * <p>Failures: a missing argument, an unknown team, issue or state, or a mutation that Linear does
+ * not confirm becomes a plain failed result; a rejected key asks an administrator to connect again.
+ * Nothing is retried, so a dropped connection on a mutation is reported as indeterminate.
  */
 public final class LinearAdapter extends LiveServerAdapter {
 
+    /** The production Linear API host; tests pass another base URL to the constructor. */
     public static final String BASE_URL = "https://api.linear.app";
 
+    /** The GraphQL selection shared by every issue query and mutation answer. */
     private static final String ISSUE_FIELDS =
             "id identifier title description priority url createdAt updatedAt state { name } team { key } assignee { name }";
 
+    /** Registers the four Linear tools. The sandbox supplies the tool definitions. */
     public LinearAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Linear", json, http, baseUrl);
         on("list_issues", this::listIssues);
@@ -42,12 +53,14 @@ public final class LinearAdapter extends LiveServerAdapter {
         on("update_issue", this::updateIssue);
     }
 
+    /** Sends the personal API key as the Authorization header without a Bearer prefix. */
     @Override
     protected void authorize(HttpHeaders headers, String key) {
         // A personal API key goes in the header as it is; an OAuth token would carry "Bearer".
         headers.set(HttpHeaders.AUTHORIZATION, key);
     }
 
+    /** Connection check: GraphQL query for the viewer and organisation; answers the name with the organisation. */
     @Override
     protected Mono<String> whoAmI(String key) {
         return graphql(key, "query { viewer { name } organization { name } }", json.createObjectNode())
@@ -59,6 +72,10 @@ public final class LinearAdapter extends LiveServerAdapter {
     }
 
     // @find: Linear list issues, tool linear__list_issues, live Linear call
+    /**
+     * Read tool. One GraphQL query, newest update first, at most 100 issues, optionally filtered by
+     * title text, state name or team key (all ignoring case).
+     */
     private Mono<ToolResult> listIssues(ToolInvocation invocation, JsonNode arguments, String key) {
         ObjectNode variables = json.createObjectNode();
         variables.put("first", limit(arguments, 25, 100));
@@ -85,6 +102,7 @@ public final class LinearAdapter extends LiveServerAdapter {
     }
 
     // @find: Linear get issue, tool linear__get_issue, live Linear call
+    /** Read tool. One GraphQL query for one issue, including its description; fails with a plain message when the key cannot see it. */
     private Mono<ToolResult> getIssue(ToolInvocation invocation, JsonNode arguments, String key) {
         String id = required(arguments, "id");
         return issueById(key, id, ISSUE_FIELDS).map(issue -> done(
@@ -92,6 +110,11 @@ public final class LinearAdapter extends LiveServerAdapter {
     }
 
     // @find: Linear create issue, tool linear__create_issue, live Linear call
+    /**
+     * Write tool. Two calls: a query for the teams, to choose the team, then the issueCreate mutation.
+     * A team is chosen automatically only when there is exactly one. Not idempotent: a dropped
+     * connection is reported as indeterminate and is not repeated.
+     */
     private Mono<ToolResult> createIssue(ToolInvocation invocation, JsonNode arguments, String key) {
         String title = required(arguments, "title");
         return teamId(key, text(arguments, "team")).flatMap(teamId -> {
@@ -111,6 +134,11 @@ public final class LinearAdapter extends LiveServerAdapter {
     }
 
     // @find: Linear update issue, tool linear__update_issue, live Linear call
+    /**
+     * Write tool. Two calls: a query for the issue and the states of its team, then the issueUpdate
+     * mutation with the title, description, priority and state that were given. A state is matched by
+     * name, ignoring case. Refuses before the mutation when nothing is given to change.
+     */
     private Mono<ToolResult> updateIssue(ToolInvocation invocation, JsonNode arguments, String key) {
         String id = required(arguments, "id");
         String state = text(arguments, "state");
@@ -140,6 +168,7 @@ public final class LinearAdapter extends LiveServerAdapter {
         });
     }
 
+    /** Queries one issue with the given fields; fails with a plain message when it is missing or not visible to the key. */
     private Mono<JsonNode> issueById(String key, String id, String fields) {
         ObjectNode variables = json.createObjectNode();
         variables.put("id", id);
@@ -154,6 +183,10 @@ public final class LinearAdapter extends LiveServerAdapter {
     }
 
     /* Linear needs a team for every issue. One team needs no choosing; several do. */
+    /**
+     * Resolves the team of a new issue by key or name from the first fifty teams. Without a name, the
+     * only team is used; with several, the person is asked to say which.
+     */
     private Mono<String> teamId(String key, String team) {
         return graphql(key, "query { teams(first: 50) { nodes { id key name } } }", json.createObjectNode())
                 .map(data -> {
@@ -175,6 +208,7 @@ public final class LinearAdapter extends LiveServerAdapter {
                 });
     }
 
+    /** Finds the id of a named workflow state among the states of the issue team; lists the valid names when it is unknown. */
     private static String stateId(JsonNode issue, String state) {
         List<String> names = new ArrayList<>();
         for (JsonNode candidate : issue.path("team").path("states").path("nodes")) {
@@ -187,6 +221,7 @@ public final class LinearAdapter extends LiveServerAdapter {
                 + String.join(", ", names) + ".");
     }
 
+    /** Copies the optional description and numeric priority of the arguments into a mutation input. */
     private static void copy(JsonNode arguments, ObjectNode input) {
         String description = text(arguments, "description");
         if (description != null) {
@@ -197,10 +232,12 @@ public final class LinearAdapter extends LiveServerAdapter {
         }
     }
 
+    /** The team keys as a comma separated list, for error messages. */
     private static String keys(List<JsonNode> teams) {
         return String.join(", ", teams.stream().map(team -> team.path("key").asText()).toList());
     }
 
+    /** Maps a Linear issue to the plain shape the tools return; the description is added only when asked for. */
     private ObjectNode issue(JsonNode issue, boolean withDescription) {
         ObjectNode item = json.createObjectNode();
         item.put("id", issue.path("identifier").asText(issue.path("id").asText()));
@@ -217,6 +254,11 @@ public final class LinearAdapter extends LiveServerAdapter {
         return item;
     }
 
+    /**
+     * Posts one GraphQL document and returns its {@code data}. Linear reports failures as an
+     * {@code errors} array, with HTTP 200 or 400, so the array is read from either; an authentication
+     * error asks for the connection to be made again, any other error is passed on in one sentence.
+     */
     private Mono<JsonNode> graphql(String key, String document, ObjectNode variables) {
         ObjectNode body = json.createObjectNode();
         body.put("query", document);
@@ -243,6 +285,7 @@ public final class LinearAdapter extends LiveServerAdapter {
                 });
     }
 
+    /** Reads the body of a 400 answer and returns it only when it holds a GraphQL errors array; otherwise null. */
     private JsonNode graphqlErrors(String body) {
         try {
             JsonNode answer = json.readTree(body);
@@ -255,6 +298,7 @@ public final class LinearAdapter extends LiveServerAdapter {
     }
 
     /* A mutation can answer success false with no error; nothing was changed then. */
+    /** Returns the issue of a mutation payload, or refuses when Linear did not confirm success. */
     private static JsonNode confirmed(JsonNode payload, String what) {
         if (!payload.path("success").asBoolean(false) || !payload.path("issue").isObject()) {
             throw new VendorException("Linear did not confirm that the issue was " + what + ".");

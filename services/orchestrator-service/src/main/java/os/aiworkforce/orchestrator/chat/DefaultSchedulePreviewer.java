@@ -15,6 +15,9 @@ import os.aiworkforce.orchestrator.schedule.ParsedSchedule;
 @Component
 public class DefaultSchedulePreviewer implements SchedulePreviewer {
 
+    /**
+     * Delegates to {@link SchedulePreviewer#DEFAULT}: the whole-message parser first, then the phrase extractor. Pure; no side effects.
+     */
     @Override
     public Optional<ParsedSchedule> tryParse(String text, ZoneId zone, Instant now) {
         return SchedulePreviewer.DEFAULT.tryParse(text, zone, now);

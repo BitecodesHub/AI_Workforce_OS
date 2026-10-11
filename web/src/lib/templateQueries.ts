@@ -32,6 +32,7 @@ export type FromTemplate = { agent: Agent; suggestedConnectors: string[] }
  * rest of /api/agents does.
  */
 const TEMPLATES_PATH = '/api/agents/templates'
+/** The endpoint path that creates an agent from the template with this key; the key is URL-encoded. */
 const fromTemplatePath = (key: string) => `/api/agents/from-template/${encodeURIComponent(key)}`
 
 // @find: template card view, assistant template summary

@@ -51,6 +51,10 @@ import { useNow } from '../lib/useNow'
  */
 
 // @find: RunDetail component, run page, run trace, /runs/:id
+/**
+ * The Run detail page (route /runs/:id, permission run:read): the full trace of one run.
+ * Loads the run (useRun) behind QueryState (loading, error, permission, and a not-found state linking to all runs), resolves the agent's name and, with task:read, the goal and task the run belongs to (for the Back link and context), sets the tab title, and records the getting-started step "read a trace" for the person once a run has loaded. Rendering is delegated to RunTrace.
+ */
 export function RunDetail({ id }: { id: string }) {
   const runQuery = useRun(id)
   const run = runQuery.data
@@ -93,6 +97,9 @@ export function RunDetail({ id }: { id: string }) {
 }
 
 // @find: run trace, step list, tool call details
+/**
+ * One run in full: facts (agent, what started it, times, cost), what it is waiting for (approval or question, with the place to decide it), the answer, or an incomplete answer for a run that failed after writing something, the failure reason (cancellations name the member who stopped it when member:read allows), and every step in order starting with the instruction. Steps are polled while the run is active. Stop run (run:cancel, only while active) confirms, then cancels through useCancelRun and toasts. Try again (for failed, abandoned or cancelled runs) restarts the goal from the step that did not finish when the run belongs to a goal (task:create), or starts a new run with the same instruction otherwise (agent:run), then navigates to the goal or the new run. Actions already completed before the failure are listed so a person knows what a retry may repeat. Failures appear inside the confirmation dialogs.
+ */
 function RunTrace({
   run,
   agentName,

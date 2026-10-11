@@ -68,10 +68,14 @@ const FIELD_LABELS: Record<string, string> = {
   systemPrompt: 'Instructions',
 }
 
+/** Display name of an agent category; unknown categories in sentence case. */
 function categoryLabel(category: string): string {
   return CATEGORY_LABEL[category] ?? sentenceCase(category)
 }
 
+/**
+ * The searchable text of an agent: name, key, category, description, summary and the names of its connectors.
+ */
 function agentSearchText(agent: Agent): string {
   return [
     agent.name,
@@ -117,6 +121,9 @@ function OutcomeFigures({ agent, outcomes }: { agent: Agent; outcomes: Exclude<O
 }
 
 // @find: agent card, open agent, status, pause state
+/**
+ * One agent as a card that links to /agents/{id}. Shows name, category, status, description, connectors and the outcome figures. With agent:update, a Pause or Resume button sits beside the link (not inside it) for agents that are not retired. The link's accessible name is the agent's name and status, with the description as its description.
+ */
 function AgentCard({ agent, outcomes }: { agent: Agent; outcomes: Outcomes }) {
   const tools = agent.tools
   // Pause or Resume sits on the card's corner, beside the card rather than inside its link: a
@@ -312,6 +319,9 @@ function useAddAssistant(onAdded: (result: FromTemplate) => void, onFailed: (mes
 }
 
 // @find: create agent dialog, new agent, Create agent button
+/**
+ * The Add an agent dialog (permission agent:create). First view: choose a ready-made assistant (templates from useAgentTemplates, added through useAddAssistant) or Start from scratch, which shows CreateAgentForm. A ready-made assistant hands its result to the page, which shows AddedAssistantDialog. Closing resets the view, errors and the create mutation; it cannot be dismissed while a request is running.
+ */
 function CreateAgentDialog({
   open,
   onClose,
@@ -463,6 +473,9 @@ function AddedAssistantDialog({ added, onClose }: { added: FromTemplate | null; 
 }
 
 // @find: create agent form, name, description, instructions, POST /api/agents, create agent from scratch
+/**
+ * The from-scratch form: name, category, optional description, and instructions, with a key derived from the name (editable under advanced options, and shown whenever it is invalid). Save is enabled when name, a valid key and instructions are present. Flow: POST /api/agents through useCreateAgent, then toast and navigate to the new agent's page. A duplicate key is reported on the key field, other field problems beside their fields and anything else at the top of the dialog.
+ */
 function CreateAgentForm({
   createAgent,
   onError,
@@ -693,6 +706,10 @@ function SuggestedAssistants({ onAdded }: { onAdded: (result: FromTemplate) => v
 }
 
 // @find: Agents component, agents page, list agents, create agent, /agents
+/**
+ * The Agents page (route /agents, permission agent:read).
+ * Loads the agents (useAgents) behind QueryState. Shows working agents as cards, with a search box once there are more than eight agents, and retired agents in a collapsed "Retired" group that is kept for history. Outcome figures (success rate and 30-day cost) on each card need run:read; they show a loading placeholder, and are left out if they fail or the person lacks the permission. With agent:create the header and empty state offer Add an agent, and a ready-made assistant opens a dialog saying what exists and what still needs connecting. The empty state differs for people who cannot create agents.
+ */
 export function Agents() {
   const query = useAgents()
   // The figures need run:read. If they cannot be had the cards say nothing rather than guess.

@@ -21,6 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for ProcessedEvent rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface ProcessedEvents extends JpaRepository<ProcessedEvent, String> {
 
     // @find: delete old processed events, cleanup job

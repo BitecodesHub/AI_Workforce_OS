@@ -9,5 +9,6 @@ package os.aiworkforce.platform.web;
  */
 public final class PlatformWeb {
 
+    /** Not instantiable: the type exists only so that a component scan can name this package. */
     private PlatformWeb() {}
 }

@@ -27,12 +27,14 @@ import org.springframework.stereotype.Component;
 @Component
 public class RunPricing {
 
+    /** The pricing words returned for a run's cost. */
     public static final String PRICED = "priced";
     public static final String FREE = "free";
     public static final String SANDBOX = "sandbox";
     public static final String UNPRICED = "unpriced";
     public static final String NONE = "none";
 
+    /** Reads, per run, whether every successful call used the sandbox and whether every one was free. */
     private static final String CALLS =
             """
             select u.run_id,
@@ -46,11 +48,18 @@ public class RunPricing {
 
     private final NamedParameterJdbcTemplate jdbc;
 
+    /** Receives the JDBC template used for the usage query. */
     public RunPricing(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** The successful calls of each run, as {all sandbox, all free}; a run with none is absent. */
+    /**
+     * Reads the successful calls of each run from the usage table.
+     *
+     * <p>One read-only query joining usage rows to the model catalogue. Returns {all sandbox, all
+     * free} per run; a run with no successful call is absent from the map. Called by
+     * {@link RunController} for a page of runs; an empty id set returns an empty map without querying.
+     */
     public Map<UUID, boolean[]> calls(UUID orgId, Collection<UUID> runIds) {
         Map<UUID, boolean[]> out = new HashMap<>();
         if (runIds.isEmpty()) {

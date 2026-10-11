@@ -19,6 +19,7 @@ import { accessToken, clearSession } from './session'
  * or an <img> cannot carry the bearer token.
  */
 
+/** The broad kind of an uploaded file, which decides its icon and how Chat opens it. */
 export type AttachmentKind = 'pdf' | 'document' | 'presentation' | 'spreadsheet' | 'text' | 'image'
 
 /** An uploaded file, as the server describes it. */
@@ -50,9 +51,12 @@ export type SentAttachment = {
   pageCount: number | null
 }
 
+/** Largest file the composer accepts (25 MB); the server enforces its own limit as well. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+/** Most files one message may carry. */
 export const MAX_ATTACHMENTS = 10
 
+/** File extension (lower case, no dot) to attachment kind; consulted before the MIME type. */
 const EXTENSION_KIND: Record<string, AttachmentKind> = {
   pdf: 'pdf',
   docx: 'document',
@@ -106,6 +110,7 @@ export const ACCEPT = [
 /** Image types a browser can draw, so a thumbnail or an opened tab shows the picture. */
 const VIEWABLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
+/** The lower-case extension of a file name, or an empty string when there is none. */
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.')
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : ''
@@ -163,12 +168,15 @@ export function formatPages(pageCount: number | null | undefined): string | null
 /* ---- Reaching the server ------------------------------------------------------------------------ */
 
 const BASE = '/api/conversations/attachments'
+/** Endpoint path that serves the stored bytes of one attachment. */
 const contentPath = (id: string) => `${BASE}/${encodeURIComponent(id)}/content`
 
+/** Type guard: true for a plain object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Parses JSON, returning null on malformed text. */
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
@@ -177,6 +185,7 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** Clears the local session and returns the 401 error shown when a token cannot be refreshed. */
 function sessionEnded(): ApiError {
   clearSession()
   return new ApiError(401, 'token_expired', 'Your session has ended. Sign in again.', false, {})
@@ -201,12 +210,15 @@ function uploadFallback(status: number, name: string): string {
   return `${name} could not be attached. Try again.`
 }
 
+/** The error a cancelled upload rejects with, so callers can tell cancellation from failure. */
 function abortError(): DOMException {
   return new DOMException('The upload was cancelled.', 'AbortError')
 }
 
+/** What an upload request produced: status, raw response text and the request id header. */
 type XhrResult = { status: number; text: string; requestId: string | null }
 
+/** Posts one file as multipart form data through XMLHttpRequest, because fetch cannot report upload progress. Calls onProgress with 0 to 1, resolves with the raw response on any HTTP status, rejects with a network ApiError on transport failure and with an AbortError when the signal fires (or has already fired). */
 function sendUpload(
   url: string,
   file: File,
@@ -316,6 +328,7 @@ function revokeLater(url: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
+/** Saves a blob as a download by clicking a temporary hidden link; the object URL is released later. */
 function saveBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')

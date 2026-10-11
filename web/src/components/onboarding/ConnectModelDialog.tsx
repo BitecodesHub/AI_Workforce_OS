@@ -1,6 +1,6 @@
 // @find: connect model, connect provider, add API key, model provider, OpenRouter, Groq, Bedrock, test key, enable provider, model policy, default model, credentials, ConnectModelDialog, Connect a model dialog, onboarding
 // @what: Dialog to connect an AI model provider: store and test a key, enable it and set the model policy.
-// @flow: Opened from onboarding and Settings; calls /api/providers, /api/credentials and /api/model-policy
+// @flow: Opened from Model routing, the Command Map, Setup and the getting-started guide; calls /api/providers, /api/credentials and /api/model-policy
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Notice, PasswordInput, Select } from '../ui'
@@ -57,11 +57,14 @@ import { KEY_PAGES, cleanKey, keyMismatch } from '../../lib/keyFormats'
  * which is checked and stored the same way.
  */
 
+/** The dialog's phases: form (choose provider and paste the key), working (a request is running), ask (waiting for a yes or no about adding the model to an existing policy), failed (retry) and done. */
 type Phase = 'form' | 'working' | 'ask' | 'failed' | 'done'
 
 /** What the steps already did, so that trying again after a failure does not repeat them. */
+/** Which steps have already succeeded (key stored, provider enabled), kept in a ref so Try again after a failure does not repeat them. */
 type Progress = { stored: boolean; enabled: boolean }
 
+/** Props of ConnectModelDialog: open, onClose and an optional provider to start on. */
 type Props = {
   open: boolean
   onClose: () => void
@@ -109,6 +112,18 @@ function offeredTo(providerId: string, catalogue: ProviderCatalogue | null, save
   return saved.filter((model) => model.providerId !== providerId || listed.has(model.modelId))
 }
 
+/**
+ * The dialog itself; see ConnectModelDialog for why it is remounted per opening.
+ * Data: useProviders, useModels, useModelPolicy and useCredentials (enabled while open). Flow: Verify and connect
+ * tests the key with useTestProviderKey (one small provider request, so a mistyped key is refused before
+ * anything is saved), then connect(): stores the credential (useStoreCredential, then clears the key from state),
+ * enables the provider (useToggleProvider) when needed, reads the provider's live model list, picks a model
+ * with recommendModel and decides the policy with planConnect. Outcomes: create a new policy (useSetModelPolicy),
+ * ask first when a policy already exists (the ask phase, answered by answerAsk), or leave it unchanged. The
+ * final sentence (connectedSentence) states whether the offline sandbox is still a fallback. Errors map onto
+ * fields (Bedrock uses BedrockCredentialFields and one JSON credential value) or appear as a notice; a failed
+ * phase offers Try again. A phase that replaces the form takes focus so it is announced.
+ */
 function ConnectModelDialogContent({ open, onClose, initialProviderId }: Props) {
   const providersQuery = useProviders({ enabled: open })
   const modelsQuery = useModels({ enabled: open })

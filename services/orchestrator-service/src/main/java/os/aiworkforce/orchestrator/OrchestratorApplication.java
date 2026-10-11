@@ -37,6 +37,7 @@ import os.aiworkforce.platform.web.PlatformWeb;
         })
 public class OrchestratorApplication {
 
+    /** Starts the Spring context and, with it, the embedded web server, the schedulers and the event listeners of this service. */
     public static void main(String[] args) {
         SpringApplication.run(OrchestratorApplication.class, args);
     }

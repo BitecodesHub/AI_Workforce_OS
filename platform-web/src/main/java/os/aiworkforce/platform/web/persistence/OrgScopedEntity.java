@@ -32,16 +32,27 @@ import org.hibernate.annotations.ParamDef;
 @Filter(name = OrgScopedEntity.ORG_FILTER)
 public abstract class OrgScopedEntity extends BaseEntity {
 
+    /** Name of the Hibernate filter that restricts queries to one workspace. */
     public static final String ORG_FILTER = "orgFilter";
+    /** Name of the filter parameter that carries the workspace id. */
     public static final String ORG_PARAM = "orgId";
 
+    /**
+     * The owning workspace. It is written once on insert and never changed, so a row cannot be moved
+     * from one tenant to another by an update.
+     */
     @Column(name = "org_id", nullable = false, updatable = false)
     private UUID orgId;
 
+    /** Returns the id of the workspace that owns this row. */
     public UUID getOrgId() {
         return orgId;
     }
 
+    /**
+     * Sets the owning workspace. Called by a service when it creates the row; the column is not
+     * updatable afterwards.
+     */
     public void setOrgId(UUID orgId) {
         this.orgId = orgId;
     }

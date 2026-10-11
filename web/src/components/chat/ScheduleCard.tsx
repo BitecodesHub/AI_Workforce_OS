@@ -13,7 +13,18 @@ import { scheduleState } from '../../lib/schedules'
 import { can } from '../../lib/session'
 
 // @find: ScheduleCard, schedule card, schedule card, scheduled task in chat, recurring task, created schedule
-/** A schedule read back in plain words, with next runs and a one-click way to save it (D10). */
+/**
+ * A schedule read back in plain words, with next runs and a one-click way to save it (D10).
+ *
+ * Rendered by MessageItem for a "schedule_suggestion" message, whose detail carries the name, agent,
+ * instruction, timetable text, description, timezone and next runs. Saved state is recognised four ways:
+ * the message names its schedule, this card just created it, a per-message flag in localStorage
+ * (chat.schedule.<message id>), or an existing schedule from useSchedules that matches agent, instruction
+ * and timetable. A saved card shows "Saved as a schedule", its state tag (active, paused or done, by the
+ * same rule as the Schedules screen) and links to the agent and Schedules. An unsaved card offers Create
+ * schedule (useCreateSchedule, for viewers holding task:create; otherwise an explanation), shows a failure
+ * in a warning Notice, and remembers success in storage.
+ */
 export function ScheduleCard({ message }: { message: ChatMessage }) {
   const detail = message.detail
   const createSchedule = useCreateSchedule()

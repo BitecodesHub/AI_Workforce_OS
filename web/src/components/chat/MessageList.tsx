@@ -11,6 +11,7 @@ import { lastAnswer, messageAuthor, orphanQuestions, withDayDividers } from './c
 import { useRovingList } from './useRovingList'
 
 /** The hidden heading an article opens with: "You, 10:42", "Priya Shah, 10:42", "Routing, 10:42". */
+/** Builds the hidden accessible name of a thread article from the author and the time, for example "You, 10:42". */
 function articleLabel(message: ChatMessage, agentNames: Record<string, Agent>, memberNames: Record<string, Member>, me: string | null): string {
   const time = new Date(message.createdAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
   const who =
@@ -35,6 +36,10 @@ function articleLabel(message: ChatMessage, agentNames: Record<string, Agent>, m
  * thread is a single Tab stop the way the sidebar's conversation list is (B1.3).
  */
 
+/**
+ * The thread as an ordered list: day dividers, one MessageItem per message, then orphan questions.
+ * Props are the thread's data (messages, goals, questions, agent and member lookups, the viewer id and the clock) and the callbacks passed through to the cards. Progress messages whose goal is not in the loaded goals are left out, since they would draw an empty article. withDayDividers inserts a divider before the first message of each calendar day and marks consecutive messages by the same author as grouped. Questions that have no message of their own are drawn after the messages (orphanQuestions). Every article belongs to one roving-focus list (useRovingList), so the thread is a single Tab stop and arrow keys move between items. The latest answer is flagged so it can be styled and read aloud first. Rendered by the Chat page.
+ */
 function MessageListInner({
   messages,
   goals,

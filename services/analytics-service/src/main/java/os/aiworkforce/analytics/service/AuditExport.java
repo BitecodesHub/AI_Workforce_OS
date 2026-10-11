@@ -32,6 +32,7 @@ public final class AuditExport {
     /** Rows read from the database at a time while streaming. */
     public static final int PAGE_SIZE = 500;
 
+    /** The export columns, in the order they are written to the CSV header and rows. */
     static final List<String> COLUMNS = List.of(
             "sequence",
             "occurred_at",
@@ -52,12 +53,22 @@ public final class AuditExport {
     /** Not key-sorted: the columns keep their documented order, and the detail keeps what was stored. */
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Not instantiable: this is a static utility. */
     private AuditExport() {}
 
+    /**
+     * The CSV header line: the column names joined by commas, ending with a carriage return and
+     * line feed.
+     */
     public static String csvHeader() {
         return String.join(",", COLUMNS) + "\r\n";
     }
 
+    /**
+     * One audit entry as a CSV line ending in a carriage return and line feed. The cells follow {@link #COLUMNS};
+     * the time is written to the microsecond and the detail as canonical JSON, exactly as hashed, and each cell
+     * passes through {@link #csvCell}. Null fields become empty cells. Called by AuditController while streaming.
+     */
     public static String csvRow(AuditEvent event) {
         List<String> cells = List.of(
                 Long.toString(event.getSequence()),
@@ -85,7 +96,11 @@ public final class AuditExport {
         return row.append("\r\n").toString();
     }
 
-    /** One JSON object on one line, with the detail as an object rather than as text. */
+    /**
+     * One JSON object on one line, with the detail as an object rather than as text. The fields and
+     * their order match the CSV columns, and the line ends with a newline. Throws
+     * IllegalStateException if the entry cannot be serialised.
+     */
     public static String jsonLine(AuditEvent event) {
         Map<String, Object> line = new LinkedHashMap<>();
         line.put("sequence", event.getSequence());
@@ -130,6 +145,7 @@ public final class AuditExport {
         return formula ? "'" + value : value;
     }
 
+    /** Returns the value, or an empty string when it is null. */
     private static String nullToEmpty(String value) {
         return value == null ? "" : value;
     }

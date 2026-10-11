@@ -29,6 +29,7 @@ import { OWNER_LEFT_REASON, scheduleStatus } from './scheduleModel'
  * them again on every request.
  */
 
+/** Readable timezone name: underscores replaced by spaces; empty for none. */
 const zoneLabel = (timezone: string | null | undefined) => (timezone ? timezone.replace(/_/g, ' ') : '')
 
 /** When a schedule next fires, as its own timezone's clock reads, or why it will not. */
@@ -40,6 +41,12 @@ function nextRunText(schedule: Schedule): string {
 }
 
 // @find: agent schedule run history panel, run counts, last five runs, view trace link
+/**
+ * The history inside an open schedule row. Reads useRecentScheduleRuns(schedule.id) through QueryState
+ * (permission task:read). Shows the totals (times run, succeeded, failed when counts exist), the last run with its
+ * status, up to the last few runs each with a View trace link (or Open in Tasks when no run id exists) and a button
+ * that opens the full history dialog (onOpenHistory). Empty state: "It has not run yet".
+ */
 function ScheduleRunHistory({ schedule, onOpenHistory }: { schedule: Schedule; onOpenHistory: () => void }) {
   const query = useRecentScheduleRuns(schedule.id)
   return (
@@ -121,6 +128,15 @@ function ScheduleRunHistory({ schedule, onOpenHistory }: { schedule: Schedule; o
 }
 
 // @find: one schedule row on agent page, schedule disclosure, schedule actions
+/**
+ * One schedule as a list item with a disclosure for its history.
+ * Shows the name toggle (aria-expanded), a status tag (scheduleStatus), when it fires, the next run in the
+ * schedule's own timezone (nextRunText) and the owner. When canManage is true it offers: Pause or Resume
+ * (usePauseSchedule and useResumeSchedule; not for a finished schedule or one paused because its owner left
+ * the workspace, which must first be taken over on the Schedules page), Run now (useRunScheduleNow), Edit and
+ * Delete (both delegated to the card through callbacks). Each request reports through a toast. The history
+ * panel is mounted only while open, so the history is requested only when someone looks at it.
+ */
 function AgentScheduleRow({
   schedule,
   ownerName,
@@ -269,6 +285,15 @@ function AgentScheduleRow({
 }
 
 // @find: agent schedules card component, scheduled tasks section
+/**
+ * "Scheduled tasks" card on an agent's page, rendered by routes/AgentDetail.tsx.
+ * Reads useAgentSchedules(agentId) (filtered again client-side by agent id) through QueryState (permission
+ * task:read), with owner names from useMemberDirectory. An empty list explains how to create one from the
+ * Schedules page or Chat. A row's actions need task:create plus the owner rules in canManageSchedule
+ * (lib/schedules.ts); the server checks them again. Edit opens ScheduleDialog (for viewers holding task:create),
+ * "Open full history" opens ScheduleHistoryDialog, and Delete opens a ConfirmDialog that calls useDeleteSchedule,
+ * with a success toast or an inline error.
+ */
 export function AgentSchedulesCard({ agentId, agentName }: { agentId: string; agentName: string }) {
   const query = useAgentSchedules(agentId)
   const directory = useMemberDirectory()

@@ -52,17 +52,27 @@ import org.springframework.stereotype.Service;
 @Service
 public class AuditChain {
 
+    /** Logger; chain breaks are logged at ERROR with the chain and the first broken sequence. */
     private static final Logger log = LoggerFactory.getLogger(AuditChain.class);
 
     /** The chain for events that belong to no workspace: a sign-in as an address nobody holds. */
     public static final String PLATFORM_CHAIN = "platform";
 
+    /**
+     * The original hash formula, version 1, used by entries written when the platform shared one
+     * chain.
+     */
     public static final int LEGACY = 1;
+    /** The current hash formula, version 2, covering every field; all new entries use it. */
     public static final int CURRENT = 2;
 
     /** Rows read per page while walking a chain: enough to be quick, few enough to hold in memory. */
     public static final int PAGE_SIZE = 500;
 
+    /**
+     * Stand-in for the previous hash of the first entry of a chain, so the formula has a value to
+     * hash.
+     */
     private static final String GENESIS = "genesis";
 
     /*
@@ -79,12 +89,20 @@ public class AuditChain {
     /** Plain and unconfigured: version 1 hashed whatever Jackson's defaults printed. */
     private static final ObjectMapper LEGACY_JSON = new ObjectMapper();
 
-    /** The chain an entry for this workspace belongs to. */
+    /**
+     * The chain an entry for this workspace belongs to: the workspace id as text, or
+     * {@value #PLATFORM_CHAIN} when there is no workspace. Pure; used by AuditAppender when writing
+     * and by AuditVerification when verifying.
+     */
     public static String chainKeyFor(UUID orgId) {
         return orgId == null ? PLATFORM_CHAIN : orgId.toString();
     }
 
-    /** The fields the chain covers, as read back from the table. */
+    /**
+     * The fields the chain covers, as read back from the table. Built by AuditAppender.toEntry from a
+     * stored or about-to-be-stored row, so hashing and verification both see exactly what the
+     * database holds. Also the row type that page suppliers return to a walk.
+     */
     public record ChainEntry(
             long sequence,
             int hashVersion,
@@ -105,6 +123,7 @@ public class AuditChain {
     /**
      * The result of walking one chain.
      *
+     * @param chainKey the chain that was walked: a workspace id, {@value #PLATFORM_CHAIN} or {@code legacy}
      * @param checked entries examined, up to and including the break when there is one
      * @param lastSequence the last entry examined, or 0 for an empty chain
      * @param firstBrokenSequence the first entry that failed, or null when the chain is intact
@@ -113,6 +132,7 @@ public class AuditChain {
     public record Verification(
             String chainKey, long checked, long lastSequence, Long firstBrokenSequence, String reason) {
 
+        /** True when no entry failed, that is when {@link #firstBrokenSequence()} is null. */
         public boolean verified() {
             return firstBrokenSequence == null;
         }
@@ -121,18 +141,31 @@ public class AuditChain {
     /** Where a walk gets its rows from: the next page of one chain, oldest first. */
     @FunctionalInterface
     public interface ChainPages {
+        /**
+         * Returns up to {@code limit} entries of the chain with a sequence above {@code
+         * afterSequence}, oldest first; empty when there are none.
+         */
         List<ChainEntry> after(String chainKey, long afterSequence, int limit);
     }
 
     /** Where a walk of the original platform-wide chain gets its rows from. */
     @FunctionalInterface
     public interface LegacyPages {
+        /**
+         * Returns up to {@code limit} entries of the original chain with a sequence above {@code
+         * afterSequence}, oldest first; empty when there are none.
+         */
         List<ChainEntry> after(long afterSequence, int limit);
     }
 
     /* ---- The two formulas ---------------------------------------------------------------------- */
 
-    /** The version 1 digest, given the entry before it. Kept exactly as it was written. */
+    /**
+     * The version 1 digest, given the entry before it. Kept exactly as it was written: it joins the
+     * given fields with a record separator, using {@code genesis} for a missing previous hash and an
+     * empty text for any other missing field, and returns the SHA-256 digest. Used only through
+     * {@link #recompute} and {@link #matches} for old rows; new entries use {@link #hashV2}.
+     */
     // @find: compute audit entry hash
     public String hash(
             String previousHash,
@@ -181,7 +214,10 @@ public class AuditChain {
         return digest(CanonicalJson.write(material));
     }
 
-    /** The digest an entry should carry, by the formula its own version names. */
+    /**
+     * The digest an entry should carry, by the formula its own version names. Pure; does not compare
+     * with the stored hash (see {@link #matches}) and tries only the formula's primary detail form.
+     */
     public String recompute(ChainEntry entry) {
         if (entry.hashVersion() >= CURRENT) {
             return hashV2(entry);
@@ -189,6 +225,7 @@ public class AuditChain {
         return legacyHash(entry, legacyDetail(entry.detail()));
     }
 
+    /** Version 1 digest of an entry, given the already prepared detail text. */
     private String legacyHash(ChainEntry entry, String detailText) {
         return hash(
                 entry.previousHash(),
@@ -257,7 +294,11 @@ public class AuditChain {
         }
     }
 
-    /** The first broken sequence in an in-memory run of one chain, or empty when it is intact. */
+    /**
+     * The first broken sequence in an in-memory run of one chain, or empty when it is intact. Applies
+     * the same rules as {@link #verify} but starts from an empty chain head, so the list must begin at
+     * the first entry of the chain. Logs a break at ERROR. No database access.
+     */
     // @find: find first broken audit entry
     public Optional<Long> findFirstBreak(List<ChainEntry> entries) {
         Walk walk = new Walk("in-memory");
@@ -316,16 +357,32 @@ public class AuditChain {
         }
     }
 
-    /** The state of one walk, so an in-memory list and a paged read follow exactly the same rules. */
+    /**
+     * The state of one walk, so an in-memory list and a paged read follow exactly the same rules:
+     * version 2 entries must name the previous hash, the format must not go backwards, and every entry
+     * must match its own hash. Not thread-safe; one instance per walk, used by {@link #verify} and
+     * {@link #findFirstBreak}.
+     */
     private final class Walk {
+        /** Key of the chain being walked, used in the result and in log messages. */
         private final String chainKey;
+        /**
+         * Hash of the last accepted entry, which the next version 2 entry must name as its
+         * previous hash.
+         */
         private String lastHash;
+        /** Number of entries examined so far. */
         private long checked;
+        /** Sequence of the entry examined last. */
         private long lastSequence;
+        /** Whether a version 2 entry has been seen; a version 1 entry after one is a break. */
         private boolean sawCurrent;
+        /** Sequence of the first failed entry, or null while intact. */
         private Long broken;
+        /** Plain-words reason for the first failure, or null while intact. */
         private String reason;
 
+        /** Starts a walk with no entries examined and an empty chain head. */
         Walk(String chainKey) {
             this.chainKey = chainKey;
         }
@@ -352,6 +409,10 @@ public class AuditChain {
             return null;
         }
 
+        /**
+         * Records the first failure (sequence and reason), logs it at ERROR and returns the failed
+         * sequence. Called by {@link #accept}.
+         */
         private Long fail(ChainEntry entry, String why, String logDetail) {
             broken = entry.sequence();
             reason = why;
@@ -359,6 +420,7 @@ public class AuditChain {
             return broken;
         }
 
+        /** Snapshot of the walk so far as a {@link Verification}. */
         Verification result() {
             return new Verification(chainKey, checked, lastSequence, broken, reason);
         }
@@ -370,6 +432,10 @@ public class AuditChain {
         return (Map<String, Object>) sortedDeepValue(detail == null ? Map.of() : detail);
     }
 
+    /**
+     * Recursive helper of {@link #sortedDeep}: maps become key-sorted maps and lists are rebuilt
+     * with sorted contents; other values are returned unchanged.
+     */
     private static Object sortedDeepValue(Object value) {
         if (value instanceof Map<?, ?> map) {
             TreeMap<String, Object> sorted = new TreeMap<>();
@@ -391,6 +457,10 @@ public class AuditChain {
         }
     }
 
+    /**
+     * SHA-256 of the text as UTF-8, encoded as unpadded URL-safe Base64. Throws
+     * IllegalStateException if the JVM lacks SHA-256.
+     */
     private static String digest(String material) {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(material.getBytes(StandardCharsets.UTF_8));
@@ -400,6 +470,7 @@ public class AuditChain {
         }
     }
 
+    /** Returns the value, or an empty string when it is null. */
     private static String nullToEmpty(String value) {
         return value == null ? "" : value;
     }

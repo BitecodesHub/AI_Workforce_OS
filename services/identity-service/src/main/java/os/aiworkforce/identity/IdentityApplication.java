@@ -24,6 +24,10 @@ import os.aiworkforce.platform.web.PlatformWeb;
 public class IdentityApplication {
 
     // @find: identity service start, run identity application, main
+    /**
+     * Starts the application. Component scanning covers this package and the shared platform
+     * packages, and scheduling is enabled for the housekeeping job in {@code SessionSweep}.
+     */
     public static void main(String[] args) {
         SpringApplication.run(IdentityApplication.class, args);
     }

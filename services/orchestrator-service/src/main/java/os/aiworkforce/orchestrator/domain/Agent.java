@@ -64,6 +64,7 @@ public class Agent extends OrgScopedEntity {
     @Column(name = "is_fallback", nullable = false)
     private boolean fallback;
 
+    /** True while the agent accepts work. */
     public boolean isActive() {
         return "active".equals(status);
     }

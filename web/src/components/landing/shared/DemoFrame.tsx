@@ -15,8 +15,10 @@ import { usePointerSpot } from '../../../hooks/usePointerSpot'
  * first render and starts empty, so the first thing a demo announces is actually heard.
  */
 
+/** The four demo areas; each is also the id and anchor of its frame (#approval, #failover, #audit, #cited). */
 export type DemoArea = 'approval' | 'failover' | 'audit' | 'cited'
 
+/** Props: area, index (the demo number), name, title, lead, status (the live announcement), children, footnote, busy (aria-busy on the body), steps (the "Try this" guide) and showIndex (false where the number means nothing to the reader). */
 export type DemoFrameProps = {
   area: DemoArea
   index: '01' | '02' | '03' | '04'
@@ -33,9 +35,11 @@ export type DemoFrameProps = {
   showIndex?: boolean
 }
 
+/** Stagger order of the scroll reveal for each area. */
 const REVEAL_ORDER: Record<DemoArea, number> = { approval: 0, failover: 1, audit: 2, cited: 3 }
 
 // @find: DemoFrame component, demo tile frame
+/** The frame every demo sits in. Carries what no demo may leave out: the "Simulated" tag, one polite status line (a live region from the first render, starting empty, so the first announcement is heard), the optional "Try this" ordered list, the demo body (aria-busy while busy) and the footnote. The article has the area as its id and uses the scroll reveal (useReveal) and pointer spot (usePointerSpot) effects, whose release functions are returned from one callback ref. Used by all four demos. */
 export function DemoFrame({
   area,
   index,

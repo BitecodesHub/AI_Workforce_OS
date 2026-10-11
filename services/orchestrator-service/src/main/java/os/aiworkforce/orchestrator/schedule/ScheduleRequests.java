@@ -31,8 +31,10 @@ import os.aiworkforce.orchestrator.domain.Agent;
 public class ScheduleRequests {
 
     /** The longest schedule name; the rest of a long instruction stays in the instruction. */
+    /** Longest schedule name, in characters. */
     static final int MAX_NAME = 60;
 
+    /** Format of a run time in the confirmation sentence, for example {@code Mon 13 Oct 2026 at 9:00 AM}. */
     private static final DateTimeFormatter WHEN =
             DateTimeFormatter.ofPattern("EEE d MMM yyyy 'at' h:mm a", Locale.ENGLISH);
 
@@ -44,6 +46,7 @@ public class ScheduleRequests {
 
     private final ScheduleService service;
 
+    /** Builds the component; used by Spring. */
     public ScheduleRequests(ScheduleService service) {
         this.service = service;
     }
@@ -173,6 +176,7 @@ public class ScheduleRequests {
         return WHEN.format(ZonedDateTime.ofInstant(instant, zone));
     }
 
+    /** The schedule's stored zone, falling back to UTC when the stored id cannot be read. */
     private static ZoneId zoneOf(Schedule schedule) {
         try {
             return ZoneId.of(schedule.getTimezone());
@@ -181,14 +185,17 @@ public class ScheduleRequests {
         }
     }
 
+    /** Lower-cases a name and removes spaces, hyphens and underscores so names compare loosely. */
     private static String normalise(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[\\s\\-_]+", "");
     }
 
+    /** Upper-cases the first character. */
     private static String capitalise(String text) {
         return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
     }
 
+    /** Lower-cases the first character so the text reads inside a sentence, unless it looks like an acronym or a name. */
     private static String lowerFirst(String text) {
         if (text == null || text.isEmpty()) {
             return "";

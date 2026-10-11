@@ -1,6 +1,6 @@
 // @find: knowledge base, knowledge, documents, sources, search, retrieval, retrieve passages, search documents, semantic search, keyword search, hybrid search, grounding, grounded answer, citations, RAG, restricted sources, agent-owned sources, degraded search, no evidence, query rewriting, RetrievalService
 // @what: Finds the passages that answer a question by combining keyword and meaning-based search, filtered to what the caller may read, with grounding checks.
-// @flow: Called by KnowledgeController.search, InternalSearchController.search and AgentKnowledgeController; uses Chunks, QdrantClient and EmbeddingService.
+// @flow: Called by KnowledgeController.search and InternalSearchController (search and status); uses Chunks, Sources, QdrantClient and EmbeddingService.
 package os.aiworkforce.knowledge.service;
 
 import java.time.Duration;
@@ -92,7 +92,8 @@ public class RetrievalService {
 
 
     /**
-     * The equivalent floor for keyword search.
+     * The relevance floor for keyword search, the counterpart of the similarity floor that
+     * {@link EmbeddingSettings#meaningFloor} gives the meaning-based search.
      *
      * <p>Measured against this corpus: passages that genuinely answer a question rank between
      * 0.037 and 0.056, an incidental single-term match ranks 0.015. Without a floor, OR-combined
@@ -127,6 +128,14 @@ public class RetrievalService {
      */
     private final ExecutorService denseExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
+    /**
+     * Creates the service.
+     *
+     * @param vectors the vector store, for the meaning-based half
+     * @param embeddings embeds the question for that half
+     * @param chunks the keyword search and the passage lookup
+     * @param sources decides which sources a caller may read
+     */
     public RetrievalService(QdrantClient vectors, EmbeddingService embeddings, Chunks chunks, Sources sources) {
         this.vectors = vectors;
         this.embeddings = embeddings;
@@ -134,6 +143,7 @@ public class RetrievalService {
         this.sources = sources;
     }
 
+    /** Stops the background threads of the meaning-based search when the application closes. */
     @PreDestroy
     void shutdown() {
         denseExecutor.shutdownNow();
@@ -170,6 +180,7 @@ public class RetrievalService {
             boolean restricted,
             Double similarity) {
 
+        /** A passage that was not found by meaning, so it has no similarity. */
         public Passage(
                 UUID chunkId,
                 UUID documentId,
@@ -200,6 +211,8 @@ public class RetrievalService {
     }
 
     /**
+     * The outcome of a search, returned by {@code retrieve} to the controllers.
+     *
      * @param passages what was found, best first
      * @param degraded true when the meaning-based half was wanted but timed out or failed, so these
      *     are keyword matches only and the caller can say so
@@ -213,6 +226,8 @@ public class RetrievalService {
      * @param requested the sources the caller asked to search, or null for every one they may read;
      *     a source they may not read is dropped from it silently, the same as one that does not exist
      * @param includeRestricted whether the caller may read restricted sources
+     * @return the cited passages; empty when nothing is grounded
+     * @throws ApiException a validation error when the query is blank
      */
     public Retrieval retrieve(
             UUID orgId, String query, int limit, List<UUID> requested, boolean includeRestricted) {
@@ -222,6 +237,20 @@ public class RetrievalService {
     /**
      * As {@link #retrieve(UUID, String, int, List, boolean)}, for an agent: its own documents are
      * searched too. Another agent's are never read, and a search with no agent never reads any.
+     *
+     * <p>Flow: refuses a blank query, limits the count to between 1 and {@link #MAX_LIMIT}, works out
+     * the allowed sources, starts the meaning-based search on its own thread, runs the keyword search,
+     * waits for the meaning-based half within its budget, merges the two rankings by reciprocal rank,
+     * loads the passages with their provenance and applies the grounding bar. Called by
+     * {@code KnowledgeController.search} and {@code InternalSearchController.search}.
+     *
+     * <p>Reads only; nothing is written. The meaning-based half makes HTTP calls to the orchestrator
+     * and the vector store. A failure of that half is not thrown: it is reported as {@code degraded}.
+     * A database failure in the keyword search or the passage lookup propagates.
+     *
+     * @param agentId the searching agent, or null
+     * @return the cited passages and whether the search was degraded; no allowed source gives an empty result
+     * @throws ApiException a validation error when the query is blank
      */
     public Retrieval retrieve(
             UUID orgId,
@@ -293,13 +322,19 @@ public class RetrievalService {
      * <p>A fact about the workspace rather than about any document, which is why it needs no
      * caller's permission: the orchestrator uses it to decide whether to offer agents a document
      * search at all, and what a search may then read is still decided per person.
+     *
+     * <p>Called by {@code InternalSearchController.status}. Counts workspace sources only; an agent's
+     * own sources are left out.
      */
     public int indexedSources(UUID orgId) {
         return indexedSources(orgId, null);
     }
 
     // @find: count searchable sources for one agent
-    /** As {@link #indexedSources(UUID)}, counting this agent's own documents as well. */
+    /**
+     * As {@link #indexedSources(UUID)}, counting this agent's own documents as well. A null agent
+     * gives the workspace count. Reads the source list only.
+     */
     public int indexedSources(UUID orgId, UUID agentId) {
         return (int) sources.findByOrgIdOrderByName(orgId).stream()
                 .filter(source -> source.getAgentId() == null || source.getAgentId().equals(agentId))
@@ -310,6 +345,8 @@ public class RetrievalService {
     /**
      * The sources this search may read: those the caller may see, narrowed to the ones they asked
      * for. One short query, with nothing held open afterwards.
+     *
+     * <p>With an agent, its own sources are added to the visible ones; another agent's never are.
      */
     private List<Source> allowedSources(
             UUID orgId, List<UUID> requested, boolean includeRestricted, UUID agentId) {
@@ -334,6 +371,8 @@ public class RetrievalService {
     /**
      * Groups the sources worth searching by meaning: not sandbox, whose vectors carry no meaning,
      * and holding at least one passage, so a source that was never filled cannot fail the search.
+     *
+     * @return one group for each distinct collection, provider and model; empty when no source qualifies
      */
     static List<DenseGroup> denseGroups(List<Source> searchable) {
         Map<List<String>, List<UUID>> grouped = new LinkedHashMap<>();
@@ -351,6 +390,14 @@ public class RetrievalService {
         return groups;
     }
 
+    /**
+     * Starts the meaning-based search on a virtual thread, so it runs beside the keyword search.
+     *
+     * <p>The caller's request context is copied across, because the embedding call is made on that
+     * person's behalf. The returned future fails with a timeout after {@link #DENSE_BUDGET}.
+     *
+     * @param limit how many hits to keep
+     */
     private CompletableFuture<Map<UUID, Double>> startDense(UUID orgId, String query, List<DenseGroup> groups, int limit) {
         // The caller's identity goes with the work: the embedding call is made on their behalf.
         RequestContext.Snapshot context = RequestContext.snapshot();
@@ -362,6 +409,11 @@ public class RetrievalService {
     /**
      * Embeds the query once per group, with that group's own model, and merges the hits by score.
      * Throws on any failure; the caller decides what a failure costs.
+     *
+     * <p>Makes one embedding call and one vector search for each group. A chunk found in more than one
+     * group keeps its best score.
+     *
+     * @return chunk identifiers with their similarity, best first, at most {@code limit}
      */
     private Map<UUID, Double> denseSearch(UUID orgId, String query, List<DenseGroup> groups, int limit) {
         List<QdrantClient.Hit> hits = new ArrayList<>();
@@ -381,6 +433,10 @@ public class RetrievalService {
         return ordered;
     }
 
+    /**
+     * Runs the keyword search over the allowed sources, after removing conversational words from the
+     * question, and returns chunk identifiers best first. A single database query.
+     */
     private List<UUID> lexicalSearch(UUID orgId, String query, String allowedArray, int limit) {
         return chunks.searchLexical(
                 orgId,
@@ -404,6 +460,11 @@ public class RetrievalService {
                     + "question|knowledge|base|document|documents|docs|file|files|there|its)\\b",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * Removes the conversational words from a question for keyword matching.
+     *
+     * @return the question without them, or the question as it was when nothing would be left; an empty string for null
+     */
     static String withoutConversationalWords(String query) {
         if (query == null) {
             return "";
@@ -423,6 +484,8 @@ public class RetrievalService {
      * <p>Each list contributes {@code 1 / (k + rank)} to a passage's score, so a document found by
      * both searches outranks one found emphatically by only one. This is what makes the hybrid
      * better than either half rather than merely different.
+     *
+     * @return at most {@code limit} chunk identifiers, best first
      */
     private List<UUID> fuse(List<UUID> dense, List<UUID> lexical, int limit) {
         Map<UUID, Double> scores = new LinkedHashMap<>();
@@ -446,6 +509,13 @@ public class RetrievalService {
      * at the source stops being citable immediately, before the vector purge has caught up -
      * otherwise a person would be shown a passage from a file that no longer exists. The allowed
      * sources are applied here too, because a vector hit is only an id until it is resolved.
+     *
+     * <p>One database query. The passage score is derived from the position in the fused ranking, from
+     * 1.0 downward, and is not the raw fusion score. An id with no row, because it was deleted or is
+     * not in an allowed source, is silently left out.
+     *
+     * @param similarities the meaning-based similarity of each chunk that has one
+     * @return the passages, best first
      */
     private List<Passage> hydrate(
             UUID orgId,
@@ -496,6 +566,7 @@ public class RetrievalService {
             "get", "got", "give", "tell", "show", "list", "find", "know", "want", "like", "some", "more", "most", "very",
             "just", "only", "each", "other", "such", "please");
 
+    /** Splits text into words and numbers for the grounding check. */
     private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
 
     // @find: grounding check, drop passages that do not match the question, citations
@@ -511,6 +582,8 @@ public class RetrievalService {
      * prevent. When nothing is left, the search is simply not grounded.
      *
      * @param viaMeaning the passages the meaning-based search found
+     * @return the kept passages in their original order; empty for a question about the assistant or
+     *     one with no distinctive term
      */
     static List<Passage> groundedPassages(String query, List<Passage> passages, Set<UUID> viaMeaning) {
         if (isAboutTheAssistant(query)) {
@@ -549,6 +622,7 @@ public class RetrievalService {
                     + "|^\\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening))\\b[\\s\\p{Punct}\\p{L}]{0,30}$",
             Pattern.CASE_INSENSITIVE);
 
+    /** True when the question is about the assistant, or is a greeting or thanks; false for null. */
     static boolean isAboutTheAssistant(String query) {
         return query != null && ABOUT_ASSISTANT.matcher(query).find();
     }
@@ -622,7 +696,8 @@ public class RetrievalService {
 
     // @find: no evidence found, nothing in knowledge base answers this
     /**
-     * Raised when an agent asked a question the corpus cannot support.
+     * Builds the error for an agent that asked a question the corpus cannot support. At present
+     * nothing in this service calls it: {@code retrieve} reports an empty result instead.
      *
      * <p>Surfaced to the caller as a distinct code so the interface can say "no document supports
      * an answer" rather than showing an empty result that looks like a failure.

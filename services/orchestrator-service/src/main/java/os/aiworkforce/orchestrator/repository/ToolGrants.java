@@ -21,6 +21,11 @@ import os.aiworkforce.orchestrator.domain.AgentToolGrant;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for AgentToolGrant rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface ToolGrants extends JpaRepository<AgentToolGrant, UUID> {
 
     // @find: enabled tool grants of an agent

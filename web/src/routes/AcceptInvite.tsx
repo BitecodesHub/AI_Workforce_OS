@@ -59,6 +59,9 @@ type FieldName = keyof typeof FIELD_IDS
  */
 type ClosedReason = 'invalid' | 'revoked' | 'expired' | 'accepted'
 
+/**
+ * Reads why an invitation link can no longer be used from a failed accept: unknown token (404) is invalid, otherwise the platform's reason field (revoked, expired or already accepted). Returns null for any other failure, which keeps the form usable.
+ */
 function closedReason(thrown: unknown): ClosedReason | null {
   if (!(thrown instanceof ApiError)) return null
   if (thrown.status === 404) return 'invalid'
@@ -81,6 +84,9 @@ function acceptErrorMessage(thrown: unknown): string {
  */
 const ACCEPT_INTENT_KEY = 'aiwos.acceptInvite'
 
+/**
+ * Records, in sessionStorage for this tab only, that the person chose "Sign in to accept" for this token; ignores blocked storage.
+ */
 function rememberAcceptIntent(token: string) {
   try {
     sessionStorage.setItem(ACCEPT_INTENT_KEY, token)
@@ -89,6 +95,9 @@ function rememberAcceptIntent(token: string) {
   }
 }
 
+/**
+ * Reads and clears that record. True only when it holds this token, which proves the return trip started in this tab rather than from a crafted link with accept=1.
+ */
 function takeAcceptIntent(token: string): boolean {
   try {
     const remembered = sessionStorage.getItem(ACCEPT_INTENT_KEY)
@@ -100,6 +109,10 @@ function takeAcceptIntent(token: string): boolean {
 }
 
 // @find: AcceptInvite component, accept invitation, join workspace, /accept-invite, invitation link page
+/**
+ * The Accept invitation page (route /accept-invite?token=..., public, no permission).
+ * Paths: with no token it says the link is incomplete. With a token and a signed-out visitor it shows the join form (name, password of at least 12 characters, confirmation; Join checks the form and names what to fix beside each field) and creates the account through useAcceptInvitation, then offers Continue to sign in. If the address already has an account, it says so and offers "Sign in to accept". A signed-in visitor sees "Accept the invitation" as their own account (useAcceptInvitationSignedIn) and, on success, enters the workspace and opens the Command Map, or asks them to sign in again if the session could not be moved. Coming back from signing in with ?accept=1 finishes automatically, once, but only when this tab began the round trip. A dead link (unknown, withdrawn, expired or used) replaces the form with an explanation. Failures move focus to the message; success moves focus to the heading.
+ */
 export function AcceptInvite() {
   const { search, navigate } = useRouter()
   const token = search.get('token') ?? ''

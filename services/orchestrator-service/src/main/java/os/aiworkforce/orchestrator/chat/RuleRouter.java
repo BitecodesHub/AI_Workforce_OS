@@ -31,11 +31,13 @@ import os.aiworkforce.orchestrator.domain.Agent;
  */
 public final class RuleRouter {
 
+    /** Not instantiable; every method is static and the router holds no state. */
     private RuleRouter() {}
 
     /** Below this, a clause names nobody in particular. */
     private static final int MIN_SCORE = 2;
 
+    /** The phrases a message is split on into separate pieces of work, tried in this order. */
     private static final List<String> CLAUSE_SEPARATORS = List.of(" and then ", " then ", "; ", ", then ");
 
     /** At most this many clauses are read from one message; a longer chain is not one somebody typed. */
@@ -44,6 +46,7 @@ public final class RuleRouter {
     /** The most alternatives offered when something scored; a longer list is not a short choice any more. */
     private static final int MAX_ALTERNATIVES = 3;
 
+    /** Extra phrases, by agent key, that point at that agent; each match scores {@code 2}. */
     private static final Map<String, List<String>> SYNONYMS = Map.of(
             "hr",
                     List.of(
@@ -100,6 +103,7 @@ public final class RuleRouter {
             "research",
                     List.of("research", "report", "competitor", "market", "analysis", "summarise sources", "compare"));
 
+    /** Words that point at an agent holding a tool of that server name; each match scores {@code 1}. */
     private static final Map<String, List<String>> TOOL_SYNONYMS = Map.of(
             "gmail", List.of("email"),
             "slack", List.of("channel", "slack"),
@@ -112,6 +116,8 @@ public final class RuleRouter {
     private static final Map<String, Pattern> PHRASE_PATTERNS = new ConcurrentHashMap<>();
 
     /**
+     * One routed step: the agent chosen, its part of the message, and why.
+     *
      * @param matched the words that scored, in the order they were found
      * @param fallback true when this step was handed to the workspace's General Employee rather
      *     than won on its own words
@@ -122,6 +128,7 @@ public final class RuleRouter {
         }
     }
 
+    /** An agent with the score it earned against a clause, for offering a person a choice. */
     public record ScoredAgent(Agent agent, int score) {}
 
     /** Why a message could not be routed on its own. */
@@ -133,6 +140,8 @@ public final class RuleRouter {
     }
 
     /**
+     * The outcome of routing: the routed steps, or a request for the person to choose, with the candidates and the reason.
+     *
      * @param steps one entry per routed clause, in order, when at least one clause routed
      * @param alternatives the candidates worth offering a person when nothing did, or when a tie
      *     needs breaking - the top scored agents, or every active specialist (each scored zero)
@@ -145,19 +154,26 @@ public final class RuleRouter {
             return !steps.isEmpty() && steps.stream().allMatch(Routed::fallback);
         }
 
+        /** An unrouted result for a message that matched nobody. */
         static Result unrouted(List<ScoredAgent> alternatives) {
             return unrouted(alternatives, Reason.NO_MATCH);
         }
 
+        /** An unrouted result with the given reason; the person must choose. */
         static Result unrouted(List<ScoredAgent> alternatives, Reason reason) {
             return new Result(List.of(), true, alternatives, reason);
         }
 
+        /** A routed result; no choice is needed, and the alternatives are only offered as other options. */
         static Result routed(List<Routed> steps, List<ScoredAgent> alternatives) {
             return new Result(steps, false, alternatives, Reason.NONE);
         }
     }
 
+    /**
+     * Splits a message into at most {@value #MAX_CLAUSES} clauses at "and then", "then", semicolons and
+     * ", then", dropping blank pieces. Pure; used by {@link #route} and by the coordinator for display.
+     */
     // @find: split message into clauses
     public static List<String> clausesOf(String text) {
         List<String> clauses = new ArrayList<>(List.of(text));
@@ -177,12 +193,23 @@ public final class RuleRouter {
                 .toList();
     }
 
+    /** Routes with no General Employee fallback; see the four-argument overload. */
     // @find: route message to agents by rules
     public static Result route(String text, List<Agent> agents, Map<UUID, List<String>> agentToolServers) {
         return route(text, agents, agentToolServers, null);
     }
 
     /**
+     * Chooses agents for a message by rules alone.
+     *
+     * <p>Flow: keeps only active specialists (the fallback is excluded from scoring), splits the
+     * message into clauses and scores each against every specialist. A tie on any clause returns
+     * an unrouted result with the tied agents to choose from; otherwise clauses that scored
+     * enough become steps, with unmatched clauses merged into a neighbour. When nothing routed the
+     * message goes whole to the fallback if there is one, else comes back unrouted with
+     * alternatives. Called by {@link CoordinatorService}. Pure: no database, HTTP or model call.
+     *
+     * @param agentToolServers the tool-server names each agent holds, by agent id, used as a weak signal
      * @param fallback the workspace's active General Employee, or null when it has none. A
      *     fallback that is not active is treated the same as null - a paused or retired General
      *     never takes work, however this is called.
@@ -239,16 +266,23 @@ public final class RuleRouter {
         return Result.unrouted(alternatives, Reason.NO_MATCH);
     }
 
-    /** One clause together with every specialist's score against it, highest first. */
+    /**
+     * One clause together with every specialist's score against it, highest first.
+     * A clause is routed when the best score reaches {@link #MIN_SCORE} and is not shared with the
+     * runner-up; it is a tie when the two best scores are equal and reach that floor.
+     */
     private record ClauseScore(String clause, List<Scored> scored) {
+        /** The best-scoring agent, or null when there are none. */
         Scored winner() {
             return scored.isEmpty() ? null : scored.get(0);
         }
 
+        /** The second-best agent, or null when there is only one. */
         Scored runnerUp() {
             return scored.size() > 1 ? scored.get(1) : null;
         }
 
+        /** Whether the best two scores are equal and at least the floor. */
         boolean isTie() {
             Scored winner = winner();
             Scored runnerUp = runnerUp();
@@ -258,6 +292,7 @@ public final class RuleRouter {
                     && winner.score() >= MIN_SCORE;
         }
 
+        /** Whether one agent clearly won this clause. */
         boolean isRouted() {
             Scored winner = winner();
             return winner != null && winner.score() >= MIN_SCORE && !isTie();
@@ -291,6 +326,7 @@ public final class RuleRouter {
         return steps;
     }
 
+    /** The agents to offer when a clause tied: the tied leaders first, then others that scored, at most three, plus the fallback when there is one. */
     private static List<ScoredAgent> tieAlternatives(ClauseScore tie, Agent fallback) {
         int topScore = tie.winner().score();
         List<Scored> tiedFirst = new ArrayList<>();
@@ -314,7 +350,7 @@ public final class RuleRouter {
         return List.copyOf(alternatives);
     }
 
-    /** The top scored specialists across every clause, highest score first, excluding a step's own agent. */
+    /** The top scored specialists across every clause, highest score first, at most three, excluding the agents already given a step. */
     private static List<ScoredAgent> topAlternatives(List<ClauseScore> outcomes, List<Routed> steps) {
         Set<UUID> used = steps.stream()
                 .filter(step -> !step.fallback())
@@ -337,6 +373,7 @@ public final class RuleRouter {
                 .toList();
     }
 
+    /** The alternatives for an unrouted message: the top scorers, or every specialist at zero when nothing scored. */
     private static List<ScoredAgent> alternativesFor(List<Scored> scored, List<Agent> specialists) {
         boolean anyScored = scored.stream().anyMatch(s -> s.score() > 0);
         if (!anyScored) {
@@ -348,8 +385,13 @@ public final class RuleRouter {
                 .toList();
     }
 
+    /** One agent's score against one clause, with the words that produced it. */
     private record Scored(Agent agent, int score, List<String> matched) {}
 
+    /**
+     * Scores every specialist against one clause: 3 for each word of its key or name, 2 for its
+     * category, 2 for each synonym phrase, and 1 for each word tied to a tool server it holds.
+     */
     private static List<Scored> scoreClause(
             String clause, List<Agent> agents, Map<UUID, List<String>> agentToolServers) {
         String lower = clause.toLowerCase(Locale.ROOT);
@@ -402,6 +444,7 @@ public final class RuleRouter {
         return words;
     }
 
+    /** Whether the word appears as a whole word in the text. */
     private static boolean containsWord(String lower, String word) {
         return Pattern.compile("\\b" + Pattern.quote(word) + "\\b")
                 .matcher(lower)
@@ -417,6 +460,7 @@ public final class RuleRouter {
         return phrasePattern(phrase).matcher(lower).find();
     }
 
+    /** The cached whole-word pattern, with an optional plural ending, for a phrase. */
     private static Pattern phrasePattern(String phrase) {
         return PHRASE_PATTERNS.computeIfAbsent(
                 phrase, p -> Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(p) + "(?:s|es)?(?![\\p{L}\\p{N}])"));

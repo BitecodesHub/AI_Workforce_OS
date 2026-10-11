@@ -43,6 +43,7 @@ const GAP = 4
 const EDGE = 8
 
 // @find: place, place, model picker, model combobox, searchable model list, choose model
+/** Computes the fixed position of the option list beside its input: at least 460 pixels wide, kept inside the window, opening below unless there is less than 240 pixels there and more room above, with a capped maximum height. Also used by RegionCombobox. */
 export function place(anchor: HTMLElement): Placement {
   const rect = anchor.getBoundingClientRect()
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth
@@ -58,6 +59,16 @@ export function place(anchor: HTMLElement): Placement {
 }
 
 // @find: ModelCombobox, model combobox, model picker, model combobox, searchable model list, choose model
+/**
+ * Searchable ARIA combobox for a provider's models, used by CandidateModelField.
+ * Typing filters the options (filterModels); matches are grouped Free first, then Paid (groupModels) and at
+ * most OPTION_LIMIT are drawn (capGroups). Arrow keys move the active option, Enter chooses, Escape closes and
+ * restores the chosen model's name, and a blur closes the list. The list is portalled and positioned with place(),
+ * and repositions on resize and scroll. Options carry an accessible summary (optionSummary: context size and
+ * price) and a tag for a model the provider does not offer to this key. loading shows a loading placeholder and
+ * status; describedBy links the line under the field. Props: label, value (model id), fallbackLabel for a
+ * value not among the options, options, onChange, loading, disabled, providerName.
+ */
 export function ModelCombobox({
   label,
   value,

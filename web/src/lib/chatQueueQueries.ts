@@ -25,12 +25,14 @@ export function describeChatActionError(error: unknown): string {
   return describeApiError(error)
 }
 
+/** Applies `update` to the queued messages held in the cached conversation detail, so the Chat page reflects an edit or removal at once without a refetch. Does nothing when the detail is not cached. */
 function patchQueue(client: QueryClient, conversationId: string, update: (queue: QueuedMessage[]) => QueuedMessage[]) {
   client.setQueryData<ConversationDetail>(['conversations', conversationId], (detail) =>
     detail ? { ...detail, queued: update(detail.queued ?? []) } : detail,
   )
 }
 
+/** The endpoint path of one queued message in a conversation; the id is URL-encoded. */
 const queuePath = (conversationId: string, queuedId: string) =>
   `/api/conversations/${conversationId}/queue/${encodeURIComponent(queuedId)}`
 

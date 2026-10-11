@@ -14,17 +14,26 @@ import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
  *
  * <p>The client secret is held encrypted and is never returned by any endpoint. One app serves
  * every connector of its provider, so the Google app covers Gmail, Calendar, Drive and Sheets.
+ *
+ * <p>Written by {@code OAuthService.saveApp} and read by {@code OAuthService} when a sign-in starts,
+ * completes or refreshes. The accessors below are plain getters and setters for the columns.
  */
 @Entity
 @Table(name = "oauth_apps")
 public class OAuthApp extends OrgScopedEntity {
 
+    /** The provider id this app belongs to: {@code google}, {@code microsoft} or {@code salesforce}. */
     @Column(nullable = false)
     private String provider;
 
+    /** The public client identifier issued by the provider. Not secret, and shown in the console. */
     @Column(name = "client_id", nullable = false)
     private String clientId;
 
+    /**
+     * The client secret, encrypted for the workspace and serialised. Only decrypted to call the
+     * provider's token endpoint; never returned by an endpoint.
+     */
     @Column(name = "client_secret_ref", nullable = false, columnDefinition = "text")
     private String clientSecretRef;
 

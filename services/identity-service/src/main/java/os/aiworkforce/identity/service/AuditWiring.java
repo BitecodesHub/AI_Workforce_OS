@@ -25,6 +25,14 @@ import os.aiworkforce.platform.web.audit.AuditTokenSource;
 class AuditWiring {
 
     // @find: audit token source, token for audit relay
+    /**
+     * Supplies the bearer token the audit relay presents to the analytics service.
+     *
+     * <p>Each call mints a fresh internal token for the {@code analytics} audience, acting as the
+     * platform ({@link Actor#SYSTEM}), through {@link TokenService#issueInternalToken}. Nothing is
+     * written to the database. A signing failure propagates to the relay, which retries on its next
+     * timer tick.
+     */
     @Bean
     AuditTokenSource auditTokenSource(TokenService tokens) {
         return () -> tokens.issueInternalToken("analytics", Actor.SYSTEM).token();

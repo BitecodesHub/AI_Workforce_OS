@@ -65,15 +65,21 @@ function needsAttention(document: SourceDocument): boolean {
   return document.status === 'skipped' || document.status === 'failed'
 }
 
+/**
+ * Facet for useListFilter: documents that need attention (skipped or failed) versus indexed ones, selected with ?state= in the address.
+ */
 const DOCUMENT_FACETS = {
   state: (document: SourceDocument) =>
     needsAttention(document) ? 'attention' : document.status === 'indexed' ? 'indexed' : null,
 }
 
+/** The searchable text of a document: its title. */
 const documentText = (document: SourceDocument) => document.title
 
+/** A formatted count with its noun, pluralised by adding s: "1 passage", "12 passages". */
 const countOf = (count: number, noun: string) => `${formatCount(count)} ${noun}${count === 1 ? '' : 's'}`
 
+/** Trims text and ends it with a full stop unless it already ends in a full stop or question mark. */
 const withStop = (text: string) => {
   const trimmed = text.trim()
   return /[.?]$/.test(trimmed) ? trimmed : `${trimmed}.`
@@ -86,6 +92,9 @@ const withStop = (text: string) => {
  */
 const VECTOR_ERROR_PREFIX = 'Vector indexing is unavailable'
 
+/**
+ * Extracts the underlying detail from the service's "Vector indexing is unavailable" source error; null when the error is some other message.
+ */
 function vectorErrorDetail(lastError: string): string | null {
   if (!lastError.startsWith(VECTOR_ERROR_PREFIX)) return null
   return lastError.slice(VECTOR_ERROR_PREFIX.length).replace(/^[\s:]+/, '').trim()
@@ -225,6 +234,9 @@ type FileOutcome = Ingested | Rejected
 
 type Feedback = { tone: 'success' | 'info' | 'error'; text: string }
 
+/**
+ * Converts the service's upload result into the page's Ingested outcome, defaulting missing optional fields to null and the stored title to the file name.
+ */
 function ingested(name: string, result: UploadOutcome): Ingested {
   return {
     name,
@@ -245,6 +257,9 @@ function checkFile(file: File): string | null {
   return null
 }
 
+/**
+ * Turns a failed upload into one sentence naming the file: too large (413), empty, a validation problem, or the service's message; non-API errors read as a generic failure.
+ */
 function uploadFailure(name: string, err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 413) return `${name} is larger than 25 MB.`
@@ -260,6 +275,9 @@ function extras(outcome: Ingested): string[] {
   return [outcome.notice, outcome.vectorWarning].filter((text): text is string => Boolean(text)).map(withStop)
 }
 
+/**
+ * The message for an upload of exactly one file, by outcome (indexed, replaced, unchanged, skipped, failed or rejected), as a tone and text. Extra notices (cut at the limit, no meaning-based search) turn a success into an info message.
+ */
 function singleFeedback(outcome: FileOutcome): Feedback {
   switch (outcome.status) {
     case 'rejected':
@@ -368,6 +386,11 @@ function summaryFeedback(outcomes: FileOutcome[], skipped: string[]): Feedback {
 type ClashPrompt = { files: File[]; clashes: string[] }
 
 // @find: SourceDetail component, knowledge source page, upload document, delete document, update source, search in source, /knowledge/:id
+/**
+ * The Source detail page (route /knowledge/:id, permission knowledge:read).
+ * Loads the source (useSource) and its documents (useSourceDocuments). Header: source kind or, for an agent's own documents, the owning agent; tags for restricted access; and, with knowledge:source_manage (and not for an agent's own source), Rename, Re-index (rebuilds meaning-based search for documents already indexed) and Delete source, each with its own confirmation or form dialog. Figures: document and passage counts, embedding model, last indexed time. With knowledge:query a "try a search" panel searches this source directly without starting an agent run; asking in Chat also needs chat:use. The access control (restricted or open to everyone with Chat) changes through the update mutation, with a confirmation before opening it.
+ * Uploads: files come from the button or drag and drop and are checked (not empty, at most 25 MB). Names that clash with existing documents prompt Skip, Keep both or Replace (planUploads); files then upload one at a time with progress, and one summary message reports every outcome. Documents are searchable and filterable by state; each row opens its passages or, with permission, deletes the document after confirmation. Deleting the source navigates to /knowledge. All results are toasts or inline feedback, and failures are described in plain words.
+ */
 export function SourceDetail({ id }: { id: string }) {
   const sourceQuery = useSource(id)
   const documentsQuery = useSourceDocuments(id)

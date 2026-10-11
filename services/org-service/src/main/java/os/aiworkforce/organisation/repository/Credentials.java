@@ -22,12 +22,21 @@ import os.aiworkforce.organisation.domain.Credential;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Stored, encrypted credentials, one row per workspace and reference name.
+ *
+ * <p>Used by {@code CredentialService}, which is the only caller. Every finder takes the workspace id
+ * so that one workspace can never read another's keys. Spring Data generates the implementation.
+ */
 public interface Credentials extends JpaRepository<Credential, UUID> {
 
+    /** The credential with the given reference in a workspace, or empty when there is none. */
     Optional<Credential> findByOrgIdAndRef(UUID orgId, String ref);
 
+    /** Every credential in a workspace, ordered by reference. Rows hold encrypted values only. */
     List<Credential> findByOrgIdOrderByRef(UUID orgId);
 
+    /** Whether a reference is already taken in a workspace; used to reject a duplicate before inserting. */
     boolean existsByOrgIdAndRef(UUID orgId, String ref);
 
     // @find: record credential use, update last used time without version conflict

@@ -11,11 +11,13 @@
  * the pure part: the regions offered, the form's shape, and turning the form into that value.
  */
 
+/** Region preselected in the Bedrock form. */
 export const BEDROCK_DEFAULT_REGION = 'us-east-1'
 
 /** Where a region is, for grouping the region list the way AWS's console does. */
 export type BedrockGeography = 'United States' | 'Americas' | 'Europe' | 'Middle East' | 'Asia Pacific' | 'AWS GovCloud'
 
+/** One AWS region: its id, the name AWS's console shows, and the geography it is grouped under. */
 export type BedrockRegion = { id: string; name: string; geography: BedrockGeography }
 
 // @find: Bedrock regions list, AWS region names; used by: region picker in Connect your AI dialog
@@ -83,6 +85,7 @@ export function groupRegions(query: string): Array<{ geography: BedrockGeography
 
 /** AWS's guide to Bedrock's IAM permissions and API keys, linked from the setup steps. */
 export const BEDROCK_SETUP_DOCS = 'https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html'
+/** Link to AWS's guidance on enabling model access, shown in the connect dialog. */
 export const BEDROCK_MODEL_ACCESS_DOCS = 'https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html'
 
 /** The IAM permissions the setup steps ask for: chat, listing models and inference profiles. */
@@ -93,8 +96,10 @@ export const BEDROCK_IAM_ACTIONS = [
   'bedrock:ListInferenceProfiles',
 ] as const
 
+/** The two ways to authenticate: a Bedrock API key, or an IAM access key pair. */
 export type BedrockAuth = 'api_key' | 'access_key'
 
+/** The values held by the Connect Bedrock form; fields for the unused authentication method stay empty. */
 export type BedrockForm = {
   auth: BedrockAuth
   apiKey: string
@@ -104,6 +109,7 @@ export type BedrockForm = {
   region: string
 }
 
+/** The form's starting state: API key mode in the default region. */
 export const EMPTY_BEDROCK_FORM: BedrockForm = {
   auth: 'api_key',
   apiKey: '',
@@ -124,6 +130,7 @@ export const BEDROCK_FIELD_LABELS: Record<string, string> = {
 }
 
 // @find: is Bedrock provider check
+/** Whether a model provider is Amazon Bedrock (kind compared case-insensitively). */
 export function isBedrock(provider: { kind: string }): boolean {
   return provider.kind.toUpperCase() === 'BEDROCK'
 }

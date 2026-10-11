@@ -58,6 +58,7 @@ function useShotImage(shotId: string, element: RefObject<HTMLElement | null>) {
   return { src, failed }
 }
 
+/** Alternative text for a screenshot: "Screenshot of" the page title, else its address, else "the page". */
 function altText(shot: BrowserShotRef): string {
   return `Screenshot of ${shot.title || shot.url || 'the page'}`
 }
@@ -110,7 +111,7 @@ export function BrowserShot({ shot, compact = false }: { shot: BrowserShotRef; c
  * What the run's web browser saw, drawn as a small browser window: an address bar with the page
  * being shown, the page itself (a click opens it full size), and a strip of every page the run
  * visited. While the run is working it follows the newest page as steps arrive (the steps query
- * already polls); choosing a page in the strip pins it until "Latest" is chosen. Shows nothing until
+ * already polls); choosing an earlier page in the strip pins it until the newest page is chosen again. Shows nothing until
  * the run has used the browser.
  */
 export function BrowserPreview({ runId, active }: { runId: string; active: boolean }) {
@@ -174,6 +175,7 @@ export function BrowserPreview({ runId, active }: { runId: string; active: boole
   )
 }
 
+/** Address-bar text for a page: host, path (the bare root is omitted) and query; "Opening a page" without a URL; the raw text if it does not parse as a URL. */
 function displayAddress(url: string | null): string {
   if (!url) return 'Opening a page'
   try {
@@ -185,6 +187,7 @@ function displayAddress(url: string | null): string {
   }
 }
 
+/** The page area of the preview: the screenshot as a button that opens the full-size Dialog, with loading and failure text. It fetches the image with useShotImage. */
 function PreviewPage({
   shot,
   onOpen,
@@ -218,6 +221,7 @@ function PreviewPage({
   )
 }
 
+/** One thumbnail in the pages-visited strip, a toggle button (aria-pressed) named by the page number and title. Its image loads lazily with useShotImage. */
 function Thumbnail({
   shot,
   index,

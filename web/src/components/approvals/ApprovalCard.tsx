@@ -21,7 +21,19 @@ import { can } from '../../lib/session'
 const ACTION_TONE: Record<string, TagTone> = { OUTBOUND: 'warning', DESTRUCTIVE: 'danger', WRITE: 'blue' }
 
 // @find: ApprovalCard, approval card, approval, approve, reject, decide request
-/** A request waiting for a decision. */
+/**
+ * A request waiting for a decision, rendered by the Approvals page for each pending item.
+ *
+ * Shows the tool, a readable summary, the action class tag, who asked and for what (contextLine), the
+ * agent, the request and expiry times, the original task instruction (collapsible) and the payload as
+ * the person should read it (PayloadPreview). Approve, "Send back with feedback" (when onSendBack is
+ * given) and "Reject and stop" appear only when approval.canDecide is true; each reports through its
+ * callback, and the loading flags disable the other two while one is in flight. A viewer who asked for
+ * the work and may decide but is barred by the four-eyes rule is told that someone else must decide it.
+ * "View the run" links to the run trace. The wrapper carries the anchor a run trace links to and is
+ * focusable so the page can move focus here. agentsKnown distinguishes an agent list still loading
+ * from a genuinely unknown agent.
+ */
 export function ApprovalCard({
   approval,
   agent,
@@ -190,7 +202,14 @@ function DecisionLine({
 }
 
 // @find: DecidedCard, decided card, approval, approve, reject, decide request
-/** A request that was decided, expired or withdrawn, with the record of what happened to it. */
+/**
+ * A request that was decided, expired or withdrawn, with the record of what happened to it.
+ *
+ * Shows the outcome tag (sent back, approved, rejected, expired or withdrawn), the readable summary, the
+ * agent, a DecisionLine saying who decided and when, any reason or feedback given, and the original request
+ * in a collapsible PayloadPreview (closed by default), with a link to the run. Read-only: it has no actions.
+ * Rendered by the Approvals page in the decision history.
+ */
 export function DecidedCard({
   approval,
   agent,

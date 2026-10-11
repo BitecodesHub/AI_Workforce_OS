@@ -44,25 +44,31 @@ import type { RoleId } from './roleData'
  * otherwise it goes to the demos on the page (see useDemoCta).
  */
 
+/** The role to compare against, or none. */
 type CompareTarget = RoleId | 'none'
 
+/** Totals used in sentences and meters (permission codes, console areas), and CODE_INDEX, which gives each permission code a stable position for the chip animation delay. */
 const TOTAL_CODES = ALL_CODES.length
 const TOTAL_AREAS = CONSOLE_AREAS.length
 const CODE_INDEX: ReadonlyMap<string, number> = new Map(ALL_CODES.map((code, index) => [code, index]))
 
+/** Type guard: the string is one of the five role ids. */
 function isRoleId(value: string): value is RoleId {
   return (ROLE_ORDER as readonly string[]).includes(value)
 }
 
+/** A count as a word for announcements: "none" for zero. */
 function spoken(count: number): string {
   return count === 0 ? 'none' : String(count)
 }
 
+/** Announcement of a comparison: how many permission codes the role has added and removed relative to the other. */
 function comparisonSentence(role: RoleId, other: RoleId): string {
   const { added, removed } = compareRoles(role, other)
   return `${ROLE_LABEL[role]} compared with ${ROLE_LABEL[other]}: ${spoken(added.length)} added, ${spoken(removed.length)} removed.`
 }
 
+/** Announcement of a selection: the permission code count and console area count of the role, plus the comparison when one is set. */
 function selectionSentence(role: RoleId, other: CompareTarget): string {
   const base =
     `${ROLE_LABEL[role]}: ${ROLE_CODES[role].size} of ${TOTAL_CODES} permission codes. ` +
@@ -70,6 +76,7 @@ function selectionSentence(role: RoleId, other: CompareTarget): string {
   return other === 'none' ? base : `${base} ${comparisonSentence(role, other)}`
 }
 
+/** Sets the CSS variable --ci (the code's index) that staggers the permission chip animation. */
 function chipStyle(code: string): CSSProperties {
   return { '--ci': String(CODE_INDEX.get(code) ?? 0) } as CSSProperties
 }
@@ -80,6 +87,12 @@ function meterStyle(held: number): CSSProperties {
 }
 
 // @find: RoleSwitcher component, roles explorer
+/**
+ * Interactive explorer of the five built-in roles, with a comparison against another role. All data is derived from roleData, which mirrors the permission registry, the role seeder and the console route table.
+ * Pattern: WAI-ARIA tabs with automatic activation. ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Home and End move between role tabs and select as they go (roving tab index). Choosing the role being compared clears the comparison, since comparing a role with itself says nothing.
+ * State: the selected role (default manager), the comparison target, and one announcement string shown in a polite hidden live region, set only inside the handlers that change the selection or comparison. The held-permission count animates up (useCountUp) once the panel is 20 percent in view (useInView).
+ * Content: tabs with counts and meters; for the selected role, the plain-language capabilities, the console screens it can open, and every permission code grouped (each marked held or not held, and added or removed when comparing). The closing link signs in as the role only where the site offers demo accounts, otherwise it goes to the demos (useDemoCta, useInPageLink). Static: no requests. Rendered by the Trust page.
+ */
 export function RoleSwitcher(): ReactElement {
   const [selected, setSelected] = useState<RoleId>('manager')
   const [compareWith, setCompareWith] = useState<CompareTarget>('none')

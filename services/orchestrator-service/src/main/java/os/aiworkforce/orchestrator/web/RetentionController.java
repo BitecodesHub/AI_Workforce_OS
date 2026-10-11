@@ -44,12 +44,15 @@ public class RetentionController {
     private final RetentionService retention;
     private final AuditClient audit;
 
+    /** Receives the retention service and the audit client. */
     public RetentionController(RetentionService retention, AuditClient audit) {
         this.retention = retention;
         this.audit = audit;
     }
 
     /**
+     * The retention settings.
+     *
      * @param runDetailDays how many days a finished run keeps the text of its steps
      * @param defaultRunDetailDays what it is until a workspace chooses
      * @param minRunDetailDays the shortest that may be chosen
@@ -59,10 +62,11 @@ public class RetentionController {
     public record SettingsView(
             int runDetailDays, int defaultRunDetailDays, int minRunDetailDays, int maxRunDetailDays, int usageDays) {}
 
-    /** @param runDetailDays the new number of days; the range is checked here and again by the setting itself */
+    /** The body of a change: the new number of days; the range is checked here and again by the setting itself. */
     public record UpdateRequest(
             @NotNull @Min(7) @Max(3650) Integer runDetailDays) {}
 
+    /** Reads the retention settings; route {@code GET /api/orchestrator/retention-settings}; requires WORKSPACE_UPDATE. */
     // @find: get retention settings, GET /api/orchestrator/retention-settings
     @GetMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
@@ -71,6 +75,13 @@ public class RetentionController {
         return view(retention.runDetailDays(orgId()));
     }
 
+    /**
+     * Sets how many days run detail is kept.
+     *
+     * <p>Route {@code PUT /api/orchestrator/retention-settings}; requires WORKSPACE_UPDATE. Stores the
+     * value through {@link RetentionService} and records a {@code retention.update} audit entry with the
+     * old and new number of days. Out-of-range values are refused with a validation error.
+     */
     // @find: update retention days, PUT /api/orchestrator/retention-settings
     @PutMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
@@ -88,6 +99,7 @@ public class RetentionController {
         return view(retention.runDetailDays(orgId));
     }
 
+    /** Builds the view from the current days plus the fixed default, limits and usage retention. */
     private static SettingsView view(int days) {
         return new SettingsView(
                 days,
@@ -97,6 +109,7 @@ public class RetentionController {
                 RetentionService.USAGE_DAYS);
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

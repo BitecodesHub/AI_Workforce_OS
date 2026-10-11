@@ -40,8 +40,10 @@ public class InternalTokenProvider {
     /** Far more than the people and workspaces active within one token lifetime. */
     static final int MAX_CACHED = 1_000;
 
+    // Cache identity: callee service, acting person or system id, and workspace. All three are needed so one person's authority is never reused for another.
     private record CacheKey(String service, String actorId, String orgId) {}
 
+    // A minted token with its expiry; considered stale a few seconds early.
     private record CachedToken(String token, Instant expiresAt) {
         boolean isFresh() {
             // Renewed early, so a token never expires between being fetched and being used.
@@ -54,6 +56,12 @@ public class InternalTokenProvider {
     private final Duration ttl;
     private final String internalSecret;
 
+    /**
+     * Builds a client for the identity service (which issues the tokens) and reads the token lifetime and the shared internal secret from platform properties.
+     *
+     * @param builder Spring's shared WebClient builder
+     * @param properties platform configuration: identity URL, token TTL, internal service secret
+     */
     public InternalTokenProvider(WebClient.Builder builder, PlatformProperties properties) {
         this.client = builder.baseUrl(properties.services().identity()).build();
         this.ttl = properties.security().internalTokenTtl();
@@ -61,7 +69,14 @@ public class InternalTokenProvider {
     }
 
     // @find: token for service, platform actor
-    /** A token for {@code service}, for whoever and whichever workspace the current context names. */
+    /**
+     * A token for {@code service}, for whoever and whichever workspace the current context names.
+     * Falls back to the system actor when no request is in flight. Calls the identity service on a
+     * cache miss and may therefore throw on a transport failure.
+     *
+     * @param service the audience, for example {@code "integrations"}
+     * @return the bearer token, or null if the identity service returned none
+     */
     public String forService(String service) {
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
         return mint(service, actor, actor.orgId());
@@ -75,6 +90,11 @@ public class InternalTokenProvider {
      * the organisation service's credential reveal. A scheduled or system run has no workspace in
      * its context, so the workspace being acted for is named explicitly; the person is still
      * carried from the context, so the audit trail keeps them.
+     *
+     * @param service the audience service
+     * @param orgId the workspace to act for; must not be null
+     * @return the bearer token
+     * @throws ApiException ORGANISATION_MISMATCH when the current context belongs to a different workspace
      */
     public String forService(String service, UUID orgId) {
         Objects.requireNonNull(orgId, "orgId");
@@ -98,6 +118,12 @@ public class InternalTokenProvider {
      * for. The receiving service reads the person from the token and decides what they may do; the
      * token itself carries no permissions. A request made as one workspace can never name another
      * workspace's person, for the same reason {@link #forService(String, UUID)} refuses it.
+     *
+     * @param service the audience service
+     * @param orgId the workspace the person belongs to; must not be null
+     * @param requestedBy the person to act as; must not be null
+     * @return the bearer token
+     * @throws ApiException ORGANISATION_MISMATCH when the current context belongs to a different workspace
      */
     public String forRequester(String service, UUID orgId, UUID requestedBy) {
         Objects.requireNonNull(orgId, "orgId");
@@ -111,6 +137,7 @@ public class InternalTokenProvider {
         return mint(service, requester, orgId.toString());
     }
 
+    // Returns a cached token while it is fresh; otherwise asks the identity service's /internal/tokens endpoint for a new one (5 second timeout, blocking) and caches it. A null or empty body yields null, which is not cached. Transport and HTTP errors propagate to the caller.
     private String mint(String service, Actor actor, String orgId) {
         CacheKey key = new CacheKey(service, actor.id(), orgId);
 
@@ -147,6 +174,7 @@ public class InternalTokenProvider {
         return token;
     }
 
+    // Stores a token, first dropping expired entries and then, if still at the bound, the entries nearest expiry.
     private void remember(CacheKey key, CachedToken token) {
         cache.values().removeIf(entry -> !entry.isFresh());
         // Still full of live tokens: drop the ones closest to expiry, which are the cheapest to
@@ -168,5 +196,6 @@ public class InternalTokenProvider {
         return cache.size();
     }
 
+    // The identity service's reply: only the token string is used.
     private record TokenResponse(String token) {}
 }

@@ -17,9 +17,11 @@ import { setupSteps, summarise, type SetupFacts, type SetupStep, type SetupSumma
  * Each is asked only of a role that can act on it.
  */
 
+/** Whether a model provider is the built-in sandbox, which does not count as a live model. */
 const isSandbox = (provider: { kind: string }) => provider.kind.toUpperCase() === 'SANDBOX'
 
 // @find: setup steps hook, workspace setup progress, checklist status; reads providers, sources, members, budget, notifications; used by: Setup page, setup banner
+/** Computes the workspace setup checklist. Flow: for each area (models, search, tools, knowledge, team, notifications, budget) the matching query runs only when the person holds the permissions needed to read it; the results are gathered into a facts object, which setupSteps turns into steps and summarise into progress. Areas the person may not see are marked not allowed rather than incomplete. Pass enabled false to skip every query (for example when signed out). Reads the browser notification preference from localStorage. Used by the Setup page and the setup banner. Returns the steps and the summary; data not yet loaded leaves a step undetermined. */
 export function useSetupSteps(options: { enabled?: boolean } = {}): { steps: SetupStep[]; summary: SetupSummary } {
   const on = options.enabled ?? true
   const me = profile()

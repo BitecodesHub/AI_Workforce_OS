@@ -21,6 +21,7 @@ import os.aiworkforce.platform.config.PlatformProperties;
 @Component
 public class ScheduleZoneLookup extends WorkspaceZoneLookup {
 
+    /** Builds the lookup by passing the HTTP builder, properties and internal service token to the shared implementation. */
     public ScheduleZoneLookup(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         super(builder, properties, tokens);
     }

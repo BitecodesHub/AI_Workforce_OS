@@ -52,6 +52,11 @@ import os.aiworkforce.platform.config.PlatformProperties;
 @EnableMethodSecurity
 public class ResourceServerConfig {
 
+    /**
+     * Paths reachable without a bearer token: probes, API documentation, sign-in and the few
+     * endpoints that issue or redeem credentials. Each carries its own protection, explained beside
+     * the entry. Everything else is refused unless a token is verified.
+     */
     private static final String[] PUBLIC_PATHS = {
         "/actuator/health",
         "/actuator/health/**",
@@ -86,6 +91,18 @@ public class ResourceServerConfig {
         "/internal/tokens",
     };
 
+    /**
+     * The filter chain for every request.
+     *
+     * <p>Switches off CSRF (there is no cookie session to forge), applies the CORS rules from
+     * {@code corsSource}, makes sessions stateless, permits pre-flight requests and {@code PUBLIC_PATHS},
+     * and requires authentication for all else, including {@code /internal} paths. Bearer tokens are
+     * validated by the {@link JwtDecoder} and turned into an actor by {@link JwtActorConverter}. Adds
+     * response headers that refuse framing, disable content sniffing and enforce HTTPS for a year.
+     *
+     * <p>Built once at startup by Spring Security. A request without a valid token receives 401 before it
+     * reaches any controller.
+     */
     @Bean
     public SecurityFilterChain filterChain(
             HttpSecurity http, JwtActorConverter converter, PlatformProperties properties) throws Exception {
@@ -114,13 +131,6 @@ public class ResourceServerConfig {
      * <p>Asymmetric signing means no other service holds a key that can mint a token: identity
      * signs, everybody else verifies. Issuer and audience are both checked, so a token minted for
      * another deployment cannot be replayed into this one.
-     */
-    /**
-     * Verifies tokens against the identity service's published keys.
-     *
-     * <p>Asymmetric signing means no other service holds a key that can mint a token: identity
-     * signs, everybody else verifies. Issuer and audience are both checked, so a token minted for
-     * another deployment cannot be replayed into this one.
      *
      * <p>The key selector is built explicitly rather than through
      * {@code NimbusJwtDecoder.withJwkSetUri}, because that builder defaults to RS256 and rejects
@@ -130,6 +140,14 @@ public class ResourceServerConfig {
     /** The shortest gap between two fetches of the identity service's published keys. */
     static final long JWKS_MIN_FETCH_INTERVAL_MS = 5_000;
 
+    /**
+     * The token decoder; the description above explains the design.
+     *
+     * <p>Reads the key-set address, cache times, issuer and audience from {@code PlatformProperties}.
+     * Keys are fetched from identity over HTTP, cached, and refetched at most once per
+     * {@code JWKS_MIN_FETCH_INTERVAL_MS}; only ES256 signatures are accepted. Throws
+     * {@link IllegalStateException} at startup when the key-set address is not a valid URL.
+     */
     @Bean
     public JwtDecoder jwtDecoder(PlatformProperties properties) {
         PlatformProperties.Security security = properties.security();
@@ -151,6 +169,11 @@ public class ResourceServerConfig {
 
             NimbusJwtDecoder decoder = new NimbusJwtDecoder(processor);
             decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(new OAuth2TokenValidator<Jwt>() {
+                /**
+                 * Accepts the token only when its audience includes this deployment's audience and its issuer
+                 * matches the configured issuer. This runs in addition to the default signature, expiry and
+                 * not-before checks. A mismatch fails validation, which results in a 401.
+                 */
                 @Override
                 public OAuth2TokenValidatorResult validate(Jwt token) {
                     List<String> audience = token.getAudience();
@@ -169,6 +192,11 @@ public class ResourceServerConfig {
         }
     }
 
+    /**
+     * Builds the cross-origin rules from the platform's HTTP settings: the allowed origins, the methods
+     * and request headers the web client uses, the response headers it may read, whether credentials are
+     * allowed, and how long a browser may cache the answer. Applied to every path by {@code filterChain}.
+     */
     private CorsConfigurationSource corsSource(PlatformProperties properties) {
         PlatformProperties.Http http = properties.http();
         CorsConfiguration config = new CorsConfiguration();

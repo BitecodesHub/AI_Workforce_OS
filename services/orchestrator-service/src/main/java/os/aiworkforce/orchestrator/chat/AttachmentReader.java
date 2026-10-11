@@ -35,6 +35,8 @@ public interface AttachmentReader {
     int MAX_TEXT_CHARS = 200_000;
 
     /**
+     * The knowledge service's answer for one file. Unknown fields are ignored so the service may add to its reply.
+     *
      * @param mediaType what the file is, detected from its content
      * @param text its readable text, possibly empty
      * @param pageCount pages, where the format has them
@@ -54,6 +56,11 @@ public interface AttachmentReader {
             boolean truncated) {}
 
     /**
+     * Reads one file: detects its real type and extracts its text, without indexing it.
+     *
+     * Called by {@code AttachmentService.upload} before the file is stored. The call has no side effects
+     * in the knowledge service.
+     *
      * @throws ApiException {@code DEPENDENCY_UNAVAILABLE} when the file could not be read at all
      *     right now, so an upload is refused rather than stored unchecked
      */
@@ -68,6 +75,9 @@ public interface AttachmentReader {
         private final WebClient client;
         private final InternalTokenProvider tokens;
 
+        /**
+         * Builds a client for the knowledge service address, with a response limit sized for {@link #MAX_TEXT_CHARS} of text.
+         */
         public Remote(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
             this.client = builder.clone()
                     .baseUrl(properties.services().knowledge())
@@ -76,6 +86,13 @@ public interface AttachmentReader {
             this.tokens = tokens;
         }
 
+        /**
+         * Posts the file to the knowledge service's extract endpoint and returns its answer.
+         *
+         * <p>Sends a multipart request with a service token for the workspace and a 60 second timeout. No
+         * state is changed on either side. Any failure, including an empty reply, is logged as a warning and
+         * reported as {@code DEPENDENCY_UNAVAILABLE}, so the upload is refused and not stored unchecked.
+         */
         @Override
         public Read read(UUID orgId, String name, byte[] content) {
             MultipartBodyBuilder body = new MultipartBodyBuilder();
@@ -109,6 +126,7 @@ public interface AttachmentReader {
             }
         }
 
+        /** The single error shown whenever extraction cannot be completed. */
         private static ApiException unavailable() {
             return new ApiException(
                     ErrorCode.DEPENDENCY_UNAVAILABLE, "Files cannot be read right now. Try again in a minute.");

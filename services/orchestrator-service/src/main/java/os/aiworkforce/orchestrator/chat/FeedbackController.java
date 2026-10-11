@@ -74,6 +74,9 @@ public class FeedbackController {
     private final Runs runs;
     private final AuditClient audit;
 
+    /**
+     * Creates the controller over the conversation, message, feedback and run repositories and the audit client.
+     */
     public FeedbackController(
             Conversations conversations,
             ChatMessages messages,
@@ -88,6 +91,8 @@ public class FeedbackController {
     }
 
     /**
+     * The body of a rating: the verdict and an optional reason. Validated on receipt; {@link #rate} applies the remaining rules.
+     *
      * @param rating {@code 1} for a thumbs up, {@code -1} for a thumbs down
      * @param reason why, in a few words or a sentence; optional
      */
@@ -110,6 +115,17 @@ public class FeedbackController {
     /** Every rating the answers of one run have. */
     public record RunFeedback(List<RunRating> ratings) {}
 
+    /**
+     * Records, or replaces, the caller's rating of an agent's answer.
+     *
+     * <p>Route: {@code POST /api/conversations/{id}/messages/{messageId}/feedback}. Permission: {@code
+     * CHAT_USE}. Flow: validate the rating and reason, require a signed-in person, check the message is an
+     * agent answer in a visible conversation, read the agent and run from the stored message, upsert the
+     * vote and read it back. Writes one feedback row in the transaction and, after commit, one audit entry
+     * ({@code chat.answer.rated}); an audit failure cannot undo the rating. Returns the stored {@link
+     * FeedbackView}. A bad rating or a message that is not an answer is a validation error; an unknown
+     * conversation or message is not found.
+     */
     // @find: rate answer, thumbs up or down, POST /api/conversations/{id}/messages/{messageId}/feedback
     @PostMapping("/conversations/{id}/messages/{messageId}/feedback")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -147,6 +163,13 @@ public class FeedbackController {
         return view(saved);
     }
 
+    /**
+     * Withdraws the caller's rating of an answer.
+     *
+     * <p>Route: {@code DELETE /api/conversations/{id}/messages/{messageId}/feedback}. Permission: {@code
+     * CHAT_USE}. Returns 204, including when there was no rating to remove. Deletes at most one row; the
+     * same message checks as {@link #rate} apply. Withdrawal is not audited.
+     */
     // @find: withdraw rating, remove thumbs, DELETE /api/conversations/{id}/messages/{messageId}/feedback
     @DeleteMapping("/conversations/{id}/messages/{messageId}/feedback")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -162,6 +185,12 @@ public class FeedbackController {
         feedbacks.withdraw(orgId, messageId, userId);
     }
 
+    /**
+     * Lists the ratings the caller has given in one conversation.
+     *
+     * <p>Route: {@code GET /api/conversations/{id}/feedback}. Permission: {@code CHAT_USE}. Read only.
+     * Other people's ratings are never included. The conversation must be visible to the caller.
+     */
     // @find: ratings in conversation, GET /api/conversations/{id}/feedback
     @GetMapping("/conversations/{id}/feedback")
     @RequiresPermission(Permission.Codes.CHAT_USE)
@@ -176,6 +205,13 @@ public class FeedbackController {
                 .toList());
     }
 
+    /**
+     * Lists every rating the answers of one run have, with reasons.
+     *
+     * <p>Route: {@code GET /api/runs/{runId}/feedback}. Permission: {@code RUN_READ}. Read only. A run
+     * of another workspace, or of a task hidden from the caller, is reported as not found. Used by the run
+     * detail page.
+     */
     // @find: ratings on a run, GET /api/runs/{runId}/feedback
     @GetMapping("/runs/{runId}/feedback")
     @RequiresPermission(Permission.Codes.RUN_READ)
@@ -198,6 +234,9 @@ public class FeedbackController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ConversationAccess access;
 
+    /**
+     * Requires that the caller may see the conversation: through {@link ConversationAccess} when present, otherwise by workspace only. Throws not found otherwise.
+     */
     private void visibleConversation(UUID orgId, UUID id) {
         if (access != null) {
             access.require(orgId, RequestContext.requireActor(), id);
@@ -224,6 +263,7 @@ public class FeedbackController {
         return message;
     }
 
+    /** The rating as a stored value; anything other than 1 or -1 is a validation error. */
     private static short ratingOf(Integer value) {
         if (value == null || (value != MessageFeedback.POSITIVE && value != MessageFeedback.NEGATIVE)) {
             throw ApiException.validation("rating", "Rate with 1 for a thumbs up or -1 for a thumbs down.");
@@ -277,6 +317,7 @@ public class FeedbackController {
         return runs.findByIdAndOrgId(runId, orgId).map(run -> run.getId()).orElse(null);
     }
 
+    /** Parses a UUID from a stored detail value, or null when it is missing or malformed. */
     private static UUID uuidIn(Object value) {
         if (!(value instanceof String text) || text.isBlank()) {
             return null;
@@ -288,11 +329,13 @@ public class FeedbackController {
         }
     }
 
+    /** Maps a stored rating to its response form. */
     private static FeedbackView view(MessageFeedback feedback) {
         return new FeedbackView(
                 feedback.getMessageId(), feedback.getRating(), feedback.getReason(), feedback.getUpdatedAt());
     }
 
+    /** The workspace of the current request, taken from the request context. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

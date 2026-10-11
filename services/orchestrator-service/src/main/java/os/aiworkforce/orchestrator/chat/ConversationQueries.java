@@ -1,6 +1,6 @@
 // @find: conversation queries, list conversations, conversation list, search chats, conversation detail, messages page, earlier messages, unread, pinned, archived, needs me, ConversationQueries, chat sidebar
 // @what: Read-only queries that build the conversation list, a conversation's detail and its pages of messages for a person.
-// @flow: Called by ChatController.
+// @flow: Called by ChatController for the list, detail and message pages, and by ConversationAdmin for a single row's view; reads Conversations, ConversationMarks, ChatMessages, Goals, Tasks, Runs, QuestionService and ChatQueue.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
@@ -90,6 +90,10 @@ public class ConversationQueries {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ChatQueue chatQueue;
 
+    /**
+     * Wires the repositories and services the read queries need; the access and queue collaborators
+     * are injected by field because they are optional in hand-built tests.
+     */
     public ConversationQueries(
             Conversations conversations,
             ConversationMarks marks,
@@ -109,8 +113,13 @@ public class ConversationQueries {
 
     // ---- Shapes -----------------------------------------------------------------------------
 
+    /** The first message that matched a search term in a conversation, with a short excerpt around the match. */
     public record SearchMatch(UUID messageId, String snippet) {}
 
+    /**
+     * One row of the conversation list, as this particular person sees it: the shared conversation
+     * fields plus their own pin, archive and unread state, the current activity, and what they may do.
+     */
     public record ConversationView(
             UUID id,
             String title,
@@ -130,12 +139,14 @@ public class ConversationQueries {
             /** Whether this person may change who can read it: its creator, or a holder of chat:read_all. */
             boolean canShare) {}
 
+    /** One page of the conversation list: pinned and needs-you rows (first page only), then the main rows. */
     public record ConversationPage(
             List<ConversationView> pinned,
             List<ConversationView> needsYou,
             List<ConversationView> conversations,
             boolean hasMore) {}
 
+    /** A chat message as the Chat page receives it; a plain copy of the stored message row. */
     public record ChatMessageView(
             UUID id,
             int position,
@@ -148,6 +159,10 @@ public class ConversationQueries {
             UUID goalId,
             Instant createdAt) {}
 
+    /**
+     * A conversation opened in full, or the changes to it since a reader last looked: the messages,
+     * the goals and questions they refer to, the waiting queue and whether the conversation is busy.
+     */
     public record ConversationDetail(
             ConversationView conversation,
             List<ChatMessageView> messages,
@@ -170,16 +185,32 @@ public class ConversationQueries {
             this(conversation, messages, goals, questions, hasEarlier, generatedAt, List.of(), "idle");
         }
 
+        /** The same detail with the waiting queue and busy state filled in. */
         ConversationDetail withQueue(List<ChatQueue.QueuedMessageView> waiting, String state) {
             return new ConversationDetail(
                     conversation, messages, goals, questions, hasEarlier, generatedAt, waiting, state);
         }
     }
 
+    /** One page of older messages, oldest first, and whether still older ones remain. */
     public record MessagesPage(List<ChatMessageView> messages, boolean hasEarlier) {}
 
     // ---- The conversation list ----------------------------------------------------------------
 
+    /**
+     * Builds one page of the conversation list for a person.
+     *
+     * <p>Flow: validates the search text and scope, loads the person's marks, then assembles the
+     * archived list, or on the first page the pinned and needs-you rows, followed by the main rows
+     * (excluding pinned and archived ones) fetched one extra to detect a further page. Activity
+     * (goal running, approval or answer pending) and search snippets are then attached to every row.
+     * Called by {@link ChatController#list}. Read-only.
+     *
+     * @param q optional search text, matched against titles and message text; at most 200 characters
+     * @param scope {@code all}, {@code mine} or {@code archived}
+     * @param page zero-based page number, size clamped to 1 to 100
+     * @throws ApiException a validation error when {@code q} is too long or {@code scope} is unknown
+     */
     // @find: list conversations, search messages, chat sidebar, filters pinned archived unread, GET /api/conversations
     @Transactional(readOnly = true)
     public ConversationPage list(UUID orgId, Actor actor, String q, String scope, int page, int size) {
@@ -310,7 +341,13 @@ public class ConversationQueries {
         return new ConversationPage(pinnedViews, needsYouViews, mainViews, hasMore);
     }
 
-    /** The view for a single, freshly created or freshly changed conversation, with no marks yet loaded. */
+    /**
+     * The view for a single, freshly created or freshly changed conversation, with no marks yet loaded.
+     *
+     * <p>Loads this person's mark and the conversation's activity itself, then delegates to the
+     * private row builder. Called by {@link ChatController#create} and by {@link ConversationAdmin}
+     * after a change. Read-only.
+     */
     // @find: conversation view, row in chat list
     @Transactional(readOnly = true)
     public ConversationView view(UUID orgId, Actor actor, Conversation conversation) {
@@ -330,6 +367,7 @@ public class ConversationQueries {
         return view(conversation, actor, mark, activeGoal, waitingApproval, pendingRequesters, me, Map.of());
     }
 
+    /** Builds one list row from the preloaded marks and activity maps; {@code mark} is null when the person has none. */
     private ConversationView view(
             Conversation conversation,
             Actor actor,
@@ -364,6 +402,10 @@ public class ConversationQueries {
                 canShare(conversation, actor));
     }
 
+    /**
+     * Chooses the activity label for a row: {@code needs_answer} or {@code waiting_answer} first, then
+     * {@code needs_approval} or {@code waiting_approval}, then {@code working}, otherwise {@code idle}.
+     */
     private static String activityOf(
             UUID id,
             Actor actor,
@@ -387,6 +429,7 @@ public class ConversationQueries {
         return "idle";
     }
 
+    /** Turns (conversation id, count) rows into a map holding true for every conversation with a count above zero. */
     private static Map<UUID, Boolean> activityMap(List<Object[]> countRows) {
         Map<UUID, Boolean> present = new LinkedHashMap<>();
         for (Object[] row : countRows) {
@@ -399,12 +442,14 @@ public class ConversationQueries {
         return present;
     }
 
+    /** Whether the person may change who can read the conversation: its creator or a holder of chat:read_all. */
     static boolean canShare(Conversation conversation, Actor actor) {
         String human = actor.humanId();
         return (human != null && human.equals(conversation.getCreatedBy()))
                 || actor.hasPermission(Permission.Codes.CHAT_READ_ALL);
     }
 
+    /** Whether the person may rename or delete the conversation: its creator or a holder of workspace:update. */
     static boolean canManage(Conversation conversation, Actor actor) {
         String human = actor.humanId();
         return (human != null && human.equals(conversation.getCreatedBy()))
@@ -428,6 +473,7 @@ public class ConversationQueries {
         return matches;
     }
 
+    /** An excerpt around the first match, with ellipses where it was cut; the start of the text when nothing matches. */
     private static String snippetOf(String content, String query) {
         if (content == null) {
             return "";
@@ -444,13 +490,17 @@ public class ConversationQueries {
         return prefix + middle + suffix;
     }
 
+    /** Substitutes a never-used id for an empty set so that SQL {@code in} clauses stay valid. */
     private static Set<UUID> orDummy(Set<UUID> ids) {
         return ids.isEmpty() ? Set.of(NONE) : ids;
     }
 
     // ---- Conversation detail ------------------------------------------------------------------
 
-    /** The conversation's whole recent window: its newest messages, their goals, and its questions. */
+    /**
+     * The conversation's whole recent window: its newest messages, their goals, and its questions.
+     * Delegates to the incremental overload with no cursor. Called by {@link ChatController#get}.
+     */
     // @find: conversation detail, open a chat with messages
     @Transactional(readOnly = true)
     public ConversationDetail detail(UUID orgId, Actor actor, UUID id, int limit) {
@@ -523,6 +573,7 @@ public class ConversationQueries {
     }
 
     /** The detail with the conversation's queue and whether it is busy, read fresh every time. */
+    /** Adds the live queue and busy state, read fresh on every call; returns the detail unchanged when no queue is wired. */
     private ConversationDetail withQueue(UUID orgId, Actor actor, Conversation conversation, ConversationDetail detail) {
         if (chatQueue == null) {
             return detail;
@@ -613,6 +664,13 @@ public class ConversationQueries {
                 .toList();
     }
 
+    /**
+     * One page of messages older than position {@code before}, oldest first. Requires read access to
+     * the conversation. Called by {@link ChatController#earlierMessages}. Read-only.
+     *
+     * @param limit clamped to 1 to 200
+     * @throws ApiException not found when the conversation is absent or not readable by the person
+     */
     // @find: messages page, load earlier messages
     @Transactional(readOnly = true)
     public MessagesPage messagesPage(UUID orgId, Actor actor, UUID id, int before, int limit) {
@@ -632,6 +690,7 @@ public class ConversationQueries {
                 ascending.stream().map(ConversationQueries::toMessageView).toList(), hasEarlier);
     }
 
+    /** Copies a stored message into its view record. */
     private static ChatMessageView toMessageView(ChatMessage message) {
         return new ChatMessageView(
                 message.getId(),
@@ -646,10 +705,12 @@ public class ConversationQueries {
                 message.getCreatedAt());
     }
 
+    /** Escapes {@code !}, {@code %} and {@code _} so user text is matched literally in a LIKE clause that uses {@code !} as its escape character. */
     static String escapeLike(String value) {
         return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
+    /** Parses a UUID, returning null for null or malformed text such as a non-person actor id. */
     private static UUID parseUuidOrNull(String value) {
         try {
             return value == null ? null : UUID.fromString(value);

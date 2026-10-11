@@ -74,15 +74,20 @@ public class QuestionService {
 
     private static final Logger log = LoggerFactory.getLogger(QuestionService.class);
 
+    // Limits: how many questions one run may ask, how long one may stay open in total, and the
+    // longest free-text answer and note accepted.
     static final int MAX_ASKS_PER_RUN = 3;
     static final Duration MAX_OPEN = Duration.ofDays(7);
     static final int MAX_OTHER = 2_000;
     static final int MAX_NOTE = 2_000;
+    // Reasons written on closed questions and in the trace, worded for a person to read. VIA lists
+    // the places an answer may come from.
     public static final String STOPPED_WORK = "The work this question belonged to has stopped.";
     static final String NO_ANSWER = "No answer arrived before the question closed.";
     static final String SKIPPED = "Skipped: the person asked the agent to use its judgement.";
     static final Set<String> VIA = Set.of("chat", "orchestrator", "run", "approvals");
 
+    // Reasons given to the model when asking is not allowed; see policyFor.
     static final String SCHEDULED_REASON = "No person can answer questions during scheduled work. Choose a "
             + "sensible default, do the work, and say what you assumed.";
     static final String LIMIT_REASON =
@@ -90,10 +95,12 @@ public class QuestionService {
     static final String UNANSWERED_REASON = "An earlier question went unanswered, so do not ask again. Finish "
             + "with what you can, and say what you still need.";
 
+    // Jackson type tokens for reading the JSON columns back into typed values.
     private static final TypeReference<List<AskPersonTool.Question>> QUESTIONS = new TypeReference<>() {};
     private static final TypeReference<List<Map<String, Object>>> MAPS = new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP = new TypeReference<>() {};
 
+    // Collaborators; window is how long a question stays open, and each extension adds one window.
     private final RunQuestions questions;
     private final Runs runs;
     private final Tasks tasks;
@@ -102,6 +109,10 @@ public class QuestionService {
     private final AuditClient audit;
     private final Duration window;
 
+    /**
+     * Wires the repositories, the JSON mapper and the audit client. {@code window} is read from
+     * {@code aiwos.questions.window} (24 hours by default).
+     */
     public QuestionService(
             RunQuestions questions,
             Runs runs,
@@ -129,19 +140,33 @@ public class QuestionService {
      */
     public record AskPolicy(boolean allowed, boolean everAsked, String reason) {}
 
-    /** One reply to one question: the option labels chosen, and an answer in the person's own words. */
+    /**
+     * One reply to one question: the option labels chosen, and an answer in the person's own words.
+     * Part of {@link AnswerInput}, cleaned by {@code normalise} and checked by {@code validate}.
+     */
     public record AnswerItem(String questionId, List<String> selected, String other) {}
 
     /**
+     * A person's submitted answer: a reply per question, an optional note, or a skip that leaves the
+     * choice to the agent. Built by {@code QuestionController} and the chat coordinator.
+     *
+     * @param answers one item per question answered; empty when {@code skipped}
+     * @param note a reply in the person's own words, which may stand in for some answers
+     * @param skipped the person asked the agent to use its judgement
      * @param via where it was answered: {@code chat}, {@code orchestrator}, {@code run} or {@code approvals}
      */
     public record AnswerInput(List<AnswerItem> answers, String note, boolean skipped, String via) {}
 
-    /** @param newlyAnswered false when this was the same person repeating the same answer */
+    /**
+     * What {@link #answer} returns: the question as stored, and whether this call recorded the
+     * answer. The caller submits the run's resume only when it did.
+     *
+     * @param newlyAnswered false when this was the same person repeating the same answer
+     */
     public record AnswerOutcome(RunQuestion question, boolean newlyAnswered) {}
 
     /**
-     * A question as a person sees it.
+     * A question as a person sees it. Built by {@link #views} for the question endpoints and chat.
      *
      * @param canAnswer whether the viewer may answer it
      * @param extendable whether one more extension still fits inside the seven-day cap
@@ -178,6 +203,10 @@ public class QuestionService {
      * <p>A scheduled goal never asks, because nobody is watching and a waiting goal would block the
      * schedule. A run asks at most three times, and never again after a question went unanswered:
      * guessing past silence is safer than asking into it.
+     *
+     * <p>Called by {@code AgentRunner} when it assembles the model's tools. Read only.
+     *
+     * @return the policy, with a model-facing reason when asking is refused
      */
     @Transactional(readOnly = true)
     public AskPolicy policyFor(Run run) {
@@ -206,6 +235,12 @@ public class QuestionService {
      *
      * <p>Idempotent on the call id: a replay of the same ask returns the row it already created.
      * Joins the caller's transaction, which also parks the run.
+     *
+     * <p>Copies the goal, conversation and requester from the run's task's goal; a run started
+     * directly on an agent is attributed to whoever created it. Sets the expiry one window ahead and
+     * stores the questions as JSON. Called by {@code AgentRunner}.
+     *
+     * @return the saved question, or the existing one on a replay
      */
     @Transactional
     public RunQuestion raise(Run run, Agent agent, String toolCallId, AskPersonTool.Ask ask) {
@@ -240,7 +275,7 @@ public class QuestionService {
         return questions.save(question);
     }
 
-    /** The detail of the trace's {@code question} step. */
+    /** The detail of the trace's {@code question} step: ids, a one-line summary and the questions asked. */
     public Map<String, Object> askStepDetail(RunQuestion question) {
         List<AskPersonTool.Question> asked = readQuestions(question);
         Map<String, Object> detail = new LinkedHashMap<>();
@@ -252,6 +287,7 @@ public class QuestionService {
         return detail;
     }
 
+    // One line naming what was asked: the question itself, or the headers when there are several.
     private static String askSummary(List<AskPersonTool.Question> asked) {
         if (asked.size() == 1) {
             return "Asked: " + asked.getFirst().question();
@@ -269,6 +305,17 @@ public class QuestionService {
      * <p>A refusal does not roll back what was written before it. The only writes before a
      * refusal close a question that can no longer be answered - its time is up, or its work has
      * stopped - and that must stick whether or not this answer could be accepted.
+     *
+     * <p>Flow: locks the question row, checks the actor may answer, closes the question if its run
+     * is no longer waiting, then handles the repeat, closed and expired cases, validates the answer
+     * against what was asked, and stores it. After commit it records a {@code question.answer} audit
+     * entry. It does not resume the run; the caller does, when {@code newlyAnswered} is true.
+     *
+     * @param input the answer or skip, from the person
+     * @return the stored question; {@code newlyAnswered} is false for an identical repeat by the
+     *     same person
+     * @throws ApiException not found, permission denied, {@code QUESTION_ALREADY_ANSWERED},
+     *     {@code QUESTION_CLOSED}, or a validation error for an answer that does not fit the questions
      */
     @Transactional(noRollbackFor = ApiException.class)
     public AnswerOutcome answer(UUID orgId, UUID questionId, AnswerInput input) {
@@ -330,6 +377,12 @@ public class QuestionService {
      * Gives a question one more window, up to seven days from when it was asked.
      *
      * <p>As with an answer, a question whose work has stopped is closed rather than extended.
+     * Locks the row, requires the same permission as answering, moves the expiry on by one window
+     * and records a {@code question.extend} audit entry after commit.
+     *
+     * @return the question with its new expiry
+     * @throws ApiException {@code QUESTION_CLOSED} when it is no longer pending; {@code CONFLICT}
+     *     when another window would pass the seven-day cap
      */
     @Transactional(noRollbackFor = ApiException.class)
     public RunQuestion extend(UUID orgId, UUID questionId) {
@@ -366,6 +419,9 @@ public class QuestionService {
     /**
      * The goal's requester, or anyone who can cancel work, and in either case someone who can
      * start work: an answer steers it.
+     *
+     * <p>Public so the views and chat can show or hide the answer controls with the same rule the
+     * answer itself enforces. A null actor may not answer.
      */
     public boolean canAnswer(RunQuestion question, Actor actor) {
         if (actor == null) {
@@ -379,6 +435,8 @@ public class QuestionService {
         return steers && mayStartWork;
     }
 
+    // Throws PERMISSION_DENIED, naming task:cancel, when canAnswer is false; action completes the
+    // refusal sentence.
     private void requireCanAnswer(RunQuestion question, Actor actor, String action) {
         if (!canAnswer(question, actor)) {
             throw new ApiException(
@@ -408,6 +466,7 @@ public class QuestionService {
         }
     }
 
+    // Saves a question as closed with the given status and reason; the caller holds the row lock.
     private void close(RunQuestion question, String status, String reason) {
         question.setStatus(status);
         question.setClosedReason(reason);
@@ -461,6 +520,10 @@ public class QuestionService {
         }
     }
 
+    // Checks a cleaned answer against what was asked: a known channel, length limits, only questions
+    // that were asked and only once each, only offered options, the right count for single and
+    // multiple choice, and every question covered unless a note is given. A skip must carry no
+    // answers. Throws a validation ApiException naming the field at fault.
     @SuppressWarnings("unchecked")
     private void validate(RunQuestion question, AnswerInput input, Map<String, Object> normalised) {
         if (input.via() == null || !VIA.contains(input.via())) {
@@ -517,6 +580,11 @@ public class QuestionService {
     // ---- Expiry, withdrawal and resuming --------------------------------------------------------
 
     // @find: overdue questions, expiry sweep
+    /**
+     * Ids of pending questions past their deadline, for the expiry sweep. Read only.
+     *
+     * @param limit the most ids to return in one pass
+     */
     @Transactional(readOnly = true)
     public List<UUID> overdueIds(int limit) {
         return questions.findExpiredIds(Instant.now(), PageRequest.of(0, limit));
@@ -528,6 +596,9 @@ public class QuestionService {
      *
      * <p>One per transaction, so an answer committing to one question at the same moment can never
      * roll back the expiry of the rest of the batch.
+     *
+     * <p>Closes it as {@code expired} and records a {@code question.expire} audit entry after
+     * commit. The run is not resumed here; the caller submits the returned reference.
      *
      * @return the run to resume, or empty when a concurrent answer or withdrawal got there first
      */
@@ -547,13 +618,19 @@ public class QuestionService {
         return Optional.of(new RunRef(question.getOrgId(), question.getRunId()));
     }
 
+    /** Ids of pending questions whose run may have stopped without withdrawing them, for the sweep. */
     @Transactional(readOnly = true)
     public List<UUID> strandedPendingIds(int limit) {
         return questions.findStrandedPendingIds(PageRequest.of(0, limit));
     }
 
     // @find: close stranded question
-    /** Closes a pending question whose run stopped by a path that could not withdraw it. */
+    /**
+     * Closes a pending question whose run stopped by a path that could not withdraw it.
+     *
+     * <p>One question per transaction, under its row lock. Does nothing when the question has
+     * already closed or its run is still waiting for it.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void closeStranded(UUID questionId) {
         RunQuestion question = questions.lockById(questionId).orElse(null);
@@ -574,6 +651,8 @@ public class QuestionService {
      * Withdraws a stopped run's pending question with a conditional bulk update, never by loading
      * and saving it. Joins the caller's transaction, which holds the run's lock.
      *
+     * <p>Called by {@code cancel} and {@code stopRun} on {@link GoalService}.
+     *
      * @return how many were withdrawn
      */
     @Transactional
@@ -582,7 +661,13 @@ public class QuestionService {
     }
 
     // @find: runs awaiting resume after answer
-    /** Runs parked on a question that has since been answered or expired, for the resume sweep. */
+    /**
+     * Runs parked on a question that has since been answered or expired, for the resume sweep.
+     * This catches a resume the answering request failed to submit. Read only.
+     *
+     * @param cutoff only questions settled before this instant, so a resume under way is left alone
+     * @return each run once
+     */
     @Transactional(readOnly = true)
     public List<RunRef> awaitingResume(Instant cutoff, int limit) {
         return questions.findAwaitingResume(cutoff, PageRequest.of(0, limit)).stream()
@@ -601,7 +686,7 @@ public class QuestionService {
 
     // ---- For chat -------------------------------------------------------------------------------
 
-    /** [conversationId, requestedBy] for every pending question in these conversations. */
+    /** [conversationId, requestedBy] for every pending question in these conversations; empty for no ids. */
     @Transactional(readOnly = true)
     public List<Object[]> pendingByConversation(UUID orgId, Collection<UUID> ids) {
         if (ids == null || ids.isEmpty()) {
@@ -620,7 +705,7 @@ public class QuestionService {
     }
 
     // @find: unlink deleted conversation questions
-    /** Unlinks a deleted conversation's questions, which stay on their runs. */
+    /** Unlinks a deleted conversation's questions, which stay on their runs. Returns how many rows changed. */
     @Transactional
     public int detachConversation(UUID orgId, UUID conversationId) {
         return questions.detachConversation(orgId, conversationId);
@@ -628,7 +713,14 @@ public class QuestionService {
 
     // ---- What the model and the trace are told --------------------------------------------------
 
-    /** The ask call's result, as the model receives it. */
+    /**
+     * The ask call's result, as the model receives it, as JSON text.
+     *
+     * <p>Three shapes: {@code skipped}, telling the model to use its own judgement; {@code
+     * answered}, with each question's header, text, chosen options and own-words reply; and {@code
+     * no_answer} for an expired or cancelled question. Each carries an instruction for what to do
+     * next. Called by {@code AgentRunner} when it resumes a run.
+     */
     public String modelResult(RunQuestion question) {
         ObjectNode result = json.createObjectNode();
         if ("answered".equals(question.getStatus())) {
@@ -669,7 +761,10 @@ public class QuestionService {
         return result.toString();
     }
 
-    /** One line for the trace's answering step. */
+    /**
+     * One line for the trace's answering step: the fixed no-answer or skip text, or the answers
+     * joined, cut to 500 characters.
+     */
     public String resultSummary(RunQuestion question) {
         if (!"answered".equals(question.getStatus())) {
             return NO_ANSWER;
@@ -702,6 +797,7 @@ public class QuestionService {
 
     // ---- Views ----------------------------------------------------------------------------------
 
+    /** One question, only when it belongs to the workspace. */
     @Transactional(readOnly = true)
     public Optional<RunQuestion> find(UUID orgId, UUID questionId) {
         return questions.findByIdAndOrgId(questionId, orgId);
@@ -744,7 +840,13 @@ public class QuestionService {
         return rows;
     }
 
-    /** Views for a batch, with goal titles and run statuses loaded in two queries in all. */
+    /**
+     * Views for a batch, with goal titles and run statuses loaded in two queries in all.
+     *
+     * <p>A goal or run from another workspace is treated as absent. {@code canAnswer} is evaluated
+     * for {@code actor}, and {@code extendable} is true while another window still fits inside the
+     * seven-day cap.
+     */
     @Transactional(readOnly = true)
     public List<QuestionView> views(List<RunQuestion> rows, Actor actor) {
         Set<UUID> goalIds = new HashSet<>();
@@ -801,6 +903,8 @@ public class QuestionService {
 
     // ---- JSON -----------------------------------------------------------------------------------
 
+    // Reads a stored JSON column back as typed values. A damaged questions column is a fault and
+    // throws; damaged answer or maps columns read as empty.
     List<AskPersonTool.Question> readQuestions(RunQuestion question) {
         try {
             return json.readValue(question.getQuestionsJson(), QUESTIONS);
@@ -825,6 +929,7 @@ public class QuestionService {
         }
     }
 
+    // The per-question items of a stored answer; empty when absent or malformed.
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> answerItems(Map<String, Object> answer) {
         if (!(answer.get("answers") instanceof List<?> items)) {
@@ -839,6 +944,7 @@ public class QuestionService {
         return out;
     }
 
+    // The chosen option labels of one answer item.
     private static List<String> selectedOf(Map<String, Object> item) {
         if (!(item.get("selected") instanceof List<?> selected)) {
             return List.of();
@@ -846,6 +952,7 @@ public class QuestionService {
         return selected.stream().filter(Objects::nonNull).map(String::valueOf).toList();
     }
 
+    // Writes a string field, or an explicit null when the value is not a string.
     private static void putNullable(ObjectNode node, String field, Object value) {
         if (value instanceof String text) {
             node.put(field, text);
@@ -854,6 +961,7 @@ public class QuestionService {
         }
     }
 
+    // Serialises a value to JSON text; a failure is a fault and throws IllegalStateException.
     private String write(Object value) {
         try {
             return json.writeValueAsString(value);
@@ -869,14 +977,17 @@ public class QuestionService {
                 : question.getExpiresAt().minus(window);
     }
 
+    // The creation time, or null for a row not yet written; used to order conversation questions.
     private static Instant openedAtOrNull(RunQuestion question) {
         return question.getCreatedAt();
     }
 
+    // Trims a value, treating a blank one as absent.
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
     }
 
+    // Reads an id string as a UUID, or null when it is missing or not one (the platform actor).
     private static UUID parseUuidOrNull(String value) {
         if (value == null) {
             return null;

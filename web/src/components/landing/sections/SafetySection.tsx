@@ -19,6 +19,7 @@ import type { RoleId } from '../roles/roleData'
  * Every row is something a person can actually do in the console today.
  */
 
+/** The six promises of the section (approval before sending, roles, a tamper-evident record, answers that cite their source, provider fallback, schedules), each with an icon, a title and a body. The provider count comes from landingFacts. */
 const PROMISES: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [
   {
     icon: 'gate',
@@ -53,6 +54,7 @@ const PROMISES: ReadonlyArray<{ icon: IconName; title: string; body: string }> =
 ]
 
 /** What a person can do, in the words a manager would use; each row needs every listed code. */
+/** The rows of the who-can-do-what table. Each row is something a person can do in the console today and lists the permission codes a role needs to hold all of. */
 const WHO_CAN: ReadonlyArray<{ label: string; codes: readonly string[] }> = [
   { label: 'Ask the AI team for work', codes: ['chat:use', 'task:create'] },
   { label: 'See the work as it happens', codes: ['run:read'] },
@@ -61,6 +63,7 @@ const WHO_CAN: ReadonlyArray<{ label: string; codes: readonly string[] }> = [
   { label: 'Invite people and set their roles', codes: ['member:invite', 'role:update'] },
 ]
 
+/** A table cell showing a tick or a dash for a role and an action. The mark is decorative; hidden text reads "<Role> can <action>" or "cannot", so the table is understandable without sight. */
 function Mark({ held, role, label }: { held: boolean; role: RoleId; label: string }): ReactElement {
   const action = label.charAt(0).toLowerCase() + label.slice(1)
   return (
@@ -76,6 +79,7 @@ function Mark({ held, role, label }: { held: boolean; role: RoleId; label: strin
 }
 
 // @find: SafetySection component, safety promises
+/** Section "Built so you stay in charge" (id safety): the six PROMISES as revealed list items, then a table of who can do what. Each tick is computed with holdsAll from roleData, the same source the page for IT teams draws its permission map from, so the two cannot disagree. The table scrolls in a focusable region so a keyboard can scroll it on a phone. Static. Rendered by the Landing route. */
 export function SafetySection(): ReactElement {
   return (
     <LandingSection id="safety" labelledBy="safety-title">

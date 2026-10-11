@@ -25,12 +25,15 @@ import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
 @Table(name = "schedules")
 public class Schedule extends OrgScopedEntity {
 
+    /** The schedule's display name, taken from the opening words of the instruction when made from words. */
     @Column(nullable = false)
     private String name;
 
+    /** The agent that does the work each time the schedule fires. */
     @Column(name = "agent_id", nullable = false)
     private UUID agentId;
 
+    /** The standing instruction every fired goal works from. */
     @Column(nullable = false, columnDefinition = "text")
     private String instruction;
 
@@ -54,6 +57,7 @@ public class Schedule extends OrgScopedEntity {
     @Column(nullable = false, columnDefinition = "text")
     private String description;
 
+    /** Whether the sweep may fire this schedule; false while paused. */
     @Column(nullable = false)
     private boolean enabled = true;
 
@@ -61,12 +65,15 @@ public class Schedule extends OrgScopedEntity {
     @Column(name = "overlap_policy", nullable = false)
     private String overlapPolicy = "skip";
 
+    /** When the sweep should next fire this schedule; null once a one-off has run or while paused. */
     @Column(name = "next_run_at")
     private Instant nextRunAt;
 
+    /** When a goal was last started from this schedule. */
     @Column(name = "last_run_at")
     private Instant lastRunAt;
 
+    /** The goal started by the most recent run. */
     @Column(name = "last_goal_id")
     private UUID lastGoalId;
 
@@ -74,9 +81,11 @@ public class Schedule extends OrgScopedEntity {
     @Column(name = "last_status")
     private String lastStatus;
 
+    /** Failed runs in a row; reset on success and used by ScheduleGoalListener to pause the schedule. */
     @Column(name = "consecutive_failures", nullable = false)
     private int consecutiveFailures = 0;
 
+    /** Plain-words reason the schedule is paused, shown on the Schedules page; null when running. */
     @Column(name = "paused_reason")
     private String pausedReason;
 
@@ -225,6 +234,7 @@ public class Schedule extends OrgScopedEntity {
         this.pausedReason = pausedReason;
     }
 
+    /** Whether this schedule repeats ({@code kind} is {@code recurring}) rather than running once. */
     public boolean isRecurring() {
         return "recurring".equals(kind);
     }

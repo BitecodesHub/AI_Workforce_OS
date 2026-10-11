@@ -44,22 +44,31 @@ public class AuditClient {
 
     private static final Logger log = LoggerFactory.getLogger(AuditClient.class);
 
+    /** The only outcome words an event may carry; anything else is rejected before it is stored. */
     private static final Set<String> OUTCOMES = Set.of("succeeded", "failed", "denied", "locked");
 
     /**
      * The longest each field is kept, matching what analytics-service accepts. An event that exceeded
      * a limit there would be refused for ever and sit in the outbox as a poison row.
+     *
+     * Longest actor id kept.
      */
     private static final int ACTOR_ID_MAX = 200;
+    /** Longest actor kind kept. */
     private static final int ACTOR_KIND_MAX = 40;
+    /** Longest action name kept. */
     private static final int ACTION_MAX = 120;
+    /** Longest resource type kept. */
     private static final int RESOURCE_TYPE_MAX = 80;
+    /** Longest resource id kept. */
     private static final int RESOURCE_ID_MAX = 200;
+    /** Longest request id kept. */
     private static final int REQUEST_ID_MAX = 128;
 
     /** Beyond this the detail is replaced by a note that it was too large, rather than stored. */
     private static final int DETAIL_MAX_BYTES = 32 * 1024;
 
+    /** Fragments of a detail key that mark its value as a secret to be redacted; see {@link #looksSecret}. */
     private static final Set<String> SECRET_WORDS =
             Set.of("password", "secret", "token", "apikey", "api_key", "authorization", "privatekey", "private_key");
 
@@ -68,6 +77,14 @@ public class AuditClient {
     private final ObjectMapper json;
     private final AuditProperties properties;
 
+    /**
+     * Creates the client.
+     *
+     * @param outbox where events are written
+     * @param relay nudged once an event is stored
+     * @param json writes the detail as JSON text
+     * @param properties supplies the enabled switch
+     */
     public AuditClient(AuditOutbox outbox, AuditOutboxRelay relay, ObjectMapper json, AuditProperties properties) {
         this.outbox = outbox;
         this.relay = relay;
@@ -80,6 +97,10 @@ public class AuditClient {
      *
      * @param outcome {@code succeeded}, {@code failed}, {@code denied} or {@code locked}
      * @return the event's id
+     *
+     * Takes the actor from {@code RequestContext}, falling back to the platform's own system actor
+     * when the work has no request (a scheduled job, for example), and the workspace from that actor.
+     * Delegates to the overload that takes an explicit workspace and actor.
      */
     // @find: record audit event, log who did what
     public UUID record(String action, String resourceType, String resourceId, String outcome, Map<String, Object> detail) {
@@ -87,7 +108,14 @@ public class AuditClient {
         return record(workspaceOf(actor), actor, action, resourceType, resourceId, outcome, detail);
     }
 
-    /** Records an event in a named workspace, or the platform's own log when {@code orgId} is null. */
+    /**
+     * Records an event in a named workspace, or the platform's own log when {@code orgId} is null.
+     *
+     * Unpacks the actor's id, kind and on-behalf-of person and delegates to the fully explicit
+     * overload. Used by callers that already hold an {@link Actor}.
+     *
+     * @return the event's id, or {@code null} when auditing is switched off
+     */
     public UUID record(
             UUID orgId,
             Actor actor,
@@ -111,6 +139,16 @@ public class AuditClient {
     /**
      * Records an event with the actor spelled out, for the cases where there is no signed-in actor
      * to read it from: a failed sign-in, a link redeemed by somebody not yet signed in.
+     *
+     * Validates the outcome, then, when auditing is enabled, creates the event id, truncates each
+     * field to the limit analytics-service accepts, redacts secret-looking detail keys and adds the row
+     * to the outbox. The write joins the caller's transaction when one is active. The event's time is
+     * taken here, not at delivery.
+     *
+     * <p>Side effects: one outbox insert; the relay is woken after the transaction commits.
+     *
+     * @return the event's id, or {@code null} when {@code aiwos.audit.enabled} is false
+     * @throws IllegalArgumentException when the outcome is not one of the permitted words
      */
     public UUID record(
             UUID orgId,
@@ -147,7 +185,12 @@ public class AuditClient {
         return id;
     }
 
-    /** Sends soon: once the surrounding transaction commits, or at once when there is none. */
+    /**
+     * Sends soon: once the surrounding transaction commits, or at once when there is none.
+     *
+     * <p>Registers an after-commit callback when a transaction is active, so a rolled-back change never
+     * triggers a send; otherwise wakes the relay directly. Called by {@code record} after the outbox write.
+     */
     private void nudgeAfterCommit() {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -161,6 +204,13 @@ public class AuditClient {
         }
     }
 
+    /**
+     * Writes the redacted detail as JSON text.
+     *
+     * <p>A missing detail becomes an empty object. Detail larger than the limit is replaced by a note
+     * that it was truncated, and detail that cannot be serialised is replaced by a marker object.
+     * Neither case throws, because the event must still be recorded.
+     */
     private String detailJson(Map<String, Object> detail) {
         try {
             String text = json.writeValueAsString(scrub(detail == null ? Map.of() : detail));
@@ -178,11 +228,21 @@ public class AuditClient {
     /** How deep detail may nest before the rest is replaced; real detail is flat or one level in. */
     private static final int MAX_DEPTH = 8;
 
-    /** A copy of the detail with any value under a secret-sounding key replaced. */
+    /**
+     * A copy of the detail with any value under a secret-sounding key replaced.
+     *
+     * <p>Package-private so tests can call it. Nested maps and collections are cleaned recursively; the
+     * input is not modified.
+     */
     static Map<String, Object> scrub(Map<String, Object> detail) {
         return scrubMap(detail, 0);
     }
 
+    /**
+     * Copies one map, replacing the value of every secret-looking key with {@code [redacted]} and
+     * cleaning the other values recursively. Keys are converted to text. Called by {@code scrub} and
+     * {@code scrubValue}.
+     */
     private static Map<String, Object> scrubMap(Map<?, ?> detail, int depth) {
         Map<String, Object> clean = new LinkedHashMap<>();
         detail.forEach((key, value) -> {
@@ -192,6 +252,11 @@ public class AuditClient {
         return clean;
     }
 
+    /**
+     * Cleans one value. Maps and collections nested deeper than {@code MAX_DEPTH} are replaced by a
+     * short note, nested maps and collections are copied with their contents cleaned, and any other
+     * value is returned unchanged.
+     */
     private static Object scrubValue(Object value, int depth) {
         if (depth > MAX_DEPTH && (value instanceof Map<?, ?> || value instanceof Collection<?>)) {
             return "[nested too deeply]";
@@ -207,6 +272,13 @@ public class AuditClient {
         return value;
     }
 
+    /**
+     * Whether a detail key names a secret.
+     *
+     * <p>The key is compared in lower case with hyphens and underscores removed. It matches when it
+     * contains one of the secret words and does not end in {@code ref}, {@code kind} or {@code id},
+     * because those name a reference to a secret, or its type, rather than the secret itself.
+     */
     private static boolean looksSecret(String key) {
         String lower = key.toLowerCase(java.util.Locale.ROOT).replace("-", "").replace("_", "");
         return SECRET_WORDS.stream().map(word -> word.replace("_", "")).anyMatch(lower::contains)
@@ -215,6 +287,10 @@ public class AuditClient {
                 && !lower.endsWith("id");
     }
 
+    /**
+     * The actor's workspace as a UUID, or {@code null} when the actor has none or the value is not a
+     * valid UUID. Never throws.
+     */
     private static UUID workspaceOf(Actor actor) {
         if (actor.orgId() == null) {
             return null;
@@ -226,6 +302,7 @@ public class AuditClient {
         }
     }
 
+    /** Truncates text to {@code max} characters; {@code null} stays {@code null}. */
     private static String cut(String value, int max) {
         if (value == null) {
             return null;
@@ -233,6 +310,10 @@ public class AuditClient {
         return value.length() <= max ? value : value.substring(0, max);
     }
 
+    /**
+     * Maps blank text to {@code null} so an optional field is stored as absent rather than as an empty
+     * string.
+     */
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
     }

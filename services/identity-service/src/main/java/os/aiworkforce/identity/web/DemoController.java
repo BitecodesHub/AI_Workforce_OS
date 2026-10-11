@@ -33,11 +33,16 @@ public class DemoController {
 
     private final PlatformProperties properties;
 
+    /**
+     * Creates the controller over the platform properties, used to detect a deployed environment.
+     */
     public DemoController(PlatformProperties properties) {
         this.properties = properties;
     }
 
     /**
+     * Response body for {@link #list}.
+     *
      * @param accounts one per role, with a sentence on what that role can and cannot do
      * @param password published deliberately: pretending a shared demo password is secret is
      *     worse than stating it
@@ -45,6 +50,13 @@ public class DemoController {
     public record DemoAccounts(List<DemoDataSeeder.DemoAccountView> accounts, String password) {}
 
     // @find: list demo accounts, GET /api/auth/demo-accounts
+    /**
+     * GET {@code /api/auth/demo-accounts}. No permission is required.
+     *
+     * <p>Returns the published demo accounts and their shared password. In a deployed environment it
+     * returns an empty list and no password, even if the controller is enabled. Reads no data and
+     * writes nothing.
+     */
     @GetMapping
     @Operation(summary = "Demo accounts available in this environment")
     public DemoAccounts list() {

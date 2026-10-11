@@ -94,6 +94,7 @@ export function flattenApprovalPages(pages: ReadonlyArray<readonly ApprovalItem[
   return items
 }
 
+/** Builds a query string from the given parameters, leaving out null, undefined and empty values. */
 function query(params: Record<string, string | number | null | undefined>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -102,6 +103,7 @@ function query(params: Record<string, string | number | null | undefined>): stri
   return search.toString()
 }
 
+/** Loads one page of approvals from GET /api/approvals with the given filters and normalises each row (approvalItemRow). Rejects with the ApiError on failure. */
 async function fetchPage(params: Record<string, string | number | null | undefined>): Promise<ApprovalItem[]> {
   return (await api<Array<Approval & Partial<ApprovalItem>>>(`/api/approvals?${query(params)}`)).map(approvalItemRow)
 }

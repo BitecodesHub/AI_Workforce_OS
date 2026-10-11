@@ -30,25 +30,35 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Component
 public class GitHubFolderReader {
 
+    /** The GitHub REST address; overridable through the second constructor for a test. */
     static final String BASE_URL = "https://api.github.com";
+    /** How long one GitHub request may take. */
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
+    /** Items per page when the contents API is read page by page. */
     private static final int PAGE_SIZE = 100;
+    /** The most pages read before the listing is reported incomplete. */
     private static final int MAX_PAGES = 30;
 
+    /** The HTTP client for GitHub. */
     private final WebClient client;
+    /** The GitHub address every path is appended to. */
     private final String baseUrl;
 
+    /** Creates the reader for the real GitHub API. */
     @Autowired
     public GitHubFolderReader(WebClient.Builder builder) {
         this(builder, BASE_URL);
     }
 
+    /** Creates a reader for another address, so a test can point it at a stub server. */
     GitHubFolderReader(WebClient.Builder builder, String baseUrl) {
         this.client = builder.clone().build();
         this.baseUrl = baseUrl;
     }
 
     /**
+     * The listing of one folder, as returned by {@link #list}.
+     *
      * @param entries every file and folder directly inside the folder, each {@code path} (full)
      *     and {@code type} ({@code dir} or {@code file}), folders first then by name
      * @param complete false only when even the page-by-page read hit its limit
@@ -57,6 +67,13 @@ public class GitHubFolderReader {
 
     // @find: list one github folder completely
     /**
+     * Lists every file and folder directly inside one folder of a repository.
+     *
+     * Called by {@code GitHubContextController.tree}. Reads the non-recursive git tree of {@code
+     * ref:folder}; if GitHub reports it truncated, reads the contents API up to {@link #MAX_PAGES} pages
+     * instead. Read only; looks up the default branch when no ref is given, then makes the tree request and, in the large case, the page requests, all with the given token. HTTP
+     * failures, including a missing folder, propagate to the caller.
+     *
      * @param repo "owner/name", already checked
      * @param ref a branch, or null for the default branch
      * @param folder a folder inside it, or null for the root
@@ -87,10 +104,17 @@ public class GitHubFolderReader {
         return new Folder(sorted(entries), false);
     }
 
+    /** The repository's default branch, or {@code main} when GitHub does not state one. One GitHub read. */
     private String defaultBranch(String token, String repo) {
         return get(token, "/repos/" + repo).path("default_branch").asText("main");
     }
 
+    /**
+     * One authenticated GitHub read of an already encoded path, returning the JSON body.
+     *
+     * <p>Times out after {@link #TIMEOUT}. An empty body is returned as a missing node; HTTP errors
+     * propagate as web client exceptions for the caller to translate.
+     */
     private JsonNode get(String token, String path) {
         JsonNode body = client.get()
                 // Already encoded: a URI, so the client does not encode it a second time.
@@ -106,6 +130,7 @@ public class GitHubFolderReader {
         return body == null ? com.fasterxml.jackson.databind.node.MissingNode.getInstance() : body;
     }
 
+    /** One listing entry with its full path and a {@code dir} or {@code file} type. */
     private static Map<String, Object> entry(String path, boolean dir) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("path", path);
@@ -113,6 +138,7 @@ public class GitHubFolderReader {
         return entry;
     }
 
+    /** Folders first, then files, each ordered by path ignoring case. */
     private static List<Map<String, Object>> sorted(List<Map<String, Object>> entries) {
         return entries.stream()
                 .sorted(Comparator.comparing((Map<String, Object> e) -> !"dir".equals(e.get("type")))

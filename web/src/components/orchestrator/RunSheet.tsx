@@ -23,6 +23,15 @@ import { useToast } from '../../lib/toast'
  * the same trace, but its footer offers only what a run without a chain can: stop it, or open it.
  */
 // @find: run sheet component, run details drawer, cancel run
+/**
+ * Side sheet for a direct run (a run started straight from an agent, with no goal to open a GoalSheet for).
+ * Data: useRun and useRunSteps (polling only while the run is active) give the status and the instruction text;
+ * the pending question or approval for this run comes from the board. Content: status, the instruction, the
+ * open question (QuestionCard) or approval (InlineApproval) at the top, and the compact trace
+ * (RunTraceCompact). Footer: Stop run (when the run is active and the viewer holds run:cancel; ConfirmDialog
+ * whose wording depends on whether it waits on an approval or a question; useCancelRun) and Open run. The
+ * sheet is non-modal at 1024 pixels and wider and modal below. Props: runId, board and onClose.
+ */
 export function RunSheet({ runId, board, onClose }: { runId: string; board: Board; onClose: () => void }) {
   const toast = useToast()
   const { members } = useMemberDirectory()

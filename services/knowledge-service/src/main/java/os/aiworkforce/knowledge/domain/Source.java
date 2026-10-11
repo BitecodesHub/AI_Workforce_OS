@@ -21,56 +21,77 @@ import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
  * <p>The embedding model and its dimension are recorded because changing either invalidates the
  * index: vectors of different widths cannot be compared, and the symptom is poor recall rather
  * than an error. Storing the dimension turns that into a refusal.
+ *
+ * <p>Created and updated by {@code IngestionService}, listed by {@code KnowledgeController}, filtered
+ * by {@code Sources} and read by {@code RetrievalService}. The identifier, workspace and timestamps
+ * come from {@code OrgScopedEntity}. The getters and setters are plain accessors and are not
+ * documented one by one.
  */
 @Entity
 @Table(name = "sources")
 public class Source extends OrgScopedEntity {
 
+    /** The kind of source; {@code upload} for a folder of uploaded files. */
     @Column(nullable = false)
     private String kind;
 
+    /** The name shown in the console. Unique within the workspace, ignoring case. */
     @Column(nullable = false)
     private String name;
 
+    /** A reference to the place the documents come from, for a source that is connected rather than uploaded. Not set by uploads. */
     @Column(name = "external_ref")
     private String externalRef;
 
+    /** A reference to the stored credential used to read an external source. Not set by uploads. */
     @Column(name = "credential_ref")
     private String credentialRef;
 
+    /** The state: {@code idle} until something is indexed, {@code ready}, or {@code reconnect_required}. */
     @Column(nullable = false)
     private String status = "idle";
 
+    /** Where the last crawl of an external source stopped, so the next one reads only what is new. */
     @Column
     private String watermark;
 
+    /** The target passage size in characters used when its documents are chunked. */
     @Column(name = "chunk_size", nullable = false)
     private int chunkSize = 1200;
 
+    /** How many characters each passage repeats from the previous one. */
     @Column(name = "chunk_overlap", nullable = false)
     private int chunkOverlap = 150;
 
+    /** The provider that embeds this source's passages; {@code sandbox} means keyword search only. */
     @Column(name = "embedding_provider", nullable = false)
     private String embeddingProvider = "sandbox";
 
+    /** The embedding model of that provider. */
     @Column(name = "embedding_model", nullable = false)
     private String embeddingModel = "sandbox-embed-1";
 
+    /** How wide the model's vectors are. */
     @Column(name = "embedding_dimension", nullable = false)
     private int embeddingDimension = 1536;
 
+    /** The name of the vector collection that holds this source's vectors; it depends on the workspace and the model. */
     @Column(nullable = false)
     private String collection;
 
+    /** How many documents are indexed, not counting skipped ones. */
     @Column(name = "document_count", nullable = false)
     private int documentCount;
 
+    /** How many passages the indexed documents hold. */
     @Column(name = "chunk_count", nullable = false)
     private int chunkCount;
 
+    /** When a document was last indexed into the source. */
     @Column(name = "last_ingested_at")
     private Instant lastIngestedAt;
 
+    /** The latest problem, such as the vector store being unavailable; null when there is none. */
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
@@ -99,6 +120,7 @@ public class Source extends OrgScopedEntity {
     /** The provider that produces offline vectors which carry no meaning (see SandboxProvider). */
     public static final String SANDBOX_PROVIDER = "sandbox";
 
+    /** True when the source status is {@code ready}. */
     public boolean isReady() {
         return "ready".equals(status);
     }

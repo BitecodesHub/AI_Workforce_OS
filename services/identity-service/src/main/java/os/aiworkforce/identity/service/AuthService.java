@@ -81,6 +81,10 @@ public class AuthService {
     private final PlatformProperties.Security config;
     private final AuditClient audit;
 
+    /**
+     * Wires the repositories, the password and token services, the security settings and the audit
+     * client used by every flow in this class.
+     */
     public AuthService(
             Users users,
             Sessions sessions,
@@ -101,12 +105,18 @@ public class AuthService {
     }
 
     /**
+     * What a successful sign-in or refresh returns: the token pair and the facts the interface
+     * needs to render the session. Built by {@code issue} and returned by {@code AuthController}.
+     *
      * @param accessToken short-lived bearer token
      * @param refreshToken single-use token, returned once and never stored in clear
      * @param expiresAt when the access token stops being accepted
      * @param userId the signed-in account
      * @param orgId the workspace in scope, which may be null before one is chosen
      * @param permissions what this session may do, for the interface to render against
+     * @param displayName the signed-in person's display name
+     * @param email the signed-in person's address
+     * @param roleName the name of the role held in the workspace in scope, or null when there is none
      */
     public record AuthResult(
             String accessToken,
@@ -120,11 +130,15 @@ public class AuthService {
             String roleName) {}
 
     /**
-     * One signed-in device: the live link of one refresh-token family.
+     * One signed-in device: the live link of one refresh-token family. Built by
+     * {@link #listSessions} for the session list.
      *
      * @param familyId what to pass to end this session
      * @param issuedAt when the session last renewed, which is when the device was last active
+     * @param userAgent the client description recorded on the link, which may be null
+     * @param ipAddress the client address recorded on the link, which may be null
      * @param signedInAt when the family began, which is when the device signed in
+     * @param expiresAt when the link stops being accepted
      * @param current whether this is the session the caller is using now
      */
     public record SessionSummary(
@@ -136,13 +150,31 @@ public class AuthService {
             Instant expiresAt,
             boolean current) {}
 
-    /** The workspace a token is issued for, and what the role held there allows. */
+    /**
+     * The workspace a token is issued for, and what the role held there allows. Produced by
+     * {@code resolveScope} and consumed by {@code issue}.
+     */
     private record Scope(UUID orgId, UUID roleId, String roleName, Set<String> permissions, long permissionVersion) {
 
+        /**
+         * The scope of a person who belongs to no workspace or has not chosen one: no workspace, no
+         * role and no permissions.
+         */
         static final Scope NONE = new Scope(null, null, null, Set.of(), 0);
     }
 
     // @find: register account, sign up, create user, POST /api/auth/register
+    /**
+     * Creates a new account.
+     *
+     * <p>Flow: trims the address; refuses with a 409 if an account already has it (compared without
+     * regard to case); falls back to the address as display name when none is given; hashes the
+     * password, which also validates it; marks the email verified at once unless verification is
+     * required. Saves one {@code users} row; no session, membership or audit record is written.
+     *
+     * @return the saved user
+     * @throws ApiException already exists for a known address, or a validation error for a weak password
+     */
     @Transactional
     public User register(String email, String displayName, String rawPassword) {
         String normalised = email == null ? "" : email.strip();
@@ -167,6 +199,24 @@ public class AuthService {
     }
 
     // @find: sign in, login, authenticate, wrong password, lockout, POST /api/auth/sign-in
+    /**
+     * Authenticates by email and password and opens a new session.
+     *
+     * <p>Flow: looks the account up; for an unknown, locked or disabled account, spends the time of a
+     * password check and refuses with the one generic message; compares the password and, on a
+     * mismatch, records the failure (locking at the configured threshold) and refuses; refuses an
+     * unverified address when verification is required; resolves the workspace scope; silently
+     * re-hashes an out-of-date password; clears the failure count and stamps the sign-in; issues a
+     * new token family.
+     *
+     * <p>Side effects: updates the user row, inserts a session row, and writes an audit record for
+     * every outcome. Does not roll back on a refusal, so counts and audit entries persist.
+     *
+     * @param requestedOrgId the workspace to enter, or null to use the only one a person has
+     * @param userAgent the client description, truncated before storing
+     * @param ipAddress the client address, shown in the session list
+     * @throws ApiException invalid credentials (also for lockout), email not verified, or workspace not available
+     */
     @Transactional(noRollbackFor = ApiException.class)
     public AuthResult signIn(
             String email, String rawPassword, UUID requestedOrgId, String userAgent, String ipAddress) {
@@ -247,6 +297,15 @@ public class AuthService {
      * somewhere it should not, so the entire family is revoked - the legitimate session as well as
      * the stolen one. Ending one person's session is a small price for closing a window that would
      * otherwise stay open for the full thirty days.
+     *
+     * <p>Flow: looks the token up by hash; a replayed token revokes its family and raises a reuse
+     * error, with an audit record; an expired or revoked token is refused; a disabled account has
+     * its family revoked; the workspace scope is resolved afresh (the requested workspace, or the
+     * one the session was in); a new link is issued in the same family and the old one is retired.
+     * Does not roll back on a refusal, so the revocations persist.
+     *
+     * @throws ApiException token invalid, expired, reuse detected, account disabled, or the
+     *     requested workspace is not available to the person
      */
     @Transactional(noRollbackFor = ApiException.class)
     public AuthResult refresh(String refreshToken, UUID requestedOrgId, String userAgent, String ipAddress) {
@@ -297,6 +356,13 @@ public class AuthService {
     }
 
     // @find: sign out, logout, sign out everywhere, POST /api/auth/sign-out
+    /**
+     * Ends a session from its refresh token.
+     *
+     * <p>Revokes the presented token's session, or every session of its owner when
+     * {@code allDevices} is true, which also writes an audit record. An unknown token is ignored,
+     * so the caller cannot tell whether it was live.
+     */
     @Transactional
     public void signOut(String refreshToken, boolean allDevices) {
         String hash = tokens.hashRefreshToken(refreshToken);
@@ -357,6 +423,10 @@ public class AuthService {
 
     // @find: end session, sign out one device, DELETE /api/users/me/sessions/{familyId}
     /** Signs one of a person's devices out. A family that is not theirs is reported as not found. */
+    /**
+     * Revokes every link of one family belonging to the person, as the "sign out this device" action.
+     * The family must be theirs; otherwise a not-found error is raised and nothing is changed.
+     */
     @Transactional
     public void endSession(UUID userId, UUID familyId) {
         if (!sessions.existsByFamilyIdAndUserId(familyId, userId)) {
@@ -508,6 +578,10 @@ public class AuthService {
 
     /* ---- Audit ------------------------------------------------------------------------------ */
 
+    /**
+     * Writes an {@code auth.sign_in} audit record for a known account with the given outcome and an
+     * optional reason, through {@link #auditAuthentication}.
+     */
     private void auditSignIn(User user, String outcome, String reason, String userAgent, String ipAddress) {
         auditAuthentication(
                 user.getId(),
@@ -550,6 +624,10 @@ public class AuthService {
         }
     }
 
+    /**
+     * The audit detail for a sign-in event: the reason when present, the client address and the
+     * client description cut to 200 characters. Returns a mutable map so callers can add fields.
+     */
     private static Map<String, Object> signInDetail(String reason, String userAgent, String ipAddress) {
         Map<String, Object> detail = new LinkedHashMap<>();
         if (reason != null) {
@@ -564,6 +642,7 @@ public class AuthService {
         return detail;
     }
 
+    /** An audit detail holding only a reason code, for events with no client context to record. */
     private static Map<String, Object> reason(String reason) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("reason", reason);
@@ -581,10 +660,17 @@ public class AuthService {
         }
     }
 
+    /**
+     * The one refusal a failed sign-in gives, carrying {@link #SIGN_IN_REFUSED} under the invalid
+     * credentials code.
+     */
     private static ApiException refused() {
         return new ApiException(ErrorCode.INVALID_CREDENTIALS, SIGN_IN_REFUSED);
     }
 
+    /**
+     * Cuts a client description to 400 characters before it is stored on a session. Null stays null.
+     */
     private static String truncate(String value) {
         if (value == null) {
             return null;

@@ -23,8 +23,10 @@ import './plusMenu.css'
  * mentioning another agent is how it becomes a new request.
  */
 
+/** The views the popover can show: the root list of actions, or one of four searchable pickers. */
 export type PlusView = 'root' | 'knowledge' | 'repo' | 'skill' | 'agent'
 
+/** Spacing constants for plusMenuPosition: GAP between the trigger and the panel, MARGIN kept clear of the window edges. */
 const GAP = 6
 const MARGIN = 8
 
@@ -44,6 +46,7 @@ export function plusMenuPosition(
   return { top, left, placement }
 }
 
+/** Shared 16 pixel SVG frame for the row icons. */
 function Glyph({ children }: { children: ReactNode }) {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -52,6 +55,7 @@ function Glyph({ children }: { children: ReactNode }) {
   )
 }
 
+/** Icon for each root row, keyed by row id. */
 const ICONS: Record<string, ReactNode> = {
   upload: (
     <Glyph>
@@ -90,6 +94,7 @@ const ICONS: Record<string, ReactNode> = {
   ),
 }
 
+/** Arrow shown on rows that open a picker. */
 function Chevron() {
   return (
     <svg className="plus-row-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
@@ -98,6 +103,7 @@ function Chevron() {
   )
 }
 
+/** A row of the root list: id, label, helper note, icon, the picker it opens (absent for actions that happen at once) and whether it is disabled. */
 type RootRow = {
   id: string
   label: string
@@ -108,6 +114,23 @@ type RootRow = {
 }
 
 // @find: PlusMenu, plus menu, composer + button, attach menu
+/**
+ * The composer's "+" button and the popover it opens.
+ * Root rows: Upload files (clicks a hidden file input, so the browser picker opens inside the user gesture,
+ * and passes the chosen files to onFiles), Add from Knowledge, Attach a repository and Use a skill (each opens
+ * a picker view in the same popover and edits the ComposerContext through onContextChange), Schedule this
+ * (closes the menu and calls onSchedule) and Choose an agent (calls onMention). While the box answers a
+ * question (attachDisabled) only the agent row remains available; Schedule this is also disabled without
+ * the schedule permission (canSchedule).
+ * Rendering: the panel is portalled into the nearest dialog or document.body and positioned with
+ * plusMenuPosition, which prefers opening upward and is recomputed on resize, scroll and when the panel
+ * height changes (ResizeObserver). A pointer down outside closes it.
+ * Keyboard: arrows, Home and End move between rows, Right opens a picker, a letter jumps to the next row
+ * starting with it, Escape goes back or closes, and Tab at the root closes and returns focus to the trigger.
+ * Inside a picker Tab is trapped and wraps within the panel. Focus lands on the first enabled row, the
+ * remembered row, or the picker's search box. After something is chosen, onChosen moves focus to the text
+ * box; without it focus returns to the trigger. The trigger label reports how many items are attached.
+ */
 export function PlusMenu({
   context,
   onContextChange,

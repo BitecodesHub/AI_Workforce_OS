@@ -5,7 +5,11 @@ import { formatDateTime } from '../../lib/format'
 import type { ChatMessage } from '../../lib/queries'
 
 // @find: NoticeLine, notice line, notice line, system message, thread notice, status line in chat
-/** A centred caption between two hairlines: "Stopped. Stopped from the chat.", a retry, a reroute. */
+/**
+ * A centred caption between two hairlines: "Stopped. Stopped from the chat.", a retry, a reroute.
+ *
+ * Rendered by MessageItem for notice messages and for system text. Shows the message content and its time.
+ */
 export function NoticeLine({ message }: { message: ChatMessage }) {
   return (
     <p className="chat-notice">

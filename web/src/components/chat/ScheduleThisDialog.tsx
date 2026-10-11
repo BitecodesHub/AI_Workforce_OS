@@ -23,6 +23,17 @@ export function scheduleNameFrom(text: string): string {
 }
 
 // @find: ScheduleThisDialog, schedule this message
+/**
+ * Dialog opened from the "+" menu that turns the message being written into a schedule.
+ * Flow: each opening seeds the name (scheduleNameFrom), the instruction (the message text) and clears the
+ * "when" field. The agent defaults to preferredAgentId when it can take schedules, otherwise the General
+ * Employee, otherwise the first active agent with a revision (useAgents). The "when" text is plain English;
+ * after a 350 ms pause (and at least 3 characters) it is sent to useSchedulePreview, and a successful
+ * reading is echoed back with the timezone and the next three runs. Example chips fill the field.
+ * Create schedule is enabled only when name, instruction, agent and a current successful preview exist;
+ * it calls useCreateSchedule, then shows a toast, calls onCreated (Composer clears its draft) and closes.
+ * Server problems are shown at the field or in the dialog. The dialog cannot be dismissed while saving.
+ */
 export function ScheduleThisDialog({
   open,
   onClose,

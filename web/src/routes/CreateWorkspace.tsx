@@ -111,6 +111,11 @@ function startingMode(search: URLSearchParams): Mode {
 }
 
 // @find: CreateWorkspace component, create workspace, sign up, register company, /create-workspace
+/**
+ * The Create workspace page (route /create-workspace, public, no permission): a stepper that registers an owner account, creates the workspace and offers ready-made assistants.
+ * Steps: account (name, email, password), workspace name, time zone, assistants (all four ticked by default) and a final Connect AI offer. A visit that already has an account (?signedIn=1 or a session in this tab) skips the account step; a new tab at ?signedIn=1 first tries to restore the session from the refresh cookie.
+ * Submit flow (on the assistants step, after each earlier step validates and shows field errors beside the fields): (1) POST /api/auth/register unless an earlier attempt already registered this address; (2) sign in without a workspace to get a token that can create one; (3) POST /api/workspaces, which also makes the account its owner; (4) sign in again naming the workspace so the session carries owner permissions (a signed-in account instead creates the workspace and re-issues its session through enterWorkspace); (5) create the ticked assistants, which never throws and reports any it could not add. The session is saved with saveSession. A retry resumes where the last attempt stopped rather than registering twice, and warns if the password differs from the first one entered. A refused address returns to the account step with both ways forward (choose another address or sign in); other server field problems send the person only to the step that owns the field. Focus moves to the step heading or the first problem after each change.
+ */
 export function CreateWorkspace() {
   const { search } = useRouter()
   const [mode, setMode] = useState<Mode>(() => startingMode(search))

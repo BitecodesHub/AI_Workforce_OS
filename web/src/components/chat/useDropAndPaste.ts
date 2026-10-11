@@ -5,16 +5,24 @@ import { useCallback, useRef, useState } from 'react'
 import type { ClipboardEvent as ReactClipboardEvent, DragEvent } from 'react'
 
 /*
- * Two more ways to attach a file besides the paperclip: dragging files onto the chat panel, and
+ * Two more ways to attach a file besides "Upload files" in the "+" menu: dragging files onto the chat panel, and
  * pasting them (a screenshot, usually) into the text box. Only a drag that carries files reacts,
  * so dragging selected text around the page behaves as it always has.
  */
 
+/** True when a drag event carries files, so dragging selected text around the page is ignored. */
 function carriesFiles(event: DragEvent): boolean {
   return Array.from(event.dataTransfer?.types ?? []).includes('Files')
 }
 
 // @find: useFileDrop, use file drop, drag and drop files, paste image, paste file, file drop
+/**
+ * Hook for dropping files onto a zone. Returns dragging (true while files are dragged over an enabled
+ * zone) and bind (the four drag handlers). A depth counter copes with dragenter and dragleave firing for
+ * every child element. While disabled the default is still prevented, so the browser does not navigate to the
+ * dropped file, but the drop effect is "none" and nothing is passed on. A drop calls onFiles with the files.
+ * Used by Composer, which attaches the handlers to the chat panel as native listeners.
+ */
 export function useFileDrop({ onFiles, disabled = false }: { onFiles: (files: File[]) => void; disabled?: boolean }) {
   const [dragging, setDragging] = useState(false)
   // dragenter and dragleave fire for every child the pointer crosses; the count says whether the

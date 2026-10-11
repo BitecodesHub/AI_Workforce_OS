@@ -22,6 +22,11 @@ import os.aiworkforce.platform.web.PlatformWeb;
         basePackageClasses = {OrganisationApplication.class, PlatformCore.class, PlatformWeb.class})
 public class OrganisationApplication {
 
+    /**
+     * Starts the application. Component scanning covers this service's own package, the shared core
+     * module and the shared web module; configuration properties are scanned from the same three
+     * places. Run by the JVM at launch; startup fails if the database or a required setting is missing.
+     */
     public static void main(String[] args) {
         SpringApplication.run(OrganisationApplication.class, args);
     }

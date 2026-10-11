@@ -41,10 +41,13 @@ import { useNow } from '../lib/useNow'
  * on the page ever disagrees with anything else on it.
  */
 
+/** Maps the ?window= tokens used in the address to the board window values the API takes. */
 const WINDOW_TO_API: Record<string, BoardWindow> = { '1h': 'PT1H', '2h': 'PT2H', '6h': 'PT6H', '24h': 'PT24H', today: 'TODAY' }
 
+/** Type guard used to validate the stored Live updates flag. */
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 
+/** Reads one query parameter from the address, or null. */
 function readParam(search: URLSearchParams, key: string): string | null {
   return search.get(key)
 }
@@ -61,6 +64,10 @@ function withParams(base: URLSearchParams, changes: Record<string, string | null
 }
 
 // @find: Orchestrator component, orchestrator page, live updates toggle, /orchestrator
+/**
+ * The Orchestrator page (route /orchestrator, permission run:read): the live board of what agents are doing and what needs a person.
+ * Flow: the time window comes from ?window= (default 2 hours); the board is read through useBoard, which polls at a rate that follows how much is moving. Live updates is a saved choice (localStorage key orc.live): switching it off freezes the board at its latest snapshot (the Needs you inbox keeps using the latest data), and Show latest, or switching back on, releases it. Loading, error and permission states come from QueryState, which keeps the board on screen during a failed refresh. Rendering is delegated to OrchestratorBody.
+ */
 export function Orchestrator() {
   const { search } = useRouter()
   const windowToken = readParam(search, 'window') ?? '2h'
@@ -104,6 +111,9 @@ export function Orchestrator() {
 }
 
 // @find: orchestrator body, board, swimlanes, timeline, approvals sheet
+/**
+ * The board itself, given the displayed snapshot, the latest snapshot and the frozen one. Everything the person sees is derived from the address so views are linkable: ?goal= or ?run= open the detail sheet (?focus= jumps to its question or approval), ?view= board or list (list by default on narrow screens), ?group=, ?agent= and ?status= filter, ?window= sets the time window. Sections: a summary strip, the Needs you inbox, the board of goal cards (columns, grouping and keyboard navigation), and the folded Workforce (agents and map) and Timeline sections, whose open state is remembered in localStorage. A header menu offers Live updates, Schedules, keyboard shortcuts and, with run:cancel, Stop everything (disabled when nothing is running and confirmed before it acts); New goal (task:create) is a separate header button. Changes to cards while live are highlighted; new questions and approvals are announced once each to screen readers. Sets the tab title with the count of items waiting on this person. Hotkeys: Cmd or Ctrl+K focuses the board search, Cmd or Ctrl+/ opens shortcuts, Escape closes the sheet or clears the agent filter.
+ */
 function OrchestratorBody({
   board,
   live,
@@ -435,6 +445,7 @@ function TimelineLanes(props: Omit<ComponentProps<typeof Swimlanes>, 'now'>) {
 }
 
 // @find: more icon
+/** Three-dot icon for the header menu button. */
 function MoreIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -445,6 +456,9 @@ function MoreIcon() {
   )
 }
 
+/**
+ * The keyboard shortcut list shown in the shortcuts dialog, with the keys written for the person's platform.
+ */
 function shortcutGroups() {
   return [
     {

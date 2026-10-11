@@ -16,6 +16,7 @@ import type { ProviderName } from '../shared/landingFacts'
 
 /* ---- Chain and faults ----------------------------------------------------------------------- */
 
+/** The four providers of the demo chain, in order (CHAIN): OpenRouter, Groq, Google Gemini and Anthropic. */
 export type ProviderId = 'openrouter' | 'groq' | 'gemini' | 'anthropic'
 
 export type Candidate = { id: ProviderId; name: ProviderName }
@@ -28,6 +29,7 @@ export const CHAIN: ReadonlyArray<Candidate> = [
 ]
 
 /** Faults the router sees before it calls anything, so the candidate is skipped. */
+/** Faults the router sees before it calls anything, so the candidate is skipped (disabled, no credential, circuit open, missing capability, context too small, over budget). */
 export type SkipFault =
   | 'disabled'
   | 'no_credential'
@@ -37,10 +39,13 @@ export type SkipFault =
   | 'over_budget'
 
 /** Faults that only show up once the candidate has been called. */
+/** Faults that only appear once the candidate has been called: rate limited, credential rejected, timeout, model not found, safety refusal. */
 export type CallFault = 'rate_limited' | 'credential_rejected' | 'timeout' | 'model_not_found' | 'safety_refusal'
 
+/** Everything a candidate can be set to: healthy, a skip fault or a call fault. */
 export type Fault = 'healthy' | SkipFault | CallFault
 
+/** What happens when every candidate fails: FAIL_CLOSED fails the run, DEGRADE_TO_SANDBOX answers on the offline sandbox model and says so. */
 export type Policy = 'FAIL_CLOSED' | 'DEGRADE_TO_SANDBOX'
 
 export type Config = Record<ProviderId, Fault>
@@ -62,6 +67,7 @@ export const CALL_FAULTS: ReadonlyArray<CallFault> = [
   'safety_refusal',
 ]
 
+/** Display labels of the faults, the short reasons used in skip trace lines (SKIP_REASON), and the option groups of each select (Answers, Skipped before calling, Fails when called). */
 export const FAULT_LABEL: Record<Fault, string> = {
   healthy: 'Healthy',
   disabled: 'Disabled',
@@ -93,16 +99,19 @@ export const FAULT_GROUPS: ReadonlyArray<{ label: string; faults: ReadonlyArray<
   { label: 'Fails when called', faults: CALL_FAULTS },
 ]
 
+/** Type guard: the value is one of the known fault names. */
 export function isFault(value: string): value is Fault {
   return Object.prototype.hasOwnProperty.call(FAULT_LABEL, value)
 }
 
+/** Type guard: the fault is skipped before any call is made. */
 export function isSkipFault(fault: Fault): fault is SkipFault {
   return (SKIP_FAULTS as ReadonlyArray<Fault>).includes(fault)
 }
 
 /* ---- Presets ---------------------------------------------------------------------------------- */
 
+/** Named scenarios the visitor can load in one press (throttled, bad key, provider down, safety refusal, everything down), their display order and their fault configurations. */
 export type PresetId = 'throttled' | 'bad_key' | 'provider_down' | 'safety_refusal' | 'everything_down'
 
 export const PRESET_ORDER: ReadonlyArray<PresetId> = [
@@ -136,6 +145,7 @@ export const PRESETS: Record<PresetId, { label: string; config: Config }> = {
   },
 }
 
+/** True when two configurations give every provider the same fault; used to show which preset is active. */
 export function sameConfig(a: Config, b: Config): boolean {
   return CHAIN.every((candidate) => a[candidate.id] === b[candidate.id])
 }
@@ -156,6 +166,7 @@ export function applyBreakers(config: Config, ids: ReadonlyArray<ProviderId>): C
 
 /* ---- Events ----------------------------------------------------------------------------------- */
 
+/** What a chain node looks like at a moment of the run: idle, calling, waiting (honouring Retry-After), backing off, skipped, failed, answered, stopped (safety refusal) or not tried. */
 export type NodeState =
   | 'idle'
   | 'calling'
@@ -167,18 +178,21 @@ export type NodeState =
   | 'stopped'
   | 'not_tried'
 
+/** One line of the trace: a verb (skip, try, wait, fail, ok, stop, done or sandbox), the provider and a detail. */
 export type TraceLine = {
   verb: 'skip' | 'try' | 'wait' | 'fail' | 'ok' | 'stop' | 'done' | 'sandbox'
   provider: string
   detail: string
 }
 
+/** How a run ends: answered (by whom, with failover and skip counts), stopped by a safety refusal, failed closed, or degraded to the sandbox. */
 export type Outcome =
   | { kind: 'answered'; by: string; failovers: number; skips: number }
   | { kind: 'stopped'; by: string }
   | { kind: 'failed_closed' }
   | { kind: 'degraded' }
 
+/** A timed event of the plan (at is milliseconds from the start): move the hop marker, set a node's state and label, add a trace line, start a progress bar, open a breaker, show the sandbox, or finish with an outcome. */
 export type RouteEvent =
   | { at: number; kind: 'hop'; index: number }
   | { at: number; kind: 'node'; index: number; state: NodeState; label: string }
@@ -189,6 +203,7 @@ export type RouteEvent =
   | { at: number; kind: 'outcome'; outcome: Outcome }
 
 /** Milliseconds. Waits are compressed: the Retry-After of 2 s plays in 1.2 s. */
+/** Durations in milliseconds of the simulation: hop between nodes, skip, call, the compressed Retry-After wait and the backoff. */
 export const ROUTE_TIMING = {
   hop: 320,
   skip: 240,
@@ -197,9 +212,11 @@ export const ROUTE_TIMING = {
   backoff: 800,
 } as const
 
+/** Label of a node before a run starts. */
 export const IDLE_LABEL = 'Standing by'
 
 // @find: planRoute, plan failover route, retry, skip, fail over
+/** Turns a configuration and a failure policy into the timed events of one run. Walks the chain in order. A skip fault marks the node skipped and moves on. Otherwise the node is called: healthy answers and ends the run; a rate limit waits out Retry-After and fails over; a rejected credential fails over and opens that candidate's breaker; a timeout backs off then fails over; model not found fails over; a safety refusal stops the whole chain (later nodes are not tried) rather than sending the prompt to another vendor. If every candidate fails, FAIL_CLOSED ends with a failed-closed outcome and DEGRADE_TO_SANDBOX shows the sandbox and a degraded outcome. Pure: the same inputs give the same events. */
 export function planRoute(config: Config, policy: Policy): RouteEvent[] {
   const events: RouteEvent[] = []
   let at = 0
@@ -294,6 +311,7 @@ export function planRoute(config: Config, policy: Policy): RouteEvent[] {
 
 /* ---- Folding events into a view --------------------------------------------------------------- */
 
+/** The folded view of a run: each node's state and label, whether the sandbox is shown, the trace, the current hop, the active progress bar, the breakers opened during the run (the component remembers them after it ends) and the outcome. */
 export type NodeView = { state: NodeState; label: string }
 
 export type RouteView = {
@@ -308,6 +326,7 @@ export type RouteView = {
 }
 
 // @find: initialView, failover initial view
+/** The view before any event: every node idle, an empty trace and no outcome. */
 export function initialView(): RouteView {
   return {
     nodes: CHAIN.map(() => ({ state: 'idle', label: IDLE_LABEL })),
@@ -321,9 +340,11 @@ export function initialView(): RouteView {
 }
 
 /** States during which a node's progress bar keeps running. */
+/** Node states during which a progress bar keeps running; any other state change ends the bar. */
 const HOLDING: ReadonlyArray<NodeState> = ['waiting', 'backing_off']
 
 // @find: applyEvent, fold route event
+/** Folds one event into a view without mutating it. A node event also ends that node's progress bar unless it moved into a holding state. A breaker is recorded once. The sandbox event shows the sandbox and moves the hop marker past the chain. An outcome ends the run and clears the bar. */
 export function applyEvent<V extends RouteView>(view: V, event: RouteEvent): V {
   switch (event.kind) {
     case 'hop':
@@ -350,18 +371,21 @@ export function applyEvent<V extends RouteView>(view: V, event: RouteEvent): V {
 
 /** Folds events synchronously, in order. */
 // @find: applyEvents, fold route events, end state
+/** Folds a list of events synchronously in order. Used for the reduced-motion end state and by tests. */
 export function applyEvents<V extends RouteView>(view: V, events: ReadonlyArray<RouteEvent>): V {
   return events.reduce<V>((current, event) => applyEvent(current, event), view)
 }
 
 /* ---- Words ------------------------------------------------------------------------------------ */
 
+/** Count with a singular or plural noun. */
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`
 }
 
 /** The sentence the status line announces when a run ends. */
 // @find: summarise, failover outcome sentence
+/** The sentence announced when a run ends, for each outcome kind: who answered with the failover and skip counts, a safety stop that did not try another vendor, a failed-closed run, or a degradation to the offline sandbox. */
 export function summarise(outcome: Outcome): string {
   switch (outcome.kind) {
     case 'answered': {

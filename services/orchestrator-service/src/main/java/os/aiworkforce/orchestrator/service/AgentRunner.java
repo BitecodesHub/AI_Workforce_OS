@@ -138,6 +138,8 @@ public class AgentRunner {
     private static final Logger log = LoggerFactory.getLogger(AgentRunner.class);
     private static final String WORKER_ID = UUID.randomUUID().toString().substring(0, 8);
 
+    // Texts recorded on a tool step that was not run, and the reason and detail shown when the reaper
+    // marks a run abandoned (see reapAbandoned).
     static final String STOPPED_NOT_RUN = "Not run: the run was stopped.";
     static final String PAUSED_NOT_RUN = "Not run: the run paused for a person. Call it again if it is still needed.";
     static final String ABANDONED_REASON = "The worker running this task stopped responding.";
@@ -266,6 +268,9 @@ public class AgentRunner {
     @org.springframework.context.annotation.Lazy
     private os.aiworkforce.orchestrator.schedule.AgentScheduleTool scheduleTool;
 
+    /**
+     * Test hook: installs the schedule tool where the runner is built by hand rather than injected.
+     */
     void useScheduleTool(os.aiworkforce.orchestrator.schedule.AgentScheduleTool scheduleTool) {
         this.scheduleTool = scheduleTool;
     }
@@ -274,6 +279,9 @@ public class AgentRunner {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.browser.BrowserShotService browserShots;
 
+    /**
+     * Test hook: installs the screenshot store where the runner is built by hand rather than injected.
+     */
     void useBrowserShots(os.aiworkforce.orchestrator.browser.BrowserShotService browserShots) {
         this.browserShots = browserShots;
     }
@@ -282,6 +290,14 @@ public class AgentRunner {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ChatAttachments chatAttachments;
 
+    /**
+     * Creates the runner with every collaborator it needs.
+     *
+     * <p>Besides storing the dependencies, it builds a {@link TransactionTemplate} with
+     * {@code PROPAGATION_REQUIRES_NEW}, so each persistence unit of a run (one step, a park, a finish)
+     * commits on its own whatever transaction the caller holds. Spring calls this; tests may call it
+     * directly and then use the {@code use...} hooks for the optional collaborators.
+     */
     public AgentRunner(
             Runs runs,
             RunSteps steps,
@@ -339,6 +355,10 @@ public class AgentRunner {
     /** How long a run may keep working when its agent sets no limit of its own; {@code aiwos.runs.max-duration}. */
     private Duration defaultMaxRunDuration = Duration.ofMinutes(60);
 
+    /**
+     * Sets the platform-wide working-time limit from {@code aiwos.runs.max-duration}. A null, zero or
+     * negative value is ignored and the 60 minute default stays.
+     */
     @Autowired
     void setDefaultMaxRunDuration(@Value("${aiwos.runs.max-duration:PT60M}") Duration duration) {
         if (duration != null && !duration.isNegative() && !duration.isZero()) {
@@ -347,15 +367,26 @@ public class AgentRunner {
     }
 
     /** The working time one run of this revision is allowed: its own limit, or the platform's. */
+    /**
+     * Instance form of {@link #timeLimitOf(AgentVersion, Duration)} using the configured platform default.
+     */
     Duration timeLimitOf(AgentVersion version) {
         return timeLimitOf(version, defaultMaxRunDuration);
     }
 
+    /**
+     * Returns the working time one run may use: the revision's own {@code maxRunMinutes}, capped at
+     * 120 minutes, or {@code platformDefault} when the revision sets none (null or below one).
+     */
     static Duration timeLimitOf(AgentVersion version, Duration platformDefault) {
         Integer minutes = version.getMaxRunMinutes();
         return minutes == null || minutes < 1 ? platformDefault : Duration.ofMinutes(Math.min(minutes, 120));
     }
 
+    /**
+     * Sets how long a run stays claimed without a renewal, from {@code aiwos.runs.lease}. A null, zero
+     * or negative value is ignored and the two minute default stays.
+     */
     @Autowired
     void setLease(@Value("${aiwos.runs.lease:PT2M}") Duration lease) {
         if (lease != null && !lease.isNegative() && !lease.isZero()) {
@@ -363,6 +394,9 @@ public class AgentRunner {
         }
     }
 
+    /**
+     * Stops the heartbeat timer when the application shuts down, so no renewal is attempted afterwards.
+     */
     @PreDestroy
     void stopHeartbeats() {
         heartbeats.shutdownNow();
@@ -382,6 +416,8 @@ public class AgentRunner {
         private volatile boolean stopped;
         private volatile ScheduledFuture<?> ticks;
 
+        // Schedules a renewal every quarter of the lease; if the service is shutting down no timer is
+        // created and the lease written by the last step simply runs out.
         private Heartbeat(UUID runId) {
             this.runId = runId;
             long periodMillis = Math.max(1L, lease.toMillis() / 4);
@@ -397,12 +433,15 @@ public class AgentRunner {
             }
         }
 
+        // Timer callback: hands the renewal to its own virtual thread so a slow database cannot delay others.
         private void tick() {
             if (!stopped) {
                 renewals.newThread(this::renew).start();
             }
         }
 
+        // Extends this worker's lease on the run. Closes itself when the update matches no row (the run
+        // parked, finished, was stopped or was reaped); a database error is logged and retried next tick.
         private void renew() {
             if (stopped) {
                 return;
@@ -419,6 +458,7 @@ public class AgentRunner {
             }
         }
 
+        // Idempotent: stops further ticks. Called by the loop in a finally block and by renew() itself.
         @Override
         public void close() {
             stopped = true;
@@ -429,6 +469,7 @@ public class AgentRunner {
         }
     }
 
+    // Starts keeping the lease of the given run fresh; the caller closes the result when the drive ends.
     private Heartbeat heartbeat(Run run) {
         return new Heartbeat(run.getId());
     }
@@ -447,6 +488,7 @@ public class AgentRunner {
             return "waiting_approval".equals(status) || "waiting_input".equals(status);
         }
 
+        /** True only when parked for an answer to the agent's question, not for an approval. */
         public boolean isWaitingForInput() {
             return "waiting_input".equals(status);
         }
@@ -547,6 +589,9 @@ public class AgentRunner {
     /** @param instruction what the agent is asked, with what an earlier attempt already did put in front */
     private record Prepared(Run run, Agent agent, AgentVersion version, String instruction) {}
 
+    // Validates the agent (exists in the organisation, active, has a configuration), folds earlier
+    // attempts' changes into the instruction, then saves the run. Throws ApiException before any write
+    // when the agent cannot take the work. Used by start(..) and prepare(..).
     private Prepared prepareRun(
             UUID orgId,
             UUID agentId,
@@ -587,8 +632,10 @@ public class AgentRunner {
      */
     record PriorAttempts(int attempt, List<Change> changes) {
 
+        // The result for a first attempt: attempt number one and nothing already done.
         static final PriorAttempts NONE = new PriorAttempts(1, List.of());
 
+        // True when at least one earlier attempt changed something outside the platform.
         boolean madeChanges() {
             return !changes.isEmpty();
         }
@@ -669,6 +716,8 @@ public class AgentRunner {
         return kept;
     }
 
+    // Appends one bullet per change; when more than PRIOR_CHANGES_LISTED exist only the newest are
+    // listed, with a count of the earlier ones.
     private static void appendChanges(StringBuilder text, List<Change> changes) {
         int skipped = Math.max(0, changes.size() - PRIOR_CHANGES_LISTED);
         if (skipped > 0) {
@@ -845,6 +894,8 @@ public class AgentRunner {
     static final String SENT_BACK_INSTRUCTION =
             "Do not repeat this action unchanged. Revise it using the feedback, or explain why you cannot.";
 
+    // Builds the tool_call step detail that answers a call the approver sent back: status REJECTED,
+    // their note, and SENT_BACK_INSTRUCTION as the content the model will read on the next turn.
     private Map<String, Object> sentBackDetail(Approval approval) {
         String note = approval.getDecisionNote() == null ? "" : approval.getDecisionNote();
         Map<String, Object> content = new LinkedHashMap<>();
@@ -1119,11 +1170,13 @@ public class AgentRunner {
 
         private final String tool;
 
+        // Keeps the tool name so reason() can name what the person should check.
         ApprovedCallUncertain(String tool, Throwable cause) {
             super("The approved call to " + tool + " did not answer", cause);
             this.tool = tool;
         }
 
+        // The failure reason recorded on the run: the approved action may or may not have happened.
         String reason() {
             return "The approved action may or may not have been carried out; check " + tool + " before retrying.";
         }
@@ -1188,6 +1241,7 @@ public class AgentRunner {
         return redacted;
     }
 
+    // Matches an email address; secrets(..) uses it to set addresses aside while redacting.
     private static final Pattern EMAIL_ADDRESS = Pattern.compile("\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b");
     /** Private-use characters, which no secret pattern matches and no tool result contains. */
     private static final String ADDRESS_OPEN = "\uE000";
@@ -1255,11 +1309,14 @@ public class AgentRunner {
         }
     }
 
+    // The plain sentence for a live connector that has been disconnected; the verb (read, sent,
+    // changed) follows the tool's side effect so the person knows what did not happen.
     static String disconnectedMessage(String name, String sideEffect) {
         String done = "READ".equals(sideEffect) ? "read" : "OUTBOUND".equals(sideEffect) ? "sent" : "changed";
         return name + " was disconnected, so nothing was " + done + ".";
     }
 
+    // The plain sentence for a connection whose credential needs an administrator to renew it.
     static String reconnectMessage(String name) {
         return name + " needs to be reconnected by an administrator.";
     }
@@ -1372,6 +1429,7 @@ public class AgentRunner {
         return capForModel(content, MODEL_RESULT_LIMIT);
     }
 
+    // Shared cap: unchanged when within limit, else the list form, else the wrapped text form. Null gives "".
     private static String capForModel(String content, int limit) {
         if (content == null) {
             return "";
@@ -1413,6 +1471,8 @@ public class AgentRunner {
         return best < 0 ? null : itemsShown(object, items, best, total);
     }
 
+    // Rebuilds the {count, items} object with only the first `shown` items and the truncation fields
+    // (truncated, shown, total, note); other top-level fields are copied across unchanged.
     private static String itemsShown(ObjectNode original, ArrayNode items, int shown, long total) {
         ObjectNode result = JSON.createObjectNode();
         for (Map.Entry<String, JsonNode> field : original.properties()) {
@@ -1645,6 +1705,31 @@ public class AgentRunner {
         return runs.findStatusById(run.getId()).orElse(run.getStatus());
     }
 
+    /**
+     * The agent loop proper: ask the model, run the tools it requests, feed the results back, repeat
+     * until the run completes, fails or parks. Called only from {@link #driveOrFail}.
+     *
+     * <p>Set-up: resolves the routing policy and the agent's tool grants, notes which connectors are
+     * live, and builds the list of tool specs on offer (gateway tools, plus the ask tool, document
+     * search, memory and schedule tools when they apply). Each pass of the {@code while} loop then:
+     * <ol>
+     *   <li>re-reads the run's status and the working-time budget, and steps back if the run was
+     *       stopped or its time is up;
+     *   <li>shortens a very long history, builds the request (with wrap-up notes near the limits) and
+     *       asks the model through {@link #routeModel};
+     *   <li>handles a tool call written out as text, an answer cut off by the output limit (retry at
+     *       a higher limit, then continue) and an empty answer;
+     *   <li>records the model step and, for a plain answer, finishes the run as completed;
+     *   <li>otherwise runs each requested call through {@link #runTool}, re-checking the status before
+     *       every call, and returns at once when a call parks the run for an approval or an answer.
+     * </ol>
+     * Exhausting {@code maxSteps} ends the run as failed with any partial answer kept.
+     *
+     * @param conversation the messages so far; this method appends to it and may replace its content
+     *     when the history is compacted
+     * @param ask whether the agent may ask a person, and whether it already has
+     * @return the outcome: completed, failed, or waiting for a person; never null
+     */
     private Outcome loop(
             Run run, Agent agent, AgentVersion version, List<ChatMessage> conversation, QuestionService.AskPolicy ask) {
         RoutingPolicy policy = policies.resolve(run.getOrgId(), agent.getId());
@@ -2027,6 +2112,8 @@ public class AgentRunner {
     static final String WRITTEN_CALL_REPROMPT = "Your last reply was a tool call written out as text, so nothing was"
             + " run. Make the call properly with the tool, or answer in plain words.";
 
+    // Parses a candidate JSON object and rejects any trailing text, so a stray brace in prose is not
+    // mistaken for a tool call (used by WrittenCall).
     private static final ObjectMapper STRICT_JSON = JsonMapper.builder()
             .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .build();
@@ -2061,6 +2148,7 @@ public class AgentRunner {
             return null;
         }
 
+        // The JSON object the whole candidate text parses to, or null when it is not exactly one object.
         private static JsonNode asObject(String candidate) {
             try {
                 JsonNode node = STRICT_JSON.readTree(candidate);
@@ -2070,6 +2158,9 @@ public class AgentRunner {
             }
         }
 
+        // Reads the tool name and arguments out of an object in any of the common spellings (name/tool,
+        // arguments/parameters/args/input, nested function or tool_call). Null when either is missing.
+        // A double underscore in the name is turned into the dotted form this platform uses.
         private static WrittenCall fromObject(JsonNode node, String prose) {
             JsonNode function = node.get("function");
             JsonNode inner = function != null && function.isObject()
@@ -2096,6 +2187,7 @@ public class AgentRunner {
             return new WrittenCall(name.strip().replace("__", "."), argumentsJson, prose);
         }
 
+        // The first of the keys holding a non-blank string, or null.
         private static String firstText(JsonNode node, String... keys) {
             for (String key : keys) {
                 JsonNode value = node.get(key);
@@ -2106,6 +2198,7 @@ public class AgentRunner {
             return null;
         }
 
+        // The first of the keys holding a non-null value, or null.
         private static JsonNode firstPresent(JsonNode node, String... keys) {
             for (String key : keys) {
                 JsonNode value = node.get(key);
@@ -2161,6 +2254,7 @@ public class AgentRunner {
         };
     }
 
+    // True when the text is neither null nor blank.
     private static boolean hasText(String text) {
         return text != null && !text.isBlank();
     }
@@ -2302,12 +2396,17 @@ public class AgentRunner {
         return out;
     }
 
+    // True when the history already holds a tool call or a tool result, which a provider only accepts
+    // from a model that supports tools.
     private static boolean conversationHasToolCalls(List<ChatMessage> conversation) {
         return conversation.stream()
                 .anyMatch(message -> message.hasToolCalls() || message.role() == ChatMessage.Role.TOOL);
     }
 
     /**
+     * What came of running one tool call inside the loop: the result, what the model is told, and
+     * whether the run must now park. Produced by {@link #runTool}, consumed by {@link #loop}.
+     *
      * @param modelContent what the model is told this call returned, already capped
      * @param ask the question to park on, when the call was the person's ask tool
      * @param approval the approval to raise and park on, when the gateway wants a person to decide
@@ -2315,10 +2414,12 @@ public class AgentRunner {
     private record ToolOutcome(
             ToolResult result, String modelContent, boolean parked, AskPersonTool.Ask ask, PendingApproval approval) {
 
+        // A call that ran: the model is told the result, capped.
         static ToolOutcome ran(ToolResult result) {
             return new ToolOutcome(result, capForModel(result.forModel()), false, null, null);
         }
 
+        // A call that ran, with the exact text the model is told (already built and saved on the step).
         static ToolOutcome ran(ToolResult result, String modelContent) {
             return new ToolOutcome(result, modelContent, false, null, null);
         }
@@ -2354,11 +2455,14 @@ public class AgentRunner {
      */
     private static final class CallHistory {
 
+        // One remembered call: its identity key, how it ended, what the model was told, whether it was a
+        // read, and whether it went live or to the sandbox.
         private record Seen(String key, String status, String modelContent, boolean read, String mode) {}
 
         private final Deque<Seen> recent = new ArrayDeque<>();
         private int blocked;
 
+        // How many of the remembered calls are identical to this one.
         long timesSeen(String key) {
             return recent.stream().filter(seen -> seen.key().equals(key)).count();
         }
@@ -2374,6 +2478,7 @@ public class AgentRunner {
             return found;
         }
 
+        // Records a call so an identical one can be recognised; the window keeps the newest REPEAT_WINDOW.
         void remember(String key, String status, String modelContent, boolean read, String mode) {
             // A read that failed or did not answer is asked again. So is a change that failed:
             // nothing happened, so an identical retry is safe and the right thing to do. A change
@@ -2396,6 +2501,7 @@ public class AgentRunner {
             recent.removeIf(Seen::read);
         }
 
+        // Counts one refused repeat toward MAX_BLOCKED_REPEATS.
         void refused() {
             blocked++;
         }
@@ -2411,6 +2517,8 @@ public class AgentRunner {
         return tool + " " + canonicalArguments(argumentsJson);
     }
 
+    // The arguments as JSON with keys in order, so the same call spelled differently compares equal.
+    // Null or blank gives "{}"; text that is not valid JSON is used as it is.
     static String canonicalArguments(String argumentsJson) {
         if (argumentsJson == null || argumentsJson.isBlank()) {
             return "{}";
@@ -2424,6 +2532,8 @@ public class AgentRunner {
         }
     }
 
+    // The reason shown for an approval that is forced because an earlier approval in this run was
+    // sent back with feedback; see runTool.
     static final String FORCED_AFTER_FEEDBACK =
             "A person has already asked this run for changes, so every action that sends or removes something"
                     + " needs approval again, whatever this agent was allowed to do on its own.";
@@ -2442,6 +2552,15 @@ public class AgentRunner {
      * This method's only judgement is what to do with the three possible answers - and the ask
      * tool, which no server runs, is recognised before any of that. A call the agent has just made
      * is answered from {@code history} rather than made again.
+     *
+     * <p>Order of handling: the platform's own tools (ask, document search, memory, schedule); a
+     * repeat check; the gateway's decision. {@code AwaitApproval} returns a parking outcome with
+     * nothing written yet; {@code Refuse} records a BLOCKED step and an audit entry after commit;
+     * otherwise the credential is resolved, a missing or disconnected live connection fails the
+     * call plainly, and the tool is invoked with a 60 second wait. A call that throws or returns
+     * nothing is recorded as INDETERMINATE, never retried. The step is saved before returning.
+     *
+     * @return the outcome: the result and what the model is told, or a request to park the run
      */
     private ToolOutcome runTool(
             Run run,
@@ -2912,17 +3031,6 @@ public class AgentRunner {
         return ToolOutcome.ran(result, modelContent);
     }
 
-    /**
-     * Puts the passages from the workspace's documents that bear on a new run's instruction at the
-     * end of its first message, as reference material, and records that as a {@code knowledge_query}
-     * step - so a model that cannot call tools is grounded all the same, and a run that parks and
-     * resumes is rebuilt with the same first message.
-     *
-     * <p>Does nothing when the workspace has no documents, when the instruction already carries
-     * passages (chat searched for it), when this run has already done it, when nobody is behind
-     * the run, or when nothing in the documents covers the instruction. A search that cannot run
-     * never fails the run: the agent has the search tool, and goes ahead without.
-     */
     /** The type of the note step that records which attached files a run was given. */
     static final String ATTACHMENTS_NOTE = "attachments";
 
@@ -2967,6 +3075,10 @@ public class AgentRunner {
         }
     }
 
+    /**
+     * Rebuilds the attachments turn of a resumed run from the file ids its note step recorded.
+     * Empty when attachments are not available, no ids were recorded, or none still has text.
+     */
     private java.util.Optional<ChatMessage> attachmentMessage(Run run, List<UUID> ids) {
         if (chatAttachments == null || ids.isEmpty()) {
             return java.util.Optional.empty();
@@ -2975,18 +3087,21 @@ public class AgentRunner {
         return files.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(messageOf(material(run, files)));
     }
 
+    // Builds the prompt material (text and images) for the files, reading each file's content on demand.
     private os.aiworkforce.orchestrator.chat.AttachmentPrompt.Material material(
             Run run, List<os.aiworkforce.orchestrator.chat.ChatAttachments.Row> files) {
         return os.aiworkforce.orchestrator.chat.AttachmentPrompt.build(
                 files, id -> chatAttachments.content(run.getOrgId(), id).orElse(null));
     }
 
+    // A user message carrying the material's text, with its pictures when there are any.
     private static ChatMessage messageOf(os.aiworkforce.orchestrator.chat.AttachmentPrompt.Material material) {
         return material.images().isEmpty()
                 ? ChatMessage.user(material.text())
                 : ChatMessage.userWithImages(material.text(), material.images());
     }
 
+    // The UUIDs in a stored list value; entries that are not UUIDs are skipped, a non-list gives empty.
     private static List<UUID> idsOf(Object value) {
         if (!(value instanceof List<?> list)) {
             return List.of();
@@ -3051,6 +3166,17 @@ public class AgentRunner {
                 found.query(), relevant, !relevant.isEmpty(), found.degraded(), found.failure());
     }
 
+    /**
+     * Puts the passages from the workspace's documents that bear on a new run's instruction at the
+     * end of its first message, as reference material, and records that as a {@code knowledge_query}
+     * step - so a model that cannot call tools is grounded all the same, and a run that parks and
+     * resumes is rebuilt with the same first message.
+     *
+     * <p>Does nothing when the workspace has no documents, when the instruction already carries
+     * passages (chat searched for it), when this run has already done it, when nobody is behind
+     * the run, or when nothing in the documents covers the instruction. A search that cannot run
+     * never fails the run: the agent has the search tool, and goes ahead without.
+     */
     private void addReferenceMaterial(Run run, Agent agent, List<ChatMessage> conversation) {
         try {
             if (!knowledge.isOfferedIn(run.getOrgId(), agent.getId())) {
@@ -3254,6 +3380,7 @@ public class AgentRunner {
         }
     }
 
+    // The side-effect class name used for platform tools that only read (search, memory, repeats).
     static final String READ = ToolSpec.SideEffect.READ.name();
 
     /** Records a call that failed before reaching anything, and tells the model why. */
@@ -3319,6 +3446,8 @@ public class AgentRunner {
         return held;
     }
 
+    // Records a BLOCKED tool_call step for an action held back beside a read (see heldUntilReadsReturn),
+    // in its own transaction, so a resumed run is rebuilt with the same hold message.
     private void recordHeld(Run run, ToolCall call, String sideEffect) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("toolCallId", call.id());
@@ -3493,6 +3622,7 @@ public class AgentRunner {
         steps.save(RunStep.of(run.getOrgId(), run.getId(), nextPosition(run), kind, detail));
     }
 
+    // The position for the run's next step: one more than the highest already saved.
     private int nextPosition(Run run) {
         return steps.highestPosition(run.getId()) + 1;
     }
@@ -3550,6 +3680,8 @@ public class AgentRunner {
                 .orElse(run.getStatus());
     }
 
+    // Records the call that would have parked, and the rest of its turn, as not run because the run
+    // was stopped before the approval could be raised.
     private void recordStoppedBeforeParking(Run run, ToolCall call, List<ToolCall> rest, String status) {
         List<ToolCall> notRun = new ArrayList<>(rest.size() + 1);
         notRun.add(call);
@@ -3612,6 +3744,18 @@ public class AgentRunner {
         return new Outcome("waiting_input", null, run.getId());
     }
 
+    /**
+     * Ends the run in the given terminal state and returns its outcome.
+     *
+     * <p>In one transaction it stamps the status and reason, refreshes the total cost, saves the run
+     * and tells {@link TaskProgress} so the task's own state follows. Tool names in the answer are
+     * turned into plain words for the reader. After the commit it calls {@link #finishTerminal}
+     * (budget release and audit entry).
+     *
+     * @param failureReason why the run did not complete, or null
+     * @param answer the final or partial answer, or null
+     * @return the outcome carrying the plain-words answer
+     */
     private Outcome finish(Run run, String status, String failureReason, String answer) {
         // A person reads the answer, so a tool's internal name in it reads as what the tool does.
         String plainAnswer = ToolLabels.humanise(answer);
@@ -3682,6 +3826,26 @@ public class AgentRunner {
     // ---- Assembly ---------------------------------------------------------------------------
 
     /**
+     * Who the agent is, stated in every run so that "what is your name" is answered with the
+     * agent's own name and never with an invented human one.
+     */
+    static String identityLine(Agent agent, String workspaceName) {
+        String workspace = workspaceName == null || workspaceName.isBlank() ? "this" : workspaceName.strip() + "'s";
+        String category = agent.getCategory() == null || agent.getCategory().isBlank() ? "general" : agent.getCategory();
+        return "You are " + agent.getName() + ", an AI agent in " + workspace + " AI workforce (" + category
+                + "). If asked your name or who you are, say that - never invent a human name.";
+    }
+
+    // The workspace's display name for the identity line, or null when the lookup fails.
+    private String workspaceName(Run run) {
+        try {
+            return zones.nameFor(run.getOrgId());
+        } catch (RuntimeException unavailable) {
+            return null;
+        }
+    }
+
+    /**
      * Builds the agent's instructions.
      *
      * <p>The persona comes from the version row; the paragraph below it is the platform's own
@@ -3693,25 +3857,6 @@ public class AgentRunner {
      * and documents return is information and not instruction. The date comes from when the run
      * started, not from the clock, so a run that parks for a day and resumes is told the same one.
      */
-    /**
-     * Who the agent is, stated in every run so that "what is your name" is answered with the
-     * agent's own name and never with an invented human one.
-     */
-    static String identityLine(Agent agent, String workspaceName) {
-        String workspace = workspaceName == null || workspaceName.isBlank() ? "this" : workspaceName.strip() + "'s";
-        String category = agent.getCategory() == null || agent.getCategory().isBlank() ? "general" : agent.getCategory();
-        return "You are " + agent.getName() + ", an AI agent in " + workspace + " AI workforce (" + category
-                + "). If asked your name or who you are, say that - never invent a human name.";
-    }
-
-    private String workspaceName(Run run) {
-        try {
-            return zones.nameFor(run.getOrgId());
-        } catch (RuntimeException unavailable) {
-            return null;
-        }
-    }
-
     private String buildSystemPrompt(Run run, Agent agent, AgentVersion version, boolean askAllowed) {
         StringBuilder prompt = new StringBuilder(version.getSystemPrompt());
         if (!version.getGoals().isBlank()) {
@@ -3848,6 +3993,7 @@ public class AgentRunner {
         return String.join("; ", parts) + ".";
     }
 
+    // Date and time layout used in the prompt's clock lines.
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm", Locale.ENGLISH);
 
     /**
@@ -4016,10 +4162,13 @@ public class AgentRunner {
         return conversation;
     }
 
+    // Stand-ins for a call with no recorded result: approved but not yet carried out, still waiting
+    // for an answer, or never run. They keep every call in a rebuilt turn answered.
     private static final String APPROVED_STUB = "A person approved this action; its result follows.";
     private static final String WAITING_STUB = "{\"status\":\"waiting\",\"note\":\"The person has not answered yet.\"}";
     private static final String NOT_RUN = "{\"status\":\"not_run\",\"note\":\"This call was not run.\"}";
 
+    // True for the step kinds that carry the result, or the pending state, of one tool call.
     private static boolean isCallStep(String kind) {
         return "tool_call".equals(kind) || "approval".equals(kind) || "question".equals(kind);
     }
@@ -4045,6 +4194,8 @@ public class AgentRunner {
         private RunStep question;
         private RunStep approval;
 
+        // Files a step under its kind; only the first tool_call step counts, later question or approval
+        // steps replace earlier ones.
         void add(RunStep step) {
             switch (step.getKind()) {
                 case "tool_call" -> {
@@ -4057,6 +4208,8 @@ public class AgentRunner {
             }
         }
 
+        // The one result the model is shown: the real tool_call result first, else a waiting or approved
+        // stub, else NOT_RUN.
         String content() {
             if (toolCall != null) {
                 return resultContent(toolCall.getDetail());
@@ -4082,6 +4235,7 @@ public class AgentRunner {
                 : String.valueOf(detail.getOrDefault("tool", "tool"));
     }
 
+    // The UUID the text spells, or null when it is not one.
     private static UUID parseUuidOrNull(String text) {
         try {
             return UUID.fromString(text);
@@ -4090,6 +4244,8 @@ public class AgentRunner {
         }
     }
 
+    // Reads the toolCallRecords list saved on a model step back into calls; anything malformed is
+    // skipped and a non-list gives an empty list.
     private static List<ToolCall> readToolCallRecords(Object raw) {
         if (!(raw instanceof List<?> records) || records.isEmpty()) {
             return List.of();
@@ -4106,12 +4262,14 @@ public class AgentRunner {
         return calls;
     }
 
+    // The agent's enabled tool grants, converted to the gateway's form.
     private List<ToolGrant> loadGrants(UUID agentId) {
         return grants.findByAgentIdAndEnabledTrue(agentId).stream()
                 .map(this::toGrant)
                 .toList();
     }
 
+    // Maps a stored grant to the gateway's ToolGrant, one field to one field.
     private ToolGrant toGrant(AgentToolGrant entity) {
         return new ToolGrant(
                 entity.getAgentId().toString(),
@@ -4131,6 +4289,7 @@ public class AgentRunner {
         return value.length() <= 8_000 ? value : value.substring(0, 8_000) + "…";
     }
 
+    // Runs the body in its own REQUIRES_NEW transaction and returns its value; commits on return.
     private <T> T inNewTransaction(Supplier<T> body) {
         return newTransaction.execute(status -> body.get());
     }
@@ -4175,6 +4334,9 @@ public class AgentRunner {
         return reaped;
     }
 
+    // Ends one lapsed run inside the caller's transaction: a conditional update guards against a
+    // heartbeat that renewed meanwhile (returns false, nothing written), then the error step and the
+    // task's outcome are written and the budget release and audit entry are queued for after commit.
     private boolean abandon(Run run, Instant now) {
         BigDecimal cost = usage.costForRun(run.getOrgId(), run.getId());
         if (runs.markAbandoned(run.getId(), ABANDONED_REASON, cost, now) == 0) {
@@ -4190,10 +4352,12 @@ public class AgentRunner {
         return true;
     }
 
+    // This instance's worker id, the value written into every lease it holds.
     static String workerId() {
         return WORKER_ID;
     }
 
+    // The id of the acting principal on this thread, or "system" outside a request.
     static String currentActor() {
         return RequestContext.actor().map(actor -> actor.id()).orElse("system");
     }

@@ -20,6 +20,7 @@ import { useMemberDirectory } from './useMemberDirectory'
  * table per agent or requester, each headed by its own name.
  */
 
+/** Duration in milliseconds for sorting (running tasks count to now); null when the task has not started. */
 function timingValue(card: BoardCard, now: number): number | null {
   const task = card.task
   if (!task?.startedAt) return null
@@ -27,6 +28,7 @@ function timingValue(card: BoardCard, now: number): number | null {
   return end - Date.parse(task.startedAt)
 }
 
+/** Duration text for the table: "Not started", the finished duration, or the running elapsed time. */
 function timingLabel(card: BoardCard, now: number): string {
   const task = card.task
   if (!task?.startedAt) return 'Not started'
@@ -34,12 +36,21 @@ function timingLabel(card: BoardCard, now: number): string {
   return formatRunElapsed({ status: task.status, startedAt: task.startedAt, completedAt: task.completedAt }, now)
 }
 
+/** The heading a card is grouped under: the agent name ("No agent" when unassigned) or the requester label. */
 function groupKeyFor(card: BoardCard, group: 'agent' | 'requester', agentNames: Record<string, string>, members: MemberDirectory, me: string | null): string {
   if (group === 'agent') return (card.task?.agentId && agentNames[card.task.agentId]) || 'No agent'
   return requesterLabel(card.goal, members, me)
 }
 
 // @find: board list view component, goals as table
+/**
+ * The board as sortable tables, rendered by Board.tsx when the List view is chosen.
+ * Props: cards (already filtered), board (for agent names), group (none, agent or requester) and onOpenGoal.
+ * Columns: goal, status, agent, requester (requesterLabel with useMemberDirectory), step, started, duration
+ * (refreshed every 10 seconds with useNow), and cost. Unknown values sort last. A row is a link to
+ * /orchestrator?goal=<id> and also calls onOpenGoal, so it opens GoalSheet in place or in a new tab. With a
+ * grouping the cards are split into one captioned table per group, sorted by group name.
+ */
 export function BoardList({
   cards,
   board,

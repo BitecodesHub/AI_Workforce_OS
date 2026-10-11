@@ -34,21 +34,38 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "aiwos.audit.verify-enabled", havingValue = "true", matchIfMissing = true)
 public class AuditChainJob {
 
+    /**
+     * Logger for the verification result; breaks are logged at ERROR, which the alert is set on.
+     */
     private static final Logger log = LoggerFactory.getLogger(AuditChainJob.class);
 
+    /** Performs the chain walks. */
     private final AuditVerification verification;
+    /** Gauge value: chains with a break found by the last run. */
     private final AtomicLong broken = new AtomicLong();
+    /** Gauge value: entries examined by the last run. */
     private final AtomicLong checked = new AtomicLong();
+    /** Gauge value: chains walked by the last run. */
     private final AtomicLong chains = new AtomicLong();
+    /** The most recent completed result, or null before the first run. */
     private final AtomicReference<Summary> last = new AtomicReference<>();
 
     /**
+     * Result of one verification run, returned by {@link #run} and {@link #lastSummary}.
+     *
+     * @param finishedAt when the run ended
+     * @param took how long it took
      * @param chains how many chains were walked
      * @param entries how many entries were examined in all
-     * @param brokenChains the keys of the chains with a break, with the first broken sequence of each
+     * @param brokenChains the keys of the chains with a break, with the first broken sequence of each; empty when all are intact
      */
     public record Summary(Instant finishedAt, Duration took, long chains, long entries, List<String> brokenChains) {}
 
+    /**
+     * Creates the job and, when a meter registry exists, registers three gauges: aiwos.audit.chain.broken,
+     * aiwos.audit.chain.checked and aiwos.audit.chain.chains, which read the values of the last run. Without
+     * a registry the job still runs and logs.
+     */
     public AuditChainJob(AuditVerification verification, ObjectProvider<MeterRegistry> registry) {
         this.verification = verification;
         registry.ifAvailable(meters -> {
@@ -65,6 +82,11 @@ public class AuditChainJob {
     }
 
     // @find: scheduled job or startup listener nightly, audit chain job
+    /**
+     * Scheduled entry point, run nightly by default at 02:15 (cron configurable through
+     * {@code aiwos.audit.verify-cron}). Calls {@link #run}. A runtime failure is logged at ERROR and swallowed
+     * so the scheduler keeps going; the gauges then keep their previous values rather than reporting clean.
+     */
     @Scheduled(cron = "${aiwos.audit.verify-cron:0 15 2 * * *}")
     public void nightly() {
         try {
@@ -76,7 +98,12 @@ public class AuditChainJob {
         }
     }
 
-    /** One full verification, also callable on demand. */
+    /**
+     * One full verification, also callable on demand. Walks every chain through
+     * {@link AuditVerification#verifyEverything}, updates the three gauge values and the stored
+     * summary, and logs the outcome (INFO when every chain is intact, ERROR naming each broken chain
+     * otherwise). Read-only against the database; failures propagate to the caller.
+     */
     // @find: run audit chain verification now
     public Summary run() {
         Instant started = Instant.now();

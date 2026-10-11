@@ -74,26 +74,35 @@ public class SigningKey implements Persistable<String> {
     @Transient
     private boolean isNew = true;
 
+    /** The key identifier, as required by {@link Persistable}. */
     @Override
     public String getId() {
         return kid;
     }
 
+    /**
+     * Whether the row is yet to be inserted; Spring Data uses this to choose insert over merge.
+     */
     @Override
     public boolean isNew() {
         return isNew;
     }
 
+    /** Lifecycle callback run after a load or insert; clears the new-row flag. */
     @PostPersist
     @PostLoad
     void markPersisted() {
         this.isNew = false;
     }
 
+    /** Whether this key is the one that signs now. */
     public boolean isActive() {
         return ACTIVE.equals(status);
     }
 
+    /**
+     * Whether the private key lives outside the database, as marked by {@link #HELD_EXTERNALLY}.
+     */
     public boolean isHeldExternally() {
         return HELD_EXTERNALLY.equals(privateKeyEncrypted);
     }

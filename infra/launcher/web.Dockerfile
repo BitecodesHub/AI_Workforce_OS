@@ -6,6 +6,8 @@
 
 # The newest Node 22 release when this was pinned. The tag was chosen and confirmed with docker
 # manifest inspect, not read from a local image: none is kept after a build.
+# Stage build: installs the web client's dependencies from the lock file and produces the
+# production bundle in /web/dist.
 FROM node:22.23.3-alpine AS build
 WORKDIR /web
 RUN corepack enable
@@ -18,6 +20,8 @@ ARG NODE_OPTIONS=""
 RUN pnpm exec vite build
 
 # Pinned to the exact nginx release the security headers in nginx.conf were checked against.
+# Stage serve: the final image. It holds only the built files and the nginx configuration; Node
+# and the sources stay in the build stage.
 FROM nginx:1.27.5-alpine
 COPY --from=build /web/dist /usr/share/nginx/html
 COPY --from=launcher nginx.conf /etc/nginx/conf.d/default.conf

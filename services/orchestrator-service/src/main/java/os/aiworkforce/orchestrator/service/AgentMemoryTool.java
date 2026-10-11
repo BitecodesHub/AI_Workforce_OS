@@ -29,9 +29,11 @@ import os.aiworkforce.llm.model.ToolSpec;
 @Component
 public class AgentMemoryTool {
 
+    // The two tool names as the runner recognises them; sent to providers as memory__remember and memory__recall.
     public static final String REMEMBER = "memory.remember";
     public static final String RECALL = "memory.recall";
 
+    // What the model sees for each tool. Remember is a WRITE, recall a READ; see the specs below.
     static final String REMEMBER_DESCRIPTION =
             "Keep one short fact in your own memory so you know it next time: how this organisation prefers "
                     + "things done, a name or place that keeps coming up, a correction a person gave you. One fact "
@@ -56,6 +58,7 @@ public class AgentMemoryTool {
             """
                     .strip();
 
+    // Offered to agents by AgentRunner. Neither is an integration, so no grant applies.
     public static final ToolSpec REMEMBER_SPEC =
             new ToolSpec(REMEMBER, REMEMBER_DESCRIPTION, REMEMBER_SCHEMA, ToolSpec.SideEffect.WRITE);
     public static final ToolSpec RECALL_SPEC =
@@ -63,6 +66,7 @@ public class AgentMemoryTool {
 
     /** How many notes are recalled into a run's first message. */
     public static final int RUN_START_LIMIT = 8;
+    // Recall limits: five notes when the model gives none, ten at most.
     static final int DEFAULT_LIMIT = 5;
     static final int MAX_LIMIT = 10;
 
@@ -73,24 +77,38 @@ public class AgentMemoryTool {
         }
     }
 
+    /** A parsed {@code memory.remember} call: the fact to keep, and its kind, which is null when the model gave none. */
     public record Remember(String content, String kind) {}
 
+    /** A parsed {@code memory.recall} call: what to look for, empty for the most recent notes, and how many notes. */
     public record Recall(String query, int limit) {}
 
+    // The client reaches the memory service; notes are held there, not here.
     private final MemoryClient client;
     private final ObjectMapper json;
 
+    /**
+     * @param client the route to the memory service
+     * @param json used to read the model's arguments
+     */
     @Autowired
     public AgentMemoryTool(MemoryClient client, ObjectMapper json) {
         this.client = client;
         this.json = json;
     }
 
+    /** Whether a tool name is one of the two memory tools. AgentRunner asks this before looking for an integration server. */
     public static boolean isMemoryTool(String name) {
         return REMEMBER.equals(name) || RECALL.equals(name);
     }
 
     // @find: parse remember arguments, memory.remember input, validate note content
+    /**
+     * Reads the arguments of a remember call. Content is required and trimmed; kind is passed through and
+     * checked by the memory service.
+     *
+     * @throws Invalid with a sentence for the model when the arguments are not a JSON object or content is empty
+     */
     public Remember parseRemember(String argumentsJson) throws Invalid {
         JsonNode root = readObject(argumentsJson);
         JsonNode content = root.get("content");
@@ -103,6 +121,12 @@ public class AgentMemoryTool {
     }
 
     // @find: parse recall arguments, memory.recall input, validate query
+    /**
+     * Reads the arguments of a recall call. Both fields are optional: the query defaults to empty and the limit
+     * to {@value #DEFAULT_LIMIT}, kept between 1 and {@value #MAX_LIMIT}.
+     *
+     * @throws Invalid when the arguments are not a JSON object
+     */
     public Recall parseRecall(String argumentsJson) throws Invalid {
         JsonNode root = readObject(argumentsJson);
         JsonNode query = root.get("query");
@@ -115,6 +139,7 @@ public class AgentMemoryTool {
         return new Recall(text, limit);
     }
 
+    /** Reads the arguments as a JSON object, or throws Invalid. Null and blank text count as malformed. */
     private JsonNode readObject(String argumentsJson) throws Invalid {
         try {
             JsonNode root = json.readTree(argumentsJson == null ? "" : argumentsJson);
@@ -128,11 +153,21 @@ public class AgentMemoryTool {
     }
 
     // @find: remember a note, save agent memory, memory.remember execution, write note
+    /**
+     * Saves the note through the memory service, for this agent only. The result says whether the note was new,
+     * already known, refused or the service unavailable; nothing is thrown. Called by AgentRunner.
+     *
+     * @param runId the run that kept it, recorded with the note
+     */
     public MemoryClient.Remembered remember(UUID orgId, UUID agentId, UUID runId, Remember request) {
         return client.remember(orgId, agentId, runId, request.kind(), request.content());
     }
 
     // @find: recall notes, search agent memory, memory.recall execution, look up memory
+    /**
+     * Looks up this agent's own notes through the memory service. The result is marked failed when the service
+     * cannot be reached; nothing is thrown. Called by AgentRunner.
+     */
     public MemoryClient.Recalled recall(UUID orgId, UUID agentId, String query, int limit) {
         return client.recall(orgId, agentId, query, limit);
     }
@@ -153,6 +188,7 @@ public class AgentMemoryTool {
         return (result.created() ? "Kept." : "Already in your memory.") + done;
     }
 
+    /** One line for the step in the trace: what was kept, or why not. */
     public static String rememberedSummary(Remember request, MemoryClient.Remembered result) {
         if (result.unavailable()) {
             return "Memory is unavailable right now.";
@@ -187,6 +223,7 @@ public class AgentMemoryTool {
         return text.toString().stripTrailing();
     }
 
+    /** Writes each note inside a numbered {@code <memory>} tag, with its kind, after removing any such tags from the note. */
     private static void appendNotes(StringBuilder text, List<MemoryClient.Note> notes) {
         int number = 1;
         for (MemoryClient.Note note : notes) {
@@ -211,6 +248,7 @@ public class AgentMemoryTool {
         return clean;
     }
 
+    /** One line for the step in the trace: how many notes came back, or why none did. */
     public static String recalledSummary(Recall request, MemoryClient.Recalled result) {
         if (result.failed()) {
             return "Memory is unavailable right now.";

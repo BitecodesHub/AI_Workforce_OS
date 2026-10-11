@@ -65,6 +65,9 @@ const ADOPT_WITHIN_MS = 10_000
  */
 export const ROLE_CHANGE_DELAY_COPY = 'A role change reaches the console within 5 minutes, when the session renews.'
 
+/**
+ * The signed-in person as the console needs them: user id, workspace, permissions, name, email and role. Stored in sessionStorage next to the token and replaced at every renewal.
+ */
 export type Profile = {
   userId: string
   workspaceId: string | null
@@ -84,10 +87,12 @@ let channel: BroadcastChannel | null | undefined
 /** The latest renewal another tab broadcast, kept for a refresh in this tab to adopt. */
 let lastRenewal: Renewal | null = null
 
+/** Type guard: true for a plain object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Type guard for a profile arriving from another tab: needs a user id and a permissions array. */
 function isProfile(value: unknown): value is Profile {
   return isRecord(value) && typeof value.userId === 'string' && Array.isArray(value.permissions)
 }
@@ -109,6 +114,7 @@ function sessionChannel(): BroadcastChannel | null {
   return channel
 }
 
+/** Sends a session message to the other tabs; ignores a closed or missing channel. */
 function post(message: SessionMessage) {
   try {
     sessionChannel()?.postMessage(message)
@@ -117,6 +123,9 @@ function post(message: SessionMessage) {
   }
 }
 
+/**
+ * Handles a message from another tab. A renewal is remembered so this tab can adopt it without calling the service; a sign-out removes this tab's stored token and tells the app through SESSION_EVENT.
+ */
 function receive(message: unknown) {
   if (!isRecord(message)) return
   if (message.type === 'renewed' && typeof message.accessToken === 'string' && isProfile(message.profile)) {
@@ -132,6 +141,7 @@ function receive(message: unknown) {
   }
 }
 
+/** Dispatches a window event; ignores environments with no window. */
 function dispatch(event: Event) {
   try {
     window.dispatchEvent(event)
@@ -140,6 +150,7 @@ function dispatch(event: Event) {
   }
 }
 
+/** Removes the token and profile from sessionStorage; ignores blocked storage. */
 function removeStored() {
   try {
     sessionStorage.removeItem(TOKEN_KEY)
@@ -149,6 +160,9 @@ function removeStored() {
   }
 }
 
+/**
+ * Sets or clears the localStorage hint that this browser has signed in before; ignores blocked storage.
+ */
 function setSignedInHint(signedIn: boolean) {
   try {
     if (signedIn) localStorage.setItem(SIGNED_IN_HINT, '1')
@@ -262,6 +276,9 @@ export function watchSessionOwner(onChange: (change: SessionOwnerChange) => void
 }
 
 // @find: access token, bearer token
+/**
+ * The current access token from sessionStorage, or null when signed out or storage is blocked. Read by api() on every request.
+ */
 export function accessToken(): string | null {
   try {
     return sessionStorage.getItem(TOKEN_KEY)
@@ -271,6 +288,7 @@ export function accessToken(): string | null {
 }
 
 // @find: profile, current user, workspace, roles
+/** The stored profile of the signed-in person, or null when signed out, absent or unreadable. */
 export function profile(): Profile | null {
   try {
     const raw = sessionStorage.getItem(PROFILE_KEY)
@@ -281,6 +299,7 @@ export function profile(): Profile | null {
 }
 
 // @find: is signed in
+/** Whether this tab holds an access token. */
 export function isSignedIn(): boolean {
   return accessToken() !== null
 }
@@ -301,10 +320,14 @@ export function initials(name: string | undefined | null): string {
 
 let refreshPromise: Promise<boolean> | null = null
 
+/**
+ * The renewal currently in flight, if any, so concurrent requests share one renewal instead of each starting their own.
+ */
 export function getRefreshPromise(): Promise<boolean> | null {
   return refreshPromise
 }
 
+/** Records (or clears with null) the renewal in flight. Used by api.ts. */
 export function setRefreshPromise(promise: Promise<boolean> | null) {
   refreshPromise = promise
 }

@@ -26,6 +26,7 @@ import { Button, Notice, PageHeader, PermissionState } from './components/ui'
  * small auth screens stay in the main bundle.
  */
 const loadCommandMap = () => import('./routes/CommandMap')
+/** Dynamic import of the Landing chunk; kept as a named loader so App can prefetch it on mount as well as lazy-render it. */
 const loadLanding = () => import('./routes/Landing')
 const CommandMap = lazy(() => loadCommandMap().then((m) => ({ default: m.CommandMap })))
 const Landing = lazy(() => loadLanding().then((m) => ({ default: m.Landing })))
@@ -100,6 +101,7 @@ const PRIVATE: Array<[string, RouteMeta]> = [
   ['/profile', { permission: null, screen: () => <Profile /> }],
 ]
 
+/** Returns the first route whose pattern matches the path, with its metadata and extracted parameters, or null when none matches (the caller then renders NotFound). */
 function find(routes: Array<[string, RouteMeta]>, path: string) {
   for (const [pattern, meta] of routes) {
     const params = match(pattern, path)
@@ -182,6 +184,19 @@ function SessionUnreachable({ onRetry }: { onRetry: () => void }) {
 type Restore = 'pending' | 'unreachable' | 'settled'
 
 // @find: App component, route table, permission gate, sign-in redirect, tab title with waiting count
+/**
+ * The root component. Chooses what to render for the current address, in this order of precedence:
+ * 1. a moved address, which is redirected first (blank busy page meanwhile);
+ * 2. restoring the session from the refresh cookie, when the tab has no token but the route is private;
+ * 3. "session unreachable" with a retry, when that restore failed to reach the service;
+ * 4. the public landing page for a signed-out visit to "/";
+ * 5. a public route (sign-in, create workspace, accept invite, home, trust);
+ * 6. a redirect to /sign-in?next=... for a signed-out visit to a private route;
+ * 7. NotFound, inside the shell when signed in;
+ * 8. a permission notice, when the route needs a permission the person lacks (checked with can());
+ * 9. the screen itself, lazily loaded inside Suspense and the signed-in Shell.
+ * Side effects: re-renders on the session event so role changes apply at once; clears the query cache when the session changes owner and navigates signed-out tabs to sign-in; prefetches the likely first screen; sets the tab title; moves focus to the new screen's heading after navigation.
+ */
 export function App() {
   const { path, search, hash, navigate } = useRouter()
   const signedIn = isSignedIn()
@@ -347,6 +362,7 @@ function focusMainHeading(): void {
   target.focus({ preventScroll: true })
 }
 
+/** Maps a route pattern to the browser tab title; unknown patterns get the title "Not found". */
 function titleFor(pattern: string): string {
   const titles: Record<string, string> = {
     '/': 'Command Map',

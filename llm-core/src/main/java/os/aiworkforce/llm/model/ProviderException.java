@@ -22,6 +22,7 @@ public class ProviderException extends RuntimeException {
     private final Duration retryAfter;
     private final transient String rawBody;
 
+    /** Full constructor; adapters use it when they hold the HTTP status, retry delay and raw body. */
     public ProviderException(
             ProviderFailure failure,
             String provider,
@@ -40,6 +41,7 @@ public class ProviderException extends RuntimeException {
         this.rawBody = rawBody;
     }
 
+    /** Shorthand for a failure with no HTTP details and no underlying cause. */
     public static ProviderException of(ProviderFailure failure, String provider, String model, String message) {
         return new ProviderException(failure, provider, model, message, null, null, null, null);
     }
@@ -49,18 +51,22 @@ public class ProviderException extends RuntimeException {
         return new ProviderException(failure, provider, model, message, null, null, null, cause);
     }
 
+    /** The classified failure that drives retry and failover decisions. */
     public ProviderFailure failure() {
         return failure;
     }
 
+    /** The provider that failed. */
     public String provider() {
         return provider;
     }
 
+    /** The model that failed. */
     public String model() {
         return model;
     }
 
+    /** The HTTP status, or null for a failure that never produced a response. */
     public Integer httpStatus() {
         return httpStatus;
     }

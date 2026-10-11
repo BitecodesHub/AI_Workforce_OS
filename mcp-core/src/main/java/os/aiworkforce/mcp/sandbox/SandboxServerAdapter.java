@@ -43,7 +43,9 @@ import os.aiworkforce.mcp.spi.McpServerAdapter;
  */
 public class SandboxServerAdapter implements McpServerAdapter {
 
+    /** Debug log of which sandbox handled which call; never argument values. */
     private static final Logger log = LoggerFactory.getLogger(SandboxServerAdapter.class);
+    /** Text that, inside any argument, makes the call fail on purpose. See {@code faultIn}. */
     private static final String FAULT_MARKER = "[[fault:";
 
     /* The status a record is left in by the verb that touched it. */
@@ -76,8 +78,11 @@ public class SandboxServerAdapter implements McpServerAdapter {
     private static final java.util.Set<String> NOT_FILTERS =
             java.util.Set.of("id", "query", "q", "jql", "limit", "text", "body", "content", "from", "to");
 
+    /** The server this instance stands in for, for example {@code gmail}. */
     private final String server;
+    /** The tool definitions it advertises, the same ones the live adapter implements. */
     private final List<ToolDefinition> tools;
+    /** Builds and reads the JSON of arguments and records. */
     private final ObjectMapper json;
 
     /* Practice records each workspace starts with, by collection, so a first list returns data. */
@@ -90,11 +95,15 @@ public class SandboxServerAdapter implements McpServerAdapter {
     /* GitHub's branches, files and commits, which a list of records cannot model; null elsewhere. */
     private final GitHubSandboxRepos repositories;
 
+    /** A sandbox server with no seeded practice records. */
     public SandboxServerAdapter(String server, List<ToolDefinition> tools, ObjectMapper json) {
         this(server, tools, json, Map.of());
     }
 
     /**
+     * Builds a sandbox server. Seed collection names are reduced to the singular so that the list
+     * and create tools of one noun share a collection. A GitHub sandbox also builds its repository model.
+     *
      * @param seeds practice records by collection; the key may be singular or plural
      *     ({@code issues} or {@code issue}), and every workspace receives its own copy
      */
@@ -110,21 +119,28 @@ public class SandboxServerAdapter implements McpServerAdapter {
         this.repositories = "github".equals(server) ? new GitHubSandboxRepos(json, this.seeds) : null;
     }
 
+    /** The server name this sandbox stands in for. */
     @Override
     public String server() {
         return server;
     }
 
+    /** The advertised tools. */
     @Override
     public List<ToolDefinition> tools() {
         return tools;
     }
 
+    /** Always true: results come from the practice store and nothing reaches a provider. */
     @Override
     public boolean isSandbox() {
         return true;
     }
 
+    /**
+     * Only the GitHub sandbox has per-call reasons, such as a file write landing on a default
+     * branch. Delegates to the repository model and contacts nothing; empty for every other server.
+     */
     @Override
     public java.util.Optional<String> approvalReason(ToolInvocation invocation) {
         if (repositories == null) {
@@ -134,12 +150,19 @@ public class SandboxServerAdapter implements McpServerAdapter {
     }
 
     // @find: sandbox health check, always healthy
+    /** Always healthy; there is nothing to reach. */
     @Override
     public Mono<Boolean> healthCheck(String credential) {
         return Mono.just(true);
     }
 
     // @find: run sandbox tool, verb collection routing, practice data store, fault marker
+    /**
+     * Runs one tool against the practice store after a short artificial delay of 80 milliseconds. The
+     * credential is ignored. Side effects: changes the in-memory records for the workspace only; no
+     * HTTP call is made. Approval and rate limits are applied by the gateway before this is reached.
+     * See {@link #run} for the behaviour.
+     */
     @Override
     public Mono<ToolResult> invoke(ToolInvocation invocation, String credential) {
         return Mono.fromCallable(() -> run(invocation))
@@ -148,6 +171,18 @@ public class SandboxServerAdapter implements McpServerAdapter {
                 .delayElement(Duration.ofMillis(80));
     }
 
+    /**
+     * Does the work of {@link #invoke} on the calling thread.
+     *
+     * <p>Flow: parse the arguments; honour an injected fault; hand GitHub repository tools to
+     * {@code GitHubSandboxRepos}; otherwise derive the verb and collection from the tool name
+     * ({@code create_issue} is verb create, collection issue), check that records named by arguments exist,
+     * then apply the verb to the workspace's in-memory list (list, get, create and its relatives, update,
+     * delete, save, status changes such as archive or refund, Twilio buy, release and connect). Every
+     * write result carries {@code sandbox: true} and a summary stating that nothing left the machine.
+     * Failure behaviour: a missing record or a refused change is a failed result; the {@code timeout} fault
+     * throws so the gateway sees a real timeout.
+     */
     private ToolResult run(ToolInvocation invocation) {
         Instant startedAt = Instant.now();
         JsonNode raw = parse(invocation.argumentsJson());
@@ -475,6 +510,7 @@ public class SandboxServerAdapter implements McpServerAdapter {
         return known;
     }
 
+    /** Whether the server has a collection of this name, by seed or by a list or search tool. */
     private boolean knows(String collection) {
         return seeds.containsKey(collection)
                 || tools.stream().anyMatch(tool -> singular(collectionOf(tool.name())).equals(collection)
@@ -544,17 +580,20 @@ public class SandboxServerAdapter implements McpServerAdapter {
         return limit > 0 && matches.size() > limit ? matches.subList(0, limit) : matches;
     }
 
+    /** Lower-cases, trims and drops a leading hash, so {@code #General} matches {@code general}. */
     private static String normalise(String value) {
         String trimmed = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
         return trimmed.startsWith("#") ? trimmed.substring(1) : trimmed;
     }
 
+    /** All the text values of a record joined and lower-cased, for the free-text search. */
     private static String textOf(JsonNode node) {
         StringBuilder text = new StringBuilder();
         collectText(node, text);
         return text.toString().toLowerCase(Locale.ROOT);
     }
 
+    /** Appends every value in the tree to the buffer. */
     private static void collectText(JsonNode node, StringBuilder text) {
         if (node.isValueNode()) {
             text.append(node.asText()).append(' ');
@@ -563,6 +602,7 @@ public class SandboxServerAdapter implements McpServerAdapter {
         }
     }
 
+    /** The record with this id, or null. Locks the list while searching. */
     private static ObjectNode find(List<ObjectNode> records, String id) {
         if (id == null) {
             return null;
@@ -575,6 +615,7 @@ public class SandboxServerAdapter implements McpServerAdapter {
         }
     }
 
+    /** A deep copy of the list, so a result is not changed by a later call. */
     private static List<ObjectNode> snapshot(List<ObjectNode> records) {
         synchronized (records) {
             return records.stream().map(ObjectNode::deepCopy).toList();
@@ -587,6 +628,7 @@ public class SandboxServerAdapter implements McpServerAdapter {
         return underscore < 0 ? tool : tool.substring(0, underscore);
     }
 
+    /** The part after the first underscore, the noun the tool works on. */
     private static String collectionOf(String tool) {
         int underscore = tool.indexOf('_');
         return underscore < 0 ? tool : tool.substring(underscore + 1);
@@ -608,6 +650,10 @@ public class SandboxServerAdapter implements McpServerAdapter {
         return lower;
     }
 
+    /**
+     * The workspace's list for a collection, created on first use from a copy of the seeds. The list is
+     * synchronised; callers lock it around compound changes.
+     */
     private List<ObjectNode> records(String orgId, String collection) {
         return store.computeIfAbsent(orgId, id -> new ConcurrentHashMap<>())
                 .computeIfAbsent(collection, name -> {
@@ -617,6 +663,7 @@ public class SandboxServerAdapter implements McpServerAdapter {
                 });
     }
 
+    /** Reads the arguments; unreadable text becomes an empty object rather than an error. */
     private JsonNode parse(String argumentsJson) {
         try {
             return json.readTree(argumentsJson == null ? "{}" : argumentsJson);
@@ -625,6 +672,10 @@ public class SandboxServerAdapter implements McpServerAdapter {
         }
     }
 
+    /**
+     * The fault named in {@code [[fault:name]]} anywhere in the arguments ({@code timeout}, {@code failed}
+     * or {@code indeterminate}), or null. Used by tests and demonstrations to exercise failure paths.
+     */
     private String faultIn(JsonNode arguments) {
         String text = arguments.toString();
         int start = text.indexOf(FAULT_MARKER);

@@ -19,6 +19,7 @@ import java.util.Objects;
  */
 public record ToolSpec(String name, String description, String parametersJson, SideEffect sideEffect) {
 
+    /** What running a tool does, which decides whether an approval gate applies. */
     public enum SideEffect {
         /** Reads data and changes nothing. */
         READ,
@@ -30,12 +31,14 @@ public record ToolSpec(String name, String description, String parametersJson, S
         DESTRUCTIVE
     }
 
+    /** Requires a name; defaults the schema to an empty object and the side effect to {@code READ}. */
     public ToolSpec {
         Objects.requireNonNull(name, "name");
         parametersJson = parametersJson == null ? "{\"type\":\"object\",\"properties\":{}}" : parametersJson;
         sideEffect = sideEffect == null ? SideEffect.READ : sideEffect;
     }
 
+    /** Whether the tool is outbound or destructive, and so needs approval whatever the policy says. */
     public boolean requiresApprovalByNature() {
         return sideEffect == SideEffect.OUTBOUND || sideEffect == SideEffect.DESTRUCTIVE;
     }

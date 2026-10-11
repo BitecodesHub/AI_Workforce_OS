@@ -75,6 +75,11 @@ function Warning({ budget }: { budget: Budget }) {
   )
 }
 
+/**
+ * Plain-language account of the month's spend: the spend against the monthly cap with a progress bar and the
+ * remaining amount when a cap exists, otherwise the spend alone; plus the projected month-end figure and any
+ * per-run or per-agent daily caps. Rendered by BudgetBody.
+ */
 function Usage({ budget }: { budget: Budget }) {
   const used = capUsed(budget)
   const summary = capSummary(budget)
@@ -117,6 +122,13 @@ function Usage({ budget }: { budget: Budget }) {
   )
 }
 
+/**
+ * Form for administrators to set the monthly, per-run and per-agent daily caps and the behaviour at the cap.
+ * Each field is parsed with parseCap on submit; an invalid entry is shown at its field and nothing is sent.
+ * A valid submit calls useSaveBudget with null for any empty cap, then shows a success toast; a server
+ * failure appears in a warning Notice. The field state is seeded from the budget once, which is why
+ * BudgetBody keys this component on the saved caps. Rendered only when the viewer holds budget:manage.
+ */
 function CapsForm({ budget }: { budget: Budget }) {
   const save = useSaveBudget()
   const toast = useToast()
@@ -209,6 +221,11 @@ function CapsForm({ budget }: { budget: Budget }) {
   )
 }
 
+/**
+ * Content of the budget card once the budget has loaded: the threshold warning, the usage summary and,
+ * for viewers holding budget:manage, the caps form (otherwise a read-only note). The form is keyed on the
+ * saved caps so a change made elsewhere replaces the form instead of being overwritten by stale values.
+ */
 function BudgetBody({ budget }: { budget: Budget }) {
   const canManage = can('budget:manage')
   return (
@@ -232,6 +249,12 @@ function BudgetBody({ budget }: { budget: Budget }) {
 }
 
 // @find: BudgetCard, set spending budget, monthly cap, save budget
+/**
+ * Analytics card for the workspace budget. Reads useBudget (only when the viewer holds budget:read) through
+ * QueryState; a viewer without that permission sees an explanatory sentence instead of a request. The
+ * section carries id "budget" from the first paint so the /analytics#budget link works while loading.
+ * Rendered on the Analytics page; takes no props.
+ */
 export function BudgetCard() {
   const canRead = can('budget:read')
   const budget = useBudget({ enabled: canRead })

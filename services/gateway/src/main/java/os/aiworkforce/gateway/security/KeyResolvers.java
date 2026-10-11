@@ -28,6 +28,13 @@ import reactor.core.publisher.Mono;
 @Configuration
 public class KeyResolvers {
 
+    /**
+     * Charges a request to the caller's network address.
+     *
+     * <p>Referenced by name from the pre-authentication routes in {@code application.yml}, where no
+     * token exists yet. Reads the exchange only; no side effects. The address is {@code unknown} when
+     * the connection does not expose one, which groups those callers into one shared bucket.
+     */
     // @find: rate limit by IP address, remote address key resolver, login and auth routes limit
     @Bean
     public KeyResolver remoteAddressKeyResolver() {
@@ -51,10 +58,16 @@ public class KeyResolvers {
                 .switchIfEmpty(Mono.fromSupplier(() -> remoteAddress(exchange)));
     }
 
+    /**
+     * The identity a rate limit counts against for a token: the subject, else the token identifier.
+     */
     private static String subjectOf(Jwt jwt) {
         return Optional.ofNullable(jwt.getSubject()).orElse(jwt.getClaimAsString("jti"));
     }
 
+    /**
+     * The caller's IP address as text, or {@code unknown} when the connection does not expose one.
+     */
     private static String remoteAddress(ServerWebExchange exchange) {
         InetSocketAddress remote = exchange.getRequest().getRemoteAddress();
         return remote == null || remote.getAddress() == null

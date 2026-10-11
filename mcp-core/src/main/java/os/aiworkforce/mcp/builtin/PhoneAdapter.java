@@ -47,34 +47,49 @@ import os.aiworkforce.mcp.spi.WorkspaceSecrets;
  */
 public final class PhoneAdapter implements McpServerAdapter {
 
+    /** Logs refusals by status only; never keys, numbers or call content. */
     private static final Logger log = LoggerFactory.getLogger(PhoneAdapter.class);
 
+    /** Production ElevenLabs endpoint, shared with {@link ElevenLabsConvai}. */
     public static final String BASE_URL = ElevenLabsConvai.BASE_URL;
+    /** Name of the workspace's own caller agent. */
     static final String CALLER_NAME = ElevenLabsConvai.CALLER_NAME;
 
+    /** Message when the ElevenLabs account has no number able to place calls. */
     public static final String NO_NUMBER = "No phone number is connected in ElevenLabs, so no call can be placed."
             + " Connect Twilio in Connectors and ask an agent to connect a number, or add one in ElevenLabs under"
             + " Phone numbers, then try again.";
+    /** Message when no ElevenLabs key is stored for the workspace. */
     public static final String NO_KEY = "No ElevenLabs key is stored for this workspace, so nothing was done."
             + " An administrator can add it on the Connectors page, under ElevenLabs voice.";
+    /** Message when the key store could not be asked, which is not the same as no key. */
     static final String STORE_DOWN = "Could not reach the key store, so nothing was done. Try again shortly.";
+    /** Message when ElevenLabs answers 401 or 403 to the stored key. */
     static final String KEY_REFUSED =
             "ElevenLabs did not accept the stored key. An administrator can store a new one on the Connectors page.";
 
+    /** Opening line used when the workspace caller is used and the call gives none. */
     static final String DEFAULT_FIRST_MESSAGE =
             "Hello, this is an automated assistant calling. Is now a good time to talk for a minute?";
 
     /* Writes that change what callers hear: a person approves each one, whatever the grant says. */
     private static final Set<String> ASKS_FIRST = Set.of("create_voice_agent", "update_voice_agent");
+    /** Most transcript turns returned by get_call, to keep the result small. */
     private static final int TRANSCRIPT_TURNS = 40;
 
     private final List<ToolDefinition> tools;
     private final ObjectMapper json;
+    /** Client for the ElevenLabs endpoints; the key is passed per call. */
     private final ElevenLabsConvai convai;
+    /** Late-bound key source, a supplier because the store is wired after the registry is built. */
     private final Supplier<WorkspaceSecrets> secrets;
     /* The caller agent's id per workspace, so it is looked up once and not on every call. */
     private final Map<String, String> callerAgents = new ConcurrentHashMap<>();
 
+    /**
+     * Builds the adapter and its ElevenLabs client. No network call is made here. A null secrets
+     * supplier, or one that gives null, means every call answers that no key is stored.
+     */
     public PhoneAdapter(
             List<ToolDefinition> tools,
             ObjectMapper json,
@@ -87,32 +102,42 @@ public final class PhoneAdapter implements McpServerAdapter {
         this.secrets = secrets;
     }
 
+    /** The server name, {@code phone}. */
     @Override
     public String server() {
         return "phone";
     }
 
+    /** The phone tools, defined in the sandbox registry. */
     @Override
     public List<ToolDefinition> tools() {
         return tools;
     }
 
+    /** Built in: nothing to connect through Connectors; the key comes from the workspace's voice key. */
     @Override
     public boolean isBuiltIn() {
         return true;
     }
 
+    /** Always true: there is no connection of its own to check. A missing key is reported by each call. */
     @Override
     public Mono<Boolean> healthCheck(String credential) {
         return Mono.just(true);
     }
 
+    /** True for creating or changing a voice agent, so the console marks those as asking first. */
     @Override
     public boolean asksEveryCall(String tool) {
         return ASKS_FIRST.contains(tool);
     }
 
     // @find: voice agent changes ask first, approval for create or update voice agent
+    /**
+     * For {@code create_voice_agent} and {@code update_voice_agent}, the reason a person must approve
+     * even though the tool is only a write; empty for every other tool. Reads the agent name from the
+     * arguments for the sentence only. Contacts nothing.
+     */
     @Override
     public Optional<String> approvalReason(ToolInvocation invocation) {
         if (!ASKS_FIRST.contains(invocation.tool())) {
@@ -132,6 +157,17 @@ public final class PhoneAdapter implements McpServerAdapter {
     }
 
     // @find: run phone tool, place call, get call, list calls, voice agents
+    /**
+     * Runs one phone tool. The credential argument is unused; the ElevenLabs key is read from the
+     * workspace secrets just before the call.
+     *
+     * <p>Tools and side-effect classes: {@code place_call} outbound (rings a real telephone, asks a
+     * person first, never retried here); {@code create_voice_agent} and {@code update_voice_agent}
+     * write and always ask first; {@code get_call}, {@code list_calls}, {@code list_voice_agents} and
+     * {@code list_phone_numbers} read. Failure behaviour: every known failure (no key, key store
+     * down, key refused, provider error, provider unreachable) becomes a failed result with a plain
+     * sentence. A timeout is left to the gateway, which reports an unknown outcome for a call placed.
+     */
     @Override
     public Mono<ToolResult> invoke(ToolInvocation invocation, String credential) {
         Instant startedAt = Instant.now();
@@ -172,6 +208,11 @@ public final class PhoneAdapter implements McpServerAdapter {
         }
     }
 
+    /**
+     * Looks the workspace's ElevenLabs key up just before use, never keeping it. Runs on a blocking
+     * scheduler because the store is a blocking call. Throws {@code Plain} when there is no store, no key
+     * or the store could not be asked.
+     */
     private String keyOf(String orgId) {
         WorkspaceSecrets source = secrets == null ? null : secrets.get();
         if (source == null) {
@@ -189,6 +230,14 @@ public final class PhoneAdapter implements McpServerAdapter {
     // ---- place_call ---------------------------------------------------------------------------
 
     // @find: place outbound phone call
+    /**
+     * Places one outbound call. Flow: normalise and check the number ({@link PhoneNumbers}); require
+     * a purpose or a named agent; list the account's numbers and pick one able to call out; resolve
+     * the agent (named, or the workspace caller); start the call with the purpose as a per-call
+     * override. Side effects: ElevenLabs lists numbers and agents, may create the caller agent, then
+     * starts the call, which rings a real phone. Nothing is created when the account has no number.
+     * Returns the call id for {@code get_call}.
+     */
     private Mono<ToolResult> placeCall(ToolInvocation invocation, JsonNode arguments, String key) {
         String to = PhoneNumbers.normalise(arguments.path("to_number").asText(""));
         String problem = PhoneNumbers.problem(to);
@@ -246,7 +295,10 @@ public final class PhoneAdapter implements McpServerAdapter {
         });
     }
 
-    /** The workspace's caller agent, found by name or made once. */
+    /**
+     * The workspace's caller agent, found by name or made once. The id is remembered per workspace.
+     * Creation is a one-off write to the ElevenLabs account and is the only side effect.
+     */
     private Mono<String> callerAgent(String orgId, String key) {
         String known = callerAgents.get(orgId);
         if (known != null) {
@@ -266,6 +318,10 @@ public final class PhoneAdapter implements McpServerAdapter {
                 .doOnNext(id -> callerAgents.put(orgId, id));
     }
 
+    /**
+     * The standing instructions for a call: say it is automated, stay brief and on purpose, make no
+     * commitments, and stop when asked. The purpose is appended.
+     */
     static String promptFor(String purpose) {
         return "You are an AI assistant making a short phone call on behalf of a team. Say early in the call that you"
                 + " are an automated assistant. Be polite and brief, stay on the purpose below, and do not make"
@@ -276,6 +332,7 @@ public final class PhoneAdapter implements McpServerAdapter {
     // ---- Agents and numbers -------------------------------------------------------------------
 
     // @find: list voice agents tool
+    /** Lists the account's voice agents (read). */
     private Mono<ToolResult> listAgents(String key) {
         return convai.agents(key, null).map(agents -> {
             ArrayNode items = json.createArrayNode();
@@ -286,6 +343,10 @@ public final class PhoneAdapter implements McpServerAdapter {
     }
 
     // @find: create voice agent tool
+    /**
+     * Creates a voice agent (write, asks first). Refuses when an agent of the same name exists, so a
+     * repeated request cannot create a duplicate. Needs a name and a prompt.
+     */
     private Mono<ToolResult> createAgent(JsonNode arguments, String key) {
         String name = text(arguments, "name");
         String prompt = text(arguments, "prompt");
@@ -311,6 +372,10 @@ public final class PhoneAdapter implements McpServerAdapter {
     }
 
     // @find: update voice agent tool
+    /**
+     * Changes a named voice agent (write, asks first). At least one of name, prompt, first message,
+     * voice or language must be given; unspecified settings are left as they are.
+     */
     private Mono<ToolResult> updateAgent(JsonNode arguments, String key) {
         String wanted = text(arguments, "agent");
         if (wanted == null) {
@@ -341,6 +406,7 @@ public final class PhoneAdapter implements McpServerAdapter {
     }
 
     // @find: list phone numbers in ElevenLabs tool
+    /** Lists the numbers on the ElevenLabs account with their provider, outbound ability and assigned agent (read). */
     private Mono<ToolResult> listPhoneNumbers(String key) {
         return convai.phoneNumbers(key).map(numbers -> {
             ArrayNode items = json.createArrayNode();
@@ -365,6 +431,10 @@ public final class PhoneAdapter implements McpServerAdapter {
     // ---- get_call and list_calls ------------------------------------------------------------------
 
     // @find: get call status, call transcript, call summary
+    /**
+     * Reads one call (read): status, length, summary, whether it succeeded and up to 40 transcript
+     * turns, each shortened. The call id must look like an ElevenLabs conversation id.
+     */
     private Mono<ToolResult> getCall(JsonNode arguments, String key) {
         String id = arguments.path("call_id").asText("").strip();
         if (!id.matches("[A-Za-z0-9_-]{4,128}")) {
@@ -403,6 +473,10 @@ public final class PhoneAdapter implements McpServerAdapter {
     }
 
     // @find: list recent phone calls
+    /**
+     * Lists recent calls (read), 1 to 50, for the named agent or else the workspace caller. An unknown
+     * agent name is refused; a workspace with no caller agent yet simply has no calls.
+     */
     private Mono<ToolResult> listCalls(ToolInvocation invocation, JsonNode arguments, String key) {
         int limit = Math.max(1, Math.min(arguments.path("limit").asInt(10), 50));
         String agentAsked = text(arguments, "agent");
@@ -445,6 +519,7 @@ public final class PhoneAdapter implements McpServerAdapter {
 
     // ---- Helpers ------------------------------------------------------------------------------
 
+    /** Wraps items as {@code {count, items}}. */
     private ObjectNode list(ArrayNode items) {
         ObjectNode content = json.createObjectNode();
         content.put("count", items.size());
@@ -452,11 +527,16 @@ public final class PhoneAdapter implements McpServerAdapter {
         return content;
     }
 
+    /** A trimmed text argument, or null when absent or blank. */
     private static String text(JsonNode arguments, String field) {
         String value = arguments.path(field).asText("").strip();
         return value.isEmpty() ? null : value;
     }
 
+    /**
+     * Turns an ElevenLabs HTTP error into one plain sentence: 401 or 403 means the key was refused, 404
+     * means not found, otherwise the status and a short detail from the reply.
+     */
     private ToolResult vendorRefusal(WebClientResponseException refused) {
         int status = refused.getStatusCode().value();
         if (status == 401 || status == 403) {
@@ -479,6 +559,7 @@ public final class PhoneAdapter implements McpServerAdapter {
                 + (detail.isBlank() ? "." : ": " + trim(detail, 200)));
     }
 
+    /** Shortens text to the limit and adds an ellipsis. */
     static String trim(String text, int limit) {
         return text.length() <= limit ? text : text.substring(0, limit) + "...";
     }

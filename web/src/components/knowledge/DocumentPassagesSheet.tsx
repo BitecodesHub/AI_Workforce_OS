@@ -14,6 +14,12 @@ import type { SourceDocument } from '../../lib/queries'
  * the size limit, or words the document simply does not use are all visible here.
  */
 
+/**
+ * Reads useDocumentPassages(sourceId, document.id) and lists the passages in reading order.
+ * States: a loading skeleton, an error Notice with a Try again button (refetch), an explanation when there
+ * are no passages (adding the document's skipReason when it has one) and otherwise a polite count line
+ * and a numbered list with page and heading, plus "Show more passages" for the next page (fetchNextPage).
+ */
 function Passages({ sourceId, document }: { sourceId: string; document: SourceDocument }) {
   const passages = useDocumentPassages(sourceId, document.id)
 

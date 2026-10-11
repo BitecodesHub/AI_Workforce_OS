@@ -44,21 +44,35 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  * administrator is still looking at the form rather than by an agent's first failed call. It is
  * stored encrypted for the workspace and decrypted only for the internal credential endpoint.
  * Neither the token nor its ciphertext is ever logged, audited or returned.
+ *
+ * <p>Called by {@code IntegrationController} for the console routes and the internal credential
+ * routes. It checks credentials through the connector adapters of the {@code ToolGateway}, saves
+ * {@code Connection} rows, delegates sign-in connectors (Google, Microsoft, Salesforce) to
+ * {@code OAuthService}, and writes audit entries through {@code AuditClient}.
  */
 @Service
 public class ConnectorService {
 
     private static final Logger log = LoggerFactory.getLogger(ConnectorService.class);
+    /** The longest a provider check may take before it counts as failed. */
     private static final Duration CHECK_TIMEOUT = Duration.ofSeconds(15);
 
+    /** Repository for the stored connections. */
     private final Connections connections;
+    /** Gives access to the connector adapters that perform the provider checks. */
     private final ToolGateway gateway;
+    /** Catalog entries: display names, auth type and credential fields. */
     private final ConnectorCatalog catalog;
+    /** Encrypts and decrypts credentials per workspace. */
     private final EnvelopeEncryptionService encryption;
+    /** Records connect, disconnect and reconnect events. */
     private final AuditClient audit;
+    /** Handles tokens of sign-in connectors. */
     private final OAuthService oauth;
+    /** Used to assemble multi-part credentials into one JSON value. */
     private final ObjectMapper json = new ObjectMapper();
 
+    /** Creates the service with its collaborators; all are required. */
     public ConnectorService(
             Connections connections,
             ToolGateway gateway,
@@ -74,14 +88,25 @@ public class ConnectorService {
         this.oauth = oauth;
     }
 
-    /** The result of a check, as the console shows it. */
+    /**
+     * The result of a check, as the console shows it.
+     *
+     * <p>Returned by {@link #test}. {@code message} is a plain sentence and never contains a token.
+     */
     public record CheckOutcome(boolean ok, String message, Instant checkedAt) {}
 
     /**
      * Verifies a token with the provider and stores it.
      *
+     * <p>Delegates to the multi-part overload with no extra fields.
+     *
      * @throws ApiException {@code connector_not_live} when the connector has no live adapter,
      *     {@code connector_check_failed} when the provider did not accept the token
+     * @param orgId the workspace
+     * @param server the connector key
+     * @param token the pasted token
+     * @param accountLabel an optional label; the provider's account name is used when blank
+     * @return the saved connection
      */
     public Connection connect(UUID orgId, String server, String token, String accountLabel) {
         return connect(orgId, server, token, Map.of(), accountLabel);
@@ -91,6 +116,17 @@ public class ConnectorService {
     /**
      * As {@link #connect(UUID, String, String, String)}, for a connector whose credential has several
      * parts (a site, an email and a token). The parts are stored together as one encrypted JSON value.
+     *
+     * <p>Flow: refuses connectors with no live adapter or that use sign-in; assembles the credential;
+     * asks the adapter to check it (up to 15 seconds); encrypts it for the workspace; creates or updates
+     * the connection, retrying on a concurrent save; and writes an {@code integration.connect} audit
+     * entry with the connector and account label, never the token. Called by
+     * {@code IntegrationController.connect}.
+     *
+     * @param singleToken the token, for connectors with a single credential field
+     * @param fields the credential parts by field key, for connectors with several
+     * @return the saved connection
+     * @throws ApiException {@code VALIDATION_FAILED} for an empty or malformed field
      */
     public Connection connect(UUID orgId, String server, String singleToken, Map<String, String> fields, String accountLabel) {
         McpServerAdapter adapter = adapter(server);
@@ -139,7 +175,18 @@ public class ConnectorService {
     }
 
     // @find: test connection, check credential, Test button, POST /api/integrations/{server}/test
-    /** Checks the stored token again and records the result. With no token, nothing is checked. */
+    /**
+     * Checks the stored token again and records the result. With no token, nothing is checked.
+     *
+     * <p>Flow: reads the stored connection; decrypts the credential (for sign-in connectors through
+     * {@code OAuthService.credentialFor}, which may refresh it); asks the adapter to check it; records the
+     * result on the connection and saves it. A connection needing a reconnect only has its check time
+     * touched. If the row changed meanwhile, the stored state is re-read and reported. Called by
+     * {@code IntegrationController.test}. An unreadable credential is reported as a failed check, not
+     * thrown.
+     *
+     * @return the outcome shown by the console
+     */
     public CheckOutcome test(UUID orgId, String server) {
         McpServerAdapter adapter = adapter(server);
         ConnectorInfo info = info(server);
@@ -196,7 +243,15 @@ public class ConnectorService {
     }
 
     // @find: disconnect connector, remove credential, Disconnect button, DELETE /api/integrations/{server}/connection
-    /** Forgets the stored token. Disconnecting a connector that was never connected is not an error. */
+    /**
+     * Forgets the stored token. Disconnecting a connector that was never connected is not an error.
+     *
+     * <p>Clears the credential on the stored row and saves it, retrying on a concurrent save, and
+     * writes an {@code integration.disconnect} audit entry only when a live connection existed. Called by
+     * {@code IntegrationController.disconnect}.
+     *
+     * @throws ApiException not found when the connector is unknown
+     */
     public void disconnect(UUID orgId, String server) {
         adapter(server);
         // Retried like connect, so a check saving its result at the same moment cannot turn a
@@ -221,6 +276,12 @@ public class ConnectorService {
      * <p>For a sign-in connector this is a fresh access token, renewed first when it is about to
      * expire. A connection that needs a new consent still answers with its stale token, so the call
      * fails with the provider's own refusal instead of silently returning practice data.
+     *
+     * <p>Sign-in connectors are resolved by {@code OAuthService.credentialFor}; pasted tokens are
+     * decrypted directly, and a row that cannot be decrypted is logged (without the value) and treated as
+     * empty. Used by {@link #lookup} and not exposed by an endpoint on its own.
+     *
+     * @return the credential, or empty when nothing live is stored
      */
     public Optional<String> credential(UUID orgId, String server) {
         Optional<Connection> stored = connections.findByOrgIdAndServer(orgId, server);
@@ -239,7 +300,13 @@ public class ConnectorService {
         });
     }
 
-    /** What an internal caller is told about a connection: its state, and the token when it has one. */
+    /**
+     * What an internal caller is told about a connection: its state, and the token when it has one.
+     *
+     * <p>Built by {@link #lookup} and turned into {@code InternalCredential} by the controller. The
+     * constants name the possible states; {@code UNREADABLE} means a credential is stored but could not
+     * be decrypted.
+     */
     public record CredentialLookup(String state, String value, String message) {
 
         public static final String CONNECTED = "connected";
@@ -256,6 +323,13 @@ public class ConnectorService {
      * hands over no token: the caller must fail the call plainly instead of sending a token the
      * provider has already refused. {@code none} means nothing live is stored (never connected, or
      * disconnected); the caller decides from its own record whether that is a change.
+     *
+     * <p>Flow: no live row gives {@code none}; a flagged row gives {@code reconnect_required} with the
+     * stored reason; otherwise the credential is resolved (which may refresh a sign-in token) and the
+     * row is read again in case that refresh flagged it. Failures give {@code unreadable} rather than an
+     * exception. Called by {@code IntegrationController.credential}. Never logs the token.
+     *
+     * @return the state, with the token only when connected
      */
     public CredentialLookup lookup(UUID orgId, String server) {
         Optional<Connection> stored = connections.findByOrgIdAndServer(orgId, server);
@@ -285,6 +359,13 @@ public class ConnectorService {
      * A new credential for a sign-in connector after the provider rejected {@code rejected} with
      * 401; empty when the sign-in cannot be renewed, in which case the connection is marked as
      * needing a reconnect. Audited, because it changes what an administrator sees.
+     *
+     * <p>Does nothing for connectors that do not use sign-in or have no live row. Otherwise it
+     * delegates to {@code OAuthService.refreshRejected}, which may call the provider and save new tokens,
+     * and writes an {@code integration.reconnect_required} audit entry when no new token was obtained.
+     * Called by {@code IntegrationController.refresh}.
+     *
+     * @param rejected the token the provider refused
      */
     public Optional<String> refreshRejected(UUID orgId, String server, String rejected) {
         if (!oauth.isOAuth(server)) {
@@ -303,7 +384,16 @@ public class ConnectorService {
     }
 
     // @find: mark connector needs reconnect
-    /** Marks a sign-in connector as needing an administrator to connect it again. */
+    /**
+     * Marks a sign-in connector as needing an administrator to connect it again.
+     *
+     * <p>Ignored for connectors that do not use sign-in, for practice data and for connections already
+     * flagged. Otherwise {@code OAuthService} flags and saves the row and an
+     * {@code integration.reconnect_required} audit entry is written. Called by
+     * {@code IntegrationController.reconnectRequired}.
+     *
+     * @param reason a plain sentence for the administrator
+     */
     public void requireReconnect(UUID orgId, String server, String reason) {
         if (!oauth.isOAuth(server)) {
             return;
@@ -317,7 +407,15 @@ public class ConnectorService {
                 });
     }
 
-    /** The one string stored and checked: the token itself, or the parts as JSON in the catalog's order. */
+    /**
+     * The one string stored and checked: the token itself, or the parts as JSON in the catalog's order.
+     *
+     * <p>A connector with fewer than two credential fields takes the single token. Otherwise every
+     * catalog field must be present, non-blank and at most 4096 characters, and is address-checked
+     * before being written into one JSON object.
+     *
+     * @throws ApiException {@code VALIDATION_FAILED} naming the offending field
+     */
     private String credential(ConnectorInfo info, String singleToken, Map<String, String> fields) {
         List<CredentialField> expected = info.credentialFields();
         if (expected.size() < 2) {
@@ -372,6 +470,12 @@ public class ConnectorService {
      * A site or subdomain that cannot be an address of the provider, or an email that is not one,
      * is refused under its own field, before anything is sent, so the form can show the problem next to the box it is in.
      */
+    /**
+     * Validates the {@code site}, {@code subdomain} and {@code email} credential fields (other keys
+     * pass untouched).
+     *
+     * @throws ApiException {@code VALIDATION_FAILED} with the field and a plain sentence
+     */
     private static void checkAddress(String key, String value) {
         try {
             switch (key) {
@@ -393,6 +497,12 @@ public class ConnectorService {
         }
     }
 
+    /**
+     * Runs the adapter's provider check, waiting up to 15 seconds. Never throws: a missing result or any
+     * runtime failure becomes a failed check with a plain message.
+     *
+     * @param token the credential being checked; not logged
+     */
     private ConnectionCheck check(McpServerAdapter adapter, String token) {
         try {
             ConnectionCheck check = adapter.check(token).block(CHECK_TIMEOUT);
@@ -402,14 +512,25 @@ public class ConnectorService {
         }
     }
 
+    /**
+     * The adapter registered for a connector.
+     *
+     * @throws ApiException not found when the connector is unknown
+     */
     private McpServerAdapter adapter(String server) {
         return gateway.adapter(server).orElseThrow(() -> ApiException.notFound("connector", server));
     }
 
+    /**
+     * The catalog entry for a connector.
+     *
+     * @throws ApiException not found when the connector is not in the catalog
+     */
     private ConnectorInfo info(String server) {
         return catalog.find(server).orElseThrow(() -> ApiException.notFound("connector", server));
     }
 
+    /** A new, unsaved connection for a workspace and connector, with a time-ordered identifier and the key as display name. */
     private static Connection fresh(UUID orgId, String server) {
         Connection connection = new Connection();
         connection.setId(UuidV7.generate());
@@ -419,10 +540,16 @@ public class ConnectorService {
         return connection;
     }
 
+    /** The current request's actor, or the system actor when none is present, for audit entries. */
     private static Actor actor() {
         return RequestContext.actor().orElse(Actor.SYSTEM);
     }
 
+    /**
+     * The calling person's identifier, recorded as who connected.
+     *
+     * @return null when there is no actor or the human identifier is not a valid UUID
+     */
     private static UUID actorUuid() {
         return RequestContext.actor()
                 .map(Actor::humanId)

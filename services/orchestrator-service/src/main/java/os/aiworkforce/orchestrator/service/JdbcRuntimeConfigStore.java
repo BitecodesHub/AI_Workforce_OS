@@ -28,11 +28,23 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
 
     private final JdbcTemplate jdbc;
 
+    /**
+     * Uses the service's own JDBC template, so every statement runs against this service's schema.
+     *
+     * @param jdbc the Spring JDBC template
+     */
     public JdbcRuntimeConfigStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
     // @find: read setting
+    /**
+     * Reads one stored value.
+     *
+     * @param key the setting key
+     * @param orgId the workspace id as text, or null for the platform-wide value
+     * @return the stored text, or empty when nothing is saved at that level (the caller then uses its default)
+     */
     @Override
     public Optional<String> read(String key, String orgId) {
         List<String> values = orgId == null
@@ -47,6 +59,20 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
     }
 
     // @find: write setting, save setting
+    /**
+     * Saves a value, replacing any earlier one at the same level.
+     *
+     * <p>Reads the current value, then upserts: the platform row (null workspace) and each workspace row
+     * have their own unique index, which the two statements name. Side effects: one insert or update,
+     * stamping the time and {@code actorId}. The read and the write are separate statements, so the
+     * returned previous value can be stale under a concurrent write; it is used for audit only.
+     *
+     * @param key the setting key
+     * @param orgId the workspace id as text, or null for the platform-wide value
+     * @param value the new value, as text
+     * @param actorId who made the change, stored in {@code updated_by}
+     * @return the value that was stored before, or empty
+     */
     @Override
     public Optional<String> write(String key, String orgId, String value, String actorId) {
         Optional<String> previous = read(key, orgId);
@@ -78,6 +104,17 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
     }
 
     // @find: clear setting, reset to default
+    /**
+     * Removes a saved value so the setting falls back to the level below it or to its default.
+     *
+     * <p>Side effect: deletes at most one row. Nothing is recorded about who cleared it; {@code actorId}
+     * is accepted to satisfy the interface and is not stored.
+     *
+     * @param key the setting key
+     * @param orgId the workspace id as text, or null for the platform-wide value
+     * @param actorId who made the change
+     * @return the value that was removed, or empty when there was none
+     */
     @Override
     public Optional<String> clear(String key, String orgId, String actorId) {
         Optional<String> previous = read(key, orgId);
@@ -90,6 +127,13 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
     }
 
     // @find: read all settings for workspace
+    /**
+     * Every value saved for one workspace, ordered by key, with when and by whom each was last changed.
+     * Platform-wide rows are not included. Read only.
+     *
+     * @param orgId the workspace id as text; must be a valid UUID
+     * @return the stored values; empty when the workspace has overridden nothing
+     */
     @Override
     public List<StoredValue> readAll(String orgId) {
         return jdbc.query(
@@ -106,6 +150,7 @@ public class JdbcRuntimeConfigStore implements RuntimeConfigStore {
                 uuid(orgId));
     }
 
+    // The org_id column is a UUID, so a malformed id fails here with IllegalArgumentException.
     private static UUID uuid(String orgId) {
         return UUID.fromString(orgId);
     }

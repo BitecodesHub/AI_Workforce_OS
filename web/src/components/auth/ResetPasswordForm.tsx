@@ -33,6 +33,15 @@ const PASSWORD_ID = 'reset-password'
 const CONFIRMATION_ID = 'reset-password-again'
 
 // @find: ResetPasswordForm, reset password, POST /api/auth/password-reset
+/**
+ * Form on the sign-in page that sets a new password from an emailed reset token.
+ * Flow: the heading takes focus on arrival (an effect). Submitting validates locally first, so a link is
+ * not spent on a bad entry: at least MINIMUM_LENGTH characters, and the confirmation must match; the
+ * offending field takes focus and shows its message, which clears when the person retypes that field.
+ * When valid it calls resetPassword(token, password) from lib/accountQueries and then onDone. A failure
+ * shows an ApiError message in a warning Notice, or NETWORK_ERROR_COPY when the request never reached the
+ * server. The button shows a pending state and a second submit is ignored while pending.
+ */
 export function ResetPasswordForm({ token, onDone }: { token: string; onDone: () => void }) {
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')

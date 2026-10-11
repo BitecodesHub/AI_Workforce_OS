@@ -13,6 +13,14 @@ import './attachments.css'
  */
 
 // @find: AttachmentChips, attachment chips, attachment chips, files being attached, upload progress, remove attachment
+/**
+ * Chips for the files attached to the message being written, shown above the Composer text box.
+ * Props: items (DraftAttachment records from useAttachments), onRemove (removes by local id), statusMessage
+ * (announced politely in a visually hidden live region as files upload, attach or fail) and notice (why some
+ * files were not added, shown as a caption). Each chip shows a preview thumbnail or a type icon, the name,
+ * the size, an upload progress bar with progressbar semantics while uploading, the failure reason when an
+ * upload failed, and a Remove button. Stateless; all state lives in useAttachments.
+ */
 export function AttachmentChips({
   items,
   onRemove,
@@ -87,6 +95,8 @@ export function AttachmentChips({
 
 // @find: AttachmentDropOverlay, attachment drop overlay, attachment chips, files being attached, upload progress, remove attachment
 /** Laid over the chat panel while files are dragged across it. */
+/**
+ */
 export function AttachmentDropOverlay({ visible }: { visible: boolean }) {
   if (!visible) return null
   return (

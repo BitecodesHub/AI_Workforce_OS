@@ -15,6 +15,9 @@ import java.util.regex.Pattern;
  */
 public final class SecretGuard {
 
+    /**
+     * Regular expressions for secret-looking text: keyword-introduced values, well-known key prefixes, private key headers, tokens and long unbroken key-like runs. Any single match counts.
+     */
     private static final List<Pattern> PATTERNS = List.of(
             // Words that introduce a secret value: "the password is hunter2", "api key: abc".
             Pattern.compile(
@@ -32,8 +35,12 @@ public final class SecretGuard {
             // A long unbroken run of key-like characters.
             Pattern.compile("\\b[A-Za-z0-9_-]{40,}\\b"));
 
+    /**
+     * Candidate card numbers: 13 to 19 digits, optionally separated by spaces or hyphens. A candidate counts only when it also passes the Luhn check.
+     */
     private static final Pattern CARD = Pattern.compile("\\b(?:\\d[ -]?){13,19}\\b");
 
+    /** Not instantiable: this is a static utility. */
     private SecretGuard() {}
 
     /** Whether the text looks like it holds a secret. */
@@ -55,6 +62,10 @@ public final class SecretGuard {
         return false;
     }
 
+    /**
+     * Luhn checksum test for a string of digits. Returns false when the length is outside 13 to 19 digits,
+     * which keeps ordinary long numbers such as phone numbers and identifiers from being refused.
+     */
     private static boolean luhn(String digits) {
         if (digits.length() < 13 || digits.length() > 19) {
             return false;

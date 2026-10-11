@@ -50,8 +50,10 @@ public class GeneralEmployee {
     /** What it does, in one line written about it (V20 writes the same line for existing workspaces). */
     public static final String DESCRIPTION =
             "Takes any request no specialist covers: questions, explanations, drafting, planning and analysis.";
+    // Step budget written into the first version; the agent's own settings can change it later.
     static final int MAX_STEPS = 10;
 
+    // The system prompt of revision 1. Teaches the agent to answer with stated assumptions, to ask at most twice through person__ask_question, and to hand specialist work to a named colleague.
     static final String PROMPT =
             """
             You are the workspace's General Employee: you take any request no specialist covers, from questions and explanations to drafting, planning and analysis.
@@ -83,6 +85,13 @@ public class GeneralEmployee {
     private final TransactionTemplate requiresNew;
     private final Set<UUID> ensured = ConcurrentHashMap.newKeySet();
 
+    /**
+     * Wires the repositories and a REQUIRES_NEW transaction template, so creating the agent commits on its own and never joins, or rolls back with, the caller's transaction.
+     *
+     * @param agents agent repository
+     * @param versions agent version repository
+     * @param transactionManager used only to build the independent transaction template
+     */
     public GeneralEmployee(Agents agents, AgentVersions versions, PlatformTransactionManager transactionManager) {
         this.agents = agents;
         this.versions = versions;
@@ -95,6 +104,15 @@ public class GeneralEmployee {
      * Creates the workspace's General Employee when it has none, choosing a free key from
      * {@link #FALLBACK_KEYS}. Does nothing when a flagged agent already exists, whatever its
      * status or key - a paused or retired General stays paused or retired. Never throws.
+     *
+     * <p>Flow: skips at once for a null id or a workspace already ensured in this process; otherwise
+     * opens a separate transaction, looks for a flagged agent, picks the first free key, then saves
+     * the agent, its first version (revision 1, created by "system") and points the agent at that
+     * version. Side effects: two inserts and one update. Failure behaviour: losing a race to a
+     * concurrent creator counts as success; any other error is logged and swallowed, and the
+     * workspace is tried again on the next call.
+     *
+     * @param orgId the workspace to guarantee a fallback for; null is ignored
      */
     public void ensure(UUID orgId) {
         if (orgId == null || ensured.contains(orgId)) {
@@ -147,7 +165,13 @@ public class GeneralEmployee {
     }
 
     // @find: find active fallback agent
-    /** The active General Employee among the workspace's agents, if any. */
+    /**
+     * The active General Employee among the workspace's agents, if any. Pure: reads the list it is
+     * given and touches no database. Used by CoordinatorService to find the agent of last resort.
+     *
+     * @param workspaceAgents the workspace's agents, already loaded by the caller
+     * @return the flagged agent whose status is active, or empty when there is none
+     */
     public Optional<Agent> activeIn(List<Agent> workspaceAgents) {
         return workspaceAgents.stream()
                 .filter(GeneralEmployee::isFallback)
@@ -155,6 +179,8 @@ public class GeneralEmployee {
                 .findFirst();
     }
 
+    // @find: is fallback agent
+    /** True when {@code agent} is non-null and carries the fallback flag. Safe for null, so it can be used as a stream filter. */
     public static boolean isFallback(Agent agent) {
         return agent != null && agent.isFallback();
     }

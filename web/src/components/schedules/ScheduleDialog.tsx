@@ -15,11 +15,13 @@ import { profile } from '../../lib/session'
 import { useToast } from '../../lib/toast'
 import { SCHEDULE_EXAMPLES, scheduleDebounceKey } from './scheduleModel'
 
+/** Field length limits and the delay in milliseconds before a "When" phrase is previewed. */
 const NAME_MAX = 120
 const INSTRUCTION_MAX = 10_000
 const WHEN_MAX = 200
 const DEBOUNCE_MS = 300
 
+/** Names the server's field keys the way the form words them, so API errors read correctly. */
 const FIELD_LABELS: Record<string, string> = { name: 'Name', agentId: 'Agent', instruction: 'Instruction', text: 'When' }
 
 /** An active agent this workspace can hand a schedule to. Matches TaskDialog's own rule: a run
@@ -27,6 +29,7 @@ const FIELD_LABELS: Record<string, string> = { name: 'Name', agentId: 'Agent', i
 const canSchedule = (agent: { status: string; revision: number | null }) =>
   agent.status === 'active' && agent.revision != null
 
+/** Select label for an agent: the name and category, with "(not available)" when it cannot take schedules. */
 function agentOptionLabel(agent: { name: string; category: string; status: string; revision: number | null }): string {
   const category = CATEGORY_LABEL[agent.category] ?? sentenceCase(agent.category)
   const base = category ? `${agent.name} — ${category}` : agent.name

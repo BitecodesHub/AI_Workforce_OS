@@ -48,11 +48,18 @@ public class ConversationAccess {
                               where p.conversation_id = c.id and p.user_id = ?)
             """;
 
+    /** Looks up conversations of a workspace. */
     private final Conversations conversations;
+    /** The people added to private conversations. */
     private final ConversationParticipants participants;
+    /** Used for the set-based queries that find hidden conversations, goals and tasks. */
     private final JdbcTemplate jdbc;
+    /** Receives the entry written when {@code chat:read_all} is the only reason a read is allowed. */
     private final AuditClient audit;
 
+    /**
+     * Creates the access rules over the conversation and participant repositories, JDBC and the audit client.
+     */
     public ConversationAccess(
             Conversations conversations,
             ConversationParticipants participants,
@@ -64,7 +71,14 @@ public class ConversationAccess {
         this.audit = audit;
     }
 
-    /** The conversation, when this person may read it; otherwise "not found". */
+    /**
+     * The conversation, when this person may read it; otherwise "not found".
+     *
+     * <p>Loads the conversation within the workspace and applies {@link #canRead}. A missing
+     * conversation and one the person may not read give the same {@code not found} error, so a
+     * private thread is never confirmed to exist. Read only; used by the chat controllers and by
+     * {@code AttachmentService} and {@code FeedbackController}.
+     */
     // @find: require access to conversation, check chat permission
     public Conversation require(UUID orgId, Actor actor, UUID id) {
         Conversation conversation = conversations
@@ -79,6 +93,10 @@ public class ConversationAccess {
     /**
      * Like {@link #require}, for a read that should be logged when {@code chat:read_all} is the only
      * reason it is allowed.
+     *
+     * <p>Side effect: writes a {@code chat.read_private} audit entry naming the thread's creator
+     * when the conversation is private and the actor is not a member. Failures are those of
+     * {@link #require}.
      */
     // @find: require read access to conversation
     public Conversation requireForRead(UUID orgId, Actor actor, UUID id) {
@@ -96,11 +114,18 @@ public class ConversationAccess {
         return conversation;
     }
 
+    /**
+     * Whether the person may read the conversation: it is a workspace one, they are a member, or they hold {@code chat:read_all}. Pure.
+     */
     public boolean canRead(Conversation conversation, Actor actor) {
         return !conversation.isPrivate() || isMember(conversation, actor) || canReadAll(actor);
     }
 
-    /** The creator, or somebody they added. */
+    /**
+     * The creator, or somebody they added.
+     *
+     * <p>An actor with no person id, such as a service, is never a member.
+     */
     public boolean isMember(Conversation conversation, Actor actor) {
         String me = actor.humanId();
         if (me == null) {
@@ -110,11 +135,18 @@ public class ConversationAccess {
                 || participants.existsByConversationIdAndUserId(conversation.getId(), me);
     }
 
+    /** Whether the actor holds the {@code chat:read_all} permission. */
     public boolean canReadAll(Actor actor) {
         return actor.hasPermission(Permission.Codes.CHAT_READ_ALL);
     }
 
-    /** Only the person who started a conversation, or a holder of chat:read_all, changes who may read it. */
+    /**
+     * Only the person who started a conversation, or a holder of chat:read_all, changes who may read it.
+     *
+     * <p>Applies {@link #require} first, so an unreadable conversation is still "not found". A
+     * reader who is neither the creator nor a holder of {@code chat:read_all} is refused with
+     * {@code PERMISSION_DENIED}.
+     */
     // @find: require conversation owner, only owner can change
     public Conversation requireOwner(UUID orgId, Actor actor, UUID id) {
         Conversation conversation = require(orgId, actor, id);
@@ -127,7 +159,11 @@ public class ConversationAccess {
         return conversation;
     }
 
-    /** Goals started from a private conversation this person is not part of. Empty for a holder of chat:read_all. */
+    /**
+     * Goals started from a private conversation this person is not part of. Empty for a holder of chat:read_all.
+     *
+     * <p>One read-only query; lists use the result to leave those goals out.
+     */
     // @find: hidden goal ids, goals in private chats
     public Set<UUID> hiddenGoalIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
@@ -143,7 +179,11 @@ public class ConversationAccess {
                 me));
     }
 
-    /** Tasks of those goals. */
+    /**
+     * Tasks of those goals.
+     *
+     * <p>As {@link #hiddenGoalIds}, one read-only query joined through the goals.
+     */
     // @find: hidden task ids, tasks in private chats
     public Set<UUID> hiddenTaskIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
@@ -160,7 +200,12 @@ public class ConversationAccess {
                 me));
     }
 
-    /** Whether work from this conversation is out of this person's sight. */
+    /**
+     * Whether work from this conversation is out of this person's sight.
+     *
+     * <p>False when there is no conversation or it cannot be found; otherwise the opposite of
+     * {@link #canRead}.
+     */
     public boolean hidden(UUID orgId, Actor actor, UUID conversationId) {
         if (conversationId == null) {
             return false;
@@ -171,7 +216,11 @@ public class ConversationAccess {
                 .orElse(false);
     }
 
-    /** Conversation ids this person may not read, for filtering a list of conversation ids. */
+    /**
+     * Conversation ids this person may not read, for filtering a list of conversation ids.
+     *
+     * <p>Empty for a holder of {@code chat:read_all}; otherwise one read-only query.
+     */
     // @find: hidden conversation ids, private chats hidden from a person
     public Set<UUID> hiddenConversationIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
@@ -188,6 +237,7 @@ public class ConversationAccess {
                         p -> p.getUserId(), p -> p.getAddedBy(), (a, b) -> a, LinkedHashMap::new));
     }
 
+    /** The actor's person id, or an empty string that matches no one. */
     private static String meOrNone(Actor actor) {
         // A person with no id is matched by nothing, so every private thread is hidden from them.
         return actor.humanId() == null ? "" : actor.humanId();

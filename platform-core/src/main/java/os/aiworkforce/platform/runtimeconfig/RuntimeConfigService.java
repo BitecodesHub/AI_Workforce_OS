@@ -54,12 +54,14 @@ public class RuntimeConfigService {
     private final PlatformProperties.RuntimeConfig config;
     private final ObjectMapper json;
 
+    /** An in-process cache entry; a null value is cached too, so a missing key does not hit Redis or the database on every read until it expires. */
     private record CachedValue(String value, long expiresAtMillis) {
         boolean isFresh() {
             return System.currentTimeMillis() < expiresAtMillis;
         }
     }
 
+    /** Wires the optional store and Redis (both resolved lazily so the service still works without them) and builds the registry of known keys. */
     public RuntimeConfigService(
             ObjectProvider<RuntimeConfigStore> store,
             ObjectProvider<StringRedisTemplate> redis,
@@ -87,10 +89,12 @@ public class RuntimeConfigService {
         }
     }
 
+    /** Returns an immutable copy of every registered key, for the console settings page. */
     public Map<String, ConfigKey> registry() {
         return Map.copyOf(registry);
     }
 
+    /** Returns the registered key, failing with an {@link IllegalStateException} when the name is unknown, which is a programming error rather than a user error. */
     public ConfigKey key(String name) {
         ConfigKey key = registry.get(name);
         if (key == null) {
@@ -101,26 +105,32 @@ public class RuntimeConfigService {
 
     // ---- Typed reads ---------------------------------------------------------------------
 
+    /** Typed read: resolves the effective value (workspace override, then platform value, then default) and parses it as a boolean. */
     public boolean getBoolean(ConfigKey key, String orgId) {
         return Boolean.parseBoolean(resolve(key, orgId));
     }
 
+    /** Typed read of an integer setting; see {@link #getBoolean}. Throws {@link NumberFormatException} if the stored text is not a number. */
     public int getInt(ConfigKey key, String orgId) {
         return Integer.parseInt(resolve(key, orgId).trim());
     }
 
+    /** Typed read of a decimal setting; see {@link #getBoolean}. */
     public double getDouble(ConfigKey key, String orgId) {
         return Double.parseDouble(resolve(key, orgId).trim());
     }
 
+    /** Typed read of an ISO-8601 duration setting such as {@code PT30S}. */
     public Duration getDuration(ConfigKey key, String orgId) {
         return Duration.parse(resolve(key, orgId).trim());
     }
 
+    /** Typed read returning the raw effective text. */
     public String getString(ConfigKey key, String orgId) {
         return resolve(key, orgId);
     }
 
+    /** Typed read that splits a comma-separated value; a blank value yields an empty list. */
     public List<String> getList(ConfigKey key, String orgId) {
         String raw = resolve(key, orgId);
         if (raw == null || raw.isBlank()) {
@@ -129,6 +139,7 @@ public class RuntimeConfigService {
         return List.of(raw.split("\\s*,\\s*"));
     }
 
+    /** Typed read that parses the effective value as JSON; invalid stored JSON surfaces as an internal error naming the key. */
     public JsonNode getJson(ConfigKey key, String orgId) {
         try {
             return json.readTree(resolve(key, orgId));
@@ -165,6 +176,11 @@ public class RuntimeConfigService {
         invalidate(keyName, orgId);
     }
 
+    /**
+     * Checks a proposed value against the key type, range and allowed values before it is stored.
+     * 
+     * @throws ApiException {@code VALIDATION_FAILED} naming the key when the value is null or does not fit
+     */
     private void validate(ConfigKey key, String value) {
         if (value == null) {
             throw ApiException.validation(key.name(), "must not be empty");
@@ -198,6 +214,7 @@ public class RuntimeConfigService {
         }
     }
 
+    /** Rejects a numeric value outside the key minimum or maximum, when those bounds are set. */
     private void checkRange(ConfigKey key, double parsed) {
         if (key.minimum() != null && parsed < key.minimum().doubleValue()) {
             throw ApiException.validation(key.name(), "must be at least " + key.minimum());
@@ -209,6 +226,7 @@ public class RuntimeConfigService {
 
     // ---- Resolution ----------------------------------------------------------------------
 
+    /** Resolves the effective text for a key. Order: workspace override (only for workspace-scoped keys and a non-null organisation), then the platform value, then the compiled default. When runtime configuration is disabled the default is always returned. */
     private String resolve(ConfigKey key, String orgId) {
         if (!config.enabled()) {
             return String.valueOf(key.defaultValue());
@@ -223,6 +241,7 @@ public class RuntimeConfigService {
         return platform != null ? platform : String.valueOf(key.defaultValue());
     }
 
+    /** Reads one stored value through two cache tiers. Flow: in-process map, then Redis, then the store; a store hit is written back to Redis, and the result (even null) is kept in-process for the configured time to live. */
     private String cached(String keyName, String orgId) {
         String cacheKey = CACHE_PREFIX + (orgId == null ? "platform" : orgId) + ":" + keyName;
 
@@ -246,6 +265,7 @@ public class RuntimeConfigService {
         return value;
     }
 
+    /** Reads a value from Redis. Returns null when Redis is absent or fails; an outage is logged and never becomes a configuration outage. */
     private String fromRedis(String cacheKey) {
         StringRedisTemplate template = redis.getIfAvailable();
         if (template == null) {
@@ -260,6 +280,7 @@ public class RuntimeConfigService {
         }
     }
 
+    /** Writes a value to Redis with the configured time to live. Failures are logged at debug level and ignored because the cache is only an optimisation. */
     private void toRedis(String cacheKey, String value) {
         StringRedisTemplate template = redis.getIfAvailable();
         if (template == null) {
@@ -272,6 +293,7 @@ public class RuntimeConfigService {
         }
     }
 
+    /** Reads the durable value from the backing store. When no store is wired it returns null, or fails with {@code DEPENDENCY_DEGRADED} when read-through on cache failure is disabled. */
     private String fromStore(String keyName, String orgId) {
         RuntimeConfigStore backing = store.getIfAvailable();
         if (backing == null) {
@@ -332,6 +354,7 @@ public class RuntimeConfigService {
     public record EffectiveSetting(
             String key, String value, String source, String description, Map<String, Object> schema) {}
 
+    /** Returns the registered key, or empty when the name is unknown; the non-throwing counterpart of {@link #key}. */
     public Optional<ConfigKey> find(String name) {
         return Optional.ofNullable(registry.get(name));
     }

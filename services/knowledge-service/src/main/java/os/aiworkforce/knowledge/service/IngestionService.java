@@ -75,11 +75,13 @@ public class IngestionService {
     static final String EMBEDDING_UNAVAILABLE = "Indexed for keyword search. The embedding model could not be used, so "
             + "meaning-based search will be less accurate until it is reindexed.";
 
+    /** The prefix of the error stored on a source whose vectors could not be written; the cause is appended. */
     static final String SOURCE_VECTOR_ERROR = "Vector indexing is unavailable: ";
 
     /** A transaction that lost a race on the source's counts is run again, this many times in all. */
     private static final int ATTEMPTS = 3;
 
+    /** Formats the day a replaced version was indexed, in UTC, for the sentences shown to a person. */
     private static final DateTimeFormatter DAY =
             DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH).withZone(ZoneOffset.UTC);
 
@@ -92,6 +94,18 @@ public class IngestionService {
     private final QdrantClient vectors;
     private final TransactionTemplate transactions;
 
+    /**
+     * Creates the service.
+     *
+     * @param sources the source repository
+     * @param documents the document repository
+     * @param chunks the passage repository
+     * @param extractor reads text out of files
+     * @param chunker cuts text into passages
+     * @param embeddings turns passages into vectors
+     * @param vectors the vector store
+     * @param transactionManager used to build the short transactions that surround each remote call
+     */
     public IngestionService(
             Sources sources,
             Documents documents,
@@ -114,6 +128,10 @@ public class IngestionService {
     /** The workspace's embedding model choice; absent in tests that build this by hand. */
     private EmbeddingSettings settings;
 
+    /**
+     * Supplies the embedding settings by setter injection, optional so that tests can build the
+     * service without them; without it every new source is keyword only.
+     */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setEmbeddingSettings(EmbeddingSettings settings) {
         this.settings = settings;
@@ -124,13 +142,23 @@ public class IngestionService {
         return settings == null ? EmbeddingSettings.Choice.KEYWORD_ONLY : settings.current(orgId);
     }
 
-    /** Where a source's vectors were before a change of embedding model. */
+    /**
+     * Where a source's vectors were before a change of embedding model, returned by
+     * {@link #switchEmbedding} so that {@code EmbeddingModelChange} can remove the old vectors.
+     */
     public record PreviousEmbedding(String collection, boolean searchedByMeaning) {}
 
     // @find: switch source to a new embedding model, move source to new vector collection
     /**
      * Moves one source onto another embedding model: the new model, its width and its own
      * collection. The passages are untouched; their vectors are written again by {@link #reindex}.
+     *
+     * <p>Runs in one short transaction and updates the source row only. Called by
+     * {@code EmbeddingModelChange.run} for each source of the workspace. For a keyword-only choice it
+     * also clears the source's last error.
+     *
+     * @return where the vectors were before, so the caller can remove them
+     * @throws ApiException not found when the source does not exist in the workspace
      */
     public PreviousEmbedding switchEmbedding(UUID orgId, UUID sourceId, EmbeddingSettings.Choice choice) {
         return transactionally(() -> {
@@ -150,6 +178,10 @@ public class IngestionService {
         });
     }
 
+    /**
+     * The vector collection for a model choice: the model's own collection when it searches by meaning,
+     * otherwise the width-only name used for keyword-only sources.
+     */
     static String collectionOf(UUID orgId, EmbeddingSettings.Choice choice) {
         return choice.searchesByMeaning()
                 ? QdrantClient.collectionFor("aiwos", orgId, choice.provider(), choice.model(), choice.dimension())
@@ -169,7 +201,11 @@ public class IngestionService {
         /** Both are kept: the new file is stored under the next free name, "Contract (2).pdf". */
         KEEP_BOTH;
 
-        /** Absent means replace, which is what re-uploading an edited file has always done. */
+        /**
+         * Absent means replace, which is what re-uploading an edited file has always done.
+         *
+         * @throws ApiException a validation error for any value other than replace or keep_both, in any case
+         */
         public static UploadMode fromWire(String mode) {
             if (mode == null || mode.isBlank() || mode.equalsIgnoreCase("replace")) {
                 return REPLACE;
@@ -182,6 +218,8 @@ public class IngestionService {
     }
 
     /**
+     * What an upload did, returned by {@code ingest} to the controllers and from there to the console.
+     *
      * @param documentId the stored document
      * @param status what happened: indexed, replaced, skipped, unchanged or failed
      * @param chunkCount passages written
@@ -214,6 +252,9 @@ public class IngestionService {
      * @param restricted whether only people who manage knowledge may search it. Settable here so a
      *     source meant to be private is never searchable by the workspace between its creation and
      *     a later change.
+     * @param kind the kind of source; {@code upload} when null
+     * @return the saved source, on the workspace's current embedding model
+     * @throws ApiException {@code ALREADY_EXISTS} when the workspace already has a source of that name, in any case
      */
     @Transactional
     public Source createSource(UUID orgId, String name, String kind, boolean restricted) {
@@ -224,6 +265,13 @@ public class IngestionService {
     /**
      * As {@link #createSource(UUID, String, String, boolean)}; with an {@code agentId} the source
      * belongs to that one agent, which alone searches it.
+     *
+     * <p>Inserts one source row, in its own transaction, with the workspace's current embedding model
+     * and that model's collection. No vector collection is created yet; that happens on the first
+     * write. Called by {@code KnowledgeController.createSource} (through the four-argument form) and
+     * by {@code AgentKnowledgeController} for an agent's first document.
+     *
+     * @throws ApiException {@code ALREADY_EXISTS} when the workspace already has a source of that name, in any case
      */
     @Transactional
     public Source createSource(UUID orgId, UUID agentId, String name, String kind, boolean restricted) {
@@ -262,6 +310,9 @@ public class IngestionService {
      *
      * @param name the new name, or null to keep it
      * @param restricted the new setting, or null to keep it
+     * @return the saved source
+     * @throws ApiException not found when the source does not exist in the workspace; {@code ALREADY_EXISTS}
+     *     when another source has the name. A change of restriction is written to the log with the actor.
      */
     public Source updateSource(UUID orgId, UUID sourceId, String name, Boolean restricted) {
         return transactionally(() -> {
@@ -290,7 +341,10 @@ public class IngestionService {
     }
 
     // @find: upload document, ingest file, re-upload replaces old version
-    /** Ingests one uploaded file, replacing any document of the same name. */
+    /**
+     * Ingests one uploaded file, replacing any document of the same name. The same as the
+     * five-argument form with {@link UploadMode#REPLACE}; called for an agent's documents and notes.
+     */
     public IngestResult ingest(UUID orgId, UUID sourceId, String filename, byte[] content) {
         return ingest(orgId, sourceId, filename, content, UploadMode.REPLACE);
     }
@@ -302,6 +356,22 @@ public class IngestionService {
      * <p>Three steps, and only the first and last hold a database connection. A failure in the
      * vector store leaves a document findable by keyword and says so; a failure after the vectors
      * are written removes them again, so no point outlives the passage it stands for.
+     *
+     * <p>Flow: extracts the text, then in a short transaction creates or updates the document and
+     * replaces its passages, then embeds them and writes the vectors with no transaction open, then in a
+     * second short transaction records the outcome and refreshes the source's counts. An unchanged file,
+     * or one that cannot be indexed, ends after the first step. Old vectors of a replaced version are
+     * deleted afterwards. Called by {@code KnowledgeController.upload} and {@code AgentKnowledgeController}.
+     *
+     * <p>Side effects: writes document, passage and source rows, calls the embedding service and the
+     * vector store, and writes log lines. It writes no audit record; the controller does.
+     *
+     * @param filename the file's own name, which identifies the document within the source
+     * @param mode what to do when the name already exists
+     * @return what happened, including a vector warning when only keyword search could be written
+     * @throws ApiException not found for an unknown source; a conflict when the document was deleted or
+     *     replaced by another upload while it was being indexed. A vector or embedding failure is not
+     *     thrown: it is reported in the result.
      */
     public IngestResult ingest(UUID orgId, UUID sourceId, String filename, byte[] content, UploadMode mode) {
         Source source = requireSource(orgId, sourceId);
@@ -384,6 +454,7 @@ public class IngestionService {
             Instant replacedIndexedAt,
             String renamedFrom) {
 
+        /** Builds the result for an upload that ends after the first step, with nothing to embed. */
         static Staged done(IngestResult outcome, List<UUID> replacedIds) {
             return new Staged(outcome, outcome.documentId(), outcome.title(), List.of(), replacedIds, null, null);
         }
@@ -426,7 +497,14 @@ public class IngestionService {
      */
     private record Finished(IngestResult result, boolean superseded) {}
 
-    /** The first step: the document and its passages, committed before anything remote is asked. */
+    /**
+     * The first step: the document and its passages, committed before anything remote is asked.
+     *
+     * <p>Finds or creates the document by name (a free name when keeping both), ends early for unchanged
+     * bytes, clears any tombstone and old reason, records a skipped document when the file is not
+     * indexable or yields no passages, and otherwise replaces the document's passages with the new
+     * ones and leaves the document {@code pending}. Runs inside the caller's transaction.
+     */
     private Staged stage(
             UUID orgId,
             UUID sourceId,
@@ -533,6 +611,9 @@ public class IngestionService {
     /**
      * Records a document that cannot be indexed, with its reason, rather than dropping it. A count
      * that silently omits the unreadable files is a count nobody can act on.
+     *
+     * <p>Marks the document skipped with the reason, deletes any passages it had, and recounts the
+     * source. The result says when an earlier searchable version is no longer searchable.
      */
     private IngestResult skip(Source source, Document document, String reason, Instant replacedIndexedAt) {
         document.setStatus("skipped");
@@ -553,7 +634,16 @@ public class IngestionService {
                 document.getId(), "skipped", 0, detail, false, document.getTitle(), null, null, replacedIndexedAt);
     }
 
-    /** The last step: the outcome, written once the vectors have been. */
+    /**
+     * The last step: the outcome, written once the vectors have been.
+     *
+     * <p>Checks that the document still holds the passages that were embedded, marks it indexed, sets
+     * the source ready with the vector error if any, recounts the source and builds the result sentences.
+     * Runs inside the caller's transaction.
+     *
+     * @throws ApiException a conflict when the document was deleted meanwhile, or when an upload of different
+     *     content replaced its passages; the same bytes uploaded twice at once end as {@code unchanged}
+     */
     private Finished finish(
             UUID orgId,
             Staged staged,
@@ -624,6 +714,13 @@ public class IngestionService {
      * <p>Run with no transaction open. The caller decides what a failure means: for an upload, a
      * document findable by keyword only, which is imperfect but real, and which the person is told
      * about; failing the whole upload would throw away work that mostly succeeded.
+     *
+     * <p>Does nothing for a source on the offline embeddings. Otherwise makes sure the collection
+     * exists, embeds all the passages through the orchestrator and upserts one vector per passage with
+     * the workspace, source and document in its payload. Called by {@code ingest} and {@code reindex}.
+     *
+     * @throws ApiException when the vector store is unavailable or refuses the write
+     * @throws EmbeddingService.EmbeddingRefused when the embedding model cannot be used
      */
     private void writeVectors(Source source, UUID documentId, List<Chunk> stored) {
         if (!writesVectors(source)) {
@@ -683,7 +780,13 @@ public class IngestionService {
     }
 
     /**
-     * @param documentCount documents whose vectors were written again, including recovered ones
+     * The outcome of a reindex, returned to {@code KnowledgeController.reindex} and
+     * {@code EmbeddingModelChange}.
+     *
+     * @param documentCount documents examined, which are the indexed ones and the unfinished ones
+     * @param chunkCount passages whose vectors were attempted
+     * @param vectorised whether the vectors of at least one document could be written
+     * @param detail a sentence saying why no vectors could be written, or null
      * @param recovered documents whose indexing had stopped part way and is now finished
      */
     public record ReindexResult(int documentCount, int chunkCount, boolean vectorised, String detail, int recovered) {}
@@ -708,6 +811,13 @@ public class IngestionService {
      *
      * <p>One document at a time and with no transaction open, so a large source neither holds a
      * connection for the whole run nor loads every passage at once.
+     *
+     * <p>Called by {@code KnowledgeController.reindex}. Writes vectors, may mark unfinished documents
+     * indexed, and updates the source's status, last error and counts. A vector or embedding failure is
+     * not thrown: it is reported in the result and on the source, and keyword search is unaffected.
+     *
+     * @return the number of documents and passages handled, whether vectors were written and any detail
+     * @throws ApiException not found when the source does not exist
      */
     public ReindexResult reindex(UUID orgId, UUID sourceId) {
         return reindex(orgId, sourceId, passages -> {});
@@ -716,7 +826,10 @@ public class IngestionService {
     // @find: reindex source with progress, re-index documents, progress bar
     /**
      * As {@link #reindex(UUID, UUID)}, saying after each document how many of its passages were
-     * attempted, for a progress bar.
+     * attempted, for a progress bar. Called by {@code EmbeddingModelChange.run} with a callback that
+     * publishes its progress.
+     *
+     * @param progress called after each document with the number of its passages handled
      */
     public ReindexResult reindex(UUID orgId, UUID sourceId, java.util.function.IntConsumer progress) {
         Source source = requireSource(orgId, sourceId);
@@ -796,7 +909,10 @@ public class IngestionService {
         return new ReindexResult(candidates.size(), totalChunks, anyVectorised, detail, recovered);
     }
 
-    /** A document whose passages were committed but whose indexing never recorded an outcome. */
+    /**
+     * A document whose passages were committed but whose indexing never recorded an outcome: its
+     * status is still {@code pending} and it is not tombstoned.
+     */
     private static boolean isUnfinished(Document document) {
         return "pending".equals(document.getStatus()) && document.getTombstonedAt() == null;
     }
@@ -804,6 +920,10 @@ public class IngestionService {
     /**
      * Marks a recovered document indexed, if it is still the one that was recovered: still
      * pending, and still holding exactly the passages whose vectors were just written.
+     *
+     * <p>Runs in a short transaction started by {@code reindex}; writes the document's status and time.
+     *
+     * @return true when the document was marked indexed, false when it had changed meanwhile
      */
     private boolean settle(UUID orgId, UUID documentId, List<UUID> written) {
         Document document = documents.findByIdAndOrgId(documentId, orgId).orElse(null);
@@ -827,6 +947,13 @@ public class IngestionService {
      * erasure request or retiring something uploaded by mistake, and a tombstone would keep its
      * title, hash and every passage in the database. The vectors go after the commit: if they
      * cannot, retrieval still finds nothing, because every hit is resolved against the passages.
+     *
+     * <p>Called by {@code KnowledgeController.deleteDocument} and {@code AgentKnowledgeController}. Deletes
+     * the passages and the document and recounts the source in one transaction, then removes the vectors
+     * and logs the actor. The audit record is written by the controller.
+     *
+     * @throws ApiException not found when the source does not exist, or the document is not in that
+     *     source of the workspace
      */
     public void deleteDocument(UUID orgId, UUID sourceId, UUID documentId) {
         Erased erased = transactionally(() -> {
@@ -855,6 +982,11 @@ public class IngestionService {
      *
      * <p>Its vectors are removed by filter, never by dropping the collection: one collection
      * holds every source in the workspace that shares an embedding width.
+     *
+     * <p>Called by {@code KnowledgeController.deleteSource}. Deletes passages, documents and the source
+     * in one transaction, then the vectors, and logs the actor. The audit record is written by the controller.
+     *
+     * @throws ApiException not found when the source does not exist in the workspace
      */
     public void deleteSource(UUID orgId, UUID sourceId) {
         Erased erased = transactionally(() -> {
@@ -873,10 +1005,14 @@ public class IngestionService {
                 actor());
     }
 
+    /** What a deletion removed, so its vectors can be removed after the commit and the log can report counts. */
     private record Erased(String collection, int documents, int passages) {}
 
     /**
      * Counts what is indexed, which is all the counts on a source claim to cover.
+     *
+     * <p>Counts the source's currently indexed documents and their passages and saves the source. It
+     * must run inside a transaction opened by the caller.
      *
      * @param ingested whether this follows indexing, which moves "last indexed"; a deletion does not
      */
@@ -913,6 +1049,10 @@ public class IngestionService {
         throw ApiException.conflict("This source already holds too many files called " + filename + ".");
     }
 
+    /**
+     * The name with a number before the extension, such as {@code Contract (2).pdf}. A name with no
+     * extension, or only a leading dot, gets the number at the end.
+     */
     static String numbered(String filename, int n) {
         int dot = filename.lastIndexOf('.');
         // A leading dot names a file (".env") rather than starting an extension.
@@ -922,6 +1062,7 @@ public class IngestionService {
         return filename.substring(0, dot) + " (" + n + ")" + filename.substring(dot);
     }
 
+    /** The source in the workspace, or a not found error. A source of another workspace is reported as absent. */
     private Source requireSource(UUID orgId, UUID sourceId) {
         return sources.findByIdAndOrgId(sourceId, orgId).orElseThrow(() -> ApiException.notFound("source", sourceId));
     }
@@ -959,6 +1100,7 @@ public class IngestionService {
         return joined.isEmpty() ? null : joined;
     }
 
+    /** The identifier of the acting person, agent or service for log lines; {@code system} when there is none. */
     static String actor() {
         return RequestContext.actor().map(a -> a.id()).orElse("system");
     }

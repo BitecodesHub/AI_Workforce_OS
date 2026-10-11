@@ -41,12 +41,19 @@ public class AuditAppender {
     /** An entry that claims to have happened later than this is stamped with the time it arrived. */
     static final Duration FUTURE_ALLOWANCE = Duration.ofMinutes(5);
 
+    /**
+     * Repository used to find the chain head and any earlier delivery of the same event, and to
+     * insert the new entry.
+     */
     private final AuditEvents events;
+    /** Hash rules; supplies the entry hash for a new entry. */
     private final AuditChain chain;
 
+    /** Injected by the container; used only to take the advisory lock. */
     @PersistenceContext
     private EntityManager entityManager;
 
+    /** Creates the service over the events repository and the chain hasher. */
     public AuditAppender(AuditEvents events, AuditChain chain) {
         this.events = events;
         this.chain = chain;
@@ -77,6 +84,21 @@ public class AuditAppender {
     /** The entry that was written, or that an earlier delivery of the same event had written. */
     public record Appended(UUID id, long sequence, String entryHash, boolean duplicate) {}
 
+    /**
+     * Appends one entry to the chain of the workspace the command names, or to the platform chain when it
+     * names none. Called by InternalAuditController.
+     *
+     * Flow, all in one transaction: take the chain's advisory lock; when an event id was supplied and an
+     * entry for it exists, return that entry with the duplicate flag set and write nothing; otherwise read
+     * the chain's newest entry, build the new entry (blank optional fields become null, a missing detail
+     * becomes empty, the time is the sender's unless absent or more than five minutes ahead), link it to the
+     * previous hash, compute its hash and insert and flush it. Side effect: one insert, and a lock held until
+     * commit. Failure behaviour: any exception rolls back and releases the lock; a unique-index violation
+     * (the backstop against a bypassed lock) surfaces to the sender, which retries.
+     *
+     * @param command the entry to append
+     * @return the id, sequence and hash of the stored entry, and whether it was a repeat delivery
+     */
     @Transactional
     // @find: append audit event, write audit entry to chain
     public Appended append(Command command) {
@@ -140,6 +162,10 @@ public class AuditAppender {
                 event.getDetail());
     }
 
+    /**
+     * Takes the transaction-scoped Postgres advisory lock for one chain, blocking until it is free. It is
+     * released automatically at commit or rollback.
+     */
     private void lockChain(String chainKey) {
         // hashtext maps the name to the integer an advisory lock takes. Two chains that hash alike
         // merely share a lock for a while; the prefix keeps these away from other users of advisory
@@ -150,6 +176,11 @@ public class AuditAppender {
                 .getSingleResult();
     }
 
+    /**
+     * Chooses the stored time: now when the sender gave none or claimed a time more than
+     * {@link #FUTURE_ALLOWANCE} ahead, otherwise the sender's time, truncated to microseconds so the stored
+     * and hashed values agree.
+     */
     private static Instant occurredAt(Instant claimed, Instant now) {
         if (claimed == null || claimed.isAfter(now.plus(FUTURE_ALLOWANCE))) {
             return now;
@@ -157,6 +188,7 @@ public class AuditAppender {
         return claimed.truncatedTo(ChronoUnit.MICROS);
     }
 
+    /** Returns null for a null or blank value, otherwise the value unchanged. */
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
     }

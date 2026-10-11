@@ -40,6 +40,8 @@ foreach ($arg in $args) {
     }
 }
 
+# ConvertTo-Bool VALUE: maps a yes/no style word (1, true, yes, y, on, 0, false, no, n, off; any
+# case) to the text 'true' or 'false', and anything else to $null. Changes nothing.
 function ConvertTo-Bool([string]$value) {
     switch -Regex (("$value").Trim().ToLowerInvariant()) {
         '^(1|true|yes|y|on)$' { return 'true' }
@@ -52,6 +54,8 @@ if ($null -eq $demoChoice -and $env:AIWOS_DEMO_ENABLED) {
     $demoChoice = ConvertTo-Bool $env:AIWOS_DEMO_ENABLED
 }
 
+# New-RandomBytes COUNT: returns COUNT bytes from the system's cryptographic random generator.
+# Changes nothing; the leading comma keeps PowerShell from unrolling the array.
 function New-RandomBytes([int]$count) {
     $bytes = New-Object byte[] $count
     $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -59,22 +63,27 @@ function New-RandomBytes([int]$count) {
     return , $bytes
 }
 
+# New-RandomBase64: 32 random bytes, base64 encoded; used for the encryption master key.
 function New-RandomBase64 { [Convert]::ToBase64String((New-RandomBytes 32)) }
 
+# New-RandomHex: 32 random bytes as 64 hexadecimal characters; used for secrets and passwords.
 function New-RandomHex { -join ((New-RandomBytes 32) | ForEach-Object { $_.ToString('x2') }) }
 
 # UTF-8 without a byte-order mark and with LF line ends, which is what docker compose reads.
 # Written in place, so a file already restricted to this account keeps its permissions.
+# Write-EnvLines LINES: replaces the whole .env file with LINES. A write error is terminating.
 function Write-EnvLines([string[]]$lines) {
     $text = ($lines -join "`n") + "`n"
     [System.IO.File]::WriteAllText($EnvFile, $text, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+# Read-EnvLines: returns the lines of the .env file, or an empty array when it does not exist.
 function Read-EnvLines {
     if (-not (Test-Path -LiteralPath $EnvFile)) { return @() }
     return @([System.IO.File]::ReadAllLines($EnvFile))
 }
 
+# Get-EnvValue KEY: returns the last value assigned to KEY in the .env file, or $null.
 function Get-EnvValue([string]$key) {
     $value = $null
     foreach ($line in Read-EnvLines) {
@@ -83,6 +92,8 @@ function Get-EnvValue([string]$key) {
     return $value
 }
 
+# Set-EnvValue KEY VALUE: replaces KEY's line (dropping duplicates) or appends it, keeping every
+# other line. Unlike prepare-env.sh it rewrites the file in place, not through a temporary file.
 function Set-EnvValue([string]$key, [string]$value) {
     $done = $false
     $lines = New-Object System.Collections.Generic.List[string]
@@ -97,6 +108,9 @@ function Set-EnvValue([string]$key, [string]$value) {
     Write-EnvLines $lines.ToArray()
 }
 
+# Write-NewEnv KEYID MASTERKEY DEVSECRET DBPASSWORD DEMO LOADED: creates the .env file for the first
+# time with a fresh internal service secret, then restricts the file to the current account. A
+# failure to restrict access is reported as a note, not an error.
 function Write-NewEnv($keyId, $masterKey, $developmentSecret, $dbPassword, $demo, $loaded) {
     $today = Get-Date -Format 'yyyy-MM-dd'
     Write-EnvLines @(
@@ -129,6 +143,8 @@ function Write-NewEnv($keyId, $masterKey, $developmentSecret, $dbPassword, $demo
     }
 }
 
+# Test-VolumeExists: true when the Docker volume of an earlier launcher install exists. Changes
+# nothing; the preference change below only keeps docker's error output from aborting the script.
 function Test-VolumeExists {
     # Windows PowerShell turns a native command's error output into a terminating error while
     # $ErrorActionPreference is Stop, so the check runs with it relaxed.

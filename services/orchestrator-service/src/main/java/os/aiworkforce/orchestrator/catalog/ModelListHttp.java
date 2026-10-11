@@ -23,6 +23,9 @@ public interface ModelListHttp {
     record Response(int status, String body) {}
 
     /**
+     * Sends a GET with the given headers and returns the status and body, whatever the status; the
+     * caller decides what a non-200 means. No retry and no logging.
+     *
      * @throws IOException when the provider could not be reached or did not answer in time
      */
     Response get(URI uri, Map<String, String> headers) throws IOException;

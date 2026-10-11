@@ -51,10 +51,12 @@ public record Permission(
         }
     }
 
+    /** Builds an ordinary (non-administrative, enforced) permission whose code is {@code resource:action}. */
     private static Permission of(String resource, String action, String description) {
         return new Permission(resource + ":" + action, resource, action, description, false, false);
     }
 
+    /** Builds an administrative permission, one that lets its holder widen authority; the console warns before it is granted. */
     private static Permission admin(String resource, String action, String description) {
         return new Permission(resource + ":" + action, resource, action, description, true, false);
     }
@@ -305,6 +307,13 @@ public record Permission(
         return code != null && BY_CODE.containsKey(code);
     }
 
+    /**
+     * Looks a permission up by its code.
+     * 
+     * @param code the {@code resource:action} code
+     * @return the registered permission
+     * @throws IllegalArgumentException when the code is null or not in the catalogue, so a typo fails loudly
+     */
     public static Permission byCode(String code) {
         Permission permission = code == null ? null : BY_CODE.get(code);
         if (permission == null) {
@@ -313,6 +322,7 @@ public record Permission(
         return permission;
     }
 
+    /** Streams every permission that belongs to one resource, for example all {@code agent:*} codes. */
     public static Stream<Permission> forResource(String resource) {
         return ALL.stream().filter(p -> p.resource().equals(resource));
     }

@@ -37,6 +37,8 @@ import os.aiworkforce.platform.rbac.Permission;
  *       otherwise find it widened again by the next deployment - which is the sort of surprise
  *       that makes people stop trusting the console. Only its description follows the build,
  *       because a description grants nothing and a stale one misdescribes the role.
+ *       The one exception is {@code owner}, which is topped up with any permission it lacks, so
+ *       that a permission added in a later release reaches existing owners.
  * </ul>
  */
 @Component
@@ -47,12 +49,18 @@ public class PermissionSeeder {
     private final Permissions permissions;
     private final Roles roles;
 
+    /** Wires the permission and role repositories that the seeder writes to. */
     public PermissionSeeder(Permissions permissions, Roles roles) {
         this.permissions = permissions;
         this.roles = roles;
     }
 
     // @find: seed permissions and system roles at startup
+    /**
+     * Runs once the application is ready, ordered before {@code DemoDataSeeder}, which needs the
+     * system roles created here. Synchronises permission codes first, then system roles, in one
+     * transaction. A failure rolls both back and stops startup.
+     */
     @EventListener(ApplicationReadyEvent.class)
     @org.springframework.core.annotation.Order(10)
     @Transactional
@@ -61,6 +69,12 @@ public class PermissionSeeder {
         seedSystemRoles();
     }
 
+    /**
+     * Mirrors {@code Permission.ALL} into the {@code permissions} table.
+     *
+     * <p>Inserts codes that are missing and updates the description and administrative flag of rows
+     * that differ. Codes present in the database but unknown to the build are only logged.
+     */
     private void seedPermissions() {
         Map<String, PermissionRecord> existing = permissions.findAll().stream()
                 .collect(java.util.stream.Collectors.toMap(PermissionRecord::getCode, record -> record));
@@ -226,6 +240,7 @@ public class PermissionSeeder {
                         Permission.ANALYTICS_READ));
     }
 
+    /** The permission codes of the given permissions, as an insertion-ordered set. */
     private static Set<String> codes(Permission... permissions) {
         Set<String> set = new LinkedHashSet<>();
         for (Permission permission : permissions) {
@@ -234,11 +249,21 @@ public class PermissionSeeder {
         return set;
     }
 
+    /**
+     * Ensures a system role exists, without topping up an existing one. See the four-argument
+     * form for the rules.
+     */
     private void ensureRole(String name, String description, Set<String> permissionCodes) {
         ensureRole(name, description, permissionCodes, false);
     }
 
     /**
+     * Ensures one system role exists.
+     *
+     * <p>A missing role is created with the given composition. An existing role keeps its
+     * composition, and only its description is brought into line with the build. Writes through the
+     * role repository and logs each change.
+     *
      * @param topUp whether a role that already exists is given any permission in {@code
      *     permissionCodes} it lacks. True only for the owner, who holds everything by definition:
      *     without it, a permission added in a later release (such as reading every private

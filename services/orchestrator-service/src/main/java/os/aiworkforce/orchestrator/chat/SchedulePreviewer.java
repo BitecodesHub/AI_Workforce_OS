@@ -12,12 +12,18 @@ import os.aiworkforce.orchestrator.schedule.ScheduleParser;
 
 /**
  * A seam around {@link ScheduleParser#tryParse}, so {@link IntentDetector}'s tests can supply a
- * schedule reading of their own rather than depending on the real parser's behaviour - which, at
- * the time this seam was written, is still a stub that never recognises anything.
+ * schedule reading of their own rather than depending on the real parser's behaviour.
+ *
+ * <p>Implemented by {@link DefaultSchedulePreviewer}, the Spring bean {@link IntentDetector} uses
+ * to decide whether a message asks for work on a schedule. Previewing only reads text; it creates no
+ * schedule.
  */
 @FunctionalInterface
 public interface SchedulePreviewer {
 
+    /**
+     * Reads a schedule out of the text, in the given zone and relative to {@code now}; empty when the text names none.
+     */
     Optional<ParsedSchedule> tryParse(String text, ZoneId zone, Instant now);
 
     /**

@@ -64,6 +64,7 @@ public class ConversationParticipant {
 
     protected ConversationParticipant() {}
 
+    /** Records that {@code userId} was given access to a conversation by {@code addedBy}; the timestamp is set automatically. */
     public ConversationParticipant(UUID conversationId, String userId, String addedBy) {
         this.conversationId = conversationId;
         this.userId = userId;

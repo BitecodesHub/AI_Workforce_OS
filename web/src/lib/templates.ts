@@ -15,8 +15,12 @@
  * checked against these keys in the same test.
  */
 
+/** Keys of the four ready-made assistants. */
 export type TemplateKey = 'hr' | 'engineering-manager' | 'research' | 'support'
 
+/**
+ * A ready-made assistant: name, category, one-sentence description and the connectors worth connecting.
+ */
 export type AgentTemplate = {
   key: TemplateKey
   name: string
@@ -28,6 +32,9 @@ export type AgentTemplate = {
 }
 
 // @find: assistant templates list, four ready-made assistants, hr, engineering-manager, research, support; used by: Create workspace page
+/**
+ * This build's copy of the assistant catalogue, shown on first paint and used when the platform does not answer. The platform's list (GET /api/agents/templates) replaces it when available.
+ */
 export const TEMPLATES: readonly AgentTemplate[] = [
   {
     key: 'hr',
@@ -62,6 +69,7 @@ export const TEMPLATES: readonly AgentTemplate[] = [
   },
 ]
 
+/** The template keys, in catalogue order. */
 export const TEMPLATE_KEYS: readonly TemplateKey[] = TEMPLATES.map((template) => template.key)
 
 // @find: find template by key; used by: Create workspace page

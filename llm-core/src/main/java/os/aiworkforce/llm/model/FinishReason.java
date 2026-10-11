@@ -25,10 +25,12 @@ public enum FinishReason {
     /** The provider gave a reason this platform does not recognise. */
     UNKNOWN;
 
+    /** Whether the output is a whole answer or a whole tool request, safe to act on. */
     public boolean isComplete() {
         return this == STOP || this == STOP_SEQUENCE || this == TOOL_CALLS;
     }
 
+    /** Whether the output was cut short and must not be treated as a finished answer. */
     public boolean isTruncated() {
         return this == LENGTH || this == INCOMPLETE;
     }

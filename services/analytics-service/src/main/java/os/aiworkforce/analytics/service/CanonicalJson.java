@@ -25,15 +25,25 @@ import com.fasterxml.jackson.core.io.JsonStringEncoder;
  */
 final class CanonicalJson {
 
+    /** Not instantiable: this is a static utility. */
     private CanonicalJson() {}
 
-    /** The canonical text for a JSON value: a map, a list, a string, a number, a boolean or null. */
+    /**
+     * The canonical text for a JSON value: a map, a list, a string, a number, a boolean or null. Pure
+     * function with no side effects: the same logical value always gives the same text, and any other
+     * type is written as the quoted string of its {@code toString()}. Called by AuditChain when
+     * hashing and by AuditExport when writing files.
+     */
     static String write(Object value) {
         StringBuilder out = new StringBuilder();
         append(out, value);
         return out.toString();
     }
 
+    /**
+     * Writes one value to the buffer, choosing by type: null, map (as an object), collection or array (as a
+     * list), boolean, number (as a plain decimal), and anything else as a quoted string of its text.
+     */
     private static void append(StringBuilder out, Object value) {
         if (value == null) {
             out.append("null");
@@ -61,6 +71,10 @@ final class CanonicalJson {
         }
     }
 
+    /**
+     * Writes a map as a JSON object with keys converted to text and sorted, so the key order of
+     * the input never changes the output. Values are written recursively.
+     */
     private static void appendObject(StringBuilder out, Map<?, ?> map) {
         TreeMap<String, Object> sorted = new TreeMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
@@ -80,6 +94,10 @@ final class CanonicalJson {
         out.append('}');
     }
 
+    /**
+     * Writes text as a JSON string with the escaping rules of Jackson's string encoder, fixed here
+     * so every hash uses one escaping.
+     */
     private static void quote(StringBuilder out, String text) {
         out.append('"');
         JsonStringEncoder.getInstance().quoteAsString(text, out);

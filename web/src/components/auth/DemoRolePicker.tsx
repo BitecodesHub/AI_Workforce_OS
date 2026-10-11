@@ -70,6 +70,16 @@ export type DemoRolePickerProps = {
 }
 
 // @find: DemoRolePicker, pick demo account, sign in as role
+/**
+ * Row of demo-role tiles on the sign-in screen; pressing a tile signs that demo account in.
+ * Props: accounts (from GET /api/auth/demo-accounts), password (shown as the shared demo password when
+ * the server supplies one), pending (the address being signed in), busy (any sign-in under way) and onPick
+ * (performs the sign-in for the chosen account).
+ * State: preview, the account whose description the caption shows on hover or focus. While pending, the
+ * caption names the account being signed in and the tile shows a Spinner. Tiles use aria-disabled while busy
+ * so focus is never lost, and each tile's description is available to screen readers without hovering.
+ * The "manager" tile is flagged as the suggested start when it exists.
+ */
 export function DemoRolePicker({ accounts, password, pending, busy, onPick }: DemoRolePickerProps) {
   const [preview, setPreview] = useState<DemoAccount | null>(null)
   const pendingAccount = accounts.find((account) => account.email === pending) ?? null

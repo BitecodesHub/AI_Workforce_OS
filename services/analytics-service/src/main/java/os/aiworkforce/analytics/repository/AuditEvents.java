@@ -20,6 +20,12 @@ import os.aiworkforce.analytics.domain.AuditEvent;
  * class is not found at all, so one interface per file is the convention across every service.
  */
 
+/**
+ * Spring Data repository for the append-only {@link AuditEvent} table. Used by AuditAppender (chain
+ * head and duplicate lookup), AuditSearch (filtering is done by criteria there), AuditVerification
+ * (chain paging) and AnalyticsController (counts). The workspace scope of a query is the caller's
+ * responsibility, except for the chain queries, which are keyed by chain.
+ */
 public interface AuditEvents extends JpaRepository<AuditEvent, UUID> {
 
     /**
@@ -48,20 +54,27 @@ public interface AuditEvents extends JpaRepository<AuditEvent, UUID> {
     @Query("select distinct e.chainKey from AuditEvent e where e.chainKey is not null order by e.chainKey")
     List<String> findChainKeys();
 
+    /**
+     * Number of one workspace's entries that occurred after the given instant; used for the
+     * analytics total.
+     */
     long countByOrgIdAndOccurredAtAfter(UUID orgId, Instant since);
 
+    /** Projection of the by-action count query: an action code and its number of entries. */
     interface ActionCount {
         String getAction();
 
         long getCount();
     }
 
+    /** Projection of the by-outcome count query: an outcome and its number of entries. */
     interface OutcomeCount {
         String getOutcome();
 
         long getCount();
     }
 
+    /** Entries per action for one workspace since an instant, most frequent first. */
     @Query(
             """
             select e.action as action, count(e) as count
@@ -72,6 +85,7 @@ public interface AuditEvents extends JpaRepository<AuditEvent, UUID> {
             """)
     List<ActionCount> countByActionSince(@Param("orgId") UUID orgId, @Param("since") Instant since);
 
+    /** Entries per outcome for one workspace since an instant, in no guaranteed order. */
     @Query(
             """
             select e.outcome as outcome, count(e) as count

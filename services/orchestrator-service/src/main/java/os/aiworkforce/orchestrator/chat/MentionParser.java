@@ -28,6 +28,7 @@ import os.aiworkforce.orchestrator.domain.Agent;
  */
 public final class MentionParser {
 
+    /** Not instantiable; every member is static. */
     private MentionParser() {}
 
     /** The token a mention starts with: an "@" followed by a run of letters, digits or hyphens. */
@@ -39,9 +40,23 @@ public final class MentionParser {
     /** More than this many extra words is not a name any agent in this workspace actually has. */
     private static final int MAX_EXTRA_WORDS = 3;
 
-    /** @param agents the agents matched, in the order they were written, without duplicates */
+    /**
+     * The outcome of parsing a message: who was addressed and what is left of the text.
+     *
+     * @param agents the agents matched, in the order they were written, without duplicates
+     * @param text the message with the matched mentions removed and runs of spaces collapsed;
+     *     tokens that matched no agent are kept as written
+     */
     public record Result(List<Agent> agents, String text) {}
 
+    /**
+     * Finds the mentions of known agents in a message and removes them from the text.
+     *
+     * <p>Called by {@code CoordinatorService} before intent detection. Builds a lookup of
+     * normalised agent keys and names, then scans each {@code @token}. A token may continue into
+     * up to {@link #MAX_EXTRA_WORDS} further words, so a multi-word name is matched by its longest
+     * form. Pure; no I/O. Empty text or no agents returns an empty result with the text unchanged.
+     */
     // @find: parse mentions, find @agent in message
     public static Result parse(String text, List<Agent> agents) {
         if (text == null || text.isBlank() || agents == null || agents.isEmpty()) {
@@ -109,6 +124,7 @@ public final class MentionParser {
         return new Result(List.copyOf(found), withoutMentions);
     }
 
+    /** Lower-cases a name and removes spaces and hyphens, so spellings of one name compare equal. */
     private static String normalise(String value) {
         return value.toLowerCase(Locale.ROOT).replaceAll("[\\s-]+", "");
     }

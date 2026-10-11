@@ -14,8 +14,10 @@
 /** The minimal shape a mention needs to match against: an agent's identity, not its whole record. */
 export type MentionCandidate = { id: string; name: string; key: string }
 
+/** The @word being typed at the caret: its text after the @ and the index of the @ in the input. */
 export type MentionQuery = { query: string; start: number }
 
+/** Trims and lower-cases text for comparison. */
 function normalise(text: string): string {
   return text.trim().toLowerCase()
 }

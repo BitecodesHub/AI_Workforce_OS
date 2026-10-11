@@ -75,11 +75,19 @@ public class TextExtractor {
     private final Parser parser = new AutoDetectParser();
     private final int maxChars;
 
+    /**
+     * Creates the extractor with its character limit.
+     *
+     * @param maxChars the most text kept from one file, from {@code knowledge.extraction.max-chars}; zero or less means no limit
+     */
     public TextExtractor(@Value("${knowledge.extraction.max-chars:" + DEFAULT_MAX_CHARS + "}") int maxChars) {
         this.maxChars = maxChars;
     }
 
     /**
+     * The outcome of reading one file: its text, or the reason there is none. Returned by
+     * {@link #extract} to {@code IngestionService} and {@code InternalExtractController}.
+     *
      * @param text the extracted text, empty when the document is not indexable
      * @param mediaType what the file actually is, detected from content rather than the extension
      * @param pageCount pages, where the format has them
@@ -104,12 +112,27 @@ public class TextExtractor {
             this(text, mediaType, pageCount, contentHash, skipReason, null, pageCount);
         }
 
+        /** True when there is no skip reason and the text is not blank, so the document can be chunked and embedded. */
         public boolean isIndexable() {
             return skipReason == null && text != null && !text.isBlank();
         }
     }
 
     // @find: extract text from uploaded file, read PDF docx xlsx pptx, unsupported file skipped
+    /**
+     * Detects what a file is and reads its text.
+     *
+     * <p>Flow: hashes the bytes, detects the media type from content and name, then reads a PDF with PDFBox,
+     * refuses an image, and reads anything else with Tika under the character limit. The text is tidied by
+     * {@link #normalise}. Called by {@code IngestionService.ingest} and {@code InternalExtractController}.
+     *
+     * <p>Has no side effects beyond a debug log. It does not throw for a bad file: an empty, encrypted,
+     * scanned, image-only or damaged file comes back with a {@code skipReason}.
+     *
+     * @param content the file bytes
+     * @param filename the original name, used only as a hint for type detection
+     * @return the extraction; check {@link Extraction#isIndexable()} before using the text
+     */
     public Extraction extract(byte[] content, String filename) {
         String hash = sha256(content);
 
@@ -157,6 +180,7 @@ public class TextExtractor {
         }
     }
 
+    /** The text Tika produced, and whether the character limit cut it. */
     private record Parsed(String text, boolean truncated) {}
 
     /**
@@ -167,6 +191,8 @@ public class TextExtractor {
      * kept: that is the part of the document that will be indexed. A parse that ends normally with
      * the limit filled counts as cut too, because a parser reading an embedded file can swallow
      * the exception and carry on.
+     *
+     * <p>Called by {@link #extract} only. Any other parse failure propagates to it.
      */
     private Parsed parse(byte[] content, String filename) throws IOException, SAXException, TikaException {
         BodyContentHandler handler = new BodyContentHandler(new WriteOutContentHandler(maxChars > 0 ? maxChars : -1));
@@ -187,7 +213,12 @@ public class TextExtractor {
         }
     }
 
-    /** Said in characters, which is exact, and in pages, which is what a person can picture. */
+    /**
+     * Said in characters, which is exact, and in pages, which is what a person can picture. This is
+     * the notice stored with a document that was cut at the limit.
+     *
+     * @param aboutPages the number of pages the kept text spans, or is estimated to span
+     */
     private String truncationNotice(long aboutPages) {
         return String.format(
                 Locale.ENGLISH,
@@ -204,6 +235,10 @@ public class TextExtractor {
      * <p>Two reasons. Page numbers are needed for citations and Tika does not surface them, and
      * an encrypted PDF has to be distinguished from an unreadable one because the remedy is
      * completely different.
+     *
+     * <p>Returns a skip reason, with the page count where known, for an encrypted, textless,
+     * nearly textless (a scan) or damaged file. A PDF over the limit is cut after the scan check
+     * and carries a notice and the number of pages the kept text spans.
      */
     private Extraction extractPdf(byte[] content, String hash, String mediaType) {
         try (PDDocument document = Loader.loadPDF(content)) {
@@ -267,6 +302,9 @@ public class TextExtractor {
      * <p>PDF extraction produces hard line breaks mid-sentence, which split a sentence across two
      * chunks and make the retrieved passage read as gibberish. Joining them back is the single
      * largest improvement available to chunk quality, and it changes no words.
+     *
+     * <p>It joins wrapped lines, rejoins words hyphenated across a line end, collapses runs of
+     * spaces and blank lines, and strips the ends.
      */
     private static String normalise(String text) {
         return text
@@ -280,7 +318,11 @@ public class TextExtractor {
     }
 
     // @find: content hash, detect unchanged file on re-upload
-    /** Identifies the exact bytes, so an unchanged file is skipped rather than re-embedded. */
+    /**
+     * Identifies the exact bytes, so an unchanged file is skipped rather than re-embedded.
+     *
+     * @return the SHA-256 digest as lower-case hexadecimal
+     */
     public static String sha256(byte[] content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
@@ -289,6 +331,7 @@ public class TextExtractor {
         }
     }
 
+    /** The same hash for text, taken over its UTF-8 bytes. */
     static String sha256(String text) {
         return sha256(text.getBytes(StandardCharsets.UTF_8));
     }

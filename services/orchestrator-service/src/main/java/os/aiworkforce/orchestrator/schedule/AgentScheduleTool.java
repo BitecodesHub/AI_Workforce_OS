@@ -34,6 +34,7 @@ public class AgentScheduleTool {
     /** Sent to providers as {@code schedule__create}. */
     public static final String NAME = "schedule.create";
 
+    /** Tool description shown to the model: when to use the tool and how each argument is read. */
     static final String DESCRIPTION = "Set up work to happen later, once or on a repeating schedule, when the person asks "
             + "for something to be done at a later time or regularly (for example 'every Monday at 9am summarise "
             + "competitor news' or 'remind HR tomorrow at 3pm to send onboarding emails'). Do not use it for work you "
@@ -44,6 +45,7 @@ public class AgentScheduleTool {
             + "it; leave it out for yourself. The result confirms the schedule and its next run: tell the person "
             + "that in your answer.";
 
+    /** JSON schema of the tool arguments: {@code when} and {@code instruction} are required, {@code agent} is optional. */
     static final String SCHEMA =
             """
             {"type":"object","required":["when","instruction"],"properties":{
@@ -53,9 +55,12 @@ public class AgentScheduleTool {
             """
                     .strip();
 
+    /** The tool definition offered to providers. Marked WRITE because it creates a schedule row. */
     public static final ToolSpec SPEC = new ToolSpec(NAME, DESCRIPTION, SCHEMA, ToolSpec.SideEffect.WRITE);
 
+    /** Longest accepted {@code when} text, in characters. */
     static final int MAX_WHEN = 200;
+    /** Longest accepted {@code instruction} text, in characters. */
     static final int MAX_INSTRUCTION = 10_000;
 
     /** The model's arguments cannot be used, or the schedule cannot be made; the message is for the model. */
@@ -72,6 +77,7 @@ public class AgentScheduleTool {
     private final Agents agents;
     private final ObjectMapper json;
 
+    /** Builds the tool; used by Spring. The collaborators save the schedule, look up colleagues by name and read the model's JSON. */
     public AgentScheduleTool(ScheduleRequests requests, Agents agents, ObjectMapper json) {
         this.requests = requests;
         this.agents = agents;
@@ -136,6 +142,12 @@ public class AgentScheduleTool {
         return made.sentence() + " (Schedule " + made.schedule().getId() + ".)";
     }
 
+    /**
+     * Finds the agent that should do the scheduled work: the caller when none is named, otherwise a colleague
+     * matched by name or key, ignoring case, spaces, hyphens, underscores and a leading at sign.
+     *
+     * @throws Refused when no colleague matches, or the matching colleague is paused
+     */
     private Agent resolveAgent(UUID orgId, Agent self, String wanted) throws Refused {
         if (wanted == null) {
             return self;
@@ -157,10 +169,12 @@ public class AgentScheduleTool {
                 + String.join(", ", all.stream().filter(Agent::isActive).map(Agent::getName).toList()) + ".");
     }
 
+    /** Lower-cases a name and removes spaces, hyphens and underscores so names compare loosely. */
     private static String normalise(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[\\s\\-_]+", "");
     }
 
+    /** Reads a text field from the arguments; returns null when it is missing, not plain text or blank. */
     private static String text(JsonNode root, String field) {
         JsonNode value = root.get(field);
         if (value == null || value.isNull() || !value.isValueNode()) {

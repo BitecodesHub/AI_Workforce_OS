@@ -113,6 +113,7 @@ public enum ErrorCode {
     // ---- Catch all -----------------------------------------------------------------------
     INTERNAL_ERROR(500, false, "Something went wrong. The incident has been recorded."),
     NOT_IMPLEMENTED(501, false, "That capability is not available yet."),
+    /** Returned while the service is starting up or shutting down; clients should retry. */
     SERVICE_UNAVAILABLE(503, true, "The service is starting up or shutting down.");
 
     private static final Map<String, ErrorCode> BY_WIRE =
@@ -122,6 +123,7 @@ public enum ErrorCode {
     private final boolean retryable;
     private final String defaultMessage;
 
+    /** Binds the HTTP status, retry flag and default message to a constant. */
     ErrorCode(int status, boolean retryable, String defaultMessage) {
         this.status = status;
         this.retryable = retryable;
@@ -154,6 +156,13 @@ public enum ErrorCode {
         return name().toLowerCase(java.util.Locale.ROOT);
     }
 
+    /**
+     * Looks a code up by its wire form, case-insensitively.
+     *
+     * <p>Used when a code arrives from another service's response. An unknown or {@code null} value
+     * maps to {@link #INTERNAL_ERROR} rather than failing, so a newer peer cannot break an older
+     * caller.
+     */
     public static ErrorCode fromWire(String wire) {
         ErrorCode code = BY_WIRE.get(wire == null ? "" : wire.toLowerCase(java.util.Locale.ROOT));
         return code == null ? INTERNAL_ERROR : code;

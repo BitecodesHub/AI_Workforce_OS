@@ -18,12 +18,13 @@ import { AGENT_GRANTS, defaultGrant } from './agentGrants'
  * new workspace receives, and in the demo their tools work with practice data, so the copy says
  * both.
  *
- * The chips are toggle buttons in a roving group: one tab stop per tile, Left and Right (and Home
+ * The chips are radio buttons in a roving radio group: one tab stop per tile, Left and Right (and Home
  * and End) move between servers and select as they go. The sentence below them is a polite live
  * region, re-keyed per server so it fades in and is announced as a whole.
  */
 
 // @find: AgentsSection component, AI team section
+/** Home page section "Your AI team", with an id of "team" (the bar's scrollspy target). Renders a SectionHead and one AgentTile for each example agent in AGENTS (landingFacts). Static content; the grants come from agentGrants. Rendered by the Landing route. */
 export function AgentsSection(): ReactElement {
   return (
     <LandingSection id="team" labelledBy="team-title">
@@ -42,6 +43,7 @@ export function AgentsSection(): ReactElement {
   )
 }
 
+/** One example agent as an article: category tag, title, detail and a radio group of the tool servers it holds (AGENT_GRANTS). Choosing a tool, by click or by ArrowLeft, ArrowRight, Home and End (roving tab index, selection follows focus), shows the one sentence about what the agent may do there in a polite live region keyed per server so it fades in and is read as a whole; a lock icon marks a gated tool, where a person must approve. The first gated tool is selected first (defaultGrant). The tile uses the scroll-reveal (useReveal, staggered by index) and pointer-spot (usePointerSpot) hooks, whose release functions are returned from one callback ref. */
 function AgentTile({ agent, index }: { agent: AgentFact; index: number }): ReactElement {
   const grants = AGENT_GRANTS[agent.id]
   const [pressed, setPressed] = useState<ToolServer | null>(() => defaultGrant(agent.id))

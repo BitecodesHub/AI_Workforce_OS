@@ -44,15 +44,20 @@ import os.aiworkforce.platform.error.ErrorCode;
 @Tag(name = "Internal")
 public class InternalAuditController {
 
+    /** Outcomes accepted from senders. */
     private static final List<String> VALID_OUTCOMES = List.of("succeeded", "failed", "denied", "locked");
 
     private final AuditAppender appender;
 
+    /** Creates the controller over the appender that owns chaining and persistence. */
     public InternalAuditController(AuditAppender appender) {
         this.appender = appender;
     }
 
     /**
+     * Request body for one audit entry as a sibling service reports it. The workspace may be null for
+     * events that belong to no workspace, which then join the platform chain.
+     *
      * @param eventId the sender's id for this event, fixed before its first attempt; optional, but a
      *     sender that retries must send one
      * @param occurredAt when the action happened, as the sender saw it; optional, and ignored when it
@@ -72,9 +77,20 @@ public class InternalAuditController {
             UUID eventId,
             Instant occurredAt) {}
 
+    /**
+     * Response of the append endpoint: the entry id, its position in its chain and its hash. A
+     * repeated event id returns the first call's values.
+     */
     public record AuditEventResponse(UUID id, long sequence, String entryHash) {}
 
     // @find: POST /internal/audit-events, append, endpoint, internal audit
+    /**
+     * Route: POST /internal/audit-events. Permission: service callers only; a person's own token is
+     * refused with PERMISSION_DENIED. Checks the outcome is one of succeeded, failed, denied or locked, then
+     * asks {@link AuditAppender#append} to add the entry to its chain. Returns the entry id, sequence and
+     * hash. Side effect: one insert (none when the event id was already appended). Fails with a validation
+     * error for a bad outcome or oversized field.
+     */
     @PostMapping
     @Operation(summary = "Internal: append one entry to the append-only audit projection")
     public AuditEventResponse append(@Valid @RequestBody AuditEventRequest request) {

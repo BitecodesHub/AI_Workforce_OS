@@ -18,6 +18,7 @@ import type { NeedsYouItem } from './needsYou'
 import { UNKNOWN_REQUESTER } from './shared'
 import { useMemberDirectory } from './useMemberDirectory'
 
+/** Constants and types of the inbox: the localStorage key of the For me or Everyone choice, how many rows show before "Show all", and the scope type with its guard. */
 const SCOPE_KEY = 'orc.needs.scope'
 const VISIBLE_ROWS = 5
 
@@ -25,11 +26,13 @@ type Scope = 'forMe' | 'everyone'
 
 const isScope = (value: unknown): value is Scope => value === 'forMe' || value === 'everyone'
 
+/** Display name of an agent on the board; "The agent" without an id, "An agent" when it is not on the board. */
 function agentNameOf(board: Board, agentId: string | null): string {
   if (!agentId) return 'The agent'
   return board.agents.find((agent) => agent.id === agentId)?.name ?? 'An agent'
 }
 
+/** Requester name for a caption: "You" for the viewer, the member's name otherwise, "Unknown" without an id. */
 function requesterName(userId: string | null, me: string | null, nameOf: (id: string) => string): string {
   if (!userId) return 'Unknown'
   if (me != null && userId === me) return 'You'
@@ -45,6 +48,13 @@ function retryStepInfo(item: Extract<NeedsYouItem, { kind: 'failed' }>, board: B
   return { step: (retryTask?.position ?? 0) + 1, agentName }
 }
 
+/**
+ * The action button of one inbox row, by item kind. Question: Answer (or View when the viewer cannot answer),
+ * opening the goal or run with focus on the question. Approval: Review (or View), focusing the approval.
+ * Held (work waiting on a paused agent): Resume agent through useSetAgentStatus for viewers holding
+ * agent:update, otherwise Open. Failed: Retry (useRetryGoal, behind a ConfirmDialog naming the step and agent,
+ * warning that side effects may repeat) when canRetryGoal allows, otherwise Open.
+ */
 function RowAction({
   item,
   board,
@@ -152,6 +162,7 @@ function RowAction({
   )
 }
 
+/** The main line of a row: the question header and text (cut to 120 words), the approval summary, or the held or failed goal title, each prefixed with the agent name. */
 function RowText({ item, board }: { item: NeedsYouItem; board: Board }) {
   if (item.kind === 'question') {
     const agentName = agentNameOf(board, item.agentId)
@@ -175,6 +186,7 @@ function RowText({ item, board }: { item: NeedsYouItem; board: Board }) {
   )
 }
 
+/** The muted line under a row: requester and age, with the goal title and time left for questions and approvals (closesIn). */
 function RowCaption({ item, me, nameOf, now }: { item: NeedsYouItem; me: string | null; nameOf: (id: string) => string; now: number }) {
   const requester = requesterName(item.requestedBy, me, nameOf)
   const ago = `asked ${formatAgo(now - Date.parse(item.createdAt))}`
@@ -192,6 +204,7 @@ function RowCaption({ item, me, nameOf, now }: { item: NeedsYouItem; me: string 
   )
 }
 
+/** The coloured tag for an item kind: Question, Approval, Failed or Held. */
 function kindTag(item: NeedsYouItem) {
   switch (item.kind) {
     case 'question':
@@ -206,6 +219,18 @@ function kindTag(item: NeedsYouItem) {
 }
 
 // @find: needs you inbox component, items waiting on me
+/**
+ * The Needs you section of the Orchestrator: everything that waits on a person.
+ * Data: buildNeedsYou(board, ...) builds the items from the live board (open questions, approvals, failed goals
+ * of today, work held on a paused agent); the For me scope keeps those marked mine. Requester names come from
+ * useMemberDirectory ("Former member" only once the member list has loaded, otherwise a neutral word). The
+ * clock refreshes each minute so ages and deadlines stay current.
+ * Rendering: when nothing waits on anyone it is a single "Nothing needs you" line; otherwise a card with a
+ * count, a For me or Everyone switch (remembered in localStorage under orc.needs.scope), five rows and "Show
+ * all N", and a hint to switch scope when only other people's items exist. Each row is a kind tag, text,
+ * caption and a RowAction. Props: board, and onOpenGoal and onOpenRun (open the sheet with focus on the question
+ * or approval).
+ */
 export function NeedsYouInbox({
   board,
   onOpenGoal,

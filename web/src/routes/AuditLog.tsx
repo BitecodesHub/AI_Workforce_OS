@@ -41,12 +41,20 @@ import { useListFilter } from '../lib/useListFilter'
  * loaded so far, and the count under the filters says so while older entries remain.
  */
 
+/** The outcomes offered in the Outcome filter, in display order. */
 const OUTCOMES: AuditOutcome[] = ['succeeded', 'failed', 'denied', 'locked']
 
+/** Facets for useListFilter: the outcome of each entry, selected with ?outcome= in the address. */
 const FACETS = { outcome: (row: AuditEvent) => row.outcome }
 
+/**
+ * How a person, agent or key is shown in a cell: the visible label and an optional tooltip (an email address or id).
+ */
 type Name = { label: string; title?: string }
 
+/**
+ * Lookups used to turn ids into names. The loaded flags tell a former member or agent (list loaded, id absent) from one that is not known yet (list still loading).
+ */
 type Directory = {
   members: Record<string, Member>
   /** True once the member list has loaded, so a miss means a former member rather than "not known yet". */
@@ -55,9 +63,13 @@ type Directory = {
   agentsLoaded: boolean
 }
 
+/** Reads a non-empty string from an event's detail object, or undefined. */
 const detailText = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() ? value : undefined
 
+/**
+ * Display name for a person id: their name with the email as tooltip; "Former member" once the member list has loaded without them; a shortened id while it is still loading.
+ */
 function personName(id: string, directory: Directory): Name {
   const member = directory.members[id]
   if (member) return { label: member.displayName, title: member.email }
@@ -66,6 +78,7 @@ function personName(id: string, directory: Directory): Name {
   return { label: shortId(id), title: id }
 }
 
+/** Display name for an agent id, with the same loaded and former handling as personName. */
 function agentName(id: string, directory: Directory): Name {
   const agent = directory.agents[id]
   if (agent) return { label: agent.name }
@@ -73,10 +86,14 @@ function agentName(id: string, directory: Directory): Name {
   return { label: `Agent ${shortId(id)}`, title: id }
 }
 
+/** The actor kind normalised for comparison (upper case, underscores removed). */
 function actorKind(row: AuditEvent): string {
   return row.actorKind.toUpperCase().replace(/_/g, '')
 }
 
+/**
+ * Display name of whoever performed an entry: the platform for SYSTEM, the agent for AGENT, a shortened key for API keys, otherwise a person.
+ */
 function actorName(row: AuditEvent, directory: Directory): Name {
   switch (actorKind(row)) {
     case 'SYSTEM':
@@ -97,11 +114,15 @@ function runOf(row: AuditEvent): string | undefined {
   return undefined
 }
 
+/** The resource type in sentence case, or "Unknown" when empty. */
 function resourceWords(row: AuditEvent): string {
   return sentenceCase(row.resourceType) || 'Unknown'
 }
 
 // @find: audit who cell, actor name
+/**
+ * Table cell for the actor. When an agent acted, or the event records someone it was done for, a second line names the accountable person.
+ */
 function WhoCell({ row, directory }: { row: AuditEvent; directory: Directory }) {
   const actor = actorName(row, directory)
   const behalf = row.onBehalfOf ? personName(row.onBehalfOf, directory) : null
@@ -122,6 +143,9 @@ function WhoCell({ row, directory }: { row: AuditEvent; directory: Directory }) 
 }
 
 // @find: audit action cell, what happened
+/**
+ * Table cell for what happened: the action in words, the tool used if any, and the failure reason (cut to 140 characters) if it failed.
+ */
 function ActionCell({ row }: { row: AuditEvent }) {
   const tool = detailText(row.detail.tool)
   const failure = detailText(row.detail.failureReason)
@@ -139,6 +163,9 @@ function ActionCell({ row }: { row: AuditEvent }) {
 }
 
 // @find: audit resource cell, link to run
+/**
+ * Table cell for what the entry is about. Links to the run trace when the entry concerns a run and the person holds run:read; otherwise shows the resource type and a shortened id.
+ */
 function ResourceCell({ row, canReadRuns }: { row: AuditEvent; canReadRuns: boolean }) {
   const runId = runOf(row)
   if (runId && canReadRuns) {
@@ -158,6 +185,9 @@ function ResourceCell({ row, canReadRuns }: { row: AuditEvent; canReadRuns: bool
 
 /** The filters the server applies, the export buttons and the integrity check: an auditor's tools. */
 // @find: auditor tools, verify audit chain, check integrity, export audit log
+/**
+ * Controls outside the list's loading states so they stay usable when a filter matches nothing. Filters (action and date range) are sent to the server through onChange. Export CSV and Export JSON lines download through GET /api/audit/export with the same filters, showing a success toast or an inline warning. Verify integrity runs the hash chain check (useVerifyAudit) and shows whether the chain is intact, with the number of entries checked, or the first broken entry.
+ */
 function AuditorTools({
   filters,
   onChange,
@@ -261,6 +291,10 @@ function AuditorTools({
 }
 
 // @find: AuditLog component, audit log page, search audit events, filter by outcome, /audit
+/**
+ * The Audit log page (route /audit, permission audit:read, reached from Settings rather than the main navigation).
+ * Flow: server filters (action, dates) live in component state and drive useAuditPages, which loads pages newest first; the entries are flattened and searched and filtered by outcome in the browser through useListFilter, with the filter state in the address bar. Names for people and agents come from the members and agents queries, which run only when the person holds member:read and agent:read (cached by other screens). The table shows entry number, time, who, action, resource and outcome. Show older entries fetches the next page; a failure there keeps the entries on screen and reports beside the button. Empty states distinguish "no entries yet" from "no entries match" (with Clear filters). The filter note says when filters cover only the pages loaded so far.
+ */
 export function AuditLog() {
   const [serverFilters, setServerFilters] = useState<AuditFilters>({})
   const auditQuery = useAuditPages(serverFilters)

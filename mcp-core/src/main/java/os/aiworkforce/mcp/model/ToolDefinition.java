@@ -46,6 +46,11 @@ public record ToolDefinition(
         Duration defaultTimeout,
         Integer rateLimitPerMinute) {
 
+    /**
+     * Compact constructor. Rejects a missing server or name and fills safe defaults: no scopes,
+     * read-only side effect and a 30 second timeout. The read default is deliberate for display only;
+     * the sandbox registry and live adapters always state the real class for every tool.
+     */
     public ToolDefinition {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(name, "name");

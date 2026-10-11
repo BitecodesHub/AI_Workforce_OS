@@ -90,6 +90,9 @@ const NO_MESSAGES: ChatMessage[] = []
 /** What the person is told about a conversation that is gone, in the thread and when it vanishes mid-visit. */
 const NOT_AVAILABLE = 'This conversation was deleted or you do not have access to it.'
 
+/**
+ * Local media-query hook: whether the query currently matches, updating when it changes. Used for the desktop, tablet and wide layout breakpoints; false where there is no window.
+ */
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => (typeof window !== 'undefined' ? window.matchMedia(query).matches : false))
   useEffect(() => {
@@ -139,11 +142,21 @@ function listedConversationIds(client: QueryClient): string[] {
   return ids
 }
 
+/** Validator for the stored sidebar mode (open or rail). */
 const isSidebarMode = (value: unknown): value is 'open' | 'rail' => value === 'open' || value === 'rail'
+/** Validator for the stored work panel mode (open or closed). */
 const isPanelMode = (value: unknown): value is 'open' | 'closed' => value === 'open' || value === 'closed'
+/** Validator for the stored details mode (auto, expanded or collapsed). */
 const isDetailsMode = (value: unknown): value is DetailsMode => value === 'auto' || value === 'expanded' || value === 'collapsed'
 
 // @find: Chat component, chat page, send message, new conversation, queue message, poll for answer, /chat
+/**
+ * The Chat page (route /chat, permission chat:use): the shell that ties the conversation sidebar, the thread, the composer and the work panel together.
+ * State in the address: ?c=<conversationId> selects a conversation (none shows the welcome screen), ?skill=<id> attaches a skill to the composer once and is then removed, ?goal= and #m-<messageId> or #question-<id> are deep links that page back through earlier messages until the target is found. Layout choices (sidebar, work panel, details mode) persist in localStorage; breakpoints decide whether panels are inline, rails or overlays; on phones a visualViewport listener shrinks the shell above the on-screen keyboard.
+ * Data: the conversation detail (messages, goals, questions, queued messages, busy state) polls through useConversation; older pages are added by useEarlierPages; agents, member names and the sidebar list come from shared queries. Opening a conversation marks it read up to its newest position. A conversation that is deleted, unreachable or never existed shows an unavailable state in place of the thread, clears its stored draft and refreshes the list.
+ * Sending: handleSend either answers an open question (when replying to one, via the answer mutation, with a 409 meaning someone already answered), or sends a new message. A first message creates the conversation, navigates to it, then posts the message; later messages post to the existing conversation and may be queued by the server while an answer is in progress. A pending line shows while a send travels; a failed send stays on screen with its reason and can be sent again. Queued messages can be edited, cancelled, started now or sent again.
+ * Other actions, each with a toast on failure: reroute an answer to another agent, ask again, stop or retry a goal, answer from documents, rename, share (private or workspace), pin, delete (with confirmation), add people, and save a conversation as a skill. Keyboard shortcuts step between conversations, focus search and open the shortcut list. A keyed announcer reads new answers, questions and errors to screen readers and speaks the newest answer when voice is on.
+ */
 export function Chat() {
   const { search, hash, navigate } = useRouter()
   const toast = useToast()
@@ -1207,6 +1220,7 @@ function AnswerAnnouncer({
 }
 
 // @find: conversation unavailable icon
+/** Decorative icon for the unavailable-conversation state. */
 function UnavailableIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none">

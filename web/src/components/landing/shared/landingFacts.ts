@@ -14,6 +14,7 @@
 
 import type { TemplateKey } from '../../../lib/templates'
 
+/** Types for the example agents: their category (a tag tone), id and the AgentFact record (id, the real template key, display name, category, title and plain-English detail). */
 export type AgentCategory = 'operations' | 'engineering' | 'growth' | 'support'
 
 export type AgentId = 'hr' | 'eng' | 'research' | 'support'
@@ -32,6 +33,7 @@ export type AgentFact = {
   detail: string
 }
 
+/** The four example assistants of the demo workspace (HR, Engineering Manager, Research, Customer Support), in display order. Used by AgentsSection and HowItWorks. */
 export const AGENTS: ReadonlyArray<AgentFact> = [
   {
     id: 'hr',
@@ -70,6 +72,7 @@ export const AGENTS: ReadonlyArray<AgentFact> = [
   },
 ]
 
+/** The seven model providers the platform ships adapters for, in display order, and the ProviderName type derived from them. */
 export const PROVIDERS = [
   'OpenRouter',
   'Groq',
@@ -82,6 +85,7 @@ export const PROVIDERS = [
 
 export type ProviderName = (typeof PROVIDERS)[number]
 
+/** Display name of the offline sandbox model. */
 export const SANDBOX_MODEL = 'Offline sandbox model'
 
 /*
@@ -95,14 +99,17 @@ export const SANDBOX_MODEL = 'Offline sandbox model'
  * The home page promises no live connection at all (see CONNECTOR_NOTICE); only the page for IT
  * teams names the live ones.
  */
+/** Connectors that can reach a real account once an administrator adds a token or signs in, copied from mcp-core's ConnectorCatalog (liveAvailable). See the comment above for how the catalogue is mirrored; check this list against it whenever it changes. */
 export const LIVE_CONNECTORS = [
   'github', 'slack', 'notion', 'linear', 'hubspot', 'webhook',
   'jira', 'confluence', 'asana', 'zendesk', 'stripe', 'zoom', 'twilio',
   'gmail', 'calendar', 'drive', 'sheets', 'outlook', 'teams', 'salesforce',
 ] as const
 
+/** Connectors that work with practice data only; currently none, so PlatformBand omits that row. */
 export const PRACTICE_CONNECTORS = [] as const
 
+/** The id of any counted connector. */
 export type ConnectorId = (typeof LIVE_CONNECTORS)[number] | (typeof PRACTICE_CONNECTORS)[number]
 
 /** The catalogue's display names. */
@@ -129,6 +136,7 @@ export const CONNECTOR_LABEL: Record<ConnectorId, string> = {
   twilio: 'Twilio',
 }
 
+/** Total number of counted connectors. */
 export const CONNECTOR_COUNT = LIVE_CONNECTORS.length + PRACTICE_CONNECTORS.length
 
 /** What the home page says about connectors: true of every install, and no promise of a live one. */
@@ -152,17 +160,20 @@ export const TOOL_LABEL: Record<ToolServer, string> = {
 }
 
 /** "a, b and c", for the sentences that name a list. */
+/** Formats a list as "a, b and c" for sentences; one item is returned as it is and an empty list as an empty string. */
 export function listOf(items: readonly string[]): string {
   if (items.length < 2) return items.join('')
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
+/** Counts stated on the page: the platform's services, the permission codes (kept equal to Permission.ALL in roleData) and the built-in roles. */
 export const SERVICE_COUNT = 8
 
 export const PERMISSION_CODE_COUNT = 46
 
 export const BUILT_IN_ROLE_COUNT = 5
 
+/** Notice that says a page is simulated in the browser, sends nothing and needs no account. */
 export const SIMULATED_PAGE_NOTICE = 'Simulated in your browser. Nothing is sent, and no account is needed.'
 
 /*
@@ -170,6 +181,7 @@ export const SIMULATED_PAGE_NOTICE = 'Simulated in your browser. Nothing is sent
  * this site has them (see useDemoCta). Everywhere else, and until the site has answered, the same
  * button is "See it work" and scrolls to the simulated demos on this page, which work anywhere.
  */
+/** The calls to action and their targets: try the demo (the sign-in page's demo accounts), see it work (the demos on the page), create a workspace, sign in and the technical page. useDemoCta chooses between the first two. */
 export const CTA = {
   demo: { label: 'Try the demo', href: '/sign-in' },
   seeItWork: { label: 'See it work', href: '#demos' },

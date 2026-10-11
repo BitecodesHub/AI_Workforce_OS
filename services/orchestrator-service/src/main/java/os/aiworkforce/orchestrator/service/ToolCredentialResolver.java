@@ -37,7 +37,7 @@ public class ToolCredentialResolver {
     public static final String UNAVAILABLE_MESSAGE =
             "Could not reach the connection store; nothing was read or sent. Try again shortly.";
 
-    /** What a lookup found. */
+    /** What a lookup found. Sealed, so callers (AgentRunner, GitHubContextController) must handle every state. */
     public sealed interface Lookup permits Connected, NotConnected, ReconnectRequired, Unavailable {}
 
     /** A live token is stored for the server. */
@@ -70,6 +70,7 @@ public class ToolCredentialResolver {
     /** The connection store could not be asked. The call must not go ahead. */
     public record Unavailable(String reason) implements Lookup {}
 
+    // Shared instance: the record has no state.
     static final NotConnected NOT_CONNECTED = new NotConnected();
 
     private final WebClient client;
@@ -78,6 +79,14 @@ public class ToolCredentialResolver {
     /** How long to wait before the one retry; short, to ride out a restart of the store. */
     private Duration retryDelay = Duration.ofMillis(300);
 
+    /**
+     * Builds a client for the integrations service.
+     *
+     * @param builder Spring's shared WebClient builder
+     * @param properties platform configuration: integrations service URL
+     * @param tokens mints the service token for each lookup
+     * @param gateway tells whether a server is a sandbox or built-in adapter
+     */
     public ToolCredentialResolver(
             WebClient.Builder builder,
             PlatformProperties properties,
@@ -101,7 +110,13 @@ public class ToolCredentialResolver {
      * would ignore a token anyway, and an outage of the store must not break every demo tool. A
      * 2xx answer with no value is {@link NotConnected}. Anything else - a timeout, any 4xx or 5xx,
      * a token that could not be minted - is tried once more after a short pause, then reported
-     * as {@link Unavailable}.
+     * as {@link Unavailable}. Blocks the calling thread for up to two 5 second requests plus the pause.
+     * Performs one HTTP read and no writes. Called by AgentRunner before a tool call executes and by
+     * the chat GitHub context controller.
+     *
+     * @param orgId the workspace whose connection is wanted
+     * @param server the tool server name, for example {@code "github"}
+     * @return never null; one of the four {@link Lookup} states
      */
     public Lookup resolve(UUID orgId, String server) {
         if (!liveCapable(server)) {
@@ -138,11 +153,13 @@ public class ToolCredentialResolver {
         return liveCapable(server);
     }
 
+    // A server is live-capable only when its adapter is registered and is neither a sandbox nor built-in; an unknown server is treated as not live.
     private boolean liveCapable(String server) {
         // A built-in server (the web browser, phone calls) has nothing stored for it to look up.
         return gateway.adapter(server).map(adapter -> !adapter.isSandbox() && !adapter.isBuiltIn()).orElse(false);
     }
 
+    // One blocking GET of the stored credential, with the workspace header and a service token, 5 second timeout. Throws on any HTTP or transport failure; the caller retries.
     private CredentialResponse fetch(UUID orgId, String server) {
         return client.get()
                 .uri("/internal/connections/{server}/credential", server)
@@ -165,6 +182,7 @@ public class ToolCredentialResolver {
         }
     }
 
+    // Short reason text for logs and the Unavailable result. Never includes the token.
     private static String describe(RuntimeException e) {
         if (e == null) {
             return "the lookup was interrupted";
@@ -174,5 +192,6 @@ public class ToolCredentialResolver {
                 : e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
+    // The integrations service's reply: value is the token; state is empty, reconnect_required or unreadable; message explains reconnect_required.
     private record CredentialResponse(String value, String state, String message) {}
 }

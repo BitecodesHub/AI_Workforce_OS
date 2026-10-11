@@ -34,6 +34,7 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public final class AwsSigV4 {
 
+    /** The signing algorithm name, written into the {@code Authorization} header and the string to sign. */
     public static final String ALGORITHM = "AWS4-HMAC-SHA256";
 
     private static final DateTimeFormatter AMZ_DATE =
@@ -100,6 +101,10 @@ public final class AwsSigV4 {
         return out;
     }
 
+    /**
+     * Builds the canonical request text: method, path, query, sorted lower-case headers, signed header
+     * names and the SHA-256 of the body. The signature is computed over its hash.
+     */
     static String canonicalRequest(
             String method,
             String path,
@@ -122,6 +127,7 @@ public final class AwsSigV4 {
         return hmac(kService, "aws4_request");
     }
 
+    /** The canonical path: empty becomes a slash, and each segment is encoded once more when {@code doubleEncode} is set. */
     static String canonicalPath(URI uri, boolean doubleEncode) {
         String raw = uri.getRawPath();
         if (raw == null || raw.isEmpty()) {
@@ -145,6 +151,7 @@ public final class AwsSigV4 {
         return out.toString();
     }
 
+    /** The canonical query: parameters decoded, re-encoded strictly and sorted by name, then by value. */
     static String canonicalQuery(URI uri) {
         String raw = uri.getRawQuery();
         if (raw == null || raw.isEmpty()) {
@@ -199,6 +206,7 @@ public final class AwsSigV4 {
         return out.toString();
     }
 
+    /** Percent-decodes one query component. */
     private static String decode(String value) {
         // '+' is kept as a literal plus: SigV4 query values are percent-encoded, never form-encoded.
         return java.net.URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8);
@@ -209,10 +217,12 @@ public final class AwsSigV4 {
         return value == null ? "" : value.strip().replaceAll("\\s+", " ");
     }
 
+    /** SHA-256 of a string in UTF-8. */
     static byte[] sha256(String text) {
         return sha256(text.getBytes(StandardCharsets.UTF_8));
     }
 
+    /** SHA-256 of raw bytes; fails only if the JVM lacks the algorithm. */
     static byte[] sha256(byte[] bytes) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(bytes);
@@ -221,6 +231,7 @@ public final class AwsSigV4 {
         }
     }
 
+    /** HMAC-SHA256 of a string in UTF-8 under the given key; fails only if the JVM lacks the algorithm. */
     static byte[] hmac(byte[] key, String data) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -231,6 +242,7 @@ public final class AwsSigV4 {
         }
     }
 
+    /** Lower-case hexadecimal form of a digest. */
     static String hex(byte[] bytes) {
         return HexFormat.of().formatHex(bytes);
     }

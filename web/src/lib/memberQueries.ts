@@ -27,6 +27,7 @@ export type ResetLink = { url: string; expiresAt: string }
 /** What accepting an invitation returns: who joined which workspace, at which role. */
 export type AcceptedInvitation = { userId: string; orgId: string; email: string; roleName: string }
 
+/** Whether a role is the built-in owner role (system-defined and named owner). */
 const isOwnerRole = (role: Pick<Role, 'name' | 'system'>) => role.system && role.name === OWNER_ROLE
 
 /**

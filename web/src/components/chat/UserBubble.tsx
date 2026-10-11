@@ -12,7 +12,15 @@ import { SentContextChips } from './ContextChips'
 const CLAMP_LINES = 12
 
 // @find: UserBubble, user bubble, user message, my message, sent message bubble, person bubble
-/** What a person typed, right-aligned, the way the composer sent it. */
+/**
+ * What a person typed, right-aligned, the way the composer sent it.
+ *
+ * Rendered by MessageItem for a person's text message. Shows the author's name when the message does not
+ * continue a group and is not the viewer's own, the context chips that were attached (SentContextChips), the
+ * attached files (AttachmentCards), the text (clamped to 12 lines with Show more or Show less) and actions:
+ * Copy, and for the viewer's own text "Edit and send again", which hands the text to onEditAndResend so
+ * Composer can refill. A message with files or context only has no text bubble or text actions.
+ */
 export function UserBubble({
   message,
   grouped,

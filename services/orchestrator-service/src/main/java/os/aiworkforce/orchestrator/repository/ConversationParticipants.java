@@ -13,6 +13,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import os.aiworkforce.orchestrator.domain.ConversationParticipant;
 
+/**
+ * Spring Data repository for ConversationParticipant rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface ConversationParticipants extends JpaRepository<ConversationParticipant, ConversationParticipant.Key> {
 
     // @find: list participants of conversation

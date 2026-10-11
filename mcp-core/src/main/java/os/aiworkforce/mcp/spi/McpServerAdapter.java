@@ -88,6 +88,11 @@ public interface McpServerAdapter {
         return Optional.empty();
     }
 
+    /**
+     * Looks one of this server's tools up by its bare name (without the server prefix). Used by
+     * {@code ToolGateway} to find the side-effect class and scopes before a call; empty when the
+     * name is unknown.
+     */
     default Optional<ToolDefinition> tool(String name) {
         return tools().stream().filter(tool -> tool.name().equals(name)).findFirst();
     }

@@ -18,6 +18,9 @@ import { useRouter } from './router'
 
 type FacetValue = string | readonly string[] | null | undefined
 
+/**
+ * Inputs to useListFilter: the rows, how to read a row's searchable text, the facets and the search parameter name.
+ */
 export type ListFilterOptions<T> = {
   /** The loaded rows. Undefined while loading reads as an empty list. */
   rows: readonly T[] | undefined
@@ -29,6 +32,9 @@ export type ListFilterOptions<T> = {
   queryParam?: string
 }
 
+/**
+ * What useListFilter returns: the current query and selections, the actions that change them, the filtered rows, per-value counts and totals.
+ */
 export type ListFilter<T> = {
   query: string
   setQuery: (query: string) => void
@@ -53,25 +59,32 @@ export type ListFilter<T> = {
   total: number
 }
 
+/** Splits a comma-separated URL parameter into trimmed non-empty values. */
 function splitValues(raw: string | null): string[] {
   return raw ? raw.split(',').map((value) => value.trim()).filter(Boolean) : []
 }
 
+/** Normalises a facet value (none, one, or several) to a list. */
 function valuesOf(value: FacetValue): readonly string[] {
   if (value == null) return []
   return typeof value === 'string' ? [value] : value
 }
 
+/** Writes a facet's selection to the query string, or removes the parameter when nothing is selected. */
 function setValues(next: URLSearchParams, param: string, values: string[]) {
   if (values.length > 0) next.set(param, values.join(','))
   else next.delete(param)
 }
 
+/** Splits a search query into lower-case terms; a row must contain every term. */
 function termsOf(query: string): string[] {
   return query.toLowerCase().split(/\s+/).filter(Boolean)
 }
 
 // @find: use list filter, search and filter a table, URL query state
+/**
+ * Search and facet filtering for a list page, with the state kept in the address bar so a filtered view can be linked, reloaded and reached with Back. Flow: reads ?q= and one parameter per facet from the router; every change rewrites the query string with replace and no scroll (other parameters and the #fragment are kept); the rows are filtered by every term and by any selected value within each facet; counts tell how many rows each facet value would show. Used by the Agents, Tasks, Runs, Skills, Connectors, Members, Approvals, Audit log and Source detail pages.
+ */
 export function useListFilter<T>({ rows, text, facets, queryParam = 'q' }: ListFilterOptions<T>): ListFilter<T> {
   const { search, navigate } = useRouter()
 

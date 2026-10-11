@@ -36,8 +36,10 @@ import type { CitationNumber, PageNumber, QuestionId, Segment } from './citedAns
 
 /* ---- State ------------------------------------------------------------------------------------- */
 
+/** The demo's phases: idle, retrieving (scanning the pages), answering (revealing words), answered and declined. */
 type Phase = 'idle' | 'retrieving' | 'answering' | 'answered' | 'declined'
 
+/** Demo state: phase, the question asked, how many words of the answer are revealed, the pages retrieval hit, the citation previewed (active) and the one pinned by a press, whether autoplay has happened, the live announcement, and a counter of questions asked (which restarts the page scan animation). */
 type State = {
   phase: Phase
   question: QuestionId | null
@@ -51,6 +53,7 @@ type State = {
   asked: number
 }
 
+/** Events of the reducer: ASK, HITS, DECLINE, ANSWERING, WORDS, ANSWERED, CLEAR, and PREVIEW, UNPREVIEW and PIN for citation markers. */
 type Action =
   | { type: 'ASK'; question: QuestionId }
   | { type: 'HITS' }
@@ -63,16 +66,19 @@ type Action =
   | { type: 'UNPREVIEW'; n: CitationNumber }
   | { type: 'PIN'; n: CitationNumber }
 
+/** Word count of the whole answer, and the timings in milliseconds: when hits appear (1100), when the answer starts (1400) and the delay per word (22). */
 const TOTAL_WORDS = wordCount(ANSWER)
 
 const TIMING = { hits: 1100, answer: 1400, word: 22 } as const
 
+/** Screen reader announcements for searching, a declined question and a finished answer. */
 const ANNOUNCE = {
   searching: 'Searching the workspace documents.',
   declined: 'No document supports an answer. The agent did not guess.',
   answered: `Answer ready. It cites two passages from ${DOCUMENT_NAME}, pages ${PASSAGES[1].page} and ${PASSAGES[2].page}.`,
 } as const
 
+/** The starting state: nothing asked. */
 const IDLE: State = {
   phase: 'idle',
   question: null,
@@ -85,6 +91,7 @@ const IDLE: State = {
   asked: 0,
 }
 
+/** Transitions of the demo. ASK starts retrieving and resets everything else; HITS, ANSWERING, WORDS, ANSWERED and DECLINE apply only in the phase they belong to (so a late timer after Clear is ignored); CLEAR returns to idle but keeps the autoplayed flag; PREVIEW and UNPREVIEW follow hover and focus on a marker (an unpreview falls back to the pinned one); PIN toggles the pinned citation. */
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'ASK':
@@ -124,6 +131,7 @@ function reducer(state: State, action: Action): State {
 }
 
 /** Under reduced motion the demo opens on the answered question, every word shown. */
+/** Initial state: idle normally; with reduced motion the demo opens on the answered first question with every word and both hits shown. */
 function init(reduced: boolean): State {
   if (!reduced) return IDLE
   return {
@@ -136,6 +144,7 @@ function init(reduced: boolean): State {
   }
 }
 
+/** Timed steps for a question (played with useSequence): ASK at 0. The unsupported question (jupiter) declines after 1100 ms. The supported one shows the hits at 1100 ms, starts answering at 1400 ms, adds one word every 22 ms, and finishes after the last word. */
 function askSteps(question: QuestionId, dispatch: Dispatch<Action>): SequenceStep[] {
   const steps: SequenceStep[] = [{ at: 0, run: () => dispatch({ type: 'ASK', question }) }]
   if (question === 'jupiter') {
@@ -151,12 +160,14 @@ function askSteps(question: QuestionId, dispatch: Dispatch<Action>): SequenceSte
   return steps
 }
 
+/** The page numbers of the document and the citation numbers, used to draw the page grid and the passages. */
 const PAGES: ReadonlyArray<number> = Array.from({ length: PAGE_COUNT }, (_, index) => index + 1)
 
 const CITATIONS: ReadonlyArray<CitationNumber> = [1, 2]
 
 /* ---- Parts ---------------------------------------------------------------------------------------- */
 
+/** Props of a citation marker: its number, whether it is previewed or pinned, and the reducer dispatch. */
 type MarkerProps = {
   n: CitationNumber
   active: boolean
@@ -164,6 +175,7 @@ type MarkerProps = {
   dispatch: Dispatch<Action>
 }
 
+/** A numbered citation button in the answer. Hover or focus previews the passage and page behind it, leaving removes the preview, and a press pins it (aria-pressed). It controls the passage list item and its label names the source and page. */
 function CitationMarker({ n, active, pinned, dispatch }: MarkerProps): ReactElement {
   const preview = () => dispatch({ type: 'PREVIEW', n })
   const unpreview = () => dispatch({ type: 'UNPREVIEW', n })
@@ -186,6 +198,7 @@ function CitationMarker({ n, active, pinned, dispatch }: MarkerProps): ReactElem
   )
 }
 
+/** The (partially revealed) answer: text segments as they are and citation segments as CitationMarker buttons. */
 function AnswerText({ segments, state, dispatch }: { segments: ReadonlyArray<Segment>; state: State; dispatch: Dispatch<Action> }): ReactElement {
   return (
     <p className="lp-cite-answer-text">
@@ -206,6 +219,7 @@ function AnswerText({ segments, state, dispatch }: { segments: ReadonlyArray<Seg
   )
 }
 
+/** The status line under the page grid: no matches (declined), the number of matching passages (technical voice shows keyword, vector and merged counts), "Searching" or nothing. */
 function retrievalLine(state: State, voice: DemoVoice): string | null {
   if (state.phase === 'declined') return voice === 'plain' ? 'Nothing in the document covers this' : '0 passages matched'
   if (state.hits.length > 0) return voice === 'plain' ? 'Found 2 matching passages' : 'keyword 2 · vector 2 · merged 2 passages'
@@ -243,9 +257,11 @@ const COPY: Record<DemoVoice, { name: string; lead: string; footnote: string; so
 
 /* ---- Demo ------------------------------------------------------------------------------------------ */
 
+/** Props: voice, technical (default) or plain. */
 export type CitedAnswerDemoProps = { voice?: DemoVoice }
 
 // @find: CitedAnswerDemo component, cited answer demo
+/** Landing demo 04: a simulated cited answer. State is a reducer (reducer, init); useSequence replays retrieval and the word-by-word reveal; it autoplays the first question once the stage is 45 percent in view and not again. Two chips ask the supported question (two passages found, answer with citation markers) or an unsupported one (declined, nothing cited). Hovering, focusing or pressing a marker highlights the page and passage behind it. Clear cancels any running sequence. Nothing is actually retrieved: the search is replayed from static data. Rendered by DemoStage inside DemoFrame, with copy for the two voices. */
 export function CitedAnswerDemo({ voice = 'technical' }: CitedAnswerDemoProps = {}): ReactElement {
   const copy = COPY[voice]
   const { reduced } = useLandingMotion()

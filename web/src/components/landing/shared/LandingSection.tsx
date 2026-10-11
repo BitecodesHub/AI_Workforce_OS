@@ -10,12 +10,14 @@ import { revealStyle, useReveal } from '../../../hooks/useReveal'
  * wrapper everything else on the page is built from.
  */
 
+/** True for any node that would render something (not undefined, null, false or an empty string). */
 function isPresent(node: ReactNode): boolean {
   return node !== undefined && node !== null && node !== false && node !== ''
 }
 
 /* ---- LandingSection ------------------------------------------------------------------------ */
 
+/** Props: id, labelledBy (the id of the heading), children, className and tight (reduced spacing). */
 export type LandingSectionProps = {
   id: string
   labelledBy: string
@@ -40,6 +42,7 @@ export function LandingSection({ id, labelledBy, children, className, tight }: L
 
 /* ---- Reveal -------------------------------------------------------------------------------- */
 
+/** Elements a Reveal may render as, and the props of Reveal (as, stagger index, className, id, labelledBy, children). */
 export type RevealTag = 'div' | 'article' | 'li' | 'figure' | 'aside' | 'header' | 'section'
 
 export type RevealProps = {
@@ -71,6 +74,7 @@ export function Reveal({ as, index, className, id, labelledBy, children }: Revea
 
 /* ---- SectionHead --------------------------------------------------------------------------- */
 
+/** Props: eyebrow, title, titleId (the heading's id, referenced by the section's aria-labelledby), lead, aside and band (a tighter heading style). */
 export type SectionHeadProps = {
   eyebrow: string
   title: ReactNode

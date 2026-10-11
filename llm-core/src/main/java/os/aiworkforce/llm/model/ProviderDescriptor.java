@@ -55,6 +55,7 @@ public record ProviderDescriptor(
         SANDBOX
     }
 
+    /** Requires an identifier and a kind, and makes the header and region collections immutable. */
     public ProviderDescriptor {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(kind, "kind");
@@ -72,6 +73,7 @@ public record ProviderDescriptor(
         return kind != Kind.SANDBOX && credentialRef != null && !credentialRef.isBlank();
     }
 
+    /** Whether the provider is addressed per region, which is true only for Bedrock. */
     public boolean isRegional() {
         return kind == Kind.BEDROCK;
     }

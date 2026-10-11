@@ -29,7 +29,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class OperationsMetrics {
 
+    // Metric name of the pending-approvals gauge.
     public static final String APPROVALS_PENDING = "aiwos.approvals.pending";
+    // Metric name of the per-sweep timer, tagged "sweep".
     public static final String SWEEP_DURATION = "aiwos.sweep.duration";
 
     /** The sweeps that are timed, registered at start so each has a series before its first run. */
@@ -49,6 +51,12 @@ public class OperationsMetrics {
     private final JdbcTemplate jdbc;
     private final AtomicLong pendingApprovals = new AtomicLong();
 
+    /**
+     * Registers the pending-approvals gauge, which reads a held value and never queries, and pre-registers a timer for each name in {@link #SWEEPS}.
+     *
+     * @param meters the Micrometer registry
+     * @param jdbc used only to count pending approvals
+     */
     public OperationsMetrics(MeterRegistry meters, JdbcTemplate jdbc) {
         this.meters = meters;
         this.jdbc = jdbc;
@@ -74,7 +82,15 @@ public class OperationsMetrics {
     }
 
     // @find: time a sweep
-    /** Runs a sweep and records how long it took, whether it returned or threw. */
+    /**
+     * Runs a sweep and records how long it took, whether it returned or threw. A new timer series
+     * is created for a name not listed in {@link #SWEEPS}, so callers should use only the listed names.
+     * An exception from the body propagates unchanged after the time is recorded. Called by
+     * MaintenanceScheduler around each pass.
+     *
+     * @param sweep the sweep's name, used as the {@code sweep} tag
+     * @param body the work to run
+     */
     public void timed(String sweep, Runnable body) {
         Timer.Sample sample = Timer.start(meters);
         try {
@@ -84,6 +100,7 @@ public class OperationsMetrics {
         }
     }
 
+    // Gets or registers the timer for one sweep name; Micrometer returns the existing meter on repeat calls.
     private Timer timer(String sweep) {
         return Timer.builder(SWEEP_DURATION)
                 .description("How long one pass of a background sweep takes")

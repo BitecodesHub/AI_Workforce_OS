@@ -24,6 +24,19 @@ import { useToast } from '../../lib/toast'
 const NOTE_MAX = 20_000
 
 // @find: AgentDocumentsCard, agent documents card, agent documents, agent's own documents, agent files, private documents
+/**
+ * Card listing the files and typed notes that only one agent reads, with add and remove controls.
+ * Flow: reads the agent's documents with useAgentDocuments (when the viewer holds agent:read) and renders
+ * them through QueryState, which supplies the loading, error, forbidden and empty states. A document that
+ * is still pending shows a "Being read" tag; one that is neither ready nor indexed shows its skip reason.
+ * Anyone holding agent:update also sees the add controls. Choosing a file calls useUploadAgentDocument;
+ * submitting the note form calls useAddAgentNote (title and text, both required, text capped at NOTE_MAX);
+ * Remove opens a ConfirmDialog and, on confirmation, calls useDeleteAgentDocument. Success is reported
+ * with a toast; a failed upload or note shows an inline warning Notice, a failed removal shows an error toast.
+ * State: the note fields, the last failure, the document awaiting removal, and a ref to the hidden file
+ * input, which is cleared after every upload so the same file can be chosen again.
+ * Rendered by the agent detail page; props are the agent id and its display name.
+ */
 export function AgentDocumentsCard({ agentId, agentName }: { agentId: string; agentName: string }) {
   const toast = useToast()
   const canEdit = can('agent:update')

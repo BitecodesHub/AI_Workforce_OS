@@ -24,6 +24,7 @@ public enum EmbeddingPurpose {
         return value != null && value.strip().toLowerCase(Locale.ROOT).equals("query") ? QUERY : PASSAGE;
     }
 
+    /** The lower-case wire form, {@code query} or {@code passage}. */
     public String wire() {
         return name().toLowerCase(Locale.ROOT);
     }

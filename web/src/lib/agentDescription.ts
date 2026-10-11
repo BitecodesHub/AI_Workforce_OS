@@ -10,6 +10,7 @@
  */
 const IRREGULAR_VERBS: Record<string, string> = { have: 'has', do: 'does', go: 'goes', be: 'is' }
 
+/** Converts a base-form verb to its third-person singular ("triage" to "triages"), honouring the few irregular verbs and the -es and -ies endings. */
 function thirdPerson(verb: string): string {
   const lower = verb.toLowerCase()
   const irregular = IRREGULAR_VERBS[lower]
@@ -29,17 +30,20 @@ const LISTED_VERBS = new Set(
   ).split(' '),
 )
 
+/** Conjugates known verbs that follow "and" or a comma in the rest of a sentence, so a list such as "triage tickets and draft replies" stays grammatical. Unknown words are left alone. */
 function conjugateListedVerbs(text: string): string {
   return text.replace(/(,\s*(?:and\s+)?|\s+and\s+)([a-z]+)\b/g, (match, joiner: string, word: string) =>
     LISTED_VERBS.has(word) ? `${joiner}${thirdPerson(word)}` : match,
   )
 }
 
+/** Upper-cases the first character. */
 function capitalise(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 // @find: describe agent, rewrite agent summary, you to third person
+/** Rewrites an agent summary written to the agent ("You triage tickets") into a third-person line about it ("Triages tickets"). Flow: collapse whitespace, unwrap a leading "You are ...: you ..." form, conjugate the first verb, keep the first sentence. Returns `fallback` for an empty summary or one still addressed to "you" after rewriting (for example "You will ..."). Pure; no side effects. */
 export function describeAgent(summary: string | null | undefined, fallback: string): string {
   const clean = (summary ?? '').replace(/\s+/g, ' ').trim()
   if (!clean) return fallback

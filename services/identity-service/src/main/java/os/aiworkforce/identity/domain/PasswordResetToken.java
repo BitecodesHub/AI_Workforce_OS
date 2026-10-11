@@ -50,10 +50,14 @@ public class PasswordResetToken extends BaseEntity {
     @Column(name = "used_at")
     private Instant usedAt;
 
+    /** Whether the link has already been redeemed or replaced by a newer one. */
     public boolean isUsed() {
         return usedAt != null;
     }
 
+    /**
+     * Whether the link has expired at {@code now}. The expiry instant itself counts as expired.
+     */
     public boolean isExpiredAt(Instant now) {
         return !expiresAt.isAfter(now);
     }

@@ -53,6 +53,7 @@ public class ScheduleController {
     /** A history page's size when none is asked for, and the most one may hold. */
     static final int DEFAULT_RUNS_PAGE = 20;
 
+    /** Largest history page size accepted; larger requests are clamped. */
     static final int MAX_RUNS_PAGE = 100;
 
     private final ScheduleService service;
@@ -62,31 +63,38 @@ public class ScheduleController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.repository.Tasks tasks;
 
+    /** Reads the latest run of each fired goal's first task, so the history can link to its trace; absent only in hand-built tests. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.repository.Runs runs;
 
+    /** Builds the controller; used by Spring. The service holds the rules, the agent repository supplies agent names for views. */
     public ScheduleController(ScheduleService service, Agents agents) {
         this.service = service;
         this.agents = agents;
     }
 
+    /** Body of the preview call: the schedule phrase and an optional time zone id (the workspace zone is used when absent). */
     public record PreviewRequest(@NotBlank @Size(max = 200) String text, String timezone) {}
 
+    /** How a phrase was read: kind, cron or single run time, plain-words description, the zone used and the next few run times. */
     public record PreviewResponse(
             String kind, String cron, Instant runAt, String description, String timezone, List<Instant> nextRuns) {}
 
+    /** Body of the create call: a name, the agent that does the work, the standing instruction and the timing phrase. */
     public record CreateScheduleRequest(
             @NotBlank @Size(max = 120) String name,
             @NotNull UUID agentId,
             @NotBlank @Size(max = 10_000) String instruction,
             @NotBlank @Size(max = 200) String text) {}
 
+    /** Body of the update call; any field left out keeps its current value. */
     public record UpdateScheduleRequest(
             @Size(max = 120) String name,
             UUID agentId,
             @Size(max = 10_000) String instruction,
             @Size(max = 200) String text) {}
 
+    /** Body of the owner change: the member the schedule should run as from now on. */
     public record ChangeOwnerRequest(@NotNull UUID userId) {}
 
     /**
@@ -139,6 +147,12 @@ public class ScheduleController {
     public record ScheduleRunsPage(
             List<ScheduleRunView> runs, int page, int size, long total, boolean hasMore, ScheduleRunCounts counts) {}
 
+    /**
+     * Route {@code POST /api/schedules/preview}; requires {@code task:read}.
+     *
+     * <p>Reads a schedule phrase and returns what it means and its next run times. Nothing is saved.
+     * A phrase that cannot be read is refused by the service with an error that carries examples.
+     */
     // @find: preview schedule text, check when it will run, POST /api/schedules/preview
     @PostMapping("/preview")
     @RequiresPermission(Permission.Codes.TASK_READ)
@@ -154,6 +168,12 @@ public class ScheduleController {
                 result.nextRuns());
     }
 
+    /**
+     * Route {@code GET /api/schedules}; requires {@code task:read}.
+     *
+     * <p>Returns every schedule in the workspace, by name, or only those given to one agent when
+     * {@code agentId} is supplied.
+     */
     // @find: list schedules, GET /api/schedules, Schedules page
     @GetMapping
     @RequiresPermission(Permission.Codes.TASK_READ)
@@ -163,6 +183,12 @@ public class ScheduleController {
         return found.stream().map(this::toView).toList();
     }
 
+    /**
+     * Route {@code POST /api/schedules}; requires {@code task:create}; responds 201 with the new schedule.
+     *
+     * <p>Saves a schedule that runs as the caller. Writes the schedule row and an audit entry through the
+     * service; an unreadable phrase or an inactive agent is refused.
+     */
     // @find: create schedule, new schedule, POST /api/schedules, New schedule dialog
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -174,6 +200,12 @@ public class ScheduleController {
         return toView(schedule);
     }
 
+    /**
+     * Route {@code PUT /api/schedules/{scheduleId}}; requires {@code task:create}, and the service then
+     * requires the caller to own the schedule or hold {@code task:cancel}.
+     *
+     * <p>Changes the name, agent, instruction or timing and returns the updated schedule.
+     */
     // @find: update schedule, edit schedule, PUT /api/schedules/{id}
     @PutMapping("/{scheduleId}")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -190,6 +222,11 @@ public class ScheduleController {
         return toView(schedule);
     }
 
+    /**
+     * Route {@code PUT /api/schedules/{scheduleId}/owner}; requires {@code task:cancel}.
+     *
+     * <p>Hands the schedule to another member, who it then runs as. Returns the updated schedule.
+     */
     // @find: change schedule owner, reassign schedule, PUT /api/schedules/{id}/owner
     @PutMapping("/{scheduleId}/owner")
     @RequiresPermission(Permission.Codes.TASK_CANCEL)
@@ -198,6 +235,10 @@ public class ScheduleController {
         return toView(service.changeOwner(orgId(), scheduleId, request.userId(), RequestContext.requireActor()));
     }
 
+    /**
+     * Route {@code POST /api/schedules/{scheduleId}/pause}; requires {@code task:create} plus ownership
+     * or {@code task:cancel}. Stops the schedule from firing until resumed and returns it.
+     */
     // @find: pause schedule, stop schedule, POST /api/schedules/{id}/pause
     @PostMapping("/{scheduleId}/pause")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -206,6 +247,10 @@ public class ScheduleController {
         return toView(service.pause(orgId(), scheduleId, RequestContext.requireActor()));
     }
 
+    /**
+     * Route {@code POST /api/schedules/{scheduleId}/resume}; requires {@code task:create} plus ownership
+     * or {@code task:cancel}. Re-enables the schedule, recomputes its next run and returns it.
+     */
     // @find: resume schedule, restart schedule, POST /api/schedules/{id}/resume
     @PostMapping("/{scheduleId}/resume")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -214,6 +259,11 @@ public class ScheduleController {
         return toView(service.resume(orgId(), scheduleId, RequestContext.requireActor()));
     }
 
+    /**
+     * Route {@code POST /api/schedules/{scheduleId}/run-now}; requires {@code task:create} plus ownership
+     * or {@code task:cancel}. Fires the schedule immediately as the caller, starting a goal, and returns
+     * the schedule with its updated last-run fields.
+     */
     // @find: run schedule now, run now button, POST /api/schedules/{id}/run-now
     @PostMapping("/{scheduleId}/run-now")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -222,6 +272,10 @@ public class ScheduleController {
         return toView(service.runNow(orgId(), scheduleId, RequestContext.requireActor()));
     }
 
+    /**
+     * Route {@code DELETE /api/schedules/{scheduleId}}; requires {@code task:create} plus ownership or
+     * {@code task:cancel}; responds 204. Removes the schedule row and records an audit entry.
+     */
     // @find: delete schedule, remove schedule, DELETE /api/schedules/{id}
     @DeleteMapping("/{scheduleId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -287,6 +341,7 @@ public class ScheduleController {
         return traces;
     }
 
+    /** Builds the console view of a schedule, looking up the agent's name (null when the agent no longer exists). */
     private ScheduleView toView(Schedule schedule) {
         String agentName =
                 agents.findById(schedule.getAgentId()).map(Agent::getName).orElse(null);
@@ -323,6 +378,7 @@ public class ScheduleController {
         return schedule.isEnabled() ? "active" : "paused";
     }
 
+    /** Builds one history row; {@code trace} is {@code [taskId, runId]} or null when no task has started. */
     private static ScheduleRunView toRunView(Goal goal, UUID[] trace) {
         return new ScheduleRunView(
                 goal.getId(),
@@ -334,6 +390,7 @@ public class ScheduleController {
                 trace == null ? null : trace[0]);
     }
 
+    /** The workspace of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

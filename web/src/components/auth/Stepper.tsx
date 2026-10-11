@@ -15,6 +15,11 @@ export type StepperProps = {
 }
 
 // @find: Stepper, step indicator, progress steps
+/**
+ * Ordered list of step labels with the state of each derived from current (a zero-based index): done,
+ * current or upcoming. The current step carries aria-current="step"; a done step shows a tick and a
+ * visually hidden "completed". Stateless; rendered by multi-step signed-out screens.
+ */
 export function Stepper({ steps, current }: StepperProps) {
   return (
     <ol className="auth-steps" aria-label="Progress">

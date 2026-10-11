@@ -21,8 +21,10 @@ import { useNow } from '../../lib/useNow'
  * already shows one at the top - it only points back up to it.
  */
 
+/** Task statuses that mean a run is still going: running, waiting for approval, waiting for input. */
 const ACTIVE_STATUS = new Set(['running', 'waiting_approval', 'waiting_input'])
 
+/** Timing text for a step: running elapsed time while active, the final duration once finished, otherwise "Not started". */
 function stepTiming(task: BoardTask, now: number): string {
   if (!task.startedAt) return 'Not started'
   if (ACTIVE_STATUS.has(task.status.toLowerCase())) {
@@ -32,6 +34,7 @@ function stepTiming(task: BoardTask, now: number): string {
   return 'Not started'
 }
 
+/** A task result rendered as Markdown, clamped with a Show more button once it is longer than about 420 characters (a character count stands in for measuring rendered lines). */
 function ClampedResult({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false)
   // A short result never needs the control at all; a rough character count stands in for actually
@@ -52,6 +55,14 @@ function ClampedResult({ text }: { text: string }) {
   )
 }
 
+/**
+ * One step of a goal: agent avatar and name (with a Default tag for the fallback agent), task status, attempt
+ * count for retried tasks, timing, the task title, any failure reason, the result (labelled "Incomplete
+ * answer" for a failed step), a collapsible trace (RunTraceCompact, mounted only when open) and actions.
+ * "Stop this step" appears for an active step with a run when the viewer holds run:cancel; it opens a
+ * ConfirmDialog whose text depends on whether the run waits on an approval or a question and calls
+ * useCancelRun, with a toast on success and the error shown in the dialog. "Open run" links to /runs/<id>.
+ */
 function StepRow({
   task,
   agentName,
@@ -172,6 +183,11 @@ function StepRow({
 }
 
 // @find: step list component, goal tasks in order
+/**
+ * Ordered list of a goal's tasks (by position) as StepRow items, resolving each agent from the board.
+ * Rendered inside GoalSheet; onGoToQuestion is passed to each trace so a step waiting for an answer points
+ * back to the form at the top of the sheet instead of showing a second one.
+ */
 export function StepList({
   goal,
   board,

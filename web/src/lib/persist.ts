@@ -11,6 +11,9 @@ import { useCallback, useState } from 'react'
  */
 
 // @find: read stored value, localStorage get
+/**
+ * Reads and JSON-parses a localStorage value. Returns `fallback` when the key is absent, storage is blocked, the text is not valid JSON, or the optional validator rejects the parsed value. Never throws.
+ */
 export function readStored<T>(key: string, fallback: T, validate?: (value: unknown) => value is T): T {
   try {
     const raw = localStorage.getItem(key)
@@ -24,6 +27,9 @@ export function readStored<T>(key: string, fallback: T, validate?: (value: unkno
 }
 
 // @find: write stored value, localStorage set
+/**
+ * JSON-stringifies and stores a value; silently does nothing when storage is blocked or full. Never throws.
+ */
 export function writeStored<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value))

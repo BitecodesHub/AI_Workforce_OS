@@ -23,6 +23,11 @@ import os.aiworkforce.orchestrator.domain.ModelPolicyEntity;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for ModelPolicyEntity rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface ModelPolicies extends JpaRepository<ModelPolicyEntity, UUID> {
 
     // @find: find policy for an agent

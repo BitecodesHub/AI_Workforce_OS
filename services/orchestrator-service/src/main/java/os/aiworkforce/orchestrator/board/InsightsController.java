@@ -36,10 +36,17 @@ public class InsightsController {
 
     private final InsightsService insights;
 
+    /** Builds the controller; used by Spring. */
     public InsightsController(InsightsService insights) {
         this.insights = insights;
     }
 
+    /**
+     * Route {@code GET /api/orchestrator/insights}; requires {@code analytics:read}.
+     *
+     * <p>Returns the workspace's figures for the {@code window} (7, 30 or 90 days; the service applies a
+     * default when absent and refuses an unknown value). Read only.
+     */
     // @find: workspace insights, analytics figures, GET /api/orchestrator/insights
     @GetMapping
     @RequiresPermission(Permission.Codes.ANALYTICS_READ)
@@ -48,6 +55,12 @@ public class InsightsController {
         return insights.insights(orgId(), window);
     }
 
+    /**
+     * Route {@code GET /api/orchestrator/insights/agents}; requires {@code run:read}.
+     *
+     * <p>Returns one row per agent for the same kind of window. The hourly staff cost in the response is
+     * removed (set to null) unless the caller also holds {@code analytics:read}. Read only.
+     */
     // @find: agent insights, per-agent figures, GET /api/orchestrator/insights/agents
     @GetMapping("/agents")
     @RequiresPermission(Permission.Codes.RUN_READ)
@@ -64,6 +77,7 @@ public class InsightsController {
                 result.window(), result.from(), result.to(), result.basis(), result.valueLabel(), null, result.agents());
     }
 
+    /** The workspace of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

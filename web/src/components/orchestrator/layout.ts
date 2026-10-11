@@ -22,6 +22,7 @@ import { isGoalActive } from '../../lib/queries'
 
 /* Tall enough that a node at the very bottom of the ring keeps its label inside the canvas. */
 export const FLOW_VIEWBOX = { width: 640, height: 360 } as const
+/** Geometry constants of the flow map: the hub position inside FLOW_VIEWBOX and the radius of the agent ring. */
 export const HUB = { x: 320, y: 172 } as const
 export const RING_RADIUS = 128
 
@@ -110,6 +111,7 @@ export function flowEdges(goals: readonly BoardGoal[]): FlowEdge[] {
 
 /* ---- Swimlanes ----------------------------------------------------------------------------------- */
 
+/** Default length in minutes of the swimlane window (two hours) used by laneWindow when the caller gives none. */
 export const SWIMLANE_WINDOW_MINUTES = 120
 const DEFAULT_TICK_STEP_MS = 15 * 60 * 1000
 
@@ -190,9 +192,11 @@ export type BoardCard = {
   queuePosition: number | null
 }
 
+/** Goal statuses that mean finished, and task statuses that mean waiting on a person. */
 const FINISHED_GOAL = new Set(['completed', 'failed', 'cancelled'])
 const WAITING_TASK = new Set(['waiting_input', 'waiting_approval'])
 
+/** The task that explains how a goal ended: the first failed or cancelled task, else the last completed, else the last one. */
 function endingTask(tasks: readonly BoardTask[]): BoardTask | null {
   const stoppedEarly = tasks.find((task) => task.status.toLowerCase() === 'failed' || task.status.toLowerCase() === 'cancelled')
   if (stoppedEarly) return stoppedEarly
@@ -310,6 +314,7 @@ export function countCards(cards: readonly BoardCard[], statusKey: CardStatusKey
 /* ---- Summary tile notes: a note only ever explains a figure above zero, so a "0" tile never
    reads as if something were paused or waiting. ------------------------------------------------ */
 
+/** Singular or plural noun with its count, for the summary tile notes. */
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`
 }

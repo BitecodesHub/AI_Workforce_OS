@@ -12,7 +12,13 @@ import java.util.UUID;
  * than the cause deserves. One interface per file is also the convention.
  */
 
-/** A passage with everything needed to cite it, assembled in one query. */
+/**
+ * A passage with everything needed to cite it, assembled in one query.
+ *
+ * <p>A projection filled by the native query {@code Chunks.findCitable}, which joins each passage to
+ * its document; the getter names match that query's column aliases. {@code RetrievalService} turns each
+ * row into a {@code Passage}. The getters need no further documentation.
+ */
 public interface CitableChunk {
     UUID getChunkId();
 

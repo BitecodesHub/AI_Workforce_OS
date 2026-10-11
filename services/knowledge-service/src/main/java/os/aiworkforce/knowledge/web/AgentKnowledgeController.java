@@ -1,6 +1,6 @@
 // @find: knowledge base, knowledge, documents, sources, agent documents, agent knowledge, AI employee documents, agent-owned source, upload file to agent, add note to agent, delete agent document, GET /api/knowledge/agents/{agentId}/documents, POST /api/knowledge/agents/{agentId}/notes, AgentKnowledgeController
 // @what: REST endpoints for an AI employee's own private documents and notes, kept apart from workspace sources.
-// @flow: Called by the agent detail page; delegates to IngestionService and RetrievalService, creating the agent's own source on first use.
+// @flow: Called by the agent detail page; delegates to IngestionService, Sources and Documents, creating the agent's own source on first use.
 package os.aiworkforce.knowledge.web;
 
 import java.nio.charset.StandardCharsets;
@@ -48,23 +48,40 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
 @Tag(name = "Agent documents")
 public class AgentKnowledgeController {
 
+    /** The largest file accepted for an agent, 25 MB; a larger one is refused before it is read. */
     static final long MAX_UPLOAD_BYTES = 25L * 1024 * 1024;
+    /** The longest typed note accepted, in characters. */
     static final int MAX_NOTE_CHARS = 20_000;
 
     private final Sources sources;
     private final Documents documents;
     private final IngestionService ingestion;
 
+    /**
+     * Creates the controller.
+     *
+     * @param sources reads the agent's own sources
+     * @param documents lists the documents of those sources
+     * @param ingestion creates the source and does the indexing and deleting
+     */
     public AgentKnowledgeController(Sources sources, Documents documents, IngestionService ingestion) {
         this.sources = sources;
         this.documents = documents;
         this.ingestion = ingestion;
     }
 
+    /** The body of the note endpoint: a title, which becomes the file name, and the note text. */
     public record NoteRequest(
             @NotBlank @Size(max = 120) String title, @NotBlank @Size(max = MAX_NOTE_CHARS) String text) {}
 
     // @find: list agent documents, GET /api/knowledge/agents/{agentId}/documents
+    /**
+     * {@code GET /api/knowledge/agents/{agentId}/documents}: lists the documents and notes the agent keeps.
+     *
+     * <p>Permission: {@code agent:read}. Read-only. An agent with nothing yet gives an empty list.
+     *
+     * @return one view per document, ordered by title within each of the agent's sources
+     */
     @GetMapping("/documents")
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "The documents and notes this agent keeps for itself")
@@ -77,6 +94,17 @@ public class AgentKnowledgeController {
     }
 
     // @find: upload document to an agent, give agent a file, POST /api/knowledge/agents/{agentId}/documents
+    /**
+     * {@code POST /api/knowledge/agents/{agentId}/documents}: adds an uploaded file to the agent's own documents.
+     *
+     * <p>Permission: {@code agent:update}. Creates the agent's own source on first use, then ingests the
+     * file (text extraction, chunking, embedding and vector writes, all inside {@code IngestionService}).
+     * A file with the name of an existing document is handled as a re-upload by that service.
+     *
+     * @param file the multipart file, not empty and at most 25 MB
+     * @return the ingestion result, including a skip reason when the file could not be indexed
+     * @throws ApiException a validation error for an empty or oversized file; {@code INGESTION_FAILED} when the upload cannot be read
+     */
     @PostMapping(value = "/documents", consumes = "multipart/form-data")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Operation(summary = "Add a file to this agent's own documents")
@@ -97,6 +125,16 @@ public class AgentKnowledgeController {
     }
 
     // @find: add note to agent knowledge, write note, POST /api/knowledge/agents/{agentId}/notes
+    /**
+     * {@code POST /api/knowledge/agents/{agentId}/notes}: writes a typed note into the agent's own documents.
+     *
+     * <p>Permission: {@code agent:update}. Replaces characters that are unsafe in a file name with
+     * spaces, collapses runs of spaces, and ingests the text as {@code <title>.txt}, so a note with the
+     * same title is handled as a re-upload by {@code IngestionService}. Creates the agent's source on first use.
+     *
+     * @return the ingestion result, with status 201
+     * @throws ApiException a validation error when the title is empty after cleaning
+     */
     @PostMapping("/notes")
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -111,6 +149,16 @@ public class AgentKnowledgeController {
     }
 
     // @find: delete agent document, DELETE /api/knowledge/agents/{agentId}/documents/{documentId}
+    /**
+     * {@code DELETE /api/knowledge/agents/{agentId}/documents/{documentId}}: removes a document or note.
+     *
+     * <p>Permission: {@code agent:update}. Looks for the document among the agent's own sources only, so
+     * a workspace document or another agent's cannot be deleted through this route. Deleting is done by
+     * {@code IngestionService.deleteDocument}, which removes its passages and vectors.
+     *
+     * @return nothing, with status 204
+     * @throws ApiException not found when the agent has no such document
+     */
     @DeleteMapping("/documents/{documentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -127,7 +175,12 @@ public class AgentKnowledgeController {
         throw ApiException.notFound("document", documentId);
     }
 
-    /** The agent's own source, made the first time something is added to it. */
+    /**
+     * The agent's own source, made the first time something is added to it.
+     *
+     * <p>Creates, when none exists, an unrestricted source of kind {@code upload} named after the
+     * agent, owned by the agent. Called by the upload and note endpoints.
+     */
     private Source ownSource(UUID agentId) {
         UUID orgId = orgId();
         List<Source> own = sources.findByOrgIdAndAgentIdOrderByName(orgId, agentId);
@@ -137,6 +190,7 @@ public class AgentKnowledgeController {
         return ingestion.createSource(orgId, agentId, "Agent documents " + agentId, "upload", false);
     }
 
+    /** The workspace of the current request, as an identifier. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

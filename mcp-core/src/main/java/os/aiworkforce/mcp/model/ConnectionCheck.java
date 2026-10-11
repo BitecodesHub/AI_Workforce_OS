@@ -15,11 +15,16 @@ package os.aiworkforce.mcp.model;
  */
 public record ConnectionCheck(boolean ok, String message, String accountLabel) {
 
+    /**
+     * Builds a successful result. The message names the account when the provider reported one.
+     * Called by adapters from {@code check} and by the default in {@code McpServerAdapter}.
+     */
     public static ConnectionCheck passed(String accountLabel) {
         return new ConnectionCheck(
                 true, accountLabel == null ? "Connected." : "Connected as " + accountLabel + ".", accountLabel);
     }
 
+    /** Builds a failed result carrying a plain sentence telling the administrator what to do next. */
     public static ConnectionCheck failed(String message) {
         return new ConnectionCheck(false, message, null);
     }

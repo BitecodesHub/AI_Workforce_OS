@@ -1,6 +1,6 @@
 // @find: confluence, atlassian, wiki, pages, search pages, get page, create page, update page, site email api token, live adapter, real API, documentation
 // @what: Live Confluence connector: runs confluence__ tools (search, get, create, update pages) against an Atlassian Cloud site using site, email and API token.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "confluence"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke; the site address comes from the stored credential through baseFor; each tool makes one to three calls to the Atlassian site; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,16 +23,27 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  * <p>The stored credential is JSON: {@code {"site":"https://acme.atlassian.net","email":"...","token":"..."}}.
  * Search uses the v1 search API (CQL); pages are read and written through the v2 API, which
  * needs the current version number to update a page.
+ *
+ * <p>Used by the tool gateway when a workspace has stored a Confluence credential. search_pages and
+ * get_page are read tools; create_page and update_page are write tools, so a person is asked first
+ * when the workspace policy says so. There is no destructive or outbound tool.
+ *
+ * <p>Failures: a malformed credential, a missing argument or an unknown space becomes a plain
+ * failed result; a version conflict on update is explained by {@link #describe}. Nothing is retried.
  */
 public final class ConfluenceAdapter extends LiveServerAdapter {
 
     /** The address comes from the credential's site. */
+    /** Null on purpose: the real address is taken from the site in each stored credential. */
     public static final String BASE_URL = null;
 
+    /** The most characters of page text returned by get_page, to keep answers small. */
     private static final int CONTENT_LIMIT = 20_000;
 
+    /** True when a base URL was injected (tests), in which case the credential site is not used for routing. */
     private final boolean fixedBase;
 
+    /** Registers the four Confluence tools. A non-null base URL fixes the address and bypasses the site in the credential. */
     public ConfluenceAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Confluence", json, http, baseUrl);
         this.fixedBase = baseUrl != null;
@@ -42,8 +53,13 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         on("update_page", this::updatePage);
     }
 
+    /** The parsed credential: a validated site address, the account email and the API token. */
     private record Account(String base, String email, String token) {}
 
+    /**
+     * Parses the stored JSON credential and checks the site with {@link Hosts#atlassianBase}, so only
+     * Atlassian Cloud addresses are ever called. Throws a plain refusal for malformed or incomplete input.
+     */
     private Account account(String credential) {
         JsonNode node;
         try {
@@ -67,12 +83,14 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         }
     }
 
+    /** The Atlassian site of this credential, or null when a fixed base URL is in use. */
     @Override
     protected String baseFor(String credential) {
         Account account = account(credential);
         return fixedBase ? null : account.base();
     }
 
+    /** Sends the email and API token as HTTP basic authentication. */
     @Override
     protected void authorize(HttpHeaders headers, String credential) {
         Account account = account(credential);
@@ -80,6 +98,7 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         headers.set(HttpHeaders.ACCEPT, "application/json");
     }
 
+    /** Connection check: GET the current user; answers the display name and the site host. */
     @Override
     protected Mono<String> whoAmI(String credential) {
         Account account = account(credential);
@@ -90,6 +109,11 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
     }
 
     // @find: Confluence search pages, tool confluence__search_pages, live Confluence call
+    /**
+     * Read tool. Builds a CQL query (pages only, optionally by text and space; newest first when no
+     * text is given) and calls the v1 search API once. Query and space values are escaped so they
+     * cannot alter the query. Answers id, title, space, excerpt, update time and link.
+     */
     private Mono<ToolResult> searchPages(ToolInvocation invocation, JsonNode arguments, String credential) {
         StringBuilder cql = new StringBuilder("type = page");
         String query = text(arguments, "query");
@@ -123,6 +147,10 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
     }
 
     // @find: Confluence get page, tool confluence__get_page, live Confluence call
+    /**
+     * Read tool. GET one page in storage format through the v2 API, then reduces the markup to plain
+     * text, cut at the content limit. Also answers the version number, which update_page needs.
+     */
     private Mono<ToolResult> getPage(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         Account account = account(credential);
@@ -148,6 +176,11 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
     }
 
     // @find: Confluence create page, tool confluence__create_page, live Confluence call
+    /**
+     * Write tool. Two calls: GET the space by key to find its id, then POST the page through the v2
+     * API. Plain text becomes one paragraph per block. Fails with a plain message when the space is
+     * unknown to the token. Not idempotent: a dropped connection is reported as indeterminate.
+     */
     private Mono<ToolResult> createPage(ToolInvocation invocation, JsonNode arguments, String credential) {
         String space = required(arguments, "space");
         String title = required(arguments, "title");
@@ -181,6 +214,11 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
     }
 
     // @find: Confluence update page, tool confluence__update_page, live Confluence call
+    /**
+     * Write tool. Reads the current page for its version and unchanged parts, then PUTs the new
+     * version (current plus one). A concurrent edit makes Confluence answer 409, reported by
+     * {@link #describe}. Refuses before any call when neither title nor content is given.
+     */
     private Mono<ToolResult> updatePage(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         String title = text(arguments, "title");
@@ -211,6 +249,7 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
     }
 
     /* Confluence answers 409 when the page changed between reading its version and writing the next. */
+    /** Adds a plain explanation for a 409 version conflict; other statuses use the base class wording. */
     @Override
     protected String describe(WebClientResponseException response) {
         if (response.getStatusCode().value() == 409) {
@@ -220,11 +259,13 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         return super.describe(response);
     }
 
+    /** GET one page with its body in storage format. */
     private Mono<JsonNode> page(String credential, String id) {
         return get(credential, "/wiki/api/v2/pages/{id}?body-format=storage", id);
     }
 
     /* Plain text becomes storage format: one escaped paragraph per blank-line-separated block. */
+    /** Escapes plain text and wraps each blank-line separated block in a paragraph, giving valid storage format. */
     private static String storage(String content) {
         StringBuilder html = new StringBuilder();
         for (String paragraph : content.split("\\n\\s*\\n")) {
@@ -239,6 +280,7 @@ public final class ConfluenceAdapter extends LiveServerAdapter {
         return html.toString();
     }
 
+    /** Escapes backslashes and quotes so a value stays inside its CQL string. */
     private static String escape(String input) {
         return input.replace("\\", "\\\\").replace("\"", "\\\"");
     }

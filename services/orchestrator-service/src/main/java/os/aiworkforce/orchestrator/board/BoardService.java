@@ -71,15 +71,20 @@ public class BoardService {
     /** Run fetch size for the 24h and today windows. */
     private static final int RUN_FETCH_LIMIT_WIDE = 1000;
 
+    /** Most queued tasks listed on the board. */
     private static final int QUEUE_FETCH_LIMIT = 100;
+    /** Most goals listed in the failed-today panel; the tile count is taken separately and is not capped. */
     private static final int FAILED_TODAY_LIMIT = 50;
+    /** Most pending questions listed on the board. */
     private static final int QUESTION_FETCH_LIMIT = 50;
 
     /** The statuses a run started directly on an agent, rather than for a task, is still active in. */
     private static final List<String> DIRECT_RUN_STATUSES = List.of("running", "waiting_approval", "waiting_input");
 
+    /** Logger for per-item failures while stopping work. */
     private static final Logger log = LoggerFactory.getLogger(BoardService.class);
 
+    /** Reason recorded on every goal and run cancelled by Stop everything. */
     static final String STOPPED_REASON = "A person stopped every run in this workspace.";
 
     private final Goals goals;
@@ -97,6 +102,7 @@ public class BoardService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ConversationAccess access;
 
+    /** Builds the service; used by Spring. Reads goals, tasks, runs, agents and usage, lists approvals and questions, and cancels work through the goal service and the schedule service. */
     public BoardService(
             Goals goals,
             Tasks tasks,
@@ -138,14 +144,21 @@ public class BoardService {
             this.minutes = minutes;
         }
 
+        /** The wire code of the window, such as {@code PT2H}. */
         public String code() {
             return code;
         }
 
+        /** The window length in minutes, or -1 for {@code TODAY}, which has no fixed length. */
         public int minutes() {
             return minutes;
         }
 
+        /**
+         * Reads a window code.
+         *
+         * @throws ApiException a validation failure when the code is not one of the five supported values
+         */
         public static Window parse(String code) {
             for (Window window : values()) {
                 if (window.code.equals(code)) {
@@ -180,6 +193,7 @@ public class BoardService {
             BigDecimal cost,
             int attempts) {}
 
+    /** A goal as the board shows it, with its tasks in position order. */
     public record GoalView(
             UUID id,
             String title,
@@ -193,6 +207,7 @@ public class BoardService {
             Instant completedAt,
             List<TaskView> tasks) {}
 
+    /** One agent on the board: its status and the runs it has running, waiting for approval or asking a question, plus its queued task count. */
     public record AgentSummary(
             UUID id,
             String name,
@@ -204,6 +219,7 @@ public class BoardService {
             List<UUID> askingRunIds,
             int queued) {}
 
+    /** One task waiting to start; {@code reason} is {@code ready}, {@code waiting_on_earlier_task} or {@code agent_paused}. */
     public record QueueEntry(
             UUID goalId,
             String goalTitle,
@@ -215,6 +231,7 @@ public class BoardService {
             String source,
             Instant createdAt) {}
 
+    /** One run on the timeline, with its goal when it belongs to one. */
     public record TimelineEntry(
             UUID runId, UUID agentId, UUID goalId, String status, Instant startedAt, Instant completedAt) {}
 
@@ -255,6 +272,7 @@ public class BoardService {
             int goalsFailedToday,
             int directRuns) {}
 
+    /** The whole board response: figures, agents, goals, queue, timeline, pending questions and approvals the caller can see, and goals that failed today. */
     public record Board(
             Instant generatedAt,
             String timezone,
@@ -269,6 +287,7 @@ public class BoardService {
             List<ApprovalSummary> approvals,
             List<GoalView> failedToday) {}
 
+    /** What Stop everything did: items cancelled or withdrawn, schedules paused, and goals and runs skipped because they finished first or could not be cancelled. */
     public record StopAllResult(
             int runsCancelled,
             int tasksCancelled,
@@ -280,6 +299,16 @@ public class BoardService {
 
     // ---- Reading the board -------------------------------------------------------------------
 
+    /**
+     * Builds the board for a window; called by {@code OrchestratorController.board}. Read only.
+     *
+     * <p>Flow: reads recent goals, every still-active goal and today's failed goals, drops work hidden
+     * by private conversations, then loads all tasks and all runs in two batched queries and derives the
+     * stats, per-agent rows, queue, timeline, questions and approvals from them. The result is a
+     * snapshot; nothing is written.
+     *
+     * @param actor the caller, used to hide private conversations and to work out which approvals they may decide
+     */
     // @find: build board, orchestrator board data, running and queued goals, GET /api/orchestrator/board
     @Transactional(readOnly = true)
     public Board board(UUID orgId, Window window, Actor actor) {
@@ -398,6 +427,7 @@ public class BoardService {
                 failedTodayViews);
     }
 
+    /** How many recent goals to read: a larger limit for the windows that reach further back. */
     private static int goalFetchLimit(Window window) {
         return switch (window) {
             case H24, TODAY -> GOAL_FETCH_LIMIT_WIDE;
@@ -405,6 +435,7 @@ public class BoardService {
         };
     }
 
+    /** How many recent runs to read for the timeline, by window. */
     private static int runFetchLimit(Window window) {
         return switch (window) {
             case H1, H2 -> RUN_FETCH_LIMIT;
@@ -413,6 +444,12 @@ public class BoardService {
         };
     }
 
+    /**
+     * Counts tasks and direct runs by state, plus today's completions, failures and spend.
+     *
+     * <p>Queued tasks that are held because their agent is paused are counted again under {@code held}.
+     * One usage query supplies the spend since midnight.
+     */
     private Stats computeStats(
             UUID orgId,
             Map<UUID, List<Task>> tasksByGoal,
@@ -484,6 +521,7 @@ public class BoardService {
                 directRuns.size());
     }
 
+    /** Groups the active tasks and direct runs by agent into the per-agent rows; every agent appears, even with nothing active. */
     private List<AgentSummary> computeAgentSummaries(
             java.util.Collection<Agent> allAgents,
             Map<UUID, List<Task>> tasksByGoal,
@@ -618,6 +656,7 @@ public class BoardService {
         return entries;
     }
 
+    /** Recent runs started inside the window, excluding runs of tasks hidden from the caller, newest first. */
     private List<TimelineEntry> computeTimeline(
             UUID orgId, Instant since, int runFetchLimit, Map<UUID, UUID> goalIdByTaskId, Set<UUID> hiddenTasks) {
         return runs.findRecent(orgId, PageRequest.of(0, runFetchLimit)).stream()
@@ -715,6 +754,7 @@ public class BoardService {
         return summaries;
     }
 
+    /** Parses an identifier, returning null for null or a value that is not a UUID. */
     private static UUID parseUuidOrNull(String value) {
         if (value == null) {
             return null;
@@ -744,6 +784,7 @@ public class BoardService {
         return everyPredecessorDone ? "ready" : "waiting_on_earlier_task";
     }
 
+    /** The tasks that must finish before this one: those it names in {@code dependsOn}, otherwise every earlier position. */
     private static List<Task> predecessorsOf(Task task, List<Task> siblings) {
         List<UUID> dependsOn = task.getDependsOn();
         if (dependsOn != null && !dependsOn.isEmpty()) {

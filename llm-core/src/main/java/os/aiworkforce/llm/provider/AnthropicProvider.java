@@ -1,6 +1,6 @@
 // @find: model router, LLM, model providers, Anthropic, Claude, Messages API, system prompt, tool use, streaming, AnthropicProvider
-// @what: Adapter for Anthropic's Messages API.
-// @flow: Registered as a ChatProvider; called by ModelRouter.
+// @what: Adapter for Anthropic's Messages API: system prompt lifting, tool_use and tool_result blocks, streaming events and failure classification.
+// @flow: Spring ChatProvider of kind ANTHROPIC; ModelRouter calls complete/stream/healthCheck; WebClient posts to /v1/messages; errors are translated to a classified ProviderException for the router.
 package os.aiworkforce.llm.provider;
 
 import java.time.Duration;
@@ -52,18 +52,33 @@ public class AnthropicProvider implements ChatProvider {
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper json;
 
+    /**
+     * Creates the adapter with the shared reactive client builder and JSON mapper supplied by Spring.
+     * No network activity happens here; a client is built per call.
+     */
     public AnthropicProvider(WebClient.Builder webClientBuilder, ObjectMapper json) {
         this.webClientBuilder = webClientBuilder;
         this.json = json;
     }
 
     @Override
+    /**
+     * Identifies this adapter to the provider registry, which selects it for every provider row of kind
+     * {@code ANTHROPIC}. This adapter does not send images; it keeps the default of the SPI.
+     */
     public ProviderDescriptor.Kind kind() {
         return ProviderDescriptor.Kind.ANTHROPIC;
     }
 
     // @find: call Claude, chat completion
     @Override
+    /**
+     * Sends one non-streaming request to {@code POST /v1/messages}.
+     *
+     * <p>Flow: called by the model router; builds the body, applies the request deadline (120 seconds by
+     * default), parses content blocks into text and tool calls, and maps any failure to a classified
+     * {@link ProviderException}. One HTTP call; retries and failover belong to the router.
+     */
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         Instant startedAt = Instant.now();
@@ -80,6 +95,14 @@ public class AnthropicProvider implements ChatProvider {
 
     // @find: stream Claude answer
     @Override
+    /**
+     * Streams a response from {@code POST /v1/messages} with {@code stream} enabled.
+     *
+     * <p>Each server-sent event is interpreted by {@link #handleEvent}; text deltas are emitted at once,
+     * while tool input fragments are held in a {@code StreamState} and emitted as complete tool calls,
+     * followed by a terminal chunk, when the stream ends. Without a final stop reason the terminal chunk
+     * is {@code INCOMPLETE}, which lets the router retry without streaming.
+     */
     public Flux<ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         StreamState state = new StreamState();
@@ -97,6 +120,13 @@ public class AnthropicProvider implements ChatProvider {
 
     // @find: check Anthropic key works
     @Override
+    /**
+     * Verifies the credential with a one-token request, since no free probe endpoint exists.
+     *
+     * <p>Side effect: a real, very small billable call to a fixed Haiku model. Never fails: network and
+     * server errors report {@code false}, while any HTTP error other than 401 or 403 (for example a 400
+     * for an unavailable model) reports {@code true}, because the credential itself was accepted.
+     */
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         // Anthropic offers no free probe endpoint, so the cheapest real call is used: one token.
         ObjectNode body = json.createObjectNode();
@@ -121,6 +151,15 @@ public class AnthropicProvider implements ChatProvider {
                                 && response.getStatusCode().value() != 403));
     }
 
+    /**
+     * Builds the Messages API body.
+     *
+     * <p>The system prompt is lifted to the top-level field, {@code max_tokens} is always set (caller value
+     * or {@code DEFAULT_MAX_TOKENS}, capped at the model limit), tool results become user messages with a
+     * {@code tool_result} block, and assistant tool calls become {@code tool_use} blocks whose input is
+     * parsed JSON (an empty object when unreadable). Tools are included only when the request uses them
+     * and the model supports them. JSON mode and image parts are not sent by this adapter.
+     */
     private ObjectNode buildBody(ModelSpec model, ChatRequest request, boolean streaming) {
         ObjectNode body = json.createObjectNode();
         body.put("model", model.modelId());
@@ -195,6 +234,13 @@ public class AnthropicProvider implements ChatProvider {
         return body;
     }
 
+    /**
+     * Converts a Messages response into a {@link ChatResponse}.
+     *
+     * <p>Text blocks are concatenated and {@code tool_use} blocks become tool calls. A refusal stop reason
+     * raises {@code CONTENT_FILTERED}. Prompt tokens are the input tokens plus cache reads, and cache
+     * creation tokens are not counted separately.
+     */
     private ChatResponse parse(ProviderDescriptor provider, ModelSpec model, JsonNode node, Instant startedAt) {
         StringBuilder text = new StringBuilder();
         List<ToolCall> calls = new ArrayList<>();
@@ -240,6 +286,7 @@ public class AnthropicProvider implements ChatProvider {
                 Map.of("id", node.path("id").asText("")));
     }
 
+    // Maps Anthropic stop reasons to {@link FinishReason}; the presence of tool calls always wins.
     private FinishReason mapStopReason(String raw, boolean hasToolCalls) {
         if (hasToolCalls) {
             return FinishReason.TOOL_CALLS;
@@ -265,6 +312,7 @@ public class AnthropicProvider implements ChatProvider {
         private TokenUsage usage = TokenUsage.NONE;
         private boolean drained;
 
+        // Emits, once only, the assembled tool calls followed by the terminal chunk.
         List<ChatChunk> drain() {
             if (drained) {
                 return List.of();
@@ -287,6 +335,16 @@ public class AnthropicProvider implements ChatProvider {
         }
     }
 
+    /**
+     * Interprets one stream event.
+     *
+     * <p>{@code content_block_start} records the identity of a tool call; {@code content_block_delta} emits
+     * text or appends partial tool input; {@code message_delta} records the finish reason and output
+     * tokens; an {@code error} event is raised as a {@code SERVER_ERROR} {@link ProviderException}. Other
+     * events carry no output. An unreadable event is skipped so that the rest of the answer survives.
+     * Because {@code message_start} is ignored, streamed usage reports output tokens only unless the
+     * delta carries input tokens.
+     */
     private Flux<ChatChunk> handleEvent(String line, StreamState state) {
         if (line == null || line.isBlank()) {
             return Flux.empty();
@@ -346,6 +404,11 @@ public class AnthropicProvider implements ChatProvider {
         }
     }
 
+    /**
+     * Builds a client for one call: provider base URL, the fixed {@code anthropic-version} header, the
+     * {@code x-api-key} credential when present, and the provider row's default headers. The credential is
+     * never logged.
+     */
     private WebClient client(ProviderDescriptor provider, String credential) {
         WebClient.Builder builder =
                 webClientBuilder.clone().baseUrl(provider.baseUrl()).defaultHeader("anthropic-version", API_VERSION);
@@ -356,6 +419,15 @@ public class AnthropicProvider implements ChatProvider {
         return builder.build();
     }
 
+    /**
+     * Turns anything thrown into a classified {@link ProviderException}, which the router uses to retry,
+     * fail over or stop.
+     *
+     * <p>Timeouts and connection errors are distinguished; HTTP statuses map to failure classes, with 429
+     * bodies mentioning credit or quota treated as exhausted quota (not retried) and 529 treated as
+     * overload. The Retry-After header is read as whole seconds and the body is truncated. Anything else
+     * becomes {@code UNKNOWN}.
+     */
     private Throwable translate(ProviderDescriptor provider, ModelSpec model, Throwable error) {
         if (error instanceof ProviderException) {
             return error;
@@ -436,6 +508,7 @@ public class AnthropicProvider implements ChatProvider {
                 error);
     }
 
+    // Caps the raw provider body kept in a failure, because bodies can quote the prompt.
     private static String truncate(String value) {
         if (value == null) {
             return null;

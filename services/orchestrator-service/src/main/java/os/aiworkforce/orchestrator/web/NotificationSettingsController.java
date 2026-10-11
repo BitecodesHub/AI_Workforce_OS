@@ -43,6 +43,7 @@ public class NotificationSettingsController {
     private final NotificationService notifications;
     private final AuditClient audit;
 
+    /** Receives the notification service that stores and delivers, and the audit client. */
     public NotificationSettingsController(NotificationService notifications, AuditClient audit) {
         this.notifications = notifications;
         this.audit = audit;
@@ -52,14 +53,19 @@ public class NotificationSettingsController {
     public record EventOption(String id, String label) {}
 
     /**
+     * The notification settings as a person reads them.
+     *
      * @param webhookUrl where messages go; empty when notifications are off
      * @param hasSecret whether messages are signed; the secret itself is never returned
      * @param events the events being sent, from {@code availableEvents}
+     * @param availableEvents every event that can be chosen, with its label
      */
     public record SettingsView(
             String webhookUrl, boolean hasSecret, List<String> events, List<EventOption> availableEvents) {}
 
     /**
+     * A change to the notification settings.
+     *
      * @param webhookUrl where messages go; empty turns notifications off, and removes the secret
      * @param secret a new secret to sign with: absent keeps the stored one, empty removes it
      * @param events the events to send
@@ -69,13 +75,16 @@ public class NotificationSettingsController {
             @Size(max = NotificationService.SECRET_MAX) String secret,
             List<String> events) {}
 
+    /** The result of a test delivery: whether it arrived, the HTTP status if any, and a plain sentence. */
     public record TestView(boolean delivered, Integer statusCode, String message) {}
 
+    /** The events a workspace may subscribe to, in display order. */
     private static final List<EventOption> AVAILABLE = List.of(
             new EventOption(NotificationService.APPROVAL_RAISED, "An agent is waiting for an approval"),
             new EventOption(NotificationService.APPROVAL_EXPIRED, "An approval expired before anybody decided it"),
             new EventOption(NotificationService.SCHEDULE_PAUSED, "A schedule paused itself after repeated failures"));
 
+    /** Reads the notification settings; route {@code GET /api/orchestrator/notification-settings}; requires WORKSPACE_UPDATE. The secret is never returned. */
     // @find: get notification settings, GET /api/orchestrator/notification-settings
     @GetMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
@@ -84,6 +93,14 @@ public class NotificationSettingsController {
         return view(notifications.settings(orgId()));
     }
 
+    /**
+     * Changes the webhook, secret and subscribed events.
+     *
+     * <p>Route {@code PUT /api/orchestrator/notification-settings}; requires WORKSPACE_UPDATE.
+     * {@link NotificationService#update} validates and stores the change; this method then audits
+     * {@code notifications.update} recording only whether a webhook is set, what happened to the secret
+     * and the events, never the address or the secret. Validation errors come from the service.
+     */
     // @find: update notification settings, PUT /api/orchestrator/notification-settings
     @PutMapping
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
@@ -104,6 +121,13 @@ public class NotificationSettingsController {
         return view(saved);
     }
 
+    /**
+     * Sends a test message to the saved webhook.
+     *
+     * <p>Route {@code POST /api/orchestrator/notification-settings/test}; requires WORKSPACE_UPDATE.
+     * Makes an outbound HTTP call through {@link NotificationService#sendTest}; a delivery failure is
+     * reported in the body rather than as an error status.
+     */
     // @find: send test notification, POST .../notification-settings/test
     @PostMapping("/test")
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
@@ -113,10 +137,12 @@ public class NotificationSettingsController {
         return new TestView(result.delivered(), result.statusCode(), result.message());
     }
 
+    /** Adds the list of available events to the stored settings. */
     private static SettingsView view(NotificationService.Settings settings) {
         return new SettingsView(settings.webhookUrl(), settings.hasSecret(), settings.events(), AVAILABLE);
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

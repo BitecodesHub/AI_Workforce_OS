@@ -31,27 +31,43 @@ import os.aiworkforce.platform.context.RequestContext;
  */
 public class AuditOutboxRelay {
 
+    /** Logger for delivery problems; events themselves are never logged beyond their id and action. */
     private static final Logger log = LoggerFactory.getLogger(AuditOutboxRelay.class);
 
     private final AuditOutbox outbox;
     private final AuditSender sender;
     private final AuditProperties properties;
 
+    /** Set while a pass is in progress, so passes do not overlap within this instance. */
     private final AtomicBoolean running = new AtomicBoolean();
+    /** Set while a nudge is queued, so a burst of commits queues only one extra pass. */
     private final AtomicBoolean wakePending = new AtomicBoolean();
+    /** Single daemon thread on which nudged passes run, kept off request threads. */
     private final ExecutorService nudges = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "audit-outbox-relay");
         thread.setDaemon(true);
         return thread;
     });
 
+    /**
+     * Creates the relay.
+     *
+     * @param outbox the queue to read from
+     * @param sender how an event reaches analytics-service
+     * @param properties batch size, lease, back-off and the enabled switch
+     */
     public AuditOutboxRelay(AuditOutbox outbox, AuditSender sender, AuditProperties properties) {
         this.outbox = outbox;
         this.sender = sender;
         this.properties = properties;
     }
 
-    /** Asks for a pass soon, without waiting for it. Many calls in a burst collapse into one pass. */
+    /**
+     * Asks for a pass soon, without waiting for it. Many calls in a burst collapse into one pass.
+     *
+     * <p>Called by {@code AuditClient} after a commit. Never blocks and never throws; if the executor is
+     * already shut down the request is dropped and the timer picks the rows up instead.
+     */
     public void wake() {
         if (!wakePending.compareAndSet(false, true)) {
             return;
@@ -66,11 +82,20 @@ public class AuditOutboxRelay {
         }
     }
 
+    /**
+     * Stops accepting nudges. Called by Spring when the context closes, as the bean's destroy method.
+     * A pass already running is allowed to finish.
+     */
     public void shutdown() {
         nudges.shutdown();
     }
 
     // @find: scheduled job or startup listener tick, audit relay
+    /**
+     * Timer entry point: runs one pass every {@code aiwos.audit.relay-interval} (ten seconds by
+     * default) after an initial delay of five seconds. This is the safety net for rows that missed
+     * their nudge, for example after a restart.
+     */
     @Scheduled(fixedDelayString = "${aiwos.audit.relay-interval:PT10S}", initialDelayString = "PT5S")
     public void tick() {
         deliverDue();
@@ -80,6 +105,14 @@ public class AuditOutboxRelay {
      * One pass: claims what is due and sends it in order. Passes do not overlap within an instance.
      *
      * @return how many events were delivered
+     *
+     * <p>Does nothing when auditing is disabled or a pass is already running. Otherwise clears any request
+     * identity on the thread, claims a batch from the outbox, and sends each event in turn. When the
+     * destination itself is failing, the unsent remainder is released at once and the pass stops.
+     *
+     * <p>Side effects: deletes delivered rows, records failed attempts and back-off times, and logs at WARN
+     * when a row has used up its attempts. Failure: a database error while claiming is logged and the pass
+     * ends with the count so far; nothing is thrown.
      */
     // @find: deliver due audit events to analytics
     public int deliverDue() {
@@ -116,6 +149,7 @@ public class AuditOutboxRelay {
         return delivered;
     }
 
+    /** The result of one delivery attempt, which decides whether the pass continues. */
     private enum Outcome {
         DELIVERED,
         /** This event was refused or could not be sent; the ones behind it may still go. */
@@ -124,6 +158,10 @@ public class AuditOutboxRelay {
         DESTINATION_FAILING
     }
 
+    /**
+     * Sends one event and removes it from the outbox when accepted. On failure records the attempt and
+     * classifies the failure as specific to the event or as a sign that the destination is down.
+     */
     private Outcome deliver(AuditOutbox.Event event) {
         try {
             sender.send(event);
@@ -135,6 +173,12 @@ public class AuditOutboxRelay {
         }
     }
 
+    /**
+     * Stores the failed attempt with the next retry time from {@code AuditProperties.backoffAfter} and
+     * writes a log line whose level rises with the attempt count: debug, then info on the first failure,
+     * then WARN once the attempts are used up. A failure to store the attempt is itself logged and not
+     * rethrown, so the row simply becomes due again when its lease ends.
+     */
     private void recordFailure(AuditOutbox.Event event, RuntimeException failure) {
         int failedAttempts = event.attempts() + 1;
         var retryAfter = properties.backoffAfter(failedAttempts);
@@ -165,7 +209,13 @@ public class AuditOutboxRelay {
         }
     }
 
-    /** A failure of the destination rather than of this one event: everything behind it would fail too. */
+    /**
+     * A failure of the destination rather than of this one event: everything behind it would fail too.
+     *
+     * <p>Server errors and the statuses 401, 403 and 429 count as the destination failing, as does any
+     * failure that is not an HTTP response (timeout, connection refused). Other client errors are
+     * treated as belonging to this event alone.
+     */
     private static boolean systemic(Throwable failure) {
         if (failure instanceof WebClientResponseException response) {
             return response.getStatusCode().is5xxServerError()
@@ -176,6 +226,7 @@ public class AuditOutboxRelay {
         return true;
     }
 
+    /** Builds a short reason for the outbox row: the exception name and message, cut to 300 characters. */
     private static String describe(Throwable failure) {
         String message = failure.getMessage();
         String text = failure.getClass().getSimpleName() + (message == null ? "" : ": " + message);

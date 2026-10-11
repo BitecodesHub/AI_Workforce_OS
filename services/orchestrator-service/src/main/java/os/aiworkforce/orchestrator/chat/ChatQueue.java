@@ -51,11 +51,12 @@ public class ChatQueue {
     /** A "Start now anyway" claim that has not finished in this long goes back in the queue. */
     static final Duration STARTING_STALE = Duration.ofMinutes(2);
 
+    /** The goal statuses that count as work in progress. */
     static final List<String> ACTIVE_GOAL_STATUSES = List.of("planning", "running", "waiting");
     private static final Set<String> PARKED = Set.of("waiting_approval", "waiting_input");
     private static final Set<String> MOVING = Set.of("running", "claimed");
 
-    /** Whether a conversation has work in progress, as the console shows it. */
+    /** Whether a conversation has work in progress, as the console shows it; {@link #wire} is the text sent to the client. */
     public enum Busy {
         IDLE("idle"),
         WORKING("working"),
@@ -67,6 +68,7 @@ public class ChatQueue {
             this.wire = wire;
         }
 
+        /** The lower-case text the client receives. */
         public String wire() {
             return wire;
         }
@@ -95,6 +97,7 @@ public class ChatQueue {
     private final Tasks tasks;
     private final Conversations conversations;
 
+    /** Wires the queue, goal, task and conversation repositories. */
     public ChatQueue(ChatQueuedMessages queue, Goals goals, Tasks tasks, Conversations conversations) {
         this.queue = queue;
         this.goals = goals;
@@ -102,7 +105,15 @@ public class ChatQueue {
         this.conversations = conversations;
     }
 
-    /** What the conversation is doing right now. */
+    /**
+     * What the conversation is doing right now.
+     *
+     * <p>Working while a routing decision began less than {@link #DECIDING_STALE} ago or a "Start
+     * now" claim began less than {@link #STARTING_STALE} ago; otherwise it looks at the goals still
+     * in progress: waiting for a decision when at least one task is parked for an approval or an
+     * answer and none is running or claimed, working in every other case, idle when no goal is
+     * active. Read-only; called by CoordinatorService, {@link ConversationQueries} and the runner.
+     */
     // @find: is conversation busy, busy state, work in progress
     public Busy state(UUID orgId, Conversation conversation) {
         Instant now = Instant.now();
@@ -129,6 +140,7 @@ public class ChatQueue {
         return parked && !moving ? Busy.WAITING_DECISION : Busy.WORKING;
     }
 
+    /** Whether the conversation has any work in progress; a convenience over {@link #state}. */
     public boolean busy(UUID orgId, Conversation conversation) {
         return state(orgId, conversation) != Busy.IDLE;
     }
@@ -139,7 +151,7 @@ public class ChatQueue {
         return active == null ? List.of() : active;
     }
 
-    /** The oldest message waiting to start, if any. */
+    /** The oldest message waiting to start, if any; expired messages and those already starting are skipped. Read-only. */
     // @find: next queued message, oldest waiting message
     public java.util.Optional<ChatQueuedMessage> next(UUID conversationId) {
         return queue.findByConversationIdOrderByCreatedAtAsc(conversationId).stream()
@@ -148,6 +160,13 @@ public class ChatQueue {
                 .findFirst();
     }
 
+    /**
+     * The conversation's waiting messages as the console shows them, oldest first and numbered from 1.
+     * A message queued for longer than {@link #EXPIRY} is shown as expired without waiting for the
+     * sweep. Called by {@link ConversationQueries} and {@link ChatController}. Read-only.
+     *
+     * @param reader decides each row's {@code canManage} flag
+     */
     // @find: queued message views, waiting messages shown in chat
     public List<QueuedMessageView> views(UUID conversationId, Conversation conversation, Actor reader) {
         List<ChatQueuedMessage> all = queue.findByConversationIdOrderByCreatedAtAsc(conversationId);
@@ -177,6 +196,7 @@ public class ChatQueue {
         return views;
     }
 
+    /** The view of one waiting message, with its real place in the queue; a stand-in at place 1 when it is no longer listed. Read-only. */
     public QueuedMessageView view(ChatQueuedMessage q, Conversation conversation, Actor reader) {
         return views(q.getConversationId(), conversation, reader).stream()
                 .filter(v -> v.id().equals(q.getId()))
@@ -194,7 +214,7 @@ public class ChatQueue {
                         canManage(q, conversation, reader)));
     }
 
-    /** Its sender may change or cancel it, and so may whoever owns the conversation. */
+    /** Its sender may change or cancel it, and so may whoever owns the conversation; false for an unknown reader. */
     static boolean canManage(ChatQueuedMessage q, Conversation conversation, Actor reader) {
         if (reader == null) {
             return false;
@@ -211,6 +231,13 @@ public class ChatQueue {
 
     // ---- Changing a waiting message -------------------------------------------------------
 
+    /**
+     * Changes the text of a waiting message.
+     *
+     * <p>Flow: loads it and checks the caller may manage it, refuses a message that is no longer
+     * queued, has started or has expired (conflict), refuses an empty text when it has no files
+     * (validation), then saves. Called by {@link ChatController#editQueued}. Writes one queue row.
+     */
     // @find: edit queued message, change waiting message text
     @Transactional
     public QueuedMessageView edit(UUID orgId, UUID conversationId, UUID queuedId, String text, Actor actor) {
@@ -231,6 +258,10 @@ public class ChatQueue {
         return view(q, conversation(orgId, conversationId), actor);
     }
 
+    /**
+     * Removes a waiting message. The caller must be able to manage it; a message that is already
+     * starting cannot be cancelled (conflict). Deletes one queue row. Called by {@link ChatController#cancelQueued}.
+     */
     // @find: cancel queued message, remove waiting message
     @Transactional
     public void cancel(UUID orgId, UUID conversationId, UUID queuedId, Actor actor) {
@@ -241,7 +272,10 @@ public class ChatQueue {
         queue.delete(q);
     }
 
-    /** Expires messages that waited too long and returns stale "Start now" claims to the queue. */
+    /**
+     * Expires messages that waited too long and returns stale "Start now" claims to the queue.
+     * Updates queue rows only; called periodically by {@link ChatQueueRunner}.
+     */
     // @find: tidy queue, remove stale queued messages
     @Transactional
     public void tidy() {
@@ -250,7 +284,7 @@ public class ChatQueue {
         queue.releaseStaleStarts(now.minus(STARTING_STALE), now);
     }
 
-    /** Every conversation with a message waiting to start, as [orgId, conversationId]. */
+    /** Every conversation with a message waiting to start, as [orgId, conversationId], each listed once. Read-only; called by {@link ChatQueueRunner}. */
     // @find: waiting conversations, conversations with queued messages
     @Transactional(readOnly = true)
     public List<UUID[]> waitingConversations() {
@@ -265,6 +299,7 @@ public class ChatQueue {
         return out;
     }
 
+    /** The queued message, when it exists in this conversation and the caller may manage it; not found or permission denied otherwise. */
     ChatQueuedMessage require(UUID orgId, UUID conversationId, UUID queuedId, Actor actor) {
         ChatQueuedMessage q = queue.findByIdAndOrgIdAndConversationId(queuedId, orgId, conversationId)
                 .orElseThrow(() -> ApiException.notFound("queued message", queuedId));
@@ -274,13 +309,14 @@ public class ChatQueue {
         return q;
     }
 
+    /** The conversation row, or null when it is gone. */
     private Conversation conversation(UUID orgId, UUID conversationId) {
         return conversations.findByIdAndOrgId(conversationId, orgId).orElse(null);
     }
 
     // ---- The sender, kept with the message ------------------------------------------------
 
-    /** Who sent a message, as needed to start it later with the same authority. */
+    /** Who sent a message, as needed to start it later with the same authority: identity, role and permissions as a plain map. Never null. */
     static Map<String, Object> snapshot(Actor actor) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (actor == null) {
@@ -297,7 +333,7 @@ public class ChatQueue {
         return m;
     }
 
-    /** The sender again, or null when nothing usable was kept. */
+    /** The sender again, rebuilt from {@link #snapshot}, with its permissions as they were when queued; null when nothing usable was kept. */
     @SuppressWarnings("unchecked")
     static Actor restore(Map<String, Object> m) {
         if (m == null || !(m.get("id") instanceof String id) || id.isBlank()) {

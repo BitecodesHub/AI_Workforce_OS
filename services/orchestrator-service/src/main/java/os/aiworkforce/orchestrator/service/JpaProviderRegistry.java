@@ -62,11 +62,18 @@ public class JpaProviderRegistry implements ProviderRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(JpaProviderRegistry.class);
 
+    // providers and models are the shared catalogue; settings and availability are each workspace's own state beside it.
     private final Providers providers;
     private final Models models;
     private final WorkspaceProviderSettings settings;
     private final WorkspaceModelAvailabilities availability;
 
+    /**
+     * @param providers the provider catalogue
+     * @param models the model catalogue
+     * @param settings per-workspace provider switches and credential status
+     * @param availability per-workspace model notes, now only cleared, never written
+     */
     public JpaProviderRegistry(
             Providers providers,
             Models models,
@@ -98,6 +105,10 @@ public class JpaProviderRegistry implements ProviderRegistry {
     // ---- Workspace views, for the console and the router alike ----------------------------
 
     // @find: list workspace providers
+    /**
+     * Every provider this workspace can see, each with the workspace's own state merged in. A null workspace sees
+     * the platform's providers with no workspace state. Used by the console and, through {@link #providers}, the router.
+     */
     @Transactional(readOnly = true)
     public List<WorkspaceProvider> workspaceProviders(UUID orgId) {
         Map<String, WorkspaceProviderSetting> own = orgId == null
@@ -110,6 +121,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
     }
 
     // @find: get workspace provider
+    /** One provider as this workspace sees it, or empty when it does not exist or belongs to another workspace. */
     @Transactional(readOnly = true)
     public Optional<WorkspaceProvider> workspaceProvider(UUID orgId, String providerId) {
         return providers
@@ -168,12 +180,14 @@ public class JpaProviderRegistry implements ProviderRegistry {
     // ---- ProviderRegistry ------------------------------------------------------------------
 
     // @find: providers for router
+    /** The router's view of every provider this workspace can see, with its effective on or off switch. */
     @Override
     @Transactional(readOnly = true)
     public List<ProviderDescriptor> providers(String orgId) {
         return workspaceProviders(parse(orgId)).stream().map(this::toDescriptor).toList();
     }
 
+    /** The router's view of one provider, or empty when this workspace cannot see it. */
     @Override
     @Transactional(readOnly = true)
     public Optional<ProviderDescriptor> provider(String orgId, String providerId) {
@@ -181,6 +195,10 @@ public class JpaProviderRegistry implements ProviderRegistry {
     }
 
     // @find: look up model spec
+    /**
+     * The router's view of one model, or empty when its provider is another workspace's. The availability row
+     * is merged in but no longer has any effect.
+     */
     @Override
     @Transactional(readOnly = true)
     public Optional<ModelSpec> model(String orgId, String providerId, String modelId) {
@@ -200,6 +218,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
                 .map(this::toSpec);
     }
 
+    /** The router's view of every model this workspace can use. */
     @Override
     @Transactional(readOnly = true)
     public List<ModelSpec> models(String orgId) {
@@ -252,6 +271,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
 
     // ---- Merging ---------------------------------------------------------------------------
 
+    /** The workspace's own setting for a provider, or null when it has made none or there is no workspace. */
     private WorkspaceProviderSetting ownSetting(UUID orgId, String providerId) {
         return orgId == null
                 ? null
@@ -259,6 +279,10 @@ public class JpaProviderRegistry implements ProviderRegistry {
                         .orElse(null);
     }
 
+    /**
+     * Combines a catalogue row with the workspace's setting: effective switch, credential status (unknown when
+     * nothing is recorded) and when it was last checked.
+     */
     private static WorkspaceProvider merge(LlmProviderEntity entity, WorkspaceProviderSetting own) {
         String status = own == null || own.getCredentialStatus() == null
                 ? WorkspaceProviderSetting.UNKNOWN
@@ -275,6 +299,10 @@ public class JpaProviderRegistry implements ProviderRegistry {
         return new WorkspaceModel(model, null, null);
     }
 
+    /**
+     * Converts a workspace's view of a provider to the descriptor the router uses. Throws IllegalArgumentException
+     * if the stored kind is not a known one.
+     */
     private ProviderDescriptor toDescriptor(WorkspaceProvider provider) {
         LlmProviderEntity entity = provider.entity();
         return new ProviderDescriptor(
@@ -291,6 +319,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
                 entity.getPriority());
     }
 
+    /** Converts a model row to the specification the router uses, including its cost per million tokens. */
     private ModelSpec toSpec(WorkspaceModel model) {
         LlmModelEntity entity = model.entity();
         return new ModelSpec(
@@ -310,6 +339,7 @@ public class JpaProviderRegistry implements ProviderRegistry {
                 model.unavailableUntil() == null ? null : model.unavailableUntil().toEpochMilli());
     }
 
+    /** The workspace id as a UUID; null stays null, meaning no workspace. Throws IllegalArgumentException if malformed. */
     private static UUID parse(String orgId) {
         return orgId == null ? null : UUID.fromString(orgId);
     }

@@ -46,6 +46,7 @@ public interface RetentionStore {
          *
          * @return how many screenshots were deleted, at most {@code batch}
          */
+        // The default deletes nothing, so a test store that does not hold screenshots need not implement it.
         default int deleteBrowserShots(UUID orgId, Instant finishedBefore, int batch) {
             return 0;
         }
@@ -53,6 +54,7 @@ public interface RetentionStore {
         /** Deletes model-usage rows recorded before {@code cutoff}; at most {@code batch} of them. */
         int deleteUsageBefore(Instant cutoff, int batch);
 
+        // Narrowed so that closing needs no try/catch for a checked exception; JdbcRetentionStore releases the lock here.
         @Override
         void close();
     }

@@ -52,6 +52,7 @@ public record PlatformProperties(
         @Valid @DefaultValue RuntimeConfig runtimeConfig,
         @Valid @DefaultValue Services services) {
 
+    /** The deployment tier. {@link #isDeployed()} separates the shared tiers (staging, production), where unsafe defaults are refused, from local and test. */
     public enum Environment {
         LOCAL,
         TEST,
@@ -366,6 +367,7 @@ public record PlatformProperties(
         return List.copyOf(problems);
     }
 
+    /** Null-safe blank check used by the environment validation rules. */
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }

@@ -69,6 +69,7 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 public class GoalService {
 
     private static final Logger log = LoggerFactory.getLogger(GoalService.class);
+    /** The most tasks one goal may hold; an unbounded graph would be an unbounded spend. */
     private static final int MAX_TASKS_PER_GOAL = 50;
     /** Chat starts a chain rather than a plan; a longer one is not something a person typed. */
     private static final int MAX_CHAT_TASKS = 5;
@@ -88,6 +89,7 @@ public class GoalService {
      */
     public static final String REQUEST_HEADING = "The person's request (verbatim):\n";
 
+    /** Heading that introduces a step's own part of the request; see {@link #REQUEST_HEADING}. */
     public static final String PART_HEADING = "Your part: ";
 
     /**
@@ -96,7 +98,9 @@ public class GoalService {
      */
     public static final String PASSAGES_HEADING = "Passages from the workspace's documents that bear on this request.";
 
+    /** The blank line and heading that split a chain step's instruction into request and part. */
     private static final String PART_SEPARATOR = "\n\n" + PART_HEADING;
+    /** Matches one numbered passage title line, such as {@code [1] Handbook, page 4}. */
     private static final Pattern PASSAGE_TITLE = Pattern.compile("^\\[(\\d+)] (.+)$");
     /** How far the claim window reaches past tasks whose agent is paused, so they cannot starve it. */
     private static final int CLAIM_WINDOW = 100;
@@ -114,12 +118,15 @@ public class GoalService {
             50,
             "How many tasks one workspace may have running at the same time. Others wait their turn.");
 
+    /* Reasons recorded on runs and tasks that a stop withdrew; worded for a person to read. */
     static final String GOAL_CANCELLED = "The goal this run belonged to was cancelled.";
     static final String PERSON_CANCELLED = "A person cancelled this goal.";
     static final String TASK_RUN_STOPPED = "The run for this task was stopped before it finished.";
     /** The steps a retry starts again from: the first that did not finish. */
     private static final Set<String> RETRY_FROM = Set.of("failed", "cancelled", "skipped");
 
+    // Collaborators. runExecutor is injected lazily because the executor itself depends on this
+    // service; questions, approvals and announcer are used when a goal or run is stopped.
     private final Goals goals;
     private final Tasks tasks;
     private final Runs runs;
@@ -135,6 +142,10 @@ public class GoalService {
     /** Where the per-workspace cap is read. Null in unit tests, which use the default. */
     private RuntimeConfigService runtimeConfig;
 
+    /**
+     * Wires the repositories and the collaborators a goal's lifecycle needs. Spring calls it once;
+     * {@code runExecutor} is {@code @Lazy} to break the cycle with {@link RunExecutor}.
+     */
     public GoalService(
             Goals goals,
             Tasks tasks,
@@ -162,6 +173,10 @@ public class GoalService {
         this.audit = audit;
     }
 
+    /**
+     * Optional injection of the runtime settings service. Registers the per-workspace running-task
+     * cap so it appears among the editable settings; absent in unit tests, which use the default.
+     */
     @Autowired(required = false)
     void setRuntimeConfig(RuntimeConfigService runtimeConfig) {
         this.runtimeConfig = runtimeConfig;
@@ -170,13 +185,22 @@ public class GoalService {
         }
     }
 
-    /** How much a stop withdrew, for a caller that reports it. */
+    /**
+     * How much a stop withdrew, for a caller that reports it. Returned by {@code cancel} and
+     * {@code stopRun}, and written into the stop's audit entry.
+     */
     public record CancelCounts(int tasks, int runs, int approvals, int questions) {}
 
-    /** The goal as it stands after a retry, and the step it starts again from. */
+    /**
+     * The goal as it stands after a retry, and the step it starts again from. Returned by {@link
+     * #retry} to the goal endpoint and chat.
+     */
     public record RetryResult(Goal goal, Task fromTask) {}
 
     /**
+     * One task as a caller of {@link #create} describes it. Superseded by {@link NewTask}, which
+     * this is converted into.
+     *
      * @param title what the person asked for
      * @param instruction the full request
      * @param agentId the agent to do it, for a single-step goal
@@ -185,7 +209,8 @@ public class GoalService {
     public record TaskRequest(String title, String instruction, UUID agentId, List<Integer> dependsOn) {}
 
     /**
-     * One task in a goal being created, before it has an id.
+     * One task in a goal being created, before it has an id. Built by the goal endpoint, chat and
+     * schedules, and turned into a persisted {@link Task} by {@link #createGoal}.
      *
      * @param dependsOnPositions positions within the same {@link NewGoal#tasks()} this one waits
      *     for; empty means the old, simpler rule instead - wait for every earlier position
@@ -193,6 +218,9 @@ public class GoalService {
     public record NewTask(UUID agentId, String title, String instruction, List<Integer> dependsOnPositions) {}
 
     /**
+     * A goal to be created: its text, who it is for, where it came from and its tasks. The one
+     * input to {@link #validate} and {@link #createGoal}.
+     *
      * @param requestedBy who this is for, when it is known ahead of the goal's own default (the
      *     acting person, read from the request context)
      * @param source {@code manual}, {@code chat} or {@code schedule}
@@ -262,6 +290,14 @@ public class GoalService {
      * runAsync} true and answers before any of the work is done; the person follows the goal or its
      * run, which update as the agent works. When it is true the workspace's next tasks are handed
      * to {@link RunExecutor} once this commits, rather than left for the next sweep to notice.
+     *
+     * <p>Flow: validates the spec, saves the goal as {@code planning}, saves its tasks as {@code
+     * pending} with their dependencies resolved to ids, then moves the goal to {@code running}.
+     * Writes one goal row and one row per task; it records no audit entry of its own. A refused
+     * spec throws a validation {@link ApiException} before anything is written.
+     *
+     * @param runAsync whether to dispatch the first ready tasks once the transaction commits
+     * @return the saved goal, already {@code running}
      */
     @Transactional
     public Goal createGoal(UUID orgId, NewGoal spec, boolean runAsync) {
@@ -331,6 +367,9 @@ public class GoalService {
      * silently defeating the entire point of running it asynchronously. Registering the submission
      * to run after the transaction commits - falling back to running it immediately when, for a
      * caller or a test, no transaction is open at all - is what actually gets it seen.
+     *
+     * <p>Called only by {@link #createGoal}. A failure inside the executor happens after the commit,
+     * so it cannot undo the goal.
      */
     private void submitNextTasksAfterCommit(UUID orgId) {
         if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -351,6 +390,7 @@ public class GoalService {
         return RequestContext.actor().map(actor -> parseUuidOrNull(actor.id())).orElse(null);
     }
 
+    // Reads an actor id as a UUID, or null when it is not one (the platform actor is "system").
     private static UUID parseUuidOrNull(String value) {
         try {
             return UUID.fromString(value);
@@ -390,6 +430,9 @@ public class GoalService {
         }
     }
 
+    // Depth-first walk for validateNoCycles: "visiting" holds the current path, so meeting a task
+    // already on it is a cycle; "done" holds tasks fully checked. Also rejects dependencies that
+    // point at a missing position or at the task itself.
     private void walk(int index, List<NewTask> requests, Set<Integer> visiting, Set<Integer> done) {
         if (done.contains(index)) {
             return;
@@ -425,6 +468,7 @@ public class GoalService {
      * <p>What the run's outcome means for the task and its goal is decided by {@link TaskProgress},
      * which the runner reports to as the run finishes or parks.
      *
+     * @param orgId the workspace whose queue is read
      * @return whether a task was claimed
      */
     public boolean runNextTask(UUID orgId) {
@@ -451,6 +495,13 @@ public class GoalService {
      * one transaction across the whole agent run would keep a pooled connection and the task's
      * row lock for minutes, and several chat messages or schedules firing together would exhaust
      * the pool.
+     *
+     * <p>Called by {@link RunExecutor} and {@link #runNextTask}. Marks the task {@code running} and
+     * counts the attempt as a side effect; blocked or agentless tasks met on the way are marked
+     * {@code skipped}.
+     *
+     * @return the claimed task with its completed predecessors, or empty when there is nothing to
+     *     start
      */
     public Optional<TaskStart> claimNextTask(UUID orgId) {
         Optional<TaskStart> start =
@@ -466,6 +517,12 @@ public class GoalService {
      * sweep - the run is attributed to the goal's own requester: its audit entries name them, and
      * the tokens it fetches carry their identity. A goal nobody is on record for runs as the
      * platform. A start refused before anything was written counts as a failed attempt.
+     *
+     * <p>Runs on the caller's thread, which blocks for the length of the agent run unless the
+     * runner parks it. A task with predecessors is given a hand-off instruction built by {@link
+     * #withHandoffPreamble}, and one {@code handoff} trace step per predecessor. An {@link
+     * ApiException} from the runner is reported to {@link TaskProgress#onStartFailed} rather than
+     * thrown.
      */
     public void startClaimed(UUID orgId, TaskStart claimed) {
         Task task = claimed.task();
@@ -520,14 +577,24 @@ public class GoalService {
         return Actor.user(requestedBy.toString(), orgId, null, Set.of(), 0L);
     }
 
+    /** Gives the claim its own short transaction; null in unit tests, which run it inline. */
     private org.springframework.transaction.support.TransactionTemplate claimTransaction;
 
+    // Builds the claim transaction template once the transaction manager is available.
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setTransactionManager(org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.claimTransaction = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
     }
 
-    /** Claims the next ready task and marks it running, skipping blocked ones on the way. */
+    /**
+     * Claims the next ready task and marks it running, skipping blocked ones on the way.
+     *
+     * <p>Stops at once if the workspace is at its cap. Otherwise reads one window of claimable
+     * tasks and their siblings, and for each: skips it while it waits, atomically claims it (losing
+     * to a concurrent claimer is not an error), marks it {@code skipped} when a needed predecessor
+     * did not complete or no agent is assigned, and otherwise marks it {@code running}. Runs inside
+     * the transaction supplied by {@link #claimNextTask}.
+     */
     private Optional<TaskStart> claimNext(UUID orgId) {
         int cap = maxConcurrentRuns(orgId);
         long running = tasks.countByOrgIdAndStatus(orgId, "running");
@@ -611,6 +678,7 @@ public class GoalService {
         }
     }
 
+    /** Whether a task can start: {@code READY}, {@code WAITING} on unfinished work, or {@code BLOCKED} for good. */
     private enum Readiness {
         READY,
         WAITING,
@@ -637,6 +705,8 @@ public class GoalService {
         return everyPredecessorCompleted ? Readiness.READY : Readiness.BLOCKED;
     }
 
+    // The tasks this one waits for: its explicit dependsOn, or every earlier position when it has
+    // none.
     private static List<Task> predecessorsOf(Task task, List<Task> siblings) {
         List<UUID> dependsOn = task.getDependsOn();
         if (!dependsOn.isEmpty()) {
@@ -861,6 +931,7 @@ public class GoalService {
         return handoffs;
     }
 
+    // An agent's display name for hand-off text and the trace; empty when there is none or it is gone.
     private String agentNameOf(UUID agentId) {
         if (agentId == null) {
             return "";
@@ -881,6 +952,10 @@ public class GoalService {
      * reported it. This is what cleans up a task left "waiting for approval" by a run that was
      * approved, rejected, expired or cancelled before those paths reported to the task.
      *
+     * <p>Called by the goal sweep. Tasks whose latest run is still active, or began before the
+     * task's current attempt, are left alone.
+     *
+     * @param limit the most stranded tasks to examine in one call
      * @return how many tasks were repaired
      */
     @Transactional
@@ -961,7 +1036,7 @@ public class GoalService {
      * Cancels a goal and everything still open under it, for the default reason.
      *
      * <p>Kept with its signature so every existing caller stays as it is; see {@link
-     * #cancel(UUID, UUID, String)}.
+     * #cancel(UUID, UUID, String)}. The reason is {@link #PERSON_CANCELLED}.
      */
     @Transactional
     public void cancel(UUID orgId, UUID goalId) {
@@ -982,7 +1057,13 @@ public class GoalService {
      * The withdrawals are conditional bulk updates, so an answer or a decision committing at the
      * same moment wins or loses cleanly and never fails the cancel.
      *
+     * <p>Side effects: finishes each active run as cancelled, withdraws its approvals and
+     * questions, marks every unfinished task cancelled, closes the goal as cancelled, and after
+     * commit tells the listeners and records a {@code goal.cancel} audit entry.
+     *
      * @param reason shown on every task this cancels, written for a person to read
+     * @return how much was withdrawn
+     * @throws ApiException not found for an unknown goal; {@code CONFLICT} when it already finished
      */
     @Transactional
     public CancelCounts cancel(UUID orgId, UUID goalId, String reason) {
@@ -1064,6 +1145,10 @@ public class GoalService {
      * <p>The run is locked first, so a resume claiming it at the same moment waits and then loses.
      * Its approvals and question are withdrawn with conditional bulk updates, and a task's run
      * settles its task as cancelled.
+     *
+     * <p>After commit it records a {@code run.stop} audit entry.
+     *
+     * @throws ApiException not found for an unknown run; {@code CONFLICT} when it already ended
      */
     @Transactional
     public CancelCounts stopRun(UUID orgId, UUID runId, String reason) {
@@ -1118,6 +1203,8 @@ public class GoalService {
         }
     }
 
+    // Allows the goal's requester, or anyone holding task:cancel; otherwise throws
+    // PERMISSION_DENIED with the given refusal text.
     private static void requireRequesterOrCanceller(Goal goal, Actor actor, String refusal) {
         boolean requester = actor != null
                 && goal.getRequestedBy() != null
@@ -1135,9 +1222,16 @@ public class GoalService {
      * someone else's work repeats its side effects, so it takes the same authority as stopping
      * it: the person who asked for it, or someone who can cancel work.
      *
+     * <p>Resets every unfinished task from that step on to {@code pending}, reopens the goal as
+     * {@code running}, and after commit dispatches the next tasks, tells the listeners and records a
+     * {@code goal.retry} audit entry.
+     *
      * <p>The goal is locked here, the one exception to locking runs first: a goal that failed or
      * was stopped has no active run, so nothing can hold a run or task lock and wait for this one.
      * A second retry at the same moment waits, then finds the goal running and gets a conflict.
+     *
+     * @throws ApiException {@code CONFLICT} when the goal is not failed or stopped, or every step
+     *     completed; {@code PERMISSION_DENIED} for an actor who may not retry it
      */
     @Transactional
     public RetryResult retry(UUID orgId, UUID goalId, Actor actor) {

@@ -1,6 +1,6 @@
 // @find: approvals, human gate, approve, reject, decide approval, pending approvals, approval queue, four-eyes, requester rule, send back, request changes, approval expiry, deadline, who can approve, approval counts, held actions, tool call approval
 // @what: Raises approvals for risky agent tool calls and records approve, reject or send-back decisions, enforcing the four-eyes rule and paging the queue.
-// @flow: Called by AgentRunner.drive when a call needs a person and by ApprovalController for decisions; resumes the run through RunExecutor after commit
+// @flow: Called by AgentRunner.drive when a call needs a person and by ApprovalController for decisions; the controllers resume the run through RunExecutor after the decision is saved; ends the run through TaskProgress and AgentRunner on rejection and expiry
 package os.aiworkforce.orchestrator.service;
 
 import java.time.Duration;
@@ -103,12 +103,16 @@ public class ApprovalService {
             "Stops the person who asked for the work from approving what its agent then wants to do: off, only"
                     + " for actions that remove something (destructive), or for every action (all).");
 
-    /** How strictly the four-eyes rule applies in a workspace. */
+    /**
+     * How strictly the four-eyes rule applies in a workspace. Parsed from the workspace setting
+     * {@code approvals.requesterCannotApprove} and used by {@link ApprovalService} on every decision.
+     */
     public enum RequesterRule {
         OFF,
         DESTRUCTIVE,
         ALL;
 
+        /** Reads the setting text, case-insensitively; anything unrecognised or null means {@link #OFF}. */
         static RequesterRule parse(String value) {
             if (value == null) {
                 return OFF;
@@ -138,7 +142,10 @@ public class ApprovalService {
         public static final Context NONE = new Context(null, null, null, null);
     }
 
-    /** How many approvals are waiting, and how many of them the caller could decide. */
+    /**
+     * How many approvals are waiting, and how many of them the caller could decide. Returned by
+     * {@link #count} for the approvals badge.
+     */
     public record Counts(int pending, int canDecide) {}
 
     private final Approvals approvals;
@@ -174,6 +181,7 @@ public class ApprovalService {
         this(approvals, runs, null, null, objectMapper, audit, progress, runner);
     }
 
+    /** Spring's constructor: the full set, including the task and goal repositories used to find who asked for the work. */
     @Autowired
     public ApprovalService(
             Approvals approvals,
@@ -194,11 +202,13 @@ public class ApprovalService {
         this.runner = runner;
     }
 
+    /** Optional wiring: the announcer that tells listeners about raised and expired approvals. */
     @Autowired(required = false)
     void setAnnouncer(LifecycleAnnouncer announcer) {
         this.announcer = announcer;
     }
 
+    /** Optional wiring: the settings service, where the four-eyes key is also registered. */
     @Autowired(required = false)
     void setRuntimeConfig(RuntimeConfigService runtimeConfig) {
         this.runtimeConfig = runtimeConfig;
@@ -215,9 +225,13 @@ public class ApprovalService {
      * started a run directly - so the four-eyes rule has someone to compare the approver with. A
      * run no person is behind, such as a schedule nobody owns, has none.
      *
+     * <p>Writes the approval row. After commit, listeners are told it was raised. Called by
+     * AgentRunner.drive when a tool call needs a person.
+     *
      * @param actionClass what the call does, from the tool's own definition - {@code OUTBOUND},
      *     {@code DESTRUCTIVE}, {@code WRITE} - so an approver sees a deletion marked as one; {@code
      *     OUTBOUND} when it is not known
+     * @return the saved approval, pending, with a 24-hour deadline
      */
     @Transactional
     public Approval raise(
@@ -256,7 +270,10 @@ public class ApprovalService {
     }
 
     // @find: record approval outcome, what happened after approved call ran
-    /** Puts what happened when an approved call was carried out on the approval, so it can be shown there. */
+    /**
+     * Puts what happened when an approved call was carried out on the approval, so it can be shown there.
+     * Writes one column on the approval. Called by AgentRunner after the approved call runs.
+     */
     public void recordOutcome(java.util.UUID approvalId, String outcome) {
         approvals.recordOutcome(approvalId, outcome);
     }
@@ -280,6 +297,7 @@ public class ApprovalService {
     }
 
     // @find: list pending approvals, approvals waiting, approval inbox
+    /** Every pending approval in the workspace, as the repository orders them. Read-only; called by ApprovalController. */
     @Transactional(readOnly = true)
     public List<Approval> pending(UUID orgId) {
         return approvals.findPending(orgId);
@@ -295,6 +313,9 @@ public class ApprovalService {
      *     means pending
      * @param agentId only this agent's approvals, when given
      * @param runId only this run's approvals, when given; it wins over {@code agentId}
+     * @param page zero-based page, negative treated as zero
+     * @param size page size, held between 1 and {@value #MAX_PAGE_SIZE}
+     * @return the page, possibly empty; an unknown status is a validation error
      */
     @Transactional(readOnly = true)
     public List<Approval> list(UUID orgId, String status, UUID agentId, UUID runId, int page, int size) {
@@ -317,6 +338,7 @@ public class ApprovalService {
         return approvals.findByOrgIdAndStatusIn(orgId, statuses, pageable);
     }
 
+    // Maps the status filter to the stored statuses it covers; anything else is a validation error.
     private static List<String> statusesFor(String status) {
         return switch (status) {
             case "pending" -> PENDING;
@@ -355,7 +377,7 @@ public class ApprovalService {
     }
 
     // @find: get one approval by id
-    /** One approval, for a caller that knows only its id. */
+    /** One approval, for a caller that knows only its id; not found is an error. Read-only. */
     @Transactional(readOnly = true)
     public Approval get(UUID orgId, UUID approvalId) {
         return approvals
@@ -363,7 +385,7 @@ public class ApprovalService {
                 .orElseThrow(() -> ApiException.notFound("approval", approvalId));
     }
 
-    /** One approval, for a caller that already knows its workspace - the resumed run, for one. */
+    /** One approval, or empty when it is not in that workspace. Read-only; the non-throwing form of {@link #get}. */
     @Transactional(readOnly = true)
     public Optional<Approval> find(UUID orgId, UUID approvalId) {
         return approvals.findByIdAndOrgId(approvalId, orgId);
@@ -373,6 +395,10 @@ public class ApprovalService {
     /**
      * What each approval is for - its goal, who asked, and what the task was told to do - with a
      * handful of lookups however many approvals there are, never one per approval.
+     *
+     * <p>Read-only. Task and goal rows from another workspace are ignored. The requester comes from
+     * the approval, else the goal, else (for a direct run) the person who started it. Called by
+     * ApprovalController. The result is empty for an empty list.
      */
     @Transactional(readOnly = true)
     public Map<UUID, Context> contextFor(Collection<Approval> list) {
@@ -452,6 +478,8 @@ public class ApprovalService {
     /**
      * Whether {@code actor} may decide {@code approval} now: it is still waiting, they hold the
      * permission it needs, and the workspace's four-eyes rule does not stop them as its requester.
+     * Used by ApprovalController to show or hide the decision buttons; {@link #decide} repeats the
+     * checks when the decision is made.
      */
     public boolean canDecide(Actor actor, Approval approval) {
         if (actor == null || !approval.isPending() || !actor.hasPermission(approval.getRequiredPermission())) {
@@ -461,6 +489,7 @@ public class ApprovalService {
                 requesterRule(approval.getOrgId()), approval.getRequestedBy(), approval.getActionClass(), actor);
     }
 
+    // True when the rule applies to this action class and the actor is the person who asked for the work.
     private static boolean stoppedByRule(RequesterRule rule, UUID requestedBy, String actionClass, Actor actor) {
         return rule != RequesterRule.OFF
                 && requestedBy != null
@@ -488,7 +517,7 @@ public class ApprovalService {
         }
     }
 
-    /** The workspace's four-eyes rule as a setting reads: {@code off}, {@code destructive} or {@code all}. */
+    /** The workspace's four-eyes rule as a setting reads: {@code off}, {@code destructive} or {@code all}. Read-only. */
     public String requesterRuleName(UUID orgId) {
         return requesterRule(orgId).name().toLowerCase();
     }
@@ -498,7 +527,11 @@ public class ApprovalService {
      * Sets the workspace's four-eyes rule. It applies from the next decision: an approval already
      * waiting is judged by the rule in force when somebody decides it.
      *
+     * <p>An invalid value is a validation error; an unavailable settings service is a degraded
+     * dependency error. Writes the setting and records an audit entry with the previous value.
+     *
      * @param value {@code off}, {@code destructive} or {@code all}
+     * @return the value saved, normalised to lower case
      */
     public String setRequesterRule(UUID orgId, String value, Actor actor) {
         String chosen = value == null ? "" : value.strip().toLowerCase();
@@ -532,8 +565,16 @@ public class ApprovalService {
      * <p>The decision is audited once it commits, with the approver's note, who the agent was and
      * how long the request waited, so a decision that rolled back is never on record as made.
      *
+     * <p>Flow: takes a row lock on the approval, checks permission, status, deadline and the
+     * four-eyes rule, then records the decision. A rejection also ends the run and its task.
+     * The opposite answer to an earlier decision, an expired approval or a rule violation is
+     * refused with an {@link ApiException}. Called by ApprovalController, which then resumes an
+     * approved run.
+     *
      * @param note why, in the approver's words; trimmed, kept to {@value #NOTE_MAX} characters, and
      *     on a rejection carried into the run's failure reason
+     * @return the approval as decided; when the same answer was already recorded, that approval
+     *     unchanged
      */
     @Transactional(noRollbackFor = ApiException.class)
     public Approval decide(UUID orgId, UUID approvalId, boolean approved, String note) {
@@ -622,6 +663,9 @@ public class ApprovalService {
      * nothing to revise. A run that has been sent back about this same tool before, or twice in
      * all, ends instead with {@link #STOPPED_AFTER_ROUNDS}: an agent that cannot get it right in
      * two attempts needs a person, not a third.
+     *
+     * <p>Writes the decision (as a rejection marked sent back), may end the run, and audits once
+     * committed. Called by ApprovalController, which resumes the run unless it ended.
      */
     @Transactional(noRollbackFor = ApiException.class)
     public SendBack sendBack(UUID orgId, UUID approvalId, String note) {
@@ -679,7 +723,7 @@ public class ApprovalService {
     }
 
 
-    /** The note trimmed and cut to length, or null when there is nothing in it. */
+    /** The note trimmed and cut to {@value #NOTE_MAX} characters, or null when there is nothing in it. */
     static String cleanNote(String note) {
         if (note == null) {
             return null;
@@ -703,6 +747,7 @@ public class ApprovalService {
         return truncate(reason, REASON_MAX);
     }
 
+    // Cuts text to max characters, ending with an ellipsis; null-safe.
     private static String truncate(String text, int max) {
         if (text == null || text.length() <= max) {
             return text;
@@ -710,6 +755,7 @@ public class ApprovalService {
         return text.substring(0, max - 1) + "…";
     }
 
+    // Seconds from request to decision (or to now when undecided), never negative.
     private static long waitedSeconds(Approval approval) {
         Instant end = approval.getDecidedAt() == null ? Instant.now() : approval.getDecidedAt();
         return Math.max(0, Duration.between(approval.getRequestedAt(), end).toSeconds());
@@ -721,6 +767,11 @@ public class ApprovalService {
      * <p>The default is to reject. An action that nobody approved must not happen because
      * everybody was busy, and a pending approval that silently becomes permission after a day is
      * not a gate at all.
+     *
+     * <p>Flow: finds up to {@code limit} approvals past their deadline and expires each one,
+     * ending its run. Called by the maintenance sweep.
+     *
+     * @return how many approvals were expired
      */
     @Transactional
     public int expireOverdue(int limit) {
@@ -775,7 +826,7 @@ public class ApprovalService {
         }
     }
 
-    /** Cancels open approvals for a run that has been stopped, so the queue stays truthful. */
+    /** Cancels open approvals for a run that has been stopped, so the queue stays truthful. Called when a run is stopped. */
     @Transactional
     public void cancelForRun(UUID runId) {
         withdrawForRun(runId);
@@ -787,6 +838,8 @@ public class ApprovalService {
      * <p>A conditional bulk update rather than loading and saving each row: an approver deciding
      * at the same moment then simply wins or loses, and can never make the stop itself fail with
      * a version conflict.
+     *
+     * @return the number of approvals withdrawn
      */
     @Transactional
     public int withdrawForRun(UUID runId) {
@@ -797,6 +850,7 @@ public class ApprovalService {
      * Runs an approver approved that are still parked, for the resume sweep: the approver's own
      * resume did not happen, most often because the service restarted in between. Only a run's
      * newest approval counts, so a run parked again on a newer one is never resumed past it.
+     * Read-only; called by the maintenance sweep, which resubmits each run.
      */
     @Transactional(readOnly = true)
     public List<RunRef> approvedAwaitingResume(Instant cutoff, int limit) {
@@ -822,6 +876,7 @@ public class ApprovalService {
         }
     }
 
+    // The text as a UUID, or null when it is null or not one (for example a system actor's name).
     private static UUID parseUuid(String value) {
         if (value == null) {
             return null;

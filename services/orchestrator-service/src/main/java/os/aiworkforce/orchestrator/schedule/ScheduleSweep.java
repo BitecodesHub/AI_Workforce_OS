@@ -22,16 +22,23 @@ import org.springframework.stereotype.Component;
 public class ScheduleSweep {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduleSweep.class);
+    /** Most due schedules handled in one tick. */
     private static final int BATCH = 50;
 
     private final ScheduleService service;
 
+    /** Builds the sweep; used by Spring. */
     public ScheduleSweep(ScheduleService service) {
         this.service = service;
     }
 
     // @find: scheduled job, sweep due schedules every 30 seconds
     @Scheduled(fixedDelayString = "${aiwos.scheduling.schedule-interval:PT30S}")
+    /**
+     * Runs on a fixed delay (default 30 seconds, {@code aiwos.scheduling.schedule-interval}) and asks
+     * {@link ScheduleService#sweepDue(int)} to start due schedules. Side effects are those of the service
+     * (goals started, schedule rows advanced). An unexpected failure is logged and swallowed so the next tick still runs.
+     */
     public void sweep() {
         try {
             int processed = service.sweepDue(BATCH);

@@ -60,14 +60,17 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String timezone = "UTC";
 
+    /** Whether the account status is active; other statuses may not sign in. */
     public boolean isActive() {
         return "active".equals(status);
     }
 
+    /** Whether the account is locked at this moment, that is, the lock expiry is in the future. */
     public boolean isLocked() {
         return lockedUntil != null && lockedUntil.isAfter(Instant.now());
     }
 
+    /** Whether the address has been verified. */
     public boolean isEmailVerified() {
         return emailVerifiedAt != null;
     }
@@ -87,6 +90,7 @@ public class User extends BaseEntity {
         }
     }
 
+    /** Clears any lockout state and stamps the last sign-in time. The caller saves the entity. */
     public void recordSuccessfulLogin() {
         clearLockout();
         lastLoginAt = Instant.now();

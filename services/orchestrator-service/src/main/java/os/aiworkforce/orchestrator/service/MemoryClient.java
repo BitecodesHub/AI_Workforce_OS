@@ -34,43 +34,85 @@ public class MemoryClient {
     private final InternalTokenProvider tokens;
 
     @Autowired
+    /**
+     * Builds a client for the memory service.
+     *
+     * @param builder Spring's shared WebClient builder
+     * @param properties platform configuration: memory service URL
+     * @param tokens mints the per-workspace service token
+     */
     public MemoryClient(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         this.client = builder.baseUrl(properties.services().memory()).build();
         this.tokens = tokens;
     }
 
-    /** One note as the memory service returns it. */
+    /** One note as the memory service returns it. Carried inside {@link Remembered} and {@link Recalled}, and read by AgentMemoryTool. */
     public record Note(UUID id, String kind, String content, String source) {}
 
-    /** @param refused why the note was not kept, in words for the model; null when it was kept */
+    /**
+     * The outcome of keeping a note: kept, refused with a reason, or the service unavailable. Built
+     * only through the three factories below and read by AgentMemoryTool, which reports it to the model.
+     *
+     * @param note the stored note; null unless it was kept
+     * @param created whether the memory service reports a new note was created
+     * @param refused why the note was not kept, in words for the model; null when it was kept
+     * @param unavailable true when the memory service could not be asked or gave no usable answer
+     */
     public record Remembered(Note note, boolean created, String refused, boolean unavailable) {
 
+        // The note was stored.
         static Remembered keptNote(Note note, boolean created) {
             return new Remembered(note, created, null, false);
         }
 
+        // The memory service refused the note (validation); the reason is passed to the model.
         static Remembered refusedWith(String why) {
             return new Remembered(null, false, why, false);
         }
 
+        // The memory service could not be asked, or answered with an error that is not the note's fault.
         static Remembered notAvailable() {
             return new Remembered(null, false, null, true);
         }
     }
 
-    /** @param failed true when the memory service could not be asked */
+    /**
+     * The outcome of recalling notes. A failure and an empty result are different: {@code failed}
+     * tells the caller the service could not be asked, so it does not claim there is nothing to recall.
+     *
+     * @param notes the notes found, never null
+     * @param failed true when the memory service could not be asked
+     */
     public record Recalled(List<Note> notes, boolean failed) {
 
+        // An empty result flagged as failed.
         static Recalled couldNotRecall() {
             return new Recalled(List.of(), true);
         }
     }
 
+    // Wire shape of the remember response.
     private record RememberedBody(Note memory, boolean created) {}
 
+    // Wire shape of the recall response.
     private record RecalledBody(List<Note> memories) {}
 
     // @find: save note to memory service
+    /**
+     * Asks the memory service to keep a note for one agent.
+     *
+     * <p>Flow: posts the content (plus kind and run id when given) to the agent's remember endpoint with a
+     * service token for the workspace, waiting up to 8 seconds. A 4xx answer is a refusal whose own
+     * wording is passed on; a 5xx, a timeout, an empty body or a token failure is reported as
+     * unavailable and logged. Side effect: a note is written by the memory service. Never throws.
+     *
+     * @param orgId the workspace
+     * @param agentId the agent the note belongs to
+     * @param runId the run that produced the note; null to omit
+     * @param kind the note kind; null to let the service choose
+     * @param content the note text
+     * @return the outcome; never null
+     */
     public Remembered remember(UUID orgId, UUID agentId, UUID runId, String kind, String content) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
@@ -106,6 +148,19 @@ public class MemoryClient {
     }
 
     // @find: recall notes from memory service
+    /**
+     * Asks the memory service for the agent's notes that best match a query.
+     *
+     * <p>Read only. The query is first cut to the service's length limit by {@link #recallQuery}. Waits
+     * up to 5 seconds. Any failure, or an empty body, is returned as a failed result and logged. Never
+     * throws.
+     *
+     * @param orgId the workspace
+     * @param agentId the agent whose notes are searched
+     * @param query the text to match, for example the user's request; null is treated as empty
+     * @param limit the most notes to return
+     * @return the notes found, or a failed result; never null
+     */
     public Recalled recall(UUID orgId, UUID agentId, String query, int limit) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();

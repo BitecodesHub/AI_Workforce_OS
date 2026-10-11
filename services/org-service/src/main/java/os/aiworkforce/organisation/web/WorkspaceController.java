@@ -64,18 +64,34 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 @Tag(name = "Workspaces")
 public class WorkspaceController {
 
+    /**
+     * Audit client, injected when the audit wiring is present and {@code null} otherwise, so the
+     * controller still works where auditing is not configured.
+     */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.platform.web.audit.AuditClient audit;
 
+    /** Logger for workspace creation and settings changes. */
     private static final Logger log = LoggerFactory.getLogger(WorkspaceController.class);
 
     /** Names collapse to this shape for the address; kept short so the result stays readable. */
     private static final Pattern NON_SLUG_CHARACTERS = Pattern.compile("[^a-z0-9]+");
 
+    /** Repository for workspace rows. */
     private final Organisations organisations;
+    /** Client whose base URL is identity-service, used to grant the creator the owner role. */
     private final WebClient identityClient;
+    /** Supplies the service token for calls to identity-service. */
     private final InternalTokenProvider tokens;
 
+    /**
+     * Creates the controller.
+     *
+     * @param organisations repository for workspace rows
+     * @param builder source of the HTTP client
+     * @param properties platform settings, giving the identity-service address
+     * @param tokens supplier of service tokens
+     */
     public WorkspaceController(
             Organisations organisations,
             WebClient.Builder builder,
@@ -86,13 +102,42 @@ public class WorkspaceController {
         this.tokens = tokens;
     }
 
+    /**
+     * Request body for creating a workspace.
+     *
+     * @param name the display name; the address (slug) is derived from it
+     * @param timezone a region name such as {@code Europe/London}; Melbourne is used when blank or absent
+     */
     public record CreateWorkspaceRequest(@NotBlank @Size(max = 120) String name, @Size(max = 60) String timezone) {}
 
+    /**
+     * Request body for changing settings. A field left {@code null} keeps its current value.
+     *
+     * @param name the new display name
+     * @param timezone the new region name
+     */
     public record UpdateSettingsRequest(@Size(max = 120) String name, @Size(max = 60) String timezone) {}
 
+    /**
+     * The public view of a workspace: id, display name, slug, timezone and status. Shared with {@code
+     * InternalWorkspaceController}.
+     */
     public record WorkspaceView(UUID id, String name, String slug, String timezone, String status) {}
 
     // @find: create workspace, new workspace, POST /api/workspaces, bootstrap owner
+    /**
+     * {@code POST /api/workspaces}: creates a workspace and makes the caller its owner.
+     *
+     * <p>Permission: authentication only, because the caller has no role anywhere yet. Response: 201 with
+     * the new workspace's view.
+     *
+     * <p>Flow: builds a unique slug from the name, validates the timezone, saves the organisation with the
+     * caller as owner, then calls {@code POST /internal/memberships/bootstrap-owner} on identity with a
+     * service token. If that call fails or times out (ten seconds), the organisation is deleted, the
+     * transaction rolls back and the caller receives 502 with a message that nothing was created. Failure:
+     * 422 for a blank name or an unrecognised timezone. No audit event is recorded here; the log notes the
+     * creation.
+     */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Create a workspace and become its owner")
@@ -147,6 +192,10 @@ public class WorkspaceController {
      * does not confirm that somebody else's workspace exists. Sibling services read workspaces
      * through {@link InternalWorkspaceController} instead; service tokens are still let through
      * here so a caller not yet moved over keeps working.
+     *
+     * <p>{@code GET /api/workspaces/{workspaceId}}. Response: 200 with the workspace's view. Failure: 404
+     * when the path names a workspace other than the token's (system and agent tokens are exempt) or when
+     * no such workspace exists. Read-only.
      */
     @GetMapping("/{workspaceId}")
     @Operation(summary = "One workspace")
@@ -167,6 +216,13 @@ public class WorkspaceController {
      * <p>The orchestrator caches each workspace's timezone for ten minutes, so a new zone reaches
      * schedule suggestions and "today" within that window. Schedules already created keep the
      * zone they were created in.
+     *
+     * <p>{@code PATCH /api/workspaces/{workspaceId}/settings}. Permission: {@code WORKSPACE_UPDATE}, in the
+     * workspace the path names. Response: 200 with the updated view. Both values are validated before
+     * either is applied. Side effects: saves the row, records the audit event {@code workspace.update} with
+     * the previous and new name and timezone, and logs the change. Failure: 403 {@code ORGANISATION_MISMATCH}
+     * when the path differs from the token's workspace; 404 when the workspace is missing; 422 for a blank
+     * name or an unrecognised timezone.
      */
     @PatchMapping("/{workspaceId}/settings")
     @RequiresPermission(Permission.Codes.WORKSPACE_UPDATE)
@@ -221,6 +277,7 @@ public class WorkspaceController {
         }
     }
 
+    /** The actor's workspace as a UUID, or {@code null} when it has none or the value is not a valid UUID. */
     private static UUID orgOf(Actor actor) {
         try {
             return actor.orgId() == null ? null : UUID.fromString(actor.orgId());
@@ -253,6 +310,12 @@ public class WorkspaceController {
         }
     }
 
+    /**
+     * Derives an address from a name: lower case, runs of other characters replaced by a hyphen, hyphens
+     * trimmed from the ends, with {@code workspace} used when nothing is left. If the slug is taken, appends
+     * {@code -2}, {@code -3} and so on until one is free. Reads the database once per candidate. Two requests
+     * at the same moment could still pick the same slug; the database's unique constraint then decides.
+     */
     private String uniqueSlug(String name) {
         String base = NON_SLUG_CHARACTERS
                 .matcher(name.strip().toLowerCase(Locale.ROOT))
@@ -269,8 +332,16 @@ public class WorkspaceController {
         return candidate;
     }
 
+    /**
+     * Request body for identity's bootstrap-owner call: the new workspace and the person to make its
+     * owner.
+     */
     private record BootstrapRequest(UUID orgId, UUID userId) {}
 
+    /**
+     * Converts a workspace row to its public view. Package-visible so that {@code
+     * InternalWorkspaceController} returns the same shape.
+     */
     static WorkspaceView toView(Organisation org) {
         return new WorkspaceView(org.getId(), org.getName(), org.getSlug(), org.getTimezone(), org.getStatus());
     }

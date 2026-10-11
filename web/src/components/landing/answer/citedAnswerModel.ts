@@ -10,6 +10,7 @@
  * so the honest answer is to decline rather than to guess.
  */
 
+/** The demo document's file name and page count (eight pages), the two questions the visitor can ask in display order, and the types of a question id, a citation number and a page number. */
 export const DOCUMENT_NAME = 'Project_Proposal.pdf'
 
 export const PAGE_COUNT = 8
@@ -29,6 +30,7 @@ export type PageNumber = 4 | 6
 
 export type Segment = { kind: 'text'; text: string } | { kind: 'cite'; n: CitationNumber }
 
+/** The answer as text and citation segments. It is written only from the two passages below, and each claim carries the marker of the passage behind it. */
 export const ANSWER: ReadonlyArray<Segment> = [
   {
     kind: 'text',
@@ -42,6 +44,7 @@ export const ANSWER: ReadonlyArray<Segment> = [
   { kind: 'text', text: '.' },
 ]
 
+/** The two quoted passages by citation number, each with the page it is from. Both quotes are verbatim from the document. */
 export const PASSAGES: Record<CitationNumber, { page: PageNumber; quote: string }> = {
   1: {
     page: 6,
@@ -58,8 +61,10 @@ export const PASSAGES: Record<CitationNumber, { page: PageNumber; quote: string 
 /** The pages retrieval returns for the answerable question, in rank order. */
 export const HIT_PAGES: ReadonlyArray<PageNumber> = [PASSAGES[1].page, PASSAGES[2].page]
 
+/** The sentence the agent gives for a question the document cannot support: it declines rather than guessing, and cites nothing. */
 export const DECLINE = 'No document in this workspace supports an answer to that question.'
 
+/** Matches a run of non-space characters; the reveal counts words with it. */
 const WORD = /\S+/g
 
 /** The answer's text with the citation markers left out. */

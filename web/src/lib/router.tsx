@@ -17,6 +17,7 @@ import type { ReactNode } from 'react'
  * links.
  */
 
+/** Options for navigate: replace the history entry, and whether to scroll afterwards. */
 export type NavigateOptions = {
   /** Replace the current history entry instead of adding one, for state such as list filters. */
   replace?: boolean
@@ -34,6 +35,7 @@ type RouterValue = {
 
 const RouterContext = createContext<RouterValue | null>(null)
 
+/** Current path, query string and fragment from the browser's location. */
 const readLocation = () => ({
   path: window.location.pathname,
   search: window.location.search,
@@ -69,6 +71,10 @@ function scrollToTarget(hash: string, fromTop = true) {
 
 // @find: router provider, app routing, history listener
 // @find: router provider, navigation, history, link interception; wraps the whole app (main.tsx)
+/**
+ * Provides the current path, query string, #fragment and navigate() to the whole app (mounted once in main.tsx).
+ * Flow: location state is read from window.location. navigate(to, { replace, scroll }) pushes or replaces a history entry, updates state, and scrolls to the top or to the #fragment (replaced entries keep their position unless scroll is true). Back and Forward arrive through popstate. A document-wide click listener turns plain left-clicks on same-origin links that start with "/" into navigate() calls, leaving alone modified clicks, target _blank, downloads and links that start with "//". A deep link with a #fragment on first load is scrolled to once it renders.
+ */
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(readLocation)
 
@@ -121,6 +127,9 @@ export function RouterProvider({ children }: { children: ReactNode }) {
 
 // @find: use router, navigate, current path, query string
 // @find: use router, current path, navigate, search params; used by: every page
+/**
+ * Returns the router value { path, search, hash, navigate }. search is the same URLSearchParams object until the query string changes. Throws when used outside RouterProvider.
+ */
 export function useRouter(): RouterValue {
   const value = useContext(RouterContext)
   if (!value) throw new Error('useRouter must be used inside RouterProvider')
@@ -142,6 +151,7 @@ let waitingCount = 0
 /** A leading "(3) " a screen added itself: the count is ours to write, once. */
 const LEADING_COUNT = /^\(\d+\)\s+/
 
+/** Writes document.title: the page title, prefixed with "(n)" when n items are waiting on the person. */
 function writeTitle() {
   document.title = waitingCount > 0 ? `(${waitingCount}) ${pageTitle}` : pageTitle
 }

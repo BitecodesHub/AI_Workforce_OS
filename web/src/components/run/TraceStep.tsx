@@ -139,6 +139,15 @@ function ApprovalDecision({ approvalId }: { approvalId: string }) {
 }
 
 // @find: TraceStep, trace step, trace step, run step, step kind, tool call
+/**
+ * One step of the full trace on the run page, as a list item.
+ * The instruction step shows "What the agent was asked". Every other step shows a kind tag (stepKind), a heading
+ * (stepHeading), the tool status, a live or practice-data tag for tool calls (stepMode, so a practice answer is
+ * never read as a real result), an offline sandbox tag and the duration. Below: the description, the searched
+ * documents with their passages, recalled or kept memory notes, the approval decision for an approval step
+ * (ApprovalDecision, loaded by id), the questions with their options for a question step, the tools the model
+ * asked to use, the attempts, an audio clip, a browser screenshot, and the time.
+ */
 export function TraceStep({ step }: { step: RunStep }) {
   const time = (
     <p className="caption muted" style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>

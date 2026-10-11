@@ -39,10 +39,12 @@ public class InternalScheduleController {
 
     private final ScheduleService service;
 
+    /** Builds the controller; used by Spring. */
     public InternalScheduleController(ScheduleService service) {
         this.service = service;
     }
 
+    /** Request body: the workspace and the member who was removed from it. */
     public record OwnerRemovedRequest(@NotNull UUID orgId, @NotNull UUID userId) {}
 
     /** @param paused how many enabled schedules this paused */

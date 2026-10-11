@@ -35,27 +35,38 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  */
 public final class ZoomAdapter extends LiveServerAdapter {
 
+    /** Zoom's API address. */
     public static final String BASE_URL = "https://api.zoom.us/v2";
+    /** Where the credentials are exchanged for an access token. */
     public static final String TOKEN_URL = "https://zoom.us/oauth/token";
 
+    /** A cached token is dropped this long before it expires. */
     private static final Duration SAFETY_MARGIN = Duration.ofSeconds(60);
+    /** Regular expression for a plain calendar date. */
     private static final String DATE = "\\d{4}-\\d{2}-\\d{2}";
 
+    /** An access token and the moment the cache stops using it. */
     private record CachedToken(String token, Instant expiresAt) {}
 
+    /** The token endpoint; replaced by a stand-in in tests. */
     private final String tokenUrl;
+    /** Time source, replaceable in tests. */
     private final Clock clock;
+    /** Tokens by hash of the stored credential, so the secret itself is never a map key. */
     private final Map<String, CachedToken> tokens = new ConcurrentHashMap<>();
 
+    /** The usual constructor: Zoom's real token endpoint. */
     public ZoomAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         this(sandbox, json, http, baseUrl, TOKEN_URL);
     }
 
+    /** As above, with a different token endpoint (tests). */
     public ZoomAdapter(
             SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl, String tokenUrl) {
         this(sandbox, json, http, baseUrl, tokenUrl, Clock.systemUTC());
     }
 
+    /** As above, with a different clock (tests of token expiry). Registers the five Zoom tools. */
     ZoomAdapter(
             SandboxServerAdapter sandbox,
             ObjectMapper json,
@@ -73,11 +84,17 @@ public final class ZoomAdapter extends LiveServerAdapter {
         on("list_recordings", this::listRecordings);
     }
 
+    /** Sends the short-lived access token as a bearer credential. */
     @Override
     protected void authorize(HttpHeaders headers, String accessToken) {
         headers.setBearerAuth(accessToken);
     }
 
+    /**
+     * Turns the stored credential into an access token. Returns a cached one while it is still valid; otherwise
+     * calls Zoom's token endpoint with the client id and secret (an HTTP POST that only issues a token) and caches
+     * the answer. A 400 or 401 becomes a plain sentence; a malformed credential is refused before any request.
+     */
     @Override
     protected Mono<String> prepare(String credential) {
         String cacheKey = sha256(credential);
@@ -132,6 +149,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         return prepare(credential);
     }
 
+    /** Reads the account's own user record (a read call) and answers a name and email label. */
     @Override
     protected Mono<String> whoAmI(String accessToken) {
         return get(accessToken, "/users/me").map(user -> {
@@ -144,6 +162,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
     }
 
     // @find: Zoom list meetings, tool zoom__list_meetings, live Zoom call
+    /** Tool list_meetings (read). Lists upcoming meetings, optionally between two dates. */
     private Mono<ToolResult> listMeetings(ToolInvocation invocation, JsonNode arguments, String token) {
         StringBuilder uri = new StringBuilder("/users/me/meetings?type=upcoming&page_size={n}");
         java.util.List<Object> variables = new java.util.ArrayList<>();
@@ -157,6 +176,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
     }
 
     // @find: Zoom get meeting, tool zoom__get_meeting, live Zoom call
+    /** Tool get_meeting (read). Reads one meeting by id, without the host start link. */
     private Mono<ToolResult> getMeeting(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(token, "/meetings/{id}", id).map(meeting -> {
@@ -168,6 +188,10 @@ public final class ZoomAdapter extends LiveServerAdapter {
     }
 
     // @find: Zoom schedule meeting, tool zoom__schedule_meeting, live Zoom call
+    /**
+     * Tool schedule_meeting (write). Creates a scheduled meeting on the connected user's account. Nobody is invited;
+     * the join link must be shared separately. Not idempotent.
+     */
     private Mono<ToolResult> scheduleMeeting(ToolInvocation invocation, JsonNode arguments, String token) {
         String topic = required(arguments, "topic");
         String start = required(arguments, "start");
@@ -190,6 +214,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
     }
 
     // @find: Zoom cancel meeting, tool zoom__cancel_meeting, live Zoom call
+    /** Tool cancel_meeting (destructive). Deletes the meeting at Zoom with a DELETE request; it cannot be undone from here. */
     private Mono<ToolResult> cancelMeeting(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return call(HttpMethod.DELETE, token, "/meetings/{id}", id).map(ignored -> {
@@ -201,6 +226,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
     }
 
     // @find: Zoom list recordings, tool zoom__list_recordings, live Zoom call
+    /** Tool list_recordings (read). Lists cloud recordings, optionally between two dates; file contents are not downloaded. */
     private Mono<ToolResult> listRecordings(ToolInvocation invocation, JsonNode arguments, String token) {
         StringBuilder uri = new StringBuilder("/users/me/recordings?page_size={n}");
         java.util.List<Object> variables = new java.util.ArrayList<>();
@@ -221,6 +247,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         });
     }
 
+    /** Adds the optional from and to dates to the query after checking their form. */
     private static void dates(JsonNode arguments, StringBuilder uri, java.util.List<Object> variables) {
         for (String field : new String[] {"from", "to"}) {
             String value = text(arguments, field);
@@ -246,6 +273,7 @@ public final class ZoomAdapter extends LiveServerAdapter {
         return item;
     }
 
+    /** Hex SHA-256 of the credential, used only as a cache key. */
     private static String sha256(String value) {
         try {
             return HexFormat.of().formatHex(

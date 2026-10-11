@@ -12,6 +12,7 @@ import type { SequenceStep } from '../../../hooks/useSequence'
  * even if a button were somehow pressed.
  */
 
+/** The types of the demo: the roles that can be chosen as the decider, the five timeline steps and their states, the run phases, the approval card status, which region receives focus, the whole state, the events the reducer accepts, and the dispatch function. */
 export type Decider = 'manager' | 'employee' | 'viewer'
 export type StepId = 'plan' | 'draft' | 'gate' | 'send' | 'summary'
 export type StepState =
@@ -61,8 +62,10 @@ export type ApprovalEvent =
 export type ApprovalDispatch = (event: ApprovalEvent) => void
 
 /** Only the manager role, of the three offered here, holds approval:decide. */
+/** Only the manager role, of the three offered, holds approval:decide; every approval and rejection guard in the reducer calls this. */
 export const canDecide = (d: Decider): boolean => d === 'manager'
 
+/** The order of the timeline steps, the display copy of each step, the sample payload of the email, the screen reader announcements for each phase and the announcement for each decider choice. */
 export const STEP_ORDER: ReadonlyArray<StepId> = ['plan', 'draft', 'gate', 'send', 'summary']
 
 export const STEP_COPY: Record<StepId, { label: string; detail: string }> = {
@@ -111,6 +114,7 @@ export const DECIDER_ANNOUNCEMENT: Record<Decider, string> = {
   viewer: 'Deciding as a viewer. This role does not see the approval queue.',
 }
 
+/** Step states before the run starts (all ghost) and when parked at the gate (plan and draft done, gate waiting, the rest ghost). */
 const GHOST_STEPS: Readonly<Record<StepId, StepState>> = {
   plan: 'ghost',
   draft: 'ghost',
@@ -145,11 +149,13 @@ export function initApprovalState(reduced: boolean): ApprovalState {
   return { ...base, phase: 'idle', steps: { ...GHOST_STEPS }, card: 'hidden', autoplayed: false }
 }
 
+/** Builds the next focus request for a target; bumping the nonce makes a repeated request to the same target still move focus. */
 function focusOn(s: ApprovalState, target: FocusTarget): ApprovalState['focus'] {
   return { target, nonce: s.focus.nonce + 1 }
 }
 
 // @find: approvalReducer, approve, reject, expire transitions
+/** Pure reducer for the approval-gate demo. Transitions: START (idle to running, only once; a user start sends focus to the timeline), STEP (update one step while running or approving), PARK (running to parked, card waiting), APPROVE (parked to approving, only when canDecide), RESOLVE_APPROVED (approving to completed, focus to the result), REJECT (parked to rejected, only when canDecide; send and summary skipped), LET_EXPIRE (parked to expiring; any role may let the deadline pass because doing nothing needs no permission), RESOLVE_EXPIRED (expiring to expired, rejected by default), SET_DECIDER (changes the role and announces it) and RESET (back to idle, focus to the timeline). An event that does not fit the current phase returns the state unchanged. Every state change that matters sets an announcement for the live region. */
 export function approvalReducer(s: ApprovalState, e: ApprovalEvent): ApprovalState {
   switch (e.type) {
     case 'START': {
@@ -250,6 +256,7 @@ export function approvalReducer(s: ApprovalState, e: ApprovalEvent): ApprovalSta
 /* ---- Sequences, played with useSequence (times in ms) --------------------------------------- */
 
 // @find: startSteps, run starts, plan and draft timeline
+/** Timed steps (milliseconds) that play the start of the run: START at 0, plan done and draft active at 900, draft done at 1700, gate waiting and PARK at 2000. Played with useSequence. */
 export function startSteps(dispatch: ApprovalDispatch, byUser: boolean): SequenceStep[] {
   return [
     { at: 0, run: () => dispatch({ type: 'START', byUser }) },
@@ -272,6 +279,7 @@ export function startSteps(dispatch: ApprovalDispatch, byUser: boolean): Sequenc
 }
 
 // @find: approveSteps, approval timeline, send email after approve
+/** Timed steps after an approval: APPROVE at 0, send active at 600, send done and summary active at 1300, summary done and RESOLVE_APPROVED at 2000. */
 export function approveSteps(dispatch: ApprovalDispatch): SequenceStep[] {
   return [
     { at: 0, run: () => dispatch({ type: 'APPROVE' }) },
@@ -294,6 +302,7 @@ export function approveSteps(dispatch: ApprovalDispatch): SequenceStep[] {
 }
 
 // @find: expireSteps, deadline passes, run cancelled
+/** Timed steps for letting the deadline pass: LET_EXPIRE at 0, RESOLVE_EXPIRED at 1200. */
 export function expireSteps(dispatch: ApprovalDispatch): SequenceStep[] {
   return [
     { at: 0, run: () => dispatch({ type: 'LET_EXPIRE' }) },

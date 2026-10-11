@@ -1,6 +1,6 @@
 // @find: model router, LLM, model providers, OpenAI compatible, OpenRouter, NVIDIA NIM, Groq, OpenAI, self-hosted, chat completions, embeddings, failure classification, 429 rate limit, tool calls, images, OpenAiCompatibleProvider
-// @what: One adapter for every provider speaking the OpenAI chat completions API, with failure classification and embeddings.
-// @flow: Registered as a ChatProvider; called by ModelRouter and knowledge-service embeddings.
+// @what: One adapter for every provider speaking the OpenAI chat completions API (OpenRouter, NVIDIA NIM, Groq, OpenAI, self-hosted), with failure classification and embeddings.
+// @flow: Spring ChatProvider of kind OPENAI_COMPATIBLE; ModelRouter calls complete/stream/healthCheck and knowledge-service calls embed; WebClient posts to /chat/completions, /models and /embeddings; every error is translated to a classified ProviderException that the router uses to retry, fail over or stop.
 package os.aiworkforce.llm.provider;
 
 import java.time.Duration;
@@ -57,6 +57,11 @@ import os.aiworkforce.llm.model.ToolSpec;
  *       contain an error - which is caught below, because treating it as success returns an empty
  *       answer to the person.
  * </ul>
+ *
+ * <p>Correction note: of the three differences above, only the OpenRouter 200-with-error case is
+ * handled in this class. No {@code presence_penalty} is ever sent, so the Groq restriction does not
+ * arise, and a missing NVIDIA model is recognised through the generic 404 and body classification.
+ * Throttling headers are read from the standard and the {@code x-ratelimit-reset-requests} names.
  */
 @Component
 public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProvider {
@@ -67,12 +72,22 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper json;
 
+    /**
+     * Creates the adapter with the shared reactive client builder and JSON mapper supplied by Spring.
+     *
+     * <p>The builder is cloned for every call so that per-provider base URL and headers never leak
+     * between providers. The constructor performs no network activity.
+     */
     public OpenAiCompatibleProvider(WebClient.Builder webClientBuilder, ObjectMapper json) {
         this.webClientBuilder = webClientBuilder;
         this.json = json;
     }
 
     @Override
+    /**
+     * Identifies this adapter to the provider registry, which uses the kind to select the adapter for
+     * each configured provider row.
+     */
     public ProviderDescriptor.Kind kind() {
         return ProviderDescriptor.Kind.OPENAI_COMPATIBLE;
     }
@@ -85,6 +100,17 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // @find: call OpenRouter NVIDIA Groq OpenAI, chat completion
     @Override
+    /**
+     * Sends one non-streaming chat completion.
+     *
+     * <p>Flow: called by the model router; builds the JSON body, posts it to {@code /chat/completions},
+     * applies the request deadline, parses the answer and maps any failure to a classified
+     * {@link ProviderException}. One HTTP call is made and no retry happens here; retry, failover and
+     * circuit breaking belong to the router, which reads the failure class.
+     *
+     * @return the parsed response including token usage, or an error signal carrying a
+     * {@link ProviderException}
+     */
     public Mono<ChatResponse> complete(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         Instant startedAt = Instant.now();
@@ -103,6 +129,15 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // @find: stream answer
     @Override
+    /**
+     * Streams a chat completion as text chunks followed by tool calls and a terminal chunk.
+     *
+     * <p>Flow: posts the same body as {@link #complete} with streaming enabled, turns each server-sent
+     * frame into text chunks, and feeds tool-call fragments to an accumulator. When the stream ends, the
+     * accumulator emits the assembled tool calls and a terminal chunk. A stream that ended without a
+     * finish reason is reported as {@code INCOMPLETE} so that the router can retry without streaming.
+     * The request deadline applies to the whole stream. Failures are classified as in {@link #complete}.
+     */
     public Flux<os.aiworkforce.llm.spi.ChatChunk> stream(
             ProviderDescriptor provider, ModelSpec model, ChatRequest request, String credential) {
         ObjectNode body = buildBody(provider, model, request, true);
@@ -123,6 +158,12 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // @find: check provider key works
     @Override
+    /**
+     * Checks that the credential is accepted by calling {@code GET /models} with a ten second deadline.
+     *
+     * <p>Used when a provider key is saved or tested. Never fails: any error, including a network error,
+     * is reported as {@code false}.
+     */
     public Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential) {
         // Listing models is the cheapest call that still proves the credential is accepted.
         return client(provider, credential)
@@ -137,6 +178,10 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // @find: OpenAI-compatible embeddings, knowledge base embeddings
     @Override
+    /**
+     * Embeds the given texts as passages, which is the default purpose for knowledge base ingestion.
+     * Delegates to the overload that takes an explicit purpose.
+     */
     public Mono<List<float[]>> embed(
             ProviderDescriptor provider, ModelSpec model, List<String> inputs, String credential) {
         return embed(provider, model, inputs, credential, os.aiworkforce.llm.model.EmbeddingPurpose.PASSAGE);
@@ -178,11 +223,22 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 .onErrorMap(error -> translate(provider, model, error));
     }
 
+    /**
+     * Reports whether the provider is NVIDIA NIM, recognised by id or by the {@code api.nvidia.com} host.
+     * Package-private so that tests can exercise it.
+     */
     static boolean isNvidia(ProviderDescriptor provider) {
         String base = provider.baseUrl() == null ? "" : provider.baseUrl().toLowerCase(java.util.Locale.ROOT);
         return "nvidia".equalsIgnoreCase(provider.id()) || base.contains("api.nvidia.com");
     }
 
+    /**
+     * Validates an embeddings response and returns the vectors in input order.
+     *
+     * <p>Rejects, as {@code MALFORMED_RESPONSE}, a missing body, an unexpected number of vectors, an
+     * unreadable vector, or a duplicated index. An error envelope returned with status 200 (seen with
+     * OpenRouter) is classified as a normal failure instead of being treated as success.
+     */
     private List<float[]> parseEmbeddings(ProviderDescriptor provider, ModelSpec model, JsonNode node, int expected) {
         if (node == null) {
             throw ProviderException.of(
@@ -239,6 +295,13 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // ---- Request building ----------------------------------------------------------------
 
+    /**
+     * Builds the JSON request body for {@code /chat/completions}.
+     *
+     * <p>Output tokens are capped at the model limit. Tools are sent only when the request uses them and
+     * the model supports them; JSON mode likewise. Streaming requests ask for usage in the final frame so
+     * that cost can be recorded.
+     */
     private ObjectNode buildBody(ProviderDescriptor provider, ModelSpec model, ChatRequest request, boolean streaming) {
         ObjectNode body = json.createObjectNode();
         body.put("model", model.modelId());
@@ -271,6 +334,13 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         return body;
     }
 
+    /**
+     * Maps the neutral message list to the OpenAI message shape.
+     *
+     * <p>User messages with images use the content-parts form with data URLs. Assistant tool calls and
+     * tool results carry their identifiers and wire-safe tool names. A message with neither text nor tool
+     * calls receives an empty string, because several providers reject a null content field.
+     */
     private ArrayNode buildMessages(ChatRequest request) {
         ArrayNode messages = json.createArrayNode();
         for (ChatMessage message : request.messages()) {
@@ -324,6 +394,10 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         return messages;
     }
 
+    /**
+     * Maps tool specifications to function definitions, converting names to the wire-safe form.
+     * An unreadable parameter schema is logged and replaced by an empty object schema.
+     */
     private ArrayNode buildTools(List<ToolSpec> tools) {
         ArrayNode array = json.createArrayNode();
         for (ToolSpec tool : tools) {
@@ -344,6 +418,10 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         return array;
     }
 
+    /**
+     * Chooses the response format for JSON mode: a strict JSON schema when the request carries one,
+     * otherwise plain {@code json_object}. An unreadable schema falls back to {@code json_object}.
+     */
     private ObjectNode buildResponseFormat(ChatRequest request) {
         ObjectNode format = json.createObjectNode();
         if (request.jsonSchema() == null) {
@@ -365,6 +443,12 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // ---- Response parsing ----------------------------------------------------------------
 
+    /**
+     * Converts a completion response into a {@link ChatResponse}.
+     *
+     * <p>Throws a classified {@link ProviderException} for an error envelope, a response with no choices,
+     * or a content filter finish. Elapsed time is measured from {@code startedAt}.
+     */
     private ChatResponse parseResponse(ProviderDescriptor provider, ModelSpec model, JsonNode node, Instant startedAt) {
         // OpenRouter and some proxies answer 200 with an error envelope. Treating that as a
         // success hands the person an empty answer with no explanation.
@@ -418,6 +502,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 Map.of("id", node.path("id").asText("")));
     }
 
+    // Reads tool calls from a non-streaming message, restoring original tool names from the wire form.
     private List<ToolCall> parseToolCalls(JsonNode array) {
         if (!array.isArray()) {
             return List.of();
@@ -433,6 +518,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         return calls;
     }
 
+    // Reads prompt, cached and reasoning token counts; absent usage yields {@code TokenUsage.NONE}.
     private TokenUsage parseUsage(JsonNode usage) {
         if (usage.isMissingNode() || usage.isNull()) {
             return TokenUsage.NONE;
@@ -447,6 +533,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 reasoning);
     }
 
+    // Maps provider finish strings to {@link FinishReason}; the presence of tool calls always wins.
     private FinishReason mapFinishReason(String raw, boolean hasToolCalls) {
         if (hasToolCalls) {
             return FinishReason.TOOL_CALLS;
@@ -465,6 +552,13 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // ---- Streaming -----------------------------------------------------------------------
 
+    /**
+     * Handles one streamed frame: records tool-call fragments, finish reason and usage in the
+     * accumulator, and emits a text chunk when the frame carries text.
+     *
+     * <p>An unreadable frame is skipped and logged at debug level so that one bad frame does not discard
+     * the rest of the answer.
+     */
     private Flux<os.aiworkforce.llm.spi.ChatChunk> handleStreamLine(String line, ToolCallAccumulator accumulator) {
         if (line == null || line.isBlank() || "[DONE]".equals(line.trim())) {
             return Flux.empty();
@@ -509,6 +603,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         private TokenUsage usage = TokenUsage.NONE;
         private boolean drained;
 
+        // Merges tool-call fragments by index: id, name and argument text are accumulated.
         void absorb(JsonNode toolCalls) {
             if (!toolCalls.isArray()) {
                 return;
@@ -529,6 +624,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             }
         }
 
+        // Records the finish reason and, when non-empty, the usage.
         void finish(FinishReason reason, TokenUsage reported) {
             this.finishReason = reason;
             if (reported != null && reported.totalTokens() > 0) {
@@ -536,16 +632,19 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
             }
         }
 
+        // Records usage that arrives in a frame without a finish reason.
         void recordUsage(TokenUsage reported) {
             if (reported != null && reported.totalTokens() > 0) {
                 this.usage = reported;
             }
         }
 
+        // True once any tool-call fragment has been seen.
         boolean hasCalls() {
             return !builders.isEmpty();
         }
 
+        // Emits, once only, the assembled tool calls and the terminal chunk.
         List<os.aiworkforce.llm.spi.ChatChunk> drainTerminal() {
             if (drained) {
                 return List.of();
@@ -564,6 +663,9 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         }
     }
 
+    /**
+     * Mutable holder for one tool call while its fragments arrive, used only by the accumulator.
+     */
     private static final class ToolCallBuilder {
         private String id;
         private String name;
@@ -579,6 +681,10 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
 
     // ---- Failure classification ----------------------------------------------------------
 
+    /**
+     * Builds a client for one call: base URL from the provider row, bearer authorisation when a credential
+     * exists, and the row's default headers (for example attribution headers). The credential is never logged.
+     */
     private WebClient client(ProviderDescriptor provider, String credential) {
         WebClient.Builder builder = webClientBuilder.clone().baseUrl(provider.baseUrl());
         if (credential != null && !credential.isBlank()) {
@@ -588,6 +694,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         return builder.build();
     }
 
+    // The request deadline, defaulting to 120 seconds.
     private Duration timeout(ChatRequest request) {
         return request.timeout() != null ? request.timeout() : Duration.ofSeconds(120);
     }
@@ -639,6 +746,12 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 error);
     }
 
+    /**
+     * Maps an HTTP error response to a {@link ProviderException}.
+     *
+     * <p>The status selects the failure class; 400 and 422 and 429 inspect the body for finer detail.
+     * The Retry-After value and a truncated body are attached for the router and for traces.
+     */
     private ProviderException classifyHttp(
             ProviderDescriptor provider, ModelSpec model, WebClientResponseException response) {
         int status = response.getStatusCode().value();
@@ -738,6 +851,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         return ProviderFailure.RATE_LIMITED;
     }
 
+    // Classifies an error found inside a 200 response body; the message text is the only signal available.
     private ProviderException classifyBody(
             ProviderDescriptor provider, ModelSpec model, String message, String code, Integer status) {
         ProviderFailure failure = classifyBadRequest(message);
@@ -745,6 +859,8 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
                 failure, provider.id(), model.modelId(), message, status, null, truncate(message), null);
     }
 
+    // Reads a retry delay from Retry-After or the rate limit reset header; milliseconds, seconds and plain
+    // numbers are understood, anything else yields null.
     private Duration parseRetryAfter(WebClientResponseException response) {
         String header = response.getHeaders().getFirst("Retry-After");
         if (header == null) {
@@ -771,6 +887,7 @@ public class OpenAiCompatibleProvider implements os.aiworkforce.llm.spi.ChatProv
         }
     }
 
+    // Extracts {@code error.code} from a JSON error body for the failure message, or null.
     private String extractCode(String body) {
         if (body == null) {
             return null;

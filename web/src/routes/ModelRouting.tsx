@@ -75,9 +75,11 @@ import type { CredentialView, Model, ModelPolicy, Provider } from '../lib/querie
  * and the end of workspace setup link to. Everything it does can still be done piece by piece below.
  */
 
+/** Whether a provider is the built-in offline sandbox. */
 const isSandbox = (provider: Provider) => provider.kind.toUpperCase() === 'SANDBOX'
 
 /** For the sentence naming live candidates the router passes over before the one it uses. */
+/** Plain wording for why a candidate in the routing policy is passed over, by readiness reason. */
 const SKIP_REASON: Record<string, string> = {
   disabled: 'turned off for this workspace',
   platform_off: 'not offered on this installation',
@@ -86,6 +88,9 @@ const SKIP_REASON: Record<string, string> = {
   unavailable: 'not available in this workspace',
 }
 
+/**
+ * The stored (present) credential of a provider, found through its credential reference, or undefined.
+ */
 function storedCredential(provider: Provider, credentials: readonly CredentialView[]): CredentialView | undefined {
   return credentials.find((credential) => credential.ref === provider.credentialRef && credential.present)
 }
@@ -97,10 +102,14 @@ function Price({ amount }: { amount: number }) {
 }
 
 // @find: yes or no cell
+/** A Yes or No tag for a capability column. */
 function YesNo({ value }: { value: boolean }) {
   return <Tag tone={value ? 'success' : 'neutral'}>{value ? 'Yes' : 'No'}</Tag>
 }
 
+/**
+ * Columns of the models table: name, context window, output limit, tool, JSON and streaming support, input and output prices per million tokens and, for people with provider:manage on chat models, a "Test now" check. The embedding variant leaves out the chat-only columns. Test now makes one small real call to that model and reports how it went; nothing is set aside after a failure.
+ */
 function modelColumns(embedding: boolean, canManage: boolean): Column<Model>[] {
   const dash = <span className="muted">—</span>
   const columns: Column<Model>[] = [
@@ -211,6 +220,9 @@ function KeyCell({
 }
 
 // @find: routing banner, sandbox mode warning, connect your AI prompt
+/**
+ * The notice at the top: one honest sentence about whether runs use a live model (liveRouting and routingSummary), naming providers that are skipped and why, with a link to the providers or the routing policy when the person can fix it.
+ */
 function RoutingBanner({
   policy,
   providers,
@@ -256,6 +268,9 @@ function RoutingBanner({
  * shared with an agent's own page (components/routing/PolicyEditor.tsx); this is where it is saved.
  */
 // @find: routing policy card, workspace model order, PUT /api/model-policy
+/**
+ * The workspace-wide model chain card: what every agent without its own chain tries, in order. Wraps the shared PolicyEditor, saving through useSetModelPolicy (PUT /api/model-policy); people with provider:manage can edit, test models and remove a model from all routing.
+ */
 function RoutingPolicyCard({
   policy,
   providers,
@@ -292,6 +307,11 @@ function RoutingPolicyCard({
 }
 
 // @find: ModelRouting component, model routing page, connect provider, test now, routing policy, /routing
+/**
+ * The Model routing page (route /routing, permission provider:read; changes need provider:manage).
+ * Reads providers, models, the workspace policy and the stored credentials (keys are never shown, only their state and fingerprint). Sections: a status banner, the providers table (state, key, turn on or off, store or replace a key, remove from all routing, connect), the workspace routing policy, and the models table. Connect your AI dialog: opened from the header button or by /routing?connect=1, which is removed from the address once acted on.
+ * Actions: turning a provider on or off is per workspace and toasts the result; if it has no usable key, a dialog explains and offers to turn it on anyway; a refusal (409, for example turning off the last usable model) stays on the page beside the providers; turning off shows which chains are left empty. Storing a key calls the credential mutation and toasts with the key fingerprint. Remove from all routing first reads who lists the provider or model, asks for confirmation, then removes it from the workspace and every agent's chain, showing any warning. Failures show in the dialog that caused them, or as a toast.
+ */
 export function ModelRouting() {
   const providersQuery = useProviders()
   const modelsQuery = useModels()

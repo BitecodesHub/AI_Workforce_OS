@@ -54,18 +54,25 @@ public class InternalMemoryController {
     /** The structured detail, measured as the JSON that is stored. */
     static final int MAX_DETAIL_BYTES = 16 * 1024;
 
+    /** Sorted, comma-separated list of allowed episode kinds, used in the validation message. */
     private static final String KIND_LIST =
             Episode.KINDS.stream().sorted().collect(Collectors.joining(", "));
 
     private final EpisodicMemory memory;
     private final ObjectMapper json;
 
+    /**
+     * Creates the controller. {@code json} is used only to measure the stored size of the detail
+     * map.
+     */
     public InternalMemoryController(EpisodicMemory memory, ObjectMapper json) {
         this.memory = memory;
         this.json = json;
     }
 
     /**
+     * Request body of the record endpoint; checked by hand in the controller rather than by bean validation.
+     *
      * @param agentId the agent the episode belongs to
      * @param runId the run it happened in, when there was one
      * @param importance 1 to 10, higher kept longer; 5 when not given
@@ -79,6 +86,13 @@ public class InternalMemoryController {
             Map<String, Object> detail) {}
 
     // @find: POST /internal/memory/episodes, record, endpoint, internal memory
+    /**
+     * Route: POST /internal/memory/episodes. Permission: service token only (users and API keys are
+     * refused before anything else is checked). Validates agent id, kind, summary (not blank, at most
+     * {@link #MAX_SUMMARY_CHARS} characters) and detail (at most {@link #MAX_DETAIL_BYTES} bytes as JSON),
+     * then records the episode with default importance 5 and returns it with status 201. Side effect: one
+     * insert. Failures are validation errors or PERMISSION_DENIED.
+     */
     @PostMapping("/episodes")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Internal: record what an agent observed, decided or did")
@@ -121,6 +135,10 @@ public class InternalMemoryController {
         return MemoryController.EpisodeView.of(episode);
     }
 
+    /**
+     * Size in UTF-8 bytes of the detail map once serialised as JSON; throws a validation error
+     * when it cannot be serialised.
+     */
     private int sizeOf(Map<String, Object> detail) {
         try {
             return json.writeValueAsString(detail).getBytes(StandardCharsets.UTF_8).length;

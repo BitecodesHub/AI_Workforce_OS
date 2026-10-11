@@ -1,6 +1,6 @@
 // @find: model router planner, ask a model to plan agents, chain of agents, plan steps, route with LLM, ModelRouterPlanner, which agent handles this, multi-agent plan
 // @what: Asks a configured live model to choose and order agents for a piece of work.
-// @flow: Called by CoordinatorService; falls back to RuleRouter when no model answers.
+// @flow: Called by CoordinatorService, which falls back to RuleRouter when this returns empty; calls ModelRouter (one LLM call), AgentVersions and ToolGrants to describe the agents.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Duration;
@@ -53,8 +53,11 @@ import os.aiworkforce.platform.error.ApiException;
 @Service
 public class ModelRouterPlanner {
 
+    /** Logger for planning failures, kept at debug because falling back to the rules is normal. */
     private static final Logger log = LoggerFactory.getLogger(ModelRouterPlanner.class);
+    /** The most steps a plan may hold; a longer one is rejected. */
     private static final int MAX_STEPS = 3;
+    /** The overall time all planning attempts together may take. */
     private static final Duration PLANNING_DEADLINE = Duration.ofSeconds(45);
     /** How long one model is given to answer the routing question. */
     static final Duration PLANNING_ATTEMPT = Duration.ofSeconds(15);
@@ -68,6 +71,7 @@ public class ModelRouterPlanner {
      * more, or copies the request into it, is cut here rather than clutter a title and a card.
      */
     private static final int MAX_PART_CHARS = 300;
+    /** Matches the first sentence of an agent's system prompt, used as its one-line description. */
     private static final Pattern FIRST_SENTENCE = Pattern.compile("^(.+?[.!?])(?=\\s|$)");
 
     /** A reply that arrived fenced in a markdown code block, with an optional "json" tag. */
@@ -79,6 +83,7 @@ public class ModelRouterPlanner {
     private final ToolGrants grants;
     private final ObjectMapper objectMapper;
 
+    /** Wires the model router, the workspace's routing policy, and the repositories that describe each agent. */
     public ModelRouterPlanner(
             ModelRouter router,
             RoutingPolicyResolver policies,
@@ -92,8 +97,10 @@ public class ModelRouterPlanner {
         this.objectMapper = objectMapper;
     }
 
+    /** One step of a plan: the agent chosen and a short label for its part of the work. */
     public record PlannedStep(UUID agentId, String instruction) {}
 
+    /** The ordered steps the model chose, with its one-sentence reason. */
     public record Plan(List<PlannedStep> steps, String reason) {}
 
     /**
@@ -107,13 +114,28 @@ public class ModelRouterPlanner {
         public static final PlanHints NONE = new PlanHints(null);
     }
 
-    /** Empty when no live provider answered with a plan this coordinator can act on. */
+    /** Plans without hints; see the overload with hints. Empty when no live provider answered with a plan this coordinator can act on. */
     // @find: plan agents for message
     public Optional<Plan> plan(UUID orgId, String text, List<Agent> agents) {
         return plan(orgId, text, agents, PlanHints.NONE);
     }
 
-    /** Empty when no live provider answered with a plan this coordinator can act on. */
+    /**
+     * Asks a live model to choose and order agents for the message. Empty when no live provider
+     * answered with a plan this coordinator can act on.
+     *
+     * <p>Flow: keeps the active agents, builds a system prompt (rules, the General Employee
+     * fallback line, an optional hint about the agent that answered last, and a catalog of agents)
+     * and a JSON schema limited to the real agent keys, then makes one call through the model
+     * router under {@link #forPlanning}. The reply is discarded when it came from the offline
+     * sandbox, and is otherwise parsed and validated. Called by {@link CoordinatorService}.
+     *
+     * <p>Side effects: one model call, which is billed and counted by the router. Failure: any
+     * routing error, a sandbox answer, malformed JSON or an unknown agent key yields an empty
+     * result, never an exception.
+     *
+     * @param hints a steer for follow-up messages; null is treated as none
+     */
     // @find: plan agents for message with hints from last answer
     public Optional<Plan> plan(UUID orgId, String text, List<Agent> agents, PlanHints hints) {
         List<Agent> active = agents.stream()
@@ -225,6 +247,11 @@ public class ModelRouterPlanner {
                 .formatted(enumJson);
     }
 
+    /**
+     * Turns the model's reply into a plan, or empty when it is blank, malformed, has no steps or
+     * more than three, or names an agent that is not active. Filler steps and repeated agents are
+     * skipped, and each instruction is cut to a short label.
+     */
     private Optional<Plan> parse(String content, Map<String, Agent> byKey) {
         if (content == null || content.isBlank()) {
             return Optional.empty();
@@ -267,6 +294,7 @@ public class ModelRouterPlanner {
         }
     }
 
+    /** Matches an instruction that is blank, only punctuation, or a placeholder such as "n/a" or "none". */
     private static final Pattern FILLER =
             Pattern.compile("(?i)^[\\s\\p{Punct}]*(?:n/?a|none|null|nothing|skip|tbd|no action|not needed)?[\\s\\p{Punct}]*$");
 
@@ -292,6 +320,11 @@ public class ModelRouterPlanner {
         return unfenced.substring(start, end + 1);
     }
 
+    /**
+     * One catalog line for the prompt: key, name, category, the first sentence of its current
+     * instructions, the tool servers it has enabled, and a note when it is the default. Reads the
+     * agent's version and tool grants from the database.
+     */
     private String describe(Agent agent) {
         String does = "";
         if (agent.getCurrentVersionId() != null) {
@@ -312,6 +345,7 @@ public class ModelRouterPlanner {
                 .formatted(agent.getKey(), agent.getName(), agent.getCategory(), does, tools, fallbackNote);
     }
 
+    /** The first sentence of a prompt on one line, cut to 160 characters; empty when there is none. */
     private static String firstSentence(String prompt) {
         if (prompt == null) {
             return "";

@@ -35,17 +35,30 @@ import { useToast } from '../../lib/toast'
  * The parent keys this component per opening, so every opening starts fresh.
  */
 
+/** Names the server's field keys the way the form words them, so API errors read correctly. */
 const FIELD_LABELS: Record<string, string> = {
   tools: 'What it may do',
   requireApproval: 'Always ask first',
   maxCallsPerRun: 'Most calls per run',
 }
 
+/** Display name of a connector: its catalogue name, falling back to a label made from its server id. */
 function connectorName(integration: Pick<Integration, 'server' | 'displayName'>): string {
   return serverLabel(integration.server, integration.displayName)
 }
 
 // @find: GrantDialog, grant dialog, grant connector to agent, give agent access, agent capabilities, change what agent may do
+/**
+ * Two-step dialog that gives an agent a connector or changes what it may do there.
+ * Props: open, onClose, agent (id, name and current grants), integrations (every connector, already loaded)
+ * and initialServer (a server id opens straight on its settings for Edit; null starts at the picker for Add).
+ * Flow: step 1 is ConnectorPicker; step 2 is GrantCapabilitiesForm for the chosen connector, keyed by
+ * server so choosing another starts from its defaults. Saving calls useSaveAgentGrant(agent.id) with the
+ * server and the form's tools, approval switch and call limit; success shows a toast and closes, a failure
+ * is shown in the dialog using FIELD_LABELS. Back is offered only to someone who came through the picker.
+ * A server no longer offered shows a short message. The dialog cannot be dismissed while saving. The
+ * parent keys this component per opening so each opening starts fresh. Rendered by the agent detail page.
+ */
 export function GrantDialog({
   open,
   onClose,
@@ -158,6 +171,12 @@ function useFocusFirstField(formRef: React.RefObject<HTMLFormElement | null>) {
 
 /* ---- Step 1: the connector ------------------------------------------------------------------- */
 
+/**
+ * Step 1: a searchable radio list of connectors, sorted by name, showing each one's category, description,
+ * live or practice state and an "Added" tag when the agent already has it. Search matches name, server id,
+ * category and description, all terms required. Choosing a granted connector changes the button to "Edit its
+ * settings". Next calls onPick(server). Focus moves to the search field when the step appears.
+ */
 function ConnectorPicker({
   integrations,
   grantedServers,
@@ -273,6 +292,17 @@ function ConnectorPicker({
 /* ---- Step 2: what it may do ------------------------------------------------------------------- */
 
 // @find: GrantCapabilitiesForm, grant capabilities form, grant connector to agent, give agent access, agent capabilities, change what agent may do
+/**
+ * Step 2: what the agent may do in one connector.
+ * Props: connectorName, the connector's tools, the current grant (or null for a new one), saving,
+ * onSubmit(GrantInput) and the optional onBack and onCancel.
+ * The form lists the tools in capability groups with checkboxes (initialSelection decides what starts
+ * ticked: reads on, creating, sending and deleting off), a Select all or Clear all button and a live count.
+ * A switch makes every action from the connector wait for a person (sending and deleting always wait). An
+ * optional numeric limit on calls per run is validated with parseCallLimit and shown with an error when
+ * out of range. Submit is disabled with nothing chosen or an invalid limit, and calls onSubmit with the
+ * tools (grantTools), requireApproval and maxCallsPerRun. Exported so tests and other callers can render it.
+ */
 export function GrantCapabilitiesForm({
   connectorName: name,
   tools,

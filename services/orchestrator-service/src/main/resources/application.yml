@@ -40,6 +40,7 @@ spring:
       idle-timeout: 300000
       leak-detection-threshold: 30000
 
+  # JPA: validation only, schema "orchestrator", batched writes in UTC. Open-in-view is off so no database work happens while a response is rendered.
   jpa:
     open-in-view: false
     hibernate:
@@ -58,6 +59,7 @@ spring:
           fail_on_pagination_over_collection_fetch: true
           in_clause_parameter_padding: true
 
+  # Flyway migrations for this service only, from classpath:db/migration, applied into the orchestrator schema.
   flyway:
     enabled: true
     schemas: orchestrator
@@ -69,6 +71,7 @@ spring:
     # environments that already ran the old version would otherwise diverge silently.
     validate-on-migrate: true
 
+  # Redis connection (shared cache and locks), pooled with a short command timeout.
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -81,6 +84,7 @@ spring:
           max-active: 16
           max-idle: 8
 
+  # Kafka: reliable producer settings, and a consumer group that commits offsets manually after each event is handled.
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
     producer:
@@ -104,9 +108,11 @@ spring:
       concurrency: 3
       observation-enabled: true
 
+# HTTP port of this service; the default can be overridden with SERVER_PORT.
 server:
   port: ${SERVER_PORT:8083}
 
+# Application settings read by the *Properties classes of this service.
 aiwos:
   service-name: orchestrator
   runs:
@@ -122,6 +128,7 @@ aiwos:
     question-expiry-interval: PT120S
     # Resumes runs answered or approved while nothing was left to resume them, such as a restart.
     resume-interval: PT60S
+  # ElevenLabs voice settings bound to VoiceProperties. The API key itself is never here: it is stored per workspace and looked up through credential-ref.
   voice:
     elevenlabs:
       base-url: ${AIWOS_VOICE_ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
@@ -138,6 +145,7 @@ aiwos:
     runner-url: ${AIWOS_BROWSER_RUNNER_URL:}
     runner-secret: ${AIWOS_BROWSER_RUNNER_SECRET:}
 
+# OpenAPI document and Swagger UI endpoints.
 springdoc:
   api-docs:
     path: /v3/api-docs

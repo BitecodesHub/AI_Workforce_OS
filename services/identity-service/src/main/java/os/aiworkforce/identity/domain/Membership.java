@@ -38,6 +38,9 @@ public class Membership extends BaseEntity {
     @Column(name = "joined_at")
     private Instant joinedAt;
 
+    /**
+     * Whether the membership currently grants access; removed and suspended members are not active.
+     */
     public boolean isActive() {
         return "active".equals(status);
     }

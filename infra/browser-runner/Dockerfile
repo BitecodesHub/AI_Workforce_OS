@@ -8,11 +8,13 @@
 #   BROWSER_RUNNER_PORT              default 8090
 #   BROWSER_RUNNER_MAX_SESSIONS      browser contexts (one per run) open at once, default 2
 #   BROWSER_RUNNER_SESSION_IDLE_MS   an unused run's page is closed after this, default 120000 (2 min)
-#   BROWSER_RUNNER_BROWSER_IDLE_MS   Chromium itself is closed after this with no pages, default 300000
+#   BROWSER_RUNNER_BROWSER_IDLE_MS   Chromium itself is closed after this with no pages, default 600000
 #   BROWSER_RUNNER_PAGE_TIMEOUT_MS   page-load timeout, default 20000
 # The orchestrator side: AIWOS_BROWSER_RUNNER_URL (for example http://browser:8090) and
 # AIWOS_BROWSER_RUNNER_SECRET (the same secret).
 
+# Single stage. Debian rather than Alpine because Playwright's Chromium needs glibc. The base image
+# version is pinned so a rebuild gives the same runtime.
 FROM node:22.20.0-bookworm-slim
 
 ENV NODE_ENV=production \
@@ -25,10 +27,13 @@ RUN npm ci --omit=dev --no-audit --no-fund \
     && npx --no-install playwright-core install --with-deps --only-shell chromium \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /root/.npm /tmp/*
 
+# The runner's own code is copied after the dependencies, so a code change reuses the cached
+# layer that holds Chromium.
 COPY guard.js proxy.js server.js ./
 
 RUN groupadd --system runner && useradd --system --gid runner --home-dir /app --no-create-home runner \
     && chown -R runner:runner /app
+# From here the runner is unprivileged: Chromium and the Node process run as the user above.
 USER runner
 
 EXPOSE 8090

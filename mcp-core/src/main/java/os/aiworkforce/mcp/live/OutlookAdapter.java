@@ -1,6 +1,6 @@
 // @find: outlook, microsoft, microsoft 365, email, inbox, mail, calendar events, list messages, get message, draft message, send message, delete message, list events, Graph API, OAuth, live adapter, real API
 // @what: Live Outlook connector: runs outlook__ tools (mail and calendar) against Microsoft Graph with an OAuth access token.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "outlook"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke, and send_message and delete_message pass the approval gate first; OAuthAdapter supplies the bearer token and the one renew-and-retry after a 401; each tool makes one call to graph.microsoft.com; base class OAuthAdapter
 package os.aiworkforce.mcp.live;
 
 import java.time.LocalDate;
@@ -18,14 +18,29 @@ import os.aiworkforce.mcp.model.ToolInvocation;
 import os.aiworkforce.mcp.model.ToolResult;
 import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
 
-/** Outlook mail and calendar through Microsoft Graph with an OAuth access token. */
+/**
+ * Outlook mail and calendar through Microsoft Graph with an OAuth access token.
+ *
+ * <p>Used by the tool gateway when a workspace has connected a Microsoft account. list_messages,
+ * get_message and list_events are read tools; draft_message is a write tool (a person is asked first
+ * when the workspace policy says so); send_message is outbound and delete_message is destructive, and
+ * both always ask a person first. A send is not idempotent, so a dropped connection is reported as
+ * indeterminate and the send is never repeated.
+ *
+ * <p>Failures: a missing argument, or a line break in an address or subject, becomes a plain failed
+ * result; a 401 triggers one token renewal in the base class.
+ */
 public final class OutlookAdapter extends OAuthAdapter {
 
+    /** The production Microsoft Graph address; tests pass another base URL to the constructor. */
     public static final String BASE_URL = "https://graph.microsoft.com/v1.0";
 
+    /** The message fields requested in a listing, so answers stay small. */
     private static final String LIST_FIELDS = "id,subject,from,bodyPreview,receivedDateTime,isRead";
+    /** The most characters of message text returned by get_message. */
     private static final int BODY_LIMIT = 50_000;
 
+    /** Registers the six Outlook tools. The sandbox supplies the tool definitions. */
     public OutlookAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Outlook", json, http, baseUrl);
         on("list_messages", this::listMessages);
@@ -36,6 +51,7 @@ public final class OutlookAdapter extends OAuthAdapter {
         on("list_events", this::listEvents);
     }
 
+    /** Connection check: GET the signed-in user; answers the mail address, else the sign-in name. */
     @Override
     protected Mono<String> whoAmI(String token) {
         return get(token, "/me").map(me -> {
@@ -48,6 +64,11 @@ public final class OutlookAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Outlook list messages, tool outlook__list_messages, live Microsoft Outlook call
+    /**
+     * Read tool. GET messages, at most 50. Without a query they are newest first; with a query Graph
+     * ranks them itself, because it refuses a search combined with an ordering. Quotes in the query are
+     * replaced so the search phrase stays intact.
+     */
     private Mono<ToolResult> listMessages(ToolInvocation invocation, JsonNode arguments, String token) {
         String query = text(arguments, "query");
         int top = limit(arguments, 10, 50);
@@ -81,6 +102,7 @@ public final class OutlookAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Outlook get message, tool outlook__get_message, live Microsoft Outlook call
+    /** Read tool. GET one message with its recipients and body; an HTML body is reduced to text and cut at the body limit. */
     private Mono<ToolResult> getMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(
@@ -108,6 +130,7 @@ public final class OutlookAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Outlook draft message, tool outlook__draft_message, live Microsoft Outlook call
+    /** Write tool. POST a new message to the Drafts folder; nothing is sent. */
     private Mono<ToolResult> draftMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode message = message(arguments);
         return send(HttpMethod.POST, token, message, "/me/messages").map(draft -> {
@@ -120,6 +143,11 @@ public final class OutlookAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Outlook send message, tool outlook__send_message, live Microsoft Outlook call
+    /**
+     * Outbound tool; a person always approves it first. POST to the send-mail endpoint, which sends
+     * from the connected mailbox and keeps a copy in Sent Items. Graph answers with no body, so the
+     * result only confirms the recipient and subject.
+     */
     private Mono<ToolResult> sendMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         body.set("message", message(arguments));
@@ -134,6 +162,10 @@ public final class OutlookAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Outlook delete message, tool outlook__delete_message, live Microsoft Outlook call
+    /**
+     * Destructive tool; a person always approves it first. DELETE one message by id. Whether it can be
+     * recovered depends on the mailbox settings of the organisation.
+     */
     private Mono<ToolResult> deleteMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return call(HttpMethod.DELETE, token, "/me/messages/{id}", id).map(ignored -> {
@@ -145,6 +177,10 @@ public final class OutlookAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Outlook list events, tool outlook__list_events, live Microsoft Outlook call
+    /**
+     * Read tool. GET the calendar view between two moments, ordered by start, at most 100. The range
+     * defaults to today through thirty days ahead (UTC); a date alone covers the whole day.
+     */
     private Mono<ToolResult> listEvents(ToolInvocation invocation, JsonNode arguments, String token) {
         String from = text(arguments, "from");
         String to = text(arguments, "to");
@@ -177,6 +213,10 @@ public final class OutlookAdapter extends OAuthAdapter {
                 });
     }
 
+    /**
+     * Builds a Graph message from to, subject and body. The recipients may be separated by commas or
+     * semicolons; line breaks are refused in addresses and subject so no header can be injected.
+     */
     private ObjectNode message(JsonNode arguments) {
         java.util.List<String> to = recipients(required(arguments, "to"));
         ObjectNode message = json.createObjectNode();
@@ -189,6 +229,7 @@ public final class OutlookAdapter extends OAuthAdapter {
         return message;
     }
 
+    /** A Graph event boundary as text; a time stated in UTC gets an explicit zone mark. */
     private static String time(JsonNode time) {
         String value = time.path("dateTime").asText("");
         boolean utc = "UTC".equalsIgnoreCase(time.path("timeZone").asText());

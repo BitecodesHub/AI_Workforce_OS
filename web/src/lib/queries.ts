@@ -30,6 +30,7 @@ import type { ProviderCatalogue } from './modelCatalogue'
  *   structural copies of these types that expect the field to be there.
  */
 
+/** An agent as listed: identity, key, category, status and current revision. */
 export type Agent = {
   id: string
   key: string
@@ -58,6 +59,9 @@ export type Agent = {
   fallback?: boolean
 }
 
+/**
+ * What an agent may use from one connector: the tools and scopes granted and whether each call needs approval.
+ */
 export type AgentGrant = {
   server: string
   tools: string[]
@@ -66,6 +70,9 @@ export type AgentGrant = {
   maxCallsPerRun?: number | null
 }
 
+/**
+ * An agent with its saved instructions, goals and step limit; those are null only when no revision has been saved.
+ */
 export type AgentDetail = Agent & {
   /** The next three are null only when the agent has no saved revision. */
   systemPrompt: string | null
@@ -80,6 +87,7 @@ export type AgentDetail = Agent & {
   grants: AgentGrant[]
 }
 
+/** One execution of an agent: status, timing, cost and the task it belongs to, if any. */
 export type Run = {
   id: string
   agentId: string
@@ -106,6 +114,7 @@ export type Run = {
   pricing?: RunPricing | null
 }
 
+/** How a run's cost was determined: priced, free model, sandbox, unpriced model, or no model call. */
 export type RunPricing = 'priced' | 'free' | 'sandbox' | 'unpriced' | 'none'
 
 /** What starting a run returns (AgentController.RunStarted). The run's id is `runId`. */
@@ -115,6 +124,7 @@ export type RunStarted = {
   answer?: string | null
 }
 
+/** One step in a run's trace: its position, kind and a kind-specific detail object. */
 export type RunStep = {
   id: string
   position: number
@@ -128,6 +138,7 @@ export type RunStep = {
   occurredAt: string
 }
 
+/** A request for a person to decide before an agent acts: the run, agent, tool, payload and status. */
 export type Approval = {
   id: string
   runId: string
@@ -149,6 +160,9 @@ export type DecisionResult = {
   runStatus?: string | null
 }
 
+/**
+ * One unit of work inside a goal, assigned to an agent, with status, result or failure reason and timing.
+ */
 export type Task = {
   id: string
   /** Null when the agent the task was assigned to has since been deleted. */
@@ -172,6 +186,7 @@ export type Task = {
 /** How a goal came to exist: typed in directly, routed from a chat conversation, or a schedule firing. */
 export type GoalSource = 'manual' | 'chat' | 'schedule'
 
+/** A request made to the workforce, broken into ordered tasks, with status and who requested it. */
 export type Goal = {
   id: string
   title: string
@@ -189,6 +204,7 @@ export type Goal = {
   tasks: Task[]
 }
 
+/** A model provider and whether it is on for this workspace, with the state of its key. */
 export type Provider = {
   id: string
   displayName: string
@@ -209,6 +225,7 @@ export type Provider = {
   warning?: string | null
 }
 
+/** A model offered by a provider, with its limits, tool support and prices. */
 export type Model = {
   providerId: string
   modelId: string
@@ -226,6 +243,9 @@ export type Model = {
   unavailableReason?: string | null
 }
 
+/**
+ * One entry in the routing policy: the model at its position, with optional temperature and output limit.
+ */
 export type ModelPolicyCandidate = {
   position: number
   providerId: string
@@ -234,6 +254,7 @@ export type ModelPolicyCandidate = {
   maxOutputTokens?: number | null
 }
 
+/** The workspace routing policy: the ordered candidates and what to do when all of them fail. */
 export type ModelPolicy = {
   /** False when nothing has been set and the router falls through to the workspace default, or the built-in sandbox. */
   configured: boolean
@@ -270,6 +291,9 @@ export type CredentialView = {
   lastUsedAt?: string | null
 }
 
+/**
+ * A knowledge source (a folder, site or repository) with its status, document count and last index time.
+ */
 export type Source = {
   id: string
   name: string
@@ -286,6 +310,7 @@ export type Source = {
   agentId?: string | null
 }
 
+/** One document inside a knowledge source, with its index status and skip reason. */
 export type SourceDocument = {
   id: string
   title: string
@@ -297,6 +322,7 @@ export type SourceDocument = {
   removedAtSource: boolean
 }
 
+/** A passage of a document returned by search or cited in an answer. */
 export type Passage = {
   chunkId: string
   documentId: string
@@ -310,14 +336,25 @@ export type Passage = {
 
 /* ---- Clarifying questions ------------------------------------------------------------------- */
 
+/** Lifecycle of an agent question. */
 export type QuestionStatus = 'pending' | 'answered' | 'expired' | 'cancelled'
+/** The screen a question was answered from. */
 export type AnsweredVia = 'chat' | 'orchestrator' | 'run' | 'approvals'
 
+/** One choice offered with a question, optionally marked as recommended. */
 export type QuestionOption = { label: string; description: string; recommended?: boolean }
+/** One question on a card: its id, header, text, choices and whether several may be picked. */
 export type QuestionItem = { id: string; header: string; question: string; multiSelect: boolean; options: QuestionOption[] }
+/** The answer to one question item: the options chosen and any free text for Other. */
 export type QuestionAnswerItem = { questionId: string; selected: string[]; other?: string | null }
+/**
+ * The stored answer to a question card: one item per question, an optional note, and whether it was skipped.
+ */
 export type QuestionAnswer = { answers: QuestionAnswerItem[]; note?: string | null; skipped: boolean }
 
+/**
+ * A question an agent asked a person during a run, with its status, who answered it, and where it came from.
+ */
 export type RunQuestion = {
   id: string
   runId: string
@@ -341,6 +378,7 @@ export type RunQuestion = {
   runStatus: string
 }
 
+/** The body of an answer submission: the question id, the answers, an optional note, and a skip flag. */
 export type AnswerQuestionInput = {
   id: string
   answers: QuestionAnswerItem[]
@@ -348,11 +386,14 @@ export type AnswerQuestionInput = {
   skipped?: boolean
   via: AnsweredVia
 }
+/** What answering returns: the updated question and the status of its run. */
 export type AnswerQuestionResult = { question: RunQuestion; runStatus: string }
 
 /* ---- Chat --------------------------------------------------------------------------------------- */
 
+/** Who wrote a chat message. */
 export type ChatAuthorKind = 'user' | 'coordinator' | 'agent' | 'system'
+/** The kinds of chat message, each with its own detail shape. */
 export type ChatMessageKind =
   | 'text'
   | 'routing'
@@ -364,7 +405,9 @@ export type ChatMessageKind =
   | 'question'
   | 'notice'
 
+/** An agent chosen by routing, with the instruction it was given. */
 export type RoutingAgent = { id: string; name: string; instruction: string }
+/** An agent that was considered by routing, with its score. */
 export type RoutingAlternative = { id: string; name: string; score: number }
 
 /**
@@ -421,6 +464,7 @@ export type ChatMessageDetail = {
   nextRunAt?: string | null
 }
 
+/** One message in a conversation: author, kind, text, position and kind-specific detail. */
 export type ChatMessage = {
   id: string
   position: number
@@ -434,6 +478,7 @@ export type ChatMessage = {
   createdAt: string
 }
 
+/** What a conversation is waiting on, used for its badge and for sorting what needs the person. */
 export type ConversationActivity =
   | 'needs_answer'
   | 'waiting_answer'
@@ -442,8 +487,12 @@ export type ConversationActivity =
   | 'working'
   | 'idle'
 
+/** A message that matched a conversation search, with a snippet. */
 export type SearchMatch = { messageId: string; snippet: string }
 
+/**
+ * A chat thread as listed, with its flags (pinned, archived, unread, shared) and what the person may do with it.
+ */
 export type Conversation = {
   id: string
   title: string
@@ -464,6 +513,7 @@ export type Conversation = {
   canShare?: boolean
 }
 
+/** One page of the conversation list: pinned, needing the person, the rest, and whether more exist. */
 export type ConversationPage = {
   pinned: Conversation[]
   needsYou: Conversation[]
@@ -471,10 +521,15 @@ export type ConversationPage = {
   hasMore: boolean
 }
 
+/** Which conversations the list shows: all, only the person's own, or archived. */
 export type ConversationScope = 'all' | 'mine' | 'archived'
 
+/** A page of messages and whether older ones exist. */
 export type MessagesPage = { messages: ChatMessage[]; hasEarlier: boolean }
 
+/**
+ * What stopping or retrying a goal returns: the goal id and status, and the original task when a retry started a new one.
+ */
 export type GoalActionResult = { goalId: string; status: string; fromTaskId?: string | null }
 
 /**
@@ -502,6 +557,7 @@ export type ConversationDetail = {
   busy?: ConversationBusy
 }
 
+/** Whether the conversation is idle, working, or waiting on a decision. */
 export type ConversationBusy = 'idle' | 'working' | 'waiting_decision'
 
 /** A message held back until the answer in progress finishes (one answer at a time per conversation). */
@@ -524,6 +580,7 @@ export type SendMessageResult = { messages: ChatMessage[]; queued: QueuedMessage
 
 /* ---- Orchestrator board --------------------------------------------------------------------------- */
 
+/** Counts shown across the top of the Command Map. */
 export type BoardStats = {
   running: number
   waitingApproval: number
@@ -538,6 +595,7 @@ export type BoardStats = {
   directRuns: number
 }
 
+/** An agent as the Command Map shows it: status, current work and whether it is asking a question. */
 export type BoardAgent = {
   id: string
   name: string
@@ -561,10 +619,13 @@ export type BoardTask = Task & {
   attempts?: number
 }
 
+/** A goal with board-level task detail. */
 export type BoardGoal = Omit<Goal, 'tasks'> & { tasks: BoardTask[] }
 
+/** Why a queued task has not started: ready, waiting on an earlier task, or its agent is paused. */
 export type QueueReason = 'ready' | 'waiting_on_earlier_task' | 'agent_paused'
 
+/** A task waiting to start, with the reason. */
 export type BoardQueueEntry = {
   goalId: string
   goalTitle: string
@@ -577,6 +638,7 @@ export type BoardQueueEntry = {
   createdAt: string
 }
 
+/** A run on the board's timeline. */
 export type BoardTimelineEntry = {
   runId: string
   agentId: string
@@ -602,8 +664,12 @@ export type BoardApproval = {
   canDecide: boolean
 }
 
+/** The time window the board covers (ISO durations, or today). */
 export type BoardWindow = 'PT1H' | 'PT2H' | 'PT6H' | 'PT24H' | 'TODAY'
 
+/**
+ * The whole Command Map snapshot: stats, agents, goals, queue, timeline, questions, approvals and failures today.
+ */
 export type Board = {
   generatedAt: string
   timezone: string
@@ -620,6 +686,7 @@ export type Board = {
   failedToday: BoardGoal[]
 }
 
+/** What stopping everything did: counts of runs, tasks, approvals and questions affected. */
 export type StopAllResult = {
   runsCancelled: number
   tasksCancelled: number
@@ -630,13 +697,17 @@ export type StopAllResult = {
   runsSkipped: number
 }
 
+/** Pause or resume an agent. */
 export type AgentStatusAction = 'pause' | 'resume'
 
 /* ---- Schedules ------------------------------------------------------------------------------------ */
 
+/** A schedule that repeats (cron) or runs once. */
 export type ScheduleKind = 'recurring' | 'once'
+/** What a schedule does when the previous run is still going: skip the new one or queue it. */
 export type OverlapPolicy = 'skip' | 'queue'
 
+/** A scheduled task: its agent, timing, next and last run, and state. */
 export type Schedule = {
   id: string
   name: string
@@ -678,6 +749,7 @@ export type SchedulePreview = {
 
 /* ---- Voice ------------------------------------------------------------------------------------------ */
 
+/** Whether voice is served by ElevenLabs or the browser, and the state of the key and usage. */
 export type VoiceStatus = {
   provider: 'elevenlabs' | 'browser'
   keyStored: boolean
@@ -686,6 +758,7 @@ export type VoiceStatus = {
   characterLimit?: number | null
 }
 
+/** One voice a person can choose for spoken replies. */
 export type Voice = {
   voiceId: string
   name: string
@@ -694,6 +767,7 @@ export type Voice = {
   previewUrl?: string | null
 }
 
+/** The outcome of indexing one uploaded document: indexed, skipped, unchanged or failed. */
 export type IngestResult = {
   documentId: string
   status: 'indexed' | 'skipped' | 'unchanged' | 'failed'
@@ -711,6 +785,7 @@ export type ReindexResult = {
   detail?: string | null
 }
 
+/** A tool a connector offers, with its side effect classification. */
 export type Tool = {
   name: string
   qualifiedName: string
@@ -723,6 +798,7 @@ export type Tool = {
 /** How a connector is connected (mcp-core ConnectorCatalog). Only 'token' and 'url' can be pasted in today. */
 export type ConnectorAuthType = 'token' | 'oauth' | 'url' | 'none'
 
+/** A connector as listed: its status, whether it runs on practice data, and its tools. */
 export type Integration = {
   server: string
   displayName: string
@@ -810,6 +886,7 @@ export type GrantInput = {
   maxCallsPerRun: number | null
 }
 
+/** A person in the workspace with their role and status. */
 export type Member = {
   userId: string
   displayName: string
@@ -820,6 +897,7 @@ export type Member = {
   lastSignInAt?: string | null
 }
 
+/** A role: its name, whether it is built in, and the permissions it carries. */
 export type Role = {
   id: string
   name: string
@@ -830,6 +908,7 @@ export type Role = {
   holders: number
 }
 
+/** One permission the platform defines, by code, resource and action. */
 export type PermissionInfo = {
   code: string
   resource: string
@@ -838,6 +917,7 @@ export type PermissionInfo = {
   administrative: boolean
 }
 
+/** An invitation to join the workspace and its status. */
 export type Invitation = {
   invitationId: string
   email: string
@@ -884,8 +964,11 @@ export function isRunParked(run?: { status: string } | null): boolean {
 
 /** Rows per page for the paged lists. A full last page means there may be more. */
 export const RUN_PAGE_SIZE = 50
+/** Rows per page of the goals list. */
 export const GOAL_PAGE_SIZE = 50
+/** Rows per page of the audit log. */
 export const AUDIT_PAGE_SIZE = 100
+/** Rows per page of the conversation list. */
 export const CONVERSATION_PAGE_SIZE = 50
 
 /*
@@ -922,19 +1005,29 @@ function withNulls<T extends Record<string, unknown>>(row: T, keys: ReadonlyArra
   return filled as T
 }
 
+/** Restores omitted null fields on an agent (see withNulls). */
 const agentRow = (agent: Agent): Agent => withNulls(agent, ['revision'])
+/** Restores omitted null fields on an agent detail. */
 const agentDetailRow = (agent: AgentDetail): AgentDetail =>
   withNulls(agent, ['revision', 'systemPrompt', 'goals', 'maxSteps'])
+/** Restores omitted null fields on a task. */
 const taskRow = (task: Task): Task =>
   withNulls(task, ['agentId', 'result', 'failureReason', 'startedAt', 'completedAt', 'runId'])
+/** Restores omitted null fields on a goal and its tasks. */
 const goalRow = (goal: Goal): Goal => ({
   ...withNulls(goal, ['completedAt', 'requestedBy', 'conversationId', 'scheduleId']),
   tasks: goal.tasks.map(taskRow),
 })
+/** Restores omitted null fields on an approval. */
 const approvalRow = (approval: Approval): Approval => withNulls(approval, ['tool'])
+/** Restores omitted null fields on a knowledge source. */
 const sourceRow = (source: Source): Source => withNulls(source, ['lastIngestedAt', 'lastError'])
+/** Restores omitted null fields on a source document. */
 const documentRow = (document: SourceDocument): SourceDocument => withNulls(document, ['skipReason', 'indexedAt'])
 
+/**
+ * Fills defaults on a question and its items (unknown run status, single-select, not recommended) and restores nulls.
+ */
 const questionRow = (question: RunQuestion): RunQuestion => ({
   ...withNulls(question, [
     'taskId',
@@ -956,11 +1049,13 @@ const questionRow = (question: RunQuestion): RunQuestion => ({
   })),
 })
 
+/** Fills defaults on a board approval summary (cannot decide unless told) and restores nulls. */
 const approvalSummaryRow = (approval: BoardApproval): BoardApproval => ({
   ...withNulls(approval, ['taskId', 'goalId', 'tool', 'requestedBy']),
   canDecide: approval.canDecide ?? false,
 })
 
+/** Restores omitted null fields on a board task. */
 const boardTaskRow = (task: BoardTask): BoardTask =>
   withNulls(task, [
     'agentId',
@@ -973,12 +1068,18 @@ const boardTaskRow = (task: BoardTask): BoardTask =>
     'stepCount',
     'cost',
   ])
+/** Restores omitted null fields on a board goal and its tasks. */
 const boardGoalRow = (goal: BoardGoal): BoardGoal => ({
   ...withNulls(goal, ['completedAt', 'requestedBy', 'conversationId', 'scheduleId']),
   tasks: goal.tasks.map(boardTaskRow),
 })
+/** Restores omitted null fields on a queue entry. */
 const boardQueueRow = (entry: BoardQueueEntry): BoardQueueEntry => withNulls(entry, ['agentId', 'requestedBy'])
+/** Restores omitted null fields on a timeline entry. */
 const boardTimelineRow = (entry: BoardTimelineEntry): BoardTimelineEntry => withNulls(entry, ['goalId', 'completedAt'])
+/**
+ * Normalises a whole board snapshot: defaults for fields older servers omit (window, counters, lists) and each nested row normalised.
+ */
 const boardRow = (board: Board): Board => ({
   ...board,
   agents: board.agents.map((agent) => ({ ...agent, fallback: agent.fallback ?? false, askingRunIds: agent.askingRunIds ?? [] })),
@@ -999,6 +1100,7 @@ const boardRow = (board: Board): Board => ({
   },
 })
 
+/** Fills defaults on a conversation (counts, flags, visibility) and restores nulls. */
 const conversationRow = (conversation: Conversation): Conversation => ({
   ...withNulls(conversation, ['createdBy']),
   messageCount: conversation.messageCount ?? 0,
@@ -1011,13 +1113,18 @@ const conversationRow = (conversation: Conversation): Conversation => ({
   visibility: conversation.visibility ?? 'workspace',
   canShare: conversation.canShare ?? false,
 })
+/** Normalises a conversation page, defaulting missing lists to empty. */
 const conversationPageRow = (page: ConversationPage): ConversationPage => ({
   pinned: (page.pinned ?? []).map(conversationRow),
   needsYou: (page.needsYou ?? []).map(conversationRow),
   conversations: (page.conversations ?? []).map(conversationRow),
   hasMore: page.hasMore ?? false,
 })
+/** Restores omitted null fields on a chat message. */
 const chatMessageRow = (message: ChatMessage): ChatMessage => withNulls(message, ['authorId', 'agentId', 'goalId'])
+/**
+ * Normalises a conversation with its messages, goals, questions and queued messages, defaulting what the server omits.
+ */
 const conversationDetailRow = (detail: ConversationDetail): ConversationDetail => ({
   conversation: conversationRow(detail.conversation),
   messages: detail.messages.map(chatMessageRow),
@@ -1028,6 +1135,7 @@ const conversationDetailRow = (detail: ConversationDetail): ConversationDetail =
   queued: (detail.queued ?? []).map(queuedMessageRow),
   busy: detail.busy ?? 'idle',
 })
+/** Fills defaults on a queued message (no agents, zero attachments); exported for the queue mutations. */
 export const queuedMessageRow = (item: QueuedMessage): QueuedMessage => ({
   ...item,
   authorId: item.authorId ?? null,
@@ -1035,11 +1143,15 @@ export const queuedMessageRow = (item: QueuedMessage): QueuedMessage => ({
   attachmentCount: item.attachmentCount ?? 0,
 })
 
+/** Restores omitted null fields on a schedule. */
 const scheduleRow = (schedule: Schedule): Schedule =>
   withNulls(schedule, ['cron', 'runAt', 'nextRunAt', 'lastRunAt', 'lastStatus', 'lastGoalId', 'pausedReason', 'createdBy'])
 
+/** De-duplicates pages of runs by id. */
 const uniqueRuns = uniquePages<Run>((run) => run.id)
+/** De-duplicates pages of goals by id. */
 const uniqueGoals = uniquePages<Goal>((goal) => goal.id)
+/** De-duplicates pages of audit events by id. */
 const uniqueAuditEvents = uniquePages<AuditEvent>((event) => event.id)
 
 /** How often something that is moving by itself is read. */
@@ -1192,6 +1304,9 @@ export function invalidateWork(client: QueryClient): void {
 /* ---- Reads ------------------------------------------------------------------------------------- */
 
 // @find: list agents, agent roster, all agents; route: GET /api/agents; used by: Agents page, Chat agent picker, Orchestrator
+/**
+ * Query for every agent in the workspace (GET /api/agents, key ['agents']). Used by the Agents page, the Chat agent picker and the Orchestrator; invalidated by every agent mutation. enabled false skips it.
+ */
 export const useAgents = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['agents'],
@@ -1200,6 +1315,9 @@ export const useAgents = (options: QueryOptions = {}) =>
   })
 
 // @find: get one agent, agent detail; route: GET /api/agents/{id}; used by: Agent detail page
+/**
+ * Query for one agent with its saved instructions (GET /api/agents/{id}, key ['agents', id]). Used by the Agent detail page. The key is under ['agents'], so agent mutations refresh it too.
+ */
 export const useAgent = (id: string) =>
   useQuery({
     queryKey: ['agents', id],
@@ -1224,6 +1342,7 @@ export const useRuns = () =>
     refetchInterval: (query) => (query.state.data?.some(isRunActive) ? 5_000 : 30_000),
   })
 
+/** Server-side filters for the run list: status and agent. */
 export type RunListFilter = { status?: string | null; agentId?: string | null }
 
 // @find: paged run list, filter runs by status or agent; route: GET /api/runs?page&size&status&agentId; used by: Runs page
@@ -1302,6 +1421,9 @@ export function useRunSteps(id: string, options: { active?: boolean } = {}) {
 }
 
 // @find: pending approvals, approval queue; route: GET /api/approvals; used by: Approvals page, navigation badge
+/**
+ * Query for approvals (GET /api/approvals, key ['approvals']), refreshed every 30 seconds because the navigation badge depends on it. Used by the Approvals page and the badge; enabled false skips it.
+ */
 export const useApprovals = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['approvals'],
@@ -1595,6 +1717,9 @@ export function useConversation(id: string | null | undefined, options: QueryOpt
 }
 
 // @find: new chat, create conversation; route: POST /api/conversations; used by: Chat page New chat button
+/**
+ * Mutation that starts a chat (POST /api/conversations with an optional title). Resolves to the new conversation; on success it refetches the conversation lists. Used by the Chat page New chat button.
+ */
 export function useCreateConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1654,6 +1779,9 @@ export function useReroute(conversationId: string) {
 }
 
 // @find: rename chat; route: PATCH /api/conversations/{id}; used by: Chat page
+/**
+ * Mutation that renames a chat (PATCH /api/conversations/{id} with title). On success it refetches the conversation lists.
+ */
 export function useRenameConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1664,6 +1792,9 @@ export function useRenameConversation() {
 }
 
 // @find: pin or unpin chat; route: PUT|DELETE /api/conversations/{id}/pin; used by: Chat page
+/**
+ * Mutation that pins (PUT) or unpins (DELETE) a chat for the person (/api/conversations/{id}/pin). On success it refetches the conversation lists.
+ */
 export function usePinConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1674,6 +1805,9 @@ export function usePinConversation() {
 }
 
 // @find: archive or unarchive chat; route: PUT|DELETE /api/conversations/{id}/archive; used by: Chat page
+/**
+ * Mutation that archives (PUT) or restores (DELETE) a chat (/api/conversations/{id}/archive). On success it refetches the conversation lists.
+ */
 export function useArchiveConversation() {
   const client = useQueryClient()
   return useMutation({
@@ -1887,6 +2021,9 @@ export function useSchedulePreview() {
 }
 
 // @find: create schedule; route: POST /api/schedules; used by: Schedules page
+/**
+ * Mutation that creates a schedule (POST /api/schedules). On success it refetches schedules and the work lists. Used by the Schedules page.
+ */
 export function useCreateSchedule() {
   const client = useQueryClient()
   return useMutation({
@@ -1900,6 +2037,9 @@ export function useCreateSchedule() {
 }
 
 // @find: update schedule, edit schedule; route: PUT /api/schedules/{id}; used by: Schedules page
+/**
+ * Mutation that edits a schedule (PUT /api/schedules/{id}); only the fields given change. On success it refetches schedules and the work lists.
+ */
 export function useUpdateSchedule(id: string) {
   const client = useQueryClient()
   return useMutation({
@@ -1928,14 +2068,19 @@ function useScheduleAction(id: string, action: 'pause' | 'resume' | 'run-now') {
 }
 
 // @find: pause schedule; route: POST /api/schedules/{id}/pause; used by: Schedules page
+/** Mutation that pauses a schedule (POST /api/schedules/{id}/pause). */
 export const usePauseSchedule = (id: string) => useScheduleAction(id, 'pause')
 // @find: resume schedule; route: POST /api/schedules/{id}/resume; used by: Schedules page
+/** Mutation that resumes a paused schedule (POST /api/schedules/{id}/resume). */
 export const useResumeSchedule = (id: string) => useScheduleAction(id, 'resume')
 // @find: run schedule now; route: POST /api/schedules/{id}/run-now; used by: Schedules page
 /** Fires the schedule now, outside its own timetable. The returned ScheduleView carries the new goal in `lastGoalId`. */
 export const useRunScheduleNow = (id: string) => useScheduleAction(id, 'run-now')
 
 // @find: delete schedule; route: DELETE /api/schedules/{id}; used by: Schedules page
+/**
+ * Mutation that deletes a schedule (DELETE /api/schedules/{id}); takes the id when called. On success it refetches schedules and the work lists.
+ */
 export function useDeleteSchedule() {
   const client = useQueryClient()
   return useMutation({
@@ -1983,6 +2128,9 @@ export function useSetAgentVoice(agentId: string) {
 }
 
 // @find: list model providers; route: GET /api/providers; used by: Model routing page
+/**
+ * Query for the model providers (GET /api/providers, key ['providers']). Used by the Model routing page and the setup checklist; enabled false skips it.
+ */
 export const useProviders = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['providers'],
@@ -1991,6 +2139,9 @@ export const useProviders = (options: QueryOptions = {}) =>
   })
 
 // @find: list models; route: GET /api/providers/models; used by: Model routing page
+/**
+ * Query for the models of every provider (GET /api/providers/models, key ['providers', 'models']). Used by the Model routing page.
+ */
 export const useModels = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['providers', 'models'],
@@ -2020,6 +2171,9 @@ export function useProviderCatalogue(providerId: string, options: QueryOptions =
 }
 
 // @find: workspace model policy; route: GET /api/model-policy; used by: Model routing page
+/**
+ * Query for the workspace routing policy (GET /api/model-policy, key ['model-policy']). Used by the Model routing page and the setup checklist.
+ */
 export const useModelPolicy = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['model-policy'],
@@ -2037,6 +2191,9 @@ export const useCredentials = (options: QueryOptions = {}) =>
   })
 
 // @find: save model policy; route: PUT /api/model-policy; used by: Model routing page
+/**
+ * Mutation that saves the workspace routing policy (PUT /api/model-policy). On success it refetches the policy.
+ */
 export function useSetModelPolicy() {
   const client = useQueryClient()
   return useMutation({
@@ -2047,6 +2204,9 @@ export function useSetModelPolicy() {
 }
 
 // @find: store provider API key, save credential; route: PUT /api/credentials/{ref}; used by: Model routing page connect dialog
+/**
+ * Mutation that stores a provider key (PUT /api/credentials/{ref} with kind, value and optional expiry). The service never returns the value. On success it refetches credentials and providers. Used by the Connect your AI dialog.
+ */
 export function useStoreCredential() {
   const client = useQueryClient()
   return useMutation({
@@ -2063,6 +2223,9 @@ export function useStoreCredential() {
 }
 
 // @find: list knowledge sources, knowledge base; route: GET /api/sources; used by: Knowledge page
+/**
+ * Query for the knowledge sources (GET /api/sources, key ['sources']). Used by the Knowledge page and the setup checklist.
+ */
 export const useSources = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['sources'],
@@ -2071,6 +2234,9 @@ export const useSources = (options: QueryOptions = {}) =>
   })
 
 // @find: get one knowledge source; route: GET /api/sources/{id}; used by: Source detail page
+/**
+ * Query for one knowledge source (GET /api/sources/{id}, key ['sources', id]). Used by the Source detail page.
+ */
 export const useSource = (id: string) =>
   useQuery({
     queryKey: ['sources', id],
@@ -2078,6 +2244,9 @@ export const useSource = (id: string) =>
   })
 
 // @find: list source documents; route: GET /api/sources/{id}/documents; used by: Source detail page
+/**
+ * Query for the documents in one source (GET /api/sources/{id}/documents, key ['sources', id, 'documents']). Used by the Source detail page.
+ */
 export const useSourceDocuments = (id: string) =>
   useQuery({
     queryKey: ['sources', id, 'documents'],
@@ -2095,6 +2264,9 @@ export const useIntegrations = (options: QueryOptions = {}) =>
   })
 
 // @find: list members, team members; route: GET /api/users; used by: Members page
+/**
+ * Query for the workspace's people (GET /api/users, key ['members']). Used by the Members page and the setup checklist.
+ */
 export const useMembers = (options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['members'],
@@ -2103,6 +2275,9 @@ export const useMembers = (options: QueryOptions = {}) =>
   })
 
 // @find: list invitations; route: GET /api/orgs/{orgId}/invitations; used by: Members page
+/**
+ * Query for pending and past invitations (GET /api/orgs/{orgId}/invitations, key ['invitations', orgId]). Disabled until a workspace id is known. Used by the Members page.
+ */
 export const useInvitations = (orgId: string, options: QueryOptions = {}) =>
   useQuery({
     queryKey: ['invitations', orgId],
@@ -2131,6 +2306,9 @@ export const usePermissionCatalogue = (options: QueryOptions = {}) =>
 /* ---- Writes ------------------------------------------------------------------------------------ */
 
 // @find: create goal, assign task to agent; route: POST /api/goals; used by: Tasks page New goal, Agent detail page
+/**
+ * Mutation that gives one agent a piece of work (POST /api/goals, one task). On success it refreshes every work list (invalidateWork). Used by the Tasks page and the Agent detail page.
+ */
 export function useCreateGoal() {
   const client = useQueryClient()
   return useMutation({
@@ -2149,6 +2327,9 @@ export function useCreateGoal() {
 }
 
 // @find: approve, reject, request changes; route: POST /api/approvals/{id}/decision; used by: Approvals page, Chat page, Orchestrator
+/**
+ * Mutation that decides an approval (POST /api/approvals/{id}/decision) as approve, reject or request changes, with an optional note. It refreshes the work lists whether it succeeds or fails, because a decision refused as already made or expired must still clear the stale card. Used by the Approvals page, Chat and the Orchestrator.
+ */
 export function useDecideApproval() {
   const client = useQueryClient()
   return useMutation({
@@ -2168,6 +2349,9 @@ export function useDecideApproval() {
 }
 
 // @find: create agent, new agent; route: POST /api/agents; used by: Agents page New agent dialog
+/**
+ * Mutation that creates an agent (POST /api/agents). On success it refetches the agent lists. Used by the New agent dialog.
+ */
 export function useCreateAgent() {
   const client = useQueryClient()
   return useMutation({
@@ -2178,6 +2362,9 @@ export function useCreateAgent() {
 }
 
 // @find: update agent configuration, system prompt, goals; route: PUT /api/agents/{id}/configuration; used by: Agent detail page
+/**
+ * Mutation that saves an agent's instructions, goals and limits as a new revision (PUT /api/agents/{id}/configuration). On success it refetches the agent queries. Used by the Agent detail page.
+ */
 export function useUpdateAgent(id: string) {
   const client = useQueryClient()
   return useMutation({
@@ -2211,6 +2398,9 @@ export function useSetAgentDescription(id: string) {
 }
 
 // @find: cancel run, stop run; route: POST /api/runs/{id}/cancel; used by: Run detail page, Runs page
+/**
+ * Mutation that stops a run (POST /api/runs/{id}/cancel) by id. On success it refreshes questions and the work lists. Used by the Run detail and Runs pages.
+ */
 export function useCancelRun() {
   const client = useQueryClient()
   return useMutation({
@@ -2223,6 +2413,9 @@ export function useCancelRun() {
 }
 
 // @find: create knowledge source, new source; route: POST /api/sources; used by: Knowledge page Add source dialog
+/**
+ * Mutation that creates a knowledge source (POST /api/sources with name and kind). On success it refetches the source list.
+ */
 export function useCreateSource() {
   const client = useQueryClient()
   return useMutation({
@@ -2233,6 +2426,9 @@ export function useCreateSource() {
 }
 
 // @find: enable or disable provider; route: POST /api/providers/{id}/enable|disable; used by: Model routing page
+/**
+ * Mutation that turns a provider on or off for this workspace (POST /api/providers/{id}/enable or /disable). On success it refetches providers. A refusal (409) is read with toggleRefusal.
+ */
 export function useToggleProvider() {
   const client = useQueryClient()
   return useMutation({
@@ -2244,6 +2440,7 @@ export function useToggleProvider() {
 
 /* ---- Connectors ---------------------------------------------------------------------------------- */
 
+/** Endpoint path of one connector; the server name is URL-encoded. */
 const serverPath = (server: string) => `/api/integrations/${encodeURIComponent(server)}`
 
 // @find: connect connector, store token, connect integration; route: PUT /api/integrations/{server}/connection; used by: Connectors page Connect dialog
@@ -2419,6 +2616,9 @@ export function useCreateRun(agentId: string) {
 }
 
 // @find: cancel goal; route: POST /api/goals/{id}/cancel; used by: Tasks page, Orchestrator
+/**
+ * Mutation that stops a goal and its tasks (POST /api/goals/{id}/cancel). On success it refreshes questions and the work lists. Used by the Tasks page and the Orchestrator.
+ */
 export function useCancelGoal(goalId: string) {
   const client = useQueryClient()
   return useMutation({
@@ -2452,6 +2652,9 @@ export function useRetryRun() {
 }
 
 // @find: re-index source, update knowledge, rebuild embeddings; route: POST /api/sources/{id}/reindex; used by: Source detail page
+/**
+ * Mutation that re-indexes a source (POST /api/sources/{id}/reindex). On success it refetches the sources, this source and its documents. Used by the Source detail page.
+ */
 export function useReindexSource(sourceId: string) {
   const client = useQueryClient()
   return useMutation({
@@ -2465,6 +2668,7 @@ export function useReindexSource(sourceId: string) {
 }
 
 // @find: create role; route: POST /api/roles; used by: Members page role editor
+/** Mutation that creates a role (POST /api/roles). On success it refetches roles. */
 export function useCreateRole() {
   const client = useQueryClient()
   return useMutation({
@@ -2475,6 +2679,7 @@ export function useCreateRole() {
 }
 
 // @find: delete role; route: DELETE /api/roles/{id}; used by: Members page role editor
+/** Mutation that deletes a role (DELETE /api/roles/{id}); takes the id. On success it refetches roles. */
 export function useDeleteRoleMutation() {
   const client = useQueryClient()
   return useMutation({
@@ -2484,6 +2689,9 @@ export function useDeleteRoleMutation() {
 }
 
 // @find: update role permissions; route: PUT /api/roles/{id}; used by: Members page role editor
+/**
+ * Mutation that changes a role's name, description and permissions (PUT /api/roles/{id}). On success it refetches roles.
+ */
 export function useUpdateRoleMutation() {
   const client = useQueryClient()
   return useMutation({
@@ -2494,6 +2702,9 @@ export function useUpdateRoleMutation() {
 }
 
 // @find: invite member, send invitation; route: POST /api/orgs/{orgId}/invitations; used by: Members page Invite dialog
+/**
+ * Mutation that invites someone to the workspace at a role (POST /api/orgs/{orgId}/invitations). On success it refetches members and invitations. Used by the Members page invite dialog.
+ */
 export function useInviteMember(orgId: string, email: string, roleName: string) {
   const client = useQueryClient()
   return useMutation({
@@ -2510,6 +2721,9 @@ export function useInviteMember(orgId: string, email: string, roleName: string) 
 }
 
 // @find: change member role; route: PUT /api/users/{userId}/role; used by: Members page
+/**
+ * Mutation that changes a member's role (PUT /api/users/{userId}/role). On success it refetches members and roles, because each role's holder count changes.
+ */
 export function useUpdateMemberRole() {
   const client = useQueryClient()
   return useMutation({
@@ -2524,6 +2738,9 @@ export function useUpdateMemberRole() {
 }
 
 // @find: remove member; route: DELETE /api/users/{userId}; used by: Members page
+/**
+ * Mutation that removes a person from the workspace (DELETE /api/users/{userId}). On success it refetches members and roles.
+ */
 export function useRemoveMember() {
   const client = useQueryClient()
   return useMutation({
@@ -2536,6 +2753,9 @@ export function useRemoveMember() {
 }
 
 // @find: accept invitation, join workspace; route: POST /api/invitations/accept; used by: Accept invite page
+/**
+ * Mutation that accepts an invitation with its token, display name and a chosen password (POST /api/invitations/accept). Makes no cache change; the Accept invite page then sends the new person to the sign-in page, because the invited account is created but not signed in.
+ */
 export function useAcceptInvitation() {
   return useMutation({
     mutationFn: (input: { token: string; displayName: string; password: string }) =>
@@ -2546,6 +2766,9 @@ export function useAcceptInvitation() {
   })
 }
 
+/**
+ * One audit log entry: who did what to which resource, the outcome, and the hash chain fields used for verification.
+ */
 export type AuditEvent = {
   id: string
   sequence: number
@@ -2562,9 +2785,12 @@ export type AuditEvent = {
   entryHash?: string | null
 }
 
+/** How many audit events had one action. */
 export type ActionCount = { action: string; count: number }
+/** How many audit events had one outcome. */
 export type OutcomeCount = { outcome: string; count: number }
 
+/** Audit activity over a time window, counted by action and by outcome. */
 export type AnalyticsSummary = {
   windowStart: string
   windowEnd: string
@@ -2574,6 +2800,9 @@ export type AnalyticsSummary = {
 }
 
 // @find: analytics summary, audit counts; route: GET /api/analytics; used by: Analytics page
+/**
+ * Query for the audit activity summary (GET /api/analytics, key ['analytics']). Used by the Analytics page.
+ */
 export function useAnalytics() {
   return useQuery({
     queryKey: ['analytics'],
@@ -2632,6 +2861,9 @@ export type AuditVerification = {
 }
 
 // @find: verify audit chain, tamper check; route: GET /api/audit/verify; used by: Audit log page Verify button
+/**
+ * Mutation that asks the platform to check the audit log's hash chain for tampering (GET /api/audit/verify). Nothing is cached; the Audit log page shows the result.
+ */
 export function useVerifyAudit() {
   return useMutation({ mutationFn: () => api<AuditVerification>('/api/audit/verify') })
 }

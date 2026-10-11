@@ -7,7 +7,16 @@ import { can } from '../../lib/session'
 import { PassageList } from './PassageList'
 
 // @find: DocumentsCard, documents card, documents card, sources in chat, documents an agent used, knowledge documents in thread
-/** A document question's answer: the passages that matched it, quoted, each with its source. */
+/**
+ * A document question's answer: the passages that matched it, quoted, each with its source.
+ *
+ * Rendered by MessageItem for a "documents" message, which carries the passages and a grounded flag in its
+ * detail. A header counts the passages and the distinct documents. When nothing grounds an answer it says no
+ * document supports one and suggests other words or checking that the document is indexed in Knowledge.
+ * Otherwise it lists the passages (PassageList, first two shown), a note when only keyword search could run,
+ * and an action: "Write an answer from these passages" (onAnswerFromDocuments, for viewers holding
+ * task:create, with a loading state while answering) or, once an answer has started, a link to that message.
+ */
 export function DocumentsCard({
   message,
   onAnswerFromDocuments,

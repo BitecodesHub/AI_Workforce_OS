@@ -30,11 +30,19 @@ import os.aiworkforce.platform.config.PlatformProperties;
 public class IntegrationsTokenRefresher implements TokenRefresher {
 
     private static final Logger log = LoggerFactory.getLogger(IntegrationsTokenRefresher.class);
+    // Longer than other internal calls because a refresh makes the integrations service call the provider.
     private static final Duration TIMEOUT = Duration.ofSeconds(20);
 
     private final WebClient client;
     private final InternalTokenProvider tokens;
 
+    /**
+     * Builds a client for the integrations service.
+     *
+     * @param builder Spring's shared WebClient builder
+     * @param properties platform configuration: integrations service URL
+     * @param tokens mints the service token for the workspace named in each call
+     */
     public IntegrationsTokenRefresher(
             WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         this.client = builder.baseUrl(properties.services().integrations()).build();
@@ -42,6 +50,21 @@ public class IntegrationsTokenRefresher implements TokenRefresher {
     }
 
     // @find: refresh OAuth token, rejected credential
+    /**
+     * Asks the integrations service to renew the access token the provider rejected.
+     *
+     * <p>Posts the rejected token to the connection's refresh endpoint so the service can tell
+     * whether another caller already renewed it. Side effect: the integrations service may call
+     * the provider and store a new token. The result is empty, not an error, when the answer is
+     * anything but connected with a value, so the caller treats it as "no new token". Transport
+     * failures and timeouts (20 seconds) are logged and passed on as an error signal. Called by
+     * live connector adapters mid tool call.
+     *
+     * @param orgId the workspace id as text
+     * @param server the connector name
+     * @param rejectedCredential the token the provider refused; null is sent as empty
+     * @return the new access token, or empty when none could be obtained
+     */
     @Override
     public Mono<String> refresh(String orgId, String server, String rejectedCredential) {
         return authorised(orgId)
@@ -60,6 +83,18 @@ public class IntegrationsTokenRefresher implements TokenRefresher {
     }
 
     // @find: mark connection reconnect required
+    /**
+     * Tells the integrations service that this connection can no longer be renewed, so it shows as
+     * needing a reconnect and later lookups answer reconnect_required.
+     *
+     * <p>Side effect: the connection's state is changed in the integrations service. Failures are
+     * logged and passed on as an error signal; the 20 second timeout applies.
+     *
+     * @param orgId the workspace id as text
+     * @param server the connector name
+     * @param reason why the connection is unusable, in words for the administrator; null is sent as empty
+     * @return completes when the service has recorded it
+     */
     @Override
     public Mono<Void> markReconnectRequired(String orgId, String server, String reason) {
         return authorised(orgId)
@@ -79,10 +114,12 @@ public class IntegrationsTokenRefresher implements TokenRefresher {
                         error.getClass().getSimpleName()));
     }
 
+    // Mints the service token on a boundedElastic thread, because minting may block and the caller is on the HTTP client's thread. Errors (including a malformed workspace id) arrive as an error signal.
     private Mono<String> authorised(String orgId) {
         return Mono.fromCallable(() -> tokens.forService("integrations", UUID.fromString(orgId)))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    // The integrations service's reply: state is "connected" when value holds a fresh token; message explains other states.
     private record Answer(String value, String state, String message) {}
 }

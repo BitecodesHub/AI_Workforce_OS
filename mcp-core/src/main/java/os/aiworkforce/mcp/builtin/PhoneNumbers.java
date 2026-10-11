@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
  */
 public final class PhoneNumbers {
 
+    /** International format: a plus sign, a non-zero first digit and 8 to 15 digits in all. */
     private static final Pattern E164 = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
 
     /* Premium-rate and costly shared ranges, by prefix (country code included). */
@@ -32,15 +33,25 @@ public final class PhoneNumbers {
             "+979", "+881", "+882", "+883", "+870", "+808" // international premium, satellite, shared-cost
             );
 
+    /** Not instantiable. */
     private PhoneNumbers() {}
 
-    /** The number with spaces, dashes, dots and brackets taken out. */
+    /**
+     * The number with spaces, dashes, dots and brackets taken out. A null number becomes an empty
+     * string. Called first, so that {@link #problem} and the call itself see the same text.
+     */
     public static String normalise(String number) {
         return number == null ? "" : number.strip().replaceAll("[\\s().-]", "");
     }
 
     // @find: is this phone number allowed, refuse premium number
-    /** Why {@code number} may not be called, or null when it may. Expects the normalised form. */
+    /**
+     * Why {@code number} may not be called, or null when it may. Expects the normalised form.
+     *
+     * <p>Checks, in order: present, E.164 shape, then the blocked premium and shared-cost prefixes.
+     * The message is written for the agent and the person reading the trace. Pure; no network call.
+     * The prefix list is a safeguard and is not a complete catalogue of premium ranges.
+     */
     public static String problem(String number) {
         if (number == null || number.isBlank()) {
             return "Give the number to call in international format, for example +61 2 9999 0000.";

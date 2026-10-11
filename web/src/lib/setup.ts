@@ -12,10 +12,13 @@
  * counted either way, because a guess is wrong exactly when someone looks.
  */
 
+/** The setup checklist items, by id. */
 export type SetupStepId = 'model' | 'order' | 'search' | 'tools' | 'knowledge' | 'team' | 'notifications' | 'budget'
 
+/** Where a step stands: done, needs attention, optional, still loading, or not for this person's role. */
 export type SetupStatus = 'done' | 'attention' | 'optional' | 'checking' | 'not_allowed'
 
+/** One checklist row: id, status and a plain-words detail line. */
 export type SetupStep = { id: SetupStepId; status: SetupStatus; detail: string }
 
 /** The order the page lists the steps in. */
@@ -26,6 +29,9 @@ export const OPTIONAL_STEPS: ReadonlySet<SetupStepId> = new Set(['search', 'noti
 
 type Known<T> = { allowed: boolean; data: T | undefined }
 
+/**
+ * What setupSteps needs to know, by area. Each area carries whether this person may see it and its data (undefined while loading).
+ */
 export type SetupFacts = {
   /** Whether a live model answers runs, and which (lib/routing.ts liveRouting). */
   model: Known<{ live: boolean; providerName: string | null }>
@@ -39,9 +45,13 @@ export type SetupFacts = {
   budget: Known<{ monthlyCap: number | null }>
 }
 
+/** Count with a singular or plural noun ("1 document", "2 documents"). */
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`
 
 // @find: compute setup steps, step status from facts, what is left to set up
+/**
+ * Turns the gathered facts into the ordered checklist. A step the person may not see is not_allowed, one whose data has not loaded is checking, and otherwise the rule for that area decides done, attention or optional and writes the detail sentence. Pure; no requests are made here (see useSetupSteps).
+ */
 export function setupSteps(facts: SetupFacts): SetupStep[] {
   const step = <K extends SetupStepId>(id: K, known: Known<unknown>, decide: () => Omit<SetupStep, 'id'>): SetupStep => {
     if (!known.allowed) return { id, status: 'not_allowed', detail: 'Your role cannot change this. An owner or admin can.' }
@@ -100,6 +110,7 @@ export function setupSteps(facts: SetupFacts): SetupStep[] {
   ]
 }
 
+/** Progress figures for the banner and the page header. */
 export type SetupSummary = {
   /** Steps that are done, out of those the person can act on and that have loaded. */
   done: number
@@ -111,6 +122,9 @@ export type SetupSummary = {
 }
 
 // @find: setup summary, how many steps done, steps left, setup banner count
+/**
+ * Counts progress over the steps: done out of those that count (not hidden by role, not still loading), how many required steps still need attention, and whether setup is complete (nothing loading and nothing required outstanding). Optional steps never hold completion back.
+ */
 export function summarise(steps: readonly SetupStep[]): SetupSummary {
   const counted = steps.filter((step) => step.status !== 'not_allowed' && step.status !== 'checking')
   const checking = steps.some((step) => step.status === 'checking')

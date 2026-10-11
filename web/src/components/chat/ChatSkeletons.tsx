@@ -8,6 +8,7 @@
  */
 
 // @find: SidebarSkeleton, sidebar skeleton, loading skeleton, chat loading, sidebar skeleton, thread skeleton
+/** Five placeholder conversation rows with a polite loading status for screen readers, shown while ChatSidebar loads the list. */
 export function SidebarSkeleton() {
   return (
     <div className="chat-skel-rows" role="status" aria-busy="true">
@@ -24,6 +25,7 @@ export function SidebarSkeleton() {
 }
 
 // @find: ThreadSkeleton, thread skeleton, loading skeleton, chat loading, sidebar skeleton, thread skeleton
+/** Placeholder user bubble and agent answer lines with a loading status, shown while a conversation's messages load. */
 export function ThreadSkeleton() {
   return (
     <div className="chat-skel-thread" role="status" aria-busy="true">

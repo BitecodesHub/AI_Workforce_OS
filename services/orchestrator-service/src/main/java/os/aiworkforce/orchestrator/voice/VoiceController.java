@@ -47,23 +47,30 @@ public class VoiceController {
     private final VoiceClips clips;
     private final Agents agents;
 
+    /** Creates the controller with the voice service, the clip repository and the agent repository. */
     public VoiceController(VoiceService voice, VoiceClips clips, Agents agents) {
         this.voice = voice;
         this.clips = clips;
         this.agents = agents;
     }
 
+    /** Response of the status endpoint: whether a key is stored and the plan usage when it is known. */
     public record VoiceStatusView(
             String provider, boolean keyStored, String tier, Integer charactersUsed, Integer characterLimit) {}
 
+    /** Response item of the voices endpoint. */
     public record VoiceView(String voiceId, String name, String category, String description, String previewUrl) {}
 
+    /** Request body for speech synthesis: the text (at most 2,500 characters) and an optional agent whose voice is used. */
     public record SpeechRequest(@NotBlank @Size(max = 2_500) String text, UUID agentId) {}
 
+    /** Response of the transcription endpoint. */
     public record TranscriptionView(String text) {}
 
+    /** Request body for key verification; the key is never stored by the check itself. */
     public record KeyCheckRequest(@NotBlank @Size(max = 512) String key) {}
 
+    /** Response of key verification: whether ElevenLabs accepted the key and a message for the person. */
     public record KeyCheckView(boolean verified, String message) {}
 
     /**
@@ -150,6 +157,7 @@ public class VoiceController {
                 .body(clip.getAudio());
     }
 
+    /** The workspace of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

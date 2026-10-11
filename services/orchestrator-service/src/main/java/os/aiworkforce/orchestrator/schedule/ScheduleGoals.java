@@ -21,6 +21,7 @@ import os.aiworkforce.orchestrator.domain.Goal;
  */
 public interface ScheduleGoals extends JpaRepository<Goal, UUID> {
 
+    /** Every goal a schedule has started, newest first; unbounded, so for schedules with small histories only. */
     List<Goal> findByOrgIdAndScheduleIdOrderByCreatedAtDesc(UUID orgId, UUID scheduleId);
 
     /**
@@ -30,6 +31,7 @@ public interface ScheduleGoals extends JpaRepository<Goal, UUID> {
      */
     Page<Goal> findByOrgIdAndScheduleIdOrderByCreatedAtDesc(UUID orgId, UUID scheduleId, Pageable pageable);
 
+    /** The most recent goal a schedule started, if any. */
     Optional<Goal> findFirstByScheduleIdOrderByCreatedAtDesc(UUID scheduleId);
 
     /** How many of a schedule's goals ended in each status, as {@code [status, count]} pairs. */

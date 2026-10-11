@@ -11,9 +11,11 @@ import type { ReactElement } from 'react'
  * and escapes included. Braces are string expressions: written bare they would be JSX.
  */
 
+/** Props: the payload (string keys and values) and the accessible label of the block. */
 export type PayloadViewProps = { payload: Readonly<Record<string, string>>; label: string }
 
 // @find: PayloadView component, payload JSON
+/** Pretty-prints a payload as JSON inside a pre block with role "group" (so the label has something to name). Keys and values pass through JSON.stringify, so what is shown is what would be serialised, and the braces are string expressions because bare braces would be JSX. Static, no state. Used by ApprovalDemo for the exact payload an approval would release. */
 export function PayloadView({ payload, label }: PayloadViewProps): ReactElement {
   const entries = Object.entries(payload)
   const last = entries.length - 1

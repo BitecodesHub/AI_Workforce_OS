@@ -5,11 +5,13 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Button, ConfirmDialog } from '../ui'
 import type { ConversationBusy, QueuedMessage } from '../../lib/queries'
 
+/** Status sentences shown under a queued message, one per situation: waiting its turn, waiting behind a pending decision, starting, and expired. */
 export const QUEUED_TEXT = 'Queued — will start when the current answer finishes'
 export const WAITING_DECISION_TEXT = 'Waiting for your decision above — this will start after it'
 export const STARTING_TEXT = 'Starting…'
 export const EXPIRED_TEXT = 'Expired — send again'
 
+/** The four actions a queued message offers; the Chat page supplies them and each reports success with a boolean (or returns nothing for onSendAgain). */
 export type QueuedActions = {
   /** Removes the queued message. Resolves true when it is gone. */
   onCancel: (item: QueuedMessage) => Promise<boolean>
@@ -49,6 +51,18 @@ export function QueuedMessages({ items, busy, ...actions }: { items: readonly Qu
 }
 
 // @find: QueuedBubble, queued bubble, queued message, message queue, waiting message, starts after current answer
+/**
+ * One message waiting in the conversation queue, drawn as a user bubble with its status line and actions.
+ * Props: item, busy (the conversation's busy state), position and total (for the accessible label such as
+ * "Queued message 2 of 3") and the QueuedActions. Actions appear only when item.canManage and the message
+ * is not already starting: Edit (queued only), Cancel and, when the queue waits on a decision, "Start now
+ * anyway", which opens a ConfirmDialog warning that the waiting work will be stopped and then calls onStartNow.
+ * An expired message offers Send again and Remove instead.
+ * Editing: an inline textarea (Cmd or Ctrl and Enter saves, Escape cancels). It takes focus with the caret at
+ * the end and is scrolled into view; closing returns focus to the Edit button. Saving an unchanged text just
+ * closes it; a message that starts while being edited leaves edit mode. State: the draft, editing, saving,
+ * cancelling, starting and the confirmation flag.
+ */
 export function QueuedBubble({
   item,
   busy,

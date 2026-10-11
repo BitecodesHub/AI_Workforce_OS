@@ -22,6 +22,7 @@ public class ElevenLabsWorkspaceSecrets implements WorkspaceSecrets {
     private final OrgCredentialResolver credentials;
     private final VoiceProperties properties;
 
+    /** Creates the provider with the credential resolver and the property naming the stored key. */
     public ElevenLabsWorkspaceSecrets(OrgCredentialResolver credentials, VoiceProperties properties) {
         this.credentials = credentials;
         this.properties = properties;

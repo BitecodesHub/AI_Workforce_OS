@@ -43,7 +43,14 @@ import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 import os.aiworkforce.platform.web.persistence.UuidV7;
 
-/** Agents and their configuration. */
+/**
+ * REST endpoints for agents: listing, detail, creation, configuration revisions, description,
+ * pause and resume, retirement and restoration, and starting a run.
+ *
+ * <p>Called by the web app Agents page. Every method is scoped to the caller's workspace and
+ * guarded by an agent permission. Configuration changes always create a new
+ * {@link AgentVersion}; runs are prepared by {@link AgentRunner} and driven in the background.
+ */
 @RestController
 @RequestMapping("/api/agents")
 @Tag(name = "Agents")
@@ -55,6 +62,7 @@ public class AgentController {
     private final os.aiworkforce.orchestrator.repository.ToolGrants grants;
     private final GeneralEmployee generalEmployee;
 
+    /** Receives the collaborators Spring provides; the run executor and schedule beans are set by setters below. */
     public AgentController(
             Agents agents,
             AgentVersions versions,
@@ -185,6 +193,7 @@ public class AgentController {
 
     public record RunStarted(UUID runId, String status, String answer) {}
 
+    /** Lists the workspace's agents, creating the General Employee first if it does not exist yet. */
     // @find: list agents, GET /api/agents, Agents page
     @GetMapping
     @RequiresPermission(Permission.Codes.AGENT_READ)
@@ -197,6 +206,12 @@ public class AgentController {
                 .toList();
     }
 
+    /**
+     * Returns one agent with its current configuration and enabled tool grants.
+     *
+     * <p>Route {@code GET /api/agents/{agentId}}; requires AGENT_READ. Fails with not found when
+     * the agent is absent or belongs to another workspace.
+     */
     // @find: get agent detail, GET /api/agents/{agentId}
     @GetMapping("/{agentId}")
     @RequiresPermission(Permission.Codes.AGENT_READ)
@@ -236,6 +251,14 @@ public class AgentController {
                 GeneralEmployee.isFallback(agent));
     }
 
+    /**
+     * Creates an agent and its first configuration revision.
+     *
+     * <p>Route {@code POST /api/agents}; requires AGENT_CREATE; answers 201 with the new view.
+     * Saves the agent, then a first version, then points the agent at that version, all in one
+     * transaction. Fails with a validation error for an unknown category and with a conflict-style
+     * error when the key is already used in the workspace.
+     */
     // @find: create agent, new agent, POST /api/agents, New agent dialog
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -329,6 +352,7 @@ public class AgentController {
         return clean.isEmpty() ? null : clean;
     }
 
+    /** Lists every revision of the agent, newest first; requires AGENT_READ; not found for another workspace. */
     // @find: agent versions, version history, GET /api/agents/{agentId}/versions
     @GetMapping("/{agentId}/versions")
     @RequiresPermission(Permission.Codes.AGENT_READ)
@@ -354,6 +378,7 @@ public class AgentController {
         return setStatus(agentId, "paused");
     }
 
+    /** Resumes a paused agent; requires AGENT_UPDATE. Fails with a conflict if the agent is retired. */
     // @find: resume agent, unpause, POST /api/agents/{agentId}/resume
     @PostMapping("/{agentId}/resume")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -366,11 +391,16 @@ public class AgentController {
     /** Why a schedule was paused when its agent was retired, shown beside the schedule. */
     public static final String RETIRED_SCHEDULE_REASON = "Paused because its agent was retired.";
 
-    /** Pauses the schedules of a retired agent; set by Spring, absent where a test builds this by hand. */
+    /**
+     * Pauses the schedules of a retired agent; set by Spring, absent where a test builds this by
+     * hand. Retirement skips schedule handling when these are null.
+     */
     private os.aiworkforce.orchestrator.schedule.ScheduleService scheduleService;
 
+    /** Repository used to find the schedules that belong to a retiring agent. */
     private os.aiworkforce.orchestrator.schedule.Schedules schedules;
 
+    /** Setter injection for the optional schedule beans, kept optional so hand-built test instances still work. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setSchedules(
             os.aiworkforce.orchestrator.schedule.ScheduleService scheduleService,
@@ -430,6 +460,11 @@ public class AgentController {
         return toView(agent, currentVersionOf(agent));
     }
 
+    /**
+     * Moves an agent to paused or active; used by pause and resume.
+     *
+     * <p>Writes the status through {@link Agents}. Fails with a conflict when the agent is retired.
+     */
     private AgentView setStatus(UUID agentId, String status) {
         Agent agent =
                 agents.findByIdAndOrgId(agentId, orgId()).orElseThrow(() -> ApiException.notFound("agent", agentId));
@@ -445,6 +480,7 @@ public class AgentController {
     /** Drives a started run in the background; set by Spring alongside the constructor's beans. */
     private os.aiworkforce.orchestrator.service.RunExecutor runExecutor;
 
+    /** Setter injection for the run executor used by {@link #run}. */
     @org.springframework.beans.factory.annotation.Autowired
     void setRunExecutor(os.aiworkforce.orchestrator.service.RunExecutor runExecutor) {
         this.runExecutor = runExecutor;
@@ -471,6 +507,12 @@ public class AgentController {
         return new RunStarted(runId, "running", null);
     }
 
+    /**
+     * Saves a new, unsealed version of an agent with the next revision number.
+     *
+     * <p>Records the acting person as creator when a request context exists. Used by creation and
+     * by configuration updates.
+     */
     private AgentVersion newVersion(
             Agent agent, String prompt, String goals, BigDecimal temperature, Integer maxOutput, int maxSteps) {
         AgentVersion version = new AgentVersion();
@@ -487,10 +529,12 @@ public class AgentController {
         return versions.save(version);
     }
 
+    /** Builds the list view of an agent, looking up its enabled grants to name its tool servers. */
     private AgentView toView(Agent agent, AgentVersion version) {
         return AgentView.of(agent, version, serverNames(grants.findByAgentIdAndEnabledTrue(agent.getId())));
     }
 
+    /** The agent's current version, or null when it has none or the stored id no longer resolves. */
     private AgentVersion currentVersionOf(Agent agent) {
         if (agent.getCurrentVersionId() == null) {
             return null;
@@ -498,6 +542,7 @@ public class AgentController {
         return versions.findById(agent.getCurrentVersionId()).orElse(null);
     }
 
+    /** The distinct, sorted tool server names across a set of grants. */
     private static List<String> serverNames(List<AgentToolGrant> granted) {
         return granted.stream()
                 .map(AgentToolGrant::getServer)
@@ -531,6 +576,7 @@ public class AgentController {
         return head.replaceAll("[\\s,;:]+$", "") + "…";
     }
 
+    /** The workspace id of the current request; fails when no request context is bound. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

@@ -19,6 +19,14 @@ import { useToast } from '../../lib/toast'
  */
 
 // @find: AgentStatusButton, agent status button, pause agent, resume agent, agent status, activate
+/**
+ * Button that pauses or resumes one agent through useSetAgentStatus.
+ * Renders nothing unless the viewer holds agent:update, and never for a retired agent. Pausing the
+ * fallback agent (the General Employee) first opens a ConfirmDialog explaining the effect; every other
+ * case calls the mutation directly. Success raises a toast. A failure is shown inside the dialog while it
+ * is open and as an error toast otherwise. The busy prop lets a parent (for example a bulk action)
+ * disable the button while it changes the same agent. Rendered by the Agents list cards and the agent page.
+ */
 export function AgentStatusButton({
   agent,
   variant = 'outline',

@@ -29,6 +29,17 @@ export type StickToBottom = {
 }
 
 // @find: useStickToBottom, use stick to bottom, stick to bottom, auto scroll, scroll to latest, thread scroll
+/**
+ * Scroll behaviour for the thread, given a ref to the scroll container.
+ * Options: newestPosition (position of the newest message, not the message count), resetKey (changes with
+ * the conversation) and reducedMotion. It tracks whether the reader is within 140 pixels of the bottom
+ * (nearBottom), whether they are more than a viewport away (farFromBottom) and how many messages arrived
+ * while they were scrolled up (newCount). When the newest position grows and the reader is at the bottom
+ * the container scrolls to the end, smoothly unless reduced motion; a new resetKey jumps to the bottom at
+ * once. jump() returns to the bottom on request. keepPosition(fn) runs a change that adds content above
+ * the reader (flushSync) and restores the scroll offset so the visible content does not move. All
+ * scrolling happens in layout effects; the scroll listener is bound once. Used by the Chat page.
+ */
 export function useStickToBottom(
   ref: RefObject<HTMLElement | null>,
   opts: { newestPosition: number; resetKey: string | null; reducedMotion: boolean },

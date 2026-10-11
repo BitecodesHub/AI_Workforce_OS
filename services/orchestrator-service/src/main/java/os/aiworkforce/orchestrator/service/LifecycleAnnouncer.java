@@ -49,6 +49,11 @@ public class LifecycleAnnouncer {
     private final List<GoalLifecycleListener> listeners;
     private final TransactionTemplate listenerTransaction;
 
+    /**
+     * Builds the announcer with its repositories and the listeners Spring found. A null listener
+     * list is treated as empty. When a transaction manager is present, each listener call is
+     * wrapped in a {@code REQUIRES_NEW} transaction; without one the call runs as it stands.
+     */
     @Autowired
     public LifecycleAnnouncer(
             Goals goals,
@@ -72,6 +77,10 @@ public class LifecycleAnnouncer {
     /**
      * A run parked on a question. Listeners hear it with the question's task and goal, or with
      * both null for a run started directly on an agent.
+     *
+     * <p>Called by QuestionService once the question is saved. Looks up the question, task and
+     * goal (read-only), then notifies each listener. An unknown question id is logged and
+     * ignored. Listener failures never reach the caller.
      */
     public void questionAsked(UUID questionId) {
         if (listeners.isEmpty()) {
@@ -95,6 +104,9 @@ public class LifecycleAnnouncer {
     /**
      * A run parked on {@code approval}. Listeners hear it with the approval's task and goal, or
      * with both null for a run started directly on an agent.
+     *
+     * <p>Called by ApprovalService when it raises an approval. A null approval is ignored.
+     * Listener failures are logged, never thrown.
      */
     public void approvalRaised(Approval approval) {
         if (listeners.isEmpty() || approval == null) {
@@ -106,7 +118,12 @@ public class LifecycleAnnouncer {
     }
 
     // @find: announce approval expired
-    /** {@code approval} expired undecided, and its run was stopped. */
+    /**
+     * {@code approval} expired undecided, and its run was stopped.
+     *
+     * <p>Called by ApprovalService's expiry sweep. A null approval is ignored. Listener failures
+     * are logged, never thrown.
+     */
     public void approvalExpired(Approval approval) {
         if (listeners.isEmpty() || approval == null) {
             return;
@@ -119,7 +136,12 @@ public class LifecycleAnnouncer {
     }
 
     // @find: announce schedule paused
-    /** A schedule paused itself. */
+    /**
+     * A schedule paused itself.
+     *
+     * <p>Called by the schedule engine, with the details in {@code pause}. A null pause is
+     * ignored. Listener failures are logged, never thrown.
+     */
     public void schedulePaused(GoalLifecycleListener.SchedulePause pause) {
         if (listeners.isEmpty() || pause == null) {
             return;
@@ -127,10 +149,12 @@ public class LifecycleAnnouncer {
         dispatch(listener -> listener.onSchedulePaused(pause), "schedule " + pause.scheduleId() + " pausing");
     }
 
+    // The approval's task, or null when the approval belongs to a run started directly on an agent.
     private Task taskOf(Approval approval) {
         return approval.getTaskId() == null ? null : tasks.findById(approval.getTaskId()).orElse(null);
     }
 
+    // The task's goal, or null when there is no task or the task has no goal.
     private Goal goalOf(Task task) {
         return task == null || task.getGoalId() == null
                 ? null
@@ -138,7 +162,12 @@ public class LifecycleAnnouncer {
     }
 
     // @find: announce goal cancelled
-    /** A goal was cancelled, for {@code reason}. */
+    /**
+     * A goal was cancelled, for {@code reason}.
+     *
+     * <p>Called by GoalService after the cancel commits. An unknown goal id is silently ignored.
+     * Listener failures are logged, never thrown.
+     */
     public void goalCancelled(UUID goalId, String reason) {
         if (listeners.isEmpty()) {
             return;
@@ -151,7 +180,13 @@ public class LifecycleAnnouncer {
     }
 
     // @find: announce goal retried
-    /** A goal was tried again, starting from {@code fromTaskId}. */
+    /**
+     * A goal was tried again, starting from {@code fromTaskId}.
+     *
+     * <p>Called by GoalService after the retry commits. {@code fromTaskId} may be null, in which
+     * case listeners receive a null task. An unknown goal id is silently ignored. Listener
+     * failures are logged, never thrown.
+     */
     public void goalRetried(UUID goalId, UUID fromTaskId) {
         if (listeners.isEmpty()) {
             return;
@@ -200,6 +235,7 @@ public class LifecycleAnnouncer {
         });
     }
 
+    // Runs the action and logs any RuntimeException instead of propagating it.
     private static void runQuietly(Runnable action) {
         try {
             action.run();

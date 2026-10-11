@@ -62,10 +62,15 @@ public class InvitationService {
     @Autowired(required = false)
     private AuditClient audit;
 
+    /** Logger; records addresses and workspaces for support, never tokens. */
     private static final Logger log = LoggerFactory.getLogger(InvitationService.class);
+    /** Source of the random invitation tokens. */
     private static final SecureRandom RANDOM = new SecureRandom();
+    /** How long an invitation stays acceptable after it is created. */
     private static final Duration INVITATION_TTL = Duration.ofDays(7);
+    /** The longest the service waits for one call to identity-service. */
     private static final Duration IDENTITY_TIMEOUT = Duration.ofSeconds(10);
+    /** Response type for identity calls that return a JSON object. */
     private static final ParameterizedTypeReference<Map<String, Object>> JSON_OBJECT =
             new ParameterizedTypeReference<>() {};
 
@@ -78,10 +83,24 @@ public class InvitationService {
     /** Identity's check-grant reason for an address that already belongs to an active member. */
     static final String ALREADY_MEMBER = "already_member";
 
+    /** Repository for invitation rows. */
     private final Invitations invitations;
+    /**
+     * Client whose base URL is identity-service, used for role checks, registration and membership
+     * grants.
+     */
     private final WebClient identityClient;
+    /** Supplies the service token for calls to identity-service. */
     private final InternalTokenProvider tokens;
 
+    /**
+     * Creates the service.
+     *
+     * @param invitations repository for invitation rows
+     * @param builder source of the HTTP client
+     * @param properties platform settings, giving the identity-service address
+     * @param tokens supplier of service tokens
+     */
     public InvitationService(
             Invitations invitations,
             WebClient.Builder builder,
@@ -93,6 +112,9 @@ public class InvitationService {
     }
 
     /**
+     * An invitation as shown to an administrator. The token and link are filled in only on the
+     * response to {@link #create}; lists and revocations leave them {@code null}.
+     *
      * @param invitationId the row, for the pending-invitations list
      * @param token the raw, one-time secret; present only on the response to {@link #create}
      * @param acceptUrl a ready-to-copy link, present only alongside {@code token}
@@ -107,12 +129,28 @@ public class InvitationService {
             String token,
             String acceptUrl) {}
 
+    /**
+     * The outcome of accepting an invitation: the new member's user id, the workspace, the invitation's
+     * address and the role the person now holds.
+     */
     public record AcceptResult(UUID userId, UUID orgId, String email, String roleName) {}
 
     /** What identity said about one person giving one role. */
     private record GrantCheck(boolean allowed, String reason) {}
 
     // @find: create invitation, invite someone, send invite, resend invite, POST /api/orgs/{orgId}/invitations
+    /**
+     * Creates an invitation and returns it with its one-time token and link.
+     *
+     * <p>Flow: normalises the address and requires a non-blank address and role; asks identity whether
+     * the inviter may give that role to that address; revokes any still-open invitation to the same
+     * address; generates a random token and stores only its hash with a seven-day expiry; records an
+     * audit event; returns the view with the raw token and a link made from {@code originForLink}.
+     *
+     * <p>Called by {@code InvitationController.create}. Failure: 422 for a blank field, an unknown role or
+     * an address that already belongs to a member; 403 {@code PERMISSION_DENIED} when the inviter may not give the
+     * role; 502 or 503 when identity cannot be reached, in which case nothing is created.
+     */
     @Transactional
     public InvitationView create(UUID orgId, UUID invitedBy, String email, String roleName, String originForLink) {
         String normalisedEmail = normaliseEmail(email);
@@ -173,6 +211,10 @@ public class InvitationService {
     }
 
     // @find: list pending invitations, GET /api/orgs/{orgId}/invitations
+    /**
+     * Lists the workspace's invitations, newest first. The views never carry the token or link.
+     * Called by {@code InvitationController.list}. Read-only.
+     */
     @Transactional(readOnly = true)
     public List<InvitationView> list(UUID orgId) {
         return invitations.findByOrgIdOrderByCreatedAtDesc(orgId).stream()
@@ -286,6 +328,10 @@ public class InvitationService {
     /**
      * The invitation a token names, provided it can still be accepted. Each reason it cannot is
      * said in words the person can act on.
+     *
+     * <p>Looks the token up by hash and refuses a withdrawn, already used or expired invitation with 409
+     * and a {@code reason} detail. As a side effect, an invitation found past its expiry is saved as
+     * {@code expired}. A blank token gives 422; an unknown one gives 404. Used by both accept methods.
      */
     private Invitation openInvitation(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
@@ -316,13 +362,23 @@ public class InvitationService {
         return invitation;
     }
 
+    /**
+     * Records an invitation event for the signed-in actor and their workspace. Does nothing when no
+     * audit client is present. The {@code orgId} argument is not used, because the client takes the
+     * workspace from the current actor.
+     */
     private void recordAudit(UUID orgId, String action, Invitation invitation, Map<String, Object> detail) {
         if (audit != null) {
             audit.record(action, "invitation", invitation.getId().toString(), "succeeded", detail);
         }
     }
 
-    /** The person accepting is not signed in as anybody yet, so the event names them explicitly. */
+    /**
+     * The person accepting is not signed in as anybody yet, so the event names them explicitly.
+     *
+     * <p>Records the event {@code invitation.accept} in the invitation's workspace as the user kind, with
+     * the role as detail. Does nothing when no audit client is present.
+     */
     private void recordAccepted(Invitation invitation, String userId, String role) {
         if (audit != null) {
             audit.record(
@@ -338,6 +394,10 @@ public class InvitationService {
         }
     }
 
+    /**
+     * Sets the invitation to accepted with the current time, saves it and logs the address and
+     * workspace. Called after the membership has been granted.
+     */
     private void markAccepted(Invitation invitation) {
         invitation.setStatus("accepted");
         invitation.setAcceptedAt(Instant.now());
@@ -345,7 +405,14 @@ public class InvitationService {
         log.info("Invitation for {} accepted into workspace {}", invitation.getEmail(), invitation.getOrgId());
     }
 
-    /** Asks identity whether {@code invitedBy} may give {@code roleName} in the workspace now. */
+    /**
+     * Asks identity whether {@code invitedBy} may give {@code roleName} in the workspace now.
+     *
+     * <p>Calls {@code POST /internal/memberships/check-grant} on identity with a service token; the
+     * optional address lets identity report an existing member. An invitation with no recorded inviter is
+     * refused as {@code not_a_member}. The check fails closed: an unreadable answer, an HTTP error or a
+     * timeout throws 502 or 503, so a role is never granted unchecked.
+     */
     private GrantCheck checkGrant(UUID orgId, UUID invitedBy, String roleName, String email) {
         if (invitedBy == null) {
             // Every invitation records who sent it; one that does not cannot be checked, and a
@@ -385,6 +452,12 @@ public class InvitationService {
         }
     }
 
+    /**
+     * Creates the account through {@code POST /api/auth/register} on identity and returns the new user id
+     * from the {@code X-User-Id} response header. A 409 from identity means the address already has an
+     * account and is reported as {@code ALREADY_EXISTS} with {@code reason=account_exists}, which lets the
+     * client offer to sign in instead; other failures give 502. The password is passed on and not stored or logged.
+     */
     private UUID registerAccount(String email, String displayName, String password) {
         try {
             var response = identityClient
@@ -420,6 +493,10 @@ public class InvitationService {
      * for a returning member, makes their old membership active again.
      *
      * @return the role the person now holds - for somebody already a member, the one they had
+     *
+     * <p>Calls {@code POST /internal/memberships/bootstrap-member} on identity with a service token.
+     * Identity answering 403 gives {@code PERMISSION_DENIED} with its own sentence, 422 gives a conflict for a
+     * role that no longer exists, and any other failure gives 502 or 503 with {@code failureSentence}.
      */
     private String grantMembership(Invitation invitation, UUID userId, String failureSentence) {
         Map<String, Object> body = new HashMap<>();
@@ -458,7 +535,12 @@ public class InvitationService {
         }
     }
 
-    /** The signed-in account's own address, from identity, using the caller's own token. */
+    /**
+     * The signed-in account's own address, from identity, using the caller's own token.
+     *
+     * <p>Calls {@code GET /api/users/me} on identity with the caller's own {@code Authorization} header.
+     * A missing header or a 401 gives {@code NOT_AUTHENTICATED}; other failures give 502 or 503.
+     */
     private String signedInEmail(String authorization) {
         if (authorization == null || authorization.isBlank()) {
             throw new ApiException(ErrorCode.NOT_AUTHENTICATED);
@@ -527,10 +609,18 @@ public class InvitationService {
         }
     }
 
+    /**
+     * Trims and lower-cases an address so that comparisons ignore case; {@code null} becomes an empty
+     * string.
+     */
     private static String normaliseEmail(String email) {
         return email == null ? "" : email.strip().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * Creates a token from 32 random bytes, encoded as URL-safe text without padding. The caller
+     * returns it once and stores only its hash.
+     */
     private static String generateToken() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
@@ -547,6 +637,10 @@ public class InvitationService {
         }
     }
 
+    /**
+     * Builds the view of an invitation. The token and link are passed only when an invitation has just
+     * been created; otherwise both are {@code null}.
+     */
     private static InvitationView toView(Invitation invitation, String rawToken, String acceptUrl) {
         return new InvitationView(
                 invitation.getId(),

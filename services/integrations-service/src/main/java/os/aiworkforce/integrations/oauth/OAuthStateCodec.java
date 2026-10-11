@@ -26,19 +26,41 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public final class OAuthStateCodec {
 
-    /** What a verified state says. */
+    /**
+     * What a verified state says.
+     *
+     * <p>{@code stateId} is the stored {@code OAuthState} row, {@code userId} may be null, and
+     * {@code binding} is the hash of the browser nonce (null when none was bound).
+     */
     public record Claims(UUID stateId, UUID orgId, UUID userId, String server, Instant expiresAt, String binding) {}
 
+    /** URL-safe Base64 without padding, so the state travels in a query string unescaped. */
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
 
+    /** The HMAC key, derived from the configured secret and a purpose label. */
     private final byte[] key;
 
+    /**
+     * Derives the signing key from the secret. It performs no I/O and holds no other state.
+     *
+     * @param secret the shared state secret from platform security settings; never logged
+     */
     public OAuthStateCodec(String secret) {
         // A purpose label keeps this key distinct from anything else derived from the same secret.
         this.key = hmac(secret.getBytes(StandardCharsets.UTF_8), "aiwos-oauth-state-v1".getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Encodes the claims and signs them.
+     *
+     * <p>Flow: the six fields are joined with a separator (a dash stands for a missing user or
+     * binding), Base64 encoded, and followed by an HMAC-SHA256 of that body. Called by
+     * {@code OAuthService.start}. No side effects.
+     *
+     * @param claims what the state should say
+     * @return the {@code body.signature} string to send to the provider as {@code state}
+     */
     public String sign(Claims claims) {
         String payload = String.join(
                 "|",
@@ -52,7 +74,18 @@ public final class OAuthStateCodec {
         return body + "." + ENCODER.encodeToString(hmac(key, body.getBytes(StandardCharsets.UTF_8)));
     }
 
-    /** The claims of a state this codec signed and that has not expired, or empty. */
+    /**
+     * The claims of a state this codec signed and that has not expired, or empty.
+     *
+     * <p>Flow: the length and shape are checked, the signature is compared in constant time, the body
+     * is decoded and parsed, and the expiry is compared with {@code now}. Any malformed, altered or
+     * expired value yields empty rather than an exception, and no reason is given. Called by
+     * {@code OAuthService.callback}. No side effects.
+     *
+     * @param state the value the provider returned, possibly null or tampered with
+     * @param now the current time
+     * @return the claims, or empty when the state is not acceptable
+     */
     public Optional<Claims> verify(String state, Instant now) {
         if (state == null || state.length() > 1024) {
             return Optional.empty();
@@ -85,6 +118,11 @@ public final class OAuthStateCodec {
         }
     }
 
+    /**
+     * Computes HMAC-SHA256.
+     *
+     * @throws IllegalStateException when the algorithm is unavailable, which cannot happen on a standard JVM
+     */
     private static byte[] hmac(byte[] key, byte[] data) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");

@@ -37,10 +37,12 @@ export type CandidateModelFieldProps = {
 }
 
 // @find: CandidateModelField, candidate model field, candidate model field, model picker, routing candidate, tool-capable models
+/** Chooses between two implementations by the live flag: LiveModelField reads the provider's own list, SavedModelField uses only the saved models. */
 export function CandidateModelField(props: CandidateModelFieldProps) {
   return props.live ? <LiveModelField {...props} /> : <SavedModelField {...props} />
 }
 
+/** Model field for a workspace without live lookups: the options are the provider's saved chat models only (mergeSaved with no catalogue). */
 function SavedModelField({ label, providerId, providerName, value, savedName, savedModels, onChange }: CandidateModelFieldProps) {
   const options = React.useMemo(() => mergeSaved(providerId, undefined, savedModels), [providerId, savedModels])
   return (
@@ -55,6 +57,10 @@ function SavedModelField({ label, providerId, providerName, value, savedName, sa
   )
 }
 
+/**
+ * Model field that reads the provider's live catalogue with useProviderCatalogue and merges in the saved models, so a model already in the policy is always listed.
+ * Notices, in priority order: a failed refresh, a failed first load (both fall back to the saved models), a chosen model that the provider does not offer to this key (NOT_AVAILABLE, "runs skip it"), then the catalogue's own message. When the model was auto-picked and turns out to be unavailable, an effect replaces it with the first available one (firstAvailable) through onChange. A summary line gives the model count and the free count. The Refresh list button calls catalogue.refresh.
+ */
 function LiveModelField({ label, providerId, providerName, value, savedName, savedModels, onChange, autoPicked }: CandidateModelFieldProps) {
   const catalogue = useProviderCatalogue(providerId)
   const data: ProviderCatalogue | undefined = catalogue.data
@@ -101,6 +107,7 @@ function LiveModelField({ label, providerId, providerName, value, savedName, sav
   )
 }
 
+/** Presentation shared by both fields: a ModelCombobox plus an aria-live line describing where the list came from (loading, refreshing, a notice or the summary) and an optional Refresh list button. A value missing from the options is labelled "(not in the catalogue)" once loading ends. */
 function ModelFieldView({
   label,
   providerName,

@@ -53,24 +53,39 @@ public class BedrockRegionController {
     /** Region searches one workspace may make in {@link #WINDOW}. */
     static final int LIMIT = 3;
 
+    /** The length of the rate-limit window. */
     static final Duration WINDOW = Duration.ofMinutes(1);
 
     private final JpaProviderRegistry registry;
     private final BedrockRegionFinder finder;
     private final AuditClient audit;
+    /** Recent search times per workspace, used by the rate limit. */
     private final Map<UUID, Deque<Long>> recent = new ConcurrentHashMap<>();
 
     /** Where the rate limit reads the time; replaced by a test. */
     LongSupplier clock = System::currentTimeMillis;
 
+    /** Receives the provider registry, the region finder and the audit client. */
     public BedrockRegionController(JpaProviderRegistry registry, BedrockRegionFinder finder, AuditClient audit) {
         this.registry = registry;
         this.finder = finder;
         this.audit = audit;
     }
 
+    /** The body of a region search: the pasted Bedrock credential, never stored or logged. */
     public record RegionSearchRequest(@NotBlank @Size(max = 8_000) String value) {}
 
+    /**
+     * Finds which AWS regions accept a Bedrock credential.
+     *
+     * <p>Route {@code POST /api/providers/{providerId}/bedrock-regions}; requires PROVIDER_MANAGE.
+     * Flow: the provider must exist in the workspace, be of the Bedrock kind and be enabled by the
+     * platform; the credential is parsed; a rate-limit slot is taken; {@link BedrockRegionFinder}
+     * then asks AWS about each region (outbound calls); and a {@code provider.find_region} audit entry
+     * records only the provider name and the best region. Nothing is stored. Fails with not found,
+     * a validation error (wrong kind or malformed credential), a provider-not-configured error, or a
+     * rate-limit error.
+     */
     @PostMapping("/{providerId}/bedrock-regions")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
     @Operation(
@@ -113,6 +128,7 @@ public class BedrockRegionController {
         return finding;
     }
 
+    /** Takes one slot from the workspace's sliding one-minute window; throws a rate-limit error with a retry delay when the window is full. */
     private void takeSlot(UUID orgId) {
         long now = clock.getAsLong();
         long window = WINDOW.toMillis();

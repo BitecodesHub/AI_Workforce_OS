@@ -18,6 +18,7 @@ import { useInPageLink } from '../shared/useInPageLink'
  * useDemoCta).
  */
 
+/** Optional overrides for the eyebrow, title and body of the closing block. */
 export type FinalCtaProps = {
   eyebrow?: string
   title?: string
@@ -25,6 +26,7 @@ export type FinalCtaProps = {
 }
 
 // @find: FinalCta component, closing call to action
+/** Centred closing call to action (section id start) shared by the home and Trust pages. The first button is the demo call to action from useDemoCta (the demo accounts where the site has them, otherwise a return to the demos on the page, smooth-scrolled with useInPageLink); the second goes to create a workspace. Static apart from those hooks. */
 export function FinalCta({
   eyebrow = 'See it for yourself',
   title = 'Watch your AI team at work',

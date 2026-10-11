@@ -24,6 +24,7 @@ import os.aiworkforce.orchestrator.domain.WorkspaceProviderSetting;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/** Spring Data repository for WorkspaceProviderSetting rows. */
 public interface WorkspaceProviderSettings
         extends JpaRepository<WorkspaceProviderSetting, WorkspaceProviderSetting.Key> {
 

@@ -31,11 +31,18 @@ public class OrchestratorController {
     private final BoardService board;
     private final GeneralEmployee generalEmployee;
 
+    /** Builds the controller; used by Spring. */
     public OrchestratorController(BoardService board, GeneralEmployee generalEmployee) {
         this.board = board;
         this.generalEmployee = generalEmployee;
     }
 
+    /**
+     * Route {@code GET /api/orchestrator/board}; requires {@code run:read}.
+     *
+     * <p>Makes sure the workspace's general employee agent exists (a write on first use), then returns the
+     * live board for the requested window (an ISO duration, default two hours). An invalid window is refused.
+     */
     // @find: orchestrator board, live view, GET /api/orchestrator/board
     @GetMapping("/board")
     @RequiresPermission(Permission.Codes.RUN_READ)
@@ -47,6 +54,12 @@ public class OrchestratorController {
         return board.board(orgId, parsed, RequestContext.requireActor());
     }
 
+    /**
+     * Route {@code POST /api/orchestrator/stop-all}; requires {@code run:cancel}.
+     *
+     * <p>Cancels active runs and goals, withdraws pending approvals and questions and, when the body
+     * asks (which also needs {@code task:create}), pauses every schedule. Returns what was stopped. See {@link BoardService#stopAll}.
+     */
     // @find: stop everything, stop all work, pause schedules, POST /api/orchestrator/stop-all
     @PostMapping("/stop-all")
     @RequiresPermission(Permission.Codes.RUN_CANCEL)
@@ -58,6 +71,7 @@ public class OrchestratorController {
         return board.stopAll(orgId(), pauseSchedules, RequestContext.requireActor());
     }
 
+    /** The workspace of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

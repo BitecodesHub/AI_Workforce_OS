@@ -27,13 +27,16 @@ import java.util.regex.Pattern;
  */
 public final class PassageRelevance {
 
+    /** Not instantiable; every member is static. */
     private PassageRelevance() {}
 
     /** Below this a passage's own score is noise. */
     static final double MIN_SCORE = 0.05;
 
+    /** A word: a run of letters or digits. */
     private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
 
+    /** Questions about the assistant itself, which no document answers. */
     private static final Pattern META = Pattern.compile(
             "\\b(who are you|who is this|what are you|what is your (name|role|job|purpose)|what'?s your (name|role|job)"
                     + "|your name|what can you do|what do you do|what are you able|how can you help|how are you"
@@ -44,11 +47,13 @@ public final class PassageRelevance {
                     + "|what are your (\\w+ )?(abilities|capabilities|skills|tools|permissions))\\b",
             Pattern.CASE_INSENSITIVE);
 
+    /** Greetings, thanks and other short pleasantries. */
     private static final Pattern SMALL_TALK = Pattern.compile(
             "^\\s*(hi|hello|hey|hiya|yo|thanks|thank you|thx|cheers|ok|okay|cool|great|nice|good (morning|afternoon|evening|night)"
                     + "|bye|goodbye|see you|sure|yes|no)\\b[\\s\\p{Punct}\\p{L}]{0,40}$",
             Pattern.CASE_INSENSITIVE);
 
+    /** Common words that do not count as the subject of a question. */
     private static final Set<String> STOPWORDS = Set.of(
             "the", "and", "for", "are", "was", "were", "with", "that", "this", "from", "what", "which", "who", "whom",
             "how", "why", "when", "where", "does", "did", "have", "has", "had", "not", "but", "you", "your", "yours",
@@ -92,6 +97,9 @@ public final class PassageRelevance {
     /**
      * Whether the message is about the agent, a greeting or small talk, so that no document can be
      * what it asks for. A message that names documents ("what documents do you have") is not.
+     *
+     * <p>Called by {@code CoordinatorService} before any search, so that such a message is never
+     * searched for. Empty text, or text that is only mentions, counts as conversational.
      */
     // @find: is message conversational, greeting, thank you, no search needed
     public static boolean isConversational(String text) {
@@ -111,7 +119,11 @@ public final class PassageRelevance {
         return distinctiveTerms(stripped).isEmpty();
     }
 
-    /** The message's subject words, stemmed, without repeats and without filler. */
+    /**
+     * The message's subject words, stemmed, without repeats and without filler.
+     *
+     * <p>Words under three letters and stopwords are skipped; null gives an empty set.
+     */
     static Set<String> distinctiveTerms(String text) {
         Set<String> terms = new LinkedHashSet<>();
         if (text == null) {
@@ -130,6 +142,11 @@ public final class PassageRelevance {
     /**
      * The passages that bear on the query: score above the floor and, for a query with more than
      * four distinctive terms, at least two of them present in the passage's text, heading or title.
+     *
+     * <p>Called by {@code CoordinatorService} with the passages {@link KnowledgeClient} returned.
+     * A conversational query keeps nothing. A passage the search by meaning found close to the
+     * question is kept whatever words it shares, except for an action in a connected service. Pure;
+     * no I/O.
      */
     // @find: filter relevant passages for a question
     public static List<KnowledgeClient.Passage> relevant(String query, List<KnowledgeClient.Passage> passages) {
@@ -190,6 +207,7 @@ public final class PassageRelevance {
         return terms;
     }
 
+    /** How many of the terms appear, after stemming, in the passage's title, heading or content. */
     private static int covered(Set<String> terms, KnowledgeClient.Passage passage) {
         Set<String> present = new LinkedHashSet<>();
         for (String text : new String[] {passage.documentTitle(), passage.heading(), passage.content()}) {
@@ -210,6 +228,9 @@ public final class PassageRelevance {
         return count;
     }
 
+    /**
+     * A light suffix stemmer, enough to match a singular with its plural or a verb with its tense. Not a full linguistic stemmer.
+     */
     static String stem(String word) {
         String w = word;
         if (w.length() > 4 && w.endsWith("ies")) {

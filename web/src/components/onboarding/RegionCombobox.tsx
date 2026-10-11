@@ -16,8 +16,10 @@ import { BEDROCK_REGIONS, groupRegions, regionLabel, type BedrockRegion } from '
  * checked carries a short tag saying what it found there.
  */
 
+/** A short tag for a region (text and good, warn or bad tone) from Find my region. */
 export type RegionNote = { text: string; tone: 'good' | 'warn' | 'bad' }
 
+/** Props: label, the selected region id, onChange, optional hint and error, disabled and notes by region id. */
 type Props = {
   label?: string
   value: string
@@ -30,6 +32,14 @@ type Props = {
 }
 
 // @find: RegionCombobox, choose AWS region dropdown
+/**
+ * Searchable ARIA combobox for choosing an AWS Bedrock region, grouped by geography.
+ * Typing filters by name, id or geography; ArrowUp, ArrowDown, Home and End move the active option, Enter
+ * chooses it, Escape closes and restores the chosen region, Tab closes. The list is portalled into the nearest
+ * dialog (or the body) and positioned with place() from ModelCombobox, and repositions on resize and scroll.
+ * The active option scrolls into view. The hint or error is linked with aria-describedby. Used by
+ * BedrockCredentialFields.
+ */
 export function RegionCombobox({ label = 'Region', value, onChange, hint, error, disabled = false, notes = {} }: Props) {
   const id = React.useId()
   const inputId = `${id}-input`

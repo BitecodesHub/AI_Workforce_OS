@@ -25,6 +25,9 @@ import {
  */
 
 // @find: api error, error class, http status, field errors
+/**
+ * The one error type thrown for every failed request. Carries the HTTP status (0 for a network failure or timeout), a machine code, a message that is safe to show, whether retrying may help, field-level problems from validation, and the request id for support.
+ */
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -90,6 +93,7 @@ const GENERIC_VALIDATION_DETAIL = 'Some of the values supplied are not valid.'
 /** Detail keys the platform attaches to failures that describe the resource, not a form field. */
 const NON_FIELD_KEYS = new Set(['resource', 'id', 'holders', 'requiredPermission', 'requiredPermissions'])
 
+/** Type guard: true for a plain object (not null, not an array). */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -98,6 +102,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export const NETWORK_FAILURE =
   'We could not reach the service. Check your connection and try again. If it keeps happening, tell your administrator.'
 
+/** The error for a request that never reached the service (status 0, retryable). */
 function networkError(): ApiError {
   return new ApiError(0, 'network_error', NETWORK_FAILURE, true, {})
 }
@@ -107,6 +112,7 @@ export const TIMEOUT_FAILURE = 'The platform is taking too long to answer.'
 /** Added for a write: the server may have carried on after the client stopped waiting. */
 const MAY_HAVE_WORKED = 'This may still have gone through; check before retrying.'
 
+/** The error for a request that outlived its time limit (status 0, retryable). Writes get the extra warning that the change may still have happened. */
 function timeoutError(method: string): ApiError {
   const message = method === 'GET' ? TIMEOUT_FAILURE : `${TIMEOUT_FAILURE} ${MAY_HAVE_WORKED}`
   return new ApiError(0, 'timeout', message, true, {})
@@ -194,10 +200,12 @@ function fieldLabel(field: string, labels?: Record<string, string>): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'A field'
 }
 
+/** Adds a closing full stop to a sentence that lacks end punctuation. */
 function withFullStop(text: string): string {
   return /[.!?]$/.test(text) ? text : `${text}.`
 }
 
+/** Joins field-level problems into one sentence of the form "Label: problem; Label: problem", using friendly labels where supplied. */
 function fieldSentence(fields: Record<string, string>, labels?: Record<string, string>): string {
   return Object.entries(fields)
     .map(([field, problem]) => `${fieldLabel(field, labels)}: ${problem}`)
@@ -321,6 +329,7 @@ function doRefresh(): Promise<boolean> {
 
 type Limits = ReturnType<typeof limitsFor>
 
+/** Performs the fetch for one attempt: adds the bearer token when present and a JSON content type when there is a body, sends cookies, and honours the abort signal. Network failures and timeouts are converted into ApiError by limits.failure. */
 async function send(path: string, options: Options, token: string | null, limits: Limits): Promise<Response> {
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
@@ -338,6 +347,7 @@ async function send(path: string, options: Options, token: string | null, limits
   }
 }
 
+/** Reads a response: 204 yields undefined, a successful body is parsed as JSON, and a failed one is turned into an ApiError. A body that stalls is stopped by the same limits signal. */
 async function read<T>(response: Response, limits: Limits): Promise<T> {
   if (response.status === 204) return undefined as T
   let text: string
@@ -391,6 +401,10 @@ export async function restoreSession(): Promise<RestoreOutcome> {
 }
 
 // @find: api call, fetch, request backend, bearer token, GET POST PUT DELETE, timeout
+/**
+ * Calls the platform and returns the parsed JSON body (undefined for 204).
+ * Flow: attaches the bearer token and a time limit (short for reads, long for writes, none for uploads and voice); on 401 with a token it renews the session once and repeats the request, and when renewal fails it ends the session and sends the person to sign in; any other failed response throws an ApiError built from the problem document. Options: method, JSON body, FormData form, abort signal, timeout override. Callers are the query and mutation hooks; components seldom call it directly.
+ */
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const token = accessToken()
   const limits = limitsFor(path, options)
@@ -416,6 +430,7 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
   return read<T>(response, limits)
 }
 
+/** Parses JSON, returning null instead of throwing on malformed text. */
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text)

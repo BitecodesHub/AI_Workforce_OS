@@ -54,7 +54,9 @@ public final class AwsDefaultCredentials {
     /** The region Bedrock is called in when the credentials come from the chain. */
     public static final String REGION = "AIWOS_BEDROCK_REGION";
 
+    /** The link-local address of the EC2 instance metadata service. */
     static final String DEFAULT_IMDS_ENDPOINT = "http://169.254.169.254";
+    /** The link-local host that serves ECS task role credentials for a relative URI. */
     static final String ECS_HOST = "http://169.254.170.2";
 
     /** How long before expiry cached credentials are replaced. */
@@ -94,6 +96,7 @@ public final class AwsDefaultCredentials {
     private BedrockCredentials cached;
     private Instant cachedExpiry;
 
+    /** Package-private so tests can supply a fake environment, HTTP client and clock. */
     AwsDefaultCredentials(Map<String, String> env, Http http, Clock clock) {
         this.env = env;
         this.http = http;
@@ -157,6 +160,11 @@ public final class AwsDefaultCredentials {
         return cachedExpiry;
     }
 
+    /**
+     * Fetches fresh credentials from the first source that applies: the container endpoint when its
+     * environment variables are set, otherwise the instance metadata service (IMDSv2). Stores the
+     * result in the cache, or throws {@link Unavailable}.
+     */
     private void fetch() {
         String full = env.get("AWS_CONTAINER_CREDENTIALS_FULL_URI");
         String relative = env.get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
@@ -188,6 +196,7 @@ public final class AwsDefaultCredentials {
         store(read(body), "instance role");
     }
 
+    /** Obtains the IMDSv2 session token with a PUT, which every later metadata call must present. */
     private String imdsToken(String base) {
         Http.Response response;
         try {
@@ -206,6 +215,7 @@ public final class AwsDefaultCredentials {
         return response.body().strip();
     }
 
+    /** One GET with error mapping: 404 means no role is attached, other non-200 statuses are classified as transient when 5xx. */
     private Http.Response get(URI uri, Map<String, String> headers, String what) {
         Http.Response response;
         try {
@@ -223,6 +233,7 @@ public final class AwsDefaultCredentials {
         return response;
     }
 
+    /** Parses a credentials response body, requiring a JSON object. */
     private static JsonNode read(Http.Response response) {
         try {
             JsonNode node = JSON.readTree(response.body());
@@ -235,6 +246,7 @@ public final class AwsDefaultCredentials {
         }
     }
 
+    /** Validates a credentials document, caches the keys with their expiry, and logs the source (never a value). */
     private void store(JsonNode node, String source) {
         String code = node.path("Code").asText("Success");
         if (!code.isEmpty() && !code.equals("Success")) {
@@ -261,6 +273,7 @@ public final class AwsDefaultCredentials {
         log.info("Using AWS credentials from the {}{}", source, expiry == null ? "" : ", valid until " + expiry);
     }
 
+    /** The same credentials in the given region; unchanged when the region is null or already the same. */
     private static BedrockCredentials withRegion(BedrockCredentials credentials, String region) {
         if (region == null || region.equals(credentials.region())) {
             return credentials;
@@ -273,10 +286,12 @@ public final class AwsDefaultCredentials {
                 region);
     }
 
+    /** Whether the value has any non-whitespace text. */
     private static boolean notBlank(String value) {
         return value != null && !value.isBlank();
     }
 
+    /** Trims the value and removes trailing slashes, so paths can be appended. */
     private static String stripSlash(String value) {
         String out = value.strip();
         while (out.endsWith("/")) {
@@ -285,6 +300,7 @@ public final class AwsDefaultCredentials {
         return out;
     }
 
+    /** The production {@link Http}: the JDK client with a two second connect and three second read timeout and no redirects. */
     private static Http jdkHttp() {
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(2))

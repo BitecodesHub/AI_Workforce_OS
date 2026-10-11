@@ -17,6 +17,7 @@ import java.util.Optional;
  */
 final class AttachmentTypes {
 
+    /** Not instantiable; every member is static. */
     private AttachmentTypes() {}
 
     /** The most one file may be. */
@@ -24,9 +25,11 @@ final class AttachmentTypes {
     /** The most files one message may carry. */
     static final int MAX_PER_MESSAGE = 10;
 
+    /** The refusal wording appended to a file name when its detected type is not on the list. */
     static final String UNSUPPORTED =
             " is not a file type Chat can read. Attach a PDF, Word, PowerPoint, Excel or CSV file, text, or an image.";
 
+    /** The allow list: each accepted detected media type with the kind shown in the interface. */
     private static final Map<String, String> KINDS = Map.ofEntries(
             Map.entry("application/pdf", "pdf"),
             Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "document"),
@@ -76,6 +79,7 @@ final class AttachmentTypes {
     private static final byte[] EICAR = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!"
             .getBytes(StandardCharsets.US_ASCII);
 
+    /** Whether the first kilobyte of the content contains the anti-virus test string. */
     static boolean isTestVirus(byte[] content) {
         outer:
         for (int i = 0; i <= content.length - EICAR.length && i < 1024; i++) {

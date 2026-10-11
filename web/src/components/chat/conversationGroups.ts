@@ -13,6 +13,7 @@ export type ConversationGroup = { key: string; label: string; conversations: Con
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/** Local midnight of a date as a timestamp, so day differences count calendar days rather than 24 hour spans. */
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }

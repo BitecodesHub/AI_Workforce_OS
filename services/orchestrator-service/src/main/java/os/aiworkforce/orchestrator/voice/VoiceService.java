@@ -43,14 +43,17 @@ public class VoiceService {
      * pays for a call to ElevenLabs it does not need the result of yet again. */
     private final Map<UUID, CachedVoices> voicesCache = new ConcurrentHashMap<>();
 
+    /** Creates the service with the ElevenLabs client, the credential resolver and the voice properties. */
     public VoiceService(ElevenLabsClient client, OrgCredentialResolver credentials, VoiceProperties properties) {
         this.client = client;
         this.credentials = credentials;
         this.properties = properties;
     }
 
+    /** One voice offered to the console. */
     public record VoiceView(String voiceId, String name, String category, String description, String previewUrl) {}
 
+    /** Whether a key is stored for the workspace, with plan and usage figures when ElevenLabs could be asked. */
     public record StatusView(
             String provider, boolean keyStored, String tier, Integer charactersUsed, Integer characterLimit) {}
 
@@ -93,6 +96,7 @@ public class VoiceService {
         }
     }
 
+    /** Whether the workspace has an ElevenLabs key in the credential store. Does not call ElevenLabs. */
     public boolean keyStored(UUID orgId) {
         return credentials.resolve(orgId.toString(), properties.credentialRef()).isPresent();
     }
@@ -209,6 +213,7 @@ public class VoiceService {
         return client.transcribe(requireKey(orgId), audio, filename, contentType);
     }
 
+    /** Returns the workspace key or fails with the voice-not-configured error when none is stored. */
     private String requireKey(UUID orgId) {
         return credentials
                 .resolve(orgId.toString(), properties.credentialRef())

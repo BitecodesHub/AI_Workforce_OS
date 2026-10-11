@@ -20,6 +20,7 @@ import { useSyncExternalStore } from 'react'
  * closing call to action and the role explorer all ask; one request answers them all.
  */
 
+/** A demo sign-in offered on the sign-in page: email, display name, role and a one-line description. */
 export type DemoAccount = {
   email: string
   displayName: string
@@ -27,6 +28,9 @@ export type DemoAccount = {
   describes: string
 }
 
+/**
+ * What the module knows about demo accounts: still loading, or ready with the list and the shared password (if published).
+ */
 export type DemoAccountsState = {
   status: 'loading' | 'ready'
   accounts: readonly DemoAccount[]
@@ -34,9 +38,12 @@ export type DemoAccountsState = {
   password: string | null
 }
 
+/** Public endpoint (GET) listing demo accounts; it answers 404 when the feature is switched off. */
 export const DEMO_ACCOUNTS_URL = '/api/auth/demo-accounts'
 
+/** State before the first answer arrives. */
 const LOADING: DemoAccountsState = { status: 'loading', accounts: [], password: null }
+/** State when there are no demo accounts, including every failure. */
 const NONE: DemoAccountsState = { status: 'ready', accounts: [], password: null }
 
 let state: DemoAccountsState = LOADING
@@ -45,6 +52,7 @@ let request: Promise<void> | null = null
 let generation = 0
 const listeners = new Set<() => void>()
 
+/** Type guard: a usable account has at least an email and a role as text. */
 function isAccount(value: unknown): value is DemoAccount {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
@@ -70,12 +78,18 @@ export function parseDemoAccounts(body: unknown): DemoAccountsState {
   }
 }
 
+/**
+ * Stores the answer and notifies subscribers, unless the request predates a test reset (generation changed).
+ */
 function settle(asked: number, next: DemoAccountsState) {
   if (asked !== generation) return
   state = next
   for (const listener of listeners) listener()
 }
 
+/**
+ * Requests the accounts once per page (later calls are no-ops while a request exists). A 404 or any failure becomes the empty state, so the sign-in page never shows an error for a missing demo.
+ */
 function load() {
   if (request) return
   const asked = generation
@@ -86,6 +100,9 @@ function load() {
     .catch(() => settle(asked, NONE))
 }
 
+/**
+ * External-store subscription: registers the listener and starts the one-off load. Returns the unsubscribe function.
+ */
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
   load()
@@ -94,10 +111,12 @@ function subscribe(listener: () => void): () => void {
   }
 }
 
+/** Current client state, for useSyncExternalStore. */
 function snapshot(): DemoAccountsState {
   return state
 }
 
+/** State assumed during server rendering: loading. */
 function serverSnapshot(): DemoAccountsState {
   return LOADING
 }

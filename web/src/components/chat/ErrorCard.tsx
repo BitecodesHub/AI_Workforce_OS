@@ -31,6 +31,16 @@ export function incompleteAnswerOf(message: ChatMessage): string | null {
 }
 
 // @find: ErrorCard, error card, chat error, agent failed, try again, retry
+/**
+ * Warning notice in the thread for a request that failed, with the recovery actions that apply.
+ * Props: message (its detail carries code, reason, runId and any incompleteAnswer), live (announce it),
+ * goal and routingMessageId (to retry or reroute), requestText (the person's own request, for Try again),
+ * agentsForReroute and the callbacks onRetry, onResend and onReroute.
+ * Actions: Try again calls onRetry when the goal can be retried by this viewer (canRetryGoal), otherwise
+ * onResend with the original request text, and is hidden when neither exists. "Choose another agent" is a
+ * menu of agents that calls onReroute. "Open trace" links to the run, errorHelp adds a hint with a link,
+ * and an incomplete answer is offered in a collapsed details element. Rendered by MessageItem.
+ */
 export function ErrorCard({
   message,
   live,

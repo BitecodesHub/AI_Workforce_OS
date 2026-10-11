@@ -60,6 +60,11 @@ public class SigningKeyStore {
     private final boolean deployed;
     private final String masterKeyId;
 
+    /**
+     * Wires the repository and encryption service and reads settings from configuration: whether the
+     * environment is a deployed one, the master key identifier, and the publish overlap, which is the
+     * access-token lifetime plus the clock-skew allowance plus the verifiers' key-set cache lifetime.
+     */
     public SigningKeyStore(SigningKeys keys, EnvelopeEncryptionService encryption, PlatformProperties properties) {
         this.keys = keys;
         this.encryption = encryption;
@@ -181,6 +186,10 @@ public class SigningKeyStore {
 
     // @find: key publish overlap, retiring key lifetime
     /** How long a retired key stays published. */
+    /**
+     * How long a retired key stays published, as computed at construction. Used when a key is
+     * retired so that tokens it signed keep verifying until they expire.
+     */
     public Duration publishOverlap() {
         return publishOverlap;
     }
@@ -207,6 +216,12 @@ public class SigningKeyStore {
                 + " and master-key-id as the other replicas; the key is not replaced outside local and test.");
     }
 
+    /**
+     * Retires a key: it stops signing and stays published for the overlap.
+     *
+     * <p>Writes the row and flushes at once. Called by {@link #activeKey()} and
+     * {@link #adoptExternalKey} while holding the creation lock.
+     */
     private void retire(SigningKey row) {
         Instant now = Instant.now();
         row.retire(now, now.plus(publishOverlap));
@@ -215,6 +230,13 @@ public class SigningKeyStore {
         keys.saveAndFlush(row);
     }
 
+    /**
+     * Decrypts a stored private key and checks it.
+     *
+     * <p>Returns empty, with a warning logged, when the key is held externally, cannot be decrypted
+     * or parsed, is not a P-256 private key, or carries a different identifier from its row. Never
+     * throws; callers decide what an unreadable key means.
+     */
     private Optional<ECKey> readPrivateKey(SigningKey row) {
         if (row.isHeldExternally()) {
             return Optional.empty();
@@ -232,6 +254,10 @@ public class SigningKeyStore {
         }
     }
 
+    /**
+     * Parses the public half of a stored key. Returns empty, with a warning logged, when the stored
+     * JWK is malformed, so one bad row cannot break the published key set.
+     */
     private static Optional<JWK> publicKey(SigningKey row) {
         try {
             return Optional.of(JWK.parse(row.getPublicJwk()).toPublicJWK());
@@ -241,6 +267,10 @@ public class SigningKeyStore {
         }
     }
 
+    /**
+     * Whether the stored public key has the same curve and point as the given key. Guards against a
+     * configured key reusing an identifier that already names a different key.
+     */
     private static boolean samePublicKey(SigningKey row, ECKey key) {
         return publicKey(row)
                 .filter(ECKey.class::isInstance)
@@ -251,6 +281,10 @@ public class SigningKeyStore {
                 .orElse(false);
     }
 
+    /**
+     * Builds an unsaved row for a key, holding its identifier, algorithm and public JWK. The caller
+     * sets the private-key column and saves it.
+     */
     private static SigningKey newRow(ECKey key) {
         SigningKey row = new SigningKey();
         row.setKid(key.getKeyID());

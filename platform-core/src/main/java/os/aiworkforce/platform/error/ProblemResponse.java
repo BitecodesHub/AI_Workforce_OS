@@ -45,6 +45,19 @@ public record ProblemResponse(
 
     private static final String TYPE_PREFIX = "https://errors.aiworkforce.os/";
 
+    /**
+     * Builds the response body for a deliberate failure.
+     *
+     * <p>Called by {@code GlobalExceptionHandler} in platform-web. The {@code type} and {@code title}
+     * are derived from the code's wire form, and empty detail is omitted. The timestamp is taken at
+     * the moment of the call. No side effects.
+     *
+     * @param exception the failure being reported
+     * @param instance the request path
+     * @param requestId the request identifier from {@link os.aiworkforce.platform.context.RequestContext}
+     * @param traceId the trace identifier, or {@code null} when tracing is off
+     * @return the body to serialise
+     */
     public static ProblemResponse of(ApiException exception, String instance, String requestId, String traceId) {
         ErrorCode code = exception.code();
         return new ProblemResponse(

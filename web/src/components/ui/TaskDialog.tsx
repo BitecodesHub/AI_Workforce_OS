@@ -1,6 +1,6 @@
 // @find: give agent a task, new task, assign task, start run, create goal, task dialog, choose agent, run trace, Command Map task, Tasks page, TaskDialog, orchestrator
-// @what: Dialog to give an agent a task: starts a run directly from an agent page or creates a goal from elsewhere, then opens the run.
-// @flow: Opened from Command Map, Agent page, Tasks, Runs; uses useCreateGoal and the runs API.
+// @what: Dialog to give an agent a task: always creates a one-task goal (the agent is fixed when opened from an agent page, chosen otherwise), then opens its run.
+// @flow: Opened from Command Map, Agent page, Tasks, Runs; uses useAgents, useCreateGoal and GET /api/goals/{id} to find the first run.
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, Dialog, Notice, Select, Textarea } from './index'
@@ -19,14 +19,15 @@ import { useToast } from '../../lib/toast'
  * Give an agent a task.
  *
  * The same dialog opens from several places: the Command Map, an agent's own page, Tasks and
- * Runs. From an agent's page the agent is already decided, so the dialog only asks what to do; it
- * starts a run directly. From everywhere else it asks which agent, and creates a goal with that
- * one task, which the orchestrator starts at once.
+ * Runs. From an agent's page the agent is already decided, so the dialog only asks what to do.
+ * From everywhere else it also asks which agent. Either way it creates a goal with that one task,
+ * which the orchestrator starts at once, so the work shows on the board and can be stopped and
+ * tried again like any other.
  *
  * Either way the platform answers as soon as the work is saved, and the agent works in the
  * background. The dialog closes straight away and opens the run's trace, which shows each step as
- * it happens. A goal's run starts a moment after the goal is saved, so for a goal the dialog looks
- * for that run for a few seconds, and opens the goal on Tasks if it has not appeared by then.
+ * it happens. The goal's run starts a moment after the goal is saved, so the dialog looks for that
+ * run for a few seconds, and opens the goal on Tasks if it has not appeared by then.
  */
 
 // @find: task started result type
@@ -52,13 +53,20 @@ const FIRST_RUN_POLL_MS = 500
 interface TaskDialogProps {
   open: boolean
   onClose: () => void
-  /** Starts a run for this agent directly. Without it the dialog asks which agent, and creates a goal. */
+  /** Fixes the agent, so the dialog does not ask which one. Without it the dialog asks which agent. */
   agentId?: string
   /** Replaces the default of opening `started.href` once the task has started. */
   onSuccess?: (runId: string | undefined, started: TaskStarted) => void
 }
 
 // @find: give agent a task dialog, create goal, start run
+/**
+ * Dialog that gives an agent a task. Props: open, onClose, agentId (fixes the agent) and onSuccess (replaces the
+ * default navigation to the started task).
+ * The dialog frame resets its busy and error state on each opening and mounts TaskForm only while open, so closing
+ * discards a half-written task. It is always dismissible, because the request only saves the task and closing
+ * never stops the agent. Opened from the Command Map, an agent page, Tasks and Runs.
+ */
 export function TaskDialog({ open, onClose, agentId, onSuccess }: TaskDialogProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -132,6 +140,7 @@ function readLastAgent(): string | null {
   }
 }
 
+/** Stores the chosen agent id for this person, ignoring blocked storage. */
 function rememberAgent(id: string) {
   try {
     const key = lastAgentKey()
@@ -144,6 +153,7 @@ function rememberAgent(id: string) {
 /** Only an active agent with a saved configuration can start a run; the platform refuses the rest. */
 const canStart = (agent: Agent) => agent.status === 'active' && agent.revision != null
 
+/** Select label for an agent: name and category, with "(default)" for the General Employee, the status for an agent that is not active, or "(not set up yet)" without a saved configuration. */
 function agentOptionLabel(agent: Agent): string {
   const category = CATEGORY_LABEL[agent.category] ?? sentenceCase(agent.category)
   const base = category ? `${agent.name} — ${category}` : agent.name
@@ -224,6 +234,19 @@ type TaskFormProps = {
   onFinished: () => void
 }
 
+/**
+ * The form inside TaskDialog: an optional agent Select, an Instruction textarea (up to 10,000 characters) and Cancel and Start buttons.
+ * Agent choice: without a fixed agentId it lists agents (useAgents), General Employee first, with only active
+ * agents that have a saved configuration selectable (canStart). The default is the agent this person used last
+ * (kept per user in localStorage, with the old unscoped key removed), else the General Employee, else the first
+ * startable agent. Warnings explain a failed agent list, no agents, or no agent that can take a task.
+ * Submit: creates a one-task goal with useCreateGoal (title from the instruction cut at a word to 80
+ * characters). On failure the field-labelled error is shown in the dialog. On success it remembers the agent,
+ * marks the "give-task" guide step, closes the dialog and shows a toast, then waitForFirstRun polls GET
+ * /api/goals/{id} for up to five seconds for the run. It then opens the run (or the goal on Tasks) through
+ * onSuccess or navigate, unless the person closed the dialog or moved to another page meanwhile (tracked with refs).
+ * If the task failed to start, an informational toast says so.
+ */
 function TaskForm({ agentId, onSuccess, busy, onBusyChange, onError, onCancel, onFinished }: TaskFormProps) {
   const { navigate } = useRouter()
   const toast = useToast()

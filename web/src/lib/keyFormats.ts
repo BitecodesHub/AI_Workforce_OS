@@ -82,6 +82,7 @@ export function keyMismatch(providerId: string, providerName: string, value: str
 /** Providers whose keys always carry their own prefix, so an sk- key for them is certainly wrong. */
 const OWN_PREFIX = new Set(['openrouter', 'anthropic', 'nvidia', 'groq', 'gemini', 'xai'])
 
+/** Chooses "a" or "an" for a provider name from its first letter. */
 function article(name: string): string {
   return /^[AEIOU]/.test(name) ? 'an' : 'a'
 }

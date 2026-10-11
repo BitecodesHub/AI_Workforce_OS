@@ -41,6 +41,7 @@ public class JdbcRetentionStore implements RetentionStore {
     /** A run in any of these has ended, and nothing will read its steps back into a conversation. */
     private static final String FINISHED = "('completed', 'failed', 'cancelled', 'abandoned')";
 
+    // Candidate workspaces: any with a finished run older than the cutoff. Each is then judged on its own number of days.
     private static final String WORKSPACES =
             "select distinct org_id from runs where completed_at < ? and status in " + FINISHED;
 
@@ -92,6 +93,8 @@ public class JdbcRetentionStore implements RetentionStore {
              where s.id = scrubbed.id
             """;
 
+    // Deletes one batch of a workspace's browser screenshots whose run finished before the cutoff. The status list
+    // repeats FINISHED because it is inside a text block.
     static final String DELETE_BROWSER_SHOTS =
             """
             delete from browser_shots
@@ -105,11 +108,17 @@ public class JdbcRetentionStore implements RetentionStore {
                      limit ?)
             """;
 
+    // Deletes one batch of model-usage rows older than the cutoff, in every workspace. The sub-select with a limit keeps
+    // each statement to a bounded number of rows.
     static final String DELETE_USAGE =
             "delete from llm_usage where id in (select id from llm_usage where occurred_at < ? limit ?)";
 
+    // Only used to borrow the one connection that holds the lock for a purge.
     private final DataSource dataSource;
 
+    /**
+     * @param dataSource the pool from which the purge's single, long-held connection is borrowed
+     */
     public JdbcRetentionStore(DataSource dataSource) {
         this.dataSource = dataSource;
     }
@@ -132,6 +141,11 @@ public class JdbcRetentionStore implements RetentionStore {
         }
     }
 
+    /**
+     * Asks Postgres for the advisory lock without waiting.
+     *
+     * @return true when this connection now holds the lock; false when another session holds it
+     */
     private static boolean tryLock(Connection connection) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("select pg_try_advisory_lock(?)")) {
             statement.setLong(1, ADVISORY_LOCK);
@@ -141,6 +155,7 @@ public class JdbcRetentionStore implements RetentionStore {
         }
     }
 
+    /** Closes a connection after a failure, ignoring null and logging, not throwing, if the close fails. */
     private static void closeQuietly(Connection connection) {
         if (connection == null) {
             return;
@@ -152,15 +167,23 @@ public class JdbcRetentionStore implements RetentionStore {
         }
     }
 
+    /**
+     * One purge turn: owns the connection that holds the advisory lock and runs each delete on it, each statement
+     * committing on its own (auto-commit). Created only by {@link #tryOpen()}; used by RetentionService.purge
+     * on a single thread. Every method wraps an SQLException in an IllegalStateException, which the service
+     * logs per workspace and carries on.
+     */
     private static final class JdbcSession implements Session {
 
         private final Connection connection;
 
+        // The connection must already hold the advisory lock.
         private JdbcSession(Connection connection) {
             this.connection = connection;
         }
 
         @Override
+        // Read only; one row per workspace.
         public List<UUID> workspacesWithRunsFinishedBefore(Instant cutoff) {
             try (PreparedStatement statement = connection.prepareStatement(WORKSPACES)) {
                 statement.setTimestamp(1, Timestamp.from(cutoff));
@@ -177,6 +200,7 @@ public class JdbcRetentionStore implements RetentionStore {
         }
 
         @Override
+        // Updates run_steps.detail for up to batch steps; returns the number of rows changed.
         public int clearRunDetail(UUID orgId, Instant finishedBefore, int batch) {
             try (PreparedStatement statement = connection.prepareStatement(CLEAR_RUN_DETAIL)) {
                 statement.setObject(1, orgId);
@@ -189,6 +213,7 @@ public class JdbcRetentionStore implements RetentionStore {
         }
 
         @Override
+        // Deletes up to batch rows from browser_shots; returns the number deleted.
         public int deleteBrowserShots(UUID orgId, Instant finishedBefore, int batch) {
             try (PreparedStatement statement = connection.prepareStatement(DELETE_BROWSER_SHOTS)) {
                 statement.setObject(1, orgId);
@@ -201,6 +226,7 @@ public class JdbcRetentionStore implements RetentionStore {
         }
 
         @Override
+        // Deletes up to batch rows from llm_usage; returns the number deleted.
         public int deleteUsageBefore(Instant cutoff, int batch) {
             try (PreparedStatement statement = connection.prepareStatement(DELETE_USAGE)) {
                 statement.setTimestamp(1, Timestamp.from(cutoff));

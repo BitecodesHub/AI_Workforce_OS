@@ -20,6 +20,10 @@ import os.aiworkforce.platform.web.PlatformWeb;
 @ConfigurationPropertiesScan(basePackageClasses = {AnalyticsApplication.class, PlatformCore.class, PlatformWeb.class})
 public class AnalyticsApplication {
 
+    /**
+     * Starts the Spring context for analytics-service; invoked by the JVM at process start.
+     * Startup fails if the database or its migrations cannot be reached.
+     */
     public static void main(String[] args) {
         SpringApplication.run(AnalyticsApplication.class, args);
     }

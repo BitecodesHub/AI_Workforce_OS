@@ -29,6 +29,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record ChatMessage(
         Role role, String content, List<ToolCall> toolCalls, String toolCallId, String name, List<ImagePart> images) {
 
+    /** Who produced a turn; {@code TOOL} carries a tool result back to the model. */
     public enum Role {
         SYSTEM,
         USER,
@@ -36,6 +37,7 @@ public record ChatMessage(
         TOOL
     }
 
+    /** Requires a role and makes the tool call and image lists immutable. */
     public ChatMessage {
         Objects.requireNonNull(role, "role");
         toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
@@ -52,6 +54,7 @@ public record ChatMessage(
         return new ChatMessage(Role.USER, content, List.of(), null, null, images);
     }
 
+    /** Whether this turn carries pictures. */
     public boolean hasImages() {
         return !images.isEmpty();
     }
@@ -75,18 +78,22 @@ public record ChatMessage(
         return new ChatMessage(role, text.toString(), toolCalls, toolCallId, name, List.of());
     }
 
+    /** A system instruction turn. */
     public static ChatMessage system(String content) {
         return new ChatMessage(Role.SYSTEM, content, List.of(), null, null);
     }
 
+    /** A person turn without pictures. */
     public static ChatMessage user(String content) {
         return new ChatMessage(Role.USER, content, List.of(), null, null);
     }
 
+    /** A plain assistant answer. */
     public static ChatMessage assistant(String content) {
         return new ChatMessage(Role.ASSISTANT, content, List.of(), null, null);
     }
 
+    /** An assistant turn that asked for tools to be run, with optional text beside the calls. */
     public static ChatMessage assistantToolCalls(String content, List<ToolCall> calls) {
         return new ChatMessage(Role.ASSISTANT, content, calls, null, null);
     }
@@ -96,6 +103,7 @@ public record ChatMessage(
         return new ChatMessage(Role.TOOL, result, List.of(), toolCallId, toolName);
     }
 
+    /** Whether the assistant asked for tools in this turn. */
     public boolean hasToolCalls() {
         return !toolCalls.isEmpty();
     }

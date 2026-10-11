@@ -18,30 +18,49 @@ import java.util.regex.Pattern;
  */
 public final class Hosts {
 
+    /** One DNS label: lower-case letters, digits and inner hyphens, at most 63 characters. */
     private static final Pattern LABEL = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?");
+    /** An instance host returned by Salesforce, which must end in salesforce.com or force.com. */
     private static final Pattern SALESFORCE_INSTANCE =
             Pattern.compile("[a-z0-9](?:[a-z0-9.-]{0,120}[a-z0-9])?\\.(?:salesforce\\.com|force\\.com)");
+    /** The three accepted login domain shapes: login, test and a My Domain (optionally a sandbox one). */
     private static final Pattern SALESFORCE_LOGIN = Pattern.compile(
             "(?:login|test)\\.salesforce\\.com|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.sandbox)?\\.my\\.salesforce\\.com");
+    /** A well-known tenant keyword, a tenant id in GUID form, or a verified domain name. */
     private static final Pattern MICROSOFT_TENANT =
             Pattern.compile("common|organizations|consumers|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|"
                     + "[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\\.[a-z]{2,}");
 
+    /** Static helpers only; not instantiated. */
     private Hosts() {}
 
-    /** {@code acme}, {@code acme.atlassian.net} or {@code https://acme.atlassian.net/} to {@code https://acme.atlassian.net}. */
+    /**
+     * {@code acme}, {@code acme.atlassian.net} or {@code https://acme.atlassian.net/} to {@code https://acme.atlassian.net}.
+     * Used by the Jira and Confluence adapters to build their base URL. Makes no network call.
+     *
+     * @throws IllegalArgumentException when the value is not a single Atlassian site label
+     */
     public static String atlassianBase(String site) {
         return "https://" + subdomain(site, "atlassian.net", "Atlassian site", "https://your-team.atlassian.net")
                 + ".atlassian.net";
     }
 
-    /** {@code acme} or {@code acme.zendesk.com} to {@code https://acme.zendesk.com}. */
+    /**
+     * {@code acme} or {@code acme.zendesk.com} to {@code https://acme.zendesk.com}. Used by the Zendesk adapter.
+     *
+     * @throws IllegalArgumentException when the value is not a single Zendesk subdomain label
+     */
     public static String zendeskBase(String subdomain) {
         return "https://" + subdomain(subdomain, "zendesk.com", "Zendesk subdomain", "your-team.zendesk.com")
                 + ".zendesk.com";
     }
 
-    /** A Salesforce instance address from a token response, or a refusal for any other host. */
+    /**
+     * A Salesforce instance address from a token response, or a refusal for any other host. Guards against
+     * a response that would redirect later API calls, and so the bearer token, to a foreign host.
+     *
+     * @throws IllegalArgumentException when the host is not under salesforce.com or force.com
+     */
     public static String salesforceInstance(String url) {
         String host = hostOf(url);
         if (host == null || !SALESFORCE_INSTANCE.matcher(host).matches()) {
@@ -51,7 +70,12 @@ public final class Hosts {
         return "https://" + host;
     }
 
-    /** A Salesforce login domain: login.salesforce.com, test.salesforce.com or a My Domain. */
+    /**
+     * A Salesforce login domain: login.salesforce.com, test.salesforce.com or a My Domain. Returns the bare host,
+     * without a scheme. Used when settings are validated at connect time.
+     *
+     * @throws IllegalArgumentException when the value is any other host
+     */
     public static String salesforceLoginDomain(String domain) {
         String host = hostOf(domain);
         if (host == null || !SALESFORCE_LOGIN.matcher(host).matches()) {
@@ -62,7 +86,12 @@ public final class Hosts {
         return host;
     }
 
-    /** A Microsoft tenant: common, organizations, consumers, a tenant id or a verified domain. */
+    /**
+     * A Microsoft tenant: common, organizations, consumers, a tenant id or a verified domain. Returns the value
+     * trimmed and lower-cased, ready to place in the sign-in address path.
+     *
+     * @throws IllegalArgumentException when the value has none of the accepted shapes
+     */
     public static String microsoftTenant(String tenant) {
         String value = tenant == null ? "" : tenant.strip().toLowerCase(Locale.ROOT);
         if (!MICROSOFT_TENANT.matcher(value).matches()) {
@@ -72,6 +101,10 @@ public final class Hosts {
         return value;
     }
 
+    /**
+     * Reduces a typed value to one label: strips the scheme, path and the vendor suffix, then checks the label
+     * shape. {@code what} and {@code example} only shape the refusal sentence.
+     */
     private static String subdomain(String input, String suffix, String what, String example) {
         String host = hostOf(input);
         if (host != null && host.endsWith("." + suffix)) {

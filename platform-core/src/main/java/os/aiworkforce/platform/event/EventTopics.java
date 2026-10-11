@@ -33,14 +33,36 @@ public final class EventTopics {
 
     private EventTopics() {}
 
+    /**
+     * The main topic name for a subject, for example {@code aiwos.task.requested}.
+     *
+     * <p>Pure string concatenation with no side effects. Callers pass the configured
+     * {@code aiwos.events.topic-prefix} and one of the subject constants above.
+     *
+     * @param prefix the deployment's topic prefix
+     * @param subject a subject constant such as {@link #TASK_REQUESTED}
+     * @return the full topic name
+     */
     public static String main(String prefix, String subject) {
         return prefix + "." + subject;
     }
 
+    /**
+     * The retry topic for a subject: the main name with a {@code .retry} suffix.
+     *
+     * <p>A failed message is republished here and consumed on a delay, so a struggling dependency
+     * is not hammered. See {@link #main(String, String)} for the arguments.
+     */
     public static String retry(String prefix, String subject) {
         return prefix + "." + subject + ".retry";
     }
 
+    /**
+     * The dead-letter topic for a subject: the main name with a {@code .dlt} suffix.
+     *
+     * <p>A message lands here once its delivery attempts are exhausted, and stays until a person
+     * replays or discards it. See {@link #main(String, String)} for the arguments.
+     */
     public static String deadLetter(String prefix, String subject) {
         return prefix + "." + subject + ".dlt";
     }

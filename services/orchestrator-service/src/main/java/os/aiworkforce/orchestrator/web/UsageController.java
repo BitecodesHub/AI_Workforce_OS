@@ -71,9 +71,12 @@ public class UsageController {
     /** Rows fetched at a time when streaming the file, so a large window is never held in memory. */
     static final int EXPORT_PAGE = 1_000;
 
+    /** The all-zero id used as the "before the first row" cursor when paging through the export. */
     private static final UUID NIL = new UUID(0L, 0L);
 
+    /** Label for spend that belongs to no agent, such as chat and knowledge calls. */
     private static final String NO_AGENT = "No agent (chat and knowledge)";
+    /** Label for spend whose agent no longer exists. */
     private static final String REMOVED_AGENT = "Removed agent";
 
     /** The groupings, in the words a client uses. */
@@ -84,6 +87,7 @@ public class UsageController {
         AGENT,
         OUTCOME;
 
+        /** Reads a grouping word, defaulting to day when none is given; a validation error for an unknown word. */
         static GroupBy parse(String text) {
             if (text == null || text.isBlank()) {
                 return DAY;
@@ -95,6 +99,7 @@ public class UsageController {
             }
         }
 
+        /** The grouping in lower case, as returned to clients. */
         String word() {
             return name().toLowerCase(Locale.ROOT);
         }
@@ -129,25 +134,36 @@ public class UsageController {
             long failedAttempts,
             long skipped) {}
 
+    /** The whole report: the window, the grouping, what the amounts are, the totals and one line per group. */
     /** What the figures are, in the report itself so a screenshot of it still says so. */
     public record UsageReport(
             Instant from, Instant to, String groupBy, String basis, Line totals, List<Line> groups) {}
 
+    /** Repository of usage rows, read through grouped and paged queries. */
     private final Usage usage;
     private final Agents agents;
     private final Clock clock;
 
+    /** Production constructor: uses the system UTC clock. */
     @Autowired
     public UsageController(Usage usage, Agents agents) {
         this(usage, agents, Clock.systemUTC());
     }
 
+    /** Constructor with an injectable clock, used by tests. */
     UsageController(Usage usage, Agents agents, Clock clock) {
         this.usage = usage;
         this.agents = agents;
         this.clock = clock;
     }
 
+    /**
+     * Returns the grouped usage report for a window.
+     *
+     * <p>Route {@code GET /api/orchestrator/usage}; requires BUDGET_READ. Defaults to the month so far
+     * grouped by day. Read-only. Fails with a validation error for a bad date, a window longer than a
+     * year or an unknown grouping.
+     */
     // @find: usage report, GET /api/orchestrator/usage
     @GetMapping("/usage")
     @RequiresPermission(Permission.Codes.BUDGET_READ)
@@ -161,6 +177,15 @@ public class UsageController {
         return report(orgId(), window, grouping);
     }
 
+    /**
+     * Streams the usage data as a CSV file.
+     *
+     * <p>Route {@code GET /api/orchestrator/usage.csv}; requires BUDGET_READ. Without {@code groupBy}
+     * the file has one row per attempt, read from the database a page at a time and written to the
+     * response as it goes; with it, one row per group plus a total. The file is not cached and is
+     * named for its window. Validation errors are the same as for the report; they occur before any
+     * byte is written.
+     */
     @GetMapping("/usage.csv")
     @RequiresPermission(Permission.Codes.BUDGET_READ)
     @Operation(
@@ -200,6 +225,7 @@ public class UsageController {
 
     // ---- The report ------------------------------------------------------------------------
 
+    /** Runs the grouped query for the window and builds the report with its totals; agent names are looked up only for the agent grouping. */
     private UsageReport report(UUID orgId, Window window, GroupBy grouping) {
         List<Object[]> rows =
                 switch (grouping) {
@@ -235,6 +261,7 @@ public class UsageController {
                 whole(row[8]));
     }
 
+    /** Adds the lines together into the report's total line. */
     private static Line total(List<Line> groups) {
         long prompt = 0;
         long cached = 0;
@@ -268,6 +295,7 @@ public class UsageController {
                 skipped);
     }
 
+    /** The label for a group key: an agent's name (or a placeholder), a plain word for an outcome, otherwise the key itself. */
     private static String label(String key, GroupBy grouping, Map<UUID, String> agentNames) {
         return switch (grouping) {
             case AGENT -> {
@@ -288,6 +316,7 @@ public class UsageController {
         };
     }
 
+    /** The names of the workspace's agents, keyed by id. */
     private Map<UUID, String> agentNames(UUID orgId) {
         Map<UUID, String> names = new HashMap<>();
         for (Agent agent : agents.findByOrgIdOrderByName(orgId)) {
@@ -296,10 +325,12 @@ public class UsageController {
         return names;
     }
 
+    /** A database number as a long; null is zero. */
     private static long whole(Object value) {
         return value == null ? 0L : ((Number) value).longValue();
     }
 
+    /** A database amount as a decimal; null is zero. */
     private static BigDecimal money(Object value) {
         if (value == null) {
             return BigDecimal.ZERO;
@@ -309,6 +340,7 @@ public class UsageController {
 
     // ---- The window ------------------------------------------------------------------------
 
+    /** A half-open time window, start inclusive and end exclusive. */
     private record Window(Instant from, Instant to) {}
 
     /** The window asked for; the month so far when none is given. */
@@ -345,6 +377,7 @@ public class UsageController {
 
     // ---- The file --------------------------------------------------------------------------
 
+    /** The download file name, built from the kind of file and the first and last day covered. */
     private static String fileName(Window window, GroupBy grouping) {
         LocalDate first = window.from().atZone(ZoneOffset.UTC).toLocalDate();
         LocalDate last = window.to().minusMillis(1).atZone(ZoneOffset.UTC).toLocalDate();
@@ -352,6 +385,7 @@ public class UsageController {
         return "usage-" + kind + "_" + first + "_to_" + last + ".csv";
     }
 
+    /** Column headings of the attempt-by-attempt file. */
     private static final String[] ATTEMPT_HEADER = {
         "occurred_at_utc",
         "agent_id",
@@ -369,6 +403,7 @@ public class UsageController {
         "duration_ms"
     };
 
+    /** Column headings of the grouped file. */
     private static final String[] GROUP_HEADER = {
         "group",
         "label",
@@ -420,6 +455,7 @@ public class UsageController {
         }
     }
 
+    /** Writes the heading, one row per group and a final total row. */
     private static void writeGroups(Writer out, UsageReport report) throws IOException {
         row(out, GROUP_HEADER);
         for (Line line : report.groups()) {
@@ -428,6 +464,7 @@ public class UsageController {
         groupRow(out, "total", report.totals());
     }
 
+    /** Writes one row of the grouped file. */
     private static void groupRow(Writer out, String group, Line line) throws IOException {
         row(
                 out,
@@ -444,6 +481,7 @@ public class UsageController {
                 line.failedAttemptCost().toPlainString());
     }
 
+    /** Writes one CSV row, with each cell made safe, ended by a carriage return and line feed. */
     private static void row(Writer out, String... cells) throws IOException {
         for (int i = 0; i < cells.length; i++) {
             if (i > 0) {
@@ -478,6 +516,7 @@ public class UsageController {
         return quote ? '"' + text.replace("\"", "\"\"") + '"' : text;
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

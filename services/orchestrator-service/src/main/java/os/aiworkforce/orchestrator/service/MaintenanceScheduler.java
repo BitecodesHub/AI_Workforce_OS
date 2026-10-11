@@ -42,6 +42,7 @@ import os.aiworkforce.orchestrator.repository.ProcessedEvents;
 public class MaintenanceScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(MaintenanceScheduler.class);
+    // The most rows or runs one sweep handles per pass; see the class comment on why it is small.
     private static final int BATCH = 50;
     /**
      * How long a processed event id is remembered. It only has to outlast the longest a broker
@@ -49,6 +50,8 @@ public class MaintenanceScheduler {
      */
     static final Duration PROCESSED_EVENT_RETENTION = Duration.ofDays(7);
 
+    // Collaborators: the runner reaps runs, approvals and questions expire their own rows, goals repairs and lists tasks,
+    // and the executor starts or resumes runs on its own threads.
     private final AgentRunner runner;
     private final ApprovalService approvals;
     private final GoalService goals;
@@ -62,6 +65,12 @@ public class MaintenanceScheduler {
     private OperationsMetrics metrics;
     private RetentionService retention;
 
+    /**
+     * Builds the scheduler with the collaborators every sweep needs. Metrics and retention are optional and
+     * arrive through their setters.
+     *
+     * @param processedEvents may be null, in which case the event purge does nothing
+     */
     @Autowired
     public MaintenanceScheduler(
             AgentRunner runner,
@@ -185,6 +194,10 @@ public class MaintenanceScheduler {
         });
     }
 
+    /**
+     * Hands one parked run to the executor, with the run's workspace and id in the logging context. Called by
+     * {@link #resumeDecidedRuns()}; the database claim lets only one driver win if another resume is also under way.
+     */
     private void resume(RunRef ref) {
         try (RunLogContext ignored = RunLogContext.run(ref.orgId(), null, ref.runId(), null)) {
             executor.submitResume(ref.orgId(), ref.runId());
@@ -280,6 +293,11 @@ public class MaintenanceScheduler {
         }
     }
 
+    /**
+     * The body of {@link #advanceGoals()}: repairs stranded tasks, then asks the executor to dispatch waiting
+     * tasks workspace by workspace. Each stage catches its own failures, so a failed repair does not stop dispatch
+     * and one workspace's failure does not stop the rest.
+     */
     private void sweepGoals() {
         try {
             int repaired = goals.reconcileStrandedTasks(BATCH);

@@ -19,8 +19,19 @@ import os.aiworkforce.identity.domain.Role;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for {@link Role} rows, both system roles (no workspace) and custom ones.
+ *
+ * <p>Used by {@code RoleController}, {@code MemberController}, {@code InternalMembershipController},
+ * {@code PasswordResetService}, {@code PermissionSeeder}, {@code DemoDataSeeder} and
+ * {@code AuthService}.
+ */
 public interface Roles extends JpaRepository<Role, UUID> {
 
+    /**
+     * The system role with this exact name, or empty. System roles have no workspace, so the name is
+     * unique among them.
+     */
     @Query("select r from Role r where r.orgId is null and r.name = :name")
     Optional<Role> findSystemRole(@Param("name") String name);
 
@@ -28,6 +39,10 @@ public interface Roles extends JpaRepository<Role, UUID> {
     @Query("select r from Role r where r.orgId = :orgId or r.orgId is null order by r.name")
     List<Role> findAvailableTo(@Param("orgId") UUID orgId);
 
+    /**
+     * The workspace's own role with this exact name, or empty. System roles are not considered; see
+     * {@link #findAvailable} for the combined lookup.
+     */
     @Query("select r from Role r where r.orgId = :orgId and r.name = :name")
     Optional<Role> findByOrgAndName(@Param("orgId") UUID orgId, @Param("name") String name);
 
@@ -53,6 +68,10 @@ public interface Roles extends JpaRepository<Role, UUID> {
         return findByOrgAndName(orgId, stripped).or(() -> findSystemRole(stripped));
     }
 
+    /**
+     * How many active memberships hold the role, across every workspace. Used to show a role's
+     * holder count and to refuse deleting a role that is still in use.
+     */
     @Query("select count(m) from Membership m where m.roleId = :roleId and m.status = 'active'")
     long countActiveHolders(@Param("roleId") UUID roleId);
 }

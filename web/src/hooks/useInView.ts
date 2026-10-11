@@ -12,9 +12,14 @@ import type { RefCallback } from 'react'
  * anything waiting on it still happens.
  */
 
+/** Options for useInView: visibility threshold (0 to 1), root margin, and whether to stop observing after the first sighting (default true). */
 export type InViewOptions = { threshold?: number; rootMargin?: string; once?: boolean }
 
 // @find: useInView hook, element visible on screen
+/**
+ * Reports whether an element has scrolled into view. Returns a ref callback to attach to the element and the current boolean.
+ * Flow: the ref callback creates an IntersectionObserver for the node; with `once` (the default) the first sighting sets inView true and stops observing, otherwise inView follows visibility. Without IntersectionObserver the initial state is already true. The ref callback returns its own cleanup, so React 19 disconnects the observer on unmount. Options: threshold, rootMargin, once.
+ */
 export function useInView<T extends Element>(
   options?: InViewOptions,
 ): { ref: RefCallback<T>; inView: boolean } {

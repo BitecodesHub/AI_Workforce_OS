@@ -15,6 +15,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 /** Posts an event to analytics-service's internal audit endpoint. */
 public class HttpAuditSender implements AuditSender {
 
+    /** Target type used to read an event's detail text back into a JSON object. */
     private static final TypeReference<Map<String, Object>> JSON_OBJECT = new TypeReference<>() {};
 
     private final WebClient client;
@@ -22,6 +23,14 @@ public class HttpAuditSender implements AuditSender {
     private final ObjectMapper json;
     private final Duration timeout;
 
+    /**
+     * Creates a sender.
+     *
+     * @param client a client whose base URL is analytics-service
+     * @param tokens supplies the bearer token for each request
+     * @param json reads the stored detail text
+     * @param timeout the longest one delivery may take
+     */
     public HttpAuditSender(
             WebClient client, AuditTokenSource tokens, ObjectMapper json, Duration timeout) {
         this.client = client;
@@ -30,6 +39,16 @@ public class HttpAuditSender implements AuditSender {
         this.timeout = timeout;
     }
 
+    /**
+     * Posts the event to {@code POST /internal/audit-events}.
+     *
+     * <p>Builds the request body from the event, adds a bearer token from the {@link AuditTokenSource}
+     * and blocks the calling thread until analytics-service answers or the timeout passes. Called by
+     * {@code AuditOutboxRelay} on its scheduler thread, never on a request thread.
+     *
+     * <p>Failure: a non-success status, a timeout or a connection error is thrown to the caller, which
+     * records the failed attempt and retries later with the same event id.
+     */
     @Override
     public void send(AuditOutbox.Event event) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -58,6 +77,12 @@ public class HttpAuditSender implements AuditSender {
                 .block();
     }
 
+    /**
+     * Turns the stored detail text into a JSON object for the request body.
+     *
+     * <p>A missing detail becomes an empty object. Text that cannot be parsed becomes a marker object
+     * rather than an exception, so a damaged row is still delivered.
+     */
     private Map<String, Object> detailOf(AuditOutbox.Event event) {
         try {
             return event.detailJson() == null ? Map.of() : json.readValue(event.detailJson(), JSON_OBJECT);

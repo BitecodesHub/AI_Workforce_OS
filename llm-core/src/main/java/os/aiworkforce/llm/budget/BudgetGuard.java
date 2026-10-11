@@ -47,10 +47,12 @@ public interface BudgetGuard {
      */
     record Decision(boolean allowed, String reason, BigDecimal remaining, boolean degradeToSandbox) {
 
+        /** A decision that does not degrade to the sandbox. */
         public Decision(boolean allowed, String reason, BigDecimal remaining) {
             this(allowed, reason, remaining, false);
         }
 
+        /** The call may proceed; {@code remaining} may be null when no limit applies. */
         public static Decision allow(BigDecimal remaining) {
             return new Decision(true, null, remaining, false);
         }

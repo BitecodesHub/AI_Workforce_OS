@@ -30,6 +30,7 @@ import os.aiworkforce.platform.config.PlatformProperties;
 @ConditionalOnProperty(name = "aiwos.demo.enabled", havingValue = "true", matchIfMissing = true)
 public class DemoDataSeeder {
 
+    /** Logger for the seeding outcome. */
     private static final Logger log = LoggerFactory.getLogger(DemoDataSeeder.class);
 
     /** Matches identity's and orchestrator's demo workspace id, so all three meet in one place. */
@@ -38,12 +39,24 @@ public class DemoDataSeeder {
     private final Organisations organisations;
     private final PlatformProperties properties;
 
+    /**
+     * Creates the seeder with the workspace repository and the platform settings that name the
+     * environment.
+     */
     public DemoDataSeeder(Organisations organisations, PlatformProperties properties) {
         this.organisations = organisations;
         this.properties = properties;
     }
 
     // @find: seed demo workspace on startup, create Demo Workspace
+    /**
+     * Creates the demo workspace when the application has finished starting.
+     *
+     * <p>Does nothing in a deployed environment, and nothing when the row already exists, so it is safe to
+     * run on every start. Otherwise inserts one organisation with a fixed id, the name "Demo Workspace"
+     * and the slug {@code demo-workspace}, inside a transaction. Failure: a database error propagates and
+     * is reported by the listener infrastructure.
+     */
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void seed() {

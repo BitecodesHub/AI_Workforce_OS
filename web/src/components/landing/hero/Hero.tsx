@@ -27,6 +27,16 @@ import { HeroGlobe } from './HeroGlobe'
 const PROVIDER_COUNT = 7
 
 // @find: Hero component, home page hero
+/**
+ * First screen of the home page, on a dark stage that stays dark in both themes.
+ * Renders the h1 offer ("Hand the busywork to AI. Keep the final say."), a lead paragraph, two calls to action
+ * (the first from useDemoCta: the demo accounts where this site has them, otherwise an in-page link to the demos,
+ * smooth-scrolled by useInPageLink; the second to create a workspace), a caption, the HeroGlobe and two glass cards
+ * that link to the #cited and #safety sections (one states the seven providers). The copy is staggered with
+ * revealStyle. A Pause motion button (aria-pressed) appears unless reduced motion is on and flips the page's
+ * ambient motion through useLandingMotion (WCAG 2.2.2). The id lp-hero-ctas lets LandingBar hide its own call to
+ * action while these are on screen. Static: no data requests.
+ */
 export function Hero(): ReactElement {
   const inPage = useInPageLink()
   const demo = useDemoCta()

@@ -61,17 +61,36 @@ public class InternalTokenController {
     private final TokenService tokens;
     private final PlatformProperties properties;
 
+    /**
+     * Wires the token service that signs tokens and the properties that hold the shared secret.
+     */
     public InternalTokenController(TokenService tokens, PlatformProperties properties) {
         this.tokens = tokens;
         this.properties = properties;
     }
 
+    /**
+     * Request body for {@link #issue}: the audience service, plus the actor the token should name.
+     * Only the audience is required; blank actor fields fall back to the system.
+     */
     public record InternalTokenRequest(
             @NotBlank String audience, String actorId, String actorKind, String orgId, String onBehalfOf) {}
 
+    /** Response body for {@link #issue}: the signed token and when it expires. */
     public record InternalTokenResponse(String token, Instant expiresAt) {}
 
     // @find: issue internal token, service token, POST /internal/tokens
+    /**
+     * POST {@code /internal/tokens}. Authenticated by the {@code X-Internal-Secret} header, not by a
+     * token or permission code.
+     *
+     * <p>Flow: compares the secret in constant time; refuses an audience that is not a known platform
+     * service; builds an actor with no permissions from the request; mints the token through
+     * {@link TokenService#issueInternalToken}. Nothing is written to the database.
+     *
+     * @throws ApiException not authenticated for a wrong or missing secret (also logged at WARN), or a
+     *     validation error for an unknown audience
+     */
     @PostMapping
     @Operation(summary = "Internal: mint a short-lived service-to-service token")
     public InternalTokenResponse issue(
@@ -122,6 +141,10 @@ public class InternalTokenController {
                 presented.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Parses the requested actor kind ignoring case. A missing or unrecognised value gives
+     * {@link Actor.Kind#SYSTEM} as the default.
+     */
     private static Actor.Kind parseKind(String kind) {
         if (kind == null) {
             return Actor.Kind.SYSTEM;
@@ -133,6 +156,9 @@ public class InternalTokenController {
         }
     }
 
+    /**
+     * Maps a null or blank string to null, so that optional request fields are absent rather than empty.
+     */
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
     }

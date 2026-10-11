@@ -52,23 +52,52 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
 @Tag(name = "Invitations")
 public class InvitationController {
 
+    /** Business logic for creating, listing, revoking and accepting invitations. */
     private final InvitationService invitations;
 
+    /** Creates the controller with its service. */
     public InvitationController(InvitationService invitations) {
         this.invitations = invitations;
     }
 
+    /**
+     * Request body for inviting someone.
+     *
+     * @param email the invitee's address
+     * @param roleName the role the invitee receives on joining
+     */
     public record CreateInvitationRequest(
             @NotBlank @Email @Size(max = 320) String email, @NotBlank @Size(max = 60) String roleName) {}
 
+    /**
+     * Request body for accepting an invitation as a new person.
+     *
+     * @param token the raw token from the invitation link
+     * @param displayName the name for the new account
+     * @param password the password for the new account, at least twelve characters
+     */
     public record AcceptInvitationRequest(
             @NotBlank String token,
             @NotBlank @Size(max = 120) String displayName,
             @NotBlank @Size(min = 12, max = 256) String password) {}
 
+    /**
+     * Request body for accepting an invitation with an existing account; the token comes from the
+     * invitation link.
+     */
     public record AcceptSignedInRequest(@NotBlank String token) {}
 
     // @find: create invitation, invite member, POST /api/orgs/{orgId}/invitations
+    /**
+     * {@code POST /api/orgs/{orgId}/invitations}: invites a person to the workspace.
+     *
+     * <p>Permission: {@code MEMBER_INVITE}. The path workspace must equal the token's workspace.
+     * Response: 201 with the invitation view, which includes the one-time token and the accept link built
+     * from the request's origin; nothing is emailed, so the administrator passes the link on. Side effects:
+     * asks identity whether the role may be given, replaces any open invitation to the same address, stores
+      * the new invitation (hash only) and records an audit event, all in {@code
+      * InvitationService.create}. Failure: 403 {@code ORGANISATION_MISMATCH}; 422 for invalid input.
+     */
     @PostMapping("/api/orgs/{orgId}/invitations")
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.MEMBER_INVITE)
@@ -82,6 +111,12 @@ public class InvitationController {
     }
 
     // @find: list invitations, pending invites, GET /api/orgs/{orgId}/invitations
+    /**
+     * {@code GET /api/orgs/{orgId}/invitations}: lists the workspace's invitations, newest first.
+     *
+     * <p>Permission: {@code MEMBER_INVITE}. Response: 200 with the views. Failure: 403
+     * {@code ORGANISATION_MISMATCH} when the path workspace differs from the token's. Read-only.
+     */
     @GetMapping("/api/orgs/{orgId}/invitations")
     @RequiresPermission(Permission.Codes.MEMBER_INVITE)
     @Operation(summary = "Invitations pending for this workspace")
@@ -91,6 +126,13 @@ public class InvitationController {
     }
 
     // @find: revoke invitation, withdraw invite, DELETE /api/orgs/{orgId}/invitations/{invitationId}
+    /**
+     * {@code DELETE /api/orgs/{orgId}/invitations/{invitationId}}: withdraws an invitation so its link
+     * stops working.
+     *
+     * <p>Permission: {@code MEMBER_INVITE}. Response: 200 with the revoked invitation's view (the row is
+     * kept). Failure: 403 for a workspace mismatch; 404 when the invitation is not in this workspace.
+     */
     @DeleteMapping("/api/orgs/{orgId}/invitations/{invitationId}")
     @RequiresPermission(Permission.Codes.MEMBER_INVITE)
     @Operation(summary = "Withdraw an invitation, so its link stops working")
@@ -100,6 +142,13 @@ public class InvitationController {
     }
 
     // @find: accept invitation with new account, POST /api/invitations/accept
+    /**
+     * {@code POST /api/invitations/accept}: accepts an invitation by creating a new account.
+     *
+     * <p>Public path: no token is needed, because the invitation token is the credential. Response: 200
+     * with the accept result (see {@code InvitationService.AcceptResult}). Side effects and failures
+     * (unknown, expired, revoked or used token, weak password) are those of {@code InvitationService.accept}.
+     */
     @PostMapping("/api/invitations/accept")
     @Operation(summary = "Accept an invitation and become a member")
     public InvitationService.AcceptResult accept(@Valid @RequestBody AcceptInvitationRequest request) {
@@ -107,6 +156,13 @@ public class InvitationController {
     }
 
     // @find: accept invitation when signed in, POST /api/invitations/accept-signed-in
+    /**
+     * {@code POST /api/invitations/accept-signed-in}: accepts an invitation with an existing account.
+     *
+     * <p>Requires a valid token but no permission, since the person has no role yet. The raw
+     * {@code Authorization} header is passed to the service, which uses it to identify the account and
+     * check that the invitation was sent to the same address. Response: 200 with the accept result.
+     */
     @PostMapping("/api/invitations/accept-signed-in")
     @Operation(summary = "Accept an invitation with the account already signed in")
     public InvitationService.AcceptResult acceptSignedIn(

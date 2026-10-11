@@ -17,10 +17,13 @@ import org.springframework.data.repository.query.Param;
  * every other repository in this service.
  */
 
+/** Spring Data repository for {@link Skill} rows (table {@code skills}) and the {@code skill_seeds} marker, used by {@code SkillService}. */
 public interface Skills extends JpaRepository<Skill, UUID> {
 
+    /** Every skill of a workspace. */
     List<Skill> findByOrgId(UUID orgId);
 
+    /** One skill by id, only when it belongs to the given workspace. */
     Optional<Skill> findByIdAndOrgId(UUID id, UUID orgId);
 
     /** Whether a skill of this name exists in the workspace, ignoring case, as the unique index does. */

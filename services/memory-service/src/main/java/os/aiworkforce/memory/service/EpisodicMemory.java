@@ -33,6 +33,7 @@ import os.aiworkforce.platform.context.RequestContext;
 @Service
 public class EpisodicMemory {
 
+    /** Logger for compaction progress. */
     private static final Logger log = LoggerFactory.getLogger(EpisodicMemory.class);
 
     /** Episodes below this importance are eligible to be folded into a summary. */
@@ -43,10 +44,28 @@ public class EpisodicMemory {
 
     private final Episodes episodes;
 
+    /** Creates the service over the episodes repository, which is the only store it touches. */
     public EpisodicMemory(Episodes episodes) {
         this.episodes = episodes;
     }
 
+    /**
+     * Appends one episode to the permanent record.
+     *
+     * Flow: the importance is clamped to 1 through 10, an episode is built for the organisation and agent,
+     * the run id and detail map are attached, the acting user (when the request has one) is stored as the
+     * creator, and the row is saved. Called by InternalMemoryController, which validates the request
+     * first. Side effect: one insert. A database failure propagates to the caller.
+     *
+     * @param orgId organisation that owns the episode
+     * @param agentId agent the episode is about; may be null for workspace-wide events
+     * @param runId run during which it happened; may be null
+     * @param kind category such as observation, decision, handoff or outcome
+     * @param summary short text that is searched and recalled
+     * @param importance weight from 1 to 10; values outside the range are clamped
+     * @param detail structured extra data stored beside the summary; may be null
+     * @return the saved episode
+     */
     @Transactional
     // @find: record episode, save what an agent did
     public Episode record(
@@ -81,6 +100,13 @@ public class EpisodicMemory {
         return episodes.search(orgId, agentId, query, PageRequest.of(0, capped));
     }
 
+    /**
+     * Lists the episodes recorded during one run, oldest first. Read-only; called by MemoryController to show
+     * what an agent did in a run. Returns an empty list when the run has none.
+     *
+     * @param orgId organisation scope
+     * @param runId run to look up
+     */
     @Transactional(readOnly = true)
     // @find: episodes for a run, run memory
     public List<Episode> forRun(UUID orgId, UUID runId) {
@@ -96,6 +122,18 @@ public class EpisodicMemory {
      *
      * <p>Decisions, handoffs and outcomes are never compacted, whatever their age: those are the
      * ones somebody reconstructs an incident from.
+     *
+     * <p>Compacts one organisation's old, low-importance episodes. No controller or job in this service
+     * calls it today; it is available to a future scheduled or operator-triggered compaction.
+     *
+     * <p>Flow: select candidates older than the compaction age with importance below the ceiling, return 0 when
+     * fewer than two exist, group them by agent, and for each group of two or more save a summary episode
+     * that records the ids it supersedes, then flag the originals as compacted. Episodes with no agent are
+     * skipped. Side effects: inserts and updates in one transaction, so a failure leaves no partial
+     * compaction. Returns the number of episodes folded.
+     *
+     * @param orgId organisation scope
+     * @param batchSize maximum number of candidates examined in this call
      */
     @Transactional
     // @find: compact episodes, summarise old episodes
@@ -159,13 +197,21 @@ public class EpisodicMemory {
                 + "Treat the detail as unavailable rather than as agreed.";
     }
 
-    /** Removes episodes past their retention date. Runs in small batches for the same reason. */
+    /**
+     * Removes episodes past their retention date. Runs in small batches for the same reason.
+     *
+     * <p>Deletes episodes whose expiry has passed, at most {@code batchSize} per call. Called by
+     * {@link EpisodePurgeJob} in a loop. Returns the number of rows removed; this is a hard delete.
+     *
+     * @param batchSize maximum rows removed in this call
+     */
     @Transactional
     // @find: purge expired episodes, retention cleanup
     public int purgeExpired(int batchSize) {
         return episodes.deleteExpired(Instant.now(), batchSize);
     }
 
+    /** Restricts an importance value to the range 1 through 10. */
     private static int clamp(int importance) {
         return Math.min(10, Math.max(1, importance));
     }

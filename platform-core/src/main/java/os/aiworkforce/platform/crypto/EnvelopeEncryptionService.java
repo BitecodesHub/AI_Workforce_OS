@@ -45,6 +45,7 @@ public class EnvelopeEncryptionService {
     private final SecretKey masterKey;
     private final String masterKeyId;
 
+    /** Reads the encryption settings and derives the master key; fails at start-up if a development key is used in a deployed environment. */
     public EnvelopeEncryptionService(PlatformProperties properties) {
         this.config = properties.security().encryption();
         this.masterKeyId = config.masterKeyId();
@@ -83,7 +84,20 @@ public class EnvelopeEncryptionService {
         }
     }
 
-    /** Encrypts {@code plaintext} for {@code orgId}. */
+    /**
+     * Encrypts {@code plaintext} for {@code orgId}.
+     *
+     * <p>Flow: generates a fresh 256-bit data key and a random IV, encrypts with AES-GCM using the
+     * organisation as additional authenticated data, then wraps the data key under the master key.
+     * Called by the organisation service's {@code CredentialService} and the integrations service's
+     * {@code ConnectorService} before a secret is written to the database. No side effects.
+     *
+     * @param orgId the owning workspace, or {@code null} for a platform-level secret
+     * @param plaintext the secret to protect
+     * @return the value to store, via {@link EncryptedValue#serialise()}
+     * @throws IllegalArgumentException when {@code plaintext} is {@code null}
+     * @throws ApiException {@code internal_error} when the cipher fails
+     */
     // @find: encrypt secret, store credential securely
     public EncryptedValue encrypt(String orgId, String plaintext) {
         if (plaintext == null) {
@@ -102,7 +116,15 @@ public class EnvelopeEncryptionService {
         }
     }
 
-    /** Decrypts a stored value for {@code orgId}. */
+    /**
+     * Decrypts a stored value for {@code orgId}.
+     *
+     * <p>Flow: unwraps the data key with the master key, then decrypts the payload. Both steps
+     * bind the organisation, so a value read under the wrong workspace fails.
+     *
+     * @throws ApiException {@code internal_error} for a wrong organisation, a tampered value, or a
+     *     master key this process does not hold
+     */
     // @find: decrypt secret, read stored credential
     public String decrypt(String orgId, EncryptedValue value) {
         try {
@@ -118,6 +140,7 @@ public class EnvelopeEncryptionService {
         }
     }
 
+    /** Convenience overload that parses the serialised form and decrypts it for the given organisation. */
     public String decrypt(String orgId, String serialised) {
         return decrypt(orgId, EncryptedValue.parse(serialised));
     }
@@ -143,12 +166,14 @@ public class EnvelopeEncryptionService {
         return !masterKeyId.equals(value.keyId());
     }
 
+    /** Generates a fresh random data key; one is created for every value encrypted. */
     private SecretKey newDataKey() throws GeneralSecurityException {
         KeyGenerator generator = KeyGenerator.getInstance(KEY_ALGORITHM);
         generator.init(DATA_KEY_BITS, random);
         return generator.generateKey();
     }
 
+    /** Encrypts a data key under the master key with AES-GCM, binding the organisation as additional authenticated data. The result is the random IV followed by the wrapped bytes. */
     private byte[] wrap(SecretKey dataKey, String orgId) throws GeneralSecurityException {
         byte[] iv = randomIv();
         Cipher cipher = Cipher.getInstance(config.transformation());
@@ -161,6 +186,7 @@ public class EnvelopeEncryptionService {
         return out;
     }
 
+    /** Reverses {@link #wrap}. Fails with an internal error when the stored key identifier is not the master key held by this process, and the GCM tag check fails if the organisation does not match. */
     private SecretKey unwrap(byte[] wrapped, String keyId, String orgId) throws GeneralSecurityException {
         if (!masterKeyId.equals(keyId)) {
             throw new ApiException(
@@ -176,10 +202,12 @@ public class EnvelopeEncryptionService {
         return new SecretKeySpec(cipher.doFinal(body), KEY_ALGORITHM);
     }
 
+    /** Builds the GCM parameters (tag length from configuration) for the given IV. */
     private GCMParameterSpec gcmSpec(byte[] iv) {
         return new GCMParameterSpec(config.tagLengthBits(), iv);
     }
 
+    /** Returns a new random initialisation vector of the configured length; an IV is never reused. */
     private byte[] randomIv() {
         byte[] iv = new byte[config.ivLengthBytes()];
         random.nextBytes(iv);

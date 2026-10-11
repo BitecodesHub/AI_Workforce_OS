@@ -14,6 +14,7 @@ import { Button, EmptyState, ErrorState, LoadingState, Notice, PermissionState }
  * different situations that looked identical, or worse, looked like success.
  */
 
+/** The subset of a TanStack query result that QueryState needs: data, error, isLoading, refetch and an optional dataUpdatedAt (epoch ms) for the stale banner. */
 type QueryLike<T> = {
   data: T | undefined
   error: unknown
@@ -33,6 +34,16 @@ function isMissingRecord(error: unknown): boolean {
 }
 
 // @find: loading error empty state wrapper, retry, permission denied
+/**
+ * Renders the state of a data query the same way on every screen, then the content once data is present.
+ * Props: query, permission (named in the message when the role lacks it), what (a phrase such as "the approvals queue", used in labels and messages), isEmpty and empty (shown instead of children when isEmpty(data) is true), rows (skeleton row count, default 4), notFound (the way out when the record does not exist) and keepData.
+ * Order of states: loading (LoadingState, also while data is still undefined); error, which is one of:
+ * stale banner over the last good data when keepData is set and data exists (a polling screen that lost
+ * connection, with Retry now); PermissionState for a permission-denied ApiError; a "does not exist" empty
+ * state for a 404 or malformed id (an h1 when notFound supplies a way out, otherwise h2); otherwise an
+ * ErrorState with the described error and a retry that refetches when the error is retryable or a network
+ * failure; then the empty state; then children(data).
+ */
 export function QueryState<T>({
   query,
   permission,

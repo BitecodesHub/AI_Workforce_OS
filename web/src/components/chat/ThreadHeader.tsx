@@ -21,6 +21,10 @@ import { visibilityLabel } from '../../lib/chatQueries'
  * that could not be opened (`unavailable`) offers none of the actions that would act on it.
  */
 
+/**
+ * Small decorative inline SVG icons for the header: actions menu, conversations list, new conversation,
+ * work panel, and the lock and people marks of the privacy pill. All are hidden from assistive technology.
+ */
 function MenuIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -75,6 +79,21 @@ function WorkspaceIcon() {
 }
 
 // @find: ThreadHeader, thread header, thread header, conversation title, rename conversation, who is in conversation
+/**
+ * Top band of the chat panel: title, privacy pill, participant avatars and the conversation actions menu.
+ * Props: eyebrow (kept visually hidden for screen readers), title, conversation (null before one exists),
+ * unavailable (it could not be opened, so no action that would act on it is offered), participants (agents
+ * taking part; four avatars and a "+N" count are shown), readOnly (a questions-only role gets a "Questions
+ * only" tag), the sidebar and new-conversation buttons for narrow screens, the work panel toggle, and the
+ * action callbacks.
+ * Behaviour: Rename (when conversation.canManage) swaps the heading for an input that focuses itself,
+ * commits on Enter or blur with a changed non-empty title through onRename, and cancels on Escape. The
+ * privacy pill reads "Private" (creator and added people) or "Workspace" with the full sentence for screen
+ * readers (visibilityLabel); a conversation not yet started counts as private. The menu holds Pin, Copy link,
+ * Copy conversation, Create skill from this conversation, Share with workspace or Make private and Add people
+ * (for those who may share), a sound toggle when a speaker provider exists, the Details mode choice
+ * (Automatic, Expanded, Collapsed), Keyboard shortcuts and Delete (for managers).
+ */
 export function ThreadHeader({
   eyebrow,
   title,

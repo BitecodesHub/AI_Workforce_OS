@@ -36,6 +36,7 @@ import { PayloadView } from './PayloadView'
  * needs no permission, and it cancels the run: nothing is sent by default.
  */
 
+/** Technical-voice lead paragraph, the three decider choices (Manager, Employee, Viewer) and the TagView type (tone and label of a tag). */
 const LEAD =
   'Reads and drafts run freely. Anything outbound or destructive, such as gmail.send_message, slack.post_message or calendar.delete_event, parks the run until a person with approval:decide answers.'
 
@@ -47,6 +48,7 @@ const DECIDERS: ReadonlyArray<{ value: Decider; label: string }> = [
 
 type TagView = { tone: TagTone; label: string }
 
+/** How each step state is drawn: the glyph (an icon, a spinner, or none) and the tag (tone and label) of the step. */
 const STEP_VIEW: Record<StepState, { glyph: IconName | 'spinner' | null; tag: TagView | null }> = {
   ghost: { glyph: null, tag: null },
   active: { glyph: 'spinner', tag: { tone: 'blue', label: 'Running' } },
@@ -58,6 +60,7 @@ const STEP_VIEW: Record<StepState, { glyph: IconName | 'spinner' | null; tag: Ta
   skipped: { glyph: 'dash', tag: { tone: 'neutral', label: 'Not run' } },
 }
 
+/** Run status tag by phase, the approval card's tag by card status, and the result copy by outcome (technical voice). */
 const RUN_STATUS: Record<Phase, TagView> = {
   idle: { tone: 'neutral', label: 'Not started' },
   running: { tone: 'blue', label: 'Running' },
@@ -144,6 +147,7 @@ const TECHNICAL_STEPS = [
   'Watch the run carry on, or stop, because of that decision.',
 ] as const
 
+/** All the words that differ between the two voices: names, lead, footnote, steps, legend, start label, headings, step and result copy, and the explanatory notes for an employee and a viewer. */
 type Copy = {
   name: string
   title: string
@@ -166,6 +170,7 @@ const EMPLOYEE_NOTE =
 const VIEWER_NOTE =
   'A viewer does not see the approval queue, because the role lacks approval:read. The run stays parked until someone who holds approval:decide answers.'
 
+/** The copy of each voice. technical (the page for IT teams) names tools and permission codes and shows the payload as JSON; plain (the home page) uses everyday words and shows the payload as an email. */
 const COPY: Record<DemoVoice, Copy> = {
   technical: {
     name: 'Approval gate',
@@ -199,24 +204,29 @@ const COPY: Record<DemoVoice, Copy> = {
   },
 }
 
+/** CSS variable that sets the duration of the deadline bar animation. */
 const BAR_STYLE = { '--lp-bar-ms': '1200ms' } as CSSProperties
 
+/** The outcome shown in the result block for a phase (completed, rejected or expired), or null while the run is still going. */
 function outcomeOf(phase: Phase): Outcome | null {
   return phase === 'completed' || phase === 'rejected' || phase === 'expired' ? phase : null
 }
 
+/** Text of the deadline line: "Deadline passing", "Deadline passed", or the sped-up real 24 hour deadline. */
 function deadlineLabel(state: ApprovalState): string {
   if (state.phase === 'expiring') return 'Deadline passing'
   if (state.card === 'expired') return 'Deadline passed'
   return 'Real deadline: 24 h, sped up here'
 }
 
+/** Drives the deadline bar animation: full, draining while the deadline passes, or empty once it has passed. */
 function deadlineRun(state: ApprovalState): 'full' | 'drain' | 'empty' {
   if (state.phase === 'expiring') return 'drain'
   if (state.card === 'expired') return 'empty'
   return 'full'
 }
 
+/** One step of the simulated run: a marker (spinner or icon for its state), the label, a state tag and the detail line. A step that has not started has no tag and reads "Not started" to screen readers. The marker is keyed by state so it animates on each change. */
 function StepRow({
   id,
   stepState,
@@ -257,6 +267,7 @@ function StepRow({
   )
 }
 
+/** The result block shown when the run ends: the outcome title and body (the heading receives focus) and a "Run it again" button that calls onReset. */
 function RunResult({
   outcome,
   headingRef,
@@ -305,9 +316,23 @@ function EmailPreview({ payload }: { payload: typeof PAYLOAD }): ReactElement {
   )
 }
 
+/** Props: voice, technical (default) or plain. */
 export type ApprovalDemoProps = { voice?: DemoVoice }
 
 // @find: ApprovalDemo component, approval gate demo
+/**
+ * Landing demo 01: a simulated HR agent run that parks at an approval gate until a person who may decide answers.
+ * State: a reducer (approvalReducer, from initApprovalState; with reduced motion it starts already parked).
+ * useSequence plays timed step lists (startSteps, approveSteps, expireSteps). It autoplays once the stage is 45 percent
+ * in view (useInView) and never autoplays again once started, guarded by reducer state rather than a ref so a StrictMode replay is safe.
+ * Interaction: a segmented control chooses who is deciding. A manager can Approve or Reject; an employee sees
+ * the request but is told the role cannot decide; a viewer sees no request details at all until it is decided,
+ * because the role lacks approval:read. Any role may "Let the deadline pass", which cancels the run: nothing is
+ * sent by default. The triggers stay focusable but aria-disabled while a decision is being carried out.
+ * Accessibility: the reducer's announcement goes to the frame's status region; focus moves (without scrolling)
+ * to the timeline, card or result heading only when the reducer asks, which happens only after a user action.
+ * Nothing real is sent: the demo is entirely local. Rendered by DemoStage and the home page inside DemoFrame.
+ */
 export function ApprovalDemo({ voice = 'technical' }: ApprovalDemoProps = {}): ReactElement {
   const copy = COPY[voice]
   const { reduced } = useLandingMotion()

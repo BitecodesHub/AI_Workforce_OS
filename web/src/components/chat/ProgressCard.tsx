@@ -33,6 +33,12 @@ import { DetailsContext } from './detailsContext'
 const REVEAL_ATTEMPTS = 20
 const REVEAL_RETRY_MS = 150
 
+/**
+ * One step of a goal's chain: a pill showing the agent, the task status and, for the current step, a pulse dot.
+ * Pressing the pill expands a compact trace of the task's run (RunTraceCompact, last four steps, answer hidden)
+ * or, when the task has no run yet, a note that it has not started. A task waiting for input also links
+ * to its question by anchor. State: whether the trace is open.
+ */
 function TaskChainStep({
   task,
   agent,
@@ -90,6 +96,7 @@ function RunningStepText({ runId, active }: { runId: string; active: boolean }) 
   return <>{liveStepText(steps?.[steps.length - 1])}</>
 }
 
+/** Plain-words description of the current task for the live header: starting, waiting for approval or an answer, or the running step. */
 function stepText(task: BoardTask | undefined): ReactNode {
   if (!task) return 'Starting'
   if (task.status === 'waiting_approval') return 'Waiting for approval'
@@ -157,6 +164,21 @@ function LiveHeader({
 }
 
 // @find: ProgressCard, progress card, goal progress, live goal, chain of agents, task steps
+/**
+ * Live card for one goal in the thread, rendered by MessageItem for a "progress" message.
+ * Reads nothing itself; the goal and questions come from the thread. Three presentations: (1) while the goal is
+ * active, a live card with LiveHeader (current agent, status, elapsed time, Stop, link to the Orchestrator,
+ * and a live browser preview), a collapsible chain of steps when there is more than one, and the inline
+ * approval for a task waiting on one (InlineApproval); (2) once a single-step goal completed cleanly, a one-line
+ * receipt; (3) otherwise a collapsible summary with the goal title, the full chain, any approval and, for a
+ * failed or cancelled goal the viewer may retry, a Try again button.
+ * Actions: Stop opens a ConfirmDialog and calls onStop(goalId); Try again opens a ConfirmDialog naming the
+ * step it restarts from (warning that side effects may repeat) and calls onRetry(goalId).
+ * State and effects: the open state follows the thread-wide Details mode (DetailsContext, useCollapsed), and a
+ * "Review" request from the work strip (revealGoal) opens the card during render, then an effect polls up to
+ * 20 times at 150 ms for the Approve button, scrolls to it and focuses it. The cost in the summary is shown
+ * only to viewers who may see spend.
+ */
 export function ProgressCard({
   goal,
   agentNames,

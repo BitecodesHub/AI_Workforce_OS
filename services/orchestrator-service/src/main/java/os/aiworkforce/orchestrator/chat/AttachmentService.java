@@ -53,6 +53,7 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 @Service
 public class AttachmentService {
 
+    /** Logger for storage, sweep and knowledge-save events. */
     private static final Logger log = LoggerFactory.getLogger(AttachmentService.class);
 
     /** The knowledge source files saved from chat go into, created the first time one is saved. */
@@ -81,6 +82,7 @@ public class AttachmentService {
             boolean savedToKnowledge,
             Instant createdAt) {
 
+        /** Builds the view from a stored row, working out whether a model could be shown the image. */
         static AttachmentView of(ChatAttachments.Row row) {
             return new AttachmentView(
                     row.id(),
@@ -112,6 +114,7 @@ public class AttachmentService {
     private final WebClient knowledge;
 
     @Autowired
+    /** Builds the service and a client for the knowledge service, whose base address comes from the platform properties. */
     public AttachmentService(
             ChatAttachments attachments,
             AttachmentReader reader,
@@ -131,7 +134,14 @@ public class AttachmentService {
     /**
      * Stores one file for a message about to be written.
      *
+     * <p>Flow: requires a signed-in person and, when a conversation is given, access to it; cleans
+     * the file name; refuses empty, oversized (over {@link AttachmentTypes#MAX_BYTES}) or test-virus
+     * files; asks {@link AttachmentReader} (and so the knowledge service, over HTTP) to detect the
+     * type and extract text; then inserts the row as {@code ready} or {@code unreadable}. Images
+     * need no text. Called by {@link AttachmentController}.
+     *
      * @param conversationId the conversation it is for, or null for a chat its first message will create
+     * @throws ApiException validation, payload too large, unsupported type or permission denied
      */
     // @find: upload attachment, add file to chat, accept attachment, size and type check
     public AttachmentView upload(UUID orgId, Actor actor, UUID conversationId, String filename, byte[] content) {
@@ -187,11 +197,19 @@ public class AttachmentService {
 
     // ---- Reading -------------------------------------------------------------------------------
 
+    /**
+     * One attachment's details, when this person may read it (see {@link #readable}); not found otherwise.
+     * Called by {@link AttachmentController}. Read-only.
+     */
     // @find: view attachment, attachment details
     public AttachmentView view(UUID orgId, Actor actor, UUID id) {
         return AttachmentView.of(readable(orgId, actor, id));
     }
 
+    /**
+     * An attachment's row and bytes for download, under the same access rule as {@link #view}. Called
+     * by {@link AttachmentController}. Read-only; not found when the row or its content is missing or hidden.
+     */
     // @find: download attachment, read attachment content
     public Download download(UUID orgId, Actor actor, UUID id) {
         ChatAttachments.Row row = readable(orgId, actor, id);
@@ -199,6 +217,11 @@ public class AttachmentService {
         return new Download(row, content);
     }
 
+    /**
+     * The file, when this person may read it; otherwise "not found". An unsent file is the uploader's
+     * alone; a sent one follows read access to its conversation. Both failure paths give the same
+     * not-found error so that ids reveal nothing.
+     */
     /** The file, when this person may read it; otherwise "not found". */
     private ChatAttachments.Row readable(UUID orgId, Actor actor, UUID id) {
         ChatAttachments.Row row = attachments.find(orgId, id).orElseThrow(() -> ApiException.notFound("attachment", id));
@@ -218,7 +241,12 @@ public class AttachmentService {
 
     // ---- Removing ------------------------------------------------------------------------------
 
-    /** Takes back a file attached but not sent. A sent file goes with its conversation. */
+    /**
+     * Takes back a file attached but not sent. A sent file goes with its conversation.
+     *
+     * <p>Only the uploader may do this (not found for anyone else); a sent file is refused with a
+     * conflict. Deletes the row. Called by {@link AttachmentController}.
+     */
     // @find: delete attachment, remove file from chat
     public void delete(UUID orgId, Actor actor, UUID id) {
         ChatAttachments.Row row = attachments.find(orgId, id).orElseThrow(() -> ApiException.notFound("attachment", id));
@@ -232,7 +260,12 @@ public class AttachmentService {
         attachments.delete(orgId, id);
     }
 
-    /** Files attached and never sent are let go after a day. */
+    /**
+     * Files attached and never sent are let go after a day.
+     *
+     * <p>Runs hourly (first run five minutes after start-up) and deletes unsent rows older than
+     * {@link #UNSENT_KEPT_FOR}. Failures are logged and swallowed so the schedule continues.
+     */
     // @find: scheduled sweep, delete unsent attachments, clean up abandoned uploads, hourly job
     @Scheduled(fixedDelayString = "${aiwos.chat.attachment-sweep-interval:PT1H}", initialDelayString = "PT5M")
     public void sweepUnsent() {
@@ -254,6 +287,8 @@ public class AttachmentService {
      * transaction that writes the message, so a refusal leaves nothing behind.
      *
      * @return the files, in the order they were attached, for the message's detail
+     * @throws ApiException validation error, with a message the person can act on, when a file is missing,
+     *     not theirs, already sent, for another conversation, unreadable, or when there are too many
      */
     // @find: check attachments before send, validate attachment ids for message
     public List<ChatAttachments.Row> checkForSend(UUID orgId, Actor actor, UUID conversationId, List<UUID> ids) {
@@ -283,7 +318,7 @@ public class AttachmentService {
         return rows;
     }
 
-    /** Ties the checked files to the message that carries them. */
+    /** Ties the checked files to the message that carries them; writes the message id on each row, and does nothing for an empty list. */
     // @find: bind attachments to message, attach files to sent message
     public void bind(UUID orgId, UUID conversationId, UUID messageId, List<ChatAttachments.Row> rows) {
         if (!rows.isEmpty()) {
@@ -292,7 +327,7 @@ public class AttachmentService {
         }
     }
 
-    /** Gives a message's files to the work it started, so its runs read them. */
+    /** Gives a message's files to the work it started, so its runs read them; writes the goal id on those rows. Called by {@link CoordinatorService}. */
     // @find: link attachment to goal, attach file to run
     public void linkGoal(UUID orgId, UUID messageId, UUID goalId) {
         attachments.linkGoal(orgId, messageId, goalId);
@@ -301,7 +336,8 @@ public class AttachmentService {
     /**
      * Work sent to a different agent takes its files along: those of the goal it replaces, or -
      * when the coordinator could not choose and nothing was started - those of the message the
-     * person sent just above the choice.
+     * person sent just above the choice. Called by {@link CoordinatorService} on a reroute; writes
+     * the goal id on the files it moves.
      */
     // @find: follow reroute, move attachments to new goal after reroute
     public void followReroute(UUID orgId, UUID conversationId, UUID previousGoalId, int routingPosition, UUID goalId) {
@@ -311,7 +347,7 @@ public class AttachmentService {
         }
     }
 
-    /** What a sent message records about each file, for its card in the thread. */
+    /** What a sent message records about each file, for its card in the thread: id, name, type, size, kind and page count. */
     static List<Map<String, Object>> detailOf(List<ChatAttachments.Row> rows) {
         List<Map<String, Object>> detail = new ArrayList<>();
         for (ChatAttachments.Row row : rows) {
@@ -330,7 +366,7 @@ public class AttachmentService {
     /**
      * What the coordinator and the planner read for a message with files: what the person wrote,
      * or a plain request to look at the files when they wrote nothing, and the files' names, so the
-     * work is routed knowing what it is about.
+     * work is routed knowing what it is about. Pure text building; no side effects.
      */
     static String requestWithNames(String text, List<ChatAttachments.Row> rows) {
         if (rows.isEmpty()) {
@@ -357,6 +393,14 @@ public class AttachmentService {
     /**
      * Adds a sent or unsent file to the workspace's documents, as the person asking, into the
      * {@value #KNOWLEDGE_SOURCE_NAME} source. The knowledge service decides whether they may.
+     *
+     * <p>Flow: reads the file under the usual access rule, finds or creates the source, uploads the
+     * bytes over HTTP with the person's own authorization header (two minutes at most), and marks
+     * the attachment as saved with the new document id. Called by {@link AttachmentController}.
+     *
+     * @throws ApiException permission denied when no authorization is held or the knowledge
+     *     service refuses the role; validation when it rejects the file; dependency unavailable
+     *     when it cannot be reached
      */
     // @find: save attachment to knowledge base, add chat file to documents
     public Saved saveToKnowledge(UUID orgId, Actor actor, UUID id, String authorization) {
@@ -410,6 +454,10 @@ public class AttachmentService {
         }
     }
 
+    /**
+     * The id of the "Saved from Chat" source that no agent owns, found by name over HTTP or created
+     * (a write in the knowledge service) the first time. Dependency unavailable when it cannot be created.
+     */
     private UUID chatSource(UUID orgId, String authorization) {
         JsonNode sources = knowledge.get()
                 .uri("/api/sources")
@@ -449,6 +497,7 @@ public class AttachmentService {
         return access.require(orgId, actor, conversationId);
     }
 
+    /** The caller's person id; permission denied for a caller with no person behind them. */
     private static String requirePerson(Actor actor) {
         String me = actor.humanId();
         if (me == null || me.isBlank()) {

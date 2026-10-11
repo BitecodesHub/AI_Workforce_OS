@@ -24,6 +24,11 @@ import os.aiworkforce.platform.web.PlatformWeb;
         basePackageClasses = {IntegrationsApplication.class, PlatformCore.class, PlatformWeb.class, McpCore.class})
 public class IntegrationsApplication {
 
+    /**
+     * Starts the integrations service.
+     *
+     * @param args the standard command line arguments, passed on to Spring Boot
+     */
     public static void main(String[] args) {
         SpringApplication.run(IntegrationsApplication.class, args);
     }

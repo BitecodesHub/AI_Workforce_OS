@@ -32,13 +32,24 @@ import os.aiworkforce.platform.error.ErrorCode;
 @Tag(name = "Workspaces")
 public class InternalWorkspaceController {
 
+    /** Source of workspace rows. */
     private final Organisations organisations;
 
+    /** Creates the controller with the workspace repository. */
     public InternalWorkspaceController(Organisations organisations) {
         this.organisations = organisations;
     }
 
     // @find: get workspace for service, GET /internal/workspaces/{workspaceId}
+    /**
+     * {@code GET /internal/workspaces/{workspaceId}}: one workspace as a view (id, name, slug,
+     * timezone and status, as built by {@code WorkspaceController.toView}).
+     *
+     * <p>Permission: no {@code @RequiresPermission}; the method itself refuses an actor of kind user or API
+     * key with 403 {@code PERMISSION_DENIED}, leaving agent and system tokens issued to services. The
+     * caller must be authenticated.
+     * Failure: 404 when no such workspace exists. Read-only; no audit record.
+     */
     @GetMapping("/{workspaceId}")
     @Operation(summary = "Internal: one workspace, for a sibling service")
     public WorkspaceController.WorkspaceView get(@PathVariable UUID workspaceId) {

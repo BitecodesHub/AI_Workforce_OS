@@ -55,6 +55,7 @@ import os.aiworkforce.platform.error.ApiException;
 @Service
 public class ModelCatalogService {
 
+    /** Logger; records provider ids and status codes only, never a key or a provider's error body. */
     private static final Logger log = LoggerFactory.getLogger(ModelCatalogService.class);
 
     /** How long a fetched list is used before the provider is asked again. */
@@ -66,6 +67,7 @@ public class ModelCatalogService {
     /** Gemini and Anthropic page their lists; more pages than this is not a list anyone scrolls. */
     private static final int MAX_PAGES = 5;
 
+    /** Where a listing came from, so the picker can say how fresh it is. */
     public enum Source {
         /** Fetched from the provider for this request. */
         live,
@@ -81,6 +83,7 @@ public class ModelCatalogService {
      * @param pricePerMTokIn US dollars per million input tokens; null when the provider does not list it
      * @param pricingNote how a free provider limits use, for example; null when there is nothing to say
      */
+    /** One model for the picker. */
     public record ModelOption(
             String id,
             String displayName,
@@ -108,19 +111,30 @@ public class ModelCatalogService {
             int freeCount,
             List<ModelOption> models) {}
 
+    /** A cached listing and when it was fetched. */
     private record Entry(Instant fetchedAt, List<CatalogModel> models) {}
 
+    /** Finds the providers a workspace has switched on. */
     private final JpaProviderRegistry registry;
+    /** Reads the seeded and discovered model rows. */
     private final Models models;
+    /** Looks up a workspace's stored provider key. */
     private final CredentialResolver credentials;
+    /** Saves discovered models into the shared catalogue. */
     private final ModelCatalogStore store;
+    /** Reads provider list responses. */
     private final ObjectMapper json;
+    /** Makes the GET calls to providers. */
     private final ModelListHttp http;
+    /** Time source for cache ageing and request signing. */
     private final Clock clock;
 
+    /** Fetched lists per workspace and provider (and per workspace and provider for embeddings), valid for {@link #TTL}; lost on restart. */
     private final Map<String, Entry> cache = new ConcurrentHashMap<>();
+    /** One lock object per cache key, so concurrent requests for the same list make one provider call. */
     private final Map<String, Object> locks = new ConcurrentHashMap<>();
 
+    /** Builds the service with the real HTTP client and system clock; used by Spring. */
     @Autowired
     public ModelCatalogService(
             JpaProviderRegistry registry,
@@ -131,6 +145,7 @@ public class ModelCatalogService {
         this(registry, models, credentials, store, json, ModelListHttp.jdk(), Clock.systemUTC());
     }
 
+    /** Builds the service with a given HTTP seam and clock, so tests need no network. */
     ModelCatalogService(
             JpaProviderRegistry registry,
             Models models,
@@ -152,17 +167,32 @@ public class ModelCatalogService {
     private os.aiworkforce.llm.provider.BedrockProvider bedrock;
 
     @Autowired(required = false)
+    /** Optional injection of the Bedrock adapter. */
     void setBedrock(os.aiworkforce.llm.provider.BedrockProvider bedrock) {
         this.bedrock = bedrock;
     }
 
+    /** Whether this is Bedrock and the server itself has an AWS role it can list models with. */
     private boolean bedrockHasRole(ProviderDescriptor.Kind kind) {
         return kind == ProviderDescriptor.Kind.BEDROCK && bedrock != null && bedrock.hasAmbientCredential(null);
     }
 
     /**
+     * The models of one provider for the picker, as the workspace is allowed to see them.
+     *
+     * <p>Flow: serves a cached list while it is younger than {@link #TTL} (and a refresh is not
+     * asked for, or came within {@link #REFRESH_FLOOR}); otherwise looks up the workspace's stored
+     * key, fetches the provider's list over HTTP, fills gaps from the seeded rows, saves the
+     * tool-capable models to {@code llm_models} through {@link ModelCatalogStore} and caches the
+     * result. The sandbox provider is never asked. Called by the model catalogue controller.
+     *
+     * <p>Failure behaviour: a missing key, an unavailable credential store or a provider failure
+     * returns the saved models with a plain message instead of an error; a failure while saving is
+     * logged and the fetched list is still returned. The key is never logged.
+     *
      * @param refresh ask the provider now, unless it was asked in the last {@link #REFRESH_FLOOR}
      * @param all include models that cannot call tools, for diagnosis
+     * @throws ApiException not found when the provider is unknown to the workspace
      */
     // @find: list provider models, refresh model list, model picker for agents
     public CatalogueView list(UUID orgId, String providerId, boolean refresh, boolean all) {
@@ -231,6 +261,7 @@ public class ModelCatalogService {
      *
      * @param pricePerMTokIn US dollars per million input tokens; null when the provider does not list it
      */
+    /** One embedding model for the knowledge base's picker. */
     public record EmbeddingOption(
             String providerId,
             String providerName,
@@ -247,6 +278,7 @@ public class ModelCatalogService {
      * @param models free first, then by provider and name
      * @param notes a plain sentence for each provider that could not be asked, or has no key stored
      */
+    /** All embedding options plus a note for each provider that could not be read. */
     public record EmbeddingCatalogue(List<EmbeddingOption> models, List<String> notes) {}
 
     /**
@@ -335,6 +367,11 @@ public class ModelCatalogService {
         return new EmbeddingCatalogue(options, notes);
     }
 
+    /**
+     * Fetches one provider's embedding models: an HTTP GET (several pages for Gemini; a signed request for Bedrock) shaped by {@link ModelListParsers}.
+     *
+     * @throws CatalogueUnavailable when the provider has no base URL, cannot be reached or answers with an error
+     */
     private List<CatalogModel> fetchEmbedding(LlmProviderEntity entity, ProviderDescriptor.Kind kind, String credential)
             throws CatalogueUnavailable {
         if (kind == ProviderDescriptor.Kind.BEDROCK) {
@@ -374,7 +411,7 @@ public class ModelCatalogService {
         };
     }
 
-    /** Forgets every cached list, for a test. */    /** Forgets every cached list, for a test. */
+    /** Forgets every cached list, for a test. */
     void clear() {
         cache.clear();
     }
@@ -388,6 +425,11 @@ public class ModelCatalogService {
         }
     }
 
+    /**
+     * Fetches one provider's chat model list over HTTP, using the header and paging scheme of its kind (Anthropic, Gemini, Ollama, or an OpenAI-style list) and parsing it with {@link ModelListParsers}.
+     *
+     * @throws CatalogueUnavailable when the provider has no base URL, cannot be reached or answers with an error
+     */
     private List<CatalogModel> fetch(LlmProviderEntity entity, ProviderDescriptor.Kind kind, String credential)
             throws CatalogueUnavailable {
         if (kind == ProviderDescriptor.Kind.BEDROCK) {
@@ -463,6 +505,11 @@ public class ModelCatalogService {
         return ModelListParsers.bedrock(foundation, profiles);
     }
 
+    /**
+     * Reads the stored Bedrock credential, or falls back to the server's own AWS role when none is stored.
+     *
+     * @throws CatalogueUnavailable when neither is available or the stored value cannot be read
+     */
     private BedrockCredentials bedrockCredentials(String credential) throws CatalogueUnavailable {
         if (credential == null || credential.isBlank()) {
             if (bedrock != null) {
@@ -480,6 +527,7 @@ public class ModelCatalogService {
         }
     }
 
+    /** A signed GET to Bedrock, in the credential's region (or the default region); see {@link #get}. */
     private JsonNode bedrockGet(String url, BedrockCredentials keys) throws CatalogueUnavailable {
         URI uri = URI.create(url);
         BedrockCredentials inRegion = keys.region() != null
@@ -498,6 +546,7 @@ public class ModelCatalogService {
                 .toList();
     }
 
+    /** Reads Anthropic's model list page by page, up to {@link #MAX_PAGES} pages. */
     private List<CatalogModel> anthropicPages(String base, Map<String, String> headers) throws CatalogueUnavailable {
         List<CatalogModel> out = new ArrayList<>();
         String after = null;
@@ -514,6 +563,7 @@ public class ModelCatalogService {
         return out;
     }
 
+    /** Reads Gemini's model list page by page, up to {@link #MAX_PAGES} pages. */
     private List<CatalogModel> geminiPages(String base, Map<String, String> headers) throws CatalogueUnavailable {
         List<CatalogModel> out = new ArrayList<>();
         String token = null;
@@ -529,6 +579,11 @@ public class ModelCatalogService {
         return out;
     }
 
+    /**
+     * One GET returning a JSON object.
+     *
+     * @throws CatalogueUnavailable on a network failure, a non-2xx status or a body that is not a JSON object; the message holds no key and no provider text
+     */
     private JsonNode get(String url, Map<String, String> headers) throws CatalogueUnavailable {
         ModelListHttp.Response response;
         try {
@@ -614,6 +669,7 @@ public class ModelCatalogService {
                 .toList();
     }
 
+    /** Shapes a listing into the picker view: one row per model id, tool-capable models only unless {@code all} is set, free models first, and a free model priced at zero. */
     private CatalogueView view(
             LlmProviderEntity entity,
             Source source,
@@ -644,6 +700,7 @@ public class ModelCatalogService {
     }
 
     /** Free first, then by name, then by id. */
+    /** Picker order: free first, then by name, then by id. */
     static final Comparator<ModelOption> ORDER = Comparator.comparing((ModelOption option) -> !option.free())
             .thenComparing(option -> option.displayName().toLowerCase(Locale.ROOT))
             .thenComparing(ModelOption::id);
@@ -660,6 +717,7 @@ public class ModelCatalogService {
         return view(entity, Source.saved, null, message, new ArrayList<>(rows.values()), all);
     }
 
+    /** Turns a saved row into a listing entry; an unlisted price on a discovered row stays unknown rather than free. */
     private static CatalogModel fromRow(LlmModelEntity row) {
         BigDecimal in = row.getInputCostPerMillion();
         BigDecimal out = row.getOutputCostPerMillion();
@@ -681,6 +739,7 @@ public class ModelCatalogService {
                 "nvidia".equals(row.getProviderId()) && free ? ModelListParsers.NVIDIA_FREE_NOTE : null);
     }
 
+    /** The provider's kind, treating an unknown or missing kind as OpenAI-compatible. */
     private static ProviderDescriptor.Kind kindOf(LlmProviderEntity entity) {
         try {
             return ProviderDescriptor.Kind.valueOf(entity.getKind());
@@ -689,10 +748,12 @@ public class ModelCatalogService {
         }
     }
 
+    /** A null list as an empty one. */
     private static <T> List<T> orEmpty(List<T> list) {
         return list == null ? List.of() : list;
     }
 
+    /** A URL without surrounding whitespace or trailing slashes; empty for null. */
     private static String stripSlash(String url) {
         String value = url == null ? "" : url.strip();
         while (value.endsWith("/")) {
@@ -701,6 +762,7 @@ public class ModelCatalogService {
         return value;
     }
 
+    /** URL-encodes a paging token. */
     private static String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }

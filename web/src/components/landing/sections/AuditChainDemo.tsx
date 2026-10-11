@@ -19,8 +19,10 @@ import type { AuditEntry, Recorded, Verification } from './auditChain'
  * speaks in answer to them.
  */
 
+/** Status sentence while the chain verifies. */
 const UNTAMPERED_STATUS = 'Every entry records the hash of the entry before it. The chain verifies.'
 
+/** The status sentence for the current check. When an entry's stored previous hash no longer equals what the entry before it hashes to now, it names both entries and the new hash; otherwise, when an entry no longer matches its own recorded hash, it names that entry; otherwise the verified sentence. Each ends by saying the alteration is detectable. */
 function statusFor(recorded: ReadonlyArray<Recorded>, results: ReadonlyArray<Verification>): string {
   const breakIndex = results.findIndex((result) => result.prevMismatch)
   const stored = recorded[breakIndex]
@@ -39,6 +41,7 @@ function statusFor(recorded: ReadonlyArray<Recorded>, results: ReadonlyArray<Ver
 }
 
 /** Shows a one-word rewrite as a deletion and an insertion, with the rest of the text as it was. */
+/** Shows an edit as a deletion and an insertion. A one-word change keeps the rest of the text as it was; any other change shows the whole original struck through and the whole new text inserted. Hidden text ("originally", "now") makes the change readable by assistive technology, and the insertion is keyed so it animates on each change. */
 function diffText(original: string, current: string): ReactNode {
   const before = original.split(' ')
   const after = current.split(' ')
@@ -79,11 +82,16 @@ function diffText(original: string, current: string): ReactNode {
   )
 }
 
+/** The text of one audit entry: the plain text, or the diff against the stored text when it was altered. */
 function EntryText({ stored, entry, altered }: { stored: AuditEntry; entry: AuditEntry; altered: boolean }) {
   return <p className="lp-audit-text">{altered ? diffText(stored.text, entry.text) : entry.text}</p>
 }
 
 // @find: AuditChainDemo component, audit chain demo
+/**
+ * Landing demo 03: the visitor presses one toggle ("Alter entry 2") to rewrite the second audit entry, and the hash chain exposes the edit.
+ * There is no sequence and no effect. The recorded chain is computed once (record), and the current entries, the verification (verify) and the status sentence are all derived during render from one boolean (altered). The status stays empty until the toggle is first used, so the live region only speaks in answer to the visitor. An altered entry shows its recomputed hash and an Altered tag; the next entry shows a broken link and a "Chain broken here" tag. A caveat explains that chaining makes an edit detectable but does not stop someone who can rewrite every later entry. All hashes are illustrative and computed in the browser. Rendered by DemoStage inside DemoFrame.
+ */
 export function AuditChainDemo(): ReactElement {
   const [altered, setAltered] = useState(false)
   const [touched, setTouched] = useState(false)

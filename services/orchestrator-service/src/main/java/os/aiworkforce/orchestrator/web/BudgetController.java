@@ -71,11 +71,13 @@ public class BudgetController {
     private final AuditClient audit;
     private final Clock clock;
 
+    /** Production constructor: reads time from the system UTC clock. */
     @Autowired
     public BudgetController(Budgets budgets, JpaBudgetGuard guard, AuditClient audit) {
         this(budgets, guard, audit, Clock.systemUTC());
     }
 
+    /** Constructor with an injectable clock, used by tests to fix the month and elapsed time. */
     BudgetController(Budgets budgets, JpaBudgetGuard guard, AuditClient audit, Clock clock) {
         this.budgets = budgets;
         this.guard = guard;
@@ -84,6 +86,8 @@ public class BudgetController {
     }
 
     /**
+     * The budget as a person reads it: caps, spend so far and a projection.
+     *
      * @param monthlyCap what the workspace may spend in a calendar month (UTC); absent for no cap
      * @param perRunCap what one run may spend; absent for no cap
      * @param perAgentDailyCap what one agent may spend in a day (UTC); absent for no cap
@@ -115,6 +119,13 @@ public class BudgetController {
             @DecimalMin("0") @DecimalMax("1000000000") BigDecimal perAgentDailyCap,
             @Pattern(regexp = "stop|sandbox") String onExhausted) {}
 
+    /**
+     * Reads the budget.
+     *
+     * <p>Route {@code GET /api/orchestrator/budget}; requires BUDGET_READ. A workspace with no stored
+     * row is shown with no caps. Month-to-date spend is read fresh from the usage table through
+     * {@link JpaBudgetGuard}; nothing is written.
+     */
     // @find: get budget, GET /api/orchestrator/budget
     @GetMapping
     @RequiresPermission(Permission.Codes.BUDGET_READ)
@@ -126,6 +137,15 @@ public class BudgetController {
         return view(budget, guard.freshMonthToDate(orgId));
     }
 
+    /**
+     * Replaces the budget's caps.
+     *
+     * <p>Route {@code PUT /api/orchestrator/budget}; requires BUDGET_MANAGE. Validates and rounds
+     * each cap, creates the row if absent, overwrites the three caps (a missing cap is removed) and
+     * the exhaustion mode when given, saves, and records a {@code budget.update} audit entry with the
+     * values before and after once the transaction commits. Fails with a validation error for a
+     * negative or oversized cap or an unknown mode.
+     */
     // @find: update budget, set spending cap, PUT /api/orchestrator/budget
     @PutMapping
     @RequiresPermission(Permission.Codes.BUDGET_MANAGE)
@@ -176,6 +196,7 @@ public class BudgetController {
         return values;
     }
 
+    /** An amount as plain text without trailing zeros; null stays null. */
     private static String text(BigDecimal amount) {
         return amount == null ? null : amount.stripTrailingZeros().toPlainString();
     }
@@ -198,6 +219,7 @@ public class BudgetController {
         return value.setScale(4, RoundingMode.HALF_UP);
     }
 
+    /** Builds the response from the stored caps and the month-to-date spend, computing remaining and the projection at the current time. */
     private BudgetView view(Budget budget, BigDecimal spent) {
         Instant now = clock.instant();
         Instant periodStart = JpaBudgetGuard.monthStart(now);
@@ -230,6 +252,7 @@ public class BudgetController {
         return projected.max(spent.setScale(4, RoundingMode.HALF_UP));
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

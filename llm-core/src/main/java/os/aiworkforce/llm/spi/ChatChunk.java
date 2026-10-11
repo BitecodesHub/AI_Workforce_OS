@@ -23,22 +23,27 @@ import os.aiworkforce.llm.model.ToolCall;
  */
 public record ChatChunk(String delta, List<ToolCall> toolCalls, FinishReason finishReason, TokenUsage usage) {
 
+    /** Copies the tool call list defensively and treats null as empty. */
     public ChatChunk {
         toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
     }
 
+    /** A chunk that carries only text. */
     public static ChatChunk text(String delta) {
         return new ChatChunk(delta, List.of(), null, null);
     }
 
+    /** A chunk that carries only completed tool calls. */
     public static ChatChunk tools(List<ToolCall> calls) {
         return new ChatChunk(null, calls, null, null);
     }
 
+    /** The final chunk of a stream, carrying the finish reason and the usage totals. */
     public static ChatChunk terminal(FinishReason reason, TokenUsage usage) {
         return new ChatChunk(null, List.of(), reason, usage);
     }
 
+    /** Whether this is the last chunk, which is the case exactly when a finish reason is set. */
     public boolean isTerminal() {
         return finishReason != null;
     }

@@ -48,6 +48,7 @@ import os.aiworkforce.mcp.spi.McpServerAdapter;
  */
 public final class BrowserAdapter implements McpServerAdapter {
 
+    /** Logs runner problems only; never page content or typed values. */
     private static final Logger log = LoggerFactory.getLogger(BrowserAdapter.class);
 
     /** Metadata key of the page's JPEG screenshot, base64-encoded. */
@@ -56,18 +57,23 @@ public final class BrowserAdapter implements McpServerAdapter {
     public static final String PAGE_URL = "pageUrl";
     public static final String PAGE_TITLE = "pageTitle";
 
+    /** Header carrying the shared secret the runner requires on every request. */
     public static final String SECRET_HEADER = "X-Runner-Secret";
 
+    /** Shown when the runner is not configured or rejects the shared secret. */
     static final String UNAVAILABLE =
             "The web browser is not available on this server yet, so nothing was opened. It is a server setting,"
                     + " not something to switch on in Connectors: an owner or admin needs to check the server's"
                     + " browser runner.";
+    /** Shown when a step exceeds {@code CALL_TIMEOUT}. */
     static final String TOO_SLOW =
             "The web browser took too long, so the step was stopped. The page may be very slow; try again or try"
                     + " another page.";
+    /** Shown when the runner cannot be reached, after the permitted single retry. */
     static final String NOT_ANSWERING =
             "The web browser did not answer, so nothing was done. Try again in a minute.";
 
+    /** Largest runner answer accepted, sized for a page plus its base64 screenshot. */
     private static final int MAX_ANSWER_BYTES = 8 * 1024 * 1024;
     /*
      * The runner may hold a step in line for up to 15 s while other runs use the browser, then load
@@ -77,24 +83,36 @@ public final class BrowserAdapter implements McpServerAdapter {
     /* The runner restarting (a deploy, or Chromium recovering) refuses connections for a moment. */
     private static final Duration RECONNECT_DELAY = Duration.ofSeconds(2);
 
+    /**
+     * Tool definitions, supplied by {@code SandboxServerRegistry} so the browser tools live with the others.
+     */
     private final List<ToolDefinition> tools;
     private final ObjectMapper json;
     private final WebClient http;
+    /** True when both the runner address and the secret were supplied. */
     private final boolean configured;
+    /** Name lookup used by the address guard; replaced in tests. */
     private final BrowserAddresses.Resolver resolver;
     /* Per run: the open page and what was typed into it, to put the page back after a long approval. */
     private final Map<String, PageState> pages = new ConcurrentHashMap<>();
 
+    /** What is remembered about one run's page: its address and the fields typed since it was opened. */
     private static final class PageState {
         private volatile String url;
         private final List<ObjectNode> fills = new ArrayList<>();
     }
 
+    /** Production constructor: uses the system name resolver for the address guard. */
     public BrowserAdapter(
             List<ToolDefinition> tools, ObjectMapper json, WebClient.Builder http, String runnerUrl, String secret) {
         this(tools, json, http, runnerUrl, secret, BrowserAddresses.SYSTEM);
     }
 
+    /**
+     * Builds the adapter. When the runner address and secret are both present, requests go to the
+     * runner with the secret header and a larger response limit; otherwise every call answers that
+     * the browser is unavailable and no network call is made.
+     */
     public BrowserAdapter(
             List<ToolDefinition> tools,
             ObjectMapper json,
@@ -114,16 +132,19 @@ public final class BrowserAdapter implements McpServerAdapter {
         this.http = builder.build();
     }
 
+    /** The server name, {@code browser}. */
     @Override
     public String server() {
         return "browser";
     }
 
+    /** The browser tools, as defined in the sandbox registry. */
     @Override
     public List<ToolDefinition> tools() {
         return tools;
     }
 
+    /** Built in: nothing to connect, no credential looked up, and calls always run for real. */
     @Override
     public boolean isBuiltIn() {
         return true;
@@ -134,6 +155,10 @@ public final class BrowserAdapter implements McpServerAdapter {
         return configured;
     }
 
+    /**
+     * Asks the runner's health endpoint, with a five second limit. False when the browser is not
+     * configured, answers with an error status or cannot be reached. Read-only; the credential is unused.
+     */
     @Override
     public Mono<Boolean> healthCheck(String credential) {
         if (!configured) {
@@ -146,6 +171,18 @@ public final class BrowserAdapter implements McpServerAdapter {
     }
 
     // @find: run browser tool, open page through runner, browser call
+    /**
+     * Runs one browser tool against the run's page in the runner. The credential is unused.
+     *
+     * <p>Flow: fail plainly when not configured; parse the arguments; map the tool to a runner action
+     * ({@code open_page} to open, {@code read_page} to read, {@code follow_link}, {@code search_site},
+     * {@code fill_field}, {@code click_button}, {@code submit_form}); for {@code open_page} check the
+     * address with {@link BrowserAddresses} off the event loop first; then {@link #call}. Side-effect
+     * classes: open, read, follow and search read; fill writes only to the open page and sends
+     * nothing; click and submit are outbound and are gated by the gateway, which asks a person first.
+     * Failure behaviour: every failure is returned as a failed result with a plain sentence, never
+     * thrown.
+     */
     @Override
     public Mono<ToolResult> invoke(ToolInvocation invocation, String credential) {
         if (!configured) {
@@ -214,6 +251,13 @@ public final class BrowserAdapter implements McpServerAdapter {
         return call(invocation, session, action, body, page, startedAt);
     }
 
+    /**
+     * Sends one action to the runner at {@code /sessions/{id}/{action}} and turns the answer into a
+     * result. HTTP calls: one POST, with one retry after two seconds when the runner could not be
+     * reached, only for actions that {@link #repeatable} allows. Limited to 70 seconds. A refusal
+     * from the runner, a timeout and an unreachable runner each become a failed result. On success
+     * the remembered page state is updated first.
+     */
     private Mono<ToolResult> call(
             ToolInvocation invocation, String session, String action, ObjectNode body, PageState page, Instant startedAt) {
         return http.post()
@@ -241,7 +285,9 @@ public final class BrowserAdapter implements McpServerAdapter {
                 });
     }
 
-    /* Steps that change nothing outside the page may be retried; clicks and submits never are. */
+    /**
+     * Steps that change nothing outside the page may be retried; clicks and submits never are.
+     */
     static boolean repeatable(String action) {
         return switch (action) {
             case "open", "read", "follow", "search", "fill" -> true;
@@ -249,7 +295,10 @@ public final class BrowserAdapter implements McpServerAdapter {
         };
     }
 
-    /* The runner answers a refusal with {"error": "<plain sentence>"}; that sentence is the result. */
+    /**
+     * The runner answers a refusal with {"error": "<plain sentence>"}; that sentence is the result.
+     * A 401 or 403 means the shared secret is wrong and is reported as the browser being unavailable.
+     */
     private ToolResult refusal(WebClientResponseException refused) {
         String message = null;
         try {
@@ -267,6 +316,11 @@ public final class BrowserAdapter implements McpServerAdapter {
         return ToolResult.failed(message);
     }
 
+    /**
+     * Updates what is remembered about the page after a successful step: a fill is recorded (replacing
+     * an earlier fill of the same field); anything other than a read clears the fills, since the page
+     * has moved on; the page address is refreshed from the answer. Synchronised per page.
+     */
     private void remember(PageState page, String action, ObjectNode body, JsonNode answer) {
         synchronized (page) {
             if ("fill".equals(action)) {
@@ -282,6 +336,10 @@ public final class BrowserAdapter implements McpServerAdapter {
         }
     }
 
+    /**
+     * The address and typed fields to send with a click or submit, so the runner can recreate the
+     * page if it closed while a person was deciding. Copies under the page's lock.
+     */
     private ObjectNode restoreOf(PageState page) {
         ObjectNode restore = json.createObjectNode();
         synchronized (page) {
@@ -295,7 +353,11 @@ public final class BrowserAdapter implements McpServerAdapter {
     }
 
     // @find: browser result for model, page as text, screenshot in metadata not in text
-    /** What the model reads: the page as text. The screenshot goes into the metadata only. */
+    /**
+     * What the model reads: the page as text. The screenshot goes into the metadata only. The content
+     * holds the address, title, visible text, links, fields and (when present) buttons and a note; the
+     * summary is one sentence for the trace, chosen by the action.
+     */
     ToolResult result(String action, JsonNode answer, Duration took) {
         String url = answer.path("url").asText("");
         String title = answer.path("title").asText("");
@@ -342,6 +404,8 @@ public final class BrowserAdapter implements McpServerAdapter {
     /**
      * For a click or a submit, the page it acts on and what was typed into that page, so the person
      * approving it sees what would reach the site: a submit's own arguments are usually empty.
+     * Empty for every other tool. Read from the remembered state only; contacts nothing. Used by the
+     * gateway when it builds the approval request.
      */
     @Override
     public Optional<String> approvalDetail(ToolInvocation invocation) {
@@ -384,12 +448,17 @@ public final class BrowserAdapter implements McpServerAdapter {
         return Optional.of(text.toString());
     }
 
+    /** Collapses whitespace and shortens a value to 200 characters so an approval sentence stays readable. */
     private static String clip(String value) {
         String flat = value.replaceAll("\\s+", " ").strip();
         return flat.length() <= 200 ? flat : flat.substring(0, 199) + "…";
     }
 
     // @find: close browser session when run ends
+    /**
+     * Forgets the run's page and, when one was open, asks the runner to close its session. Fire and
+     * forget: a failure is logged at debug level only. Called by the gateway when a run ends.
+     */
     @Override
     public void releaseRun(String runId) {
         if (runId == null || pages.remove(runId) == null || !configured) {
@@ -403,6 +472,7 @@ public final class BrowserAdapter implements McpServerAdapter {
                 .subscribe(done -> {}, error -> log.debug("Browser session {} not closed: {}", runId, error.toString()));
     }
 
+    /** The runner session id: the run id, or the workspace id when there is none, stripped to safe characters. */
     private static String sessionOf(ToolInvocation invocation) {
         String id = invocation.runId() == null || invocation.runId().isBlank()
                 ? "org-" + invocation.orgId()

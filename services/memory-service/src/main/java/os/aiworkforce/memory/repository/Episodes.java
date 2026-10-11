@@ -22,8 +22,16 @@ import os.aiworkforce.memory.domain.Episode;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for {@link Episode} rows: run history, recent and searched recall,
+ * compaction candidates and expiry deletion. Used by {@code EpisodicMemory}, which supplies the
+ * organisation scope and the transaction boundaries.
+ */
 public interface Episodes extends JpaRepository<Episode, UUID> {
 
+    /**
+     * The episodes recorded during one run, oldest first, for replaying what happened in that run.
+     */
     List<Episode> findByOrgIdAndRunIdOrderByOccurredAt(UUID orgId, UUID runId);
 
     /**
@@ -78,6 +86,11 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
             @Param("query") String query,
             Pageable pageable);
 
+    /**
+     * Compaction candidates: uncompacted episodes older than {@code before} whose importance does not
+     * exceed {@code ceiling}, oldest first. Decisions, handoffs and outcomes are never offered, because
+     * they are the facts later runs rely on.
+     */
     @Query(
             """
             select e from Episode e
@@ -94,10 +107,17 @@ public interface Episodes extends JpaRepository<Episode, UUID> {
             @Param("ceiling") int ceiling,
             Pageable pageable);
 
+    /**
+     * Flags the given episodes as compacted so recall and further compaction skip them; returns the number of rows updated. Called by {@code EpisodicMemory} after a summary episode is written.
+     */
     @Modifying
     @Query("update Episode e set e.compacted = true where e.id in :ids")
     int markCompacted(@Param("ids") List<UUID> ids);
 
+    /**
+     * Deletes up to {@code batch} episodes whose expiry is earlier than {@code now}, and returns the number
+     * removed. Batching keeps the transaction short; called repeatedly by {@code EpisodePurgeJob}.
+     */
     @Modifying
     @Query(
             value =

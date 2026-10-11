@@ -38,6 +38,9 @@ import { can } from '../lib/session'
  */
 
 // @find: time window picker, choose period, 7 days, 30 days
+/**
+ * The 7, 30 or 90 day switch in the page header; the current window is marked pressed. Calls onChange with the chosen window.
+ */
 function WindowPicker({ window, onChange }: { window: InsightsWindow; onChange: (next: InsightsWindow) => void }) {
   return (
     <div role="group" aria-label="Time window" className="row" style={{ gap: 'var(--space-2)' }}>
@@ -56,6 +59,9 @@ function WindowPicker({ window, onChange }: { window: InsightsWindow; onChange: 
 }
 
 // @find: analytics figures, totals, cost, runs, success rate
+/**
+ * The body of the dashboard for one window. Shows the value tiles with a note on how figures are compared (against the window before; goals counted on the day they finished, runs on the day they started; spend estimated at catalogue prices). With no work in the window it shows an empty state; otherwise the daily trend and the outcomes card. People with run:read also see the per-agent table (useAgentInsights), whose cost-per-hour wording depends on whether an hourly rate is set.
+ */
 function Figures({ insights, window }: { insights: Insights; window: InsightsWindow }) {
   const canReadRuns = can('run:read')
   const agents = useAgentInsights(window, { enabled: canReadRuns })
@@ -108,6 +114,10 @@ function Figures({ insights, window }: { insights: Insights; window: InsightsWin
 }
 
 // @find: Analytics component, analytics page, usage and cost insights, /analytics
+/**
+ * The Analytics page (route /analytics, permission analytics:read).
+ * The window (?window=7d, 30d or 90d; default 30d) lives in the address, and choosing another replaces the history entry and keeps the #fragment. The insights are read for that window (useInsights) behind QueryState; if they cannot be read the page says so. Below the figures sit the budget card, the spend breakdown for the same window, the value inputs (hourly rate and minutes saved per task) and the activity log, each handling its own permissions and states.
+ */
 export function Analytics() {
   const { search, hash, navigate } = useRouter()
   const window = parseWindow(search.get('window'))

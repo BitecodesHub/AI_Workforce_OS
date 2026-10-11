@@ -29,6 +29,11 @@ import os.aiworkforce.orchestrator.domain.Goal;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for Goal rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface Goals extends JpaRepository<Goal, UUID> {
 
     // @find: list recent goals

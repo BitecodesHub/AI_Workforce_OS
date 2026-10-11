@@ -14,6 +14,7 @@ import type { Source } from '../../lib/queries'
  * where things go, and everything else about sources, stays on Knowledge.
  */
 
+/** Name given to the shared source created when the workspace has none. */
 export const DEFAULT_SOURCE_NAME = 'Company documents'
 
 // @find: find shared knowledge source, default source for uploads
@@ -23,6 +24,12 @@ export function sharedSource(sources: readonly Source[] | undefined): Source | u
 }
 
 // @find: quick upload documents, create Company documents source, upload files in setup
+/**
+ * Setup control for adding documents. The target is the first shared source (sharedSource), else a source
+ * created on demand: a button creates "Company documents" with useCreateKnowledgeSource (kind upload, not
+ * restricted) and the Uploader then appears. Shows loading text, a warning Notice for a creation failure and a
+ * link to Knowledge for full management.
+ */
 export function QuickUpload() {
   const sources = useSources()
   const create = useCreateKnowledgeSource()
@@ -70,6 +77,12 @@ export function QuickUpload() {
   )
 }
 
+/**
+ * Hidden multi-file input with an Upload files button for one source. Files are uploaded one after another with
+ * useUploadKnowledgeDocument (mode keep_both), and each outcome is summarised as one line in an info Notice: added
+ * with a passage count, skipped or could not be read with the detail, or the API error. The input is cleared
+ * after each choice so the same file can be chosen again.
+ */
 function Uploader({ source }: { source: Source }) {
   const upload = useUploadKnowledgeDocument(source.id)
   const input = useRef<HTMLInputElement>(null)

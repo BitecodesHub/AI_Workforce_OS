@@ -15,8 +15,10 @@ import { formatCount, sentenceCase } from './format'
  * Pure, and typed structurally so it accepts the query types without importing them.
  */
 
+/** What a connector tool does to the outside world; drives grouping and whether approval is required. */
 export type SideEffect = 'READ' | 'WRITE' | 'OUTBOUND' | 'DESTRUCTIVE'
 
+/** A tool a connector offers, with its declared side effect and whether it always waits for approval. */
 export type CapabilityTool = {
   name: string
   description?: string | null
@@ -24,8 +26,10 @@ export type CapabilityTool = {
   alwaysRequiresApproval?: boolean | null
 }
 
+/** The four groups tools are shown in on connector cards and dialogs. */
 export type CapabilityGroupKey = 'reads' | 'edits' | 'sends' | 'deletes'
 
+/** Display data for one capability group. */
 export type CapabilityGroupInfo = {
   key: CapabilityGroupKey
   /** The heading over the group: "Reads", "Sends — asks first". */
@@ -69,6 +73,7 @@ export function asksFirst(tool: CapabilityTool, grantRequiresApproval = false): 
   return group === 'sends' || group === 'deletes'
 }
 
+/** A capability group together with the tools that fall into it. */
 export type CapabilityGroup<T> = CapabilityGroupInfo & { tools: T[] }
 
 // @find: group tools, connector capabilities list
@@ -88,6 +93,9 @@ export function capabilityLabel(tool: Pick<CapabilityTool, 'name'>): string {
 /* Product names inside a tool name keep their own spelling: 'Connect number to ElevenLabs'. */
 const PROPER_NAMES: readonly [RegExp, string][] = [[/\belevenlabs\b/gi, 'ElevenLabs']]
 
+/**
+ * Restores the correct capitalisation of product names (for example GitHub) in a sentence-cased label.
+ */
 function properNames(label: string): string {
   return PROPER_NAMES.reduce((text, [pattern, name]) => text.replace(pattern, name), label)
 }
@@ -134,7 +142,9 @@ export function grantTools(selected: readonly string[], tools: readonly Capabili
   return tools.filter((tool) => chosen.has(tool.name)).map((tool) => tool.name)
 }
 
+/** Lowest call limit a grant may carry per run. */
 export const MIN_CALLS_PER_RUN = 1
+/** Highest call limit a grant may carry per run. */
 export const MAX_CALLS_PER_RUN = 200
 
 // @find: calls per run, call limit, max tool calls
@@ -149,8 +159,14 @@ export function parseCallLimit(value: string): number | null | false {
 
 /* ---- Connection state ----------------------------------------------------------------------- */
 
+/**
+ * How a connector card presents the connection: live account, practice (sandbox) data, needs attention, or built in.
+ */
 export type ConnectorState = 'connected' | 'sandbox' | 'attention' | 'builtin'
 
+/**
+ * The minimum a connector row needs for connectorState and connectorSummary, so both accept the several row shapes the console holds.
+ */
 export type ConnectorLike = {
   server: string
   status: string
@@ -161,6 +177,7 @@ export type ConnectorLike = {
   authType?: string | null
 }
 
+/** Connection statuses that mean a person must act (check the account or connect again). */
 const ATTENTION_STATUSES = new Set(['error', 'reconnect_required', 'revoked'])
 
 // @find: connector state, connected, sandbox, needs attention, built in
@@ -178,6 +195,7 @@ export function connectorState(connector: ConnectorLike): ConnectorState {
   return 'connected'
 }
 
+/** Counts and sentences describing how all connectors stand together, for the toolbar pill. */
 export type ConnectorSummary = {
   /** Connected to a live account and passing its checks. */
   live: number
@@ -283,6 +301,7 @@ export function agentsUsing<A extends { tools?: readonly string[] | null; name: 
 
 /* ---- Signing in through a provider ----------------------------------------------------------- */
 
+/** What the provider's redirect left in the address bar: the connected server, or an error message. */
 export type OAuthReturn = { connected: string | null; error: string | null }
 
 /** The longest provider message shown; anything beyond it is cut so a crafted link cannot fill the page. */
@@ -364,6 +383,9 @@ export function webAddressProblem(value: string): string | null {
 /** The parts of a failed request that decide where its message is shown (ApiError, structurally). */
 export type FieldFailure = { code: string; message: string; fields: Readonly<Record<string, string>> }
 
+/**
+ * Result of placeFieldProblems: sentences to show under individual fields, and whether a general message is still needed.
+ */
 export type PlacedProblems = {
   /** A sentence per form field, keyed by the field's own key, to show under that field. */
   inline: Record<string, string>
@@ -371,6 +393,7 @@ export type PlacedProblems = {
   unplaced: boolean
 }
 
+/** Adds a closing full stop to a sentence that lacks end punctuation. */
 const withStop = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
 
 // @find: field problems, connector form errors, validation messages

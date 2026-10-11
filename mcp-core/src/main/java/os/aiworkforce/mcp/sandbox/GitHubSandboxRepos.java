@@ -58,21 +58,29 @@ final class GitHubSandboxRepos {
             "compare_branches",
             "list_commits");
 
+    /** {@code owner/name}: the only repository spelling accepted. */
     private static final Pattern REPO = Pattern.compile("^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$");
+    /** A branch name: letters, digits, dot, underscore, dash and slash separators; no spaces. */
     private static final Pattern REF = Pattern.compile("^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$");
+    /** A file or folder path inside a repository; spaces are allowed, absolute and parent segments are not. */
     private static final Pattern PATH = Pattern.compile("^[A-Za-z0-9_. -]+(?:/[A-Za-z0-9_. -]+)*$");
+    /** Longest file content returned in one read; longer content is cut and marked truncated. */
     private static final int MAX_FILE_CHARS = 60_000;
+    /** Most entries returned by one tree listing. */
     private static final int MAX_TREE_ENTRIES = 1000;
+    /** Longest single file accepted by commit_files. */
     private static final int MAX_COMMIT_FILE_CHARS = 1_000_000;
+    /** Sentence appended to every write summary, so an agent never reports a real change. */
     private static final String NOTHING_LEFT = " Nothing left this machine.";
 
-    /** A refusal said in one plain sentence; becomes a failed result. */
+    /** A refusal said in one plain sentence; becomes a failed result. Stackless, because it is expected control flow. */
     private static final class Refusal extends RuntimeException {
         Refusal(String message) {
             super(message, null, false, false);
         }
     }
 
+    /** One commit: its changes are a map of path to new content, with null meaning the file was deleted. */
     private static final class Commit {
         final String sha;
         final String message;
@@ -90,6 +98,7 @@ final class GitHubSandboxRepos {
         }
     }
 
+    /** A branch: the current files, the commit history oldest first, and whether it is protected. */
     private static final class Branch {
         final TreeMap<String, String> files;
         /* Oldest first. */
@@ -102,15 +111,18 @@ final class GitHubSandboxRepos {
             this.isProtected = isProtected;
         }
 
+        /** A new branch starting from this one, with the same files and history and no protection. */
         Branch copy() {
             return new Branch(new TreeMap<>(files), new ArrayList<>(history), false);
         }
 
+        /** The sha of the newest commit, or an empty string for an empty history. */
         String head() {
             return history.isEmpty() ? "" : history.get(history.size() - 1).sha;
         }
     }
 
+    /** A repository: its default branch and its branches in creation order. */
     private static final class Repo {
         final String name;
         final String defaultBranch;
@@ -122,15 +134,25 @@ final class GitHubSandboxRepos {
         }
     }
 
+    /** Builds the JSON answers. */
     private final ObjectMapper json;
+    /** Seeded practice records from {@code sandbox-seeds.json}, by kind. */
     private final List<ObjectNode> repoSeeds;
     private final List<ObjectNode> fileSeeds;
     private final List<ObjectNode> branchSeeds;
     private final List<ObjectNode> commitSeeds;
+    /**
+     * Each workspace's own repositories, built from the seeds on first use. Per workspace maps are locked while used.
+     */
     private final Map<String, Map<String, Repo>> orgs = new ConcurrentHashMap<>();
+    /** Makes commit shas unique. */
     private final AtomicLong counter = new AtomicLong();
 
-    /** @param seeds the github server's seeded records by singular collection name */
+    /**
+     * Builds an empty model over the seeds. Nothing is created until a workspace first uses it.
+     *
+     * @param seeds the github server's seeded records by singular collection name
+     */
     GitHubSandboxRepos(ObjectMapper json, Map<String, List<ObjectNode>> seeds) {
         this.json = json;
         this.repoSeeds = seeds.getOrDefault("repo", List.of());
@@ -142,6 +164,11 @@ final class GitHubSandboxRepos {
     // @find: run github sandbox repository tool
     /**
      * Runs one repository tool for a workspace.
+     *
+     * <p>Flow: take the workspace's repositories (seeded on first use), lock them, dispatch on the tool name
+     * and turn the answer into a result. Side effects: changes the in-memory model only; no HTTP call is
+     * made. Failure behaviour: a {@code Refusal} (bad argument, missing repository, branch or file) becomes a
+     * failed result with one plain sentence; nothing is thrown to the caller.
      *
      * @param created finds a repository the generic sandbox recorded (create_repo), or null
      */
@@ -176,7 +203,9 @@ final class GitHubSandboxRepos {
     /**
      * Brings a pull request's head branch into its base branch, after the generic sandbox marked
      * it merged. Answers a sentence for the summary, or null when the repository or a branch is not
-     * one this model knows (a pull request recorded with made-up branch names).
+     * one this model knows (a pull request recorded with made-up branch names). Called by the generic
+     * sandbox when a pull request is merged. Appends the head's commits and a merge commit to the base, so
+     * the base branch then shows the changes.
      */
     String merge(String orgId, ObjectNode pull, Function<String, ObjectNode> created) {
         Map<String, Repo> repos = orgs.computeIfAbsent(orgId, id -> seeded());
@@ -218,8 +247,10 @@ final class GitHubSandboxRepos {
 
     // ---- Tools ----------------------------------------------------------------------------------
 
+    /** What a tool produced: the JSON content and the one-sentence summary. */
     private record Answer(JsonNode content, String summary) {}
 
+    /** Lists the branches with head sha, protection and default flag (read). */
     private Answer listBranches(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
         ArrayNode items = json.createArrayNode();
@@ -235,6 +266,9 @@ final class GitHubSandboxRepos {
         return new Answer(listOf(items), "Read " + items.size() + " branch(es) from " + repo.name + " in the sandbox.");
     }
 
+    /**
+     * Creates a branch as a copy of another, default {@code from} the default branch (write). Refuses an existing name.
+     */
     private Answer createBranch(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
         String name = ref(required(arguments, "branch"), "branch");
@@ -255,6 +289,7 @@ final class GitHubSandboxRepos {
                 + " in the sandbox." + NOTHING_LEFT);
     }
 
+    /** Lists files and folders on a ref, optionally inside a path, up to 1000 entries (read). */
     private Answer listTree(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
         String ref = refOrDefault(repo, arguments);
@@ -307,6 +342,7 @@ final class GitHubSandboxRepos {
                 + (cut ? " The list was cut short; narrow it with a path." : ""));
     }
 
+    /** Reads one file with its content, or lists a folder's direct children (read). */
     private Answer getFile(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
         String ref = refOrDefault(repo, arguments);
@@ -336,6 +372,9 @@ final class GitHubSandboxRepos {
                 + " in the sandbox.");
     }
 
+    /**
+     * Reads several files at once, up to the registry limit; reports missing ones and refuses only when none exist (read).
+     */
     private Answer getFiles(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
         String ref = refOrDefault(repo, arguments);
@@ -379,6 +418,10 @@ final class GitHubSandboxRepos {
                 + (missing.isEmpty() ? "" : " Not found: " + String.join(", ", missing) + "."));
     }
 
+    /**
+     * Creates or replaces one file as one commit on a branch, default branch when none is named (write). A write
+     * to the default branch is held for approval by {@link #approvalReason} before it reaches here.
+     */
     private Answer saveFile(
             Map<String, Repo> repos, String agentId, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
@@ -401,6 +444,7 @@ final class GitHubSandboxRepos {
                 + " in the sandbox." + NOTHING_LEFT);
     }
 
+    /** Deletes one file as one commit (destructive, asks a person first). Refuses folders. */
     private Answer deleteFile(
             Map<String, Repo> repos, String agentId, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
@@ -426,6 +470,7 @@ final class GitHubSandboxRepos {
                 + " in the sandbox." + NOTHING_LEFT);
     }
 
+    /** Moves one file as one commit, keeping its contents (write). Refuses an existing target. */
     private Answer renameFile(
             Map<String, Repo> repos, String agentId, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
@@ -458,6 +503,11 @@ final class GitHubSandboxRepos {
                 + " in the sandbox." + NOTHING_LEFT);
     }
 
+    /**
+     * Applies many file writes and deletions as one commit (write). Creates the branch from {@code from} when it
+     * does not exist. Validates every path and size, refuses duplicates and a path in both lists, and caps the
+     * number of changes.
+     */
     private Answer commitFiles(
             Map<String, Repo> repos, String agentId, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
@@ -539,6 +589,10 @@ final class GitHubSandboxRepos {
                 + NOTHING_LEFT);
     }
 
+    /**
+     * Compares two branches: ahead and behind counts, status (identical, ahead, behind or diverged), the
+     * commits ahead and per file additions and deletions (read).
+     */
     private Answer compareBranches(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
         String baseName = ref(required(arguments, "base"), "base");
@@ -582,6 +636,7 @@ final class GitHubSandboxRepos {
                 + " file(s) changed.");
     }
 
+    /** Lists commits newest first, optionally only those touching a path, 1 to 100 (read). */
     private Answer listCommits(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         Repo repo = repo(repos, arguments, created);
         String ref = refOrDefault(repo, arguments);
@@ -601,6 +656,7 @@ final class GitHubSandboxRepos {
 
     // ---- The model ------------------------------------------------------------------------------
 
+    /** Applies the changes to the branch and records them as a new commit. */
     private Commit commit(Branch branch, Map<String, String> changes, String message, String author) {
         apply(branch.files, changes);
         Commit commit = new Commit(sha(), message, author == null ? "agent" : author, Instant.now().toString(),
@@ -609,6 +665,7 @@ final class GitHubSandboxRepos {
         return commit;
     }
 
+    /** Applies changes to a file map; null content removes the file. */
     private static void apply(Map<String, String> files, Map<String, String> changes) {
         changes.forEach((path, content) -> {
             if (content == null) {
@@ -619,14 +676,14 @@ final class GitHubSandboxRepos {
         });
     }
 
-    /* The commits on one branch that the other does not have, oldest first. */
+    /** The commits on one branch that the other does not have, oldest first. */
     private static List<Commit> notIn(Branch branch, Branch other) {
         Set<String> known = new HashSet<>();
         other.history.forEach(commit -> known.add(commit.sha));
         return branch.history.stream().filter(commit -> !known.contains(commit.sha)).toList();
     }
 
-    /* The files and folders directly inside a folder; empty when it is not one. */
+    /** The files and folders directly inside a folder; empty when it is not one. */
     private static Set<String> children(Branch branch, String folder) {
         Set<String> children = new TreeSet<>();
         String prefix = folder + "/";
@@ -638,6 +695,11 @@ final class GitHubSandboxRepos {
         return children;
     }
 
+    /**
+     * Resolves the repository named in the arguments. Without a name, the first practice repository is used, as a
+     * demonstration does. A name the model does not know is looked up among repositories the generic store
+     * recorded; otherwise the call is refused.
+     */
     private Repo repo(Map<String, Repo> repos, JsonNode arguments, Function<String, ObjectNode> created) {
         String name = text(arguments, "repo");
         if (name == null) {
@@ -664,7 +726,7 @@ final class GitHubSandboxRepos {
         return repo;
     }
 
-    /* A repository create_repo recorded: it starts with a README, as the live one does. */
+    /** A repository create_repo recorded: it starts with a README, as the live one does. */
     private Repo fromRecord(String name, ObjectNode record) {
         Repo repo = new Repo(name, record.path("defaultBranch").asText("main"));
         String title = name.substring(name.indexOf('/') + 1);
@@ -676,6 +738,7 @@ final class GitHubSandboxRepos {
         return repo;
     }
 
+    /** The named branch, or a refusal pointing to the listing tool. */
     private static Branch branch(Repo repo, String name) {
         Branch branch = repo.branches.get(name);
         if (branch == null) {
@@ -689,7 +752,8 @@ final class GitHubSandboxRepos {
     /**
      * The same rule the live adapter applies ({@link os.aiworkforce.mcp.live.DefaultBranchWrites}),
      * answered exactly from this workspace's practice repositories: a file write that lands on the
-     * repository's default branch waits for a person.
+     * repository's default branch waits for a person. Called through {@code SandboxServerAdapter} by the
+     * gateway before the call is made. Empty for tools that do not write files or for other branches. Pure.
      */
     java.util.Optional<String> approvalReason(String orgId, String tool, JsonNode arguments) {
         if (!os.aiworkforce.mcp.live.DefaultBranchWrites.TOOLS.contains(tool) || arguments == null) {
@@ -711,6 +775,7 @@ final class GitHubSandboxRepos {
                 : java.util.Optional.empty();
     }
 
+    /** The {@code ref} argument, validated, or the repository's default branch. */
     private static String refOrDefault(Repo repo, JsonNode arguments) {
         String ref = text(arguments, "ref");
         return ref == null ? repo.defaultBranch : ref(ref, "ref");
@@ -718,7 +783,10 @@ final class GitHubSandboxRepos {
 
     // ---- Seeds ----------------------------------------------------------------------------------
 
-    /* A workspace's own copy of the practice repositories. */
+    /**
+     * A workspace's own copy of the practice repositories. The default branch is built first and every other
+     * branch starts as a copy of it, then has its own seeded files and commits laid over it.
+     */
     private Map<String, Repo> seeded() {
         Map<String, Repo> repos = new LinkedHashMap<>();
         Map<String, String> defaults = new LinkedHashMap<>();
@@ -754,7 +822,7 @@ final class GitHubSandboxRepos {
         return repos;
     }
 
-    /* Lays a branch's seeded files and commits over what it started with. */
+    /** Lays a branch's seeded files and commits over what it started with. */
     private void seedBranch(Repo repo, Branch branch, String name, boolean isDefault) {
         Map<String, String> files = new TreeMap<>();
         fileSeeds.stream()
@@ -796,6 +864,7 @@ final class GitHubSandboxRepos {
         files.forEach(branch.files::putIfAbsent);
     }
 
+    /** Whether the seeds mark this branch as protected. */
     private boolean protectedSeed(String repo, String branch) {
         return branchSeeds.stream()
                 .anyMatch(seed -> repo.equals(seed.path("repo").asText()) && branch.equals(seed.path("name").asText())
@@ -804,6 +873,7 @@ final class GitHubSandboxRepos {
 
     // ---- Shapes and arguments -------------------------------------------------------------------
 
+    /** The JSON for one file, with content only when asked, cut to {@code MAX_FILE_CHARS}. */
     private ObjectNode file(String path, String content, boolean withContent) {
         ObjectNode item = json.createObjectNode();
         item.put("id", path);
@@ -821,6 +891,7 @@ final class GitHubSandboxRepos {
         return item;
     }
 
+    /** The JSON for one commit. */
     private ObjectNode commit(Commit commit) {
         ObjectNode item = json.createObjectNode();
         item.put("id", commit.sha);
@@ -831,6 +902,7 @@ final class GitHubSandboxRepos {
         return item;
     }
 
+    /** Wraps items as {@code {count, items}}. */
     private ObjectNode listOf(ArrayNode items) {
         ObjectNode result = json.createObjectNode();
         result.put("count", items.size());
@@ -838,16 +910,18 @@ final class GitHubSandboxRepos {
         return result;
     }
 
+    /** A unique commit sha for this process. */
     private String sha() {
         return sha1("sandbox-commit-" + counter.incrementAndGet() + "-" + System.nanoTime());
     }
 
-    /* The sha git itself would give the file's contents. */
+    /** The sha git itself would give the file's contents. */
     private static String blobSha(String content) {
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         return sha1("blob " + bytes.length + "\0" + content);
     }
 
+    /** SHA-1 of the text as lower-case hex. */
     private static String sha1(String text) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(text.getBytes(StandardCharsets.UTF_8)));
@@ -856,7 +930,7 @@ final class GitHubSandboxRepos {
         }
     }
 
-    /* Lines in one text that the other lacks, counted with repeats: a diff's additions or deletions. */
+    /** Lines in one text that the other lacks, counted with repeats: a diff's additions or deletions. */
     private static int linesOnlyIn(String text, String other) {
         if (text == null) {
             return 0;
@@ -879,11 +953,13 @@ final class GitHubSandboxRepos {
         return count;
     }
 
+    /** The commit message given, or the fallback. */
     private static String message(JsonNode arguments, String fallback) {
         String message = text(arguments, "message");
         return message == null ? fallback : message;
     }
 
+    /** A trimmed scalar argument, or null when absent, null or not a scalar. */
     private static String text(JsonNode arguments, String field) {
         JsonNode value = arguments.get(field);
         if (value == null || value.isNull() || !value.isValueNode()) {
@@ -893,6 +969,7 @@ final class GitHubSandboxRepos {
         return text.isEmpty() ? null : text;
     }
 
+    /** A required text argument; refuses when missing. */
     private static String required(JsonNode arguments, String field) {
         String value = text(arguments, field);
         if (value == null) {
@@ -901,6 +978,7 @@ final class GitHubSandboxRepos {
         return value;
     }
 
+    /** A validated branch name; refuses spaces, double dots and a {@code .lock} suffix. */
     private static String ref(String value, String field) {
         String ref = value.strip();
         if (!REF.matcher(ref).matches() || ref.contains("..") || ref.endsWith(".lock")) {
@@ -909,6 +987,9 @@ final class GitHubSandboxRepos {
         return ref;
     }
 
+    /**
+     * A validated repository path with leading and trailing slashes removed; refuses parent or empty segments.
+     */
     private static String path(String value, String field) {
         String path = value.strip().replaceFirst("^/+", "").replaceFirst("/+$", "");
         if (!PATH.matcher(path).matches() || List.of(path.split("/")).contains("..")

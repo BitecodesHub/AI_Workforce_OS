@@ -17,6 +17,19 @@ import os.aiworkforce.llm.model.AttemptRecord;
  */
 public interface UsageRecorder {
 
+    /**
+     * Stores one attempt and its cost.
+     *
+     * <p>Called by {@code ModelRouter} after every attempt, including failed, throttled and skipped
+     * ones. The implementation lives outside llm-core and performs a database write; it is expected
+     * not to throw, because a failure to record must not fail the person's model call.
+     *
+     * @param orgId the workspace the call was made for
+     * @param agentId the agent acting, or null where none acts
+     * @param runId the run the call belongs to, or null outside a run
+     * @param attempt what happened on this attempt
+     * @param cost the cost attributed to this attempt, possibly zero
+     */
     void record(String orgId, String agentId, String runId, AttemptRecord attempt, BigDecimal cost);
 
     /** Used in tests and where accounting is not wanted. */

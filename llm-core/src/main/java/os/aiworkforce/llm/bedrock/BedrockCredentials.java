@@ -33,6 +33,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 public record BedrockCredentials(
         String accessKeyId, String secretAccessKey, String sessionToken, String apiKey, String region) {
 
+    /** The region used when a credential names none. */
     public static final String DEFAULT_REGION = "us-east-1";
 
     /** The credential kind the console stores this under. */
@@ -69,6 +70,7 @@ public record BedrockCredentials(
     private static final Pattern NO_SPACES = Pattern.compile("^\\S+$");
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Normalises blank fields to null and trims the rest; shape checks are done by {@link #validate()}. */
     public BedrockCredentials {
         accessKeyId = blankToNull(accessKeyId);
         secretAccessKey = blankToNull(secretAccessKey);
@@ -81,16 +83,19 @@ public record BedrockCredentials(
     public static final class Invalid extends IllegalArgumentException {
         private final String field;
 
+        /** Records the form field at fault, so the console can highlight it. */
         public Invalid(String field, String message) {
             super(message);
             this.field = field;
         }
 
+        /** The name of the field that failed validation. */
         public String field() {
             return field;
         }
     }
 
+    /** Whether requests authenticate with a bearer API key rather than a SigV4 signature. */
     public boolean usesApiKey() {
         return apiKey != null;
     }
@@ -137,6 +142,7 @@ public record BedrockCredentials(
         return parsed;
     }
 
+    /** Reads the older shapes: {@code accessKeyId:secret}, or a bare API key. */
     private static BedrockCredentials legacy(String text) {
         int colon = text.indexOf(':');
         BedrockCredentials parsed = colon > 0 && ACCESS_KEY_ID.matcher(text.substring(0, colon)).matches()
@@ -263,16 +269,19 @@ public record BedrockCredentials(
         return "https://bedrock." + region + ".amazonaws.com";
     }
 
+    /** Names only the credential kind and region, never a secret. */
     @Override
     public String toString() {
         return "BedrockCredentials[" + (usesApiKey() ? "api key" : "access key") + ", region=" + region + "]";
     }
 
+    /** A trimmed text field from the JSON, or null when absent, blank or not a string. */
     private static String field(JsonNode node, String name) {
         JsonNode value = node.get(name);
         return value != null && value.isTextual() ? blankToNull(value.asText()) : null;
     }
 
+    /** Trims the value; blank becomes null. */
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
     }

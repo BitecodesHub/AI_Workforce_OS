@@ -20,6 +20,9 @@ type Clock = {
 
 const clocks = new Map<number, Clock>()
 
+/**
+ * Returns the shared clock for an interval, creating it on first use, so every component ticking at the same interval shares one timer.
+ */
 function clockFor(intervalMs: number): Clock {
   let clock = clocks.get(intervalMs)
   if (!clock) {
@@ -29,11 +32,15 @@ function clockFor(intervalMs: number): Clock {
   return clock
 }
 
+/** Updates the clock to the current time and notifies every subscriber. */
 function tick(clock: Clock) {
   clock.now = Date.now()
   for (const listener of clock.listeners) listener()
 }
 
+/**
+ * Starts the interval timer (skipped ticks while the tab is hidden) and a visibility listener that refreshes the time when the tab returns. Stores the stop function on the clock.
+ */
 function start(clock: Clock, intervalMs: number) {
   const timer = setInterval(() => {
     if (typeof document !== 'undefined' && document.hidden) return
@@ -49,6 +56,9 @@ function start(clock: Clock, intervalMs: number) {
   }
 }
 
+/**
+ * Adds a listener to the clock for this interval, starting it if this is the first, and refreshes the time at once. Returns the unsubscribe function, which stops the timer when the last listener leaves.
+ */
 function subscribe(intervalMs: number, listener: () => void): () => void {
   const clock = clockFor(intervalMs)
   clock.listeners.add(listener)

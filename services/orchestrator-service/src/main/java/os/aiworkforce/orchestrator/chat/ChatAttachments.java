@@ -56,14 +56,17 @@ public class ChatAttachments {
             Instant createdAt,
             String text) {
 
+        /** Whether the file is a picture, which is sent to a model as an image. */
         public boolean isImage() {
             return "image".equals(kind);
         }
 
+        /** Whether the text was read successfully. */
         public boolean isReady() {
             return "ready".equals(status);
         }
 
+        /** Whether the file is bound to a sent message; otherwise it is still a draft. */
         public boolean isSent() {
             return messageId != null;
         }
@@ -88,10 +91,14 @@ public class ChatAttachments {
 
     private final JdbcTemplate jdbc;
 
+    /** Creates the store over the shared JDBC template. */
     public ChatAttachments(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Stores a new draft file with its bytes and extracted text. Called by {@code AttachmentService.upload}; one {@code INSERT}, and a database failure propagates.
+     */
     // @find: insert attachment row, store uploaded file
     public void insert(NewAttachment a) {
         jdbc.update(
@@ -115,6 +122,9 @@ public class ChatAttachments {
                 a.notice());
     }
 
+    /**
+     * One attachment of the workspace, without bytes or text; empty when absent or owned by another workspace.
+     */
     public Optional<Row> find(UUID orgId, UUID id) {
         return jdbc.query("select " + COLUMNS + ", null as extracted_text from chat_attachments where org_id = ? and id = ?",
                         this::row, orgId, id)
@@ -137,6 +147,7 @@ public class ChatAttachments {
                 .toList();
     }
 
+    /** The stored bytes of one attachment, read only for a download or a picture shown to a model. */
     public Optional<byte[]> content(UUID orgId, UUID id) {
         return jdbc.query(
                         "select content from chat_attachments where org_id = ? and id = ?",
@@ -219,11 +230,13 @@ public class ChatAttachments {
                 beforePosition);
     }
 
+    /** Deletes one attachment row and returns how many rows were removed (zero or one). */
     // @find: delete attachment row
     public int delete(UUID orgId, UUID id) {
         return jdbc.update("delete from chat_attachments where org_id = ? and id = ?", orgId, id);
     }
 
+    /** Records the knowledge document made from this file, so the interface can show it as saved. */
     // @find: mark attachment saved to knowledge, record document id
     public void markSaved(UUID orgId, UUID id, UUID documentId) {
         jdbc.update(
@@ -237,10 +250,12 @@ public class ChatAttachments {
                 "delete from chat_attachments where message_id is null and created_at < ?", Timestamp.from(cutoff));
     }
 
+    /** The comma-separated {@code ?} placeholders for an {@code IN} list of this size. */
     private static String marks(List<UUID> ids) {
         return String.join(", ", java.util.Collections.nCopies(ids.size(), "?"));
     }
 
+    /** The workspace id followed by the ids, in the order the placeholders appear. */
     private static Object[] args(UUID orgId, List<UUID> ids) {
         Object[] args = new Object[ids.size() + 1];
         args[0] = orgId;
@@ -250,6 +265,9 @@ public class ChatAttachments {
         return args;
     }
 
+    /**
+     * Maps one result row to a {@link Row}; {@code extracted_text} is {@code null} in queries that do not select it.
+     */
     private Row row(ResultSet rs, int n) throws SQLException {
         return new Row(
                 rs.getObject("id", UUID.class),

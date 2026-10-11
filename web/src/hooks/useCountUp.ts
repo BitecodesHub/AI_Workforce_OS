@@ -19,6 +19,7 @@ type FrameScheduler = {
   cancel: (handle: number) => void
 }
 
+/** Returns requestAnimationFrame functions, or a 16 ms timer fallback where they do not exist (tests, old embedded browsers). */
 function frameScheduler(): FrameScheduler {
   if (typeof requestAnimationFrame === 'function' && typeof cancelAnimationFrame === 'function') {
     return {
@@ -32,11 +33,16 @@ function frameScheduler(): FrameScheduler {
   }
 }
 
+/** Easing curve: fast at first, slowing toward the target. Input and output are in the range 0 to 1. */
 function easeOutCubic(progress: number): number {
   return 1 - Math.pow(1 - progress, 3)
 }
 
 // @find: useCountUp hook, animate number
+/**
+ * Returns a number that animates from its current value to `target` once `active` is true.
+ * Flow: each change of target, active or duration starts a frame loop that eases (ease-out cubic) from the value shown to the target over durationMs; a later change of target retargets over a shorter fixed time (300 ms) instead of restarting from zero. Under reduced motion the target is returned at once and no frames are scheduled. Cleanup cancels the pending frame. Inputs: target figure, active flag (usually from useInView), duration in ms (default 600). Output: the whole number to display, which callers render aria-hidden.
+ */
 export function useCountUp(target: number, active: boolean, durationMs = 600): number {
   const reduced = useReducedMotion()
   const [shown, setShown] = useState(0)

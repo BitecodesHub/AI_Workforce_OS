@@ -122,6 +122,7 @@ const PREFERENCE_PREFIX = 'aiwos.notify.'
 /** Raised on window when the preference changes in this tab, so the shell and the toggle agree. */
 const PREFERENCE_EVENT = 'aiwos:notify'
 
+/** localStorage key of one user's browser-notification choice. */
 const preferenceKey = (userId: string) => `${PREFERENCE_PREFIX}${userId}`
 
 /** Whether this browser can show notifications at all. */
@@ -185,6 +186,7 @@ export async function enableBrowserNotifications(userId: string): Promise<Enable
   return setBrowserNotifications(userId, true) ? 'on' : 'not-saved'
 }
 
+/** Subscribes to the in-tab preference event and the cross-tab storage event. Returns the unsubscribe function, for useSyncExternalStore. */
 function subscribeToPreference(listener: () => void): () => void {
   window.addEventListener(PREFERENCE_EVENT, listener)
   window.addEventListener('storage', listener)

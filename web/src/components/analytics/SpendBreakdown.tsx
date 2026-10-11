@@ -21,6 +21,7 @@ import { useToast } from '../../lib/toast'
  * catalogue's prices; the file says so too.
  */
 
+/** Builds the shared column set (name, cost, failed-attempt cost, attempts, tokens) for a spend table; the first header names the grouping. */
 function columnsFor(first: string): Column<UsageLine>[] {
   return [
     { key: 'name', header: first, sortValue: (line) => line.label, render: (line) => line.label },
@@ -55,6 +56,11 @@ function columnsFor(first: string): Column<UsageLine>[] {
   ]
 }
 
+/**
+ * One spend table for a grouping (model or agent) over a date range.
+ * Reads useUsageReport(grouping, range) through QueryState (permission budget:read) and renders a DataTable
+ * of the groups. An empty report shows "No spend was recorded in this window". Rendered twice by SpendBreakdown.
+ */
 function Breakdown({ title, first, grouping, range }: { title: string; first: string; grouping: 'model' | 'agent'; range: { from: string; to: string } }) {
   const report = useUsageReport(grouping, range)
   const columns = useMemo(() => columnsFor(first), [first])
@@ -82,6 +88,14 @@ function Breakdown({ title, first, grouping, range }: { title: string; first: st
 }
 
 // @find: SpendBreakdown, usage report, spend by model, download usage csv
+/**
+ * Analytics card showing where the money went over the selected window, with a CSV download.
+ * Needs budget:read; without it a sentence replaces the content and no request is made. The headline
+ * total comes from the by-model usage report, which React Query shares with the by-model Breakdown so it is
+ * fetched once. Download CSV calls downloadUsageCsv for the same range, then shows a success toast with the
+ * file name or an inline warning Notice on failure; the button shows a loading state meanwhile.
+ * Rendered on the Analytics page with the window chosen there.
+ */
 export function SpendBreakdown({ window }: { window: InsightsWindow }) {
   const canRead = can('budget:read')
   const toast = useToast()

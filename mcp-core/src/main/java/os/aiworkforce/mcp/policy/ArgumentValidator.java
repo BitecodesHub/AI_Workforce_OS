@@ -38,6 +38,7 @@ public class ArgumentValidator {
     /* Compiled schemas are cached: compiling one per invocation is pure waste on a hot path. */
     private final Map<String, JsonSchema> compiled = new ConcurrentHashMap<>();
 
+    /** Creates the validator over the shared object mapper. */
     public ArgumentValidator(ObjectMapper json) {
         this.json = json;
     }
@@ -93,7 +94,12 @@ public class ArgumentValidator {
         return changed ? fixed.toString() : argumentsJson;
     }
 
-    /* The value in the schema's type when it converts without doubt; otherwise the value itself. */
+    /**
+     * The value in the schema's type when it converts without doubt; otherwise the value itself.
+     * Handles integer, number, boolean, string, array (including a single value or a list of
+     * addresses separated by commas or semicolons) and an object sent as a JSON string. Recurses
+     * into array items. Pure; a value that does not convert cleanly is returned unchanged.
+     */
     private JsonNode convert(JsonNode value, JsonNode schema) {
         String type = schema.path("type").asText("");
         var nodes = json.getNodeFactory();
@@ -169,7 +175,15 @@ public class ArgumentValidator {
     }
 
     // @find: validate tool arguments, schema check, returns problem text
-    /** Returns null when the arguments are acceptable, or a sentence describing what is wrong. */
+    /**
+     * Returns null when the arguments are acceptable, or a sentence describing what is wrong.
+     *
+     * <p>Called by {@code ToolGateway} on the normalised arguments, in {@code evaluate} and again in
+     * {@code invoke}. Compiles the tool's schema once and caches it by qualified name. Failure
+     * behaviour: text that is not JSON, or not an object, gives a fixed sentence; a schema that cannot
+     * be compiled is treated as acceptable so that one broken definition does not block every call.
+     * At most five distinct problems are reported.
+     */
     public String validate(ToolDefinition tool, String argumentsJson) {
         JsonNode arguments;
         try {
@@ -208,6 +222,7 @@ public class ArgumentValidator {
         return "The arguments do not match the tool's schema: " + detail;
     }
 
+    /** Patterns for the message shapes the schema library produces, used by {@link #plain}. */
     private static final java.util.regex.Pattern REQUIRED =
             java.util.regex.Pattern.compile("^\\$(?:\\.(\\S+))?: required property '([^']+)' not found$");
     private static final java.util.regex.Pattern WRONG_TYPE =
@@ -237,6 +252,7 @@ public class ArgumentValidator {
         return message.startsWith("$: ") ? message.substring(3) : message;
     }
 
+    /** Schema type name as plain words, for example {@code integer} becomes "a whole number". */
     private static String typeName(String type) {
         return switch (type) {
             case "string" -> "text";

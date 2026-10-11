@@ -51,11 +51,15 @@ import os.aiworkforce.mcp.spi.McpServerAdapter;
  */
 public abstract class LiveServerAdapter implements McpServerAdapter {
 
+    /** Longest a connection check may take before it is reported as not answering. */
     private static final Duration CHECK_TIMEOUT = Duration.ofSeconds(10);
+    /** Longest vendor error text quoted back to a person, in characters. */
     private static final int VENDOR_MESSAGE_LIMIT = 200;
     /* A full email or an exported document is often larger than Spring's 256 KB default. */
     static final int MAX_ANSWER_BYTES = 16 * 1024 * 1024;
+    /** Replacement text for a secret found in an outgoing summary or message. */
     private static final String HIDDEN = "[hidden]";
+    /** Names of JSON credential fields whose values are treated as secrets and redacted. */
     private static final Pattern SECRET_FIELD = Pattern.compile("(?i).*(token|secret|password|key).*");
 
     /** One tool, run against the provider with a credential that is known to be present. */
@@ -67,17 +71,27 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
     /** A refusal that can be explained in plain words: bad arguments, or the vendor saying no. */
     protected static final class VendorException extends RuntimeException {
 
+        /** Carries only the sentence to show; no stack trace is kept, and the message must never hold a secret. */
         public VendorException(String message) {
             super(message, null, false, false);
         }
     }
 
+    /** The sandbox for the same server: the source of tool definitions and the fallback when no credential is stored. */
     private final SandboxServerAdapter sandbox;
+    /** The name of the provider as shown in sentences, for example GitHub. */
     private final String vendor;
+    /** Live implementations by tool name, in registration order. */
     private final Map<String, Call> calls = new LinkedHashMap<>();
+    /** Shared JSON mapper for reading arguments and building results. */
     protected final ObjectMapper json;
+    /** HTTP client with the adapter's base URL (if any) and a raised response size limit. */
     protected final WebClient http;
 
+    /**
+     * Builds the HTTP client for this vendor from a clone of the shared builder, so settings of one adapter do
+     * not leak into another. A null {@code baseUrl} means calls use absolute addresses or {@link #baseFor}.
+     */
     protected LiveServerAdapter(
             SandboxServerAdapter sandbox, String vendor, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         this.sandbox = sandbox;
@@ -151,26 +165,38 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return Set.copyOf(calls.keySet());
     }
 
+    /** The provider name used in plain-language results. */
     public String vendor() {
         return vendor;
     }
 
+    /** The server identifier, taken from the sandbox so that governance sees the same server either way. */
     @Override
     public String server() {
         return sandbox.server();
     }
 
+    /** The tool definitions, scopes and side-effect classes declared by the sandbox. */
     @Override
     public List<ToolDefinition> tools() {
         return sandbox.tools();
     }
 
+    /** Always false: this adapter talks to the real provider. */
     @Override
     public boolean isSandbox() {
         return false;
     }
 
     // @find: run live tool call, invoke tool, vendor request, timeout becomes indeterminate, 401 renew token
+    /**
+     * Runs one tool. With no credential the call goes to the sandbox. Otherwise the registered {@link Call} is
+     * made against the provider (with one renewal and retry after a 401), any failure is explained in one
+     * sentence, and secrets are removed from the summary. Called by the gateway after policy and approval
+     * decisions; this method makes none of its own, so the side-effect class and approval come from the tool
+     * definition. An unknown tool, an empty answer or a dropped connection on a non-idempotent tool gives a
+     * failed or indeterminate result rather than an error signal.
+     */
     @Override
     public Mono<ToolResult> invoke(ToolInvocation invocation, String credential) {
         if (credential == null || credential.isBlank()) {
@@ -193,6 +219,11 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
     }
 
     // @find: test connection, check credential, who am I, connect dialog test, POST /api/integrations/connectors/{server}/test
+    /**
+     * Verifies a pasted credential with the adapter's {@link #whoAmI} request (a read call to the provider),
+     * limited to ten seconds and renewed once after a 401. The outcome is a pass with the account label or a
+     * failure with a sentence a person can act on. Used by the connect dialog and by {@link #healthCheck}.
+     */
     @Override
     public Mono<ConnectionCheck> check(String credential) {
         if (credential == null || credential.isBlank()) {
@@ -243,6 +274,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
     }
 
     // @find: health check, connection healthy
+    /** True when {@link #check} passes; used for periodic connection health. */
     @Override
     public Mono<Boolean> healthCheck(String credential) {
         return check(credential).map(ConnectionCheck::ok);
@@ -250,6 +282,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
 
     // ---- HTTP --------------------------------------------------------------------------------
 
+    /** A GET whose answer is JSON; an empty answer becomes an empty object. Errors surface as WebClient exceptions. */
     protected Mono<JsonNode> get(String credential, String uri, Object... variables) {
         return http.get()
                 .uri(address(credential, uri), variables)
@@ -269,6 +302,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
                 .defaultIfEmpty("");
     }
 
+    /** A request with a JSON body (POST, PUT or PATCH); an empty answer becomes an empty object. This changes data at the provider. */
     protected Mono<JsonNode> send(HttpMethod method, String credential, Object body, String uri, Object... variables) {
         return http.method(method)
                 .uri(address(credential, uri), variables)
@@ -290,6 +324,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
                 .defaultIfEmpty(json.createObjectNode());
     }
 
+    /** Prefixes a path that starts with a slash with the per-credential base address, if there is one. */
     private String address(String credential, String uri) {
         String base = baseFor(credential);
         return base != null && uri.startsWith("/") ? base + uri : uri;
@@ -297,10 +332,12 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
 
     // ---- Results and arguments ----------------------------------------------------------------
 
+    /** A successful result carrying the content as JSON text and a one-line summary. */
     protected ToolResult done(JsonNode content, String summary) {
         return ToolResult.succeeded(content.toString(), summary, Duration.ZERO);
     }
 
+    /** Wraps a list as an object with a count and the items, the shape every list tool answers in. */
     protected ObjectNode listOf(ArrayNode items) {
         ObjectNode result = json.createObjectNode();
         result.put("count", items.size());
@@ -318,6 +355,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return text.isEmpty() ? null : text;
     }
 
+    /** A text argument that must be present; throws {@link VendorException} naming the missing field. */
     protected static String required(JsonNode arguments, String field) {
         String value = text(arguments, field);
         if (value == null) {
@@ -326,6 +364,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return value;
     }
 
+    /** The {@code limit} argument clamped to the range 1 to {@code max}, or {@code fallback} when absent. */
     protected static int limit(JsonNode arguments, int fallback, int max) {
         int requested = arguments.path("limit").asInt(fallback);
         return Math.max(1, Math.min(requested, max));
@@ -333,6 +372,11 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
 
     // ---- Failures -----------------------------------------------------------------------------
 
+    /**
+     * Maps a failure to a result. A refusal or a vendor status becomes a failed result. A dropped connection or
+     * unreadable answer on a tool that cannot be repeated becomes indeterminate. A gateway timeout is passed on so
+     * the gateway can classify it.
+     */
     private Mono<ToolResult> explain(Throwable error, boolean idempotent) {
         if (error instanceof VendorException refusal) {
             return Mono.just(ToolResult.failed(refusal.getMessage()));
@@ -381,6 +425,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
                                 Duration.ZERO));
     }
 
+    /** The result for a call that completed with no answer at all. */
     private ToolResult empty(boolean idempotent) {
         String what = capitalised(inSentence()) + " sent an empty answer.";
         return idempotent
@@ -394,6 +439,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return vendor.startsWith("The ") ? "the " + vendor.substring(4) : vendor;
     }
 
+    /** Upper-cases the first character of a sentence fragment. */
     private static String capitalised(String text) {
         return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
     }
@@ -416,6 +462,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         };
     }
 
+    /** One plain sentence for each way a connection check can fail: rejection, rate limit, missing site, outage, network, timeout. */
     private String checkFailure(Throwable error) {
         if (error instanceof VendorException refusal) {
             return refusal.getMessage();
@@ -477,6 +524,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         }
     }
 
+    /** The first candidate node that holds non-blank text, or null. */
     private static String firstText(JsonNode... candidates) {
         for (JsonNode candidate : candidates) {
             if (candidate.isTextual() && !candidate.asText().isBlank()) {
@@ -486,6 +534,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return null;
     }
 
+    /** True when the cause chain shows the host could not be found or connected to. */
     private static boolean unreachable(Throwable error) {
         Throwable current = error;
         for (int depth = 0; current != null && depth < 10; depth++) {
@@ -497,6 +546,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return false;
     }
 
+    /** True when the exception or one of its causes (up to ten deep) is of the given type. */
     private static boolean causedBy(Throwable error, Class<? extends Throwable> type) {
         Throwable current = error;
         for (int depth = 0; current != null && depth < 10; depth++) {
@@ -553,6 +603,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
         return clean;
     }
 
+    /** Removes every known secret from the summary; the result is returned unchanged when nothing was found. */
     private static ToolResult redacted(ToolResult result, Set<String> secrets) {
         String summary = redact(result.summary(), secrets);
         return summary == null || summary.equals(result.summary())
@@ -560,6 +611,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
                 : new ToolResult(result.status(), result.contentJson(), summary, result.duration(), result.metadata());
     }
 
+    /** Fills in the elapsed time when the call did not record one. */
     private static ToolResult timed(ToolResult result, Instant startedAt) {
         if (!result.duration().isZero()) {
             return result;
@@ -572,6 +624,7 @@ public abstract class LiveServerAdapter implements McpServerAdapter {
                 result.metadata());
     }
 
+    /** The tool arguments as an object; anything that is not a JSON object becomes an empty one. */
     private JsonNode parse(String argumentsJson) {
         try {
             JsonNode node = json.readTree(argumentsJson == null ? "{}" : argumentsJson);

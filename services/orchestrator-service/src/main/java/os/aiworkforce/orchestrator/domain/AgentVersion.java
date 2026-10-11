@@ -172,6 +172,7 @@ public class AgentVersion {
         this.maxRunMinutes = maxRunMinutes;
     }
 
+    /** True once a run has used the version, after which it may no longer be edited. */
     public boolean isSealed() {
         return sealed;
     }

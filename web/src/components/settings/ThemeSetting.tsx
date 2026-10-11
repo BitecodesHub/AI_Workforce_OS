@@ -11,6 +11,11 @@ import { THEME_LABELS, THEME_SETTINGS, useTheme } from '../../lib/theme'
  * screen reader announces "Theme, System, radio button, 1 of 3" without any ARIA of our own.
  */
 // @find: theme switch component, segmented theme control
+/**
+ * Three-way theme control (System, Light, Dark) built from native radio buttons in a fieldset.
+ * Reads and writes the setting through useTheme (lib/theme), which persists it in this browser. The legend
+ * text defaults to "Theme" and can be overridden. Rendered by ThemeCard and by the account menu in Navbar.
+ */
 export function ThemeSwitch({ legend = 'Theme' }: { legend?: string }) {
   const [setting, setSetting] = useTheme()
   const name = useId()
@@ -36,6 +41,7 @@ export function ThemeSwitch({ legend = 'Theme' }: { legend?: string }) {
 }
 
 // @find: theme card, appearance card on profile
+/** Card for the Profile page with the Appearance heading, the ThemeSwitch and a caption explaining that System follows the device and that the choice is kept in this browser only. */
 export function ThemeCard() {
   return (
     <Card as="section">

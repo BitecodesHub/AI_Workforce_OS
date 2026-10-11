@@ -58,6 +58,11 @@ export function Eyebrow({
 /* ---- Page header ---------------------------------------------------------------------------- */
 
 // @find: page header, page title
+/**
+ * Header of every page: an eyebrow, the page title as the h1, an optional description, a meta line and actions.
+ * The h1 is focusable from script only (tabIndex -1), so the shell can move focus to it after a route change and
+ * a screen reader announces the new screen. Actions wrap below the title on a narrow screen.
+ */
 export function PageHeader({
   eyebrow,
   title,
@@ -91,6 +96,7 @@ export function PageHeader({
 }
 
 // @find: section heading
+/** An h2 section heading with an optional short note beside it. */
 export function SectionHeading({ children, note }: { children: ReactNode; note?: string }) {
   return (
     <div className="section-heading-row">
@@ -155,6 +161,7 @@ export function Card({
 /* ---- Stat tiles ------------------------------------------------------------------------------ */
 
 // @find: stat row
+/** Layout row that holds StatTile figures. */
 export function StatRow({ children }: { children: ReactNode }) {
   return <div className="stat-row">{children}</div>
 }
@@ -317,6 +324,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 // @find: button, primary button, loading button
+/** The button primitive. Variants: primary, outline, quiet and danger. Props: icon, and loading, which disables the button, sets aria-busy and shows a Spinner so a slow action cannot be submitted twice. Other button attributes pass through; the default type is "button". */
 export function Button({
   variant = 'primary',
   icon,
@@ -341,6 +349,7 @@ export function Button({
 }
 
 // @find: spinner, loading indicator
+/** Small animated circular spinner (hidden from assistive technology; the owner of the busy state announces it). */
 export function Spinner({ size = 14 }: { size?: number }) {
   return (
     <svg className="spinner" width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -351,6 +360,7 @@ export function Spinner({ size = 14 }: { size?: number }) {
 }
 
 // @find: icon button
+/** A button that holds only an icon. The label becomes its aria-label and tooltip. An optional numeric badge (capped at 99+) is drawn for sighted users and announced to screen readers as "<n> <badgeLabel>" through a hidden element. A caller's class is added to icon-button, never substituted for it. */
 export function IconButton({
   label,
   badge,
@@ -413,6 +423,7 @@ function useFieldIds(idProp: string | undefined, hint: ReactNode, error: string 
   return { id, describedBy, invalid: error ? true : undefined }
 }
 
+/** Wrapper shared by Input, Select and Textarea: the label (with an optional "(optional)" marker), the control, and below it either the error text or the hint. The error is text, not only a coloured border. */
 function Field({ id, label, optional, hint, error, children }: FieldProps & { id: string; children: ReactNode }) {
   return (
     <div className="field">
@@ -511,6 +522,7 @@ export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>,
 }
 
 // @find: select dropdown field
+/** A labelled native select with the shared field behaviour (id, hint, error, aria-invalid, aria-describedby). */
 export function Select({
   label,
   error,
@@ -532,6 +544,7 @@ export function Select({
 }
 
 // @find: textarea field, multi-line input
+/** A labelled multi-line field with the shared field behaviour (id, hint, error, aria-invalid, aria-describedby). */
 export function Textarea({
   label,
   error,
@@ -560,6 +573,7 @@ export function Textarea({
  */
 
 // @find: notice, alert, info warning message
+/** An inline message in the info, warning or success tone. The body is one flex child so text mixed with links flows as a sentence. Pass live for a message that appears in response to an action: it then gets role alert (warning) or status, and is announced; a banner that is part of the page stays silent. */
 export function Notice({
   tone = 'info',
   live = false,
@@ -635,11 +649,13 @@ type SortKey = string | number | null | undefined
 const isMissing = (value: SortKey) =>
   value === null || value === undefined || value === '' || (typeof value === 'number' && !Number.isFinite(value))
 
+/** Compares two sort keys: numbers numerically, strings with a numeric, case-insensitive collator in the app locale. */
 function compareKeys(a: string | number, b: string | number): number {
   if (typeof a === 'number' && typeof b === 'number') return a - b
   return collator.compare(String(a), String(b))
 }
 
+/** Returns a sorted copy of the rows by a key function. Rows with a missing key sort last in either direction, and equal keys keep their original order (the sort is stable). */
 function sortRows<T>(rows: T[], value: (row: T) => SortKey, direction: 'ascending' | 'descending'): T[] {
   const factor = direction === 'ascending' ? 1 : -1
   return rows
@@ -653,6 +669,7 @@ function sortRows<T>(rows: T[], value: (row: T) => SortKey, direction: 'ascendin
     .map((entry) => entry.row)
 }
 
+/** Up and down arrows for a sortable column header, showing only the arrow for the active direction (both when unsorted). */
 function SortIcon({ direction }: { direction: 'ascending' | 'descending' | 'none' }) {
   return (
     <svg className="table-sort-icon" width="8" height="10" viewBox="0 0 8 10" fill="none" aria-hidden="true">
@@ -667,6 +684,15 @@ function SortIcon({ direction }: { direction: 'ascending' | 'descending' | 'none
 }
 
 // @find: data table, list table, clickable rows, sortable
+/**
+ * Table with optional sortable columns and optional linked rows.
+ * Props: columns (header, render, numeric, sortValue), rows, getKey, caption (names the table and its scrolling region
+ * for assistive technology, and states the data's source), getRowHref (makes the first cell a real link, so a
+ * row can be opened in a new tab, and the whole row clickable), getRowLabel (accessible name of that link) and
+ * onRowOpen (open the row some other way, such as a sheet; a plain click calls it instead of navigating, a
+ * modifier click still follows the link).
+ * Sorting: nothing is sorted until a header is pressed; presses cycle ascending, descending and back to the original order, and aria-sort reports the state. The scrolling region is focusable so a wide table can be scrolled from the keyboard. A click that ends a text selection, or lands on a control inside the row, does not open the row (isPlainRowClick).
+ */
 export function DataTable<T>({
   columns,
   rows,
@@ -799,6 +825,7 @@ export function DataTable<T>({
 /* ---- Empty state ---------------------------------------------------------------------------------- */
 
 // @find: empty state, nothing here yet
+/** Centered empty state: an icon, a title, body text and an optional action. titleAs chooses h1 (the whole page is empty), h2 (default) or h3 (inside a titled section). */
 export function EmptyState({
   icon,
   title,
@@ -828,6 +855,7 @@ export function EmptyState({
 /* ---- Assistant launcher ----------------------------------------------------------------------------- */
 
 // @find: assistant launcher, chat bubble button
+/** Floating "Ask the assistant" button that toggles the assistant panel; panelOpen is exposed as data-panel-open for styling. */
 export function AssistantLauncher({ onClick, panelOpen = false }: { onClick: () => void; panelOpen?: boolean }) {
   return (
     <button type="button" className="assistant-launcher" onClick={onClick} data-panel-open={panelOpen}>
@@ -968,6 +996,16 @@ function initialFocusTarget(dialog: HTMLDialogElement): HTMLElement {
 }
 
 // @find: dialog, modal
+/**
+ * Modal dialog built on the native dialog element, which supplies the focus trap, Escape and backdrop.
+ * Props: open and onClose (controlled), eyebrow, title and description (linked by aria-labelledby and aria-describedby), children, footer, dismissible, closeOnBackdrop and error.
+ * Behaviour: showModal on open and close when open becomes false, with focus placed by initialFocusTarget
+ * (a data-autofocus element, else the first field, else the dialog, never the Close button). While dismissible is
+ * false, Escape, the backdrop and Close do nothing (Escape is also prevented at the key level because Chrome
+ * closes on a second Escape). A backdrop click closes only when the press also started on the backdrop, so
+ * dragging a text selection out of a field does not discard it, and only when closeOnBackdrop is true. A close
+ * requested by the parent is not reported back as a dismissal. An error is shown in a live warning Notice inside the dialog.
+ */
 export function Dialog({
   open,
   onClose,
@@ -1190,12 +1228,14 @@ const LEGACY_STATUS: Record<string, { tone: TagTone; label: string }> = {
   connected: { tone: 'success', label: 'Connected' },
 }
 
+/** Looks up a status in LEGACY_STATUS, falling back to a sentence-cased label, or "Unknown" for an empty status. */
 function legacyStatus(status: string | null | undefined): { tone: TagTone; label: string } {
   if (!status || !status.trim()) return { tone: 'neutral', label: 'Unknown' }
   return LEGACY_STATUS[status] ?? { tone: 'neutral', label: sentenceCase(status) }
 }
 
 // @find: status tag, status badge
+/** Tag for a status with the shared tone and wording. Pass kind (run, task, goal, agent and so on, see lib/labels) because the same word means different things for different records; without a kind the legacy single map is used. */
 export function StatusTag({
   kind,
   status,
@@ -1224,6 +1264,7 @@ export { TaskDialog } from './TaskDialog'
  */
 
 // @find: keyboard key, Kbd
+/** A key or chord drawn as a kbd element. */
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="kbd">{children}</kbd>
 }

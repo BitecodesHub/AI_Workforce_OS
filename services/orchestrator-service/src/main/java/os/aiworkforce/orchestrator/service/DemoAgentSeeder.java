@@ -86,6 +86,7 @@ public class DemoAgentSeeder {
     private static final Grant SUPPORT_DRIVE_GRANT =
             new Grant("drive", List.of("list_files", "get_file"), List.of("drive.readonly"));
 
+    // Repositories for what is seeded. requiresNew gives each seeding step a transaction of its own.
     private final Agents agents;
     private final AgentVersions versions;
     private final ToolGrants grants;
@@ -93,6 +94,11 @@ public class DemoAgentSeeder {
     private final GeneralEmployee generalEmployee;
     private final TransactionTemplate requiresNew;
 
+    /**
+     * @param properties tells the seeder whether this is a deployed environment, in which it does nothing
+     * @param generalEmployee ensures the General Employee agent, last
+     * @param transactionManager used to open a separate transaction for each step
+     */
     public DemoAgentSeeder(
             Agents agents,
             AgentVersions versions,
@@ -110,6 +116,13 @@ public class DemoAgentSeeder {
     }
 
     // @find: seed demo agents on startup
+    /**
+     * Seeds the demo workspace once the application is ready. Does nothing in a deployed environment. Each step
+     * logs a warning on failure and the next still runs; nothing here can stop start-up.
+     *
+     * <p>Side effects: inserts agents, versions and grants in the demo workspace, and may add revisions to agents
+     * whose prompt is an untouched legacy one.
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void seed() {
         if (properties.environment().isDeployed()) {
@@ -129,6 +142,11 @@ public class DemoAgentSeeder {
         generalEmployee.ensure(DEMO_ORG_ID);
     }
 
+    /**
+     * Creates, for each catalogue template with no agent of that key, the agent, its first version (revision 1,
+     * eight steps, created by {@code system}) and the template's demo grants. Agents that exist are skipped, which
+     * makes the method safe to repeat. Runs inside the transaction opened by {@link #seed()}.
+     */
     private void createMissingAgents(UUID orgId) {
         int created = 0;
         for (Template template : AgentTemplates.all()) {
@@ -215,6 +233,10 @@ public class DemoAgentSeeder {
         backfillSupportDriveGrant(orgId);
     }
 
+    /**
+     * Gives the demo Support agent its Drive grant when it is missing, for workspaces seeded before it had one.
+     * Does nothing when the agent is absent or already has any grant for that server.
+     */
     private void backfillSupportDriveGrant(UUID orgId) {
         Agent support = agents.findByOrgIdAndKey(orgId, "support").orElse(null);
         if (support == null) {
@@ -227,6 +249,7 @@ public class DemoAgentSeeder {
         saveGrant(orgId, support.getId(), SUPPORT_DRIVE_GRANT);
     }
 
+    /** Inserts one tool grant for an agent, allowing at most ten calls per run. */
     private void saveGrant(UUID orgId, UUID agentId, Grant grant) {
         AgentToolGrant row = new AgentToolGrant();
         row.setId(UuidV7.generate());

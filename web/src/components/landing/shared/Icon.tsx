@@ -92,6 +92,7 @@ const SHAPES: Record<IconName, ReactElement> = {
 }
 
 // @find: Icon component, svg icon
+/** Renders one of the line icons by name at a given size (default 14) with an optional extra class. The SVG is hidden from assistive technology and not focusable; the text beside it carries the meaning. Shapes come from the SHAPES map. */
 export function Icon({ name, size = 14, className }: IconProps): ReactElement {
   return (
     <svg

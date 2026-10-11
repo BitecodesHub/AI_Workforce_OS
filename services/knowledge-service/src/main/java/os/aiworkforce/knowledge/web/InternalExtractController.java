@@ -44,6 +44,8 @@ public class InternalExtractController {
     static final int MAX_CHARS = 1_000_000;
 
     /**
+     * The response of the extract endpoint: what the file is and its text, or the reason there is none.
+     *
      * @param mediaType what the file is, detected from its bytes
      * @param text the readable text, cut at the limit; empty when there is none
      * @param pageCount pages, for a format that has them
@@ -63,11 +65,27 @@ public class InternalExtractController {
 
     private final TextExtractor extractor;
 
+    /**
+     * Creates the controller.
+     *
+     * @param extractor the shared reader of file text
+     */
     public InternalExtractController(TextExtractor extractor) {
         this.extractor = extractor;
     }
 
     // @find: extract text from attachment, POST /internal/knowledge/extract
+    /**
+     * {@code POST /internal/knowledge/extract}: reads one uploaded file and returns its text.
+     *
+     * <p>Permission: a service token only; a person's token or an API key is refused. Nothing is stored,
+     * indexed or audited. Called by the orchestrator for chat attachments.
+     *
+     * @param file the multipart file
+     * @param maxChars the most text to return; absent or not positive means 200,000, and at most 1,000,000
+     * @return the extraction result; an unreadable file is reported in {@code problem}, not as an error
+     * @throws ApiException {@code PERMISSION_DENIED} for a person's token; {@code MALFORMED_REQUEST} when the upload cannot be read
+     */
     @PostMapping(value = "/extract", consumes = "multipart/form-data")
     @Operation(summary = "Internal: detect what a file is and read its text, without indexing it")
     public Extracted extract(
@@ -86,7 +104,12 @@ public class InternalExtractController {
         return extract(bytes, name, maxChars, extractor);
     }
 
-    /** The reading itself, apart from the web layer, so it can be tested on bytes alone. */
+    /**
+     * The reading itself, apart from the web layer, so it can be tested on bytes alone.
+     *
+     * <p>Extracts, cuts the text to the limit and sets {@code truncated}, and fills {@code problem}
+     * when the file is not indexable or the text is blank. Text is returned only for an indexable file.
+     */
     static Extracted extract(byte[] bytes, String name, Integer maxChars, TextExtractor extractor) {
         int limit = maxChars == null || maxChars <= 0 ? DEFAULT_MAX_CHARS : Math.min(maxChars, MAX_CHARS);
         TextExtractor.Extraction found = extractor.extract(bytes, name);

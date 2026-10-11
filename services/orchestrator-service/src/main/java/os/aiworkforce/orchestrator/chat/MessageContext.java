@@ -31,8 +31,10 @@ import os.aiworkforce.platform.error.ApiException;
  */
 public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID skillId, SkillLookup.ResolvedSkill skill) {
 
+    /** The context of a message that carries nothing; shared so callers can compare cheaply. */
     public static final MessageContext NONE = new MessageContext(List.of(), null, null, null);
 
+    /** The most knowledge references one message may carry. */
     static final int MAX_KNOWLEDGE = 20;
 
     private static final Pattern OWNER = Pattern.compile("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$");
@@ -40,6 +42,7 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
     private static final Pattern REF = Pattern.compile("^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$");
     private static final Pattern PATH = Pattern.compile("^[A-Za-z0-9_. -]+(?:/[A-Za-z0-9_. -]+)*$");
 
+    /** Compact constructor: makes the knowledge list immutable and never null. */
     public MessageContext {
         knowledge = knowledge == null ? List.of() : List.copyOf(knowledge);
     }
@@ -107,6 +110,14 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
         return new MessageContext(refs, checked, skillId, null);
     }
 
+    /**
+     * Validates and normalises a repository reference: trims blanks to null, checks the owner, name,
+     * branch and path against the characters GitHub accepts, strips surrounding slashes from the path
+     * and refuses {@code ..}. Used by {@link #of}; performs no network call, so it does not prove the
+     * repository exists.
+     *
+     * @throws ApiException a validation error naming the offending field (repo.owner, repo.name, repo.branch or repo.path)
+     */
     private static RepoRef checkRepo(RepoRef repo) {
         String owner = blankToNull(repo.owner());
         String name = blankToNull(repo.name());
@@ -132,6 +143,7 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
         return new RepoRef(owner, name, branch, path);
     }
 
+    /** Whether nothing at all is attached: no knowledge, no repository and no skill. */
     public boolean isEmpty() {
         return knowledge.isEmpty() && repo == null && skillId == null;
     }
@@ -262,6 +274,7 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
         return detail;
     }
 
+    /** The stored map form of one knowledge reference; optional parts are omitted when null. */
     private static Map<String, Object> refMap(KnowledgeRef ref) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("sourceId", ref.sourceId().toString());
@@ -274,6 +287,7 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
         return m;
     }
 
+    /** The stored map form of a repository reference; branch and path are omitted when null. */
     private static Map<String, Object> repoMap(RepoRef repo) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("owner", repo.owner());
@@ -287,6 +301,7 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
         return m;
     }
 
+    /** Parses a UUID from any value, returning null when absent or malformed. */
     private static UUID uuid(Object value) {
         if (value == null) {
             return null;
@@ -298,14 +313,17 @@ public record MessageContext(List<KnowledgeRef> knowledge, RepoRef repo, UUID sk
         }
     }
 
+    /** The value as trimmed text, or null when absent or blank. */
     private static String stringOrNull(Object value) {
         return value == null ? null : blankToNull(value.toString());
     }
 
+    /** Trims the text, mapping null and blank to null. */
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    /** Truncates the text to at most {@code max} characters; null stays null. */
     private static String cap(String value, int max) {
         return value == null || value.length() <= max ? value : value.substring(0, max);
     }

@@ -1,6 +1,6 @@
 // @find: jira, atlassian, issues, tickets, search issues, create issue, update issue, JQL, site email api token, live adapter, real API, project management
 // @what: Live Jira connector: runs jira__ tools (search, create, update issues) against an Atlassian Cloud site using site, email and API token.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "jira"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke; the site address comes from the stored credential through baseFor; each tool makes one or two calls to the Atlassian site; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -25,16 +25,28 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  *
  * <p>The stored credential is JSON: {@code {"site":"https://acme.atlassian.net","email":"...","token":"..."}}.
  * The site is rebuilt through {@link Hosts} on every call, so it can only ever name an Atlassian host.
+ *
+ * <p>Used by the tool gateway when a workspace has stored a Jira credential. search_issues is a read
+ * tool; create_issue and update_issue are write tools, so a person is asked first when the workspace
+ * policy says so. update_issue only moves an issue to another status. There is no destructive or
+ * outbound tool.
+ *
+ * <p>Failures: a malformed credential, a missing argument or a status that is not reachable becomes
+ * a plain failed result; HTTP errors are described by the base class. Nothing is retried.
  */
 public final class JiraAdapter extends LiveServerAdapter {
 
     /** The address comes from the credential's site. */
+    /** Null on purpose: the real address is taken from the site in each stored credential. */
     public static final String BASE_URL = null;
 
+    /** The issue fields requested in a search. */
     private static final String FIELDS = "summary,status,issuetype,assignee,priority,updated";
 
+    /** True when a base URL was injected (tests), in which case the credential site is not used for routing. */
     private final boolean fixedBase;
 
+    /** Registers the three Jira tools. A non-null base URL fixes the address and bypasses the site in the credential. */
     public JiraAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Jira", json, http, baseUrl);
         this.fixedBase = baseUrl != null;
@@ -43,8 +55,13 @@ public final class JiraAdapter extends LiveServerAdapter {
         on("update_issue", this::updateIssue);
     }
 
+    /** The parsed credential: a validated site address, the account email and the API token. */
     private record Account(String base, String email, String token) {}
 
+    /**
+     * Parses the stored JSON credential and checks the site with {@link Hosts#atlassianBase}, so only
+     * Atlassian Cloud addresses are ever called. Throws a plain refusal for malformed or incomplete input.
+     */
     private Account account(String credential) {
         JsonNode node;
         try {
@@ -68,12 +85,14 @@ public final class JiraAdapter extends LiveServerAdapter {
         }
     }
 
+    /** The Atlassian site of this credential, or null when a fixed base URL is in use. */
     @Override
     protected String baseFor(String credential) {
         Account account = account(credential);
         return fixedBase ? null : account.base();
     }
 
+    /** Sends the email and API token as HTTP basic authentication. */
     @Override
     protected void authorize(HttpHeaders headers, String credential) {
         Account account = account(credential);
@@ -81,6 +100,7 @@ public final class JiraAdapter extends LiveServerAdapter {
         headers.set(HttpHeaders.ACCEPT, "application/json");
     }
 
+    /** Connection check: GET the current user; answers the display name and the site host. */
     @Override
     protected Mono<String> whoAmI(String credential) {
         Account account = account(credential);
@@ -91,6 +111,10 @@ public final class JiraAdapter extends LiveServerAdapter {
     }
 
     // @find: Jira search issues, tool jira__search_issues, live Jira call
+    /**
+     * Read tool. One search call with a JQL query, at most 50 issues. With no input the last thirty
+     * days of changes are listed. Answers key, title, status, type, priority, assignee, update time and link.
+     */
     private Mono<ToolResult> searchIssues(ToolInvocation invocation, JsonNode arguments, String credential) {
         String jql = jql(text(arguments, "jql"));
         int limit = limit(arguments, 20, 50);
@@ -104,6 +128,7 @@ public final class JiraAdapter extends LiveServerAdapter {
     }
 
     /* Text that is not already a query is searched for; a query is passed on as written. */
+    /** Decides whether the input is already JQL (it contains an operator, "in (", "is" or "order by"). If not, it is escaped and searched as text. */
     private static String jql(String input) {
         if (input == null) {
             return "updated >= -30d ORDER BY updated DESC";
@@ -117,6 +142,11 @@ public final class JiraAdapter extends LiveServerAdapter {
     }
 
     // @find: Jira create issue, tool jira__create_issue, live Jira call
+    /**
+     * Write tool. POST a new issue in the given project key; the type defaults to Task and the
+     * description becomes a document with one paragraph per block. Not idempotent: a dropped connection
+     * is reported as indeterminate and is not repeated, so no duplicate issue is created.
+     */
     private Mono<ToolResult> createIssue(ToolInvocation invocation, JsonNode arguments, String credential) {
         String project = required(arguments, "project");
         String summary = required(arguments, "summary");
@@ -142,6 +172,11 @@ public final class JiraAdapter extends LiveServerAdapter {
     }
 
     // @find: Jira update issue, tool jira__update_issue, live Jira call
+    /**
+     * Write tool. Two calls: GET the transitions available from the current status, then POST the one
+     * whose name or target status matches (ignoring case). When none matches, it fails and lists the
+     * statuses that are available. Refuses before any call when no status is given.
+     */
     private Mono<ToolResult> updateIssue(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         String status = text(arguments, "status");
@@ -179,6 +214,7 @@ public final class JiraAdapter extends LiveServerAdapter {
         });
     }
 
+    /** Maps a Jira issue to the plain shape the tools return, with a browse link built from the site. */
     private ObjectNode issue(JsonNode issue, String base) {
         JsonNode fields = issue.path("fields");
         ObjectNode item = json.createObjectNode();
@@ -195,6 +231,7 @@ public final class JiraAdapter extends LiveServerAdapter {
     }
 
     /* Atlassian Document Format: one paragraph per blank-line-separated block. */
+    /** Builds the document format Jira expects for a description: one paragraph per blank-line separated block. */
     private ObjectNode document(String content) {
         ObjectNode doc = json.createObjectNode();
         doc.put("type", "doc");
@@ -212,6 +249,7 @@ public final class JiraAdapter extends LiveServerAdapter {
         return doc;
     }
 
+    /** Escapes backslashes and quotes so a value stays inside its JQL string. */
     private static String escape(String input) {
         return input.replace("\\", "\\\\").replace("\"", "\\\"");
     }

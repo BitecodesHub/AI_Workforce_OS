@@ -23,6 +23,9 @@
  * code block, and every [n] when no count is given, stays the plain text it was written as.
  */
 
+/**
+ * Inline nodes of the parsed tree: text, breaks, code, emphasis, links and citations. Plain data only, never HTML.
+ */
 export type MdInline =
   | { type: 'text'; text: string }
   | { type: 'break' }
@@ -33,10 +36,17 @@ export type MdInline =
   /** `index` counts from 1, the way the passages were numbered for the agent. */
   | { type: 'citation'; index: number }
 
+/**
+ * One list item; its content is itself a list of blocks, which allows nested lists and multi-paragraph items.
+ */
 export type MdListItem = { children: MdBlock[] }
 
+/** Column alignment of a pipe table, or null when the separator row sets none. */
 export type MdAlign = 'left' | 'center' | 'right' | null
 
+/**
+ * Block-level nodes of the parsed tree: paragraphs, headings, lists, quotes, code blocks, rules and tables.
+ */
 export type MdBlock =
   | { type: 'paragraph'; children: MdInline[] }
   | { type: 'heading'; level: number; children: MdInline[] }
@@ -53,12 +63,16 @@ const MAX_LENGTH = 60_000
 /** The only link schemes the renderer may turn into a clickable `<a>`. Anything else stays text. */
 const SAFE_LINK = /^(https?:|mailto:)/i
 
+/** Options for parseMarkdown. */
 export type MarkdownOptions = {
   /** How many numbered passages the text may cite; [n] is only a citation for n from 1 to this. */
   citations?: number
 }
 
 // @find: parse markdown, markdown to blocks, safe rendering
+/**
+ * Parses Markdown source into a tree of plain data nodes (see the file header for what is supported). Returns an empty list for empty input and a single raw paragraph above 60,000 characters. `options.citations` enables [n] citation nodes. Pure and safe: no HTML is ever produced.
+ */
 export function parseMarkdown(src: string, options: MarkdownOptions = {}): MdBlock[] {
   if (!src) return []
   if (src.length > MAX_LENGTH) return [{ type: 'paragraph', children: rawInline(src) }]
@@ -76,19 +90,23 @@ function rawInline(src: string): MdInline[] {
   return nodes
 }
 
+/** Whether a line is empty or whitespace only. */
 function isBlank(line: string): boolean {
   return line.trim() === ''
 }
 
+/** Recognises an ATX heading line ("## Title") and returns its level (1 to 6) and text, or null. */
 function headingMatch(line: string): { level: number; text: string } | null {
   const match = /^(#{1,6})\s+(.*)$/.exec(line)
   return match ? { level: match[1]!.length, text: match[2]!.trim() } : null
 }
 
+/** Whether the line is a horizontal rule (three or more of -, * or _). */
 function ruleMatch(line: string): boolean {
   return /^(-{3,}|\*{3,}|_{3,})\s*$/.test(line.trim())
 }
 
+/** Recognises a fenced code delimiter line and returns its optional language, or null. */
 function fenceMatch(line: string): { language: string | null } | null {
   const match = /^```\s*([\w-]*)\s*$/.exec(line.trim())
   return match ? { language: match[1] ? match[1] : null } : null
@@ -101,10 +119,12 @@ function fenceMatch(line: string): { language: string | null } | null {
  */
 type ListMarker = { indent: number; text: string; contentIndent: number }
 
+/** Column at which a list item's own text begins, given its indent, marker and the spaces after it. */
 function markerIndent(indent: string, marker: string, gap: string): number {
   return indent.length + marker.length + (gap.length > 4 ? 1 : gap.length)
 }
 
+/** Recognises an unordered list line ("- item" or "* item"), or returns null. */
 function bulletMatch(line: string): ListMarker | null {
   const match = /^(\s*)([-*])(\s+)(.*)$/.exec(line)
   return match
@@ -125,10 +145,12 @@ function orderedMatch(line: string): (ListMarker & { number: number }) | null {
     : null
 }
 
+/** Number of leading whitespace characters of a line. */
 function indentOf(line: string): number {
   return /^\s*/.exec(line)![0].length
 }
 
+/** Returns the text after a block quote marker (">"), or null when the line is not a quote line. */
 function quoteMatch(line: string): string | null {
   const match = /^>\s?(.*)$/.exec(line)
   return match ? match[1]! : null
@@ -159,6 +181,7 @@ function tableRowCells(line: string): string[] {
   return cells
 }
 
+/** Whether the line is a table separator row such as "| --- | :-: |". */
 function isTableSeparator(line: string): boolean {
   const cells = tableRowCells(line)
   return cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell))
@@ -176,6 +199,7 @@ function tableStartsAt(lines: string[], i: number): boolean {
   return tableRowCells(line).length === tableRowCells(next).length
 }
 
+/** Alignment encoded by a separator cell: leading colon is left, trailing is right, both is centre. */
 function cellAlign(cell: string): MdAlign {
   const left = cell.startsWith(':')
   const right = cell.endsWith(':')
@@ -185,6 +209,9 @@ function cellAlign(cell: string): MdAlign {
   return null
 }
 
+/**
+ * Core block parser, called recursively for list items and quotes. Walks the lines once, in this order of precedence: blank lines, fenced code, headings, rules, quotes, tables, lists, then paragraph text gathered until another block starts. Returns the block tree; never throws on malformed input, which simply becomes paragraphs. `citations` is the number of numbered passages a [n] may refer to.
+ */
 function parseBlocks(lines: string[], citations: number): MdBlock[] {
   const blocks: MdBlock[] = []
   let i = 0

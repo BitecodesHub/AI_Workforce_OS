@@ -22,6 +22,7 @@ const GOAL_SOURCE: Record<string, string> = {
   manual: 'Goals given directly',
 }
 
+/** Titled block (an h3) inside the outcomes grid. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
@@ -33,6 +34,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
+/** One label and right-aligned tabular value, with an optional muted note after the label. */
 function Row({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
     <div
@@ -49,6 +51,14 @@ function Row({ label, value, note }: { label: string; value: string; note?: stri
 }
 
 // @find: OutcomesCard, goal outcomes summary
+/**
+ * Analytics card showing how finished work ended, in four sections computed from the Insights payload.
+ * Runs: counts by status (StatusTag), a caption for runs still active, unpriced runs and sandbox-only runs,
+ * and goals grouped by source (chat, schedule, direct). Approvals: raised, approved, rejected, expired,
+ * still waiting, and median and 90th percentile decision times. Questions: asked, answered, rate per 100
+ * runs and median answer time. Failure reasons: the ranked list of why runs failed. Each section has a plain
+ * empty sentence for a window with no data. Rendered by the Analytics page; no queries of its own.
+ */
 export function OutcomesCard({ insights }: { insights: Insights }) {
   const { runs, approvals, questions, failureReasons, goals } = insights
   const decided = approvals.approved + approvals.rejected

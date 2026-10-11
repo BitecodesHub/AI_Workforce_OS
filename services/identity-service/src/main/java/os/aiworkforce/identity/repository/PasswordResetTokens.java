@@ -20,8 +20,15 @@ import os.aiworkforce.identity.domain.PasswordResetToken;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for {@link PasswordResetToken} rows. Used only by {@code PasswordResetService}.
+ */
 public interface PasswordResetTokens extends JpaRepository<PasswordResetToken, UUID> {
 
+    /**
+     * Looks a link up by the SHA-256 hash of the token presented. The raw token is never stored, so
+     * the caller hashes it first. Empty when the hash matches no link.
+     */
     Optional<PasswordResetToken> findByTokenHash(String tokenHash);
 
     /**

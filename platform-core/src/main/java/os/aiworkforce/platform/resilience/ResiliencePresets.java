@@ -30,6 +30,12 @@ public class ResiliencePresets {
     private final PlatformProperties.Resilience defaults;
     private final CircuitBreakerRegistry registry;
 
+    /**
+     * Takes the resilience defaults from the settings tree and creates an empty breaker registry.
+     *
+     * <p>The registry is private to this bean, so breaker state is shared by every caller in the
+     * process and not across processes.
+     */
     public ResiliencePresets(PlatformProperties properties) {
         this.defaults = properties.resilience();
         this.registry = CircuitBreakerRegistry.ofDefaults();
@@ -45,6 +51,12 @@ public class ResiliencePresets {
         return registry.circuitBreaker(dependency, () -> circuitBreakerConfig(dependency));
     }
 
+    /**
+     * Builds one breaker's configuration, preferring the dependency's override and then the default.
+     *
+     * <p>Called by {@link #circuitBreaker(String)} once per dependency, at first use. Caller faults are
+     * excluded from the failure rate; see {@link #isCallerFault(Throwable)}.
+     */
     private CircuitBreakerConfig circuitBreakerConfig(String dependency) {
         PlatformProperties.DependencyOverride override = defaults.forDependency(dependency);
         return CircuitBreakerConfig.custom()
@@ -74,6 +86,14 @@ public class ResiliencePresets {
                 .build();
     }
 
+    /**
+     * Whether a failure was caused by the caller's request, and so says nothing about the dependency.
+     *
+     * <p>True for a deliberate 4xx {@link ApiException}, except a rate limit, which does indicate an
+     * overloaded dependency. Any other exception, including timeouts, counts as a failure.
+     *
+     * @param throwable the exception raised by the protected call
+     */
     public static boolean isCallerFault(Throwable throwable) {
         if (throwable instanceof ApiException api) {
             int status = api.status();
@@ -82,6 +102,12 @@ public class ResiliencePresets {
         return false;
     }
 
+    /**
+     * The concurrency cap for a dependency, with a two second wait for a free slot.
+     *
+     * <p>Returns configuration only; the caller builds the bulkhead. The limit is the override, or the
+     * default of 25 concurrent calls.
+     */
     public BulkheadConfig bulkhead(String dependency) {
         PlatformProperties.DependencyOverride override = defaults.forDependency(dependency);
         int limit = override.bulkheadMaxConcurrentCalls() != null
@@ -93,6 +119,11 @@ public class ResiliencePresets {
                 .build();
     }
 
+    /**
+     * The call timeout for a dependency, cancelling the running call when it expires.
+     *
+     * <p>Returns configuration only. Slow providers raise the timeout through an override.
+     */
     public TimeLimiterConfig timeLimiter(String dependency) {
         PlatformProperties.DependencyOverride override = defaults.forDependency(dependency);
         return TimeLimiterConfig.custom()
@@ -102,6 +133,9 @@ public class ResiliencePresets {
                 .build();
     }
 
+    /**
+     * The number of attempts, including the first, that a caller may make against a dependency.
+     */
     public int maxAttempts(String dependency) {
         PlatformProperties.DependencyOverride override = defaults.forDependency(dependency);
         return override.maxRetryAttempts() != null ? override.maxRetryAttempts() : defaults.maxRetryAttempts();
@@ -125,6 +159,9 @@ public class ResiliencePresets {
         return Duration.ofMillis(ThreadLocalRandom.current().nextLong(0, Math.max(1, ceiling) + 1));
     }
 
+    /**
+     * The underlying registry, for health reporting and tests.
+     */
     public CircuitBreakerRegistry registry() {
         return registry;
     }

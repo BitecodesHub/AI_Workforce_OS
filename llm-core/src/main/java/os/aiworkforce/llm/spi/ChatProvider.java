@@ -84,8 +84,9 @@ public interface ChatProvider {
     /**
      * A cheap call that proves the credential works and the provider is reachable.
      *
-     * <p>Used by the health panel and by the breaker's half-open probe, so a recovering provider
-     * is tested with something trivial rather than with a person's real request.
+     * <p>Used by the health panel and by a person's hand test of a provider, so a provider is
+     * tested with something trivial rather than with a person's real request. (This replaces a
+     * reference to a circuit breaker's half-open probe: the router no longer pauses providers.)
      */
     Mono<Boolean> healthCheck(ProviderDescriptor provider, String credential);
 

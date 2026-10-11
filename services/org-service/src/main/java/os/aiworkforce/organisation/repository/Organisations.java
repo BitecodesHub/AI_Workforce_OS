@@ -19,9 +19,17 @@ import os.aiworkforce.organisation.domain.Organisation;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Workspaces. Used by {@code WorkspaceController}, {@code InternalWorkspaceController} and
+ * {@code DemoDataSeeder}; Spring Data generates the implementation.
+ */
 public interface Organisations extends JpaRepository<Organisation, UUID> {
 
     // @find: find workspace by slug, unique slug check, case-insensitive
+    /**
+     * The workspace with the given slug, compared without regard to letter case, or empty. Used to
+     * reject a slug that is already in use and to resolve a workspace from its slug.
+     */
     @Query("select o from Organisation o where lower(o.slug) = lower(:slug)")
     Optional<Organisation> findBySlug(@Param("slug") String slug);
 }

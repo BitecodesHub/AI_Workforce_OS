@@ -44,7 +44,8 @@ public class EmbeddingModelChange {
     private static final Logger log = LoggerFactory.getLogger(EmbeddingModelChange.class);
 
     /**
-     * How far a change has got.
+     * How far a change has got. Held in memory while the work runs, saved to the settings table at every
+     * step, and returned inside {@link Status} to the console.
      *
      * @param state {@code idle} (never changed), {@code running}, {@code done}, {@code failed} or
      *     {@code interrupted}
@@ -60,15 +61,18 @@ public class EmbeddingModelChange {
             Instant startedAt,
             Instant finishedAt) {
 
+        /** The state of a workspace that never changed its model. */
         static final Progress IDLE = new Progress("idle", 0, 0, 0, 0, null, null, null);
 
+        /** True when the saved or live state is {@code running}. */
         boolean running() {
             return "running".equals(state);
         }
     }
 
     /**
-     * The knowledge base's embedding setting, as the console shows it.
+     * The knowledge base's embedding setting, as the console shows it. Returned by every method of
+     * {@code EmbeddingModelChange} that the {@code EmbeddingSettingsController} exposes.
      *
      * @param searchMode {@code keyword} or {@code keyword+meaning}
      */
@@ -80,9 +84,23 @@ public class EmbeddingModelChange {
     private final Sources sources;
     private final QdrantClient vectors;
 
+    /**
+     * The change in progress in this process for each workspace. A workspace in the map is busy; this is
+     * per instance and is lost on restart, which is why {@link #progress} also reads the saved copy.
+     */
     private final Map<UUID, Progress> running = new ConcurrentHashMap<>();
+    /** Runs the re-indexing in the background, one virtual thread per change. */
     private final ExecutorService worker = Executors.newVirtualThreadPerTaskExecutor();
 
+    /**
+     * Creates the service.
+     *
+     * @param settings the stored choice and progress
+     * @param embeddings used to try a model before it is chosen
+     * @param ingestion moves sources and re-embeds their passages
+     * @param sources lists the workspace's sources
+     * @param vectors removes the vectors of a model that is no longer used
+     */
     public EmbeddingModelChange(
             EmbeddingSettings settings,
             EmbeddingService embeddings,
@@ -96,12 +114,17 @@ public class EmbeddingModelChange {
         this.vectors = vectors;
     }
 
+    /** Stops any running re-indexing when the application closes. The saved progress then reads as interrupted. */
     @PreDestroy
     void shutdown() {
         worker.shutdownNow();
     }
 
     // @find: embedding model status, reindex progress
+    /**
+     * The workspace's current embedding model, its search mode and the progress of any re-indexing.
+     * Read-only; called by {@code EmbeddingSettingsController} and by this class after a change starts.
+     */
     public Status status(UUID orgId) {
         EmbeddingSettings.Choice choice = settings.current(orgId);
         return new Status(
@@ -138,6 +161,20 @@ public class EmbeddingModelChange {
     /**
      * Switches the workspace to a model, or to keyword search only when {@code providerId} is
      * {@code sandbox} or blank, and starts re-indexing every source in the background.
+     *
+     * <p>Flow: refuses when this workspace is already being re-indexed; otherwise, for a real model,
+     * embeds one short passage to prove it works and measure its width; saves the choice with the actor
+     * who made it; logs it; and starts the background work. Called by {@code EmbeddingSettingsController.choose}.
+     *
+     * <p>Side effects: one embedding call to the orchestrator (booked to the workspace), a write to the
+     * settings table, and then, in the background, changes to every source, passage vectors and the
+     * stored progress.
+     *
+     * @param by the identifier of the person making the change, saved as the author of the setting
+     * @return the status just after the change started, with progress {@code running}
+     * @throws ApiException a conflict when a change is already running; a validation error when the
+     *     model is not named or is refused, with the provider's reason; {@code UPSTREAM_UNAVAILABLE}
+     *     when the model service cannot be reached. In the last two cases nothing is changed.
      */
     public Status change(UUID orgId, String providerId, String modelId, String by) {
         if (running.containsKey(orgId)) {
@@ -170,7 +207,14 @@ public class EmbeddingModelChange {
     }
 
     // @find: resume interrupted reindex, retry embedding change
-    /** Runs the re-indexing for the current model again, after a failure or an interruption. */
+    /**
+     * Runs the re-indexing for the current model again, after a failure or an interruption.
+     *
+     * <p>The model is not tried again and the setting is not changed. Called by
+     * {@code EmbeddingSettingsController.reindex}.
+     *
+     * @throws ApiException a conflict when a change is already running
+     */
     public Status resume(UUID orgId) {
         if (running.containsKey(orgId)) {
             throw ApiException.conflict("The knowledge base is already being re-indexed. Wait for it to finish.");
@@ -179,6 +223,13 @@ public class EmbeddingModelChange {
         return status(orgId);
     }
 
+    /**
+     * Starts the background re-indexing of every source for a choice.
+     *
+     * <p>Counts the workspace's passages, publishes the first {@code running} progress, copies the request
+     * context so that the embedding calls are made on behalf of the same person, and hands the work to
+     * {@link #run} on a background thread. Returns at once.
+     */
     private void start(UUID orgId, EmbeddingSettings.Choice choice) {
         List<Source> all = sources.findByOrgIdOrderByName(orgId);
         int passages = all.stream().mapToInt(Source::getChunkCount).sum();
@@ -201,6 +252,17 @@ public class EmbeddingModelChange {
         }));
     }
 
+    /**
+     * The background work: moves each source onto the choice and, for a model that searches by meaning,
+     * writes its vectors again.
+     *
+     * <p>For each source it calls {@code IngestionService.switchEmbedding}, then {@code reindex} with a
+     * callback that publishes progress, then deletes the vectors of the previous model's collection when
+     * that collection differs. A source deleted meanwhile is skipped. The first failure stops the run. At
+     * the end it saves a final {@code done} or {@code failed} progress, removes the workspace from the
+     * running map and logs the outcome. It never throws: failures are recorded in the progress, and a
+     * failure to remove old vectors is only logged.
+     */
     private void run(UUID orgId, EmbeddingSettings.Choice choice, List<Source> all, Progress first) {
         AtomicInteger passagesDone = new AtomicInteger();
         AtomicInteger sourcesFinished = new AtomicInteger();
@@ -281,6 +343,7 @@ public class EmbeddingModelChange {
         return count + (count == 1 ? " passage" : " passages");
     }
 
+    /** A running progress with the counts so far, never above the totals, and the default message when none is given. */
     private static Progress step(Progress first, int sourcesDone, int passagesDone, String message) {
         return new Progress(
                 "running",
@@ -296,11 +359,16 @@ public class EmbeddingModelChange {
                 null);
     }
 
+    /** Makes a progress the live one for the workspace and saves it. */
     private void publish(UUID orgId, Progress progress) {
         running.put(orgId, progress);
         save(orgId, progress);
     }
 
+    /**
+     * Saves a progress to the settings table as the system. A failure is logged at debug level and ignored,
+     * because progress reporting must not stop the re-indexing.
+     */
     private void save(UUID orgId, Progress progress) {
         try {
             settings.write(orgId, EmbeddingSettings.PROGRESS_KEY, progress, "system");

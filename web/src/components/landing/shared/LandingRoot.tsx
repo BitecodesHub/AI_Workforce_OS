@@ -13,14 +13,17 @@ import { useReducedMotion } from '../../../hooks/useReducedMotion'
  * flips to stop the aurora drift, every pulse and the hero loop at once (WCAG 2.2.2).
  */
 
+/** What the page's motion state exposes: whether the visitor prefers reduced motion, whether ambient motion is paused, and the setter used by the hero's Pause motion button. */
 export type LandingMotion = {
   reduced: boolean
   ambientPaused: boolean
   setAmbientPaused: (paused: boolean) => void
 }
 
+/** Context holding the motion state; null outside a LandingRoot. */
 const LandingMotionContext = createContext<LandingMotion | null>(null)
 
+/** Do-nothing pause for a component rendered outside a LandingRoot. */
 function ignorePause(): void {
   // Outside a LandingRoot there is no ambient motion to pause.
 }

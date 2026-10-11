@@ -20,6 +20,13 @@ const SAYS_DURATION = /\b\d+(\.\d+)?\s?(ms|s)\b/
 type Outcome = { kind: 'result'; result: ProviderCheckResult } | { kind: 'failure'; text: string }
 
 // @find: TestNow, test now, test model, test now, try model, test routing
+/**
+ * "Test now" button with its result, used in PolicyEditor for a provider or one model.
+ * Calls useCheckProvider with the provider id (and model id when given, otherwise the cheapest model is tested).
+ * Shows "Testing ..." while pending, then the service's own sentence with the latency appended only when the
+ * sentence does not already state a duration, or the failure text (checkFailureText) in a warning colour. The
+ * result sits in a polite live region. The outcome is local state and is cleared at the start of each test.
+ */
 export function TestNow({
   providerId,
   modelId,

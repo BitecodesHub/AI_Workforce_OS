@@ -13,6 +13,7 @@ import { IconButton } from './index'
  * copy command.
  */
 
+/** Copies text with the Clipboard API, falling back to a selected off-screen textarea and document.execCommand("copy") when the API is missing or refused (insecure context, policy, old WebView). */
 async function copyText(value: string): Promise<void> {
   try {
     if (!navigator.clipboard) throw new Error('Clipboard unavailable')
@@ -38,6 +39,7 @@ async function copyText(value: string): Promise<void> {
   }
 }
 
+/** Two-rectangle copy icon. */
 const COPY_ICON = (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
@@ -46,6 +48,12 @@ const COPY_ICON = (
 )
 
 // @find: copy to clipboard button, copied confirmation
+/**
+ * Button that copies text and confirms it. Props: text (a string, or a function evaluated at click time), label,
+ * copiedLabel and variant (icon button or small text button). After a successful copy the label switches to
+ * the copied word for two seconds (a timer cleared on unmount and on a repeat click), and a visually hidden
+ * status region announces it politely. Used by Markdown code blocks, invitation links and similar.
+ */
 export function CopyButton({
   text,
   label = 'Copy',

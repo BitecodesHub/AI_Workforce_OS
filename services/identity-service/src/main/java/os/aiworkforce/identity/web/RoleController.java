@@ -1,6 +1,6 @@
 // @find: roles, create role, edit role, delete role, custom role, permissions list, role permissions, /api/roles, Roles page, RoleController
 // @what: REST endpoints to list, create, edit and delete roles and list permission codes.
-// @flow: Uses GrantGuard, Roles, Permissions; backs the Roles page.
+// @flow: Uses GrantGuard, Roles, Memberships and the build's Permission registry; backs the Roles page.
 package os.aiworkforce.identity.web;
 
 import java.util.ArrayList;
@@ -66,6 +66,7 @@ public class RoleController {
     private final GrantGuard guard;
     private final AuditClient audit;
 
+    /** Wires the role and membership repositories, the grant guard and the audit client. */
     public RoleController(Roles roles, Memberships memberships, GrantGuard guard, AuditClient audit) {
         this.roles = roles;
         this.memberships = memberships;
@@ -73,6 +74,10 @@ public class RoleController {
         this.audit = audit;
     }
 
+    /**
+     * A role as the Roles page shows it, including how many active members hold it. System roles have
+     * {@code system} true and are shared by every workspace.
+     */
     public record RoleView(
             UUID id,
             String name,
@@ -82,13 +87,27 @@ public class RoleController {
             Set<String> permissions,
             long holders) {}
 
+    /**
+     * One assignable permission code with its resource, action, description and whether it is
+     * administrative.
+     */
     public record PermissionView(
             String code, String resource, String action, String description, boolean administrative) {}
 
+    /**
+     * Request body for creating or changing a role: a name of up to 60 characters, an optional
+     * description of up to 300, and the permission codes the role carries.
+     */
     public record SaveRoleRequest(
             @NotBlank @Size(max = 60) String name, @Size(max = 300) String description, Set<String> permissions) {}
 
     // @find: list roles, GET /api/roles
+    /**
+     * GET {@code /api/roles}. Requires {@code role:read}.
+     *
+     * <p>Lists the caller's workspace roles and the system roles it inherits, sorted by name, each with
+     * its holder count. Reads only.
+     */
     @GetMapping
     @RequiresPermission(Permission.Codes.ROLE_READ)
     @Operation(summary = "List the roles available in this workspace")
@@ -105,6 +124,12 @@ public class RoleController {
      * (which every signed-in person can otherwise open) rendered silently empty for any role
      * without role management access, which is most of them.
      */
+    /**
+     * GET {@code /api/roles/permissions}. Requires {@code workspace:read}.
+     *
+     * <p>Lists every permission code the running build checks, taken from the in-memory registry
+     * rather than the database. Reads only.
+     */
     @GetMapping("/permissions")
     @RequiresPermission(Permission.Codes.WORKSPACE_READ)
     @Operation(summary = "Every permission a role may be given")
@@ -119,6 +144,16 @@ public class RoleController {
     }
 
     // @find: create role, new custom role, POST /api/roles
+    /**
+     * POST {@code /api/roles}. Requires {@code role:create}.
+     *
+     * <p>Flow: checks every code is known; checks through {@link GrantGuard#assertCanCompose} that the
+     * caller holds every code; refuses a name that clashes, ignoring case, with a role the workspace
+     * can see; saves a custom role for the workspace; writes a {@code role.create} audit record.
+     * Returns 201 with the new role.
+     *
+     * @throws ApiException validation, permission denied or already exists
+     */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.ROLE_CREATE)
@@ -152,6 +187,18 @@ public class RoleController {
     }
 
     // @find: update role, edit role permissions, PUT /api/roles/{roleId}
+    /**
+     * PUT {@code /api/roles/{roleId}}. Requires {@code role:update}.
+     *
+     * <p>Renames a custom role, changes its description and replaces its permissions, which raises
+     * the role's permission version when the set differs. Built-in roles and roles of another
+     * workspace are refused. The edit rules in {@code guardEdit} apply. Writes a {@code role.update}
+     * audit record listing the permissions added and removed. Holders see the change at their next
+     * token refresh.
+     *
+     * @throws ApiException not found, immutable resource, organisation mismatch, validation, permission
+     *     denied or already exists
+     */
     @PutMapping("/{roleId}")
     @RequiresPermission(Permission.Codes.ROLE_UPDATE)
     @Transactional
@@ -206,6 +253,15 @@ public class RoleController {
     }
 
     // @find: delete role, DELETE /api/roles/{roleId}
+    /**
+     * DELETE {@code /api/roles/{roleId}}. Requires {@code role:delete}.
+     *
+     * <p>Deletes a custom role of the caller's workspace that no active member holds, then writes a
+     * {@code role.delete} audit record. Returns 204. Built-in roles, roles of another workspace and
+     * roles still in use are refused.
+     *
+     * @throws ApiException not found, immutable resource, organisation mismatch or resource in use
+     */
     @DeleteMapping("/{roleId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.ROLE_DELETE)
@@ -288,6 +344,10 @@ public class RoleController {
         }
     }
 
+    /**
+     * Converts a role to its view, with an immutable copy of its permissions and a query for the
+     * number of active holders.
+     */
     private RoleView toView(Role role) {
         return new RoleView(
                 role.getId(),

@@ -22,6 +22,9 @@ import os.aiworkforce.platform.web.PlatformWeb;
 @EnableScheduling
 public class MemoryApplication {
 
+    /**
+     * Starts the Spring context for memory-service; invoked by the JVM at process start. Startup fails if the database or its migrations cannot be reached.
+     */
     public static void main(String[] args) {
         SpringApplication.run(MemoryApplication.class, args);
     }

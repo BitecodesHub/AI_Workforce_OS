@@ -32,6 +32,9 @@ export type CatalogueModel = {
 /** The words for a model the provider does not offer to this account. */
 export const NOT_AVAILABLE = 'Not available to this account'
 
+/**
+ * One provider's model list and where it came from: fetched now (live), recently fetched (cached), or only what was saved (saved).
+ */
 export type ProviderCatalogue = {
   providerId: string
   providerName: string
@@ -57,6 +60,7 @@ export type SavedModel = {
   outputCostPerMillion: number
 }
 
+/** A heading and the models under it in a model picker. */
 export type ModelGroup = { key: 'free' | 'paid' | 'unavailable'; label: string; options: CatalogueModel[] }
 
 // @find: merge saved models into the provider list; used by: CandidateModelField
@@ -108,6 +112,7 @@ export function firstAvailable(options: readonly CatalogueModel[]): CatalogueMod
   return groupModels(options.filter((option) => !option.unavailable))[0]?.options[0]
 }
 
+/** Lower-cases text and strips accents, so a search matches regardless of case and diacritics. */
 const fold = (value: string) =>
   value
     .toLowerCase()
@@ -128,6 +133,7 @@ export function filterModels(options: readonly CatalogueModel[], query: string):
   })
 }
 
+/** Sort comparator: by display name (case-insensitive, numbers in natural order), then by id. */
 const byName = (a: CatalogueModel, b: CatalogueModel) =>
   a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base', numeric: true }) || a.id.localeCompare(b.id)
 
@@ -175,6 +181,9 @@ export function formatContext(tokens: number): string {
   return String(tokens)
 }
 
+/**
+ * Formats a per-million-token price: "$0", two significant digits below a dollar, otherwise at most two decimals.
+ */
 const money = (value: number) => {
   if (value === 0) return '$0'
   if (value < 1) return `$${Number(value.toPrecision(2))}`

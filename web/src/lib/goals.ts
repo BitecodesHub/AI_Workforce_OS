@@ -10,6 +10,7 @@ import { isGoalActive } from './queries'
  * button before that round trip.
  */
 
+/** The two fields the goal rules need: its status and who requested it. */
 export type GoalLike = { status: string; requestedBy: string | null }
 
 // @find: can stop goal, Stop button, cancel task

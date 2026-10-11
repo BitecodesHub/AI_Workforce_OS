@@ -53,10 +53,16 @@ public record ConnectorInfo(
                 List.of(), null);
     }
 
+    /** The category values the console groups connectors under. Checked by the constructor. */
     public static final List<String> CATEGORIES = List.of(
             "communication", "productivity", "engineering", "sales", "support", "files", "finance", "automation", "voice");
+    /** The accepted authentication types. Checked by the constructor. */
     public static final List<String> AUTH_TYPES = List.of("token", "oauth", "url", "none");
 
+    /**
+     * Compact constructor. Rejects a missing server or display name, and any category or auth type
+     * outside the lists above, so a typo in the catalog fails at startup. Copies the lists.
+     */
     public ConnectorInfo {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(displayName, "displayName");

@@ -49,6 +49,11 @@ const PASSWORD_ID = 'sign-in-password'
 type Pending = 'form' | string | null
 
 // @find: SignIn component, sign in page, log in, POST /api/auth/login, /sign-in
+/**
+ * The Sign in page (route /sign-in, public, no permission).
+ * Flow: the form posts email and password to POST /api/auth/sign-in (cookies included). A failure shows one message whatever the cause (unknown address, wrong password, locked), and focuses and selects the password. On success the session is stored (storeSession); a session with a workspace goes straight to the destination, otherwise chooseWorkspace opens the only workspace, asks which of several, or explains how to get one (and, if the list cannot be read, opens the console as it did before). The destination is ?next= when it is a same-site path (never a "//" address), otherwise "/", and navigation replaces the history entry.
+ * Other address parameters: ?expired=1 and ?signedOut=1 show why the person is here, ?passwordReset=1 confirms a reset, ?email= prefills the email, ?reset=<token> shows the form for choosing a new password from an administrator's reset link. Where the site publishes demo accounts (GET /api/auth/demo-accounts, failure ignored) they are offered as one-click sign-ins. Side effects: stores the session and the signed-in hint through the session helpers; network failures use plain wording.
+ */
 export function SignIn() {
   const { search, navigate } = useRouter()
   // Where to go afterwards. Only same-site paths are honoured, so a crafted link cannot bounce a

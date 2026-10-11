@@ -12,15 +12,22 @@ package os.aiworkforce.mcp.policy;
  */
 public sealed interface ApprovalDecision {
 
+    /** The call may run now. A shared instance is available as {@link #PROCEED}. */
     record Proceed() implements ApprovalDecision {}
 
     /**
+     * The call must wait for a person. The orchestrator parks the run and raises an approval request.
+     *
      * @param reason what the approver is being asked to approve
      * @param approverPermission the permission an approver must hold
      */
     record AwaitApproval(String reason, String approverPermission) implements ApprovalDecision {}
 
-    /** @param reason why it will not be permitted, whoever asks */
+    /**
+     * The call is not permitted, whoever asks, for example no grant or a spent rate limit.
+     *
+     * @param reason why it will not be permitted, whoever asks
+     */
     record Refuse(String reason) implements ApprovalDecision {}
 
     /**
@@ -32,5 +39,6 @@ public sealed interface ApprovalDecision {
      */
     record Invalid(String problem) implements ApprovalDecision {}
 
+    /** Shared instance for the common allowed case. */
     ApprovalDecision PROCEED = new Proceed();
 }

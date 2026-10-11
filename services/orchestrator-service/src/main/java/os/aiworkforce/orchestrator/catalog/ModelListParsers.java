@@ -27,9 +27,11 @@ import com.fasterxml.jackson.databind.JsonNode;
  */
 public final class ModelListParsers {
 
+    /** Static utility; not instantiated. */
     private ModelListParsers() {}
 
     /** Models that are not chat models, or that cannot take a request with tools. */
+    /** Matches ids of models that are not chat models, or cannot take a request with tools; checked before any family list. */
     static final Pattern NOT_CHAT = Pattern.compile(
             "embed|rerank|retriever|reward|guard|safety|topic-control|nemoretriever|parse|clip\\b|nvclip|whisper"
                     + "|tts|speech|transcribe|audio|realtime|translate|detector|calibration|diffusion|\\bvila\\b"
@@ -65,10 +67,13 @@ public final class ModelListParsers {
     static final Pattern OPENAI_NOT_CHAT = Pattern.compile(
             "-pro\\b|codex|instruct|nano-banana", Pattern.CASE_INSENSITIVE);
 
+    /** Gemini ids (1.5 and later) that take function declarations. */
     static final Pattern GEMINI_CHAT = Pattern.compile("^gemini-(1\\.5|[2-9])", Pattern.CASE_INSENSITIVE);
 
+    /** Tokens per price unit, for converting per-token prices. */
     private static final BigDecimal MILLION = BigDecimal.valueOf(1_000_000);
 
+    /** Pricing note shown on NVIDIA models, which are free for development within rate limits. */
     static final String NVIDIA_FREE_NOTE = "Free developer access, rate-limited";
 
     // ---- OpenRouter ---------------------------------------------------------------------------
@@ -257,6 +262,7 @@ public final class ModelListParsers {
         return out;
     }
 
+    /** Context window of an OpenAI model by id family, from the vendor's published limits; the listing does not give it. */
     static int openAiContext(String id) {
         if (id.startsWith("gpt-4.1")) return 1_047_576;
         if (id.startsWith("gpt-5")) return 400_000;
@@ -268,6 +274,7 @@ public final class ModelListParsers {
         return 128_000;
     }
 
+    /** Largest output of an OpenAI model by id family, from the vendor's published limits. */
     static int openAiMaxOutput(String id) {
         if (id.startsWith("gpt-4.1")) return 32_768;
         if (id.startsWith("gpt-5")) return 128_000;
@@ -310,6 +317,7 @@ public final class ModelListParsers {
         return out;
     }
 
+    /** Largest output of a Claude model by id family when the listing does not give it. */
     static int anthropicMaxOutput(String id) {
         if (id.startsWith("claude-3-5")) return 8_192;
         if (id.startsWith("claude-3-7")) return 64_000;
@@ -378,6 +386,7 @@ public final class ModelListParsers {
     static final Pattern BEDROCK_PROFILE_PREFIX =
             Pattern.compile("^(us|eu|apac|global|us-gov|jp|au|ca|ap)\\.", Pattern.CASE_INSENSITIVE);
 
+    /** Display names of an inference profile's region prefixes. */
     private static final Map<String, String> BEDROCK_SCOPES = Map.of(
             "us", "US",
             "eu", "EU",
@@ -397,6 +406,7 @@ public final class ModelListParsers {
      */
     static final Map<String, BigDecimal[]> BEDROCK_PRICES = bedrockPrices();
 
+    /** Builds the known Bedrock price table, as {@code [input, output]} dollars per million tokens by id prefix. */
     private static Map<String, BigDecimal[]> bedrockPrices() {
         Map<String, BigDecimal[]> prices = new java.util.LinkedHashMap<>();
         BiPrice put = (id, in, out) -> prices.put(id, new BigDecimal[] {new BigDecimal(in), new BigDecimal(out)});
@@ -434,6 +444,7 @@ public final class ModelListParsers {
     }
 
     @FunctionalInterface
+    /** Small adder used only to keep the price table readable. */
     private interface BiPrice {
         void add(String id, String in, String out);
     }
@@ -503,6 +514,7 @@ public final class ModelListParsers {
         return out.stream().filter(CatalogModel::toolCalling).toList();
     }
 
+    /** Builds one Bedrock entry. {@code id} is what a request names (an inference profile id for a profile), {@code base} is the underlying model id used for family rules, and {@code summary} may be null when the model list does not show it. */
     private static CatalogModel bedrockModel(String id, String base, String name, JsonNode summary) {
         boolean tools = BEDROCK_TOOLS.matcher(base).find();
         boolean vision = summary != null
@@ -523,6 +535,7 @@ public final class ModelListParsers {
                 null);
     }
 
+    /** Whether AWS has not marked the model legacy. */
     private static boolean bedrockUsable(JsonNode summary) {
         String status = summary.path("modelLifecycle").path("status").asText("ACTIVE");
         return !"legacy".equalsIgnoreCase(status);
@@ -545,6 +558,7 @@ public final class ModelListParsers {
         return name;
     }
 
+    /** A readable model name from an inference profile's own name, with the region and vendor words removed; falls back to a name made from the id. */
     private static String stripProfileName(String profileName, String base) {
         if (profileName.isEmpty()) {
             return displayName(base.replaceFirst("^[a-z0-9-]+\\.", "").replaceFirst(":\\d+$", ""));
@@ -553,6 +567,7 @@ public final class ModelListParsers {
                 .replaceFirst("^(Anthropic|Amazon|Meta|Mistral|Cohere|AI21|DeepSeek|Writer)\\s+", "");
     }
 
+    /** The model id at the end of the first model ARN of an inference profile, or empty. */
     private static String modelIdFromArn(JsonNode profile) {
         for (JsonNode model : array(profile, "models")) {
             String arn = text(model, "modelArn");
@@ -564,12 +579,14 @@ public final class ModelListParsers {
         return "";
     }
 
+    /** The reach of an inference profile id, such as {@code US cross-region}, from its region prefix. */
     static String bedrockScope(String profileId) {
         java.util.regex.Matcher prefix = BEDROCK_PROFILE_PREFIX.matcher(profileId);
         String scope = prefix.find() ? BEDROCK_SCOPES.getOrDefault(prefix.group(1).toLowerCase(Locale.ROOT), "") : "";
         return scope.isEmpty() ? "inference profile" : scope + " cross-region";
     }
 
+    /** The known {@code [input, output]} price for a Bedrock model id by longest prefix match, or null when it is not in the table. */
     static BigDecimal[] bedrockPrice(String base) {
         String id = base.toLowerCase(Locale.ROOT);
         String best = null;
@@ -581,6 +598,7 @@ public final class ModelListParsers {
         return best == null ? null : BEDROCK_PRICES.get(best);
     }
 
+    /** Context window of a Bedrock model by id family; the listing does not give it. */
     static int bedrockContext(String base) {
         String id = base.toLowerCase(Locale.ROOT);
         if (id.startsWith("anthropic.")) return 200_000;
@@ -595,6 +613,7 @@ public final class ModelListParsers {
         return 128_000;
     }
 
+    /** Largest output of a Bedrock model by id family; the listing does not give it. */
     static int bedrockMaxOutput(String base) {
         String id = base.toLowerCase(Locale.ROOT);
         if (id.startsWith("anthropic.claude-3-5")) return 8_192;
@@ -754,6 +773,7 @@ public final class ModelListParsers {
         return TOOL_FAMILIES.matcher(id).find() && !NOT_CHAT.matcher(id).find();
     }
 
+    /** Words {@link #displayName} writes in a fixed form, such as GPT or DeepSeek. */
     private static final Map<String, String> WORDS = Map.ofEntries(
             Map.entry("gpt", "GPT"),
             Map.entry("oss", "OSS"),
@@ -805,6 +825,7 @@ public final class ModelListParsers {
         return name.isEmpty() ? id : name.toString();
     }
 
+    /** The context window from either field a listing may use, or 0. */
     private static int contextOf(JsonNode node) {
         int context = node.path("context_window").asInt(0);
         return context > 0 ? context : node.path("context_length").asInt(0);
@@ -827,16 +848,19 @@ public final class ModelListParsers {
         }
     }
 
+    /** The named array of a response, or an empty list when the body or field is missing or not an array. */
     private static Iterable<JsonNode> array(JsonNode body, String field) {
         JsonNode node = body == null ? null : body.path(field);
         return node != null && node.isArray() ? node : List.of();
     }
 
+    /** A trimmed text field, or an empty string when missing or not text. */
     private static String text(JsonNode node, String field) {
         JsonNode value = node.path(field);
         return value.isTextual() ? value.asText().trim() : "";
     }
 
+    /** The items of an array as lower-case strings; empty when not an array. */
     private static List<String> strings(JsonNode node) {
         List<String> out = new ArrayList<>();
         if (node != null && node.isArray()) {

@@ -66,6 +66,16 @@ function focusDown(id: string) {
 }
 
 // @find: useAnswerRating, rate an answer, save rating, feedback hook
+/**
+ * Hook holding the rating state for one assistant message; rendered by RatingButtons and RatingReason.
+ * Reads the saved rating through useConversationRatings (only when the viewer may use chat and a
+ * conversation exists) and saves through useRateAnswer. vote(1 or -1) saves the thumb at once, with no
+ * reason; choosing the thumb already saved withdraws the rating (rating null). A thumbs down opens the
+ * reason form. sendReason builds the text with composeReason and saves it with the thumbs down, then
+ * closes the form and returns focus to the thumbs-down button; an empty reason just closes it. A failed
+ * save sets failed and closes the form. The enabled flag is false when the viewer may not rate, in which
+ * case both components draw nothing.
+ */
 export function useAnswerRating(conversationId: string | null, messageId: string): AnswerRatingState {
   const enabled = can('chat:use') && conversationId !== null
   const ratings = useConversationRatings(conversationId, { enabled })
@@ -128,6 +138,7 @@ export function useAnswerRating(conversationId: string | null, messageId: string
   }
 }
 
+/** Thumbs-up icon; the thumbs-down variant is the same drawing rotated half a turn. */
 function Thumb({ up }: { up: boolean }) {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -195,6 +206,12 @@ export function RatingReason({ state }: { state: AnswerRatingState }) {
   return null
 }
 
+/**
+ * The optional reason form shown after a thumbs down: preset buttons, a free-text field, Send and Not now.
+ * It is mounted only while open, so each opening starts empty, and an effect moves focus to the first
+ * preset button on mount. Send passes the chosen preset and text to state.sendReason; Not now calls
+ * state.closeReason. Rendered by RatingReason.
+ */
 function ReasonForm({ state }: { state: AnswerRatingState }) {
   const [preset, setPreset] = useState<ReasonId | null>(null)
   const [words, setWords] = useState('')

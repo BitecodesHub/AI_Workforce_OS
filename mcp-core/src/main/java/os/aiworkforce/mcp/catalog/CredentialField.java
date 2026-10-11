@@ -14,10 +14,12 @@ package os.aiworkforce.mcp.catalog;
  */
 public record CredentialField(String key, String label, boolean secret, String placeholder, String help) {
 
+    /** A visible box, for values such as a site address or an email that are not secret. */
     public static CredentialField plain(String key, String label, String placeholder, String help) {
         return new CredentialField(key, label, false, placeholder, help);
     }
 
+    /** A masked box for a token or secret. The stored value is never shown again. */
     public static CredentialField secret(String key, String label, String help) {
         return new CredentialField(key, label, true, null, help);
     }

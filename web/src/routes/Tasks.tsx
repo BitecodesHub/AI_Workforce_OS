@@ -74,16 +74,19 @@ const FILTER_THRESHOLD = 5
 /** A result longer than this is shortened here; the run trace holds the whole answer. */
 const RESULT_PREVIEW = 1_200
 
+/** Whether a task will not run again (completed, failed, cancelled or skipped). */
 function isTaskFinished(task: Task): boolean {
   return FINISHED_TASK.has(task.status.toLowerCase())
 }
 
+/** The searchable text of a goal: title, description, status label and its task titles. */
 function goalSearchText(goal: Goal): string {
   return [goal.title, goal.description, statusLabel('goal', goal.status).label, ...goal.tasks.map((task) => task.title)].join(
     ' ',
   )
 }
 
+/** Facet for useListFilter: the goal's status, selected with ?status= in the address. */
 const GOAL_FACETS = { status: (goal: Goal) => goal.status.toLowerCase() }
 
 const GOAL_COLUMNS: Column<Goal>[] = [
@@ -112,6 +115,9 @@ const GOAL_COLUMNS: Column<Goal>[] = [
 ]
 
 // @find: Tasks component, tasks page, goals, /tasks
+/**
+ * The Tasks page (route /tasks, permission task:read). Shows one goal in detail when the address carries ?goal=<id>, otherwise the list of goals. Both views read the address, so each is linkable and Back returns from a goal to the list.
+ */
 export function Tasks() {
   const { search } = useRouter()
   const goalId = search.get('goal')
@@ -121,6 +127,9 @@ export function Tasks() {
 /* ---- The list of goals ------------------------------------------------------------------------ */
 
 // @find: goal list, filter by status, give a task, create goal, POST /api/goals
+/**
+ * The list of goals. Flow: the status in the address (?status=) is passed to the server (a status it would refuse is ignored) and goals load newest first through useGoalPages; the search box and status facet appear once more than five goals are loaded or a filter is active. Rows link to /tasks?goal=<id>. Show older goals fetches the next page; a failure there is reported beside the button and keeps the list. With task:create the header and the empty state offer Give an agent a task (a dialog that calls POST /api/goals). The empty state distinguishes "no goals yet" from a filter that matches nothing.
+ */
 function GoalList() {
   const { search } = useRouter()
   // The server filters, read from the URL. A status the server would refuse (a mistyped link) is
@@ -252,6 +261,9 @@ function GoalList() {
 /* ---- One goal --------------------------------------------------------------------------------- */
 
 // @find: goal detail wrapper
+/**
+ * Loads one goal (useGoal) behind QueryState (loading, error, permission and not-found with a link back to the list), sets the tab title to the goal's title, and renders GoalView.
+ */
 function GoalDetail({ id }: { id: string }) {
   const query = useGoal(id)
   useDocumentTitle(query.data ? truncateWords(query.data.title, 60) : null)
@@ -280,6 +292,7 @@ function GoalDetail({ id }: { id: string }) {
 const RETRY_FROM = new Set(['failed', 'cancelled', 'skipped'])
 
 /** Whether a task's run is parked for a person, and so has a run worth showing a notice for. */
+/** Type guard: a task with a run that is waiting on an approval or an answer. */
 function isWaitingTask(task: Task): task is Task & { runId: string } {
   if (!task.runId) return false
   const status = task.status.toLowerCase()
@@ -288,6 +301,9 @@ function isWaitingTask(task: Task): task is Task & { runId: string } {
 
 /** The run a paused task is waiting on, shown the same way RunDetail shows a run waiting for a decision. */
 // @find: task waiting for approval or answer
+/**
+ * Shows what a waiting task needs: loads its run and renders the approval card or the question notice; the notice's action goes to the run trace. Renders nothing until the run has loaded.
+ */
 function TaskWaiting({ task }: { task: Task & { runId: string } }) {
   const { navigate } = useRouter()
   const runQuery = useRun(task.runId)
@@ -299,6 +315,9 @@ function TaskWaiting({ task }: { task: Task & { runId: string } }) {
 }
 
 // @find: goal view, plan, tasks, outcomes, cancel goal, retry
+/**
+ * One goal in detail: header with title, description, created and finished times, the task table (rows open the task's run trace), anything waiting on a person, and each task's outcome. Cancel goal (canStopGoal: the requester or task:cancel) opens a confirmation that explains what stopping does and calls the cancel mutation; Try again (canRetryGoal) restarts from the first task that did not complete and calls the retry mutation. Both toast on success and show failures inside their dialog.
+ */
 function GoalView({ goal }: { goal: Goal }) {
   const toast = useToast()
   const me = profile()?.userId ?? null
@@ -496,6 +515,9 @@ function failureLeadFor(status: string): string {
 }
 
 // @find: task outcome, result of a step
+/**
+ * One task's outcome: its title and status, the failure reason with wording that fits the status, the result (shortened beyond 1,200 characters, with an "Incomplete answer" label for a failed task), and a link to the run trace.
+ */
 function TaskOutcome({ task }: { task: Task }) {
   const failureLead = failureLeadFor(task.status.toLowerCase())
   const result = task.result ?? ''
@@ -539,6 +561,9 @@ function TaskOutcome({ task }: { task: Task }) {
 /**
  * The task table's columns. Built here rather than once per module because the agent names and
  * the running clock are live.
+ */
+/**
+ * Builds the task table's columns (task, agent, status, attempt, time). Built inside a hook because the agent names and the running clock are live data.
  */
 function useTaskColumns(): Column<Task>[] {
   const agentsQuery = useAgents()

@@ -19,6 +19,16 @@ import os.aiworkforce.platform.web.audit.AuditTokenSource;
 @Import(AuditClientConfiguration.class)
 class AuditWiring {
 
+    /**
+     * Supplies the token the audit relay presents to analytics-service.
+     *
+     * <p>Each call asks {@link InternalTokenProvider#forService} for a token for {@code analytics}. The relay
+     * runs on a timer outside any request, so no person is in the context and the token names the platform
+     * as the actor. The provider caches tokens, so most calls make no network request.
+     *
+     * @param tokens the source of service tokens
+     * @return a token source; a failure of the identity service surfaces as an exception from the call
+     */
     @Bean
     AuditTokenSource auditTokenSource(InternalTokenProvider tokens) {
         return () -> tokens.forService("analytics");

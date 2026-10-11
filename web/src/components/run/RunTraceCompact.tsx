@@ -30,8 +30,10 @@ import {
  * while the run is active, so it updates itself; "Open full trace" is always the way to the rest.
  */
 
+/** Left border and padding style for one compact step. */
 const COMPACT_STEP: CSSProperties = { borderLeft: '1px solid var(--line)', paddingLeft: 'var(--space-4)' }
 
+/** One step in the compact trace: a handoff shows who handed over and the summary; any other step shows its kind tag, heading, tool status, an Offline sandbox tag, duration, description and any audio clip. */
 function CompactStep({ step }: { step: RunStep }) {
   if (step.kind === 'handoff') {
     const from = detailText(step.detail, 'fromAgentName')
@@ -81,6 +83,14 @@ function CompactStep({ step }: { step: RunStep }) {
 }
 
 // @find: RunTraceCompact, run trace compact, run trace, compact trace, run steps, what the agent did
+/**
+ * Brief trace of one run for chat threads and the Orchestrator sheets, linking to the full page.
+ * Reads useRun and useRunSteps (polling only while the run is active). Shows, in order: a waiting notice when
+ * the run waits on an approval (WaitingForApproval) or an answer (WaitingForAnswer, notice mode, with
+ * onGoToQuestion); the finished answer (AnswerCard, hidden with showAnswer false); the web browser preview
+ * (BrowserPreview, hidden with liveView false); the last `limit` steps (the instruction excluded) under "What
+ * happened"; and a link to the full trace. Shows loading and "could not be loaded" text.
+ */
 export function RunTraceCompact({
   runId,
   headingLevel = 'h3',

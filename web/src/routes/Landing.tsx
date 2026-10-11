@@ -38,6 +38,9 @@ const HOME_DEMOS: readonly StageItem[] = [
 ]
 
 // @find: Landing component, public home page, /home
+/**
+ * The public overview page (route /home, also shown at "/" to a signed-out visitor; no permission, no data fetching). Static marketing content in the dark "night" look, written for non-technical company buyers: hero, how it works, the agents, two interactive scripted demos (the simulated-data notice is shown beside them), safety, FAQ and a closing call to action. Provides a skip link to the main landmark, which takes focus so keyboard users land in the content. Technical detail lives on /trust.
+ */
 export function Landing(): ReactElement {
   return (
     <LandingRoot look="night">

@@ -30,6 +30,14 @@ export function retireBlockedReason(agent: Pick<Agent, 'fallback' | 'status'>, c
 }
 
 // @find: RetireAgentCard, retire agent card, retire agent, restore agent, archive agent, delete agent
+/**
+ * Card at the foot of an agent page to retire the agent (archive it) or restore a retired one.
+ * Hidden unless the viewer holds agent:update or agent:delete. The button is disabled, with the reason
+ * linked through aria-describedby, when retireBlockedReason returns text. Retiring opens a ConfirmDialog
+ * and calls useRetireAgent with action "retire"; restoring calls the same mutation with "restore"
+ * immediately and the agent returns paused. Success is a toast; a retire failure shows inside the dialog,
+ * a restore failure as an error toast. Rendered by the agent detail page.
+ */
 export function RetireAgentCard({ agent }: { agent: Pick<Agent, 'id' | 'name' | 'status' | 'fallback'> }) {
   const toast = useToast()
   const retire = useRetireAgent()

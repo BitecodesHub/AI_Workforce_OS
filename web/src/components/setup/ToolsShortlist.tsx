@@ -15,6 +15,7 @@ import type { Integration } from '../../lib/queries'
  */
 
 /** Tried first, in this order, when the installation offers them. */
+/** Connector ids tried first, in this order, when the installation offers them. */
 const POPULAR = ['slack', 'gmail', 'google-drive', 'google-calendar', 'github', 'notion', 'jira', 'hubspot', 'microsoft-teams', 'outlook', 'linear', 'salesforce']
 
 // @find: pick suggested connectors, popular connectors first
@@ -29,6 +30,13 @@ export function shortlist(integrations: readonly Integration[], limit = 6): Inte
 }
 
 // @find: tools shortlist, connect tool in setup, Connect button, popular connectors
+/**
+ * Setup list of up to six common connectors that can reach a live account, from useIntegrations (shortlist
+ * decides the choice and order). Each item shows its name and description with a Connected tag or a Connect
+ * (Reconnect when it needs attention) button, which opens ConnectDialog; the dialog is keyed per opening so
+ * each starts fresh. Shows loading text, a message when no tool can be connected to a live account, and a
+ * link to the full Connectors page.
+ */
 export function ToolsShortlist() {
   const integrations = useIntegrations()
   const [connecting, setConnecting] = useState<{ session: number; integration: Integration | null; open: boolean }>({

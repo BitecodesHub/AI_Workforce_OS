@@ -8,6 +8,9 @@ import { useEffect } from 'react'
  * bound in an effect and torn down with it - never read or written during render (0.2).
  */
 
+/**
+ * One keyboard shortcut: the key, which modifiers must be held (mod means Cmd on macOS and Ctrl elsewhere), and the handler to call.
+ */
 export type Hotkey = {
   key: string
   mod?: boolean
@@ -18,6 +21,9 @@ export type Hotkey = {
   handler: (e: KeyboardEvent) => void
 }
 
+/**
+ * Whether the device is an Apple platform; false where navigator is unavailable (server rendering, tests).
+ */
 export function isMac(): boolean {
   if (typeof navigator === 'undefined') return false
   const platform = navigator.platform || navigator.userAgent || ''
@@ -29,6 +35,9 @@ export function modLabel(): 'Cmd' | 'Ctrl' {
   return isMac() ? 'Cmd' : 'Ctrl'
 }
 
+/**
+ * Whether the event target is a place the person types (input, textarea, select, contenteditable), where single-key shortcuts must not fire.
+ */
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
@@ -36,6 +45,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 }
 
+/**
+ * Whether a key event is exactly this hotkey: same key (case-insensitive) and exactly the modifiers it names, no more and no fewer.
+ */
 function matches(hotkey: Hotkey, e: KeyboardEvent): boolean {
   if (e.key.toLowerCase() !== hotkey.key.toLowerCase()) return false
   if ((e.metaKey || e.ctrlKey) !== Boolean(hotkey.mod)) return false

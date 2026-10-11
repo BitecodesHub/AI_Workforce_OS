@@ -52,6 +52,7 @@ export function previousPeriod(window: InsightsWindow): string {
 /** How a figure is written, which decides how its change is. */
 export type FigureKind = 'count' | 'money' | 'points' | 'seconds' | 'hours'
 
+/** Writes the size of a change in the unit of the figure it belongs to (count, money, points, seconds or hours). */
 function formatChange(amount: number, kind: FigureKind): string {
   switch (kind) {
     case 'count':

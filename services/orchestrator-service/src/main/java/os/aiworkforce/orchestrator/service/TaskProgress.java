@@ -78,8 +78,11 @@ public class TaskProgress {
     /** The outcomes a run can end with, which are the only values the {@code status} tag takes. */
     private static final Set<String> FINISHED_STATUSES = Set.of("completed", "failed", "abandoned", "cancelled");
 
+    /** The reason recorded on a later task that is skipped because an earlier one failed or was cancelled. */
     static final String EARLIER_TASK_UNFINISHED = "An earlier task in this goal did not finish.";
+    /** Fallback failure reason when a run or start failure gives none. */
     private static final String DEFAULT_FAILURE = "The agent did not complete this task.";
+    /** Fallback reason when the reaper abandons a run without saying why. */
     private static final String DEFAULT_ABANDONED = "The worker running this task stopped responding.";
 
     /**
@@ -89,7 +92,9 @@ public class TaskProgress {
      */
     public static final String STEP_LIMIT = "step_limit";
 
+    /** Error code for a run cut off by its output limit; never retried automatically. */
     public static final String OUTPUT_LIMIT = "output_limit";
+    /** Error code for a run that repeated the same action; never retried automatically. */
     public static final String LOOP_DETECTED = "loop_detected";
 
     /**
@@ -125,10 +130,18 @@ public class TaskProgress {
     /** Where finished runs are counted. Null in unit tests that do not look. */
     private MeterRegistry meters;
 
+    /**
+     * Convenience constructor, mainly for unit tests: no run trace or approvals are available, so a
+     * failed attempt is judged retryable on attempt count alone.
+     */
     public TaskProgress(Tasks tasks, Goals goals, List<GoalLifecycleListener> listeners) {
         this(tasks, goals, listeners, null, null);
     }
 
+    /**
+     * Spring's constructor. {@code steps} and {@code approvals} let a failed run's trace be
+     * inspected before a retry; a null listener list is treated as empty.
+     */
     @Autowired
     public TaskProgress(
             Tasks tasks,
@@ -143,12 +156,14 @@ public class TaskProgress {
         this.approvals = approvals;
     }
 
+    /** Optional wiring: gives each listener its own {@code REQUIRES_NEW} transaction. */
     @Autowired(required = false)
     void setTransactionManager(PlatformTransactionManager transactionManager) {
         this.listenerTransaction = new TransactionTemplate(transactionManager);
         this.listenerTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    /** Optional wiring: the publisher used to announce a {@link TaskSettledEvent}. */
     @Autowired(required = false)
     void setEventPublisher(ApplicationEventPublisher events) {
         this.events = events;
@@ -182,6 +197,12 @@ public class TaskProgress {
      *     agent had written when it stopped - kept on the task, where the screens show it as an
      *     incomplete answer
      * @param reason why the run did not complete, shown on the task
+     *
+     * <p>Side effects: counts the run in the metrics, saves the task, notifies listeners after
+     * commit, skips later tasks on a failure or cancel, closes the goal when everything has
+     * finished, and announces the settled task. A failed run may put the task back to
+     * {@code pending} for a retry (see {@link #applyFailure}). An unknown status is logged and
+     * leaves the task as it was. Called by AgentRunner, ApprovalService and the reaper.
      */
     @Transactional
     public void onRunFinished(Run run, String status, String answer, String reason) {
@@ -230,6 +251,9 @@ public class TaskProgress {
     /**
      * The run stopped to wait for a person, so its task is waiting too, for the same thing: an
      * approval ({@code waiting_approval}) or an answer ({@code waiting_input}).
+     *
+     * <p>Writes the task's status only. Ignored when the run is not parked, has no active task, or
+     * the task already shows that status. Called by AgentRunner.
      */
     @Transactional
     public void onRunParked(Run run) {
@@ -246,7 +270,12 @@ public class TaskProgress {
     }
 
     // @find: run resumed
-    /** The approval was granted, or the question answered, and the run picked up again. */
+    /**
+     * The approval was granted, or the question answered, and the run picked up again.
+     *
+     * <p>Sets the task back to {@code running}; ignored when it already is or when there is no
+     * active task. Called by AgentRunner.
+     */
     @Transactional
     public void onRunResumed(Run run) {
         Task task = activeTaskOf(run);
@@ -261,6 +290,10 @@ public class TaskProgress {
     /**
      * A task whose run could not even begin: the agent is paused, has been removed, or has no
      * configuration. The attempt has already been counted, so the retry rule still bounds it.
+     *
+     * <p>Applies the failure rules, saves the task, notifies listeners after commit, skips later
+     * tasks if it failed, closes the goal if finished, and announces the settled task. Called by
+     * GoalService when a claimed task cannot be started.
      */
     @Transactional
     public void onStartFailed(Task task, String reason) {
@@ -369,6 +402,7 @@ public class TaskProgress {
                 "task " + task.getId() + " reaching " + status));
     }
 
+    // Tells listeners, after commit, that the goal reached a terminal status.
     private void notifyGoalFinished(Goal goal) {
         if (listeners.isEmpty()) {
             return;
@@ -461,6 +495,11 @@ public class TaskProgress {
     /** What a failed run's trace and approvals say about repeating its work. */
     private record Inspection(boolean neverRetried, Set<String> changed) {}
 
+    /**
+     * Reads the failed run's trace and approved approvals (read-only). Reports whether its last
+     * error code is one a retry cannot fix, and which tools had already changed something, whether
+     * through a successful non-read tool call or an approved action that was not known to fail.
+     */
     private Inspection inspect(Run run) {
         List<RunStep> trace = steps == null ? List.of() : steps.findByRunIdOrderByPosition(run.getId());
         String code = null;
@@ -514,10 +553,12 @@ public class TaskProgress {
         return effect != null && !"READ".equalsIgnoreCase(effect);
     }
 
+    // The detail value for the key when it is a non-blank string, else null.
     private static String text(Map<String, Object> detail, String key) {
         return detail != null && detail.get(key) instanceof String value && !value.isBlank() ? value : null;
     }
 
+    // Joins up to LISTED_TOOLS tool names, then "and N more".
     private static String listed(Set<String> toolNames) {
         List<String> names = new ArrayList<>(toolNames);
         if (names.size() <= LISTED_TOOLS) {
@@ -526,6 +567,7 @@ public class TaskProgress {
         return String.join(", ", names.subList(0, LISTED_TOOLS)) + " and " + (names.size() - LISTED_TOOLS) + " more";
     }
 
+    // After a task settles: skips later tasks when it failed or was cancelled, then closes the goal if all tasks are done.
     private void afterTaskChanged(Task task) {
         if ("failed".equals(task.getStatus()) || "cancelled".equals(task.getStatus())) {
             skipLaterTasks(task);

@@ -40,18 +40,24 @@ import os.aiworkforce.platform.config.PlatformProperties;
 public class KnowledgeClient {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeClient.class);
+    /** How many passages a search asks for when the caller gives no limit. */
     private static final int DEFAULT_LIMIT = 5;
     /** The knowledge service caps the query at 1,000 characters; a longer one is trimmed before it is sent. */
     private static final int MAX_QUERY_CHARS = 1_000;
 
+    /** The HTTP client for the knowledge service. */
     private final WebClient client;
     /** Mints the token an agent's search is made with; null where only a person's own header is used. */
     private final InternalTokenProvider tokens;
 
+    /**
+     * Creates a client that can only search with a person's own header; agent and status calls report no result.
+     */
     public KnowledgeClient(WebClient.Builder builder, PlatformProperties properties) {
         this(builder, properties, null);
     }
 
+    /** Creates the full client; the token provider enables the agent search and the status check. */
     @Autowired
     public KnowledgeClient(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         this.client = builder.baseUrl(properties.services().knowledge()).build();
@@ -60,6 +66,9 @@ public class KnowledgeClient {
 
     /**
      * One passage that matched, with what a person needs to check it.
+     *
+     * <p>Reported by the knowledge service and used by the coordinator and the agent tools to build
+     * prompts and citations.
      *
      * @param sourceId the knowledge source holding the document, for a link to it; null from a
      *     knowledge service that does not send it yet
@@ -82,6 +91,7 @@ public class KnowledgeClient {
             boolean restricted,
             Double similarity) {
 
+        /** Compatibility constructor for a passage without a similarity, as sent by an older knowledge service. */
         public Passage(
                 UUID chunkId,
                 UUID documentId,
@@ -96,7 +106,11 @@ public class KnowledgeClient {
             this(chunkId, documentId, sourceId, documentTitle, uri, pageNumber, heading, content, score, restricted, null);
         }
 
-        /** A passage from a source everyone in the workspace may read. */
+        /**
+         * A passage from a source everyone in the workspace may read, with no similarity.
+         *
+         * <p>Convenience constructor for callers and tests that have no restricted sources.
+         */
         public Passage(
                 UUID chunkId,
                 UUID documentId,
@@ -112,12 +126,20 @@ public class KnowledgeClient {
     }
 
     /**
+     * The knowledge service's answer to a search: the passages and how far they can be trusted to support an answer.
+     *
      * @param grounded false when nothing matched well enough to support an answer
      * @param degraded true when only part of the search could run - keyword matching without the
      *     search by meaning - so fewer or weaker passages may have come back than usual
      */
     public record SearchResult(List<Passage> passages, boolean grounded, boolean degraded) {}
 
+    /**
+     * Searches the workspace's documents on a person's behalf, over every source they may read.
+     *
+     * <p>Shorthand for the narrowed search with no source filter and the default limit. Called by
+     * {@code CoordinatorService}. Returns empty when the search could not be completed.
+     */
     // @find: search knowledge for a question, find passages
     public Optional<SearchResult> search(UUID orgId, String query, String authorizationHeader) {
         return search(orgId, query, authorizationHeader, null, DEFAULT_LIMIT);
@@ -125,6 +147,11 @@ public class KnowledgeClient {
 
     /**
      * As {@link #search(UUID, String, String)}, narrowed to the sources a person chose for a message.
+     *
+     * <p>Posts to the public search endpoint with the caller's own {@code Authorization} header and
+     * a ten second timeout; no state is changed. Returns empty, never an error, when the header is
+     * missing, the person may not search (logged at debug level) or the call fails (logged as a
+     * warning). The query is trimmed to the service's limit first.
      *
      * @param sourceIds the sources to search; null or empty for every one the person may read
      * @param limit how many passages at most
@@ -172,6 +199,8 @@ public class KnowledgeClient {
     }
 
     /**
+     * The outcome of an agent's search: either a result or a failure reason, never both.
+     *
      * What an agent's search came to: passages, or the reason there are none to use.
      *
      * @param result what was found; null when the search could not run
@@ -179,10 +208,12 @@ public class KnowledgeClient {
      */
     public record AgentSearch(SearchResult result, Failure failure) {
 
+        /** An agent search that ran and returned this result. */
         public static AgentSearch found(SearchResult result) {
             return new AgentSearch(result, null);
         }
 
+        /** An agent search that could not run, with the reason. */
         public static AgentSearch failed(Failure failure) {
             return new AgentSearch(null, failure);
         }
@@ -206,7 +237,13 @@ public class KnowledgeClient {
         return searchFor(orgId, requestedBy, query, limit, agentId, runId, null);
     }
 
-    /** As {@link #searchFor(UUID, UUID, String, int, UUID, UUID)}, narrowed to these sources when given. */
+    /**
+     * As {@link #searchFor(UUID, UUID, String, int, UUID, UUID)}, narrowed to these sources when given.
+     *
+     * <p>Posts to the internal search endpoint with a service token that names the requester and
+     * a ten second timeout. Returns {@code NOT_ALLOWED} when there is no token provider or no
+     * requester, or the service refuses; {@code UNAVAILABLE} for an empty reply or any other failure.
+     */
     public AgentSearch searchFor(
             UUID orgId, UUID requestedBy, String query, int limit, UUID agentId, UUID runId, List<UUID> sourceIds) {
         if (tokens == null || requestedBy == null) {
@@ -244,7 +281,11 @@ public class KnowledgeClient {
         }
     }
 
-    /** @param indexedSources how many sources in the workspace hold at least one passage */
+    /**
+     * The reply of the knowledge service's status endpoint.
+     *
+     * @param indexedSources how many sources in the workspace hold at least one passage
+     */
     private record Status(int indexedSources) {}
 
     /**
@@ -257,7 +298,12 @@ public class KnowledgeClient {
         return hasIndexedSources(orgId, null);
     }
 
-    /** As {@link #hasIndexedSources(UUID)}, counting the documents this agent owns as well. */
+    /**
+     * As {@link #hasIndexedSources(UUID)}, counting the documents this agent owns as well.
+     *
+     * <p>Reads the internal status endpoint with a service token and a three second timeout. Empty
+     * when there is no token provider or the call fails, which the caller treats as "not known".
+     */
     // @find: has indexed sources for agent
     public Optional<Boolean> hasIndexedSources(UUID orgId, UUID agentId) {
         if (tokens == null) {
@@ -281,6 +327,7 @@ public class KnowledgeClient {
         }
     }
 
+    /** The query trimmed at a word to the knowledge service's length limit. */
     private static String truncate(String query) {
         return CoordinatorService.truncateAtWord(query, MAX_QUERY_CHARS);
     }

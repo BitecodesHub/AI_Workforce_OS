@@ -18,8 +18,10 @@ import { useToast } from '../../lib/toast'
  * Longer chains, and every other setting, stay on Model routing.
  */
 
+/** True for the offline sandbox provider, which is never offered as a first or backup choice. */
 const isSandbox = (provider: Provider) => provider.kind.toUpperCase() === 'SANDBOX'
 
+/** One chosen provider and model; empty strings mean nothing chosen. */
 type Choice = { providerId: string; modelId: string }
 
 // @find: initial model choices, current first and backup model from policy
@@ -47,6 +49,17 @@ export function orderedCandidates(policy: ModelPolicy | undefined, choices: read
 }
 
 // @find: model order picker, pick first and backup model, save model order, setup step
+/**
+ * Simple control on the Setup page to choose a first-choice model and a backup.
+ * Data: useProviders, useModels, useModelPolicy and useCredentials. Only providers that are ready (providerReadiness)
+ * and are not the sandbox are offered; embedding models are excluded from the model lists. Each row is a provider
+ * Select, which pre-selects the recommended model (recommendModel), and a CandidateModelField (live model list)
+ * for the model. The form starts from the first two live candidates of the current policy (initialChoices).
+ * Save validates that the first choice has a model and that the backup is not the same model, then calls
+ * useSetModelPolicy with orderedCandidates: the two choices first, then the rest of the old chain, with the
+ * sandbox kept last. A toast confirms and the edited state resets. Shows loading text, or a prompt to connect a
+ * model first when no provider is ready. Longer chains stay on the Model routing page, linked below the form.
+ */
 export function ModelOrderPicker() {
   const providersQuery = useProviders()
   const modelsQuery = useModels()

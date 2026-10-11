@@ -56,14 +56,21 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
 @Tag(name = "Audit")
 public class AuditController {
 
+    /** Largest page the list endpoint returns, whatever size is requested. */
     private static final int MAX_PAGE_SIZE = 100;
+    /** Most action codes one filter may name. */
     private static final int MAX_ACTIONS = 25;
+    /** Outcomes a filter may name. */
     private static final List<String> OUTCOMES = List.of("succeeded", "failed", "denied", "locked");
 
+    /** Reads entries for the list and the export. */
     private final AuditSearch search;
+    /** Walks the workspace chain for the verify endpoint. */
     private final AuditVerification verification;
+    /** Used only to record that an export took place. */
     private final AuditAppender appender;
 
+    /** Creates the controller over search, verification and the appender. */
     public AuditController(AuditSearch search, AuditVerification verification, AuditAppender appender) {
         this.search = search;
         this.verification = verification;
@@ -71,6 +78,9 @@ public class AuditController {
     }
 
     /**
+     * One audit entry as the API shows it, including the hashes an outside reviewer needs to recheck
+     * the chain. Returned by the list endpoint.
+     *
      * @param previousHash the digest of the entry before this one in the workspace's chain; absent
      *     for the first entry
      * @param entryHash this entry's own digest, which the next entry carries as its previous hash
@@ -92,16 +102,26 @@ public class AuditController {
             String entryHash) {}
 
     /**
+     * Response of the verify endpoint; null fields are left out of the JSON.
+     *
      * @param verified false when any entry no longer matches
      * @param checked entries examined, up to and including the broken one
      * @param lastSequence the last entry examined
      * @param firstBrokenSequence the first entry that failed, present only when {@code verified} is false
+     * @param reason why verification failed, present only when {@code verified} is false
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record VerifyView(
             boolean verified, long checked, long lastSequence, Long firstBrokenSequence, String reason) {}
 
     // @find: GET /api/audit, list, endpoint, audit log
+    /**
+     * Route: GET /api/audit. Permission: audit:read. Returns the caller's workspace entries, newest first,
+     * narrowed by the optional filters (actor, on-behalf-of, one or more comma-separated actions, resource,
+     * outcome, from and to). Paging is by {@code before} (a sequence cursor, preferred) or by {@code page}
+     * and {@code size}; size is capped at {@value #MAX_PAGE_SIZE}. Read-only. Fails with a validation error
+     * for a negative page, a size below 1, or an invalid filter.
+     */
     @GetMapping
     @RequiresPermission(Permission.Codes.AUDIT_READ)
     @Operation(summary = "This workspace's audit entries, newest first, optionally filtered")
@@ -133,6 +153,12 @@ public class AuditController {
     /**
      * The same entries as a file, newest first and narrowed by the same filters, written as they are
      * read from the database rather than collected first, so a long log does not sit in memory.
+     *
+     * <p>Route: GET /api/audit/export?format=csv|jsonl. Permission: audit:read. Streams the file as an
+     * attachment, up to {@link AuditExport#MAX_ROWS} rows, reading {@link AuditExport#PAGE_SIZE} rows at
+     * a time by sequence cursor. Side effect: one {@code audit.export} entry (format and filters) is
+     * appended to the chain before any byte is written, and the export is refused if that fails. Stops
+     * quietly when the client disconnects. Fails with a validation error for an unknown format or filter.
      */
     // @find: GET /api/audit/export, export, endpoint, audit log
     @GetMapping("/export")
@@ -210,6 +236,11 @@ public class AuditController {
     }
 
     // @find: GET /api/audit/verify, verify, endpoint, audit log
+    /**
+     * Route: GET /api/audit/verify. Permission: audit:read. Re-walks the caller's workspace chain through
+     * {@link AuditVerification#verifyWorkspace} and reports whether it is intact and, if not, the first
+     * sequence that failed and why. Read-only, but cost grows with the length of the chain.
+     */
     @GetMapping("/verify")
     @RequiresPermission(Permission.Codes.AUDIT_READ)
     @Operation(summary = "Re-walk this workspace's audit chain and report the first entry that does not match")
@@ -223,7 +254,10 @@ public class AuditController {
                 result.reason());
     }
 
-    /** What the export was narrowed by, kept with the event so it says what was taken away. */
+    /**
+     * What the export was narrowed by, kept with the event so it says what was taken away. Builds the
+     * detail stored with the export entry: the format and only the filters that were set.
+     */
     private static Map<String, Object> exportDetail(String format, AuditFilter filter) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("format", format);
@@ -242,13 +276,18 @@ public class AuditController {
         return detail;
     }
 
+    /** Adds the entry to the map unless the value is null. */
     private static void putIfPresent(Map<String, Object> into, String key, String value) {
         if (value != null) {
             into.put(key, value);
         }
     }
 
-    /** Parses and checks the filters shared by the list and the export. */
+    /**
+     * Parses and checks the filters shared by the list and the export. Blank values become null,
+     * {@code action} is split on commas, the outcome must be a known one, and {@code from} must be
+     * before {@code to} when both are given. Throws a validation error naming the offending parameter.
+     */
     static AuditFilter filterOf(
             String actorId,
             String onBehalfOf,
@@ -311,10 +350,12 @@ public class AuditController {
         }
     }
 
+    /** Returns null for a null or blank value, otherwise the stripped value. */
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
     }
 
+    /** Copies the fields of an entity into the response record. */
     private static AuditEventView toView(AuditEvent event) {
         return new AuditEventView(
                 event.getId(),
@@ -333,6 +374,7 @@ public class AuditController {
                 event.getEntryHash());
     }
 
+    /** Reads the workspace id from the authenticated request; fails when the request has none. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

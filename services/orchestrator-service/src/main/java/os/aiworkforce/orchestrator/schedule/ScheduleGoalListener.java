@@ -30,7 +30,9 @@ import os.aiworkforce.orchestrator.service.LifecycleAnnouncer;
 public class ScheduleGoalListener implements GoalLifecycleListener {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduleGoalListener.class);
+    /** Failed runs in a row after which a schedule pauses itself. */
     static final int MAX_CONSECUTIVE_FAILURES = 3;
+    /** Reason stored on the schedule and shown on the Schedules page when it pauses itself. */
     static final String PAUSED_REASON = "Paused after 3 failed runs in a row.";
 
     private final Schedules schedules;
@@ -41,11 +43,13 @@ public class ScheduleGoalListener implements GoalLifecycleListener {
      */
     private ObjectProvider<LifecycleAnnouncer> announcer;
 
+    /** Builds the listener; used by Spring. */
     public ScheduleGoalListener(Schedules schedules) {
         this.schedules = schedules;
     }
 
     @Autowired(required = false)
+    /** Optional setter injection of the announcer provider; absent in unit tests. */
     void setAnnouncer(ObjectProvider<LifecycleAnnouncer> announcer) {
         this.announcer = announcer;
     }
@@ -88,11 +92,13 @@ public class ScheduleGoalListener implements GoalLifecycleListener {
     }
 
     @Override
+    /** Deliberately empty: only the end of the whole goal matters to a schedule. */
     public void onTaskFinished(Goal goal, Task task, String status) {
         // A schedule cares about the goal it fired reaching its end, not about one task within
         // it; onGoalFinished is the one signal this listener needs.
     }
 
+    /** Queues the pause announcement to be sent after the current transaction commits; does nothing when no announcer is available. */
     private void announcePause(SchedulePause pause) {
         LifecycleAnnouncer lifecycle = announcer == null ? null : announcer.getIfAvailable();
         if (lifecycle == null) {

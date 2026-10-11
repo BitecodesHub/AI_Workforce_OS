@@ -66,6 +66,7 @@ public class JpaBudgetGuard implements BudgetGuard {
 
     private static final String RAISE_THE_CAP = " Ask an administrator to raise the cap in Analytics, Budget.";
 
+    // A workspace's month-to-date spend and when it was read; stale after MONTH_SPEND_TTL.
     private record CachedSpend(BigDecimal spent, Instant loadedAt) {
 
         boolean isFresh(Instant now) {
@@ -73,16 +74,24 @@ public class JpaBudgetGuard implements BudgetGuard {
         }
     }
 
+    // budgets holds the caps; usage sums spend from llm_usage; monthSpend is the short-lived cache.
     private final Budgets budgets;
     private final Usage usage;
     private final Clock clock;
     private final Map<UUID, CachedSpend> monthSpend = new ConcurrentHashMap<>();
 
+    /**
+     * Production constructor with the system clock.
+     *
+     * @param budgets where a workspace's caps are read
+     * @param usage where spend is summed from
+     */
     @Autowired
     public JpaBudgetGuard(Budgets budgets, Usage usage) {
         this(budgets, usage, Clock.systemUTC());
     }
 
+    // Test constructor with a clock the test controls, so cache expiry and month boundaries can be checked.
     JpaBudgetGuard(Budgets budgets, Usage usage, Clock clock) {
         this.budgets = budgets;
         this.usage = usage;
@@ -100,6 +109,16 @@ public class JpaBudgetGuard implements BudgetGuard {
     }
 
     // @find: check budget before model call, allow or deny spend
+    /**
+     * Decides whether one model attempt may go ahead. Called by ModelRouter before every attempt.
+     *
+     * <p>Flow: no budget or no caps allows at once; then the per-run, per-agent daily and monthly caps are
+     * tested in that order, each against spend plus the estimate. The first to fail refuses, with a message
+     * naming that cap. Read only; a null estimate counts as zero.
+     *
+     * @return allow, with the monthly amount remaining when a monthly cap is set; or deny, or deny to the
+     *     offline model when the workspace chose that at its cap
+     */
     @Override
     @Transactional(readOnly = true)
     public Decision check(CallContext context, BigDecimal estimatedCost) {
@@ -197,6 +216,7 @@ public class JpaBudgetGuard implements BudgetGuard {
         return spent;
     }
 
+    /** The month's spend for the check: the cached figure while fresh, otherwise a new sum from the usage table. */
     private BigDecimal monthToDate(UUID orgId, Instant now) {
         CachedSpend cached = monthSpend.get(orgId);
         if (cached != null && cached.isFresh(now)) {
@@ -207,6 +227,10 @@ public class JpaBudgetGuard implements BudgetGuard {
         return spent;
     }
 
+    /**
+     * Stores a month-to-date figure. When the cache is full, stale entries are dropped first; if it is still full
+     * the figure is not kept, so the next check simply reads the table again.
+     */
     private void remember(UUID orgId, BigDecimal spent, Instant now) {
         if (monthSpend.size() >= MAX_CACHED_WORKSPACES) {
             monthSpend.values().removeIf(entry -> !entry.isFresh(now));
@@ -216,6 +240,10 @@ public class JpaBudgetGuard implements BudgetGuard {
         }
     }
 
+    /**
+     * Builds the refusal: the reason plus where to raise the cap, denied outright or sent to the offline model,
+     * according to the workspace's choice.
+     */
     private static Decision refuse(Budget budget, String what, BigDecimal remaining) {
         String reason = what + RAISE_THE_CAP;
         return budget.degradesToSandbox()

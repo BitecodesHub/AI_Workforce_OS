@@ -75,11 +75,18 @@ function LiveDuration({ run }: { run: Run }) {
 }
 
 // @find: run duration
+/**
+ * A run's duration on one line: a live ticking clock while the run is active, a fixed elapsed time once it has finished.
+ */
 function RunDuration({ run }: { run: Run }) {
   return <span style={ONE_LINE}>{isRunActive(run) ? <LiveDuration run={run} /> : formatRunElapsed(run)}</span>
 }
 
 // @find: Runs component, runs page, filter runs by status, /runs
+/**
+ * The Runs page (route /runs, permission run:read): every agent run, newest first, in a sortable table (started, agent, status, started from, duration, steps, cost).
+ * Filters: the status (?status=) and agent (?agent=) are sent to the server, so they search every run and not only the loaded pages; values the server would refuse (an unknown status, a malformed id) are not sent and the list says nothing matches, with a way out. Search and the facet controls use useListFilter with their state in the address. Runs load a page at a time through useRunList, whose first page refreshes by itself; Show more fetches older pages, and the filter note says when it covers only what is loaded. While a new filter loads, the previous rows stay visible so controls do not jump. Rows link to /runs/{id}. "Started from" names what began the run and links to its goal when the person holds task:read. With task:create the header and the empty state offer Give an agent a task. Costs show their pricing note as a tooltip.
+ */
 export function Runs() {
   const { search } = useRouter()
   const agents = useAgentNames()

@@ -23,6 +23,11 @@ import os.aiworkforce.orchestrator.domain.RunStep;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for RunStep rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface RunSteps extends JpaRepository<RunStep, UUID> {
 
     // @find: list trace steps of a run

@@ -14,7 +14,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
  * for exactly that reason.
  */
 
+/** Spring Data repository for {@link VoiceClip} rows, used by {@code VoiceClipService} and {@code VoiceController}. */
 public interface VoiceClips extends JpaRepository<VoiceClip, UUID> {
 
+    /** One clip by id, only when it belongs to the given workspace. */
     Optional<VoiceClip> findByIdAndOrgId(UUID id, UUID orgId);
 }

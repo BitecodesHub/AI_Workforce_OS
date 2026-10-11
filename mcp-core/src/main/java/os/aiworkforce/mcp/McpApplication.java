@@ -16,6 +16,11 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 @SpringBootApplication
 @EnableAspectJAutoProxy
 public class McpApplication {
+    /**
+     * Starts the Spring context for the module on its own. In normal operation mcp-core is a library
+     * scanned by other services, so this entry point is for standalone checks only. Has no other side
+     * effects; a startup failure propagates as the usual Spring exception.
+     */
     public static void main(String[] args) {
         SpringApplication.run(McpApplication.class, args);
     }

@@ -18,8 +18,16 @@ import os.aiworkforce.memory.domain.AgentMemory;
  * One interface per file: Spring Data does not find a repository nested in another class.
  */
 
+/**
+ * Spring Data repository for {@link AgentMemory} notes. Every finder is scoped by organisation and
+ * agent so one workspace can never read another's notes. Used by {@code AgentMemoryService}, which
+ * adds validation, the secret guard and audit around these queries.
+ */
 public interface AgentMemories extends JpaRepository<AgentMemory, UUID> {
 
+    /**
+     * Finds one note by id, but only when it belongs to the given organisation and agent; empty otherwise, so callers answer not found rather than leak existence.
+     */
     Optional<AgentMemory> findByIdAndOrgIdAndAgentId(UUID id, UUID orgId, UUID agentId);
 
     /** Newest change first, for the agent's page. */
@@ -36,6 +44,7 @@ public interface AgentMemories extends JpaRepository<AgentMemory, UUID> {
     @Query("delete from AgentMemory m where m.orgId = :orgId and m.agentId = :agentId")
     int deleteAllOfAgent(@Param("orgId") UUID orgId, @Param("agentId") UUID agentId);
 
+    /** Number of notes the agent currently holds; used to enforce the per-agent note limit. */
     long countByOrgIdAndAgentId(UUID orgId, UUID agentId);
 
     /** The same note written twice is one note: found by its words, ignoring case and spacing. */

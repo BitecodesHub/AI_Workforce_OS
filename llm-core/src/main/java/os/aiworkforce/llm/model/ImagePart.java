@@ -29,12 +29,14 @@ public record ImagePart(String name, String mediaType, String base64Data) {
      */
     public static final int APPROXIMATE_TOKENS = 1_200;
 
+    /** Requires a media type and data, and names an unnamed picture {@code image}. */
     public ImagePart {
         Objects.requireNonNull(mediaType, "mediaType");
         Objects.requireNonNull(base64Data, "base64Data");
         name = name == null || name.isBlank() ? "image" : name;
     }
 
+    /** Whether the media type is one that vision models accept; null is not viewable. */
     public static boolean isViewable(String mediaType) {
         return mediaType != null && VIEWABLE_TYPES.contains(mediaType.toLowerCase(java.util.Locale.ROOT));
     }

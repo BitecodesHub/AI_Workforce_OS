@@ -104,6 +104,7 @@ const FIELD_LABELS: Record<string, string> = {
   description: 'What it does',
 }
 
+/** Display name of an agent category; unknown categories in sentence case. */
 function categoryLabel(category: string): string {
   return CATEGORY_LABEL[category] ?? sentenceCase(category)
 }
@@ -191,6 +192,9 @@ function EditDescriptionDialog({ open, onClose, agent }: { open: boolean; onClos
 /* ---- Edit instructions ------------------------------------------------------------------------- */
 
 // @find: edit agent instructions dialog, change system prompt, agent instructions
+/**
+ * Dialog wrapper for editing an agent's instructions. The form is mounted only while the dialog is open, so each opening starts from the saved configuration and a cancelled edit is discarded. Holds the save mutation (useUpdateAgent) and the dialog-level error; closing resets both. Not dismissible while saving.
+ */
 function EditInstructionsDialog({
   open,
   onClose,
@@ -255,6 +259,9 @@ export function parseTemperature(value: string): number | null | false {
 }
 
 // @find: edit instructions form, instructions, temperature, save new revision, update agent
+/**
+ * Form for the agent's instructions, goals, step limit, time limit and temperature. Flow: the limits are parsed as typed (empty means the default; out of range blocks Save with a message); Save sends the whole configuration, including the saved output limit, as a new revision through the update mutation, then toasts the revision number and closes. A server refusal puts field problems beside the fields (and clears each when the field is edited) and anything else in the dialog error.
+ */
 function EditInstructionsForm({
   agent,
   update,
@@ -416,6 +423,9 @@ function EditInstructionsForm({
 /* ---- Recent runs ---------------------------------------------------------------------------------- */
 
 // @find: agent runs list, recent runs of this agent, give task button
+/**
+ * The agent's recent runs card: the latest ten from useRunList filtered to this agent (refetched by the list's own polling), shown with start time, status, what started it, elapsed time and step count; each row opens the run. The agent id is checked again on the client so another agent's run can never appear. Empty state offers Give it a task when the person may; failures show a retry through QueryState; a link always leads to the full runs list filtered to this agent.
+ */
 function AgentRuns({ agentId, onGiveTask }: { agentId: string; onGiveTask?: (() => void) | undefined }) {
   // Filtered by the server, so these are this agent's runs however busy the workspace is.
   const runs = useRunList({ agentId })
@@ -510,6 +520,9 @@ function grantRules(grant: AgentGrant): string {
   return `${approval} ${limit}`
 }
 
+/**
+ * One connector grant on the agent: the connector's name and state, what the agent may do (tools granted, approval and call-limit rules), and Edit and Remove buttons when the person may manage grants.
+ */
 function GrantRow({
   grant,
   integration,
@@ -570,6 +583,9 @@ function GrantRow({
 }
 
 // @find: agent connectors, grant connector to agent, revoke access, tools an agent may use, allowed actions, approval required
+/**
+ * The agent's connectors card (permission agent:grant_tools to change; integration:read to list the catalogue). Flow: Add connector and Edit open the grant dialog for a new or existing connector; Remove asks for confirmation and calls the remove-grant mutation, toasts, and returns focus to Add. Without integration:read, or when the catalogue fails to load, the card says why connectors cannot be changed and shows the grants read-only.
+ */
 function AgentConnectors({ agent }: { agent: AgentDetailData }) {
   const toast = useToast()
   const canEdit = can('agent:grant_tools')
@@ -737,6 +753,9 @@ const SEEDED_PROVIDERS: Record<string, string> = {
 }
 
 // @find: agent model routing, choose model for an agent, agent routing policy, override workspace models, fallback chain
+/**
+ * The agent's model routing card. With permission to set an agent's policy (agent:set_model_policy) and to read providers (provider:read) it shows the full routing editor, scoped to this agent, whose save, clear and remove-model actions call the agent routing mutations. Otherwise it shows a read-only summary with a Remove action per model and a "use the workspace default" confirmation, each toasting the result; warnings from the service (for example an emptied chain) are shown. Provider names fall back to the seeded list and then sentence case when the list cannot be read.
+ */
 function AgentRouting({ agent }: { agent: AgentDetailData }) {
   const policy = useAgentModelPolicy(agent.id)
   // The provider list and model catalogue need provider:read. Without it, providers are named
@@ -1129,6 +1148,9 @@ function AgentRevisions({ agent }: { agent: AgentDetailData }) {
 const previewLine = (agentName: string) => `Hello, I am ${agentName}. This is how I will sound.`
 
 // @find: agent voice card, choose voice, text to speech, spoken answers
+/**
+ * The agent's voice card. Reads the voice status: with an ElevenLabs key stored the person (with agent:update) picks one of the workspace's voices, previews it, and saves it to the agent; without one every agent uses the browser's built-in voice and the card says so. Errors from saving appear in the card.
+ */
 function AgentVoiceCard({ agent }: { agent: AgentDetailData }) {
   const toast = useToast()
   const canSetVoice = can('agent:update')
@@ -1264,6 +1286,10 @@ function outcomeTile(
 }
 
 // @find: AgentDetail component, agent page, pause agent, resume agent, delete agent, /agents/:id
+/**
+ * The Agent detail page (route /agents/:id, permission agent:read).
+ * Loads the agent (useAgent) behind QueryState, which handles loading, error, permission and not-found states. Header: category, name, status, revision, and, with agent:update, Edit instructions, Edit description and the pause or resume control. Give it a task is offered only with agent:run for an active, configured agent (the platform refuses runs otherwise). Summary tiles show the 30-day success rate, cost and run count (these need run:read), the step limit, connector count and last run, and show a plain line while loading or on failure rather than zero. Body cards: recent runs, schedules (task:read), instructions, memory, documents, revision history, connectors, model routing, voice (chat:use), and retirement (agent:update or agent:delete). Sets the tab title to the agent's name.
+ */
 export function AgentDetail({ id }: { id: string }) {
   const query = useAgent(id)
   const [editOpen, setEditOpen] = useState(false)

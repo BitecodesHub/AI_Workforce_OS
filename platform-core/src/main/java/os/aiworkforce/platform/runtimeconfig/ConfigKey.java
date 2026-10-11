@@ -47,6 +47,7 @@ public record ConfigKey(
         List<String> allowedValues,
         boolean sensitive) {
 
+    /** Who may set a key: the platform operator only, or each workspace as an override of the platform default. */
     public enum Scope {
         /** One value for the whole deployment; only a platform operator may change it. */
         PLATFORM,
@@ -54,6 +55,7 @@ public record ConfigKey(
         WORKSPACE
     }
 
+    /** The value type of a key; it selects the parsing and validation applied on write and the JSON Schema type. */
     public enum Type {
         BOOLEAN,
         INTEGER,
@@ -65,6 +67,9 @@ public record ConfigKey(
         JSON
     }
 
+    /**
+     * Rejects a missing name or type, and copies the allowed values so the record stays immutable.
+     */
     public ConfigKey {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(type, "type");
@@ -73,19 +78,30 @@ public record ConfigKey(
 
     // ---- Builders, so a declaration reads as a sentence ---------------------------------
 
+    /** Declares a boolean key with the given default. */
     public static ConfigKey flag(String name, Scope scope, boolean defaultValue, String description) {
         return new ConfigKey(name, scope, Type.BOOLEAN, defaultValue, description, null, null, null, false);
     }
 
+    /** Declares a whole-number key with an inclusive range. */
     public static ConfigKey integer(String name, Scope scope, int defaultValue, int min, int max, String description) {
         return new ConfigKey(name, scope, Type.INTEGER, defaultValue, description, min, max, null, false);
     }
 
+    /**
+     * Declares a decimal key with inclusive bounds.
+     */
     public static ConfigKey decimal(
             String name, Scope scope, double defaultValue, double min, double max, String description) {
         return new ConfigKey(name, scope, Type.DECIMAL, defaultValue, description, min, max, null, false);
     }
 
+    /**
+     * Declares an ISO-8601 duration key.
+     *
+     * <p>The default is stored as text, and the bounds are stored as milliseconds, which is how
+     * {@link RuntimeConfigService} compares them. A {@code null} bound means unbounded.
+     */
     public static ConfigKey duration(
             String name, Scope scope, Duration defaultValue, Duration min, Duration max, String description) {
         return new ConfigKey(
@@ -100,10 +116,16 @@ public record ConfigKey(
                 false);
     }
 
+    /** Declares a free-text key with the given default. */
     public static ConfigKey text(String name, Scope scope, String defaultValue, String description) {
         return new ConfigKey(name, scope, Type.STRING, defaultValue, description, null, null, null, false);
     }
 
+    /**
+     * Declares a key restricted to a closed set of values.
+     *
+     * @throws IllegalArgumentException when the default is not among the allowed values
+     */
     public static ConfigKey choice(
             String name, Scope scope, String defaultValue, List<String> allowed, String description) {
         if (!allowed.contains(defaultValue)) {
@@ -112,10 +134,12 @@ public record ConfigKey(
         return new ConfigKey(name, scope, Type.ENUM, defaultValue, description, null, null, allowed, false);
     }
 
+    /** Declares a comma-separated list key; the default is the initial list. */
     public static ConfigKey list(String name, Scope scope, List<String> defaultValue, String description) {
         return new ConfigKey(name, scope, Type.STRING_LIST, defaultValue, description, null, null, null, false);
     }
 
+    /** Declares a key whose value is an arbitrary JSON document. */
     public static ConfigKey json(String name, Scope scope, JsonNode defaultValue, String description) {
         return new ConfigKey(name, scope, Type.JSON, defaultValue, description, null, null, null, false);
     }
@@ -125,6 +149,7 @@ public record ConfigKey(
         return new ConfigKey(name, scope, type, defaultValue, description, minimum, maximum, allowedValues, true);
     }
 
+    /** True when a workspace may override the platform value, that is when the scope is {@code WORKSPACE}. */
     public boolean workspaceOverridable() {
         return scope == Scope.WORKSPACE;
     }

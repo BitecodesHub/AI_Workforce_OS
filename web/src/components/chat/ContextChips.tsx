@@ -6,6 +6,7 @@ import { repoLabel } from './composerContext'
 import type { ComposerContext, SentContext } from './composerContext'
 import './plusMenu.css'
 
+/** Small cross icon for a chip's remove button. */
 function RemoveIcon() {
   return (
     <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden="true">
@@ -14,6 +15,7 @@ function RemoveIcon() {
   )
 }
 
+/** Icon for each kind of attached context: document, repository and skill. */
 const KIND_ICON: Record<'knowledge' | 'repo' | 'skill', ReactNode> = {
   knowledge: (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -35,8 +37,10 @@ const KIND_ICON: Record<'knowledge' | 'repo' | 'skill', ReactNode> = {
   ),
 }
 
+/** One chip to draw: its label, the hover title, the phrase a screen reader uses ("Remove ..."), and an optional remove handler (absent on a sent message). */
 type Chip = { key: string; kind: 'knowledge' | 'repo' | 'skill'; label: string; title: string; spoken: string; onRemove?: () => void }
 
+/** Renders a list of chips under an accessible label; renders nothing when there are none. align "end" puts the list on the user's side of the thread. */
 function ChipList({ chips, label, align }: { chips: Chip[]; label: string; align?: 'end' }) {
   if (chips.length === 0) return null
   return (
@@ -60,6 +64,11 @@ function ChipList({ chips, label, align }: { chips: Chip[]; label: string; align
 
 // @find: ContextChips, composer context chips with remove buttons
 /** What the "+" menu attached to the message being written, each with a remove button. */
+/**
+ * Chips for what the "+" menu attached to the message being written: a skill, a GitHub repository, and
+ * each chosen knowledge source or document. Each chip has a remove button that calls onChange with that
+ * item cleared. Pure presentation over the ComposerContext held by Composer; renders nothing when empty.
+ */
 export function ContextChips({
   context,
   onChange,
@@ -109,6 +118,7 @@ export function ContextChips({
 
 // @find: SentContextChips, context labels on a sent message
 /** The same labels on a message already sent, without remove buttons. */
+/** Read-only chips on a sent message (the same labels from a SentContext), rendered by the user's message bubble. */
 export function SentContextChips({ context }: { context: SentContext }) {
   const chips: Chip[] = []
   if (context.skill) {

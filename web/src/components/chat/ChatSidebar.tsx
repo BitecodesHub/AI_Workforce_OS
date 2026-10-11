@@ -29,6 +29,10 @@ import { nextRovingId, useRovingList } from './useRovingList'
  * overlay, or the inside of a mobile Sheet) and applies the matching CSS.
  */
 
+/**
+ * Small decorative inline SVG icons for the sidebar and its rail: new conversation, search, needs you,
+ * expand, archive and collapse. All are hidden from assistive technology; the buttons carry the labels.
+ */
 function NewConversationIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -80,12 +84,36 @@ function CollapseIcon() {
   )
 }
 
+/** Open or closed state of each sidebar group, keyed by group key; a missing key means open. */
 type GroupToggles = Record<string, boolean>
 
 /** Which collapse toggle should take focus once the sidebar has switched between panel and rail. */
+/**
+ * Module-level handoff for focus: the Show and Hide buttons are different elements in the rail and panel
+ * variants, so the pressed button records the label of the one that replaces it and the next render focuses it.
+ */
 const toggleFocus: { next: string | null } = { next: null }
 
 // @find: ChatSidebar, chat sidebar, conversation list, chat sidebar, search conversations, new conversation
+/**
+ * The conversation sidebar of the Chat page, in four variants chosen by the shell: panel, rail (icons only),
+ * overlay and sheet (mobile). The rail renders icon buttons only: expand, new conversation, search and
+ * Needs you with a count badge.
+ * The panel variant renders: a Mine, Everyone and Archived scope switch (persisted under "chat.scope"), a
+ * search field (debounced by 250 ms, Escape clears it), a New conversation button, a Hide button (not in the
+ * sheet), and the grouped list (pinned, needs you and date groups from groupConversations).
+ * Data: useConversationList({ q, scope }) with infinite paging ("Show older conversations"); pinned and
+ * needs-you rows come from the last page and are merged with the paged rows without duplicates. Group
+ * open state persists under "chat.groups".
+ * Row actions are delegated to ConversationRow: rename (useRenameConversation), pin (usePinConversation),
+ * archive with an Undo toast (useArchiveConversation, undoArchive), copy link, and delete through a
+ * ConfirmDialog (useDeleteConversation). After an archive or delete, focus moves to the next row, or to
+ * search when none remains, and the open conversation advances if it was the removed one.
+ * Keyboard: rows form a roving list (useRovingList); arrow keys, Home and End move real focus.
+ * Props: variant, onExpand and onCollapse, selectedId, onSelect(id, messageId), onNew, searchRef (so the
+ * shell can focus search from a shortcut) and focusSection ("search" or "needs-you" moves focus there).
+ * Empty states differ for a search with no match, archived, mine and everyone.
+ */
 export function ChatSidebar({
   variant,
   onExpand,

@@ -11,6 +11,9 @@ import type { AnsweredVia, AnswerQuestionInput, QuestionAnswerItem, RunQuestion 
  * "Other" state and its own free text independently.
  */
 
+/**
+ * The answer being composed, keyed by question item id: selected option labels, whether Other is on, and the Other text.
+ */
 export type AnswerDraft = Record<string, { selected: string[]; otherOn: boolean; other: string }>
 
 // @find: empty draft, new answer
@@ -21,6 +24,7 @@ export function emptyDraft(question: RunQuestion): AnswerDraft {
   return draft
 }
 
+/** The draft entry for a question, or an empty one when none exists yet. */
 function entryOf(draft: AnswerDraft, questionId: string) {
   return draft[questionId] ?? { selected: [], otherOn: false, other: '' }
 }
@@ -60,6 +64,7 @@ export function toggleOther(draft: AnswerDraft, questionId: string, multi: boole
   }
 }
 
+/** Sets the free text for the Other choice of one question. Pure: returns a new draft. */
 export function setOther(draft: AnswerDraft, questionId: string, text: string): AnswerDraft {
   const entry = entryOf(draft, questionId)
   return { ...draft, [questionId]: { ...entry, other: text } }

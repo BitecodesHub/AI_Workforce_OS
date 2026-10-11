@@ -41,6 +41,13 @@ const BOTTOM = 26
 
 type Series = { label: string; style: { fill: string }; value: (point: DayPoint) => number }
 
+/**
+ * Inline SVG stacked bar chart with one bar per day and no chart library.
+ * Props: title (accessible name), points (days, oldest first), series (stacked bottom to top, each with a
+ * fill style and a value accessor), format (axis labels) and describe (tooltip text and table row for a day).
+ * The vertical scale tops out at niceMax of the tallest stack; the horizontal axis labels every nth day so
+ * about six labels show. A visually hidden table repeats every figure for assistive technology.
+ */
 function BarChart({
   title,
   points,
@@ -155,6 +162,7 @@ function BarChart({
   )
 }
 
+/** Colour key for a chart: one swatch and label per series. */
 function Legend({ items }: { items: { label: string; style: { fill: string } }[] }) {
   return (
     <ul

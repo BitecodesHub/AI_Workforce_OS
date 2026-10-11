@@ -16,6 +16,9 @@ import type { ModelPolicy } from './queries'
  *   asking who lists it.
  */
 
+/**
+ * Outcome of "Test now" for one provider model: a result code, a plain message, latency and when it ran.
+ */
 export type ProviderCheckResult = {
   providerId: string
   modelId: string
@@ -26,8 +29,12 @@ export type ProviderCheckResult = {
   checkedAt: string
 }
 
+/** Where a provider or model is listed: in the workspace chain, and in which agents' own chains. */
 export type RoutingUsage = { workspace: boolean; agents: Array<{ id: string; name: string }> }
 
+/**
+ * What removing a model from all routing did: whether the workspace chain and which agents were changed, which agents were left with an empty chain, and any warning.
+ */
 export type RoutingRemoval = {
   workspace: boolean
   agents: Array<{ id: string; name: string; nowEmpty: boolean }>

@@ -24,6 +24,7 @@ import java.util.Map;
 public record ToolResult(
         Status status, String contentJson, String summary, Duration duration, Map<String, String> metadata) {
 
+    /** How a call ended. Only {@code SUCCEEDED} counts as success; see {@link #isSuccess()}. */
     public enum Status {
         SUCCEEDED,
         /** The tool ran and refused: bad arguments, a missing record, a rejected action. */
@@ -34,27 +35,39 @@ public record ToolResult(
         BLOCKED
     }
 
+    /** Compact constructor. Copies the metadata and defaults a missing duration to zero. */
     public ToolResult {
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
         duration = duration == null ? Duration.ZERO : duration;
     }
 
+    /** Result of a call the provider confirmed. Created by adapters. */
     public static ToolResult succeeded(String contentJson, String summary, Duration duration) {
         return new ToolResult(Status.SUCCEEDED, contentJson, summary, duration, Map.of());
     }
 
+    /** Result of a call that ran and was refused. Carries no content; the summary is shown to the model. */
     public static ToolResult failed(String summary) {
         return new ToolResult(Status.FAILED, "{}", summary, Duration.ZERO, Map.of());
     }
 
+    /**
+     * Result of a call stopped before it ran (grant, scope, approval, rate limit). Created by
+     * {@code ToolGateway}; never reached a provider.
+     */
     public static ToolResult blocked(String summary) {
         return new ToolResult(Status.BLOCKED, "{}", summary, Duration.ZERO, Map.of());
     }
 
+    /**
+     * Result of a call whose outcome is unknown, typically a timeout on a tool that is not
+     * idempotent. Must never be retried automatically.
+     */
     public static ToolResult indeterminate(String summary, Duration duration) {
         return new ToolResult(Status.INDETERMINATE, "{}", summary, duration, Map.of());
     }
 
+    /** Whether the status is {@code SUCCEEDED}. */
     public boolean isSuccess() {
         return status == Status.SUCCEEDED;
     }
@@ -76,6 +89,7 @@ public record ToolResult(
         };
     }
 
+    /** Escapes backslashes and double quotes so a summary can sit inside a hand-built JSON string. */
     private static String escape(String value) {
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }

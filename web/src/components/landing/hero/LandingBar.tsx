@@ -22,9 +22,11 @@ import { useInPageLink } from '../shared/useInPageLink'
  * observer does not exist, the bar stays transparent, no link is marked and the button shows.
  */
 
+/** A link of the bar: the id of the section it points to and its label. */
 export type BarSection = { id: string; label: string }
 
 /** The home page's sections, in page order. */
+/** The home page's sections in page order, used for the bar links and the scrollspy. */
 export const HOME_SECTIONS: readonly BarSection[] = [
   { id: 'how', label: 'How it works' },
   { id: 'team', label: 'AI team' },
@@ -34,6 +36,7 @@ export const HOME_SECTIONS: readonly BarSection[] = [
 ]
 
 /** A 5% band just above the middle of the viewport decides which section is being read. */
+/** Root margin of the scrollspy observer: a thin band just above the middle of the viewport decides which section is being read. */
 const SCROLLSPY_MARGIN = '-45% 0px -50% 0px'
 
 /**
@@ -43,6 +46,11 @@ const SCROLLSPY_MARGIN = '-45% 0px -50% 0px'
 export type LandingBarProps = { sections?: readonly BarSection[]; tone?: 'default' | 'stage' }
 
 // @find: LandingBar component, sticky top bar
+/**
+ * Sticky bar of the public pages (the home page and the trust page). Props: sections (default HOME_SECTIONS) and tone (stage keeps light-on-dark colours until the page scrolls).
+ * Three IntersectionObserver effects, with no scroll listeners: (1) a sentinel at the page top turns the bar solid (a glass capsule) once it scrolls away; (2) the bar's call to action shows only while the hero's own calls to action (element id lp-hero-ctas) are off screen, so the offer is never shown twice at once; (3) a scrollspy marks the first listed section crossing the band with aria-current="location". Without IntersectionObserver the bar stays transparent, no link is marked and the button shows.
+ * Actions: Sign in; and a primary button that is the demo call to action only where demo accounts exist and the tone is not stage, otherwise "Create your workspace". In-page links scroll smoothly through useInPageLink.
+ */
 export function LandingBar({ sections = HOME_SECTIONS, tone = 'default' }: LandingBarProps): ReactElement {
   const inPage = useInPageLink()
   const demo = useDemoCta()

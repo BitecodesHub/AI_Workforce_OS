@@ -57,6 +57,7 @@ export const approvalAnchor = (approvalId: string): string => `approval-${approv
 /** What a request does to the world, as the backend classes it. */
 export const isDestructive = (actionClass?: string | null): boolean => actionClass?.toUpperCase() === 'DESTRUCTIVE'
 
+/** Whether an action class sends something out of the workspace. */
 const isOutbound = (actionClass?: string | null): boolean => actionClass?.toUpperCase() === 'OUTBOUND'
 
 /** A request that leaves the workspace or removes something is read before it is decided, so it opens expanded. */
@@ -119,6 +120,9 @@ function fieldValue(value: unknown): string {
 }
 
 // @find: approval payload, parse payload, fields to be sent, preview what will happen
+/**
+ * Turns the stored JSON text of an approval request into rows a person can read. Known fields (To, Cc, Bcc, Subject, Body, Message, Channel, Amount, Currency) come first with friendly labels and the rest follow; text values keep their line breaks and other values show as compact JSON. Text that is not a JSON object comes back as kind raw, so nothing is hidden.
+ */
 export function parsePayload(payload: string): ParsedPayload {
   let parsed: unknown
   try {

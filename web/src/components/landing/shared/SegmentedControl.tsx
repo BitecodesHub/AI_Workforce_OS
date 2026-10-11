@@ -12,8 +12,10 @@ import type { ReactElement } from 'react'
  * here reimplements what the platform already does correctly.
  */
 
+/** One option of the control: its value and label. */
 export type SegmentedOption<V extends string> = { value: V; label: string }
 
+/** Props: legend (the accessible name; hidden visually with hideLegend), value and onChange (controlled), options, disabled (disables the fieldset) and fullWidth. */
 export type SegmentedControlProps<V extends string> = {
   legend: string
   value: V
@@ -25,6 +27,7 @@ export type SegmentedControlProps<V extends string> = {
 }
 
 // @find: SegmentedControl component, radio options
+/** Segmented control built from a native radio group in a fieldset with a legend, so the browser supplies the arrow-key movement and selection. Generic over the string value type. Used by ApprovalDemo (who is deciding) and FailoverDemo (what happens when every candidate fails). */
 export function SegmentedControl<V extends string>({
   legend,
   value,

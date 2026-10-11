@@ -25,10 +25,14 @@ import java.util.regex.Pattern;
  */
 public final class DocumentsPrompt {
 
+    /** Not instantiable; every member is static. */
     private DocumentsPrompt() {}
 
+    /** The most characters the whole prompt may reach. */
     private static final int MAX_TOTAL_CHARS = 9_000;
+    /** The most characters of one passage kept; a longer passage is cut with an ellipsis. */
     private static final int MAX_PASSAGE_CHARS = 1_200;
+    /** The most characters of a source label placed in a tag attribute. */
     private static final int MAX_SOURCE_CHARS = 200;
 
     /**
@@ -48,6 +52,7 @@ public final class DocumentsPrompt {
             + "not cover the question, answer from general knowledge or say you do not know, without citing "
             + "anything.";
 
+    /** The fixed opening: the task, the untrusted-material rule and the citation rule. */
     private static final String HEADER = "Answer the question below using only these passages from the "
             + "workspace's documents. " + UNTRUSTED_RULE + " " + CITATION_RULE
             + " For example [2] Leave policy. Say plainly what the passages do not cover.\n\nQuestion: ";
@@ -56,6 +61,12 @@ public final class DocumentsPrompt {
     private static final Pattern LOOK_ALIKE = Pattern.compile("(?i)<\\s*/?\\s*passage");
 
     /**
+     * Builds the full grounded-answer instruction: header, the question, then numbered passages.
+     *
+     * Called by {@code CoordinatorService.answerFromDocuments}. Passages are added whole while the total
+     * stays within {@link #MAX_TOTAL_CHARS}; the first one that would not fit, and all after it, are left
+     * out. Pure; no I/O. A null query is treated as empty.
+     *
      * @param passages each holding at least {@code documentTitle} and {@code content}, and
      *     optionally {@code pageNumber} and {@code heading}
      */
@@ -133,10 +144,12 @@ public final class DocumentsPrompt {
         return line.length() <= MAX_SOURCE_CHARS ? line : line.substring(0, MAX_SOURCE_CHARS).stripTrailing();
     }
 
+    /** Collapses whitespace runs to single spaces; null becomes empty. */
     private static String oneLine(String value) {
         return value == null ? "" : value.replaceAll("\\s+", " ").strip();
     }
 
+    /** Keeps at most {@link #MAX_PASSAGE_CHARS} characters of a passage, marking a cut with an ellipsis. */
     private static String cut(String content) {
         if (content == null) {
             return "";
@@ -144,6 +157,7 @@ public final class DocumentsPrompt {
         return content.length() <= MAX_PASSAGE_CHARS ? content : content.substring(0, MAX_PASSAGE_CHARS) + "…";
     }
 
+    /** The value as text, or null when absent. */
     private static String stringOf(Object value) {
         return value == null ? null : String.valueOf(value);
     }

@@ -38,26 +38,41 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @EntityListeners(AuditingEntityListener.class)
 public abstract class BaseEntity implements Persistable<UUID> {
 
+    /**
+     * The primary key. It is assigned when the object is created, using {@link UuidV7}, and never
+     * changes.
+     */
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id = UuidV7.generate();
 
+    /**
+     * Optimistic-lock counter, incremented by Hibernate on every update; a stale save fails instead of
+     * overwriting.
+     */
     @Version
     @Column(name = "version", nullable = false)
     private long version;
 
+    /** When the row was first written; filled by auditing (see {@code JpaAuditingConfig}). */
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** When the row was last changed; refreshed by auditing on every update. */
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * Who caused the insert: the human behind the request, or {@code system}; see {@code
+     * JpaAuditingConfig}.
+     */
     @CreatedBy
     @Column(name = "created_by", updatable = false, length = 64)
     private String createdBy;
 
+    /** Who caused the latest update, resolved in the same way as the creator. */
     @LastModifiedBy
     @Column(name = "updated_by", length = 64)
     private String updatedBy;
@@ -76,27 +91,41 @@ public abstract class BaseEntity implements Persistable<UUID> {
     @JsonIgnore
     private boolean isNew = true;
 
+    /**
+     * Part of the {@link Persistable} contract: Spring Data asks this in {@code save} to choose between
+     * insert and update. Excluded from JSON output.
+     */
     @Override
     @JsonIgnore
     public boolean isNew() {
         return isNew;
     }
 
+    /**
+     * Lifecycle callback: after a row is inserted or loaded it is no longer new, so a later save
+     * updates it. Invoked by Hibernate, never by application code.
+     */
     @PostPersist
     @PostLoad
     void markPersisted() {
         this.isNew = false;
     }
 
+    /** Returns the primary key; also satisfies {@link Persistable}. */
     @Override
     public UUID getId() {
         return id;
     }
 
+    /**
+     * Replaces the generated id. For tests and for rebuilding a row with a known identifier; normal
+     * code keeps the generated one.
+     */
     public void setId(UUID id) {
         this.id = id;
     }
 
+    /** Returns the optimistic-lock version last read or adopted. */
     public long getVersion() {
         return version;
     }
@@ -116,6 +145,10 @@ public abstract class BaseEntity implements Persistable<UUID> {
         }
     }
 
+    /**
+     * Returns when the row was created; the getters below for the audit columns have no further
+     * behaviour.
+     */
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -150,11 +183,16 @@ public abstract class BaseEntity implements Persistable<UUID> {
         return id != null && Objects.equals(id, entity.id);
     }
 
+    /** Hash code from the id, so it is stable for the life of the object; see {@link #equals}. */
     @Override
     public final int hashCode() {
         return id == null ? getClass().hashCode() : id.hashCode();
     }
 
+    /**
+     * Short description for logs: class name, id and version. It deliberately omits field values so
+     * that no personal data is logged.
+     */
     @Override
     public String toString() {
         return getClass().getSimpleName() + "[id=" + id + ", version=" + version + "]";

@@ -47,6 +47,7 @@ export type ScheduleRunsPage = {
 /** Runs shown per page; the server allows up to 100. */
 export const SCHEDULE_RUNS_PAGE_SIZE = 20
 
+/** Normalises a schedule run from the server, turning absent optional fields into null so the page can test them uniformly. */
 const runRow = (run: ScheduleRun): ScheduleRun => ({
   ...run,
   createdAt: run.createdAt ?? null,

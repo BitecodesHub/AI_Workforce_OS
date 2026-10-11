@@ -101,16 +101,29 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: ConnectorState | 'disconnected'; la
   { value: 'disconnected', label: 'Not connected', always: false },
 ]
 
+/**
+ * Ends a message with a full stop unless it already ends in punctuation; used for server text appended to toasts.
+ */
 const withFullStop = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`)
 
 
+/**
+ * A connector's display name: its own display name when it has one, else a known product name for its server key.
+ */
 function connectorName(integration: Pick<Integration, 'server' | 'displayName'>): string {
   return serverLabel(integration.server, integration.displayName)
 }
 
+/**
+ * The category a row is grouped and filtered under; the ElevenLabs voice card is its own "voice" category.
+ */
 const rowCategory = (row: Row) => (row.kind === 'voice' ? 'voice' : row.category)
+/** The name a row sorts by and shows: "ElevenLabs" for the voice card, else the connector's name. */
 const rowName = (row: Row) => (row.kind === 'voice' ? 'ElevenLabs' : connectorName(row.integration))
 
+/**
+ * The searchable text of a row: name, server key, category, description, tool names and the names of agents that use the connector (when the person can read agents).
+ */
 function rowText(row: Row, agents: Agent[] | undefined): string {
   if (row.kind === 'voice') return 'Voice ElevenLabs speech spoken replies voice notes'
   const { integration } = row
@@ -127,6 +140,11 @@ function rowText(row: Row, agents: Agent[] | undefined): string {
 /* ---- Page ------------------------------------------------------------------------------------- */
 
 // @find: Connectors component, connectors page, connect app, add connector dialog, OAuth redirect, /connectors
+/**
+ * The Connectors page (route /connectors, permission integration:read).
+ * Flow: reads the connector list (useIntegrations), the agents list (only with agent:read, to say which agents use each connector) and the voice status (only with chat:use). Rows are the ElevenLabs voice card plus one per connector, grouped by category in catalogue order then by name, and searched and filtered by category and status through useListFilter (state in the address bar). A summary pill says how many are live, on practice data or need attention. Each card offers Connect or Reconnect (opens the connect dialog, a new instance each time so fields start empty), Test and Disconnect (confirmation dialog) according to permissions integration:connect and integration:disconnect; after a disconnect focus moves to the card.
+ * OAuth return: a provider redirects back with ?connected= or ?error=; once the list has loaded the page toasts the outcome, refetches the list and removes the parameters from the address (replace), so a refresh does not repeat the message. If the list fails the voice card still shows.
+ */
 export function Connectors() {
   const query = useIntegrations()
   const canSeeAgents = can('agent:read')
@@ -344,6 +362,16 @@ export function Connectors() {
 /* ---- One connector ------------------------------------------------------------------------------ */
 
 // @find: connector card, connect, disconnect, status, credentials form, POST /api/integrations/connect
+/**
+ * One connector as a card: name, state tag, description, a warning when it needs attention (last
+ * error) or was connected without some permissions, the account and connection times (hidden for
+ * a sandbox connector, which has no account), its capabilities (CapabilityList) and the agents
+ * that use it. Actions follow the connector and the person's permissions: Connect, Reconnect or
+ * Replace key (live connectors, integration:connect; wording follows whether it uses sign-in),
+ * Test connection (any non-sandbox connector; calls useTestIntegration and toasts the result) and
+ * Disconnect (integration:disconnect). A built-in connector with no account shows its setup note
+ * instead. When takeFocus is set, focus moves once to its first enabled action, else its heading.
+ */
 function ConnectorCard({
   integration,
   state,
@@ -551,6 +579,12 @@ function ConnectorCard({
 /* ---- Disconnect --------------------------------------------------------------------------------- */
 
 // @find: disconnect connector dialog, remove connection, DELETE /api/integrations
+/**
+ * Confirmation dialog for disconnecting a connector (useDisconnectIntegration). Confirming deletes
+ * the stored key or token, so agents that use the connector go back to practice data in the
+ * sandbox; on success it toasts that, tells the page which connector to focus, and closes. A
+ * failure is shown inside the dialog, which cannot be closed while the request runs.
+ */
 function DisconnectDialog({
   integration,
   onClose,
@@ -614,6 +648,15 @@ function quotaNote(charactersUsed?: number | null, characterLimit?: number | nul
 }
 
 // @find: voice card, voice status, text to speech, speech to text, chat:use
+/**
+ * The ElevenLabs voice card. Shows whether a key is stored and the usage quota (reading the
+ * status needs chat:use; without it the card only explains where voice is used). With
+ * provider:manage the person can store or replace the key in a dialog. Submitting first asks the
+ * voice service to check the key (POST /api/voice/key/check); a failed check does not block saving,
+ * its message is added to the success toast. The key, cleaned of pasted extras, is then stored under
+ * the reference "elevenlabs" (useStoreCredential), the voice queries are refetched, and the dialog
+ * closes. Field problems appear beside the key field, other failures at the top of the dialog.
+ */
 function VoiceCard() {
   const canReadStatus = can('chat:use')
   const status = useVoiceStatus({ enabled: canReadStatus })

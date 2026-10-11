@@ -74,10 +74,21 @@ import os.aiworkforce.mcp.spi.WorkspaceSecrets;
 @ConditionalOnProperty(name = "aiwos.mcp.sandbox-enabled", havingValue = "true", matchIfMissing = true)
 public class SandboxServerRegistry {
 
+    /** Registry log: server counts at startup and warnings about the seed file. */
     private static final Logger log = LoggerFactory.getLogger(SandboxServerRegistry.class);
+    /** Classpath location of the practice records read by {@link #seeds}. */
     private static final String SEEDS = "/mcp/sandbox-seeds.json";
 
     // @find: register all connector servers, sandbox and live adapters beans
+    /**
+     * Spring entry point: builds the list of every tool server that {@code ToolGateway} registers.
+     *
+     * <p>Flow: decide whether a webhook to a loopback address is allowed (local and test environments
+     * only); build the built-in settings with a late-bound key lookup; build every server through
+     * {@link #servers}; give each OAuth adapter a way to reach the token refresher; log the counts. No
+     * provider is contacted. Only active when {@code aiwos.mcp.sandbox-enabled} is true or absent. The
+     * web browser stays off, with an informational log line, when no runner address is configured.
+     */
     @Bean
     public List<McpServerAdapter> sandboxServers(
             ObjectMapper json,
@@ -138,6 +149,13 @@ public class SandboxServerRegistry {
     }
 
     // @find: build all connector adapters with built in browser and phone
+    /**
+     * Builds every server from its definitions. For each server a {@code SandboxServerAdapter} is made
+     * with its seeds, then either returned as it is (for example {@code voice}) or wrapped in the
+     * live adapter for that provider, which answers from the sandbox until a credential is stored. The
+     * built-in browser and phone servers take their tools directly and have no sandbox twin. Pure
+     * construction: no network call is made.
+     */
     public static List<McpServerAdapter> servers(
             ObjectMapper json, WebClient.Builder http, boolean allowLoopback, BuiltIns builtIns) {
         Map<String, Map<String, List<ObjectNode>>> seeds = seeds(json);
@@ -208,7 +226,11 @@ public class SandboxServerRegistry {
         return servers;
     }
 
-    /* Practice records by server and collection, read once from the classpath. */
+    /**
+     * Practice records by server and collection, read from the classpath seed file. A missing or
+     * unreadable file is logged and gives empty seeds, so the sandbox still works with empty lists.
+     * Only JSON objects are kept as records.
+     */
     static Map<String, Map<String, List<ObjectNode>>> seeds(ObjectMapper json) {
         Map<String, Map<String, List<ObjectNode>>> seeds = new LinkedHashMap<>();
         try (InputStream in = SandboxServerRegistry.class.getResourceAsStream(SEEDS)) {
@@ -238,6 +260,10 @@ public class SandboxServerRegistry {
 
     // ---- Definitions ---------------------------------------------------------------------
 
+    /**
+     * A read tool: idempotent, 20 second timeout, declared ceiling of 60 calls a minute. Never gated by its
+     * class. Scopes are those the grant must carry.
+     */
     private static ToolDefinition read(
             String server, String name, String description, String schema, String... scopes) {
         return new ToolDefinition(
@@ -252,6 +278,10 @@ public class SandboxServerRegistry {
                 60);
     }
 
+    /**
+     * A write tool: changes workspace data but sends nothing outside it, so an agent may use it freely.
+     * Not idempotent, 30 second timeout, declared ceiling of 30 calls a minute.
+     */
     private static ToolDefinition write(
             String server, String name, String description, String schema, String... scopes) {
         return new ToolDefinition(
@@ -266,6 +296,10 @@ public class SandboxServerRegistry {
                 30);
     }
 
+    /**
+     * An outbound tool: leaves the workspace and cannot be recalled, so it always waits for a person.
+     * Not idempotent, which keeps a timeout indeterminate. Declared ceiling of 20 calls a minute.
+     */
     private static ToolDefinition outbound(
             String server, String name, String description, String schema, String... scopes) {
         // Not idempotent: a repeat sends a second message, so a timeout stays indeterminate.
@@ -281,6 +315,10 @@ public class SandboxServerRegistry {
                 20);
     }
 
+    /**
+     * A destructive tool: removes, cancels or refunds, so it always waits for a person. Not idempotent,
+     * 30 second timeout, declared ceiling of 5 calls a minute.
+     */
     private static ToolDefinition destructive(
             String server, String name, String description, String schema, String... scopes) {
         return new ToolDefinition(
@@ -295,6 +333,10 @@ public class SandboxServerRegistry {
                 5);
     }
 
+    /**
+     * Builds an object JSON Schema from property fragments and the names of the required properties.
+     * The gateway validates every call against it.
+     */
     private static String schema(String properties, String... required) {
         String requiredList = required.length == 0
                 ? ""
@@ -307,6 +349,13 @@ public class SandboxServerRegistry {
         return "{\"type\":\"object\",\"properties\":{" + properties + "}" + requiredList + "}";
     }
 
+    /**
+     * The Gmail tools, as data: {@code list_messages, get_message} (read, no approval); {@code
+     * draft_message} (write, no approval by default); {@code send_message} (outbound, always asks a person
+     * first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> gmailTools() {
         List<ToolDefinition> tools = new ArrayList<>();
         tools.add(read(
@@ -344,6 +393,12 @@ public class SandboxServerRegistry {
         return tools;
     }
 
+    /**
+     * The Google Calendar tools, as data: {@code list_events} (read, no approval); {@code create_event}
+     * (write, no approval by default); {@code delete_event} (destructive, always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> calendarTools() {
         return List.of(
                 read(
@@ -372,6 +427,12 @@ public class SandboxServerRegistry {
                         "calendar.events"));
     }
 
+    /**
+     * The Slack tools, as data: {@code get_messages} (read, no approval); {@code post_message} (outbound,
+     * always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> slackTools() {
         return List.of(
                 read("slack", "list_channels", "List channels the workspace can see.", schema(""), "channels:read"),
@@ -389,6 +450,17 @@ public class SandboxServerRegistry {
                         "chat:write"));
     }
 
+    /**
+     * The GitHub tools, as data: {@code list_repos, list_branches, list_issues, list_comments, get_pulls,
+     * get_pull, list_tree, get_file, get_files, compare_branches, list_commits} (read, no approval);
+     * {@code create_repo, create_branch, create_issue, update_issue, add_comment, create_pull, save_file,
+     * rename_file, commit_files} (write, no approval by default); {@code merge_pull} (outbound, always
+     * asks a person first); {@code delete_file} (destructive, always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     * The file and branch tools are answered in the sandbox by {@code GitHubSandboxRepos}; a write to the
+     * default branch is held for approval per call by the adapter.
+     */
     private static List<ToolDefinition> githubTools() {
         String repo = str("repo", "owner/name, for example acme/website");
         return List.of(
@@ -664,6 +736,12 @@ public class SandboxServerRegistry {
     /** At most this many file changes (writes and deletions together) in one github commit_files call. */
     public static final int MAX_GITHUB_CHANGES = 100;
 
+    /**
+     * The Jira tools, as data: {@code search_issues} (read, no approval); {@code create_issue,
+     * update_issue} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> jiraTools() {
         return List.of(
                 read(
@@ -690,6 +768,12 @@ public class SandboxServerRegistry {
                         "write:jira-work"));
     }
 
+    /**
+     * The voice notes tools, as data: {@code create_voice_note} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     * No scopes: a workspace capability with no external account.
+     */
     private static List<ToolDefinition> voiceTools() {
         // No scopes: this is a workspace capability, not an external account an agent connects
         // to, so there is no consent screen whose grant could be missing.
@@ -700,6 +784,12 @@ public class SandboxServerRegistry {
                 schema("\"text\":{\"type\":\"string\",\"maxLength\":2500}", "text")));
     }
 
+    /**
+     * The Google Drive tools, as data: {@code list_files, get_file} (read, no approval); {@code
+     * create_file} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> driveTools() {
         return List.of(
                 read(
@@ -728,43 +818,59 @@ public class SandboxServerRegistry {
 
     // ---- Schema helpers --------------------------------------------------------------------
 
+    /** Joins property fragments with commas for {@link #schema}. */
     private static String props(String... properties) {
         return String.join(",", properties);
     }
 
+    /** A string property fragment. */
     private static String str(String name) {
         return "\"" + name + "\":{\"type\":\"string\"}";
     }
 
+    /** A string property fragment with a description for the model. */
     private static String str(String name, String description) {
         return "\"" + name + "\":{\"type\":\"string\",\"description\":\"" + description + "\"}";
     }
 
+    /** An integer property fragment. */
     private static String integer(String name) {
         return "\"" + name + "\":{\"type\":\"integer\"}";
     }
 
+    /** A number property fragment with a description. */
     private static String number(String name, String description) {
         return "\"" + name + "\":{\"type\":\"number\",\"description\":\"" + description + "\"}";
     }
 
+    /** A boolean property fragment. */
     private static String bool(String name) {
         return "\"" + name + "\":{\"type\":\"boolean\"}";
     }
 
+    /** An array-of-strings property fragment with a description. */
     private static String strings(String name, String description) {
         return "\"" + name + "\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\""
                 + description + "\"}";
     }
 
+    /** An object property fragment with a description. */
     private static String object(String name, String description) {
         return "\"" + name + "\":{\"type\":\"object\",\"description\":\"" + description + "\"}";
     }
 
+    /** The shared {@code limit} property, 1 to 100. */
     private static final String LIMIT = "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":100}";
 
     // ---- Communication ---------------------------------------------------------------------
 
+    /**
+     * The Outlook tools, as data: {@code list_messages, get_message, list_events} (read, no approval);
+     * {@code draft_message} (write, no approval by default); {@code send_message} (outbound, always asks a
+     * person first); {@code delete_message} (destructive, always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> outlookTools() {
         String email = props(str("to"), str("subject"), str("body"));
         return List.of(
@@ -806,6 +912,12 @@ public class SandboxServerRegistry {
                         "Calendars.Read"));
     }
 
+    /**
+     * The Microsoft Teams tools, as data: {@code list_channels, get_messages} (read, no approval); {@code
+     * post_message} (outbound, always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> teamsTools() {
         return List.of(
                 read(
@@ -828,6 +940,13 @@ public class SandboxServerRegistry {
                         "ChannelMessage.Send"));
     }
 
+    /**
+     * The Zoom tools, as data: {@code list_meetings, get_meeting, list_recordings} (read, no approval);
+     * {@code schedule_meeting} (write, no approval by default); {@code cancel_meeting} (destructive,
+     * always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> zoomTools() {
         return List.of(
                 read(
@@ -871,6 +990,13 @@ public class SandboxServerRegistry {
 
     // ---- Productivity and files -------------------------------------------------------------
 
+    /**
+     * The Notion tools, as data: {@code search_pages, get_page} (read, no approval); {@code create_page,
+     * update_page} (write, no approval by default); {@code archive_page} (destructive, always asks a
+     * person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> notionTools() {
         return List.of(
                 read(
@@ -911,6 +1037,12 @@ public class SandboxServerRegistry {
                         "update_content"));
     }
 
+    /**
+     * The Confluence tools, as data: {@code search_pages, get_page} (read, no approval); {@code
+     * create_page, update_page} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> confluenceTools() {
         return List.of(
                 read(
@@ -939,6 +1071,13 @@ public class SandboxServerRegistry {
                         "write:confluence-content"));
     }
 
+    /**
+     * The Asana tools, as data: {@code list_tasks, get_task} (read, no approval); {@code create_task,
+     * update_task} (write, no approval by default); {@code delete_task} (destructive, always asks a person
+     * first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> asanaTools() {
         return List.of(
                 read(
@@ -987,6 +1126,12 @@ public class SandboxServerRegistry {
                         "tasks:delete"));
     }
 
+    /**
+     * The Google Sheets tools, as data: {@code list_spreadsheets, list_rows} (read, no approval); {@code
+     * append_row, update_row} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> sheetsTools() {
         return List.of(
                 read(
@@ -1023,6 +1168,12 @@ public class SandboxServerRegistry {
 
     // ---- Engineering -------------------------------------------------------------------------
 
+    /**
+     * The Linear tools, as data: {@code list_issues, get_issue} (read, no approval); {@code create_issue,
+     * update_issue} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> linearTools() {
         return List.of(
                 read(
@@ -1066,6 +1217,12 @@ public class SandboxServerRegistry {
 
     // ---- Sales, support and finance ------------------------------------------------------------
 
+    /**
+     * The HubSpot tools, as data: {@code list_contacts, search_contacts, list_deals} (read, no approval);
+     * {@code create_contact} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> hubspotTools() {
         return List.of(
                 read(
@@ -1096,6 +1253,12 @@ public class SandboxServerRegistry {
                         "crm.objects.deals.read"));
     }
 
+    /**
+     * The Salesforce tools, as data: {@code search_accounts, list_opportunities, get_opportunity} (read,
+     * no approval); {@code create_lead, update_opportunity} (write, no approval by default).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> salesforceTools() {
         return List.of(
                 read(
@@ -1139,6 +1302,13 @@ public class SandboxServerRegistry {
                         "api"));
     }
 
+    /**
+     * The Zendesk tools, as data: {@code list_tickets, get_ticket} (read, no approval); {@code
+     * update_ticket, add_note} (write, no approval by default); {@code send_reply} (outbound, always asks
+     * a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> zendeskTools() {
         return List.of(
                 read(
@@ -1173,6 +1343,12 @@ public class SandboxServerRegistry {
                         "tickets:write"));
     }
 
+    /**
+     * The Stripe tools, as data: {@code search_customers, list_payments, get_payment, list_invoices}
+     * (read, no approval); {@code refund_payment} (destructive, always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> stripeTools() {
         return List.of(
                 read(
@@ -1214,6 +1390,12 @@ public class SandboxServerRegistry {
 
     // ---- Automation --------------------------------------------------------------------------
 
+    /**
+     * The the webhook tools, as data: {@code list_events} (read, no approval); {@code send_event}
+     * (outbound, always asks a person first).
+     * These definitions are the contract the sandbox and the live adapter both follow; the side-effect
+     * class set here is what the gateway uses to decide on approval.
+     */
     private static List<ToolDefinition> webhookTools() {
         // No scopes: the credential is a web address, and it either accepts events or it does not.
         return List.of(
@@ -1234,6 +1416,12 @@ public class SandboxServerRegistry {
     }
 
     // @find: twilio tools, list_numbers, search_available_numbers, buy_number, release_number, connect_number_to_elevenlabs
+    /**
+     * The Twilio tools, as data: {@code list_numbers} and {@code search_available_numbers} (read, no
+     * approval); {@code buy_number} (outbound, always asks a person first, because it costs money every
+     * month); {@code release_number} (destructive, always asks first); {@code connect_number_to_elevenlabs}
+     * (write, but asks first through the adapter because it hands Twilio credentials to ElevenLabs).
+     */
     private static List<ToolDefinition> twilioTools() {
         // No scopes: an Account SID and Auth token reach the whole account. Buying costs money every
         // month and releasing gives a number up for good, so both always wait for a person;
@@ -1295,7 +1483,10 @@ public class SandboxServerRegistry {
 
     // ---- Built in: the web browser and phone calls -----------------------------------------------
 
-    /* A browser call loads a page and takes a screenshot, so it gets longer than a plain API call. */
+    /**
+     * A built-in browser tool: no scopes, a 75 second timeout and a declared ceiling of 30 calls a
+     * minute. A browser call loads a page and takes a screenshot, so it gets longer than a plain API call.
+     */
     private static ToolDefinition browserTool(
             String name, String description, String schema, ToolSpec.SideEffect sideEffect, boolean idempotent) {
         // 75 s: a step may wait in line for the browser, load a slow page and settle it (BrowserAdapter).
@@ -1304,6 +1495,12 @@ public class SandboxServerRegistry {
     }
 
     // @find: browser tools, open_page, read_page, follow_link, search_site, fill_field, click_button, submit_form
+    /**
+     * The web browser tools, as data: {@code open_page}, {@code read_page}, {@code follow_link} and
+     * {@code search_site} (read, no approval); {@code fill_field} (write that sends nothing, no approval);
+     * {@code click_button} and {@code submit_form} (outbound, always ask a person first). Run by
+     * {@code BrowserAdapter}.
+     */
     private static List<ToolDefinition> browserTools() {
         // No scopes: a built-in capability with no account behind it. Reading is free; clicking and
         // submitting can send something to the site, so both always wait for a person.
@@ -1372,6 +1569,12 @@ public class SandboxServerRegistry {
     }
 
     // @find: phone tools, place_call, get_call, list_calls, voice agents, phone numbers
+    /**
+     * The phone tools, as data: {@code list_voice_agents}, {@code list_phone_numbers}, {@code get_call}
+     * and {@code list_calls} (read, no approval); {@code create_voice_agent} and {@code update_voice_agent}
+     * (write, but always ask a person first through {@code PhoneAdapter.approvalReason}); {@code place_call}
+     * (outbound, always asks first, 45 second timeout). Run by {@code PhoneAdapter}.
+     */
     private static List<ToolDefinition> phoneTools() {
         // No scopes: built in, using the workspace's stored ElevenLabs key. Creating or changing a
         // voice agent is a write that asks a person first (PhoneAdapter.approvalReason).

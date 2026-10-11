@@ -17,8 +17,10 @@ import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
  * shipped templates.
  */
 
+/** The three steps: choose, ask and approve. */
 type StepId = 'choose' | 'ask' | 'approve'
 
+/** The three steps with icon, title and body. */
 const STEPS: ReadonlyArray<{ id: StepId; icon: IconName; title: string; body: string }> = [
   {
     id: 'choose',
@@ -40,6 +42,7 @@ const STEPS: ReadonlyArray<{ id: StepId; icon: IconName; title: string; body: st
   },
 ]
 
+/** Example requests for the ask scene: the text, the assistant that picks it up, what it does on its own and what waits for a person. The wording matches the assistants section and the shipped templates. */
 const REQUESTS: ReadonlyArray<{ text: string; agent: AgentId; alone: string; waits: string }> = [
   {
     text: 'Draft the welcome email for our new starter',
@@ -67,6 +70,7 @@ const REQUESTS: ReadonlyArray<{ text: string; agent: AgentId; alone: string; wai
   },
 ]
 
+/** Up to two capital initials of a name, for the avatar. */
 function initials(name: string): string {
   return name
     .split(' ')
@@ -77,6 +81,7 @@ function initials(name: string): string {
 }
 
 // @find: HowItWorks component, interactive three steps
+/** Home page section "Up and running in three steps" (id how). Three steps are vertical ARIA tabs (arrow keys, Home and End move and select, roving tab index); the selected step opens one illustrative scene in the panel beside it, labelled "Illustration. Nothing is sent." State: the selected step, and each scene keeps its own state (a scene is remounted, so it starts fresh, when its tab is chosen). Static data only; no requests. Rendered by the Landing route. */
 export function HowItWorks(): ReactElement {
   const [step, setStep] = useState<StepId>('choose')
   const tabs = useRef<Partial<Record<StepId, HTMLButtonElement | null>>>({})
@@ -173,6 +178,7 @@ export function HowItWorks(): ReactElement {
   )
 }
 
+/** Scene for step one: toggle buttons for the four example assistants (aria-pressed, starting with HR on the team) and a polite note counting the team. Local state only. */
 function ChooseScene(): ReactElement {
   const [team, setTeam] = useState<ReadonlySet<AgentId>>(() => new Set<AgentId>(['hr']))
   const toggle = (id: AgentId) =>
@@ -220,6 +226,7 @@ function ChooseScene(): ReactElement {
   )
 }
 
+/** Scene for step two: a radio group of four example requests; choosing one shows the request as a bubble and which assistant picks it up, with what it does on its own and what waits for a person. The thread is a polite live region and is re-keyed per choice so it fades in. */
 function AskScene(): ReactElement {
   const [chosen, setChosen] = useState(0)
   const request = REQUESTS[chosen] ?? REQUESTS[0]!
@@ -269,8 +276,10 @@ function AskScene(): ReactElement {
   )
 }
 
+/** The approval scene's state: waiting, approved or rejected. */
 type Decision = 'waiting' | 'approved' | 'rejected'
 
+/** Scene for step three: an example email the HR assistant wants to send, with Approve and Reject buttons. A decision shows what would happen (sent, or nothing sent and the assistant stops) in a polite live region, with a Try again button. Nothing is sent. */
 function ApproveScene(): ReactElement {
   const [decision, setDecision] = useState<Decision>('waiting')
 

@@ -48,16 +48,29 @@ READY_TIMEOUT="${READY_TIMEOUT:-180}"
 STOP_TIMEOUT="${STOP_TIMEOUT:-30}"
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
+# readiness_url PORT
+#   Purpose:   prints the Spring Boot readiness URL of the service listening on PORT.
+#   Arguments: $1, the port number.
+#   Changes:   nothing; writes the URL to standard output. Cannot fail.
 readiness_url() {
   echo "http://127.0.0.1:$1/actuator/health/readiness"
 }
 
 # Ready means the readiness group answers 200. -f turns a 503 (a service that is up but not
 # ready, for example without its database) into a failure instead of counting it as running.
+# is_ready PORT
+#   Purpose:   tests whether the service on PORT reports readiness.
+#   Arguments: $1, the port number.
+#   Changes:   nothing; output is discarded. Returns 0 when ready, non-zero when the request
+#              fails, times out after 2 s or returns a non-2xx status.
 is_ready() {
   curl -fsS -m 2 -o /dev/null "$(readiness_url "$1")" 2>/dev/null
 }
 
+# pid_file NAME
+#   Purpose:   prints the path of the PID file for service NAME under RUN_DIR.
+#   Arguments: $1, the service name.
+#   Changes:   nothing. Cannot fail.
 pid_file() {
   echo "$RUN_DIR/$1.pid"
 }
@@ -65,6 +78,11 @@ pid_file() {
 # A PID file outlives a crash or a reboot, and the system may since have handed its PID to an
 # unrelated program. The PID counts only while that process is still running this service's
 # copied jar; otherwise the file is stale, is removed, and nothing is ever signalled through it.
+# running_pid NAME
+#   Purpose:   prints the PID of service NAME when it is still running this script's jar copy.
+#   Arguments: $1, the service name.
+#   Changes:   removes the PID file when it is stale or unreadable.
+#   Failure:   returns 1 and prints nothing when the service is not running.
 running_pid() {
   local name="$1" file pid
   file="$(pid_file "$name")"
@@ -82,6 +100,11 @@ running_pid() {
 # Services started before this script wrote PID files run straight from target/. They are found
 # by their command line, but only when it is this checkout's jar - an absolute path into it, or a
 # relative one run from its root - so a second clone's services are never touched.
+# legacy_pids NAME
+#   Purpose:   prints the PIDs of service NAME started straight from target/ in this checkout.
+#   Arguments: $1, the service name.
+#   Changes:   nothing; it only reads the process table.
+#   Failure:   always returns 0, with no output when nothing matches.
 legacy_pids() {
   local name="$1" pid cwd
   for pid in $(pgrep -f "services/$name/target/$name.jar" 2>/dev/null || true); do
@@ -95,11 +118,21 @@ legacy_pids() {
   return 0
 }
 
+# listener_on PORT
+#   Purpose:   prints the PID of the process listening on TCP port PORT, if any.
+#   Arguments: $1, the port number.
+#   Changes:   nothing.
+#   Failure:   returns 1 when lsof is not installed; prints nothing when the port is free.
 listener_on() {
   command -v lsof >/dev/null 2>&1 || return 1
   lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null | head -n 1
 }
 
+# report NAME PORT
+#   Purpose:   prints one status line, up or down, for a service.
+#   Arguments: $1 the service name, $2 its port.
+#   Changes:   writes to standard output only.
+#   Failure:   returns 1 when the service is not ready, which status counts as down.
 report() {
   local name="$1" port="$2"
   if is_ready "$port"; then
@@ -110,6 +143,11 @@ report() {
   return 1
 }
 
+# status
+#   Purpose:   prints the state of the seven services and, when relevant, the gateway.
+#   Arguments: none.
+#   Changes:   writes to standard output only (through report).
+#   Failure:   returns non-zero when any listed service is not ready.
 status() {
   local down=0 entry
   for entry in "${SERVICES[@]}"; do
@@ -128,6 +166,11 @@ status() {
 
 # Sends SIGTERM to every service at once, waits for them to finish their graceful shutdown, and
 # only then SIGKILLs whatever is left, so a restart never races an old JVM for its port.
+# stop
+#   Purpose:   stops every service this script or the older direct-from-target launch started.
+#   Arguments: none.
+#   Changes:   signals processes, removes PID files and writes progress to the console.
+#   Failure:   never fails; a process that outlives STOP_TIMEOUT is reported and killed.
 stop() {
   local entry name pid legacy pids=() names=()
   for entry in "${SERVICES[@]}" "$GATEWAY"; do
@@ -165,6 +208,11 @@ stop() {
 }
 
 # Run for every service before any is launched, so a busy port leaves nothing half started.
+# check_port_free NAME PORT
+#   Purpose:   refuses to continue while another process holds the port a service needs.
+#   Arguments: $1 the service name, $2 its port.
+#   Changes:   nothing.
+#   Failure:   prints the holder to standard error and exits the whole script with status 1.
 check_port_free() {
   local name="$1" port="$2" holder
   holder="$(listener_on "$port" || true)"
@@ -175,6 +223,13 @@ check_port_free() {
   fi
 }
 
+# launch NAME PORT
+#   Purpose:   starts one service in the background from a private copy of its jar.
+#   Arguments: $1 the service name, $2 the port it must listen on.
+#   Changes:   writes RUN_DIR/NAME.jar and NAME.pid, rotates and rewrites the log in LOG_DIR,
+#              and starts a detached java process with the local development environment.
+#   Failure:   a missing jar or unwritable directory stops the script (set -e); a service
+#              that crashes after launch is found later by the readiness wait.
 launch() {
   local name="$1" port="$2"
   local jar="services/$name/target/$name.jar"

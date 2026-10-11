@@ -42,6 +42,11 @@ public class OrchestratorClient {
     private final WebClient client;
     private final TokenService tokens;
 
+    /**
+     * Builds a client bound to the orchestrator base URL from configuration. The shared builder is
+     * cloned so this client's settings do not leak into others. The token service mints the bearer
+     * token for each call.
+     */
     public OrchestratorClient(WebClient.Builder builder, PlatformProperties properties, TokenService tokens) {
         this.client = builder.clone().baseUrl(properties.services().orchestrator()).build();
         this.tokens = tokens;
@@ -51,6 +56,10 @@ public class OrchestratorClient {
     /**
      * Pauses the departed member's schedules once the surrounding transaction commits, or at once
      * when there is no transaction. A rolled-back removal tells the orchestrator nothing.
+     *
+     * <p>Flow: registers a transaction callback, or runs at once when none is active; the call goes
+     * through {@link #memberLeft}, and its outcome is only logged, at INFO with the count paused or
+     * at WARN on failure. Nothing is thrown to the caller.
      *
      * @param removedBy the person who removed them, carried in the service token for the audit trail
      */

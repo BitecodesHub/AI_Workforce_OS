@@ -20,8 +20,15 @@ import java.util.regex.Pattern;
  */
 public final class IntentDetector {
 
+    /** Not instantiable; every member is static. */
     private IntentDetector() {}
 
+    /**
+     * What a message without a mention is asking for.
+     *
+     * <p>{@code WORK} is routed to agents by the coordinator, {@code DOCUMENTS} is answered from the
+     * workspace's document passages, and {@code SCHEDULE} is turned into a schedule preview.
+     */
     public enum Intent {
         WORK,
         DOCUMENTS,
@@ -34,9 +41,13 @@ public final class IntentDetector {
                     + "|\\bat\\s+\\d|\\bin\\s+(\\d+|an?|half\\s+an)\\s*(minute|minutes|mins?|hour|hours|hrs?|day|days)\\b"
                     + "|\\b(on|next|this)\\s+(mon|tue|wed|thu|fri|sat|sun)[a-z]*\\b");
 
+    /** First words that make a sentence read as a question. */
     private static final Set<String> QUESTION_STARTERS =
             Set.of("what", "who", "where", "when", "why", "how", "which", "does", "do", "is", "are", "can");
 
+    /**
+     * Verbs that mark a sentence as a request for something to be done, so it is routed as work and not as a document question.
+     */
     private static final Set<String> ACTION_VERBS = Set.of(
             "draft",
             "send",
@@ -93,7 +104,15 @@ public final class IntentDetector {
                     + "|today\\s+at\\s+[\\p{L}0-9:]+"
                     + "|in\\s+\\d+\\s*(minute|minutes|hour|hours|day|days))\\b");
 
-    /** Mentions decide work by themselves; call this only when the message has none. */
+    /**
+     * Mentions decide work by themselves; call this only when the message has none.
+     *
+     * <p>Called by {@code CoordinatorService}. A message is a {@code SCHEDULE} when it carries a
+     * timing marker, does not end in a question mark and the previewer can read a schedule from it;
+     * otherwise a {@code DOCUMENTS} request when it starts with a search phrase or is a question
+     * without an action verb; otherwise {@code WORK}. Empty text is {@code WORK}. Pure apart from the
+     * previewer call, which only parses; nothing is stored.
+     */
     // @find: detect intent of message, schedule or documents or work
     public static Intent detect(String text, ZoneId zone, Instant now, SchedulePreviewer previewer) {
         if (text == null || text.isBlank()) {
@@ -109,10 +128,12 @@ public final class IntentDetector {
         return Intent.WORK;
     }
 
+    /** Whether the text contains any word or phrase that names a recurrence or a time. */
     private static boolean hasTimingMarker(String text) {
         return TIMING_MARKER.matcher(text).find();
     }
 
+    /** Whether the text is a document search or a question with no action verb in it. */
     private static boolean looksLikeDocuments(String text) {
         String trimmed = text.strip();
         String lower = trimmed.toLowerCase(Locale.ROOT);
@@ -126,11 +147,13 @@ public final class IntentDetector {
         return !containsActionVerb(lower);
     }
 
+    /** Whether the first word is one of {@link #QUESTION_STARTERS}. */
     private static boolean startsWithQuestionWord(String lower) {
         Matcher firstWord = Pattern.compile("^[\\p{L}]+").matcher(lower);
         return firstWord.find() && QUESTION_STARTERS.contains(firstWord.group());
     }
 
+    /** Whether any word of {@link #ACTION_VERBS} appears as a whole word. */
     private static boolean containsActionVerb(String lower) {
         for (String verb : ACTION_VERBS) {
             if (Pattern.compile("\\b" + Pattern.quote(verb) + "\\b")
@@ -169,7 +192,9 @@ public final class IntentDetector {
         return remainder.isBlank() ? text.strip() : remainder;
     }
 
+    /** Leading whitespace and separators left where a timing phrase was removed. */
     private static final Pattern SEAM_START = Pattern.compile("^[\\s,;:]+");
+    /** Trailing whitespace and separators left where a timing phrase was removed. */
     private static final Pattern SEAM_END = Pattern.compile("[\\s,;:]+$");
 
     /** Words that name the workspace's own documents, or the policies and handbooks they hold. */

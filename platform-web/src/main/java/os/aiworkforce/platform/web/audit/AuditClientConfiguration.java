@@ -32,6 +32,7 @@ import os.aiworkforce.platform.config.PlatformProperties;
 @Import(AuditClientConfiguration.Wiring.class)
 public final class AuditClientConfiguration {
 
+    /** Not instantiable: the class exists to be named in {@code @Import}. */
     private AuditClientConfiguration() {}
 
     /*
@@ -40,15 +41,25 @@ public final class AuditClientConfiguration {
      * record audit events the outbox and relay (and a missing-token-source failure at startup). As a
      * plain class it is picked up only by the @Import above, when a service asks for it.
      */
+    /**
+     * The beans themselves, kept in a nested class so that only an explicit {@code @Import} brings them in.
+     * Enables scheduling for the relay and binds {@link AuditProperties}.
+     */
     @EnableScheduling
     @EnableConfigurationProperties(AuditProperties.class)
     static class Wiring {
 
+        /** The outbox, stored in the service's own {@code audit_outbox} table through JDBC. */
         @Bean
         AuditOutbox auditOutbox(JdbcTemplate jdbc) {
             return new JdbcAuditOutbox(jdbc);
         }
 
+        /**
+         * The sender that posts events to analytics-service, using the address from the platform
+         * properties and the timeout from {@link AuditProperties}. The builder is cloned so the base URL
+         * set here does not leak into other clients.
+         */
         @Bean
         AuditSender auditSender(
                 WebClient.Builder builder,
@@ -60,11 +71,19 @@ public final class AuditClientConfiguration {
             return new HttpAuditSender(client, tokens, json, properties.sendTimeout());
         }
 
+        /**
+         * The relay that moves events from the outbox to the sender. It is shut down with the context
+         * so that no delivery is cut off silently.
+         */
         @Bean(destroyMethod = "shutdown")
         AuditOutboxRelay auditOutboxRelay(AuditOutbox outbox, AuditSender sender, AuditProperties properties) {
             return new AuditOutboxRelay(outbox, sender, properties);
         }
 
+        /**
+         * The client that services call to record an audit event; it writes to the outbox and nudges
+         * the relay.
+         */
         @Bean
         AuditClient auditClient(
                 AuditOutbox outbox, AuditOutboxRelay relay, ObjectMapper json, AuditProperties properties) {

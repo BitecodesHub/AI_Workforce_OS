@@ -46,11 +46,19 @@ public class AgentMemoryController {
 
     private final AgentMemoryService memories;
 
+    /**
+     * Creates the controller over the agent memory service, which holds all rules and persistence.
+     */
     public AgentMemoryController(AgentMemoryService memories) {
         this.memories = memories;
     }
 
-    /** @param source {@code agent} when the agent kept it while working, {@code person} when somebody wrote it */
+    /**
+     * One note as the API shows it, without storage details. Returned by every endpoint here and by
+     * InternalAgentMemoryController.
+     *
+     * @param source {@code agent} when the agent kept it while working, {@code person} when somebody wrote it
+     */
     public record MemoryView(
             UUID id,
             String kind,
@@ -64,6 +72,7 @@ public class AgentMemoryController {
             Instant updatedAt,
             boolean pinned) {
 
+        /** Copies the fields of an entity into the response record. */
         static MemoryView of(AgentMemory memory) {
             return new MemoryView(
                     memory.getId(),
@@ -80,12 +89,25 @@ public class AgentMemoryController {
         }
     }
 
+    /**
+     * Response of the list endpoint: the notes returned, the total the agent holds and the per-agent cap
+     * (not the page size), so the page can show how full the memory is.
+     */
     public record MemoryList(List<MemoryView> memories, long total, int limit) {}
 
+    /**
+     * Request body for adding or correcting a note. The kind is optional (default fact); the
+     * content is required and limited to {@link AgentMemory#MAX_CONTENT} characters.
+     */
     public record MemoryRequest(
             @Size(max = 20) String kind, @NotBlank @Size(max = AgentMemory.MAX_CONTENT) String content) {}
 
     // @find: GET /api/memory/agents/{agentId}/memories, list, endpoint, agent memory
+    /**
+     * Route: GET /api/memory/agents/{agentId}/memories. Permission: agent:read. Returns the agent's notes
+     * (pinned first, then newest change first, up to {@code limit}, default 200) with the total and the cap.
+     * Read-only; scoped to the workspace on the caller's token.
+     */
     @GetMapping
     @RequiresPermission(Permission.Codes.AGENT_READ)
     @Operation(summary = "What this agent remembers, newest change first")
@@ -97,6 +119,12 @@ public class AgentMemoryController {
     }
 
     // @find: POST /api/memory/agents/{agentId}/memories, add, endpoint, agent memory
+    /**
+     * Route: POST /api/memory/agents/{agentId}/memories. Permission: agent:update. Writes a note with
+     * source person and the caller as author, and returns it with status 201. A duplicate of an existing
+     * note returns that note instead of a second copy. Fails with a validation error for blank, over-long
+     * or secret-looking text and with a conflict when the agent is at its note cap.
+     */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -108,6 +136,11 @@ public class AgentMemoryController {
     }
 
     // @find: PUT /api/memory/agents/{agentId}/memories/{memoryId}, update, endpoint, agent memory
+    /**
+     * Route: PUT /api/memory/agents/{agentId}/memories/{memoryId}. Permission: agent:update. Replaces the
+     * text (and the kind when given) and returns the changed note. Fails with not found when the note is not
+     * this agent's, or with a validation error as for adding.
+     */
     @PutMapping("/{memoryId}")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Operation(summary = "Correct a note")
@@ -118,6 +151,10 @@ public class AgentMemoryController {
     }
 
     // @find: DELETE /api/memory/agents/{agentId}/memories/{memoryId}, delete, endpoint, agent memory
+    /**
+     * Route: DELETE /api/memory/agents/{agentId}/memories/{memoryId}. Permission: agent:update. Removes one
+     * note and returns 204 with no body; not found when it is not this agent's.
+     */
     @DeleteMapping("/{memoryId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -127,6 +164,10 @@ public class AgentMemoryController {
     }
 
     // @find: PUT /api/memory/agents/{agentId}/memories/{memoryId}/pin, pin, endpoint, agent memory
+    /**
+     * Route: PUT /api/memory/agents/{agentId}/memories/{memoryId}/pin. Permission: agent:update. Pins the
+     * note so every recall includes it, and returns the updated note.
+     */
     @PutMapping("/{memoryId}/pin")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Operation(summary = "Pin a note so the agent always recalls it")
@@ -135,6 +176,10 @@ public class AgentMemoryController {
     }
 
     // @find: DELETE /api/memory/agents/{agentId}/memories/{memoryId}/pin, unpin, endpoint, agent memory
+    /**
+     * Route: DELETE /api/memory/agents/{agentId}/memories/{memoryId}/pin. Permission: agent:update. Removes
+     * the pin and returns the updated note; the note itself is kept.
+     */
     @DeleteMapping("/{memoryId}/pin")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
     @Operation(summary = "Unpin a note")
@@ -142,6 +187,7 @@ public class AgentMemoryController {
         return MemoryView.of(memories.pin(orgId(), agentId, memoryId, false));
     }
 
+    /** Response of the forget-all endpoint: how many notes were removed. */
     public record Forgotten(int removed) {}
 
     /**
@@ -156,10 +202,15 @@ public class AgentMemoryController {
         return new Forgotten(memories.forgetAll(orgId(), agentId));
     }
 
+    /** Reads the workspace id from the authenticated request; fails when the request has none. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }
 
+    /**
+     * The identifier recorded as author: the human behind the caller when there is one, otherwise
+     * the actor itself.
+     */
     private static String actorId() {
         Actor actor = RequestContext.requireActor();
         return actor.humanId() != null ? actor.humanId() : actor.id();

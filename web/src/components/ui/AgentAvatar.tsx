@@ -13,6 +13,7 @@ import { initials } from '../../lib/session'
  * components/chat/AgentAvatar.tsx stays in place as a thin re-export.
  */
 
+/** Maps a category tone to the CSS colour variable used to tint the avatar; unknown tones use the neutral muted colour. */
 const TONE_VAR: Record<string, string> = {
   operations: 'var(--category-operations)',
   engineering: 'var(--category-engineering)',
@@ -22,6 +23,12 @@ const TONE_VAR: Record<string, string> = {
 }
 
 // @find: agent avatar, initials, category tint
+/**
+ * Circular avatar showing an agent's initials, tinted by its category tone (categoryTone). Props: name, category,
+ * fallback (the General Employee gets a neutral style with no tint), size (md or sm) and quietInitials (leave the
+ * circle blank when the initials would only repeat the name printed beside it, for example "HR"). Always
+ * aria-hidden, because the agent's name is printed next to it. Stateless.
+ */
 export function AgentAvatar({
   name,
   category,

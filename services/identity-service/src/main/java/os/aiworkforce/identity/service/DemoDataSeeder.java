@@ -58,6 +58,7 @@ public class DemoDataSeeder {
     /** A fixed identifier, so the demo workspace is the same one across restarts and services. */
     public static final UUID DEMO_ORG_ID = UUID.fromString("00000000-0000-7000-8000-000000000001");
 
+    /** One demo account: its address, display name, system role and the line shown on the sign-in screen. */
     private record DemoAccount(String email, String displayName, String role, String describes) {}
 
     private static final List<DemoAccount> ACCOUNTS = List.of(
@@ -93,6 +94,7 @@ public class DemoDataSeeder {
     private final PasswordService passwords;
     private final PlatformProperties properties;
 
+    /** Wires the repositories, the password hasher and the environment settings used by {@link #seed()}. */
     public DemoDataSeeder(
             Users users,
             Roles roles,
@@ -111,6 +113,14 @@ public class DemoDataSeeder {
      * Ordered after PermissionSeeder, which creates the system roles these memberships point at.
      * The annotation belongs on the method: @Order on the class does not order event listeners,
      * and the seeder silently created nothing when it ran first.
+     */
+    /**
+     * Creates the demo accounts that are missing, once the application is ready.
+     *
+     * <p>Does nothing in a deployed environment. For each demo account whose address is unknown and
+     * whose system role exists, saves a verified, active user with the published password and an
+     * active membership in {@link #DEMO_ORG_ID}. An existing account is never touched, and a missing
+     * role is logged and skipped. Runs in one transaction.
      */
     @EventListener(ApplicationReadyEvent.class)
     @Order(20)
@@ -171,5 +181,6 @@ public class DemoDataSeeder {
                 .toList();
     }
 
+    /** The public view of a demo account, returned by {@code DemoController}. Carries no password. */
     public record DemoAccountView(String email, String displayName, String role, String describes) {}
 }

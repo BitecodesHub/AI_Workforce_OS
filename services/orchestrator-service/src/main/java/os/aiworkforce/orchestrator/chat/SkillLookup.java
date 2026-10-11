@@ -19,11 +19,17 @@ public interface SkillLookup {
     record ResolvedSkill(
             UUID id, String name, String instructions, UUID defaultAgentId, List<String> requiredConnectors) {
 
+        /** Copies the connector list defensively; a missing list becomes empty. */
         public ResolvedSkill {
             requiredConnectors = requiredConnectors == null ? List.of() : List.copyOf(requiredConnectors);
         }
     }
 
-    /** The skill, or empty when this workspace has none with that id. */
+    /**
+     * The skill, or empty when this workspace has none with that id.
+     *
+     * <p>Called by {@code CoordinatorService} when a message carries a skill id. Read only; the
+     * implementation is {@code skill.SkillChatLookup}.
+     */
     Optional<ResolvedSkill> find(UUID orgId, UUID skillId);
 }

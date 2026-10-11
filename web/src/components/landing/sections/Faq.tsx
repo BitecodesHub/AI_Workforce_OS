@@ -19,6 +19,7 @@ import { CONNECTOR_NOTICE, PROVIDERS, listOf } from '../shared/landingFacts'
  * reader announces it as expanded or collapsed without any script.
  */
 
+/** The questions and answers, in plain words. Each answer is true of the platform as it ships; connector wording comes from landingFacts, and the provider list is built with listOf. */
 const QUESTIONS: ReadonlyArray<{ q: string; a: string }> = [
   {
     q: 'Will it send anything without asking?',
@@ -51,6 +52,7 @@ const QUESTIONS: ReadonlyArray<{ q: string; a: string }> = [
 ]
 
 // @find: Faq component, FAQ section
+/** Home page section "Questions" (id faq). Renders each question as a native details and summary element inside a Reveal, so it opens with a click, Enter or Space and is announced as expanded or collapsed without script. Static: no state, no requests. */
 export function Faq(): ReactElement {
   return (
     <LandingSection id="faq" labelledBy="faq-title">

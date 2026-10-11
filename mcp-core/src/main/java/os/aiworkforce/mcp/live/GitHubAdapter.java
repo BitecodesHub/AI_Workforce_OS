@@ -31,13 +31,26 @@ import os.aiworkforce.mcp.model.ToolResult;
 import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
 import os.aiworkforce.mcp.sandbox.SandboxServerRegistry;
 
-/** GitHub's REST API with a personal access token. */
+/**
+ * GitHub's REST API with a personal access token.
+ *
+ * <p>Registers 22 tools (issues, pull requests, repositories, branches, comments, files, commits and
+ * trees). Every owner, repository, branch and path argument is checked against a strict pattern
+ * before it is placed in a request address, so a crafted value cannot reach a different API path.
+ * Writes to a repository's default branch always wait for a person
+ * ({@link #approvalReason}), and merging a pull request is an outbound action. Deleting a file is
+ * destructive. Created for each connection by the SandboxServerRegistry and called through the gateway.
+ */
 public final class GitHubAdapter extends LiveServerAdapter {
 
+    /** GitHub's API address; tests pass a stand-in. */
     public static final String BASE_URL = "https://api.github.com";
 
+    /** owner/name of a repository. */
     private static final Pattern REPO = Pattern.compile("^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$");
+    /** A new repository name. */
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9_.-]{1,100}$");
+    /** A GitHub user or organisation name. */
     private static final Pattern OWNER = Pattern.compile("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$");
     /* A branch or a file path: safe characters only, so it can sit in the request path as written. */
     private static final Pattern REF = Pattern.compile("^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$");
@@ -46,16 +59,21 @@ public final class GitHubAdapter extends LiveServerAdapter {
     private static final int MAX_FILE_CHARS = 60_000;
     /* A tree longer than this is cut short, and the result says so. */
     private static final int MAX_TREE_ENTRIES = 1000;
+    /** Most files one get_files call may read; shared with the sandbox twin. */
     private static final int MAX_PATHS = SandboxServerRegistry.MAX_GITHUB_PATHS;
+    /** Most files one commit_files call may change; shared with the sandbox twin. */
     private static final int MAX_CHANGES = SandboxServerRegistry.MAX_GITHUB_CHANGES;
     /* One file written by commit_files, and all of them together. */
     private static final int MAX_COMMIT_FILE_CHARS = 1_000_000;
     private static final int MAX_COMMIT_CHARS = 10_000_000;
+    /** Commits listed by compare_branches before the list is cut. */
     private static final int MAX_COMPARE_COMMITS = 50;
+    /** Changed files listed by compare_branches before the list is cut. */
     private static final int MAX_COMPARE_FILES = 300;
     /* A regular file: git's mode for a blob that is not executable. */
     private static final String FILE_MODE = "100644";
 
+    /** Registers the 22 GitHub tools; {@code baseUrl} is the GitHub API address. */
     public GitHubAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "GitHub", json, http, baseUrl);
         on("list_repos", this::listRepos);
@@ -86,6 +104,11 @@ public final class GitHubAdapter extends LiveServerAdapter {
     private final DefaultBranchWrites defaultBranchWrites = new DefaultBranchWrites();
 
     // @find: github write to default branch needs approval, per call approval
+    /**
+     * Asks a person first when a file write (save, delete, rename or commit) would land on the default branch,
+     * using {@link DefaultBranchWrites}. Called by the gateway before the call. Other tools, and arguments that
+     * cannot be read, give no reason here; the tool itself then validates them.
+     */
     @Override
     public java.util.Optional<String> approvalReason(ToolInvocation invocation) {
         if (!DefaultBranchWrites.TOOLS.contains(invocation.tool())) {
@@ -99,6 +122,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         }
     }
 
+    /** Bearer token plus the headers GitHub asks for: JSON media type, API version and a user agent. */
     @Override
     protected void authorize(HttpHeaders headers, String token) {
         headers.setBearerAuth(token);
@@ -107,12 +131,14 @@ public final class GitHubAdapter extends LiveServerAdapter {
         headers.set(HttpHeaders.USER_AGENT, "ai-workforce-os");
     }
 
+    /** Reads the signed-in user (a read call) and answers the login name. */
     @Override
     protected Mono<String> whoAmI(String token) {
         return get(token, "/user").map(user -> user.path("login").asText("GitHub user"));
     }
 
     // @find: GitHub list issues, tool github__list_issues, live GitHub call
+    /** Tool list_issues (read). Lists up to 30 issues by state; pull requests that GitHub mixes into the list are left out. */
     private Mono<ToolResult> listIssues(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String state = text(arguments, "state");
@@ -134,6 +160,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub get pulls, tool github__get_pulls, live GitHub call
+    /** Tool get_pulls (read). Lists up to 30 open pull requests. */
     private Mono<ToolResult> getPulls(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         return get(token, "/repos/{owner}/{repo}/pulls?state=open&per_page=30", repo[0], repo[1])
@@ -159,6 +186,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub create issue, tool github__create_issue, live GitHub call
+    /** Tool create_issue (write). Opens an issue with a title and optional body. Not idempotent. */
     private Mono<ToolResult> createIssue(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         ObjectNode body = json.createObjectNode();
@@ -174,6 +202,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub update issue, tool github__update_issue, live GitHub call
+    /** Tool update_issue (write). Changes the state, title or body of an issue; refuses a call that changes nothing. */
     private Mono<ToolResult> updateIssue(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = required(arguments, "id").replaceFirst("^#", "");
@@ -205,6 +234,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     // ---- Repositories and branches -------------------------------------------------------------
 
     // @find: GitHub list repos, tool github__list_repos, live GitHub call
+    /** Tool list_repos (read). Lists the token owner's repositories, or an organisation's when an owner is given. Learns each default branch for later approval decisions. */
     private Mono<ToolResult> listRepos(ToolInvocation invocation, JsonNode arguments, String token) {
         int limit = limit(arguments, 30, 100);
         String owner = text(arguments, "owner");
@@ -219,6 +249,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub create repo, tool github__create_repo, live GitHub call
+    /** Tool create_repo (write). Creates a repository, private unless stated otherwise, with a README so a default branch exists. Not idempotent. */
     private Mono<ToolResult> createRepo(ToolInvocation invocation, JsonNode arguments, String token) {
         // "test repo" becomes test-repo, the way GitHub's own form suggests it.
         String name = required(arguments, "name").replaceAll("\\s+", "-");
@@ -247,6 +278,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub list branches, tool github__list_branches, live GitHub call
+    /** Tool list_branches (read). Lists up to 100 branches with their head commit and protection flag. */
     private Mono<ToolResult> listBranches(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         return get(token, "/repos/{owner}/{repo}/branches?per_page=100", repo[0], repo[1]).map(body -> {
@@ -264,6 +296,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub create branch, tool github__create_branch, live GitHub call
+    /** Tool create_branch (write). Creates a branch from the given branch, or from the default branch: reads the source head, then creates the reference. Not idempotent. */
     private Mono<ToolResult> createBranch(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String branch = ref(required(arguments, "branch"), "branch");
@@ -290,6 +323,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     // ---- Comments -------------------------------------------------------------------------------
 
     // @find: GitHub list comments, tool github__list_comments, live GitHub call
+    /** Tool list_comments (read). Lists up to 50 comments on an issue or pull request. */
     private Mono<ToolResult> listComments(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "issue");
@@ -304,6 +338,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub add comment, tool github__add_comment, live GitHub call
+    /** Tool add_comment (write). Adds a comment to an issue or pull request. Not idempotent. */
     private Mono<ToolResult> addComment(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "issue");
@@ -316,6 +351,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     // ---- Pull requests --------------------------------------------------------------------------
 
     // @find: GitHub get pull, tool github__get_pull, live GitHub call
+    /** Tool get_pull (read). Reads one pull request, including whether it can be merged when GitHub knows. */
     private Mono<ToolResult> getPull(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "id");
@@ -324,6 +360,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub create pull, tool github__create_pull, live GitHub call
+    /** Tool create_pull (write). Opens a pull request from a head branch into the given base, or the default branch. Changes reach the default branch only when the pull request is merged, which is a separate tool. */
     private Mono<ToolResult> createPull(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String title = required(arguments, "title");
@@ -350,6 +387,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub merge pull, tool github__merge_pull, live GitHub call
+    /** Tool merge_pull (outbound; changes the default branch and so waits for a person). Merges with the chosen method: merge, squash or rebase. */
     private Mono<ToolResult> mergePull(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String number = number(arguments, "id");
@@ -373,6 +411,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     // ---- Files ----------------------------------------------------------------------------------
 
     // @find: GitHub get file, tool github__get_file, live GitHub call
+    /** Tool get_file (read). Reads a file, decoded and cut at a size limit, or lists a folder. */
     private Mono<ToolResult> getFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String path = path(arguments);
@@ -393,6 +432,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub save file, tool github__save_file, live GitHub call
+    /** Tool save_file (write; asks first on the default branch). Creates or replaces one file. Reads the current version first because GitHub needs it to replace a file, and treats a missing file as new. */
     private Mono<ToolResult> saveFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String path = path(arguments);
@@ -432,6 +472,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub list tree, tool github__list_tree, repository files and folders, live GitHub call
+    /** Tool list_tree (read). Lists every file and folder in a branch through the recursive tree call, optionally below a folder, cut at a limit that the result reports. */
     private Mono<ToolResult> listTree(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String ref = text(arguments, "ref");
@@ -472,6 +513,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub get files, tool github__get_files, read several files at once, live GitHub call
+    /** Tool get_files (read). Reads several files one after another; a missing file is reported inside the result, and the call fails only when none exist. */
     private Mono<ToolResult> getFiles(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String ref = text(arguments, "ref");
@@ -537,6 +579,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub delete file, tool github__delete_file, live GitHub call
+    /** Tool delete_file (destructive; asks first on the default branch). Reads the file's current version, then deletes it with a commit. The file stays in history. */
     private Mono<ToolResult> deleteFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String path = path(arguments);
@@ -575,6 +618,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub rename file, move file, tool github__rename_file, git data API, live GitHub call
+    /** Tool rename_file (write; asks first on the default branch). Moves a file in one commit through the git data calls: reads the head and tree, checks the target is free, builds a tree that adds and removes the path, creates the commit and moves the branch forward. */
     private Mono<ToolResult> renameFile(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String from = path(required(arguments, "from"), "from");
@@ -618,6 +662,13 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub commit files, many files one commit, tool github__commit_files, git data API, live GitHub call
+    /**
+     * Tool commit_files (write; asks first on the default branch). Writes and deletes many files in one commit.
+     * Arguments are checked first. The repository is then read to learn the default branch; if the target turns out to be
+     * the default and the gateway did not hold the call, it is refused so that the next call asks for approval. Blobs are
+     * created, then a tree and a commit, and the branch is created or moved forward without force. Starts the branch from
+     * the given source or the default branch when it does not exist yet.
+     */
     private Mono<ToolResult> commitFiles(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String branch = ref(required(arguments, "branch"), "branch");
@@ -686,6 +737,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub compare branches, ahead behind, tool github__compare_branches, live GitHub call
+    /** Tool compare_branches (read). Reports how far one branch is ahead of or behind another, with the commits and changed files (each list cut at a limit). */
     private Mono<ToolResult> compareBranches(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         String base = ref(required(arguments, "base"), "base");
@@ -727,6 +779,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
     }
 
     // @find: GitHub list commits, history, tool github__list_commits, live GitHub call
+    /** Tool list_commits (read). Lists recent commits, optionally for a branch or a path. */
     private Mono<ToolResult> listCommits(ToolInvocation invocation, JsonNode arguments, String token) {
         String[] repo = repo(arguments);
         int limit = limit(arguments, 20, 100);
@@ -814,6 +867,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return entry;
     }
 
+    /** The commit fields shared with agents, preferring the GitHub login over the git author name. */
     private ObjectNode commit(JsonNode commit) {
         ObjectNode item = json.createObjectNode();
         item.put("id", commit.path("sha").asText());
@@ -882,12 +936,14 @@ public final class GitHubAdapter extends LiveServerAdapter {
 
     // ---- Shapes ---------------------------------------------------------------------------------
 
+    /** The repository's default branch, read from GitHub and remembered for approval decisions. */
     private Mono<String> defaultBranch(String token, String[] repo) {
         return get(token, "/repos/{owner}/{repo}", repo[0], repo[1])
                 .map(body -> ref(body.path("default_branch").asText("main"), "default branch"))
                 .doOnNext(main -> defaultBranchWrites.learn(name(repo), main));
     }
 
+    /** The repository fields shared with agents; also records the default branch. */
     private ObjectNode repository(JsonNode repo) {
         ObjectNode item = json.createObjectNode();
         item.put("id", repo.path("full_name").asText());
@@ -902,6 +958,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return item;
     }
 
+    /** The comment fields shared with agents. */
     private ObjectNode comment(JsonNode comment) {
         ObjectNode item = json.createObjectNode();
         item.put("id", comment.path("id").asText());
@@ -912,6 +969,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return item;
     }
 
+    /** The pull request fields shared with agents; a merged pull request reports the state merged. */
     private ObjectNode pull(JsonNode pull) {
         ObjectNode item = json.createObjectNode();
         item.put("id", pull.path("number").asText());
@@ -931,6 +989,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return item;
     }
 
+    /** A file or folder entry; content, when given, is cut at a size limit and flagged as truncated. */
     private ObjectNode file(JsonNode entry, String content) {
         ObjectNode item = json.createObjectNode();
         item.put("id", entry.path("path").asText());
@@ -962,6 +1021,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         }
     }
 
+    /** Checks an owner name against the allowed pattern. */
     private static String owner(String owner) {
         if (!OWNER.matcher(owner).matches()) {
             throw new VendorException("The owner must be a GitHub account or organisation name, for example acme.");
@@ -969,6 +1029,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return owner;
     }
 
+    /** Checks a branch, tag or default-branch name so it is safe in an address; refuses spaces, double dots and names ending in .lock. */
     private static String ref(String value, String field) {
         String ref = value.strip();
         if (!REF.matcher(ref).matches() || ref.contains("..") || ref.endsWith(".lock")) {
@@ -978,6 +1039,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return ref;
     }
 
+    /** The checked {@code path} argument. */
     private static String path(JsonNode arguments) {
         return path(required(arguments, "path"), "path");
     }
@@ -993,6 +1055,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return path;
     }
 
+    /** An issue or pull request number, with an optional leading #. */
     private static String number(JsonNode arguments, String field) {
         String number = required(arguments, field).replaceFirst("^#", "");
         if (!number.matches("\\d{1,10}")) {
@@ -1001,6 +1064,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return number;
     }
 
+    /** The issue fields shared with agents. */
     private ObjectNode issue(JsonNode issue) {
         ObjectNode item = json.createObjectNode();
         item.put("id", issue.path("number").asText());
@@ -1026,6 +1090,7 @@ public final class GitHubAdapter extends LiveServerAdapter {
         return new String[] {match.group(1), match.group(2)};
     }
 
+    /** owner/name text for summaries. */
     private static String name(String[] repo) {
         return repo[0] + "/" + repo[1];
     }

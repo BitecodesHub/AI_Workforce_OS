@@ -59,6 +59,14 @@ public class OrgCredentialResolver implements CredentialResolver {
     private final InternalTokenProvider tokens;
     private final ResiliencePresets resilience;
 
+    /**
+     * Builds a client for the organisation service.
+     *
+     * @param builder Spring's shared WebClient builder
+     * @param properties platform configuration: organisation service URL
+     * @param tokens mints a service token for the workspace being resolved
+     * @param resilience supplies the circuit breaker and back-off for {@link #DEPENDENCY}
+     */
     public OrgCredentialResolver(
             WebClient.Builder builder,
             PlatformProperties properties,
@@ -70,12 +78,35 @@ public class OrgCredentialResolver implements CredentialResolver {
     }
 
     // @find: resolve provider credential
+    /**
+     * The credential value, or empty when there is none or the store could not be asked. A
+     * convenience over {@link #lookup} that loses the reason; callers that must tell "no key"
+     * from "store down" use {@link #lookup} instead.
+     *
+     * @param orgId the workspace id as text
+     * @param credentialRef the stored reference to the provider key
+     * @return the key, or empty
+     */
     @Override
     public Optional<String> resolve(String orgId, String credentialRef) {
         return lookup(orgId, credentialRef) instanceof Found found ? Optional.of(found.value()) : Optional.empty();
     }
 
     // @find: lookup credential with reason
+    /**
+     * Fetches the credential and says why when there is none.
+     *
+     * <p>Flow: a blank reference or a workspace id that is not a UUID is answered NotFound at once,
+     * with no call. Otherwise up to two attempts of {@link #fetch} run through the organisation
+     * service's circuit breaker, with a jittered back-off between them and a retry only for
+     * transient failures. An open breaker, or two failures, give Unavailable. Side effects: an
+     * internal HTTP read and a warning log that never contains the key. Never throws for a store
+     * failure.
+     *
+     * @param orgId the workspace id as text; null or malformed gives NotFound
+     * @param credentialRef the stored reference to the provider key; blank gives NotFound
+     * @return Found with the key, NotFound, or Unavailable with a short reason
+     */
     @Override
     public Lookup lookup(String orgId, String credentialRef) {
         if (credentialRef == null || credentialRef.isBlank()) {
@@ -177,5 +208,6 @@ public class OrgCredentialResolver implements CredentialResolver {
         return cause.getClass().getSimpleName();
     }
 
+    // The organisation service's reply: the decrypted key, or a null value when nothing is stored.
     private record CredentialResponse(String value) {}
 }

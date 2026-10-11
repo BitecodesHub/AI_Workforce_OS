@@ -64,6 +64,7 @@ public class ModelPolicyEntity extends OrgScopedEntity {
     @OrderBy("position ASC")
     private List<ModelPolicyCandidate> candidates = new ArrayList<>();
 
+    /** True for the policy that applies to the whole workspace, that is, one not tied to a single agent. */
     public boolean isWorkspaceDefault() {
         return agentId == null;
     }

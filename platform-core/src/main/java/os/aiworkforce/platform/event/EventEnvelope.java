@@ -50,6 +50,21 @@ public record EventEnvelope<T>(
         int attempt,
         Map<String, String> headers) {
 
+    /**
+     * Starts a new causal chain.
+     *
+     * <p>Generates a fresh {@code eventId}, stamps the current time, and takes the correlation
+     * identifier and actor snapshot from {@link RequestContext} on the calling thread, so it must run
+     * inside a request or a restored context. Attempt starts at one and there is no causation
+     * identifier. No side effects beyond reading the context; publishing is the caller's job.
+     *
+     * @param type dotted event name from {@link EventTopics}
+     * @param version payload schema version
+     * @param orgId the workspace the fact belongs to
+     * @param subjectId the primary entity, which also becomes the partition key
+     * @param payload the event body
+     * @return the new envelope
+     */
     public static <T> EventEnvelope<T> of(String type, int version, String orgId, String subjectId, T payload) {
         return new EventEnvelope<>(
                 UUID.randomUUID().toString(),

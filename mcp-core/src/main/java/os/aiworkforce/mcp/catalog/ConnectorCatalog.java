@@ -26,6 +26,13 @@ public class ConnectorCatalog {
 
     private final Map<String, ConnectorInfo> connectors = new LinkedHashMap<>();
 
+    /**
+     * Builds the whole catalog in three groups: token connectors, token connectors with several
+     * fields in the connect dialog, and OAuth connectors. Runs once when the bean (or the static copy in
+     * {@code ToolLabels}) is created. Side effects: none beyond filling the in-memory map. Throws
+     * {@code IllegalStateException} if a server is listed twice, which fails startup rather than hiding
+     * a duplicate.
+     */
     public ConnectorCatalog() {
         // ---- Live with a token ---------------------------------------------------------------
         add(new ConnectorInfo(
@@ -252,15 +259,24 @@ public class ConnectorCatalog {
     }
 
     // @find: list all connectors, connector catalog list
+    /**
+     * Every connector in the order it was added, as an immutable copy. Used by the connectors
+     * listing endpoint.
+     */
     public List<ConnectorInfo> all() {
         return List.copyOf(connectors.values());
     }
 
     // @find: find connector by server name, look up connector
+    /** One connector by server name, or empty when the name is not in the catalog. */
     public Optional<ConnectorInfo> find(String server) {
         return Optional.ofNullable(connectors.get(server));
     }
 
+    /**
+     * Adds a token connector (the administrator pastes a credential). The field list may be empty,
+     * which the dialog treats as a single secret box.
+     */
     private void token(
             String server,
             String displayName,
@@ -302,6 +318,7 @@ public class ConnectorCatalog {
                 setup));
     }
 
+    /** Stores one entry and rejects a duplicate server name. */
     private void add(ConnectorInfo info) {
         if (connectors.putIfAbsent(info.server(), info) != null) {
             throw new IllegalStateException("Connector listed twice: " + info.server());

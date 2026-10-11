@@ -1,6 +1,6 @@
 // @find: time zone field, timezone picker, choose time zone, schedule timezone, onboarding timezone, TimeZoneField
 // @what: Input field for choosing an IANA time zone with a datalist of options.
-// @flow: Used by onboarding and schedule forms
+// @flow: Used by the Settings and Create workspace pages
 import { useId } from 'react'
 import { Input } from '../ui'
 import { timeInZone } from '../../lib/settingsQueries'
@@ -16,6 +16,12 @@ import { timeInZone } from '../../lib/settingsQueries'
  */
 
 // @find: TimeZoneField, time zone picker
+/**
+ * Text input with a native datalist of the supplied zones (the platform refuses names it does not recognise).
+ * The hint appends the current time in the chosen zone (timeInZone) once the value is a known choice, so a
+ * person can confirm the pick. Props: id, label, value, onChange, choices, error and hint. Used by the
+ * Settings and Create workspace pages.
+ */
 export function TimeZoneField({
   id,
   label = 'Time zone',

@@ -1,6 +1,6 @@
 // @find: knowledge base, knowledge, documents, sources, Qdrant, vector store, vector database, vector search, collection, upsert vectors, delete vectors, delete by document, delete by source, semantic search, search by meaning, reachable, health, QdrantClient
 // @what: REST client for the Qdrant vector database: creates collections, writes, searches and deletes vector points.
-// @flow: Called by IngestionService (write/delete), RetrievalService (search) and KnowledgeController.health.
+// @flow: Called by IngestionService (write/delete), RetrievalService (search) and EmbeddingModelChange (removing old vectors).
 package os.aiworkforce.knowledge.service;
 
 import java.time.Duration;
@@ -57,6 +57,13 @@ public class QdrantClient {
     private final WebClient client;
     private final ObjectMapper json;
 
+    /**
+     * Builds the client for the Qdrant REST API.
+     *
+     * @param builder the shared HTTP client builder
+     * @param baseUrl the store address, from the {@code QDRANT_URL} environment variable
+     * @param json the object mapper used to build request bodies and read responses
+     */
     public QdrantClient(
             WebClient.Builder builder,
             @Value("${QDRANT_URL:http://localhost:6333}") String baseUrl,
@@ -66,6 +73,9 @@ public class QdrantClient {
     }
 
     /**
+     * One vector to write, built by {@code IngestionService} for each stored passage and passed to
+     * {@link #upsert}. The chunk identifier is used as the point id.
+     *
      * @param chunkId the chunk this vector belongs to, so a hit resolves to a citable passage
      * @param vector the embedding
      * @param payload filters and display fields, including the workspace
@@ -73,6 +83,9 @@ public class QdrantClient {
     public record Point(UUID chunkId, float[] vector, Map<String, Object> payload) {}
 
     /**
+     * One search result returned by {@link #search}, which {@code RetrievalService} resolves to a
+     * citable passage in Postgres.
+     *
      * @param chunkId which chunk matched
      * @param score similarity, for ranking and for a confidence signal in the interface
      * @param payload what was stored alongside it
@@ -80,7 +93,12 @@ public class QdrantClient {
     public record Hit(UUID chunkId, double score, Map<String, Object> payload) {}
 
     // @find: collection name per workspace
-    /** Collection names carry the dimension, so a mismatched model cannot corrupt an index. */
+    /**
+     * Collection names carry the dimension, so a mismatched model cannot corrupt an index.
+     *
+     * <p>This older form names a collection by workspace and width only; the overload that takes
+     * the provider and model is the one that separates models of the same width.
+     */
     public static String collectionFor(String prefix, UUID orgId, int dimension) {
         return prefix + "_" + orgId.toString().replace("-", "") + "_d" + dimension;
     }
@@ -103,6 +121,17 @@ public class QdrantClient {
     }
 
     // @find: create qdrant collection, where vectors are created
+    /**
+     * Makes sure a collection exists with the wanted width, creating it with its payload indexes when it
+     * does not.
+     *
+     * <p>Flow: reads the collection (a failed read is treated as absent), refuses a width that differs
+     * from an existing one, and otherwise creates it with cosine distance. Called by {@code IngestionService}
+     * before vectors are written.
+     *
+     * @throws ApiException {@code EMBEDDING_DIMENSION_MISMATCH} when the collection exists with another
+     *     width; {@code UPSTREAM_UNAVAILABLE} when the store cannot be reached or refuses creation
+     */
     public void ensureCollection(String collection, int dimension) {
         try {
             JsonNode existing = client.get()
@@ -164,6 +193,9 @@ public class QdrantClient {
      * <p>Without an index on {@code orgId}, the tenant filter degrades to a scan of the whole
      * collection - which is both slow and, at scale, the sort of slow that makes people ask
      * whether the filter is really being applied.
+     *
+     * <p>Called once by {@link #ensureCollection} when it creates a collection. A failure to create
+     * an index is logged at debug level and ignored, because queries still work without it.
      */
     private void createPayloadIndexes(String collection) {
         for (String field : List.of("orgId", "sourceId", "documentId")) {
@@ -190,6 +222,11 @@ public class QdrantClient {
      * limit or its timeout, and was reported as "vector store unavailable" when the store was fine.
      * A failed batch fails the call; the batches before it stay written, and they belong to
      * passages that exist, so they are correct rather than orphaned.
+     *
+     * <p>Called by {@code IngestionService} when a document is indexed or re-indexed. Each batch is
+     * a blocking HTTP call that waits for the write to complete.
+     *
+     * @throws ApiException {@code INGESTION_FAILED} when a batch is refused or times out
      */
     public void upsert(String collection, List<Point> points) {
         for (int start = 0; start < points.size(); start += UPSERT_BATCH) {
@@ -197,6 +234,11 @@ public class QdrantClient {
         }
     }
 
+    /**
+     * Sends one batch of points as a single write request and waits for it to be applied.
+     *
+     * @throws ApiException {@code INGESTION_FAILED} when the store rejects the batch or the call times out
+     */
     private void upsertBatch(String collection, List<Point> points) {
         ObjectNode body = json.createObjectNode();
         ArrayNode array = body.putArray("points");
@@ -241,7 +283,16 @@ public class QdrantClient {
      * person's request path, and a store that hangs must cost the meaning-based half of the answer,
      * not the whole answer.
      *
+     * <p>Called by {@code RetrievalService} for the meaning-based half of a search.
+     *
+     * @param collection the collection of the embedding model that produced the query vector
+     * @param orgId the workspace the caller belongs to
      * @param sourceIds the sources to search; none means nothing to search, and nothing is sent
+     * @param queryVector the embedded question
+     * @param limit the maximum number of hits
+     * @param minScore the lowest similarity to return, or null for no threshold
+     * @return the hits, best first; empty when no source is given
+     * @throws ApiException {@code UPSTREAM_UNAVAILABLE} when the store fails or exceeds the search timeout
      */
     public List<Hit> search(
             String collection,
@@ -298,7 +349,12 @@ public class QdrantClient {
     }
 
     // @find: delete vectors of a document, remove document from search
-    /** Removes every vector for a document, used when a document is deleted. */
+    /**
+     * Removes every vector for a document, used when a document is deleted.
+     *
+     * <p>Best effort: a failure is logged and not thrown, because the Postgres rows are the
+     * authority and retrieval resolves every hit there.
+     */
     public void deleteByDocument(String collection, UUID documentId) {
         deleteMatching(collection, "documentId", documentId, "document");
     }
@@ -309,6 +365,8 @@ public class QdrantClient {
      *
      * <p>By filter, never by dropping the collection: one collection holds every source of a
      * workspace that shares an embedding width, so dropping it would erase the other sources too.
+     *
+     * <p>Best effort, like {@link #deleteByDocument}: a failure is logged and not thrown.
      */
     public void deleteBySource(String collection, UUID sourceId) {
         deleteMatching(collection, "sourceId", sourceId, "source");
@@ -337,6 +395,11 @@ public class QdrantClient {
         }
     }
 
+    /**
+     * Deletes every point whose payload field {@code key} equals {@code value}. Shared by
+     * {@link #deleteByDocument} and {@link #deleteBySource}; {@code what} only words the log message.
+     * A failure is logged and not thrown.
+     */
     private void deleteMatching(String collection, String key, UUID value, String what) {
         ObjectNode body = json.createObjectNode();
         ObjectNode filter = body.putObject("filter");
@@ -353,6 +416,10 @@ public class QdrantClient {
         }
     }
 
+    /**
+     * Sends a delete request to the store and waits for it to be applied. Failures propagate to the caller,
+     * which decides whether to log or fail.
+     */
     private void postDelete(String collection, ObjectNode body) {
         client.post()
                 .uri(builder -> builder.path("/collections/{collection}/points/delete")
@@ -366,6 +433,12 @@ public class QdrantClient {
     }
 
     // @find: is qdrant up, vector store health check
+    /**
+     * Checks the store's health endpoint with a five second limit. Nothing in this service calls it at
+     * present.
+     *
+     * @return true when the store answered; false on any failure, never an exception
+     */
     public boolean isReachable() {
         try {
             return client.get()

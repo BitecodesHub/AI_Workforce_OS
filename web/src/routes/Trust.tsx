@@ -34,6 +34,9 @@ const TRUST_SECTIONS: readonly BarSection[] = [
 ]
 
 // @find: Trust component, technical details page, /trust
+/**
+ * The public technical details page (route /trust; no permission, no data fetching) for IT and security reviewers. Sections, in order: hero (with the default trace retention of 180 days), four interactive safety demos, the permission model (role switcher), the platform band, and limits, then a call to action to try the sandbox model. The navigation bar and footer list the same sections, and link back to the overview at /home. Provides a skip link to the main landmark.
+ */
 export function Trust(): ReactElement {
   return (
     <LandingRoot>

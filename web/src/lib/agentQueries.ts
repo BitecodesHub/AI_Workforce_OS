@@ -138,6 +138,7 @@ function finishedOf(outcome: AgentOutcome | undefined): number {
   return outcome.finishedRuns ?? outcome.completed + outcome.failed + (outcome.cancelled ?? 0)
 }
 
+/** Value shown in place of a success rate while too few runs have finished to judge. */
 export const NOT_ENOUGH_RUNS = 'Not enough runs yet'
 
 /**

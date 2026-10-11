@@ -32,12 +32,24 @@ import os.aiworkforce.analytics.domain.AuditEvent;
 @Component
 public class AuditSearch {
 
+    /** Entity manager injected by the container; used only to build and run the criteria query. */
     @PersistenceContext
     private EntityManager entityManager;
 
     /**
+     * Returns one page of a workspace's audit entries, newest first.
+     *
+     * <p>Flow: build a criteria query that always restricts to the organisation, add one condition
+     * for each filter field that is set (the date range includes {@code from} and excludes
+     * {@code to}), apply the optional cursor, order by sequence descending and limit the result.
+     * Read-only; no count is run. Called by AuditController for the list and the export.
+     *
+     * @param orgId the caller's workspace, never taken from the filter
+     * @param filter optional narrowing criteria
+     * @param limit maximum number of entries returned
      * @param before only entries with a lower sequence than this, or null for the newest
      * @param offset entries to skip after that, for the offset paging the list endpoint still allows
+     * @return matching entries, newest first; empty when none match
      */
     @Transactional(readOnly = true)
     // @find: search audit log, list audit events, filter audit

@@ -31,6 +31,11 @@ import os.aiworkforce.orchestrator.domain.Run;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for Run rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface Runs extends JpaRepository<Run, UUID> {
 
     // @find: list runs newest first, Runs page

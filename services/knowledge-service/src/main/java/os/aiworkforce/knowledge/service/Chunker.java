@@ -34,6 +34,9 @@ public class Chunker {
     private static final Pattern SENTENCE = Pattern.compile("(?<=[.!?])\\s+(?=[A-Z\"'(\\[])");
 
     /**
+     * One passage produced by the chunker, before it is stored. This is not the JPA entity of the
+     * same name: {@code IngestionService} maps each of these onto a {@code domain.Chunk} row.
+     *
      * @param content the passage
      * @param position its order within the document
      * @param heading the nearest heading above it, which gives a retrieved passage its context
@@ -42,12 +45,31 @@ public class Chunker {
      */
     public record Chunk(String content, int position, String heading, int charStart, int charEnd) {
 
+        /**
+         * A rough token count, one token for every three characters and never less than one. It is a budgeting
+         * estimate stored with the passage, not a tokenizer result.
+         */
         public int tokenEstimate() {
             return Math.max(1, content.length() / 3);
         }
     }
 
     // @find: chunk text, split document into passages, chunk size and overlap
+    /**
+     * Splits extracted text into ordered, overlapping passages.
+     *
+     * <p>Flow: splits the text by heading, merges each section's paragraphs up to the target size, and
+     * prepends the tail of the previous passage to each passage after the first. The target is never
+     * below 200 characters, and the overlap is capped at a third of the target.
+     *
+     * <p>Called by {@code IngestionService} when a document is ingested or re-indexed. Pure and free of
+     * side effects.
+     *
+     * @param text the extracted document text
+     * @param targetSize the wanted passage size in characters
+     * @param overlap characters carried over from the previous passage
+     * @return the passages in reading order; empty when the text is null or blank
+     */
     public List<Chunk> chunk(String text, int targetSize, int overlap) {
         if (text == null || text.isBlank()) {
             return List.of();
@@ -68,8 +90,13 @@ public class Chunker {
         return chunks;
     }
 
+    /**
+     * A run of text under one heading; {@code heading} is null before the first heading, and {@code offset}
+     * is where {@code body} starts in the original text.
+     */
     private record Section(String heading, String body, int offset) {}
 
+    /** A passage-sized part of a section's body, with its start and end offsets in the original text. */
     private record Piece(String text, int start, int end) {}
 
     /**

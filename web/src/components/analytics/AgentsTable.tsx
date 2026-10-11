@@ -22,6 +22,17 @@ import { NOT_ESTIMATED, NOT_ENOUGH_RUNS, costText, formatPercent, hoursText, sat
  */
 
 // @find: AgentsTable, agent performance table, success rate and cost per agent
+/**
+ * Sortable table comparing every agent over the selected window, rendered on the Analytics page.
+ * Props: agents (rows from the insights query), window (labels the caption through WINDOW_LABEL) and
+ * hourlyRateSet (adds a note that hours returned is an estimate from the viewer's inputs).
+ * Columns: agent (a link to its page when the viewer holds agent:read, with paused and retired tags), runs,
+ * success rate (shown only when the agent has enough finished runs, otherwise a words-only placeholder that
+ * sorts last), failed, cost (flagged when some runs used a model with no price), cost per completed run,
+ * rejected approvals, ratings (the sentence is read by screen readers, the short form is hidden from them),
+ * hours returned and last active. Unknown values sort last and are never drawn as zero.
+ * An empty agents array renders an EmptyState instead of the table.
+ */
 export function AgentsTable({
   agents,
   window,

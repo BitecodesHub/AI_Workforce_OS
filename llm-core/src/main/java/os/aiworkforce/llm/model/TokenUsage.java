@@ -20,20 +20,25 @@ import java.math.RoundingMode;
  */
 public record TokenUsage(int promptTokens, int cachedPromptTokens, int completionTokens, int reasoningTokens) {
 
+    /** Zero usage, for a skipped attempt or a provider that reported nothing. */
     public static final TokenUsage NONE = new TokenUsage(0, 0, 0, 0);
 
+    /** Usage with no cached or reasoning tokens. */
     public static TokenUsage of(int promptTokens, int completionTokens) {
         return new TokenUsage(promptTokens, 0, completionTokens, 0);
     }
 
+    /** Prompt plus completion plus reasoning tokens. */
     public int totalTokens() {
         return promptTokens + completionTokens + reasoningTokens;
     }
 
+    /** Prompt tokens not served from the cache, which are billed at the full input rate. */
     public int freshPromptTokens() {
         return Math.max(0, promptTokens - cachedPromptTokens);
     }
 
+    /** Sums two usages, for totals across attempts or turns; a null argument is ignored. */
     public TokenUsage plus(TokenUsage other) {
         if (other == null) {
             return this;

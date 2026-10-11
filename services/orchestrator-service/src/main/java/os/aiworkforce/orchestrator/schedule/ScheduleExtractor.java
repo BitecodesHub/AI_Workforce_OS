@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
  */
 public final class ScheduleExtractor {
 
+    /** Static utility; not instantiated. */
     private ScheduleExtractor() {}
 
     /**
@@ -43,6 +44,7 @@ public final class ScheduleExtractor {
     /** The longest phrase tried, in words: "on the last day of every month at 5:30 pm" is ten. */
     private static final int MAX_WORDS = 11;
 
+    /** Words a timing phrase can begin with; only runs starting with one of these are tried. */
     private static final Set<String> STARTERS = Set.of(
             "every", "each", "daily", "weekly", "hourly", "weekdays", "weekends", "everyday", "tomorrow", "today",
             "tonight", "in", "on", "at", "next", "this", "monday", "tuesday", "wednesday", "thursday", "friday",
@@ -52,13 +54,26 @@ public final class ScheduleExtractor {
     private static final Pattern ANCHORED =
             Pattern.compile("(?i)\\b(at|tomorrow|today|tonight|in|on|next|this)\\b|\\d");
 
+    /** Matches one whitespace-separated word. */
     private static final Pattern WORD = Pattern.compile("\\S+");
+    /** Punctuation trimmed from either end of a candidate phrase; an at sign or hash is kept at the start and a percent sign at the end. */
     private static final Pattern EDGE_PUNCTUATION = Pattern.compile("^[\\p{Punct}&&[^@#]]+|[\\p{Punct}&&[^@#%]]+$");
+    /** Joining words and punctuation removed from the start of the remaining instruction. */
     private static final Pattern LEADING_JOINERS = Pattern.compile("(?i)^(?:[,;:\\-\\s]+|(?:and|then|to|please)\\s+)+");
+    /** Joining words and punctuation removed from the end of the text before the phrase. */
     private static final Pattern TRAILING_JOINERS = Pattern.compile("(?i)(?:[,;:\\-\\s]+|\\s+(?:and|then))+$");
 
     // @find: extract schedule from sentence, find timing phrase
-    /** The schedule written somewhere in {@code text}, when there is one. */
+    /**
+     * The schedule written somewhere in {@code text}, when there is one.
+     *
+     * <p>Splits the text into words, tries each run that starts with a starter word (longest first) through
+     * {@link ScheduleParser#tryParse}, and keeps the longest run that parses and passes the edge rule. Pure:
+     * no database or network access. Returns empty for blank text or when nothing parses.
+     *
+     * @param zone the zone times of day are read in
+     * @param now the reference instant for relative phrases such as "in 2 hours"
+     */
     public static Optional<Extraction> extract(String text, ZoneId zone, Instant now) {
         if (text == null || text.isBlank()) {
             return Optional.empty();
@@ -114,6 +129,7 @@ public final class ScheduleExtractor {
         return true;
     }
 
+    /** Strips edge punctuation and surrounding whitespace from a candidate phrase. */
     private static String clean(String phrase) {
         return EDGE_PUNCTUATION.matcher(phrase.strip()).replaceAll("").strip();
     }

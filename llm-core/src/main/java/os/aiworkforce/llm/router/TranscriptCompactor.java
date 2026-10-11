@@ -69,6 +69,7 @@ public class TranscriptCompactor {
     /** How a shortened tool result begins, so a second compaction can find the original text. */
     private static final String SHORTENED_PREFIX = "{\"truncated\":true,";
 
+    /** Builds and reads the JSON wrapper around a shortened tool result. */
     private static final ObjectMapper JSON = new ObjectMapper();
 
     // @find: compact conversation to fit context window
@@ -77,6 +78,12 @@ public class TranscriptCompactor {
      *
      * <p>Aims for a little over half of {@code model}'s window. The result can still be over that
      * aim when the protected turns alone are larger; the caller re-checks whether it fits.
+     *
+     * <p>Flow: separate the system messages from the rest, keep the last {@code PROTECTED_RECENT_TURNS}
+     * turns (moved back to a clean tool call boundary), replace everything older by one mechanical
+     * summary message, then, if the estimate is still over the aim, shorten tool results. Called by
+     * {@code ModelRouter} when a request overflows a model's window. Pure computation: no provider
+     * call, no retained state.
      *
      * <p>Null means the caller should move to a model with a larger window rather than keep
      * trimming: past this point the only thing left to cut is the current task itself.
@@ -167,6 +174,7 @@ public class TranscriptCompactor {
         return withToolResultsCut(request, low);
     }
 
+    /** A copy of the request in which every tool result is shortened to about {@code limit} characters. */
     private static ChatRequest withToolResultsCut(ChatRequest request, int limit) {
         List<ChatMessage> cut = new ArrayList<>(request.messages().size());
         for (ChatMessage message : request.messages()) {
@@ -184,6 +192,7 @@ public class TranscriptCompactor {
         return request.withMessages(cut);
     }
 
+    /** Whether the message is a tool result with text, which is the only kind that may be cut. */
     private static boolean isToolResult(ChatMessage message) {
         return message.role() == ChatMessage.Role.TOOL && message.content() != null;
     }
@@ -191,6 +200,7 @@ public class TranscriptCompactor {
     /** The text a tool result started as, looking through a cut made by an earlier compaction. */
     private record Original(String text, int length) {}
 
+    /** Unwraps a result cut earlier, so a second cut starts from the original text and not the wrapper. */
     private static Original originalText(String content) {
         if (content.startsWith(SHORTENED_PREFIX)) {
             try {

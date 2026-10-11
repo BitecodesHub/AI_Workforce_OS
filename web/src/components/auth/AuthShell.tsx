@@ -19,6 +19,11 @@ export type AuthShellProps = {
 }
 
 // @find: AuthShell, sign in layout, login page frame
+/**
+ * Page frame for signed-out screens: a main landmark with the atmosphere layer, the centred Brand, the
+ * children as the body and an optional footer navigation ("More") below. Pure layout with no state or
+ * requests; rendered by the sign-in, create-workspace and invitation routes.
+ */
 export function AuthShell({ children, footer }: AuthShellProps) {
   return (
     <main id="main" className="auth-page">

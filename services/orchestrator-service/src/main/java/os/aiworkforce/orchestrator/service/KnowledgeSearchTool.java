@@ -51,6 +51,7 @@ public class KnowledgeSearchTool {
     /** Sent to providers as {@code knowledge__search}. */
     public static final String NAME = "knowledge.search";
 
+    // The tool's description and schema are what the model sees; the limits in the schema are enforced again in parse().
     static final String DESCRIPTION = "Search the workspace's own documents - policies, handbooks, procedures, "
             + "price lists - and get back the passages that bear on a query, each with its document title. Use it "
             + "before you state anything that depends on how this organisation does things, such as a policy, a "
@@ -66,11 +67,13 @@ public class KnowledgeSearchTool {
             """
                     .strip();
 
+    // Offered to the model by AgentRunner when isOfferedIn is true. READ, so it never needs approval.
     public static final ToolSpec SPEC = new ToolSpec(NAME, DESCRIPTION, SCHEMA, ToolSpec.SideEffect.READ);
 
     /** What a person is told, and the model, when work has nobody behind it. */
     public static final String NOT_AVAILABLE = "Documents are not available for this run.";
 
+    // The words returned to the model for each situation in which no passages can be given.
     static final String NOT_ALLOWED = "The person this work is for may not search the workspace's documents.";
     static final String UNAVAILABLE =
             "Document search is unavailable right now. Carry on without it and say that the documents could not be checked.";
@@ -78,6 +81,7 @@ public class KnowledgeSearchTool {
             "No document in the workspace covers this. Say so plainly rather than stating company facts.";
     static final String KEYWORD_ONLY = "Only keyword matching was available, so a relevant passage may be missing.";
 
+    // Limits on what is asked for and on how much text one passage may add to the model's context.
     static final int DEFAULT_LIMIT = 5;
     static final int MAX_LIMIT = 8;
     /** The reference material at the start of a run is a few of the best passages, not a search result page. */
@@ -121,6 +125,7 @@ public class KnowledgeSearchTool {
             boolean restricted,
             Double similarity) {
 
+        // Convenience form for a passage with no similarity figure, as when only keyword matching ran.
         public Cited(
                 int number,
                 String documentTitle,
@@ -153,6 +158,7 @@ public class KnowledgeSearchTool {
      */
     public record Searched(String query, List<Cited> passages, boolean grounded, boolean degraded, String failure) {
 
+        // True when the search could not be made, as opposed to one that ran and found nothing.
         public boolean failed() {
             return failure != null;
         }
@@ -162,23 +168,33 @@ public class KnowledgeSearchTool {
             return passages.stream().anyMatch(Cited::restricted);
         }
 
+        // A search that could not run: no passages, not grounded, and the reason for the model.
         static Searched failed(String query, String failure) {
             return new Searched(query, List.of(), false, false, failure);
         }
     }
 
+    /** One remembered answer to "does this workspace have documents", and when to ask again. */
     private record Cached(boolean available, Instant expiresAt) {}
 
+    // The client reaches the knowledge service; available is the short-lived cache keyed by workspace and agent.
     private final KnowledgeClient client;
     private final ObjectMapper json;
     private final Clock clock;
     private final Map<String, Cached> available = new ConcurrentHashMap<>();
 
+    /**
+     * Production constructor with the system clock.
+     *
+     * @param client the route to the knowledge service
+     * @param json used to read the model's arguments
+     */
     @Autowired
     public KnowledgeSearchTool(KnowledgeClient client, ObjectMapper json) {
         this(client, json, Clock.systemUTC());
     }
 
+    // Test constructor with a clock the test controls, so cache expiry can be checked.
     KnowledgeSearchTool(KnowledgeClient client, ObjectMapper json, Clock clock) {
         this.client = client;
         this.json = json;
@@ -333,6 +349,10 @@ public class KnowledgeSearchTool {
         return text.toString().stripTrailing();
     }
 
+    /**
+     * Writes each passage inside its {@code <passage>} wrapper (built by DocumentsPrompt), cutting any one passage
+     * to {@value #MAX_PASSAGE_CHARS} characters so a long document cannot fill the context.
+     */
     private static void appendPassages(StringBuilder text, List<Cited> passages) {
         for (Cited passage : passages) {
             String content = passage.content().length() <= MAX_PASSAGE_CHARS
@@ -405,6 +425,7 @@ public class KnowledgeSearchTool {
                 + (titles.isEmpty() ? "" : " in " + String.join(", ", titles)) + ".";
     }
 
+    /** A single-line excerpt of at most {@value #EXCERPT_CHARS} characters, with runs of whitespace collapsed; empty for null. */
     private static String excerpt(String content) {
         String line = content == null ? "" : content.replaceAll("\\s+", " ").strip();
         return line.length() <= EXCERPT_CHARS ? line : line.substring(0, EXCERPT_CHARS).stripTrailing() + "…";

@@ -101,11 +101,24 @@ public class TokenService {
     /** The stored public keys as last read, and when. */
     private record StoredKeys(List<JWK> keys, Instant readAt) {}
 
+    /**
+     * Production constructor: uses the system clock. See the package-private constructor for the
+     * startup behaviour.
+     */
     @Autowired
     public TokenService(PlatformProperties properties, SigningKeyStore keyStore) {
         this(properties, keyStore, Clock.systemUTC());
     }
 
+    /**
+     * Loads the signing key at startup, so a bad configuration fails fast rather than on the first
+     * sign-in.
+     *
+     * <p>When a private key is configured, it is converted with {@link #fromPrivateKey} and recorded
+     * through {@link SigningKeyStore#adoptExternalKey}, which writes the public half to the
+     * database. Otherwise the stored key is loaded, or generated on first use, with
+     * {@link SigningKeyStore#activeKey()}. The clock is injectable for tests.
+     */
     TokenService(PlatformProperties properties, SigningKeyStore keyStore, Clock clock) {
         this.config = properties.security();
         this.keyStore = keyStore;
@@ -242,6 +255,12 @@ public class TokenService {
         return new JWKSet(published).toJSONObject();
     }
 
+    /**
+     * The stored public keys for {@link #jwks()}, cached for {@link #PUBLISHED_KEYS_TTL}.
+     *
+     * <p>On a read failure, a warning is logged and the previously read keys are reused (or none),
+     * and the attempt is remembered so that an outage is retried once per interval.
+     */
     private List<JWK> storedPublicKeys() {
         Instant now = clock.instant();
         StoredKeys cached = storedKeys;
@@ -262,10 +281,15 @@ public class TokenService {
     }
 
     // @find: active key id, kid
+    /** The identifier of the key this process signs with, as placed in each token header. */
     public String activeKeyId() {
         return activeKey.get().getKeyID();
     }
 
+    /**
+     * Signs the claims with this process's key using ES256 and returns the compact serialisation.
+     * The header carries the key identifier. A signing failure becomes an internal {@link ApiException}.
+     */
     private String sign(JWTClaimsSet claims) {
         try {
             ECKey key = activeKey.get();
@@ -317,6 +341,9 @@ public class TokenService {
     }
 
     /**
+     * A signed token with its expiry. Returned by {@link #issueAccessToken} and
+     * {@link #issueInternalToken}.
+     *
      * @param token the serialised token
      * @param expiresAt when it stops being accepted, so the client can refresh ahead of time
      */

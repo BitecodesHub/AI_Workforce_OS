@@ -32,6 +32,7 @@ const CITATION_STYLE: CSSProperties = {
   cursor: 'pointer',
 }
 
+/** A citation marker such as [2]: a link-styled button that calls the context handler with the passage number, or plain text when no handler was supplied. */
 function Citation({ index }: { index: number }) {
   const open = useContext(CitationContext)
   if (!open) return <>[{index}]</>
@@ -42,10 +43,12 @@ function Citation({ index }: { index: number }) {
   )
 }
 
+/** Text alignment style for a table cell, or undefined for the default alignment. */
 function alignStyle(align: MdAlign): { textAlign: 'left' | 'center' | 'right' } | undefined {
   return align ? { textAlign: align } : undefined
 }
 
+/** Maps inline nodes (text, line break, code, bold, italic, link, citation) to React nodes. Links open in a new tab with noopener and noreferrer; text is never interpreted as markup. */
 function renderInline(nodes: MdInline[]): ReactNode[] {
   return nodes.map((node, index) => {
     switch (node.type) {
@@ -77,6 +80,7 @@ function renderInline(nodes: MdInline[]): ReactNode[] {
   })
 }
 
+/** The items of a list, each rendering its child blocks (so nested lists and paragraphs work). */
 function ListItems({ items }: { items: MdListItem[] }) {
   return (
     <>
@@ -89,6 +93,7 @@ function ListItems({ items }: { items: MdListItem[] }) {
   )
 }
 
+/** A fenced code block with an optional language label and a Copy code button (CopyButton). */
 function CodeBlock({ language, text }: { language: string | null; text: string }) {
   return (
     <figure className="md-code">
@@ -103,6 +108,7 @@ function CodeBlock({ language, text }: { language: string | null; text: string }
   )
 }
 
+/** A table in a focusable, scrollable region so wide tables do not break the layout and keyboard users can scroll them; column alignment follows the markdown. */
 function TableBlock({ header, align, rows }: { header: MdInline[][]; align: MdAlign[]; rows: MdInline[][][] }) {
   return (
     <div className="md-table-scroll" tabIndex={0} role="region" aria-label="Table">
@@ -132,6 +138,7 @@ function TableBlock({ header, align, rows }: { header: MdInline[][]; align: MdAl
   )
 }
 
+/** Renders one block node: paragraph, heading, list, blockquote, code, rule or table. Headings step down (levels 1 and 2 become h4, deeper become h5) so a message never outranks the page's own headings. An ordered list keeps its start number. */
 function Block({ block }: { block: MdBlock }) {
   switch (block.type) {
     case 'paragraph':
@@ -169,6 +176,7 @@ function Block({ block }: { block: MdBlock }) {
   }
 }
 
+/** Renders a list of blocks; the index is a stable enough key because the tree is rebuilt whole from the source text. */
 function Blocks({ blocks }: { blocks: MdBlock[] }) {
   // Blocks carry no id of their own, and the tree is rebuilt whole from the source string on
   // every change rather than reordered in place, so the index is a stable enough key here.
@@ -182,6 +190,13 @@ function Blocks({ blocks }: { blocks: MdBlock[] }) {
 }
 
 // @find: markdown renderer, citations, code blocks
+/**
+ * Renders a markdown string as React elements through the safe parser (parseMarkdown in lib/markdown).
+ * Props: text, className and citations ({ count, onOpen }): the count tells the parser how many numbered
+ * passages the text may cite, and onOpen is provided to Citation markers through a context. Without citations
+ * a [n] stays literal text. The parse is memoised on the text and count. Used for chat answers, run output and
+ * task results.
+ */
 export function Markdown({
   text,
   className,

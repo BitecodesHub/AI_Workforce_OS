@@ -68,6 +68,7 @@ public class InternalMembershipController {
     private final Users users;
     private final GrantGuard guard;
 
+    /** Wires the repositories and the grant guard used by the internal membership endpoints. */
     public InternalMembershipController(Memberships memberships, Roles roles, Users users, GrantGuard guard) {
         this.memberships = memberships;
         this.roles = roles;
@@ -75,9 +76,15 @@ public class InternalMembershipController {
         this.guard = guard;
     }
 
+    /**
+     * Request body for {@link #bootstrapOwner}: the new workspace and the person who created it.
+     */
     public record BootstrapOwnerRequest(@NotNull UUID orgId, @NotNull UUID userId) {}
 
     /**
+     * Request body for {@link #bootstrapMember}: the workspace, the person accepting, the role name
+     * the invitation carries and who sent it.
+     *
      * @param invitedBy who sent the invitation; their membership now, not when they sent it, decides
      *     whether the role may still be given
      * @param email the address the invitation was sent to, when known; the account must have it
@@ -89,9 +96,16 @@ public class InternalMembershipController {
             @NotNull UUID invitedBy,
             String email) {}
 
+    /**
+     * Response body for the grant endpoints: the membership id, the workspace, the person and the
+     * name of the role they now hold.
+     */
     public record MembershipResponse(UUID membershipId, UUID orgId, UUID userId, String role) {}
 
     /**
+     * Request body for {@link #checkGrant}: the workspace, the member who would grant the role, the
+     * role name and optionally the address being invited.
+     *
      * @param email the address being invited, when the grant is for an invitation; an address that
      *     already belongs to an active member is answered {@code already_member}, since accepting
      *     would leave them exactly as they are
@@ -99,23 +113,46 @@ public class InternalMembershipController {
     public record CheckGrantRequest(
             @NotNull UUID orgId, @NotNull UUID actorUserId, @NotBlank String roleName, String email) {
 
+        /** Convenience constructor for a check that involves no invited address. */
         public CheckGrantRequest(UUID orgId, UUID actorUserId, String roleName) {
             this(orgId, actorUserId, roleName, null);
         }
     }
 
     /**
+     * Response body for {@link #checkGrant}: a verdict rather than an error, so the caller chooses
+     * how to refuse.
+     *
+     * @param allowed whether the grant would be allowed
      * @param reason null when allowed; otherwise {@code unknown_role}, {@code not_a_member},
      *     {@code owner_only}, {@code exceeds_grantor} or {@code already_member}
      */
     public record CheckGrantResponse(boolean allowed, String reason) {}
 
+    /**
+     * Request body for {@link #permissions}: the workspace and the person whose permissions are wanted.
+     */
     public record PermissionsRequest(@NotNull UUID orgId, @NotNull UUID userId) {}
 
-    /** @param member whether the person has an active membership; permissions are empty when not */
+    /**
+     * Response body for {@link #permissions}.
+     *
+     * @param member whether the person has an active membership; permissions are empty when not
+     * @param permissions the permission codes of the person's current role
+     */
     public record PermissionsResponse(boolean member, java.util.List<String> permissions) {}
 
     // @find: bootstrap owner, workspace creator gets owner role, POST /internal/memberships/bootstrap-owner
+    /**
+     * POST {@code /internal/memberships/bootstrap-owner}. Service token only; no permission code.
+     *
+     * <p>Gives the creator of a new workspace the system {@code owner} role. Fails with an internal
+     * error if that role has not been seeded. If the person already has a membership in the
+     * workspace, in any status, it is returned unchanged and reported as {@code owner}, so a retried
+     * call does nothing more. Otherwise inserts one active membership and logs it.
+     *
+     * @throws ApiException permission denied for a person's or key's token, or an internal error
+     */
     @PostMapping("/bootstrap-owner")
     @Operation(summary = "Internal: grant the owner role for a workspace that was just created")
     @Transactional
@@ -167,6 +204,12 @@ public class InternalMembershipController {
      *
      * <p>Idempotent, like {@link #bootstrapOwner}: a retried call finds the active membership the
      * first one made. Behind the same internal-service-token gate.
+     *
+     * <p>Route: {@code POST /internal/memberships/bootstrap-member}; service token only. When the
+     * request names an address, the account must carry the same one. Writes one membership row.
+     *
+     * @throws ApiException validation (unknown role), not found, permission denied (address
+     *     mismatch, inviter no longer a member, or the role exceeds the inviter)
      */
     @PostMapping("/bootstrap-member")
     @Operation(summary = "Internal: grant a named role to a person who accepted an invitation")
@@ -240,6 +283,10 @@ public class InternalMembershipController {
      * does not exist, or one its sender may not give, would be refused only when accepted - after
      * the new account had been created. Answered rather than thrown: the caller decides how to say
      * no. The same rule is applied again at acceptance, since the answer can change in between.
+     *
+     * <p>Route: {@code POST /internal/memberships/check-grant}; service token only. Reads only.
+     * Reports {@code unknown_role}, {@code not_a_member}, the guard's own refusal reasons, or
+     * {@code already_member} when the invited address already belongs to an active member.
      */
     @PostMapping("/check-grant")
     @Operation(summary = "Internal: whether a member may give a named role")
@@ -274,6 +321,8 @@ public class InternalMembershipController {
      * for them without their request in flight - an agent searching documents for the person it
      * works for. Only a service token reaches this. A person who is not an active member holds
      * nothing, and is told apart from "could not ask" by the answer itself.
+     *
+     * <p>Route: {@code POST /internal/memberships/permissions}; service token only. Reads only.
      */
     @PostMapping("/permissions")
     @Operation(summary = "Internal: the permissions a person holds in a workspace")
@@ -289,7 +338,8 @@ public class InternalMembershipController {
 
     /**
      * A person's own token, whatever it carries, must never be able to grant a role by calling
-     * these directly - only a sibling service acting through the internal token flow may.
+     * these directly - only a sibling service acting through the internal token flow may. Throws
+     * permission denied for a user or API key actor.
      */
     private static void requireService() {
         Actor actor = RequestContext.requireActor();
@@ -298,6 +348,7 @@ public class InternalMembershipController {
         }
     }
 
+    /** Trims and lower-cases an address for comparison. Null becomes the empty string. */
     private static String normalise(String email) {
         return email == null ? "" : email.strip().toLowerCase(Locale.ROOT);
     }

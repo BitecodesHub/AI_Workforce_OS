@@ -29,12 +29,20 @@ import { useToast } from '../../lib/toast'
 
 const KINDS = Object.keys(MEMORY_KIND_LABEL) as MemoryKind[]
 
+/** Flattens whitespace and truncates a note to about 60 characters, for the accessible name of its buttons. */
 function noteLabel(content: string): string {
   const flat = content.replace(/\s+/g, ' ').trim()
   return flat.length > 60 ? `${flat.slice(0, 59).trimEnd()}…` : flat
 }
 
 // @find: NoteRow, note row, agent memory, what the agent remembers, notes, add note
+/**
+ * One remembered note with its pin tag, kind tag, source, last change, recall count and action buttons.
+ * The Pin, Edit and Remove buttons appear only when canEdit is true; Pin additionally needs onPin.
+ * Each button carries an aria-label that quotes the note, so a list of notes does not read as a column of
+ * identical buttons. Pure presentation: every action is delegated to the callbacks supplied by
+ * AgentMemoryCard, and pinning shows a loading state while its request is in flight.
+ */
 export function NoteRow({
   note,
   canEdit,
@@ -104,6 +112,17 @@ function contentProblem(error: unknown): string | null {
 }
 
 // @find: AgentMemoryCard, agent memory card, agent memory, what the agent remembers, notes, add note
+/**
+ * Card on the agent page that lists, adds, edits, pins, removes and clears the notes an agent remembers.
+ * Flow: reads the notes with useAgentMemories (when the viewer holds agent:read) through QueryState, and
+ * shows the note count against the server limit. Anyone holding agent:update can add a note (useAddMemory,
+ * with a kind chosen from MEMORY_KIND_LABEL), edit one in a ConfirmDialog (useUpdateMemory), pin or unpin
+ * it (usePinMemory), remove it (useDeleteMemory) or choose "Forget everything" (useForgetAllMemories).
+ * Errors: a server rejection of the note text, such as a secret detected in it, is shown at the field
+ * through contentProblem; any other failure appears in a Notice, the dialog, or an error toast.
+ * State: the draft note and kind, the note being edited or removed, the forget dialog flag and the
+ * related error messages. Rendered by the agent detail page with the agent id and display name.
+ */
 export function AgentMemoryCard({ agentId, agentName }: { agentId: string; agentName: string }) {
   const toast = useToast()
   const canEdit = can('agent:update')

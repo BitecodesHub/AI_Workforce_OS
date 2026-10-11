@@ -24,6 +24,7 @@ function stepForMinutes(windowMinutes: number): number {
   return 3 * 60 * 60 * 1000
 }
 
+/** CSS class of a run bar by run status: running, waiting for approval, waiting for input, completed, failed, otherwise cancelled. */
 function barClass(status: string): string {
   switch (status.toLowerCase()) {
     case 'running':
@@ -41,6 +42,7 @@ function barClass(status: string): string {
   }
 }
 
+/** Accessible and tooltip text of a bar: agent, status, and the start and end times in the workspace timezone ("now" while running). */
 function barLabel(agentName: string, entry: BoardTimelineEntry, timezone: string): string {
   const status = statusLabel('run', entry.status).label
   const started = formatTimeIn(Date.parse(entry.startedAt), timezone)
@@ -49,6 +51,16 @@ function barLabel(agentName: string, entry: BoardTimelineEntry, timezone: string
 }
 
 // @find: swimlanes component, timeline of runs per agent
+/**
+ * Timeline of the selected window with one lane per agent and a bar for each run (board.timeline), shown on the Orchestrator.
+ * Props: board, now (epoch ms, so the "Now" marker follows the clock), windowMinutes, timezone (all times are shown in the workspace timezone) and onOpenGoal.
+ * Geometry comes from layout.ts (laneWindow, laneTicks, laneBarRect, pctOf); tick spacing follows the window
+ * length. Agents with no runs in the window are hidden behind "Show N idle agents". A bar is a link: a plain
+ * click on a goal's bar opens the goal sheet (modified clicks follow the link), and a direct run's bar links to
+ * its run page. A "Show as a table" toggle swaps the lanes for an accessible DataTable of the same runs
+ * (agent, status, start, end, goal), which is also the fallback for assistive technology. An empty timeline
+ * shows a one-line message. A key explains the bar colours. State: showIdle and asTable.
+ */
 export function Swimlanes({
   board,
   now,

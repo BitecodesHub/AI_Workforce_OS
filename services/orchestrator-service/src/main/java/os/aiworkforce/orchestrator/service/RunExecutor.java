@@ -1,6 +1,6 @@
 // @find: run executor, background run, virtual thread, async run, submit drive, submit resume, dispatch next tasks, task settled, start work without waiting
 // @what: Hands goal, run and resume work to virtual threads so requests answer immediately.
-// @flow: Called by controllers, GoalService, ApprovalService; calls AgentRunner and GoalService
+// @flow: Called by controllers (approval, question, goal, agent, retry), GoalService, ScheduleGoalListener and MaintenanceScheduler; calls AgentRunner and GoalService
 package os.aiworkforce.orchestrator.service;
 
 import java.util.Optional;
@@ -95,6 +95,11 @@ public class RunExecutor {
         return ContextExecutorService.wrap(delegate, snapshots);
     }
 
+    /**
+     * Wires the collaborators the executor needs: {@code goalService} to claim and start tasks,
+     * {@code runner} to drive and resume runs, and the repositories to look up a run's goal for
+     * attribution and logging. The virtual-thread executor is created with the field itself.
+     */
     public RunExecutor(GoalService goalService, AgentRunner runner, Tasks tasks, Goals goals, Runs runs) {
         this.goalService = goalService;
         this.runner = runner;
@@ -136,6 +141,15 @@ public class RunExecutor {
         submitNextTasks(event.orgId());
     }
 
+    /**
+     * The body of one dispatch pass, run on a virtual thread as the system actor.
+     *
+     * <p>Flow: while another pass has been requested, claim up to {@value #MAX_TASKS_PER_SUBMISSION}
+     * tasks through {@link GoalService#claimNextTask} and start each on its own thread. Claiming
+     * writes to the database; a failure is logged and never thrown to the submitter. The
+     * {@code dispatching} guard is always released, and a request that arrived in the closing
+     * window is turned into a fresh pass.
+     */
     private void dispatch(UUID orgId) {
         // The workspace is in the logging context for the failure lines below as well, so the scope
         // encloses the handlers rather than being a resource of the same try.
@@ -169,6 +183,12 @@ public class RunExecutor {
         }
     }
 
+    /**
+     * Starts one already-claimed task on its own virtual thread through
+     * {@link GoalService#startClaimed}. If the executor rejects the submission the task is started
+     * on the calling thread instead, so a claimed task is never left with nothing driving it.
+     * Failures are logged, not thrown.
+     */
     private void startOnItsOwnThread(UUID orgId, GoalService.TaskStart claimed) {
         Runnable start = () -> {
             try {
@@ -293,6 +313,10 @@ public class RunExecutor {
         return RunLogContext.run(orgId, goalId, runId, agentId);
     }
 
+    /**
+     * Works out whom a resumed run acts as: the requester of the goal behind its task, or
+     * {@code withoutGoal} when the run has no task or goal (or cannot be found). Read-only.
+     */
     private Actor actorForRun(UUID orgId, UUID runId, Actor withoutGoal) {
         return runs.findByIdAndOrgId(runId, orgId)
                 .map(Run::getTaskId)

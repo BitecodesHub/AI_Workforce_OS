@@ -9,6 +9,7 @@ import type { ReactElement } from 'react'
  * decoration, hidden from assistive technology, and turns slowly only when motion is on.
  */
 
+/** Radius, in view box units, of the globe. */
 const R = 470
 
 /** Meridians: the width of each loop, as a share of the radius, and the angle it leans at. */
@@ -31,6 +32,7 @@ const ORBITS: ReadonlyArray<[number, number]> = [
 ]
 
 // @find: HeroGlobe component
+/** Decorative SVG globe drawn as loose ellipses (MERIDIANS and ORBITS) so it reads as a connected network more than a map. Hidden from assistive technology and not focusable; its group is given a class so the stylesheet can turn it slowly only when motion is on. No props or state. Rendered by Hero. */
 export function HeroGlobe(): ReactElement {
   return (
     <svg className="lp-globe" viewBox="0 0 1000 1000" fill="none" aria-hidden="true" focusable="false">

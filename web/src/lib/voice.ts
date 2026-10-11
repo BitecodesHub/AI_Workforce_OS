@@ -17,6 +17,7 @@ import { useVoiceStatus } from './queries'
 
 /* ---- Reaching the platform for audio ------------------------------------------------------------ */
 
+/** Parses JSON, returning null on malformed text. */
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
@@ -25,6 +26,9 @@ function parseJson(text: string): unknown {
   }
 }
 
+/**
+ * Builds an ApiError from a failed voice response, using the problem document's code, detail and field errors, with a generic message when the body is unreadable. Status 500 and above is marked retryable.
+ */
 async function voiceError(response: Response): Promise<ApiError> {
   const text = await response.text().catch(() => '')
   const body = text ? parseJson(text) : null
@@ -74,6 +78,9 @@ export async function fetchAudio(
 
 /* ---- Listening: microphone or the browser's own speech recognition ------------------------------- */
 
+/**
+ * Where dictation comes from: ElevenLabs transcription of a recording, the browser's own speech recognition, or none.
+ */
 export type VoiceInputProvider = 'elevenlabs' | 'browser' | 'none'
 
 type RecognitionResultLike = { transcript: string }
@@ -91,12 +98,16 @@ type RecognitionLike = {
 }
 type RecognitionCtor = new () => RecognitionLike
 
+/**
+ * The browser's SpeechRecognition constructor (standard or webkit-prefixed), or null where unsupported.
+ */
 function recognitionCtor(): RecognitionCtor | null {
   if (typeof window === 'undefined') return null
   const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor }
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
 }
 
+/** Whether this browser can record from a microphone (MediaRecorder and getUserMedia both exist). */
 function canRecord(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -270,6 +281,7 @@ export function recognitionErrorText(code: string | undefined): string | null {
 
 /* ---- Speaking: ElevenLabs audio or the browser's own voices --------------------------------------- */
 
+/** Where spoken replies come from: ElevenLabs audio, the browser's own voices, or none. */
 export type SpeakerProvider = 'elevenlabs' | 'browser' | 'none'
 
 /*
@@ -280,6 +292,9 @@ export type SpeakerProvider = 'elevenlabs' | 'browser' | 'none'
 const SOUND_ON_KEY = 'aiwos.voice.autoSpeak'
 const MAX_SPEECH_CHARACTERS = 2500
 
+/**
+ * Whether spoken replies are off. Silent unless the person turned sound on; true when storage is blocked.
+ */
 function readMuted(): boolean {
   try {
     return localStorage.getItem(SOUND_ON_KEY) !== '1'
@@ -288,6 +303,7 @@ function readMuted(): boolean {
   }
 }
 
+/** Remembers the sound choice in localStorage (key aiwos.voice.autoSpeak); ignores blocked storage. */
 function writeMuted(muted: boolean) {
   try {
     if (muted) localStorage.removeItem(SOUND_ON_KEY)

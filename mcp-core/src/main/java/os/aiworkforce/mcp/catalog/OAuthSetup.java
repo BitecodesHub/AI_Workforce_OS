@@ -25,6 +25,7 @@ public record OAuthSetup(
         List<String> appSteps,
         String appDocsUrl) {
 
+    /** Compact constructor. Replaces missing lists with empty ones and copies them. */
     public OAuthSetup {
         appFields = appFields == null ? List.of() : List.copyOf(appFields);
         scopes = scopes == null ? List.of() : List.copyOf(scopes);

@@ -61,6 +61,9 @@ function errorSummary(lastError: string): string {
     : truncateWords(lastError, 80)
 }
 
+/**
+ * One-line state of all sources for a summary tile: how many need attention, how many are not indexed yet, how many are indexing now, otherwise "All ready".
+ */
 function sourcesNote(sources: Source[]): string {
   const attention = sources.filter(needsAttention).length
   if (attention > 0) return `${formatCount(attention)} ${attention === 1 ? 'needs' : 'need'} attention`
@@ -145,6 +148,10 @@ const COLUMNS: Column<Source>[] = [
 ]
 
 // @find: Knowledge component, knowledge page, create knowledge source, POST /api/sources, search all sources, /knowledge
+/**
+ * The Knowledge page (route /knowledge, permission knowledge:read).
+ * Lists the workspace's knowledge sources in a table (rows open /knowledge/{id}) with summary tiles for sources, documents (indexed documents only), passages and the embedding model in use, and a notice naming sources that need attention. People with knowledge:query (and chat:use for the Chat link) can try a search across all sources here without starting an agent run. With knowledge:source_manage an Add a source dialog creates an upload source (POST /api/sources), optionally restricted to people who are given access; on success it navigates to the new source and toasts. A duplicate name (409) is shown on the name field, other failures in the dialog. The empty state differs for people who cannot add sources.
+ */
 export function Knowledge() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [name, setName] = useState('')

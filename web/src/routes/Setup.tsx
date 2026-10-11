@@ -66,6 +66,10 @@ const OPEN_LABEL: Record<SetupStepId, string> = {
 }
 
 // @find: Setup component, set up your workspace checklist, /setup
+/**
+ * The Setup page (route /setup, permission workspace:update): a checklist of what a new workspace needs, in the order it matters.
+ * Flow: useSetupSteps works out each step's status from what the services report. The first step needing attention opens automatically; the person can open any step, which shows the same card or dialog its own page uses, and can skip a step for this visit only (skipping opens the next step needing attention; the status itself is unchanged). A progress bar and sentence say how many steps are done and how many required ones remain; once none remain the page says setup is complete and links to the Command Map. The Connect a model step opens the Connect your AI dialog, preselecting a free provider while no live model exists. No data is written by this page itself; every change is made by the panels it hosts.
+ */
 export function Setup() {
   const { steps, summary } = useSetupSteps()
   const [connectOpen, setConnectOpen] = useState(false)
@@ -139,6 +143,9 @@ export function Setup() {
 }
 
 // @find: setup step row, done, to do, open step
+/**
+ * One checklist row: a marker, the step title and detail line, a status tag, and a button that opens or closes its panel (Connect a model opens the dialog instead for the model step) plus Skip for now for steps that still need attention. The open panel is linked to its button for screen readers.
+ */
 function SetupRow({
   step,
   number,
@@ -226,6 +233,9 @@ function FreeStart() {
 }
 
 // @find: step panel, expanded setup step
+/**
+ * Chooses the panel for an open step: model, order, search, tools, knowledge, team, notifications or budget, each reusing a component from its own page.
+ */
 function StepPanel({ id, onConnect }: { id: SetupStepId; onConnect: () => void }): ReactNode {
   switch (id) {
     case 'model':
@@ -266,6 +276,9 @@ function ModelPanel({ onConnect }: { onConnect: () => void }) {
 }
 
 // @find: notifications step panel
+/**
+ * The Get notified step: the browser notification card and, through QueryState, the webhook settings card (workspace:update). The webhook card is keyed on the saved values so it resets when they change.
+ */
 function NotificationsPanel() {
   const settings = useNotificationSettings()
   return (
@@ -280,6 +293,9 @@ function NotificationsPanel() {
 }
 
 // @find: step marker, tick or number
+/**
+ * The round marker at the start of a row: a tick when done, otherwise the step number. Decorative; the status is also given as text.
+ */
 function StepMarker({ done, number }: { done: boolean; number: number }) {
   return (
     <span aria-hidden="true" className={`setup-marker tabular${done ? ' setup-marker-done' : ''}`}>

@@ -21,6 +21,11 @@ import os.aiworkforce.orchestrator.domain.Agent;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for Agent rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface Agents extends JpaRepository<Agent, UUID> {
 
     // @find: list agents in workspace by name, Agents page

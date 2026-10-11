@@ -45,6 +45,7 @@ public record OAuthProvider(
         List<String> appSteps,
         String appDocsUrl) {
 
+    /** Compact constructor. Copies every collection so the provider stays immutable. */
     public OAuthProvider {
         appFields = List.copyOf(appFields);
         authorizeParams = Map.copyOf(authorizeParams);
@@ -53,12 +54,18 @@ public record OAuthProvider(
         appSteps = List.copyOf(appSteps);
     }
 
-    /** Every scope a connector asks for, including the ones that are not checked afterwards. */
+    /**
+     * Every scope a connector asks for, including the ones that are not checked afterwards. Empty
+     * for an unknown connector.
+     */
     public List<String> scopesFor(String server) {
         return scopesByServer.getOrDefault(server, List.of());
     }
 
-    /** The scopes whose absence from the grant means a permission is missing. */
+    /**
+     * The scopes whose absence from the grant means a permission is missing. Used after sign-in to
+     * compare against what the provider reports as granted.
+     */
     public List<String> checkedScopes(String server) {
         List<String> checked = new ArrayList<>();
         for (String scope : scopesFor(server)) {
@@ -69,7 +76,11 @@ public record OAuthProvider(
         return checked;
     }
 
-    /** Fills {tenant} and {loginDomain} from validated settings. */
+    /**
+     * Fills {tenant} and {loginDomain} from validated settings, replacing each placeholder with the
+     * setting of the same name. Callers must pass settings that have already been through
+     * {@link #validatedSettings}.
+     */
     public static String fill(String template, Map<String, String> settings) {
         String result = template;
         for (Map.Entry<String, String> entry : settings.entrySet()) {
@@ -78,7 +89,9 @@ public record OAuthProvider(
         return result;
     }
 
-    /** A copy with the endpoints replaced, for tests that stand in for the provider. */
+    /**
+     * A copy with the endpoints replaced, for tests that stand in for the provider.
+     */
     public OAuthProvider withEndpoints(String authorize, String token, String profile) {
         return new OAuthProvider(id, label, authorize, token, profile, appFields, authorizeParams, scopesByServer,
                 uncheckedScopes, appSteps, appDocsUrl);
@@ -110,16 +123,21 @@ public record OAuthProvider(
         return clean;
     }
 
-    /** A setting that cannot be used, naming the setting's key so a form can show it beside that box. */
+    /**
+     * A setting that cannot be used, naming the setting's key so a form can show it beside that box.
+     * Thrown by {@link #validatedSettings}; the sign-in controller reports the message to the form.
+     */
     public static final class SettingProblem extends IllegalArgumentException {
 
         private final String field;
 
+        /** Creates the problem for the named setting. */
         public SettingProblem(String field, String message) {
             super(message);
             this.field = field;
         }
 
+        /** The setting key the problem belongs to. */
         public String field() {
             return field;
         }

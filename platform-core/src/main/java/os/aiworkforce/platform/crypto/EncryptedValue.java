@@ -26,6 +26,12 @@ public record EncryptedValue(String keyId, byte[] wrappedDataKey, byte[] iv, byt
     private static final Base64.Encoder ENCODER = Base64.getEncoder().withoutPadding();
     private static final Base64.Decoder DECODER = Base64.getDecoder();
 
+    /**
+     * Builds a value at the current format version.
+     *
+     * <p>Called by {@link EnvelopeEncryptionService#encrypt(String, String)} with the parts it has just
+     * produced.
+     */
     public static EncryptedValue of(String keyId, byte[] wrappedDataKey, byte[] iv, byte[] ciphertext) {
         return new EncryptedValue(keyId, wrappedDataKey, iv, ciphertext, CURRENT_VERSION);
     }
@@ -39,6 +45,15 @@ public record EncryptedValue(String keyId, byte[] wrappedDataKey, byte[] iv, byt
                 + SEPARATOR + ENCODER.encodeToString(ciphertext);
     }
 
+    /**
+     * Reads the form produced by {@link #serialise()}, as stored in a database column.
+     *
+     * <p>Called by {@link EnvelopeEncryptionService#decrypt(String, String)}. Has no side effects.
+     *
+     * @param serialised the stored text
+     * @return the decoded value
+     * @throws IllegalArgumentException when the text is empty, malformed or of an unsupported version
+     */
     public static EncryptedValue parse(String serialised) {
         if (serialised == null || serialised.isBlank()) {
             throw new IllegalArgumentException("Encrypted value is empty");

@@ -40,11 +40,15 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 @Service
 public class CredentialService {
 
+    /** Logger; records references, workspaces and actors, never values. */
     private static final Logger log = LoggerFactory.getLogger(CredentialService.class);
 
+    /** Repository for the credential rows. */
     private final Credentials credentials;
+    /** Encrypts, decrypts and fingerprints values; holds the master keys. */
     private final EnvelopeEncryptionService encryption;
 
+    /** Creates the service with its repository and the encryption service. */
     public CredentialService(Credentials credentials, EnvelopeEncryptionService encryption) {
         this.credentials = credentials;
         this.encryption = encryption;
@@ -64,6 +68,19 @@ public class CredentialService {
             String ref, String kind, String fingerprint, boolean present, Instant expiresAt, Instant lastUsedAt) {}
 
     // @find: store credential, save API key, replace credential, encrypt secret, PUT /api/credentials/{ref}
+    /**
+     * Stores a credential, replacing the value if the reference already exists in the workspace.
+     *
+     * <p>Flow: rejects a blank value; encrypts the trimmed value bound to the workspace id; finds the
+     * existing row or starts a new one with a fresh id; sets kind (default {@code api_key}), sealed value,
+     * fingerprint, key id and expiry; saves; logs the reference and actor (never the value). Replacing the
+     * value also resets the row's rotation time.
+     *
+     * <p>Called by {@code CredentialController.store}. Failure: 422 for a blank value; encryption or
+     * database errors propagate and roll the transaction back.
+     *
+     * @return the view of the stored credential, without the value
+     */
     @Transactional
     public CredentialView store(UUID orgId, String ref, String kind, String plaintext, Instant expiresAt) {
         if (plaintext == null || plaintext.isBlank()) {
@@ -102,6 +119,11 @@ public class CredentialService {
      * <p>Returns empty rather than throwing when nothing is stored: for the router this is a skip
      * with a recorded reason, not a failure, and turning it into an exception would make one
      * unconfigured provider fail an entire run.
+     *
+     * <p>Flow: finds the row for the workspace and reference; if it has expired, logs a warning and
+     * returns empty; otherwise records the use with a direct update, decrypts the value bound to the
+     * workspace and returns it. A value that cannot be decrypted is logged at error level and also returns
+     * empty. Called by {@code CredentialController.reveal}. No exception is thrown for a missing credential.
      */
     @Transactional
     public Optional<String> reveal(UUID orgId, String ref) {
@@ -125,6 +147,10 @@ public class CredentialService {
     }
 
     // @find: list credentials, which keys are stored, GET /api/credentials
+    /**
+     * Lists the workspace's credentials ordered by reference, as views that never contain a value.
+     * Called by {@code CredentialController.list}. Read-only.
+     */
     @Transactional(readOnly = true)
     public List<CredentialView> list(UUID orgId) {
         return credentials.findByOrgIdOrderByRef(orgId).stream()
@@ -133,6 +159,10 @@ public class CredentialService {
     }
 
     // @find: delete credential, remove API key, DELETE /api/credentials/{ref}
+    /**
+     * Deletes a credential and logs the reference. Called by {@code CredentialController.delete}.
+     * Failure: 404 when the workspace has no credential with that reference.
+     */
     @Transactional
     public void delete(UUID orgId, String ref) {
         Credential credential =
@@ -148,6 +178,11 @@ public class CredentialService {
      * <p>Rotation is a background job rather than a migration because the old key must keep
      * working until every value has moved. Doing it in one transaction would mean a failure
      * halfway leaves half the workspace's secrets unreadable.
+     *
+     * <p>Decrypts and re-encrypts at most {@code limit} credentials of the workspace whose key is out of
+     * date, updating the stored value and key id, and logs the count. Credentials already under the
+     * current key are skipped. Returns how many were re-wrapped. Intended for a key-rotation job; a failure
+     * to decrypt throws and rolls the batch back.
      */
     @Transactional
     public int rewrapOutdated(UUID orgId, int limit) {
@@ -173,6 +208,7 @@ public class CredentialService {
         return rewrapped;
     }
 
+    /** Builds the console view of a row; copies metadata only and never touches the encrypted value. */
     private CredentialView describe(Credential credential) {
         return new CredentialView(
                 credential.getRef(),
@@ -183,6 +219,10 @@ public class CredentialService {
                 credential.getLastUsedAt());
     }
 
+    /**
+     * Builds the 409 {@code PROVIDER_NOT_CONFIGURED} error naming the missing credential reference,
+     * for callers in this package.
+     */
     static ApiException notConfigured(String ref) {
         return new ApiException(ErrorCode.PROVIDER_NOT_CONFIGURED).with("credentialRef", ref);
     }

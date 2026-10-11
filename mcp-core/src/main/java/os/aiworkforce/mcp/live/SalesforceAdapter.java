@@ -23,17 +23,26 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
 /**
  * The Salesforce REST API. The credential is JSON holding the access token and the instance
  * address the token belongs to; the address must be a Salesforce domain or nothing is sent.
+ *
+ * <p>Token renewal and the reconnect flow come from {@link OAuthAdapter}. Queries use SOQL, with
+ * every typed value escaped before it is placed in the statement.
  */
 public final class SalesforceAdapter extends OAuthAdapter {
 
+    /** No fixed address: each connection supplies its own instance address (see {@link #baseFor}). */
     public static final String BASE_URL = null;
 
+    /** The REST data path, including the API version. */
     private static final String DATA = "/services/data/v60.0";
+    /** A Salesforce record id in its 15 or 18 character form. */
     private static final Pattern RECORD_ID = Pattern.compile("[a-zA-Z0-9]{15}|[a-zA-Z0-9]{18}");
+    /** Longest typed value allowed into a query, in characters. */
     private static final int TERM_LIMIT = 100;
 
+    /** True when a stand-in address was given (tests), so the credential's instance address is not used. */
     private final boolean fixedBase;
 
+    /** Registers the five Salesforce tools; a null {@code baseUrl} means the instance address in the credential is used. */
     public SalesforceAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Salesforce", json, http, baseUrl);
         this.fixedBase = baseUrl != null;
@@ -51,17 +60,20 @@ public final class SalesforceAdapter extends OAuthAdapter {
         return Mono.just(credential);
     }
 
+    /** Sends the access token from the credential as a bearer credential. */
     @Override
     protected void authorize(HttpHeaders headers, String credential) {
         headers.setBearerAuth(parts(credential).accessToken());
     }
 
+    /** The validated instance address from the credential, unless a fixed test address is in use. */
     @Override
     protected String baseFor(String credential) {
         String instance = parts(credential).instanceUrl();
         return fixedBase ? null : instance;
     }
 
+    /** Reads the user info (a read call) for the person's name, and adds the organisation name when a second query succeeds. */
     @Override
     protected Mono<String> whoAmI(String credential) {
         return get(credential, "/services/oauth2/userinfo").flatMap(user -> {
@@ -78,6 +90,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
     }
 
     // @find: Salesforce search accounts, tool salesforce__search_accounts, live Salesforce call
+    /** Tool search_accounts (read). Runs a SOQL name search with the term escaped, including the LIKE wildcards. */
     private Mono<ToolResult> searchAccounts(ToolInvocation invocation, JsonNode arguments, String token) {
         String term = required(arguments, "query");
         String soql = "SELECT Id,Name,Industry,BillingCity FROM Account WHERE Name LIKE '%" + likeTerm(term)
@@ -96,6 +109,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
     }
 
     // @find: Salesforce list opportunities, tool salesforce__list_opportunities, live Salesforce call
+    /** Tool list_opportunities (read). Runs a SOQL query, newest close date first, optionally for one stage. */
     private Mono<ToolResult> listOpportunities(ToolInvocation invocation, JsonNode arguments, String token) {
         String stage = text(arguments, "stage");
         String soql = "SELECT Id,Name,Account.Name,StageName,Amount,CloseDate FROM Opportunity"
@@ -109,6 +123,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
     }
 
     // @find: Salesforce get opportunity, tool salesforce__get_opportunity, live Salesforce call
+    /** Tool get_opportunity (read). Reads one opportunity; the id must have the Salesforce record id shape. */
     private Mono<ToolResult> getOpportunity(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = recordId(required(arguments, "id"));
         return get(token, DATA + "/sobjects/Opportunity/{id}", id).map(opportunity -> {
@@ -121,6 +136,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
     }
 
     // @find: Salesforce create lead, tool salesforce__create_lead, live Salesforce call
+    /** Tool create_lead (write). Creates a lead from the last name, company and optional first name and email. Not idempotent. */
     private Mono<ToolResult> createLead(ToolInvocation invocation, JsonNode arguments, String token) {
         ObjectNode body = json.createObjectNode();
         String first = text(arguments, "firstName");
@@ -141,6 +157,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
     }
 
     // @find: Salesforce update opportunity, tool salesforce__update_opportunity, live Salesforce call
+    /** Tool update_opportunity (write). Patches the stage, amount or close date; refuses a call that changes nothing. */
     private Mono<ToolResult> updateOpportunity(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = recordId(required(arguments, "id"));
         ObjectNode body = json.createObjectNode();
@@ -178,6 +195,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
 
     // ---- Helpers ------------------------------------------------------------------------------
 
+    /** The opportunity fields shared with agents, in one shape for list and get. */
     private ObjectNode opportunity(JsonNode opportunity) {
         ObjectNode item = json.createObjectNode();
         item.put("id", opportunity.path("Id").asText());
@@ -193,6 +211,7 @@ public final class SalesforceAdapter extends OAuthAdapter {
         return item;
     }
 
+    /** Refuses an id that is not a Salesforce record id, so a path cannot be injected. */
     private static String recordId(String id) {
         if (!RECORD_ID.matcher(id).matches()) {
             throw new VendorException("That is not a Salesforce record id (15 or 18 letters and digits).");
@@ -214,8 +233,13 @@ public final class SalesforceAdapter extends OAuthAdapter {
         return literal(value).replace("%", "\\%").replace("_", "\\_");
     }
 
+    /** The two values held in the stored credential. */
     private record Parts(String accessToken, String instanceUrl) {}
 
+    /**
+     * Reads the credential JSON and checks that the instance address is a Salesforce domain through
+     * {@link Hosts#salesforceInstance}. Called before every request so a bad address sends nothing.
+     */
     private Parts parts(String credential) {
         JsonNode node;
         try {

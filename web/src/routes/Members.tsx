@@ -78,15 +78,23 @@ const INVITE_FIELD_LABELS = { email: 'Email address', roleName: 'Role' }
 
 /** Built-in roles first, most powerful first; a workspace's own roles after them, by name. */
 const ROLE_RANK: Record<string, number> = { owner: 0, admin: 1, manager: 2, employee: 3, viewer: 4 }
+/**
+ * Sort comparator for role names: built-in roles by rank, then custom roles alphabetically by their label.
+ */
 const byRoleRank = (a: string, b: string) =>
   (ROLE_RANK[a] ?? 99) - (ROLE_RANK[b] ?? 99) || roleLabel(a).localeCompare(roleLabel(b))
 
+/** Facet for useListFilter: a member's role, selected with ?role= in the address. */
 const MEMBER_FACETS = { role: (member: Member) => member.role }
+/** The searchable text of a member: name, email and role label. */
 const memberText = (member: Member) => `${member.displayName} ${member.email} ${roleLabel(member.role)}`
 
+/** Adds a closing full stop unless the text already ends with one or with a question mark. */
 const withFullStop = (text: string) => (/[.?]$/.test(text) ? text : `${text}.`)
+/** Capitalises the first letter and ends with a full stop, for messages built from server text. */
 const asSentence = (text: string) => withFullStop(text.charAt(0).toUpperCase() + text.slice(1))
 
+/** Whether an ISO time is at or before `now` (milliseconds); false for a missing or invalid time. */
 function isPast(iso: string | null | undefined, now: number): boolean {
   if (!iso) return false
   const time = new Date(iso).getTime()
@@ -100,6 +108,9 @@ function invitationStatus(invitation: Invitation, now: number): string {
 }
 
 // @find: invitation timing, expires in, sent when
+/**
+ * Cell text for an invitation's timing: when it was accepted, when it expires or expired, or when it was revoked, according to its effective status.
+ */
 function InvitationTiming({ invitation, now }: { invitation: Invitation; now: number }) {
   const status = invitationStatus(invitation, now)
   if (status === 'accepted') {
@@ -266,8 +277,12 @@ type RoleDraft = {
   startFrom: string
 }
 
+/** Name suggested when a role is copied: the original with "-copy" appended, cut to 60 characters. */
 const copyName = (name: string) => `${name}-copy`.slice(0, 60)
 
+/**
+ * Turns a failed role save or delete into a plain sentence, with specific wording for a duplicate name and for built-in roles that cannot be changed; other errors use describeApiError.
+ */
 function roleErrorMessage(error: unknown, action: 'save' | 'delete'): string {
   if (error instanceof ApiError) {
     if (error.code === 'already_exists') return 'A role with that name already exists.'
@@ -281,12 +296,22 @@ function roleErrorMessage(error: unknown, action: 'save' | 'delete'): string {
   return describeApiError(error, ROLE_FIELD_LABELS)
 }
 
+/**
+ * Turns a failed member action into a plain sentence; the last-owner refusal uses the owner rule wording.
+ */
 function memberErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.code === 'last_owner_protected') return OWNER_RULE
   return describeApiError(error, { roleName: 'New role' })
 }
 
 // @find: Members component, members page, invite person, POST /api/invitations, change role, remove member, create role, /members
+/**
+ * The Members and roles page (route /members, permission member:read).
+ * Renders: the People table (searchable, filterable by role, with change role, reset password and remove actions per row), the Invitations table (shown with member:invite) with revoke and resend, and the Roles table (shown with role:read) with create, copy, edit and delete. A banner states the one-owner rule.
+ * Permissions: each control appears only when the person holds the matching permission (member:invite, member:update, member:remove, role:create, role:update, role:delete). Which roles can be given, and whose rows can be changed, follows the grant rule in lib/memberQueries (a role is offered only when the person holds every permission it carries, and only an owner touches owners).
+ * Mutations and their feedback: inviting creates a link shown once in the dialog and kept on the page; resending replaces the link; revoking disables it; the password reset dialog creates a one-time link; role and removal changes toast the result and, where relevant, the delay until the other person's session renews. Server refusals are shown inside the dialog that caused them.
+ * Side effects: focuses and selects a newly shown link so it can be copied; filter state is held in the address bar.
+ */
 export function Members() {
   const me = profile()
   const myId = me?.userId ?? null

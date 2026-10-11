@@ -40,6 +40,7 @@ import os.aiworkforce.platform.error.ApiException;
  */
 public final class ScheduleParser {
 
+    /** Static utility; not instantiated. */
     private ScheduleParser() {}
 
     /** Shown on every rejected phrase, so a person always has something that is known to work. */
@@ -56,9 +57,11 @@ public final class ScheduleParser {
             "in 2 hours",
             "on 1 October at 9am");
 
+    /** Sort order of cron day codes, Monday first, so day lists read in week order. */
     private static final Map<String, Integer> DAY_ORDER =
             Map.of("MON", 0, "TUE", 1, "WED", 2, "THU", 3, "FRI", 4, "SAT", 5, "SUN", 6);
 
+    /** Maps every accepted day spelling (full name or abbreviation, lower case) to its cron day code. */
     private static final Map<String, String> DAY_ABBREVIATION = Map.ofEntries(
             Map.entry("mon", "MON"),
             Map.entry("monday", "MON"),
@@ -79,6 +82,7 @@ public final class ScheduleParser {
             Map.entry("sun", "SUN"),
             Map.entry("sunday", "SUN"));
 
+    /** Maps a cron day code to the full day name used in descriptions. */
     private static final Map<String, String> DAY_FULL_NAME = Map.of(
             "MON",
             "Monday",
@@ -95,8 +99,10 @@ public final class ScheduleParser {
             "SUN",
             "Sunday");
 
+    /** Maps full and short English month names (lower case) to months. */
     private static final Map<String, Month> MONTH_NAME = buildMonthNames();
 
+    /** Builds the month name table once at class load. */
     private static Map<String, Month> buildMonthNames() {
         Map<String, Month> months = new java.util.HashMap<>();
         for (Month month : Month.values()) {
@@ -108,9 +114,16 @@ public final class ScheduleParser {
 
     // ---- Time-of-day -----------------------------------------------------------------------
 
+    /** Matches one time-of-day token; see {@link #parseTime}. */
     private static final Pattern TIME =
             Pattern.compile("(?i)^(noon|midnight|(\\d{1,2})(?:[:.](\\d{2}))?\\s*(am|pm|a\\.m\\.?|p\\.m\\.?)?)$");
 
+    /**
+     * Reads a time of day such as {@code 9am}, {@code 5:30 pm}, {@code 17:00}, {@code noon} or {@code midnight}.
+     * A number without am or pm is read on the 24-hour clock.
+     *
+     * @throws ApiException a validation failure when the token is not a valid time
+     */
     private static LocalTime parseTime(String token) {
         Matcher m = TIME.matcher(token.strip());
         if (!m.matches()) {
@@ -242,8 +255,10 @@ public final class ScheduleParser {
     /** A time with am or pm, the only bare number confidently read as a time of day. */
     private static final String CLOCK = "\\d{1,2}(?:[:.]\\d{2})?\\s*(?:am|pm|a\\.m\\.?|p\\.m\\.?)";
 
+    /** Matches a phrase that opens with a time, such as {@code at 3pm tomorrow}, so {@link #normalise} can move the time to the end. */
     private static final Pattern TIME_FIRST =
             Pattern.compile("^at\\s+(" + CLOCK + "|\\d{1,2}[:.]\\d{2}|noon|midnight)\\s+(.+)$");
+    /** Matches a trailing clock time with no leading {@code at}, such as {@code every monday 9am}. */
     private static final Pattern MISSING_AT = Pattern.compile("(?<!\\bat)(?<=[a-z0-9])\\s+(" + CLOCK + ")$");
 
     /**
@@ -280,6 +295,7 @@ public final class ScheduleParser {
         return text.replaceAll("\\s+", " ").strip();
     }
 
+    /** The standard refusal for a phrase that matches no shape, carrying examples of phrases that work. */
     private static ApiException invalid() {
         return ApiException.validation("text", "That is not a schedule this platform understands yet.")
                 .with("examples", EXAMPLES);
@@ -287,9 +303,15 @@ public final class ScheduleParser {
 
     // ---- ISO instant and raw cron, tried before any natural-language pattern ----------------
 
+    /** Matches an ISO-8601 instant with an explicit offset or {@code Z}, as the console sends for a fixed time. */
     private static final Pattern ISO_INSTANT =
             Pattern.compile("^\\d{4}-\\d{2}-\\d{2}[tT ]\\d{2}:\\d{2}(:\\d{2})?(\\.\\d+)?([zZ]|[+-]\\d{2}:?\\d{2})$");
 
+    /**
+     * Reads an ISO instant as a one-off; empty when the text is not one.
+     *
+     * @throws ApiException when the instant is not in the future
+     */
     private static Optional<ParsedSchedule> tryIsoInstant(String original, ZoneId zone, Instant now) {
         if (!ISO_INSTANT.matcher(original).matches()) {
             return Optional.empty();
@@ -307,6 +329,7 @@ public final class ScheduleParser {
         }
     }
 
+    /** Accepts a raw five-field (a leading seconds field is added) or six-field cron expression, only when it is built from cron characters and Spring validates it; otherwise empty. */
     private static Optional<ParsedSchedule> tryRawCron(String original) {
         String[] parts = original.trim().split("\\s+");
         if (parts.length != 5 && parts.length != 6) {
@@ -355,6 +378,11 @@ public final class ScheduleParser {
     private static final Pattern LAST_DAY_OF_MONTH =
             Pattern.compile("^on\\s+the\\s+last\\s+day\\s+of\\s+every\\s+month\\s+at\\s+(.+)$");
 
+    /**
+     * Matches the normalised phrase against each recurring shape (hourly, daily, weekdays, weekends, day lists, every N minutes or hours, monthly dates) and returns the first that fits, empty when none does.
+     *
+     * @throws ApiException when a shape matches but its values are not allowed, such as an uneven interval
+     */
     private static Optional<ParsedSchedule> tryRecurring(String lower, ZoneId zone, Instant now) {
         Matcher m;
 
@@ -435,6 +463,7 @@ public final class ScheduleParser {
         return Optional.empty();
     }
 
+    /** Wraps a cron and its description as a recurring schedule. */
     private static ParsedSchedule recurring(String cron, String description) {
         return new ParsedSchedule("recurring", cron, null, description);
     }
@@ -499,6 +528,7 @@ public final class ScheduleParser {
         return minutes % 60 == 0 ? "every " + minutes / 60 + " hours" : "every " + minutes + " minutes";
     }
 
+    /** Accepts a monthly day from 1 to 28; later days do not exist in every month, so they are refused. */
     private static int requireDayOfMonth(int day) {
         if (day < 1 || day > 28) {
             // 29, 30 and 31 do not exist in every month; "the last day of every month" is the
@@ -509,10 +539,12 @@ public final class ScheduleParser {
         return day;
     }
 
+    /** The time in an {@code at} clause, or 9:00 am when the clause is absent. */
     private static LocalTime timeOrDefault(String atClause) {
         return atClause == null || atClause.isBlank() ? LocalTime.of(9, 0) : parseTime(atClause);
     }
 
+    /** The cron day code for a day word; refused when it is not a day. */
     private static String dayCode(String token) {
         String code = DAY_ABBREVIATION.get(token.strip());
         if (code == null) {
@@ -521,6 +553,7 @@ public final class ScheduleParser {
         return code;
     }
 
+    /** Splits {@code monday, wednesday and friday} into unique day codes in week order. */
     private static List<String> splitDayList(String listText) {
         String[] tokens = listText.split("\\s*,\\s*|\\s+and\\s+");
         Set<String> codes = new LinkedHashSet<>();
@@ -533,6 +566,7 @@ public final class ScheduleParser {
         return codes.stream().sorted(Comparator.comparing(DAY_ORDER::get)).toList();
     }
 
+    /** Joins words in plain English: {@code a}, {@code a and b}, {@code a, b, and c}. */
     private static String joinWords(List<String> words) {
         if (words.size() == 1) {
             return words.get(0);
@@ -550,6 +584,7 @@ public final class ScheduleParser {
         return joined.toString();
     }
 
+    /** Writes a number with its English ordinal suffix, such as 1st, 2nd, 13th. */
     private static String ordinal(int n) {
         if (n % 100 >= 11 && n % 100 <= 13) {
             return n + "th";
@@ -565,6 +600,7 @@ public final class ScheduleParser {
     // ---- One-off phrases --------------------------------------------------------------------
 
     // Bounded for the same reason as the recurring counts: an unbounded number overflows the parse.
+    /** Matches a one-off relative phrase such as {@code in 2 hours}. */
     private static final Pattern IN_DURATION =
             Pattern.compile("^in\\s+(\\d{1,4})\\s+(minute|minutes|hour|hours|day|days)$");
     private static final Pattern TOMORROW = Pattern.compile("^tomorrow(?:\\s+at\\s+(.+))?$");
@@ -578,6 +614,11 @@ public final class ScheduleParser {
     private static final Pattern ON_WEEKDAY =
             Pattern.compile("^(?:(on|next|this|on\\s+next|on\\s+this)\\s+)?([a-z]+)(?:\\s+at\\s+(.+))?$");
 
+    /**
+     * Matches the normalised phrase against each one-off shape (in a duration, today or tomorrow, a date, a weekday, a time only) and returns the first that fits, empty when none does.
+     *
+     * @throws ApiException when a shape matches but the time has passed or the date does not exist
+     */
     private static Optional<ParsedSchedule> tryOnce(String lower, ZoneId zone, Instant now) {
         Matcher m;
 
@@ -662,6 +703,7 @@ public final class ScheduleParser {
         return Optional.empty();
     }
 
+    /** Combines a date and time in a zone into an instant; refused when the date does not exist. */
     private static Instant dateTimeOf(int year, Month month, int day, LocalTime time, ZoneId zone) {
         try {
             LocalDate date = LocalDate.of(year, month, day);
@@ -671,6 +713,7 @@ public final class ScheduleParser {
         }
     }
 
+    /** Returns the instant when it is after {@code now}; otherwise refuses with a validation error. */
     private static Instant requireFuture(Instant runAt, Instant now) {
         if (!runAt.isAfter(now)) {
             throw ApiException.validation(
@@ -680,12 +723,14 @@ public final class ScheduleParser {
         return runAt;
     }
 
+    /** Wraps an instant as a one-off schedule with a plain-words description. */
     private static ParsedSchedule once(Instant runAt, ZoneId zone) {
         return new ParsedSchedule("once", null, runAt, describeOnce(runAt, zone));
     }
 
     private static final DateTimeFormatter ONCE_DATE = DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.ENGLISH);
 
+    /** Plain-words description of a one-off, in the given zone. */
     private static String describeOnce(Instant runAt, ZoneId zone) {
         ZonedDateTime at = ZonedDateTime.ofInstant(runAt, zone);
         return "Once, on " + ONCE_DATE.format(at) + " at " + describeTime(at.toLocalTime());

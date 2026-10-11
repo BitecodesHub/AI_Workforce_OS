@@ -44,18 +44,27 @@ import os.aiworkforce.mcp.spi.WorkspaceSecrets;
  */
 public final class TwilioAdapter extends LiveServerAdapter {
 
+    /** Twilio's REST API address; the SandboxServerRegistry passes it in, tests pass a stand-in. */
     public static final String BASE_URL = "https://api.twilio.com";
+    /** Twilio's separate pricing API, used only to quote a number's monthly cost. */
     static final String PRICING_URL = "https://pricing.twilio.com";
 
+    /** An Account SID: AC followed by 32 hexadecimal characters. */
     private static final Pattern ACCOUNT_SID = Pattern.compile("^AC[0-9a-fA-F]{32}$");
+    /** A two-letter upper-case country code. */
     private static final Pattern COUNTRY = Pattern.compile("^[A-Z]{2}$");
+    /** The refusal shown when the Account SID has the wrong shape; also reused by the connect dialog checks. */
     static final String SID_FORMAT = "The Account SID starts with AC and is 34 characters long. Copy it from the"
             + " Twilio Console, under Account info.";
 
+    /** Where the pricing request goes: Twilio's pricing host, or the stand-in used in tests. */
     private final String pricingBase;
+    /** Client for ElevenLabs, used to list and import numbers; replaced by {@link #useElevenLabs}. */
     private ElevenLabsConvai elevenLabs;
+    /** Late-bound lookup of the workspace's stored ElevenLabs key. */
     private Supplier<WorkspaceSecrets> secrets = () -> null;
 
+    /** Registers the five Twilio tools; {@code baseUrl} is the Twilio API address. */
     public TwilioAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Twilio", json, http, baseUrl);
         // A stand-in provider in tests answers pricing at its own address.
@@ -75,9 +84,16 @@ public final class TwilioAdapter extends LiveServerAdapter {
         return this;
     }
 
+    /** The parsed Twilio credential: the Account SID (user name) and Auth token (password). Never log it. */
     record Account(String sid, String token) {}
 
     // @find: parse twilio credential, account sid format check
+    /**
+     * Parses the stored JSON credential and checks the SID shape. Called at the start of every tool and by
+     * {@link #authorize}.
+     *
+     * @throws VendorException when the credential is not JSON, lacks either value or has a malformed SID
+     */
     Account account(String credential) {
         JsonNode node;
         try {
@@ -99,6 +115,7 @@ public final class TwilioAdapter extends LiveServerAdapter {
         return new Account(sid, token);
     }
 
+    /** Basic authentication with the SID and Auth token, and a JSON Accept header. */
     @Override
     protected void authorize(HttpHeaders headers, String credential) {
         Account account = account(credential);
@@ -106,6 +123,7 @@ public final class TwilioAdapter extends LiveServerAdapter {
         headers.set(HttpHeaders.ACCEPT, "application/json");
     }
 
+    /** Reads the account record (a read call to Twilio) and answers its friendly name. */
     @Override
     protected Mono<String> whoAmI(String credential) {
         Account account = account(credential);
@@ -113,12 +131,14 @@ public final class TwilioAdapter extends LiveServerAdapter {
                 .map(answer -> answer.path("friendly_name").asText("Twilio account " + account.sid()));
     }
 
+    /** Only the ElevenLabs connection asks on every call; buying and releasing ask through their side-effect class. */
     @Override
     public boolean asksEveryCall(String tool) {
         return "connect_number_to_elevenlabs".equals(tool);
     }
 
     // @find: connect number to ElevenLabs asks first
+    /** The approval sentence for connecting a number, which shares the Auth token with ElevenLabs; empty for other tools. */
     @Override
     public Optional<String> approvalReason(ToolInvocation invocation) {
         if (!"connect_number_to_elevenlabs".equals(invocation.tool())) {
@@ -137,6 +157,10 @@ public final class TwilioAdapter extends LiveServerAdapter {
     // ---- Numbers on the account ---------------------------------------------------------------
 
     // @find: Twilio list numbers, tool twilio__list_numbers, live Twilio call
+    /**
+     * Tool list_numbers (read, no approval). Reads the account's incoming numbers from Twilio, then marks each as
+     * in ElevenLabs or not by asking ElevenLabs when a key is stored; "unknown" when that cannot be known.
+     */
     private Mono<ToolResult> listNumbers(ToolInvocation invocation, JsonNode arguments, String credential) {
         Account account = account(credential);
         int limit = limit(arguments, 50, 200);
@@ -178,6 +202,10 @@ public final class TwilioAdapter extends LiveServerAdapter {
     }
 
     // @find: Twilio search available numbers, tool twilio__search_available_numbers, live Twilio call
+    /**
+     * Tool search_available_numbers (read, no approval). Searches voice-enabled local numbers for sale in a
+     * country, optionally by area code or digits. Arguments are validated before any request is made.
+     */
     private Mono<ToolResult> searchAvailable(ToolInvocation invocation, JsonNode arguments, String credential) {
         Account account = account(credential);
         String country = required(arguments, "country_code").toUpperCase(Locale.ROOT);
@@ -220,6 +248,11 @@ public final class TwilioAdapter extends LiveServerAdapter {
     }
 
     // @find: Twilio buy number, tool twilio__buy_number, purchase phone number, monthly cost
+    /**
+     * Tool buy_number (outbound; a person approves every call). Optionally looks up the monthly price, then
+     * purchases the number with a form POST to Twilio, which starts a recurring charge. Not idempotent: a dropped
+     * connection is reported as indeterminate and the purchase is not repeated.
+     */
     private Mono<ToolResult> buyNumber(ToolInvocation invocation, JsonNode arguments, String credential) {
         Account account = account(credential);
         String number = checkedNumber(arguments);
@@ -262,6 +295,10 @@ public final class TwilioAdapter extends LiveServerAdapter {
     }
 
     // @find: Twilio release number, tool twilio__release_number, give up phone number
+    /**
+     * Tool release_number (destructive; a person approves every call). Confirms the number belongs to the
+     * account, then deletes it at Twilio. The number cannot be recovered.
+     */
     private Mono<ToolResult> releaseNumber(ToolInvocation invocation, JsonNode arguments, String credential) {
         Account account = account(credential);
         String number = checkedNumber(arguments);
@@ -273,6 +310,11 @@ public final class TwilioAdapter extends LiveServerAdapter {
     }
 
     // @find: Twilio connect number to ElevenLabs, tool twilio__connect_number_to_elevenlabs, import number
+    /**
+     * Tool connect_number_to_elevenlabs (write; asks first, see {@link #approvalReason}). Checks that the number
+     * is the account's and can make voice calls, reads the workspace's ElevenLabs key on a worker thread, then
+     * delegates to {@link #connect}.
+     */
     private Mono<ToolResult> connectToElevenLabs(ToolInvocation invocation, JsonNode arguments, String credential) {
         Account account = account(credential);
         String number = checkedNumber(arguments);
@@ -288,6 +330,11 @@ public final class TwilioAdapter extends LiveServerAdapter {
         });
     }
 
+    /**
+     * Imports the number into ElevenLabs (sharing the Twilio SID and Auth token with it) unless it is already
+     * there, then optionally assigns a named voice agent. ElevenLabs rejections become a plain sentence. Several
+     * ElevenLabs calls are made; a failure after the import leaves the number connected without an agent.
+     */
     private Mono<ToolResult> connect(String key, Account account, String number, String label, String agent) {
             return elevenLabs.phoneNumbers(key)
                     .flatMap(existing -> {
@@ -348,6 +395,7 @@ public final class TwilioAdapter extends LiveServerAdapter {
                 });
     }
 
+    /** The {@code phone_number} argument normalised to international form, or a refusal that explains the problem. */
     private static String checkedNumber(JsonNode arguments) {
         String number = PhoneNumbers.normalise(required(arguments, "phone_number"));
         String problem = PhoneNumbers.problem(number);
@@ -357,6 +405,10 @@ public final class TwilioAdapter extends LiveServerAdapter {
         return number;
     }
 
+    /**
+     * The workspace's ElevenLabs key from the key store; blocking, so callers run it off the HTTP threads. When
+     * {@code required} is false a missing key or store failure gives empty; otherwise it throws a refusal.
+     */
     private Optional<String> elevenLabsKey(String orgId, boolean required) {
         WorkspaceSecrets source = secrets.get();
         Optional<String> key;
@@ -375,6 +427,7 @@ public final class TwilioAdapter extends LiveServerAdapter {
         return key.map(String::strip);
     }
 
+    /** A single-field form body. */
     private static MultiValueMap<String, String> formOf(String name, String value) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add(name, value);
@@ -393,6 +446,7 @@ public final class TwilioAdapter extends LiveServerAdapter {
                 .defaultIfEmpty(json.createObjectNode());
     }
 
+    /** Same rule as the base class: a path that starts with a slash goes after the per-credential base, if any. */
     private String addressOf(String credential, String uri) {
         String base = baseFor(credential);
         return base != null && uri.startsWith("/") ? base + uri : uri;

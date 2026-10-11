@@ -29,6 +29,7 @@ public class BrowserShotController {
 
     private final BrowserShots shots;
 
+    /** Creates the controller with the repository it reads screenshots from. */
     public BrowserShotController(BrowserShots shots) {
         this.shots = shots;
     }

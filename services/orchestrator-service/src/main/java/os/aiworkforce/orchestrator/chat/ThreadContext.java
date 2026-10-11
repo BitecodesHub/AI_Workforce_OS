@@ -27,6 +27,7 @@ import os.aiworkforce.orchestrator.service.GoalService;
  */
 final class ThreadContext {
 
+    /** Not instantiable; every member is static. */
     private ThreadContext() {}
 
     /** At most this many earlier turns are kept, newest first before they are reversed for display. */
@@ -41,8 +42,11 @@ final class ThreadContext {
     /** The last answer is kept verbatim up to this many characters. */
     static final int MAX_LAST_REPLY_CHARS = 6_000;
 
+    /** The line that opens the preamble. */
     static final String HEADER = "Earlier in this conversation, for context (the request itself comes after this):\n";
+    /** The line that closes the preamble and introduces the request itself. */
     static final String FOOTER = "\nRequest:\n";
+    /** The label of the most recent answer when it was written by the agent now being asked. */
     static final String LAST_REPLY_LABEL = "Your last reply (verbatim):\n";
 
     /** What a user turn is labelled when its author is the person this request is for. */
@@ -54,16 +58,24 @@ final class ThreadContext {
     /**
      * One earlier turn, already in the words the agent reads.
      *
+     * One earlier turn, already in the words the agent reads.
+     *
      * @param agentId the agent that wrote it, for an answer
      * @param lastReply whether this is the most recent answer, which is never dropped
      */
     record Turn(String text, UUID agentId, String agentName, boolean lastReply) {}
 
-    /** The earlier turns of a conversation, oldest first. */
+    /**
+     * The earlier turns of a conversation, oldest first.
+     *
+     * <p>Built by {@link #of}; {@link #render} turns it into the text an agent is given.
+     */
     record History(List<Turn> turns) {
 
+        /** A history with no turns; renders as an empty string. */
         static final History EMPTY = new History(List.of());
 
+        /** Whether there are no turns. */
         boolean isEmpty() {
             return turns.isEmpty();
         }
@@ -79,7 +91,11 @@ final class ThreadContext {
             return (int) (hasLastReply ? others : Math.max(0, others - 1));
         }
 
-        /** The preamble as the given agent reads it, with nothing dropped. */
+        /**
+         * The preamble as the given agent reads it, with nothing dropped.
+         *
+         * <p>Called by {@code CoordinatorService}; pure.
+         */
         String render(UUID forAgentId) {
             return render(forAgentId, 0);
         }
@@ -124,6 +140,9 @@ final class ThreadContext {
             return block.append(FOOTER).toString();
         }
 
+        /**
+         * The label placed before the last reply: second person for the agent that wrote it, otherwise the writer's name.
+         */
         private static String lastReplyLabel(Turn turn, UUID forAgentId) {
             if (forAgentId != null && forAgentId.equals(turn.agentId())) {
                 return LAST_REPLY_LABEL;
@@ -136,6 +155,11 @@ final class ThreadContext {
     /**
      * The earlier turns worth giving an agent with a new request: people's own messages and agents'
      * answers, nothing else.
+     *
+     * <p>Called by {@code CoordinatorService} when starting work for a message. The newest answer
+     * with content becomes the last reply; up to {@link #MAX_TURNS} turns in all are kept, older
+     * ones within {@link #MAX_OLDER_CHARS} characters, and anything that is not a user text message
+     * or an answer is ignored. Pure; the caller supplies the messages and the names.
      *
      * @param earlierChronological earlier messages in this conversation, oldest first
      * @param agentNames agent id to display name, for the turns an agent answered
@@ -189,6 +213,9 @@ final class ThreadContext {
         return new History(kept.stream().map(Kept::turn).toList());
     }
 
+    /**
+     * The most recent answer as a turn, kept verbatim and cut only at {@link #MAX_LAST_REPLY_CHARS}, with a marker saying how much was left out.
+     */
     private static Turn lastReplyTurn(ChatMessage message, Map<UUID, String> agentNames) {
         String content = message.getContent() == null ? "" : message.getContent().strip();
         return new Turn(
@@ -217,6 +244,7 @@ final class ThreadContext {
         return null;
     }
 
+    /** The agent's display name, or null when it is not known. */
     private static String agentName(Map<UUID, String> agentNames, UUID agentId) {
         return agentNames == null || agentId == null ? null : agentNames.get(agentId);
     }
@@ -234,6 +262,7 @@ final class ThreadContext {
         return authorId != null && Objects.equals(authorId, requesterId) ? REQUESTER : SOMEONE_ELSE;
     }
 
+    /** A message cut at a word to {@link #MAX_MESSAGE_CHARS}. */
     private static String cut(String text) {
         return CoordinatorService.truncateAtWord(text, MAX_MESSAGE_CHARS);
     }

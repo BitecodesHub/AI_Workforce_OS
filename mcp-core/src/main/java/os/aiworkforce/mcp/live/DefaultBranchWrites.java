@@ -23,27 +23,33 @@ import com.fasterxml.jackson.databind.JsonNode;
  */
 public final class DefaultBranchWrites {
 
-    /** The tools that write files to a branch. */
+    /** The tools that write files to a branch; all other GitHub tools are outside this rule. */
     public static final Set<String> TOOLS = Set.of("save_file", "delete_file", "rename_file", "commit_files");
 
+    /** The fallback guess for a repository whose default branch has not been learned yet. */
     private static final Set<String> USUAL_DEFAULTS = Set.of("main", "master");
 
+    /** Default branch per repository, keyed by lower-cased owner/name; shared across concurrent calls. */
     private final Map<String, String> defaults = new ConcurrentHashMap<>();
 
-    /** Records a repository's default branch, read from any answer that carried it. */
+    /** Records a repository's default branch, read from any answer that carried it. Blank values are ignored; no network call. */
     public void learn(String repo, String defaultBranch) {
         if (repo != null && !repo.isBlank() && defaultBranch != null && !defaultBranch.isBlank()) {
             defaults.put(repo.strip().toLowerCase(Locale.ROOT), defaultBranch.strip());
         }
     }
 
-    /** The default branch learned for a repository, if any. */
+    /** The default branch learned for a repository, if any. The repository name is matched without regard to case. */
     public Optional<String> known(String repo) {
         return repo == null ? Optional.empty() : Optional.ofNullable(defaults.get(repo.strip().toLowerCase(Locale.ROOT)));
     }
 
     // @find: does this github write need approval, default branch rule
-    /** Why this call needs approval, or empty when it writes to another branch or is not a write. */
+    /**
+     * Why this call needs approval, or empty when it writes to another branch or is not a write.
+     * Called by the gateway before the call is made. A known default wins over the main and master guess,
+     * and a missing branch is always treated as the default.
+     */
     public Optional<String> reason(String tool, JsonNode arguments) {
         if (!TOOLS.contains(tool) || arguments == null) {
             return Optional.empty();
@@ -56,18 +62,22 @@ public final class DefaultBranchWrites {
                 : Optional.empty();
     }
 
-    /** The approval's summary: what is written, where. */
+    /** The approval's summary: what is written, where. Shown to the person who is asked to approve. */
     public static String sentence(String tool, String repo, String branch) {
         return "Write straight to the default branch" + (branch == null ? "" : " " + branch)
                 + (repo == null ? "" : " of " + repo) + " using github." + tool;
     }
 
-    /** The refusal when a branch only turns out to be the default once GitHub is asked. */
+    /**
+     * The refusal when a branch only turns out to be the default once GitHub is asked. The adapter returns it
+     * the first time; learning the default makes the next identical call ask for approval through {@link #reason}.
+     */
     public static String askFirst(String branch, String repo) {
         return branch + " is the default branch of " + repo + ", and writing straight to it needs a person's approval."
                 + " Call the tool again to ask for that approval, or commit to a new branch and open a pull request.";
     }
 
+    /** A trimmed string argument, or null when it is missing, null, blank or not a plain value. */
     private static String text(JsonNode arguments, String field) {
         JsonNode value = arguments.get(field);
         if (value == null || value.isNull() || !value.isValueNode()) {

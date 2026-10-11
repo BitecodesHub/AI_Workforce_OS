@@ -7,6 +7,10 @@ package os.aiworkforce.platform;
  *
  * <p>Services reference this type rather than a package name string, so moving a package cannot
  * silently disable half the platform's shared behaviour.
+ *
+ * <p>Used by the boot class of each service, for example {@code GatewayApplication}, in
+ * {@code scanBasePackageClasses} and {@code basePackageClasses}. It holds no state and is never
+ * instantiated.
  */
 public final class PlatformCore {
 

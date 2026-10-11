@@ -62,17 +62,26 @@ public class AuthController {
     private final PasswordResetService resets;
     private final PlatformProperties properties;
 
+    /**
+     * Wires the authentication service, the reset service and the properties that decide cookie
+     * security and lifetime.
+     */
     public AuthController(AuthService auth, PasswordResetService resets, PlatformProperties properties) {
         this.auth = auth;
         this.resets = resets;
         this.properties = properties;
     }
 
+    /** Request body for {@link #register}. The password must be 12 to 256 characters. */
     public record RegisterRequest(
             @NotBlank @Email @Size(max = 320) String email,
             @NotBlank @Size(max = 120) String displayName,
             @NotBlank @Size(min = 12, max = 256) String password) {}
 
+    /**
+     * Request body for {@link #signIn}. The workspace is optional: omitted, the only workspace a person
+     * has is chosen, and a person with several enters none until one is selected.
+     */
     public record SignInRequest(@NotBlank @Email String email, @NotBlank String password, UUID workspaceId) {}
 
     /** A reset link's token, and the password the person chose. Same length rule as registering. */
@@ -80,11 +89,16 @@ public class AuthController {
             @NotBlank @Size(max = 128) String token, @NotBlank @Size(min = 12, max = 256) String newPassword) {}
 
     /**
+     * Response body for sign-in and refresh. The refresh token is not here; it travels in a cookie.
+     *
      * @param accessToken bearer token for subsequent requests
      * @param expiresAt when to refresh, so a client renews ahead of a failure rather than after
      * @param userId the signed-in account
      * @param workspaceId the workspace in scope; null means the client must choose one
      * @param permissions what this session may do, so the interface hides what it cannot
+     * @param displayName the signed-in person's display name
+     * @param email the signed-in person's address
+     * @param role the name of the role held in the workspace in scope
      */
     public record SessionResponse(
             String accessToken,
@@ -97,6 +111,13 @@ public class AuthController {
             String role) {}
 
     // @find: register, sign up, POST /api/auth/register
+    /**
+     * POST {@code /api/auth/register}. Open: no token or permission is required.
+     *
+     * <p>Creates an account through {@link AuthService#register} and returns 201 with an empty body
+     * and the new id in the {@code X-User-Id} header. No session or cookie is issued. A known address
+     * gives a 409.
+     */
     @PostMapping("/register")
     @Operation(summary = "Create an account")
     public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request) {
@@ -109,6 +130,13 @@ public class AuthController {
     }
 
     // @find: sign in, login, POST /api/auth/sign-in
+    /**
+     * POST {@code /api/auth/sign-in}. Open: no token or permission is required.
+     *
+     * <p>Authenticates through {@link AuthService#signIn}, passing the client description and
+     * address for the session list. Returns the access token in the body and sets the refresh
+     * token as an HttpOnly cookie. Every refusal is the same generic response.
+     */
     @PostMapping("/sign-in")
     @Operation(summary = "Sign in and start a session")
     public ResponseEntity<SessionResponse> signIn(@Valid @RequestBody SignInRequest request, HttpServletRequest http) {
@@ -122,6 +150,13 @@ public class AuthController {
     }
 
     // @find: refresh session, POST /api/auth/refresh
+    /**
+     * POST {@code /api/auth/refresh}. Authenticated by the refresh cookie, not by an access token.
+     *
+     * <p>Exchanges the cookie's token for a new pair through {@link AuthService#refresh}, optionally
+     * switching workspace with the {@code workspaceId} parameter. A missing cookie gives not
+     * authenticated. Replaces the cookie with the new token; reuse of an old token revokes the family.
+     */
     @PostMapping("/refresh")
     @Operation(summary = "Exchange a refresh token for a new session")
     public ResponseEntity<SessionResponse> refresh(
@@ -137,6 +172,12 @@ public class AuthController {
     }
 
     // @find: sign out, logout, POST /api/auth/sign-out
+    /**
+     * POST {@code /api/auth/sign-out}. Authenticated by the refresh cookie.
+     *
+     * <p>Revokes the cookie's session, or all of the person's sessions with {@code allDevices=true}.
+     * Always returns 204 and clears the cookie, whether or not a live session was found.
+     */
     @PostMapping("/sign-out")
     @Operation(summary = "End the session")
     public ResponseEntity<Void> signOut(
@@ -186,6 +227,12 @@ public class AuthController {
         return addressLiteral(candidate);
     }
 
+    /**
+     * Normalises a candidate client address, or returns null when it is not an address literal.
+     *
+     * <p>Strips square brackets and an IPv6 zone suffix, accepts only strings shaped like an IPv4 or
+     * IPv6 literal, and returns the canonical host address. The parse involves no DNS lookup.
+     */
     static String addressLiteral(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -212,6 +259,10 @@ public class AuthController {
         }
     }
 
+    /**
+     * Builds the response for a successful sign-in or refresh: 200 with the session in the body
+     * (never the refresh token) and the refresh token in a new cookie.
+     */
     private ResponseEntity<SessionResponse> respond(AuthService.AuthResult result) {
         return ResponseEntity.ok()
                 .header(
@@ -228,6 +279,10 @@ public class AuthController {
                         result.roleName()));
     }
 
+    /**
+     * The cookie that carries the refresh token: HttpOnly, SameSite Strict, scoped to
+     * {@code /api/auth}, living as long as the refresh token, and Secure in deployed environments.
+     */
     private ResponseCookie refreshCookie(String token) {
         return ResponseCookie.from(REFRESH_COOKIE, token)
                 .httpOnly(true)
@@ -240,6 +295,10 @@ public class AuthController {
                 .build();
     }
 
+    /**
+     * An expired, empty cookie of the same name and scope as the refresh cookie, which makes the
+     * browser delete it.
+     */
     private ResponseCookie clearedCookie() {
         return ResponseCookie.from(REFRESH_COOKIE, "")
                 .httpOnly(true)

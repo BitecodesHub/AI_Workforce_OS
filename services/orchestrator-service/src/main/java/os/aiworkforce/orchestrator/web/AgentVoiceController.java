@@ -46,6 +46,7 @@ public class AgentVoiceController {
     private final ToolGrants grants;
     private final VoiceService voice;
 
+    /** Receives the repositories and the voice service that validates a voice id. */
     public AgentVoiceController(Agents agents, AgentVersions versions, ToolGrants grants, VoiceService voice) {
         this.agents = agents;
         this.versions = versions;
@@ -53,8 +54,17 @@ public class AgentVoiceController {
         this.voice = voice;
     }
 
+    /** The body of a voice request; a null or blank id clears the voice. */
     public record SetVoiceRequest(String voiceId) {}
 
+    /**
+     * Sets or clears the voice an agent speaks with.
+     *
+     * <p>Route {@code PUT /api/agents/{agentId}/voice}; requires AGENT_UPDATE. A non-blank id is
+     * checked by {@link VoiceService#validateVoiceId} (an outbound call to the voice provider, which
+     * may refuse it), then saved on the agent. Responds with the agent view. Fails with not found for
+     * an unknown agent, or with the voice service's error for an invalid voice.
+     */
     // @find: set agent voice, PUT /api/agents/{agentId}/voice
     @PutMapping("/{agentId}/voice")
     @RequiresPermission(Permission.Codes.AGENT_UPDATE)
@@ -78,6 +88,7 @@ public class AgentVoiceController {
         return AgentController.AgentView.of(agent, version, serverNames(agentId));
     }
 
+    /** The distinct, sorted tool server names the agent is granted. */
     private List<String> serverNames(UUID agentId) {
         return grants.findByAgentIdAndEnabledTrue(agentId).stream()
                 .map(AgentToolGrant::getServer)
@@ -86,6 +97,7 @@ public class AgentVoiceController {
                 .toList();
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

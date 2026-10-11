@@ -41,6 +41,7 @@ public record ChatRequest(
         Map<String, String> metadata,
         String idempotencyKey) {
 
+    /** Rejects an empty conversation and makes every collection immutable. */
     public ChatRequest {
         Objects.requireNonNull(messages, "messages");
         if (messages.isEmpty()) {
@@ -52,6 +53,7 @@ public record ChatRequest(
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
     }
 
+    /** Starts a builder; the caller supplies at least the messages. */
     public static Builder builder() {
         return new Builder();
     }
@@ -91,10 +93,12 @@ public record ChatRequest(
         return withMessages(messages.stream().map(m -> m.withImagesAsNotes(model)).toList());
     }
 
+    /** Whether any tool is offered on this call. */
     public boolean usesTools() {
         return !tools.isEmpty();
     }
 
+    /** Pessimistic prompt size, used by the router to check each candidate window. */
     public int estimatedPromptTokens() {
         return TokenEstimate.forRequest(this);
     }
@@ -131,6 +135,7 @@ public record ChatRequest(
                 idempotencyKey);
     }
 
+    /** Fluent builder for {@link ChatRequest}; used by the orchestrator and the router tests. */
     public static final class Builder {
         private List<ChatMessage> messages = List.of();
         private List<ToolSpec> tools = List.of();

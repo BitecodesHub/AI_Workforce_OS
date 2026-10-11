@@ -25,8 +25,10 @@ import { currentTaskFor } from './shared'
  * Rendered on its own, the strip draws them in its own header.
  */
 
+/** Node statuses that count an agent as busy: running, asking and waiting. */
 const BUSY = new Set(['running', 'asking', 'waiting'])
 
+/** What the bulk controller hands to its renderer: canUpdate, the ids of agents a bulk action is still changing, the Pause all and Resume all controls, and the two confirmation dialogs. */
 export type AgentBulk = {
   canUpdate: boolean
   /** The agents a bulk action is still changing. */
@@ -37,11 +39,22 @@ export type AgentBulk = {
   dialogs: ReactNode
 }
 
+/** The board's agents ordered by name. */
 function sortedAgents(board: Board): BoardAgent[] {
   return [...board.agents].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 // @find: hook bulk pause resume all agents, pause all, resume all
+/**
+ * Controller for the "Pause all" and "Resume all" actions, shared so the page can place the controls in a
+ * section header while the strip still shows per-agent spinners.
+ * Flow: the controls open one of two ConfirmDialogs; the pause dialog offers a checkbox to include the General
+ * Employee (for viewers holding task:create). Confirming picks the agents that are not already in the target
+ * state (bulkTargets), marks them as changing, and calls useSetAgentStatus for each in parallel with
+ * Promise.allSettled, clearing each id as its request settles. A toast then reports how many changed and how
+ * many failed (bulkMessage). With nothing to change, the dialog closes with an informational toast. Returns
+ * no controls (actions is null) for viewers without agent:update.
+ */
 export function useAgentBulk(board: Board): AgentBulk {
   const toast = useToast()
   const setStatus = useSetAgentStatus()
@@ -138,6 +151,12 @@ export function useAgentBulk(board: Board): AgentBulk {
 }
 
 // @find: agents strip component, list of agents with pause resume
+/**
+ * List of every agent with what it is doing, how much is queued behind it and a pause or resume control.
+ * Props: board, onOpenGoal (opens the goal an agent is working on) and an optional bulk controller supplied
+ * by the page; without one the strip uses its own useAgentBulk and draws the header (count, busy summary,
+ * Pause all, Resume all) and the dialogs itself. Agents are sorted by name, and each row is an AgentRow.
+ */
 export function AgentsStrip({
   board,
   onOpenGoal,
@@ -176,6 +195,12 @@ export function AgentsStrip({
   )
 }
 
+/**
+ * One agent: avatar with a status dot (nodeStatus), a link to its page, a Default tag for the fallback agent,
+ * a status tag when paused or retired, its current task as a button that opens the goal (cut to 40 words) or
+ * a status phrase, the queued count, and AgentStatusButton for pause or resume. changing shows that button's
+ * spinner while a bulk action is changing this agent.
+ */
 function AgentRow({
   agent,
   board,

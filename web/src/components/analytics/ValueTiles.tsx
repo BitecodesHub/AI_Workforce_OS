@@ -18,11 +18,19 @@ import { describeChange, formatHours, formatPercent, formatSeconds } from './fig
  */
 
 /** The unit line under a figure: where it covers more than the figure alone says. */
+/** Joins the truthy parts of a note with full stops; false, null and empty parts are dropped. */
 function join(parts: Array<string | false | null | undefined>): string {
   return parts.filter((part): part is string => Boolean(part)).join('. ')
 }
 
 // @find: ValueTiles, headline kpi tiles, hours saved, value, cost
+/**
+ * Row of six headline tiles at the top of Analytics, computed from the Insights payload for the chosen window.
+ * Tiles: work completed, success rate, spend (links to #budget), cost per completed goal, median approval
+ * wait (links to /approvals while some are pending) and hours returned (links to #inputs while not estimated).
+ * Each tile carries a change against the previous period through describeChange. Unknown figures are
+ * written as words, never as zero. Pure presentation: no queries of its own.
+ */
 export function ValueTiles({ insights, window }: { insights: Insights; window: InsightsWindow }) {
   const { goals, tasks, spend, approvals, value, deltas } = insights
   const finishedTasks = tasks.completed + tasks.failed

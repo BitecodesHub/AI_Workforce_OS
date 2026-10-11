@@ -1,6 +1,6 @@
 // @find: asana, asana tasks, project tasks, task management, list tasks, get task, create task, update task, delete task, personal access token, live adapter, real API, work management
 // @what: Live Asana connector: turns the asana__ tools (list, get, create, update, delete task) into real calls to the Asana REST API using a pasted personal access token.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "asana"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke, which looks up the tool in the table filled by on(...); each tool makes one or two HTTP calls to app.asana.com; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,14 +21,26 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  *
  * <p>Asana wraps every request and answer in a {@code data} object; the wrapping is added and
  * removed here so the tools see plain objects.
+ *
+ * <p>Used by the tool gateway whenever a workspace has stored an Asana token; without a token the
+ * sandbox twin answers instead. Side-effect classes follow the sandbox declaration: list_tasks and
+ * get_task are read, create_task and update_task are write (a person is asked first when the
+ * workspace policy says so), and delete_task is destructive and always asks a person first.
+ *
+ * <p>Failures: missing arguments and an Asana workspace that cannot be found become a plain
+ * failed result; HTTP errors are described by the base class. No call is retried here.
  */
 public final class AsanaAdapter extends LiveServerAdapter {
 
+    /** The production Asana API address; tests pass another base URL to the constructor. */
     public static final String BASE_URL = "https://app.asana.com/api/1.0";
 
+    /** The task fields requested for list and write answers, so the answer stays small. */
     private static final String TASK_FIELDS = "name,completed,due_on,assignee.name,permalink_url";
+    /** The task fields for a single task read, which adds the notes and the projects. */
     private static final String TASK_FIELDS_FULL = TASK_FIELDS + ",notes,projects.name";
 
+    /** Registers the five Asana tools. The sandbox supplies the tool definitions; the base URL is injected so tests can point at a local server. */
     public AsanaAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Asana", json, http, baseUrl);
         on("list_tasks", this::listTasks);
@@ -38,12 +50,14 @@ public final class AsanaAdapter extends LiveServerAdapter {
         on("delete_task", this::deleteTask);
     }
 
+    /** Sends the personal access token as a bearer token and asks for a JSON answer. */
     @Override
     protected void authorize(HttpHeaders headers, String token) {
         headers.setBearerAuth(token);
         headers.set(HttpHeaders.ACCEPT, "application/json");
     }
 
+    /** Connection check: GET /users/me; answers the user name, with the email when Asana gives one. */
     @Override
     protected Mono<String> whoAmI(String token) {
         return get(token, "/users/me").map(answer -> {
@@ -55,6 +69,11 @@ public final class AsanaAdapter extends LiveServerAdapter {
     }
 
     // @find: Asana list tasks, tool asana__list_tasks, live Asana call
+    /**
+     * Read tool. Lists tasks of a project, or of an assignee (default: the token owner) within the
+     * token's first workspace. Calls GET /tasks, preceded by GET /users/me when no project is named.
+     * The optional completed filter is applied here, after the answer, so it can return fewer than the limit.
+     */
     private Mono<ToolResult> listTasks(ToolInvocation invocation, JsonNode arguments, String token) {
         String project = text(arguments, "project");
         String assignee = text(arguments, "assignee");
@@ -87,6 +106,7 @@ public final class AsanaAdapter extends LiveServerAdapter {
     }
 
     // @find: Asana get task, tool asana__get_task, live Asana call
+    /** Read tool. GET /tasks/{id} with the full field set; fails with a plain message when the id is missing. */
     private Mono<ToolResult> getTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return get(token, "/tasks/{id}?opt_fields={fields}", id, TASK_FIELDS_FULL)
@@ -95,6 +115,11 @@ public final class AsanaAdapter extends LiveServerAdapter {
     }
 
     // @find: Asana create task, tool asana__create_task, live Asana call
+    /**
+     * Write tool. POST /tasks. A task with a project is attached to it; otherwise the first workspace of
+     * the token is looked up first (GET /users/me). Not idempotent: a dropped connection is reported as
+     * indeterminate and the call is not repeated, so no duplicate task is created.
+     */
     private Mono<ToolResult> createTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String name = required(arguments, "name");
         String project = text(arguments, "project");
@@ -119,6 +144,10 @@ public final class AsanaAdapter extends LiveServerAdapter {
     }
 
     // @find: Asana update task, tool asana__update_task, live Asana call
+    /**
+     * Write tool. PUT /tasks/{id} with only the fields given. Refuses with a plain message when no
+     * field to change is present, before any HTTP call is made.
+     */
     private Mono<ToolResult> updateTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         ObjectNode data = json.createObjectNode();
@@ -137,6 +166,10 @@ public final class AsanaAdapter extends LiveServerAdapter {
     }
 
     // @find: Asana delete task, tool asana__delete_task, live Asana call
+    /**
+     * Destructive tool; a person always approves it first. DELETE /tasks/{id}; Asana moves the task to
+     * the trash of the owner. The answer only confirms the id.
+     */
     private Mono<ToolResult> deleteTask(ToolInvocation invocation, JsonNode arguments, String token) {
         String id = required(arguments, "id");
         return call(HttpMethod.DELETE, token, "/tasks/{id}", id).map(answer -> {
@@ -147,6 +180,7 @@ public final class AsanaAdapter extends LiveServerAdapter {
         });
     }
 
+    /** The gid of the first workspace of the token, from GET /users/me; fails when the token shows none. */
     private Mono<String> workspace(String token) {
         return get(token, "/users/me").map(answer -> {
             String gid = answer.path("data").path("workspaces").path(0).path("gid").asText("");
@@ -157,18 +191,21 @@ public final class AsanaAdapter extends LiveServerAdapter {
         });
     }
 
+    /** Wraps a body in the {@code data} object that Asana expects on every request. */
     private ObjectNode wrap(ObjectNode data) {
         ObjectNode body = json.createObjectNode();
         body.set("data", data);
         return body;
     }
 
+    /** Adds a text field only when a value was given, so an update never blanks a field. */
     private static void put(ObjectNode node, String field, String value) {
         if (value != null) {
             node.put(field, value);
         }
     }
 
+    /** Maps an Asana task to the plain shape the tools return; the full form adds notes and project names. */
     private ObjectNode task(JsonNode task, boolean full) {
         ObjectNode item = json.createObjectNode();
         item.put("id", task.path("gid").asText());

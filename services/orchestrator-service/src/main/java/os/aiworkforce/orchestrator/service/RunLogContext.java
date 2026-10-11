@@ -25,6 +25,7 @@ import org.slf4j.MDC;
  */
 final class RunLogContext implements AutoCloseable {
 
+    // MDC keys. Each appears in the log pattern when set; the JSON log format prints every key.
     static final String RUN_ID = "runId";
     static final String GOAL_ID = "goalId";
     static final String TASK_ID = "taskId";
@@ -35,11 +36,12 @@ final class RunLogContext implements AutoCloseable {
     /** The value each key held before this scope began; null where it held none. */
     private final Map<String, String> previous = new LinkedHashMap<>();
 
+    // Applies each entry immediately, remembering what it replaced. Use the static factories instead.
     private RunLogContext(Map<String, String> entries) {
         entries.forEach(this::with);
     }
 
-    /** The identifiers of one run; any that are not known are left out. */
+    /** The identifiers of one run; any that are not known are left out. Opened by the run executor and the agent runner around a run. */
     static RunLogContext run(UUID orgId, UUID goalId, UUID runId, UUID agentId) {
         return of(Map.of()).with(ORG_ID, orgId).with(GOAL_ID, goalId).with(RUN_ID, runId).with(AGENT_ID, agentId);
     }
@@ -56,15 +58,24 @@ final class RunLogContext implements AutoCloseable {
         return of(entries);
     }
 
+    /** A scope holding exactly the given keys; null values are skipped. The general form behind the other factories. */
     static RunLogContext of(Map<String, String> entries) {
         return new RunLogContext(entries);
     }
 
-    /** Adds one more identifier to this scope, remembered so closing restores it too. */
+    /** Adds one more identifier to this scope, remembered so closing restores it too. A null id is ignored. */
     RunLogContext with(String key, UUID value) {
         return with(key, value == null ? null : value.toString());
     }
 
+    /**
+     * Adds one more identifier to this scope. A null value is ignored, leaving any existing value in
+     * place. The first change to a key records what was there so {@link #close} can restore it.
+     *
+     * @param key the MDC key
+     * @param value the text to set; null is ignored
+     * @return this scope, for chaining
+     */
     RunLogContext with(String key, String value) {
         if (value != null) {
             // Only the first change to a key records what was there; later ones would record this
@@ -78,6 +89,7 @@ final class RunLogContext implements AutoCloseable {
     }
 
     @Override
+    // Restores every key this scope touched to its earlier value, or removes it if it had none, then forgets them. Safe to call twice.
     public void close() {
         previous.forEach((key, before) -> {
             if (before == null) {

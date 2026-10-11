@@ -25,47 +25,64 @@ import os.aiworkforce.platform.web.persistence.OrgScopedEntity;
  * <p>{@code notice} is its non-blocking counterpart: something worth knowing about a document that
  * was indexed, such as only the first part of a very long file being kept. It is never written to
  * {@code skipReason}, because a skip reason means nothing of the document was indexed at all.
+ *
+ * <p>Created and updated by {@code IngestionService} and listed by {@code KnowledgeController} and
+ * {@code AgentKnowledgeController}. The identifier, workspace and timestamps come from
+ * {@code OrgScopedEntity}. The getters and setters are plain accessors and are not documented one by one.
  */
 @Entity
 @Table(name = "documents")
 public class Document extends OrgScopedEntity {
 
+    /** The source the document is in. */
     @Column(name = "source_id", nullable = false)
     private UUID sourceId;
 
+    /** The document's name within its source, which for an upload is the file name. Unique within the source. */
     @Column(name = "external_id", nullable = false)
     private String externalId;
 
+    /** What a citation shows; the same as the stored name. */
     @Column(nullable = false)
     private String title;
 
+    /** Where to open the original, when there is somewhere to open. Uploads leave it empty. */
     @Column
     private String uri;
 
+    /** What the file is, detected from its content. */
     @Column(name = "media_type", nullable = false)
     private String mediaType = "text/plain";
 
+    /** The SHA-256 of the file's bytes, used to skip an unchanged re-upload. */
     @Column(name = "content_hash", nullable = false)
     private String contentHash;
 
+    /** The file size in bytes. */
     @Column(name = "byte_size", nullable = false)
     private long byteSize;
 
+    /** The number of pages, for a format that has them. */
     @Column(name = "page_count")
     private Integer pageCount;
 
+    /** The number of passages stored; zero for a skipped document. */
     @Column(name = "chunk_count", nullable = false)
     private int chunkCount;
 
+    /** The state: {@code pending} while indexing is unfinished, {@code indexed}, {@code skipped} or {@code tombstoned}. */
     @Column(nullable = false)
     private String status = "pending";
 
+    /** Why nothing of the document was indexed, in words a person can act on; null otherwise. */
     @Column(name = "skip_reason", columnDefinition = "text")
     private String skipReason;
 
+    /** Something worth knowing about an indexed document, such as being cut at the size limit; null otherwise. */
     @Column(columnDefinition = "text")
     private String notice;
 
+    /** When the document was last marked indexed. */
     @Column(name = "indexed_at")
     private Instant indexedAt;
 
@@ -73,6 +90,10 @@ public class Document extends OrgScopedEntity {
     @Column(name = "tombstoned_at")
     private Instant tombstonedAt;
 
+    /**
+     * Marks the document as removed at its source and sets its status to {@code tombstoned}, so that retrieval
+     * stops returning it. The caller saves the entity.
+     */
     public void tombstone() {
         this.tombstonedAt = Instant.now();
         this.status = "tombstoned";
@@ -86,6 +107,7 @@ public class Document extends OrgScopedEntity {
         this.tombstonedAt = null;
     }
 
+    /** True when the document is indexed and not tombstoned, which is the only state whose passages are searchable and counted. */
     public boolean isIndexed() {
         return "indexed".equals(status) && tombstonedAt == null;
     }

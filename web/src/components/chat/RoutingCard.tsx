@@ -20,6 +20,7 @@ import { DetailsContext } from './detailsContext'
  * Collapsed to one line once the goal has settled (B1.5), following the thread-wide Details mode.
  */
 
+/** Builds a blur handler that calls close when focus moves to an element outside the container. */
 function closeOnFocusOut(close: () => void) {
   return (event: ReactFocusEvent<HTMLDivElement>) => {
     const next = event.relatedTarget
@@ -28,6 +29,18 @@ function closeOnFocusOut(close: () => void) {
 }
 
 // @find: RoutingCard, routing card, routing receipt, who is on it, why this agent, send to someone else
+/**
+ * Receipt in the thread for the coordinator's routing decision, rendered by MessageItem for a "routing" message.
+ * Two forms. When the coordinator could not choose (detail.needsChoice and nothing chosen yet) it is a card
+ * asking the person to pick an agent, using the alternatives or all other active agents; each button
+ * calls onReroute(agentId). Otherwise it is one quiet line: who took the request (routingSummary, or "You
+ * chose X"), the reason cut to 70 words and expandable, the matched keywords and per-agent instructions in
+ * the expanded part, and a "Change" menu to send the request to another active agent.
+ * The Change menu is offered only when no choice was made, other agents exist, and either the goal is no
+ * longer active or the viewer may stop it (rerouting cancels active work, so it needs the Stop authority;
+ * canStopGoal). It closes when focus leaves it. The line starts folded, following the thread-wide Details mode
+ * (DetailsContext, useCollapsed). Props: settled is declared for callers; rerouting disables the buttons.
+ */
 export function RoutingCard({
   message,
   agentNames,

@@ -12,14 +12,19 @@ import { useReducedMotion } from './useReducedMotion'
  * at once in order of time, so the caller lands on the end state without waiting for anything.
  */
 
+/** One timed step: run is called at milliseconds after play begins. */
 export type SequenceStep = { at: number; run: () => void }
 
+/** Handle returned by useSequence: play replaces any running sequence, cancel clears all pending timers. */
 export type Sequence = {
   play: (steps: ReadonlyArray<SequenceStep>) => void
   cancel: () => void
 }
 
 // @find: useSequence hook, play timed demo steps
+/**
+ * Returns a stable { play, cancel } pair for scripted timed demos. play(steps) cancels anything running, then either schedules one timeout per step (motion on) or runs all steps immediately in time order (reduced motion). Pending timers are cancelled on unmount. The reduced-motion flag is held in a ref so play keeps the same identity between renders.
+ */
 export function useSequence(): Sequence {
   const reduced = useReducedMotion()
   const reducedRef = useRef(reduced)

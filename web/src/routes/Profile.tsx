@@ -45,14 +45,21 @@ import { usePermissionCatalogue, type PermissionInfo } from '../lib/queries'
  * is what a person does when they think somebody else has their password.
  */
 
+/** Shortest new password the form accepts, checked before anything is sent. */
 const MINIMUM_PASSWORD_LENGTH = 12
 
 /** The sentence for any failure on this page, with the network case in plain words. */
+/**
+ * The sentence for a failed request on this page: plain network wording when the service was not reached, otherwise the described API error.
+ */
 function failure(error: unknown): string {
   return error instanceof ApiError && error.status === 0 ? NETWORK_ERROR_COPY : describeApiError(error)
 }
 
 // @find: change password form, POST /api/account/password
+/**
+ * Change password form (POST /api/account/password through useChangePassword). Flow: checks on the client that the current password is given, the new one has at least 12 characters and the two copies match; then sends the change. On success it shows a confirmation that every other device was signed out and clears the fields; a refusal puts the service's field problems beside the fields and anything else at the top of the form.
+ */
 function ChangePassword() {
   const change = useChangePassword()
   const [current, setCurrent] = useState('')
@@ -148,6 +155,9 @@ function ChangePassword() {
 }
 
 // @find: signed-in device row, end session
+/**
+ * One signed-in device: a readable device name, when it was last active, and a Sign out button for it, or a marker for the current device which has no button.
+ */
 function DeviceRow({ session, onEnd, ending }: { session: AccountSession; onEnd: () => void; ending: boolean }) {
   const device = describeDevice(session.userAgent)
   return (
@@ -179,6 +189,9 @@ function DeviceRow({ session, onEnd, ending }: { session: AccountSession; onEnd:
 }
 
 // @find: signed-in devices list, sign out other devices
+/**
+ * The signed-in devices list (useAccountSessions). Each row can be signed out on its own (useEndSession); Sign out everywhere asks for confirmation, ends every session including this one (signOut(true)) and navigates to the sign-in page with a signed-out notice. Failures are shown in the dialog.
+ */
 function Devices() {
   const { navigate } = useRouter()
   const sessions = useAccountSessions()
@@ -254,6 +267,7 @@ function Devices() {
 }
 
 // @find: security section
+/** The Security card: the password form and the devices list. */
 function Security() {
   return (
     <Card as="section" className="stack">
@@ -299,6 +313,9 @@ function byResource(entries: PermissionInfo[]): Array<[string, PermissionInfo[]]
 }
 
 // @find: permission groups, what my role can do
+/**
+ * A list of permissions grouped by resource, each with its description (the permission code as tooltip) and an Administrative tag where it applies. The muted style is used for permissions the role does not include.
+ */
 function PermissionGroups({ groups, muted = false }: { groups: Array<[string, PermissionInfo[]]>; muted?: boolean }) {
   return (
     <div className="stack" style={{ gap: 'var(--space-5)' }}>
@@ -324,6 +341,10 @@ function PermissionGroups({ groups, muted = false }: { groups: Array<[string, Pe
 }
 
 // @find: Profile component, profile page, my account, /profile
+/**
+ * The Profile page (route /profile, available to any signed-in person; no permission needed).
+ * Shows who the person is (name from the session), what their role allows and, folded away below it, what it does not, both computed by comparing the permission catalogue (usePermissionCatalogue) with the permissions held in the session. It links to Workspace settings for people with workspace:update, and ends with the Security card (password and devices). Loading and error states of the catalogue are shown in place of the lists.
+ */
 export function Profile() {
   const me = profile()
   const catalogue = usePermissionCatalogue()

@@ -29,7 +29,8 @@ import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 
 /**
- * Try again for a run that was started directly on an agent.
+ * REST endpoint to try again a run that was started directly on an agent. Called by the Retry
+ * button on the run page.
  *
  * <p>A run that belongs to a goal is retried through the goal, which knows which step to start from
  * and what had already been done; this is for the other kind, which has only its instruction. A new
@@ -41,6 +42,7 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
 @Tag(name = "Runs")
 public class RunRetryController {
 
+    /** The statuses of a run that may be tried again. */
     private static final Set<String> RETRYABLE = Set.of("failed", "abandoned", "cancelled");
 
     private final Runs runs;
@@ -48,6 +50,7 @@ public class RunRetryController {
     private final AgentRunner runner;
     private final RunExecutor executor;
 
+    /** Receives the run and step repositories, the runner that prepares a run and the executor that drives it. */
     public RunRetryController(Runs runs, RunSteps steps, AgentRunner runner, RunExecutor executor) {
         this.runs = runs;
         this.steps = steps;
@@ -55,8 +58,19 @@ public class RunRetryController {
         this.executor = executor;
     }
 
+    /** The result of a retry: the new run, the run it retries and its status. */
     public record Retried(UUID runId, UUID retryOf, String status) {}
 
+    /**
+     * Starts a new run from a finished direct run's instruction.
+     *
+     * <p>Route {@code POST /api/runs/{runId}/retry}; answers 202; requires AGENT_RUN. Allowed for the
+     * person who started the run or anyone with RUN_CANCEL. Flow: load the run, find its original
+     * instruction in the first instruction note of its trace, prepare a new run through
+     * {@link AgentRunner} (a database write) and submit it to {@link RunExecutor} to work in the
+     * background as the caller. The old run is untouched. Fails with not found, a conflict (the run is
+     * part of a goal, is not in a retryable state, or has no recorded instruction), or permission denied.
+     */
     // @find: retry run, POST /api/runs/{runId}/retry
     @PostMapping("/{runId}/retry")
     @ResponseStatus(HttpStatus.ACCEPTED)

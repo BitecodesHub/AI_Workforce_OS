@@ -32,12 +32,15 @@ public class Organisation extends BaseEntity {
     @Column(nullable = false)
     private String name;
 
+    /** Short unique name used in addresses; compared without regard to letter case. */
     @Column(nullable = false)
     private String slug;
 
+    /** Lifecycle state, {@code active} by default. */
     @Column(nullable = false)
     private String status = "active";
 
+    /** Zone id (for example {@code Australia/Melbourne}) in which working hours are read. */
     @Column(nullable = false)
     private String timezone = "Australia/Melbourne";
 
@@ -45,20 +48,34 @@ public class Organisation extends BaseEntity {
     @Column(name = "working_hours_start_minute", nullable = false)
     private int workingHoursStartMinute = 540;
 
+    /**
+     * End of the working day in minutes from midnight; the end minute itself is outside working hours.
+     * The default of 1050 is 17:30.
+     */
     @Column(name = "working_hours_end_minute", nullable = false)
     private int workingHoursEndMinute = 1050;
 
+    /** Comma-separated three-letter day codes, for example {@code MON,TUE}. */
     @Column(name = "working_days", nullable = false)
     private String workingDays = "MON,TUE,WED,THU,FRI";
 
+    /** The member who owns the workspace, or {@code null} until one is recorded. */
     @Column(name = "owner_id")
     private UUID ownerId;
 
+    /** Whether the status is {@code active}. */
     public boolean isActive() {
         return "active".equals(status);
     }
 
-    /** Whether the workspace is open right now, in its own timezone rather than the server's. */
+    /**
+     * Whether the workspace is open right now, in its own timezone rather than the server's.
+     *
+     * <p>Reads the current time in the workspace's zone, checks the day against {@code workingDays}
+     * and the minute of the day against the start (inclusive) and end (exclusive). Throws
+     * {@link java.time.DateTimeException} for an invalid zone and {@link IllegalArgumentException} for an
+     * unknown day code. Reads the clock only; nothing is stored.
+     */
     public boolean isWithinWorkingHours() {
         ZonedDateTime now = ZonedDateTime.now(ZoneId.of(timezone));
         Set<DayOfWeek> days = Arrays.stream(workingDays.split(","))
@@ -73,6 +90,10 @@ public class Organisation extends BaseEntity {
         return minuteOfDay >= workingHoursStartMinute && minuteOfDay < workingHoursEndMinute;
     }
 
+    /**
+     * Converts a three-letter day code, in any letter case, to a day of the week; an unknown code
+     * throws {@link IllegalArgumentException}.
+     */
     private static DayOfWeek toDayOfWeek(String abbreviation) {
         return switch (abbreviation.toUpperCase(java.util.Locale.ROOT)) {
             case "MON" -> DayOfWeek.MONDAY;
@@ -86,6 +107,7 @@ public class Organisation extends BaseEntity {
         };
     }
 
+    /** The start of the working day as a clock time, converted from the stored minute count. */
     public LocalTime workingHoursStart() {
         return LocalTime.ofSecondOfDay(workingHoursStartMinute * 60L);
     }

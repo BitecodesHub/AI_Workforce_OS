@@ -38,6 +38,9 @@ public class ChatAppender {
     private final ChatMessages messages;
     private final EntityManager entityManager;
 
+    /**
+     * Creates the appender over the conversation and message repositories and the entity manager used to lock.
+     */
     public ChatAppender(Conversations conversations, ChatMessages messages, EntityManager entityManager) {
         this.conversations = conversations;
         this.messages = messages;

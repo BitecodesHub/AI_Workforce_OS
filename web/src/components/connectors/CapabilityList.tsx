@@ -14,6 +14,13 @@ import { asksFirst, capabilityLabel, groupCapabilities, type CapabilityTool } fr
  */
 
 // @find: CapabilityList, capability list, connector capabilities, what a connector can do, reads, creates and edits
+/**
+ * Read-only list of a connector's tools, grouped by groupCapabilities (Reads, Creates and edits, Sends,
+ * Deletes). Each tool is a neutral tag with its capability label and its description as a tooltip; a tool
+ * that asks first inside a group that does not always ask is marked "asks first". Each group list is
+ * named by its heading through aria-labelledby. Shows emptyText when the connector offers no tools.
+ * Stateless; rendered by ConnectDialog's callers on connector cards and by GrantDialog for each grant.
+ */
 export function CapabilityList({
   tools,
   emptyText = 'It offers nothing an agent can use yet.',

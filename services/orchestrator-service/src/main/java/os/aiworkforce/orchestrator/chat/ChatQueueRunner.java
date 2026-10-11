@@ -30,13 +30,20 @@ public class ChatQueueRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ChatQueueRunner.class);
 
+    /** Resolved lazily, because the coordinator depends on this class; avoids a start-up cycle. */
     private final ObjectProvider<CoordinatorService> coordinator;
+    /** The queue store, used by the sweep to tidy and to find conversations with waiting messages. */
     private final ChatQueue queue;
     /** Conversations a look is already running for; another request for one of them is folded into it. */
     private final java.util.Set<UUID> looking = ConcurrentHashMap.newKeySet();
+    /**
+     * Conversations asked to be looked at again while a look was running, so a late request is never lost.
+     */
     private final java.util.Set<UUID> lookAgain = ConcurrentHashMap.newKeySet();
+    /** Where looks run; a virtual thread per look unless a test replaces it. */
     private Executor executor = Executors.newVirtualThreadPerTaskExecutor();
 
+    /** Creates the runner over the coordinator, resolved on demand, and the queue store. */
     public ChatQueueRunner(ObjectProvider<CoordinatorService> coordinator, ChatQueue queue) {
         this.coordinator = coordinator;
         this.queue = queue;
@@ -47,7 +54,14 @@ public class ChatQueueRunner {
         this.executor = executor;
     }
 
-    /** Looks at a conversation soon, off this thread. */
+    /**
+     * Looks at a conversation soon, off this thread.
+     *
+     * <p>Called by {@code ChatGoalListener} after work ends, after a message is routed, and by
+     * {@link #sweep}. At most one look runs per conversation: a request that arrives during a look
+     * marks the conversation to be looked at again and returns at once. Each look calls {@link
+     * #drainNow}. Missing ids are ignored; no exception reaches the caller.
+     */
     // @find: drain queue soon, start next queued message when work ends
     public void drainSoon(UUID orgId, UUID conversationId) {
         if (orgId == null || conversationId == null) {
@@ -69,7 +83,14 @@ public class ChatQueueRunner {
         });
     }
 
-    /** Starts the next waiting message if the conversation is idle. Never throws. */
+    /**
+     * Starts the next waiting message if the conversation is idle. Never throws.
+     *
+     * <p>Clears the thread's request context for the duration, because a look must not run with
+     * whatever identity the thread last held, and restores it afterwards. Calls {@code
+     * CoordinatorService.startNextQueued}, which claims the message under the conversation lock and
+     * starts its work. A failure is logged as a warning; the sweep tries again later.
+     */
     void drainNow(UUID orgId, UUID conversationId) {
         RequestContext.Snapshot before = RequestContext.snapshot();
         try {
@@ -90,6 +111,14 @@ public class ChatQueueRunner {
     @Scheduled(
             fixedDelayString = "${aiwos.chat.queue-sweep-interval:PT20S}",
             initialDelayString = "${aiwos.chat.queue-sweep-initial-delay:PT30S}")
+    /**
+     * Periodic safety net, every twenty seconds by default after a thirty second start-up delay.
+     *
+     * <p>Tidies the queue, then asks for a look at every conversation with a waiting message, which
+     * recovers anything missed by the on-demand path, such as after a restart. Configured by
+     * {@code aiwos.chat.queue-sweep-interval} and {@code aiwos.chat.queue-sweep-initial-delay}. A
+     * failure is logged and the next sweep runs as normal.
+     */
     public void sweep() {
         try {
             queue.tidy();

@@ -18,8 +18,18 @@ import os.aiworkforce.knowledge.domain.Source;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Sources of the knowledge base. Used by {@code IngestionService}, {@code RetrievalService},
+ * {@code EmbeddingModelChange}, {@code KnowledgeController} and {@code AgentKnowledgeController}.
+ * The visibility rules for restricted and agent-owned sources live in the finder methods, so that
+ * no caller has to repeat them.
+ */
 public interface Sources extends JpaRepository<Source, UUID> {
 
+    /**
+     * Every source of the workspace, restricted and agent-owned ones included, ordered by name.
+     * For internal use such as name checks and reindexing; it applies no visibility rule.
+     */
     List<Source> findByOrgIdOrderByName(UUID orgId);
 
     /** The workspace's own sources: every one that does not belong to a single agent. */
@@ -31,6 +41,7 @@ public interface Sources extends JpaRepository<Source, UUID> {
     /** The sources one agent owns. */
     List<Source> findByOrgIdAndAgentIdOrderByName(UUID orgId, UUID agentId);
 
+    /** A source by identifier within a workspace, or empty; it applies no restriction rule, so callers check that themselves. */
     Optional<Source> findByIdAndOrgId(UUID id, UUID orgId);
 
     /**

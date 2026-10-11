@@ -16,6 +16,7 @@ import { canStopGoal, currentTaskIndex, liveStepText, workStripSummary } from '.
  * hands the goal to `onReview` (Chat.tsx opens its progress card and focuses Approve there).
  */
 
+/** The task a goal is currently on, or undefined when no task is current. */
 function currentTaskOf(goal: BoardGoal): BoardTask | undefined {
   const index = currentTaskIndex(goal.tasks)
   return index === -1 ? undefined : goal.tasks[index]
@@ -32,6 +33,13 @@ function LiveStep({ runId, active }: { runId: string; active: boolean }) {
   return <span className="caption muted">{liveStepText(steps?.[steps.length - 1])}</span>
 }
 
+/**
+ * One line for an active goal, by the state of its current task. Waiting for input: the agent asked a
+ * question, with a Go to question link (onGoTo) when the pending question is known. Waiting for approval:
+ * a Review link that calls onReview(goal.id). Otherwise: a pulse, "is working", the live step (LiveStep, only
+ * once a run exists), the elapsed time updated each second, and a Stop button with a ConfirmDialog shown
+ * when the viewer may stop the goal (canStopGoal). Renders nothing when the goal has no current task.
+ */
 function WorkStripLine({
   goal,
   agentNames,
@@ -119,6 +127,14 @@ function WorkStripLine({
 }
 
 // @find: WorkStrip, work strip, work strip, active goals, running goals, review link
+/**
+ * Status lines for the goals that are active in the conversation, used by the dock under the thread (compact)
+ * and by WorkPanel (full size).
+ * Shows up to two goals as WorkStripLine and "and N more" for the rest, and nothing for an empty list. In
+ * compact mode it starts as a single summary line (workStripSummary) with a Show button and expands to
+ * the lines with a Hide button. The container is marked data-question or data-approval when a goal is parked
+ * on a person, which the stylesheet uses for emphasis. State: whether the compact strip is expanded.
+ */
 export function WorkStrip({
   goals,
   questions,

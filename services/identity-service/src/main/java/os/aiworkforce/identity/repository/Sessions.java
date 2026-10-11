@@ -21,10 +21,22 @@ import os.aiworkforce.identity.domain.Session;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for {@link Session} rows, the links of refresh-token families.
+ *
+ * <p>Used by {@code AuthService} for sign-in, refresh, sign-out and the session list, and by
+ * {@code SessionSweep} for housekeeping. The bulk updates here run in the caller's transaction and
+ * return the number of rows changed.
+ */
 public interface Sessions extends JpaRepository<Session, UUID> {
 
+    /**
+     * Looks a session up by the SHA-256 hash of the refresh token presented. Empty when the token
+     * is unknown, which the caller treats as an invalid token.
+     */
     Optional<Session> findByRefreshTokenHash(String refreshTokenHash);
 
+    /** Every session of a person that has not been revoked, including used and expired links. */
     List<Session> findByUserIdAndRevokedAtIsNull(UUID userId);
 
     /**
@@ -50,6 +62,9 @@ public interface Sessions extends JpaRepository<Session, UUID> {
             """)
     List<Object[]> findFamilyStarts(@Param("userId") UUID userId, @Param("familyIds") List<UUID> familyIds);
 
+    /**
+     * Whether the family belongs to the person. Used to stop one person revoking another's device.
+     */
     boolean existsByFamilyIdAndUserId(UUID familyId, UUID userId);
 
     /**
@@ -94,6 +109,10 @@ public interface Sessions extends JpaRepository<Session, UUID> {
             @Param("now") Instant now,
             @Param("reason") String reason);
 
+    /**
+     * Deletes every session that expired before the given instant and returns the count. Called by
+     * {@code SessionSweep}, which passes a cut-off a week in the past so recently expired rows remain.
+     */
     @Modifying
     @Query("delete from Session s where s.expiresAt < :before")
     int deleteExpiredBefore(@Param("before") Instant before);

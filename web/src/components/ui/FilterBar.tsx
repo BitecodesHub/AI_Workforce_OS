@@ -43,6 +43,13 @@ export type FilterSelect = {
 }
 
 // @find: filter bar, search and filter a list
+/**
+ * Search box and filter controls above a long list, drawn from props; state lives in the URL through useListFilter.
+ * Props: searchLabel, query and onQueryChange, placeholder, facets (toggle chip groups; several can be pressed),
+ * selects (single-choice dropdowns), shown and total (rendered as a polite "Showing N of M" status), scopeNote
+ * (required where only a page of history is loaded, so the count does not claim more than it knows), active and
+ * onClear (a Clear filters button appears while active). Stateless apart from a generated id.
+ */
 export function FilterBar({
   searchLabel,
   query,

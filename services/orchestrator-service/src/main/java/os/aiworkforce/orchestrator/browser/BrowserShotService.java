@@ -30,6 +30,7 @@ public class BrowserShotService {
 
     private final BrowserShots shots;
 
+    /** Creates the service with the repository it writes screenshots to. */
     public BrowserShotService(BrowserShots shots) {
         this.shots = shots;
     }

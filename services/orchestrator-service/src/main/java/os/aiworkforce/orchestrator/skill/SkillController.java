@@ -45,6 +45,7 @@ public class SkillController {
     private final SkillService service;
     private final Agents agents;
 
+    /** Creates the controller with the skill service and the agent repository used to show agent names. */
     public SkillController(SkillService service, Agents agents) {
         this.service = service;
         this.agents = agents;
@@ -133,6 +134,7 @@ public class SkillController {
         return toView(service.duplicate(orgId(), skillId));
     }
 
+    /** Converts a request body to the service input; a missing body stays null so the service can report it as a validation failure. */
     private static SkillService.SkillInput input(SkillRequest request) {
         if (request == null) {
             return null;
@@ -145,6 +147,7 @@ public class SkillController {
                 request.requiredConnectors());
     }
 
+    /** Builds the response view of a skill, looking its preferred agent up by name within the skill's own workspace. */
     private SkillView toView(Skill skill) {
         UUID orgId = skill.getOrgId();
         return toView(skill, agentId -> agents.findByIdAndOrgId(agentId, orgId)
@@ -152,6 +155,7 @@ public class SkillController {
                 .orElse(null));
     }
 
+    /** Builds the response view with the agent name supplied by the caller; the name stays null when the skill has no preferred agent or the agent no longer exists. */
     private static SkillView toView(Skill skill, Function<UUID, String> agentName) {
         UUID agentId = skill.getDefaultAgentId();
         return new SkillView(
@@ -168,6 +172,7 @@ public class SkillController {
                 skill.getUpdatedAt());
     }
 
+    /** The workspace of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

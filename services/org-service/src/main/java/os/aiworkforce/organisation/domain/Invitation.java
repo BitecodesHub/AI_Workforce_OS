@@ -28,24 +28,37 @@ public class Invitation extends OrgScopedEntity {
     @Column(nullable = false)
     private String email;
 
+    /** The name of the role the person receives on joining. */
     @Column(name = "role_name", nullable = false)
     private String roleName;
 
+    /** Hash of the invitation token; the token itself is never stored. */
     @Column(name = "token_hash", nullable = false)
     private String tokenHash;
 
+    /** The member who sent the invitation, kept for the audit trail and the list. */
     @Column(name = "invited_by")
     private UUID invitedBy;
 
+    /**
+     * Lifecycle state: {@code pending}, {@code accepted} or {@code revoked}. Expiry is derived from
+     * {@code expiresAt}, not stored.
+     */
     @Column(nullable = false)
     private String status = "pending";
 
+    /** The moment after which the link stops working. */
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
+    /** When the invitation was redeemed, or {@code null} while it is open. */
     @Column(name = "accepted_at")
     private Instant acceptedAt;
 
+    /**
+     * Whether the invitation is still open by status. A pending invitation may still be past its
+     * expiry; check {@link #hasExpired()} as well.
+     */
     public boolean isPending() {
         return "pending".equals(status);
     }
@@ -55,6 +68,7 @@ public class Invitation extends OrgScopedEntity {
         return "revoked".equals(status);
     }
 
+    /** Whether the invitation has been redeemed. */
     public boolean isAccepted() {
         return "accepted".equals(status);
     }
@@ -64,6 +78,7 @@ public class Invitation extends OrgScopedEntity {
         this.status = "revoked";
     }
 
+    /** Whether the expiry time has passed. Independent of the status. */
     public boolean hasExpired() {
         return expiresAt != null && expiresAt.isBefore(Instant.now());
     }

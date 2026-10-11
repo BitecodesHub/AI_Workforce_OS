@@ -19,10 +19,13 @@ import org.springframework.data.repository.query.Param;
  * interface per file is also the convention every other repository in this service follows.
  */
 
+/** Spring Data repository for {@link Schedule} rows; used by ScheduleService, ScheduleController, ScheduleGoalListener and the agent tooling. */
 public interface Schedules extends JpaRepository<Schedule, UUID> {
 
+    /** Every schedule in a workspace, by name. */
     List<Schedule> findByOrgIdOrderByNameAsc(UUID orgId);
 
+    /** One schedule, only when it belongs to the workspace; the standard tenant-safe lookup. */
     Optional<Schedule> findByIdAndOrgId(UUID id, UUID orgId);
 
     /** Every schedule in a workspace given to one agent, by name. */

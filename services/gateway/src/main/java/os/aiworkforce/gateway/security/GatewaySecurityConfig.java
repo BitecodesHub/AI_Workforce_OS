@@ -77,6 +77,18 @@ public class GatewaySecurityConfig {
         "/api/oauth/callback",
     };
 
+    /**
+     * Declares which requests need a verified token.
+     *
+     * <p>Flow: disables CSRF, because the API is called with a bearer token and not a cookie; applies
+     * the CORS rules from {@link #corsSource}; permits every CORS preflight and every path in
+     * {@code PUBLIC_PATHS}; requires an authenticated JWT for everything else. A missing or invalid
+     * token produces a 401 before the request is routed to a service. No state is written.
+     *
+     * @param http the reactive security builder supplied by Spring
+     * @param properties the settings tree, which supplies the CORS rules
+     * @return the filter chain applied to every request
+     */
     // @find: gateway security filter chain, which paths need a token, public paths, permit all, CSRF off, CORS, oauth2 resource server, who can call the api without logging in
     @Bean
     public SecurityWebFilterChain filterChain(ServerHttpSecurity http, PlatformProperties properties) {
@@ -107,6 +119,16 @@ public class GatewaySecurityConfig {
         return decoder(properties.security());
     }
 
+    /**
+     * Builds the token decoder: ES256 signatures from the published keys, then issuer and audience.
+     *
+     * <p>Called by {@link #jwtDecoder} and by tests. A token whose issuer or audience differs from
+     * {@code aiwos.security} is rejected with an {@code invalid_token} error, in addition to the default
+     * expiry and not-before checks that Spring applies.
+     *
+     * @param security the issuer, audience and key-set settings
+     * @return a decoder that fetches keys lazily through {@link #publishedKeys}
+     */
     // @find: build jwt decoder, ES256, issuer audience validator, token rejected invalid_token
     static NimbusReactiveJwtDecoder decoder(PlatformProperties.Security security) {
         JWKSource<SecurityContext> keys = publishedKeys(security);
@@ -163,6 +185,13 @@ public class GatewaySecurityConfig {
                 .flatMapMany(Flux::fromIterable);
     }
 
+    /**
+     * Builds the browser cross-origin rules from {@code aiwos.http}.
+     *
+     * <p>Allows the configured origins, the six standard methods and the headers the web client sends,
+     * and exposes the request identifier, retry and rate-limit headers so the client can read them.
+     * The same rules apply to every path. Reads settings only.
+     */
     // @find: CORS configuration, allowed origins, allowed headers, exposed headers, X-Request-Id, X-Workspace-Id, Idempotency-Key
     private CorsConfigurationSource corsSource(PlatformProperties properties) {
         PlatformProperties.Http http = properties.http();

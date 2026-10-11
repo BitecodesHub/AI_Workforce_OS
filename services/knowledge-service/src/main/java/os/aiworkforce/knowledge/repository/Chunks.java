@@ -25,8 +25,14 @@ import os.aiworkforce.knowledge.domain.Chunk;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Passages of the knowledge base. Used by {@code IngestionService} to replace, read and erase
+ * passages, by {@code RetrievalService} for keyword search and for resolving hits, and by
+ * {@code KnowledgeController} to show a document's passages.
+ */
 public interface Chunks extends JpaRepository<Chunk, UUID> {
 
+    /** A document's passages in reading order, loaded in full. Used when a document is reindexed. */
     List<Chunk> findByDocumentIdOrderByPosition(UUID documentId);
 
     /**

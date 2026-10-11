@@ -20,15 +20,19 @@ import { accessToken, clearSession } from './session'
 
 /* ---- The window ------------------------------------------------------------------------------------ */
 
+/** The time windows Analytics offers: 7, 30 or 90 days. */
 export type InsightsWindow = '7d' | '30d' | '90d'
 
+/** The windows in the order the window picker lists them. */
 export const INSIGHTS_WINDOWS: readonly InsightsWindow[] = ['7d', '30d', '90d']
 
 /** What a window opens on when none is asked for. */
 export const DEFAULT_WINDOW: InsightsWindow = '30d'
 
+/** Number of days in each window. */
 export const WINDOW_DAYS: Record<InsightsWindow, number> = { '7d': 7, '30d': 30, '90d': 90 }
 
+/** Words shown for each window. */
 export const WINDOW_LABEL: Record<InsightsWindow, string> = {
   '7d': 'Last 7 days',
   '30d': 'Last 30 days',
@@ -63,13 +67,19 @@ export function figure(value: unknown): number | null {
   return null
 }
 
+/**
+ * Reads a figure as a whole count, treating anything unreadable as 0 (used only for true counts, never for rates or money that may be unknown).
+ */
 const count = (value: unknown): number => figure(value) ?? 0
 
+/** Type guard: true for a plain object. */
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+/** Reads a non-empty string, or null. */
 const text = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null)
 
+/** Reads an array, or an empty one. */
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
 
 /* ---- The workspace's figures -------------------------------------------------------------------------- */
@@ -82,6 +92,9 @@ export type Delta = {
   changePercent: number | null
 }
 
+/**
+ * The workspace's figures over a window: goals, tasks, runs, cost and the comparison with the window before. Every number is a number or null, never a guess.
+ */
 export type Insights = {
   window: InsightsWindow
   from: string | null
@@ -145,6 +158,7 @@ export type Insights = {
   deltas: Record<string, Delta>
 }
 
+/** Normalises a comparison figure; each part is read with figure(), so unreadable values are null. */
 function deltaRow(raw: unknown): Delta {
   const row = isRecord(raw) ? raw : {}
   return {
@@ -268,6 +282,9 @@ export function useInsights(window: InsightsWindow, options: QueryOptions = {}) 
 
 /* ---- Each agent ---------------------------------------------------------------------------------------- */
 
+/**
+ * One agent's outcomes over the window: run counts, success figures, cost and time, with a flag saying whether there were enough finished runs for a rate to mean anything.
+ */
 export type AgentInsight = {
   agentId: string
   name: string
@@ -296,12 +313,16 @@ export type AgentInsight = {
   hoursReturned: number | null
 }
 
+/** The per-agent insights with the hourly rate they were valued at. */
 export type AgentInsights = {
   window: InsightsWindow
   hourlyRate: number | null
   agents: AgentInsight[]
 }
 
+/**
+ * Normalises one agent's insight row, using safe defaults (an unnamed agent, zero counts, enoughRuns only when the service said true).
+ */
 function agentRow(row: Record<string, unknown>): AgentInsight {
   return {
     agentId: text(row.agentId) ?? '',
@@ -357,6 +378,9 @@ export function useAgentInsights(window: InsightsWindow, options: QueryOptions =
 /** What every figure worked out from the inputs below is called, wherever it is shown. */
 export const VALUE_LABEL = 'Estimate from your inputs (current values)'
 
+/**
+ * The inputs the estimated value is worked out from: an hourly staff cost and minutes saved per task for each agent.
+ */
 export type ValueSettings = {
   label: string
   /** The loaded hourly staff cost in US dollars; null until one is entered. */
@@ -364,12 +388,16 @@ export type ValueSettings = {
   agents: { agentId: string; name: string; minutesPerTask: number | null }[]
 }
 
+/** The body of a value-settings save: the hourly rate and minutes per agent id. */
 export type ValueSettingsInput = {
   hourlyRate: number | null
   /** Minutes per agent id; an agent left out has no estimate. */
   minutesPerTask: Record<string, number>
 }
 
+/**
+ * Normalises the value-settings response; returns null when it is not the expected shape, so the card shows its empty state instead of wrong numbers.
+ */
 export function normaliseValueSettings(raw: unknown): ValueSettings | null {
   if (!isRecord(raw) || !Array.isArray(raw.agents)) return null
   return {
@@ -415,6 +443,9 @@ export function useSaveValueSettings() {
 
 /* ---- The spending caps ------------------------------------------------------------------------------------- */
 
+/**
+ * The workspace's spending caps and where spending stands: caps (monthly, per run, per agent per day), what happens at a cap, spent, remaining and projected month-end. Caps and projections are null when not set or unknown.
+ */
 export type Budget = {
   monthlyCap: number | null
   perRunCap: number | null
@@ -427,6 +458,7 @@ export type Budget = {
   periodStart: string | null
 }
 
+/** The body of a budget save: the three caps (null removes one) and the behaviour at a cap. */
 export type BudgetInput = {
   monthlyCap: number | null
   perRunCap: number | null
@@ -434,6 +466,9 @@ export type BudgetInput = {
   onExhausted: 'stop' | 'sandbox'
 }
 
+/**
+ * Normalises the budget response; returns null when it is not an object. Unknown behaviour reads as stop.
+ */
 export function normaliseBudget(raw: unknown): Budget | null {
   if (!isRecord(raw)) return null
   return {
@@ -486,8 +521,10 @@ export const CAP_WARNING_AT = 0.8
 
 /* ---- Spend ------------------------------------------------------------------------------------------------- */
 
+/** How the usage report is grouped: by model, agent, day, provider or outcome. */
 export type UsageGrouping = 'model' | 'agent' | 'day' | 'provider' | 'outcome'
 
+/** One row of the usage report: tokens, cost, failed-attempt cost and attempt counts. */
 export type UsageLine = {
   key: string | null
   label: string
@@ -499,8 +536,10 @@ export type UsageLine = {
   skipped: number
 }
 
+/** The usage report: how it was grouped, the totals row, and the group rows. */
 export type UsageReport = { grouping: string; totals: UsageLine; groups: UsageLine[] }
 
+/** Normalises one usage row; a missing label reads "Unknown". */
 function usageLine(raw: unknown): UsageLine {
   const row = isRecord(raw) ? raw : {}
   return {
@@ -515,6 +554,7 @@ function usageLine(raw: unknown): UsageLine {
   }
 }
 
+/** Normalises the usage report; returns null when the groups are missing. */
 export function normaliseUsageReport(raw: unknown): UsageReport | null {
   if (!isRecord(raw) || !Array.isArray(raw.groups)) return null
   return { grouping: text(raw.groupBy) ?? '', totals: usageLine(raw.totals), groups: raw.groups.map(usageLine) }
@@ -618,8 +658,12 @@ export function downloadUsageCsv(range: { from: string; to: string }): Promise<s
 /** One person's vote on one answer. */
 export type AnswerRating = { messageId: string; rating: 1 | -1; reason: string | null }
 
+/** Ratings the person gave in one conversation, keyed by message id. */
 export type ConversationRatings = Record<string, AnswerRating>
 
+/**
+ * Turns the feedback response into ratings by message id, keeping only valid up (1) and down (-1) ratings.
+ */
 export function normaliseConversationRatings(raw: unknown): ConversationRatings {
   const ratings: ConversationRatings = {}
   if (!isRecord(raw)) return ratings
@@ -631,6 +675,7 @@ export function normaliseConversationRatings(raw: unknown): ConversationRatings 
   return ratings
 }
 
+/** Query key of one conversation's ratings. */
 const ratingsKey = (conversationId: string | null) => ['conversation-ratings', conversationId] as const
 
 // @find: answer ratings in a conversation, thumbs; route: GET /api/conversations/{id}/feedback; used by: Chat page (AnswerRating)
@@ -690,8 +735,12 @@ export function useRateAnswer(conversationId: string | null) {
   })
 }
 
+/**
+ * A rating on an answer, as seen from the run: which message, who rated, up or down, the reason and when.
+ */
 export type RunRating = { messageId: string; userId: string | null; rating: 1 | -1; reason: string | null; updatedAt: string | null }
 
+/** Turns a run's feedback response into a list of valid ratings (up 1 or down -1). */
 export function normaliseRunRatings(raw: unknown): RunRating[] {
   if (!isRecord(raw)) return []
   const ratings: RunRating[] = []

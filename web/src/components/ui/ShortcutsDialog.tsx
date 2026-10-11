@@ -9,6 +9,7 @@ import { Dialog, Kbd } from './index'
  */
 
 // @find: keyboard shortcuts dialog
+/** Dialog listing a screen's keyboard shortcuts. Props: open, onClose and groups, each a title and a list of items made of a description and the separate keys of the chord (Kbd elements, from formatHotkey in lib/hotkeys). Stateless; opened by screens that define hotkeys, such as Chat. */
 export function ShortcutsDialog({
   open,
   onClose,

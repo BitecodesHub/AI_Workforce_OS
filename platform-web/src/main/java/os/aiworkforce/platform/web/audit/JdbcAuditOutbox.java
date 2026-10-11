@@ -26,6 +26,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 public class JdbcAuditOutbox implements AuditOutbox {
 
+    /**
+     * Statement that claims due rows and returns them in one step.
+     *
+     * <p>It selects up to the limit of rows whose retry time has passed, skipping rows that another
+     * instance has locked, and pushes their retry time forward by the lease so that nobody else takes
+     * them while they are being sent.
+     */
     private static final String CLAIM = """
             UPDATE audit_outbox SET next_attempt_at = now() + (? * interval '1 second')
             WHERE id IN (
@@ -38,12 +45,20 @@ public class JdbcAuditOutbox implements AuditOutbox {
                       outcome, detail::text AS detail, request_id, occurred_at, attempts
             """;
 
+    /** The JDBC access that joins the caller's transaction on the same data source. */
     private final JdbcTemplate jdbc;
 
+    /** Creates the outbox over the given template. Wired by {@code AuditClientConfiguration}. */
     public JdbcAuditOutbox(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Inserts the event as a new row, with the detail cast to {@code jsonb}. Joins the caller's
+     * transaction, so the row commits or rolls back with the change it records. Called by
+     * {@code AuditClient.record}. Failure: a database error is thrown to the caller and so aborts the
+     * surrounding change, which is intended.
+     */
     @Override
     // @find: queue audit event in outbox
     public void add(Event event) {
@@ -69,6 +84,12 @@ public class JdbcAuditOutbox implements AuditOutbox {
                 });
     }
 
+    /**
+     * Claims up to {@code limit} due rows for the length of the lease using {@code CLAIM}, then orders
+     * them by the time the action happened. A lease shorter than one second is treated as one second.
+     * Called by {@code AuditOutboxRelay}. The claim commits on its own, so a crashed sender leaves the
+     * row to be found again once the lease passes.
+     */
     @Override
     // @find: claim audit events for delivery
     public List<Event> claimDue(int limit, Duration lease) {
@@ -102,12 +123,20 @@ public class JdbcAuditOutbox implements AuditOutbox {
                 .toList();
     }
 
+    /**
+     * Deletes the row once analytics-service has accepted the event. Deleting a row that is already
+     * gone does nothing.
+     */
     @Override
     // @find: mark audit event delivered
     public void delivered(UUID id) {
         jdbc.update("DELETE FROM audit_outbox WHERE id = ?", id);
     }
 
+    /**
+     * Counts one more failed attempt, sets the next retry time {@code retryAfter} from now (at least one
+     * second) and stores the error text, cut to 500 characters, for operators.
+     */
     @Override
     // @find: mark audit event delivery failed
     public void failed(UUID id, Duration retryAfter, String error) {
@@ -126,6 +155,10 @@ public class JdbcAuditOutbox implements AuditOutbox {
                 });
     }
 
+    /**
+     * Makes the given rows due immediately, without counting an attempt. Used when a pass stops early
+     * so that events it never tried are not delayed by their lease. An empty collection does nothing.
+     */
     @Override
     public void release(Collection<UUID> ids) {
         if (ids.isEmpty()) {
@@ -136,12 +169,17 @@ public class JdbcAuditOutbox implements AuditOutbox {
         });
     }
 
+    /**
+     * Counts every row in the table, due or not. Used by the pending-events gauge; a database error is
+     * thrown to the caller.
+     */
     @Override
     public long pending() {
         Long count = jdbc.queryForObject("SELECT count(*) FROM audit_outbox", Long.class);
         return count == null ? 0 : count;
     }
 
+    /** Binds a UUID parameter, or SQL null when the value is absent. */
     private static void setUuid(PreparedStatement ps, int index, UUID value) throws SQLException {
         if (value == null) {
             ps.setNull(index, Types.OTHER);
@@ -150,6 +188,7 @@ public class JdbcAuditOutbox implements AuditOutbox {
         }
     }
 
+    /** Binds a text parameter, or SQL null when the value is absent. */
     private static void setText(PreparedStatement ps, int index, String value) throws SQLException {
         if (value == null) {
             ps.setNull(index, Types.VARCHAR);

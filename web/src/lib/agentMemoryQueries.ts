@@ -11,6 +11,7 @@ import type { QueryOptions, SourceDocument } from './queries'
  * changing takes agent:update. Every key starts with 'agents' so a change refreshes the lot.
  */
 
+/** The kinds of note an agent may hold: fact, preference, standing instruction or plain note. */
 export type MemoryKind = 'fact' | 'preference' | 'instruction' | 'note'
 
 /** One note, as GET /api/memory/agents/{id}/memories returns it. */
@@ -30,8 +31,10 @@ export type AgentMemory = {
   pinned?: boolean
 }
 
+/** The notes of one agent with the total held and the most the list returns. */
 export type AgentMemoryList = { memories: AgentMemory[]; total: number; limit: number }
 
+/** Words shown for each kind of note. */
 export const MEMORY_KIND_LABEL: Record<MemoryKind, string> = {
   fact: 'Fact',
   preference: 'Preference',
@@ -48,6 +51,9 @@ export function memorySourceLabel(source: AgentMemory['source']): string {
 }
 
 // @find: list agent memories; route: GET /api/memory/agents/{id}/memories; used by: Agent detail page (AgentMemoryCard)
+/**
+ * Query for an agent's notes (GET /api/memory/agents/{id}/memories, key ['agents', id, 'memories']), needing agent:read. Disabled until an id is known. Used by the Agent detail memory card.
+ */
 export function useAgentMemories(agentId: string, options: QueryOptions = {}) {
   return useQuery({
     queryKey: ['agents', agentId, 'memories'],
@@ -56,12 +62,18 @@ export function useAgentMemories(agentId: string, options: QueryOptions = {}) {
   })
 }
 
+/**
+ * Returns a function that refetches the agent's notes; shared by the note mutations as their success handler.
+ */
 function useRefreshMemories(agentId: string) {
   const client = useQueryClient()
   return () => client.invalidateQueries({ queryKey: ['agents', agentId, 'memories'] })
 }
 
 // @find: add memory, remember something; route: POST /api/memory/agents/{id}/memories; used by: Agent detail page (AgentMemoryCard)
+/**
+ * Mutation that adds a note written by a person (POST /api/memory/agents/{id}/memories with content and kind), needing agent:update. On success it refetches the notes.
+ */
 export function useAddMemory(agentId: string) {
   const refresh = useRefreshMemories(agentId)
   return useMutation({
@@ -72,6 +84,9 @@ export function useAddMemory(agentId: string) {
 }
 
 // @find: edit memory; route: PUT /api/memory/agents/{id}/memories/{memoryId}; used by: Agent detail page (AgentMemoryCard)
+/**
+ * Mutation that edits a note's text and kind (PUT /api/memory/agents/{id}/memories/{memoryId}). On success it refetches the notes.
+ */
 export function useUpdateMemory(agentId: string) {
   const refresh = useRefreshMemories(agentId)
   return useMutation({
@@ -85,6 +100,9 @@ export function useUpdateMemory(agentId: string) {
 }
 
 // @find: delete memory, forget one; route: DELETE /api/memory/agents/{id}/memories/{memoryId}; used by: Agent detail page (AgentMemoryCard)
+/**
+ * Mutation that makes the agent forget one note (DELETE /api/memory/agents/{id}/memories/{memoryId}); takes the note id. On success it refetches the notes.
+ */
 export function useDeleteMemory(agentId: string) {
   const refresh = useRefreshMemories(agentId)
   return useMutation({
@@ -119,6 +137,9 @@ export function useForgetAllMemories(agentId: string) {
 /* ---- The agent's own documents -------------------------------------------------------------------- */
 
 // @find: list agent documents; route: GET /api/knowledge/agents/{id}/documents; used by: Agent detail page (AgentDocumentsCard)
+/**
+ * Query for the documents an agent keeps for itself (GET /api/knowledge/agents/{id}/documents, key ['agents', id, 'documents']). While any document is still pending it polls every 3 seconds, so "Being read" becomes searchable (or shows a reason) without a reload. Used by the Agent detail documents card.
+ */
 export function useAgentDocuments(agentId: string, options: QueryOptions = {}) {
   return useQuery({
     queryKey: ['agents', agentId, 'documents'],
@@ -130,12 +151,18 @@ export function useAgentDocuments(agentId: string, options: QueryOptions = {}) {
   })
 }
 
+/**
+ * Returns a function that refetches the agent's documents; shared by the document mutations as their success handler.
+ */
 function useRefreshDocuments(agentId: string) {
   const client = useQueryClient()
   return () => client.invalidateQueries({ queryKey: ['agents', agentId, 'documents'] })
 }
 
 // @find: upload agent document; route: POST /api/knowledge/agents/{id}/documents; used by: Agent detail page (AgentDocumentsCard)
+/**
+ * Mutation that uploads a file for the agent (POST /api/knowledge/agents/{id}/documents, multipart). Resolves to the indexing status. On success it refetches the documents, which then poll while the file is read.
+ */
 export function useUploadAgentDocument(agentId: string) {
   const refresh = useRefreshDocuments(agentId)
   return useMutation({
@@ -152,6 +179,9 @@ export function useUploadAgentDocument(agentId: string) {
 }
 
 // @find: add agent note, paste text for agent; route: POST /api/knowledge/agents/{id}/notes; used by: Agent detail page (AgentDocumentsCard)
+/**
+ * Mutation that saves pasted text as a document for the agent (POST /api/knowledge/agents/{id}/notes with title and text). On success it refetches the documents.
+ */
 export function useAddAgentNote(agentId: string) {
   const refresh = useRefreshDocuments(agentId)
   return useMutation({
@@ -165,6 +195,9 @@ export function useAddAgentNote(agentId: string) {
 }
 
 // @find: delete agent document; route: DELETE /api/knowledge/agents/{id}/documents/{docId}; used by: Agent detail page (AgentDocumentsCard)
+/**
+ * Mutation that removes one of the agent's documents (DELETE /api/knowledge/agents/{id}/documents/{docId}); takes the document id. On success it refetches the documents.
+ */
 export function useDeleteAgentDocument(agentId: string) {
   const refresh = useRefreshDocuments(agentId)
   return useMutation({

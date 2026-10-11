@@ -55,6 +55,7 @@ public class GrantGuard {
     private final Roles roles;
     private final Memberships memberships;
 
+    /** Creates the guard over the role and membership repositories it reads. */
     public GrantGuard(Roles roles, Memberships memberships) {
         this.roles = roles;
         this.memberships = memberships;
@@ -70,6 +71,7 @@ public class GrantGuard {
      */
     public record Grantor(UUID userId, UUID roleId, Set<String> permissions, boolean owner) {
 
+        /** Copies the permission set so the record is immutable; a null set becomes empty. */
         public Grantor {
             permissions = permissions == null ? Set.of() : Set.copyOf(permissions);
         }
@@ -83,10 +85,14 @@ public class GrantGuard {
     /** Whether a grant is allowed, and if not, why. */
     public record Decision(boolean allowed, String reason) {
 
+        /** A decision that permits the grant. */
         public static Decision allow() {
             return new Decision(true, null);
         }
 
+        /**
+         * A decision that refuses the grant, with one of the reason codes defined on {@link GrantGuard}.
+         */
         public static Decision refuse(String reason) {
             return new Decision(false, reason);
         }
@@ -202,6 +208,10 @@ public class GrantGuard {
         }
     }
 
+    /**
+     * Whether the role is the built-in owner role: a system role with no workspace and the name
+     * {@link #OWNER}. A custom role called "owner" does not qualify. Null gives false.
+     */
     public boolean isOwnerRole(Role role) {
         return role != null && role.isSystem() && role.isPlatformWide() && OWNER.equals(role.getName());
     }
@@ -211,6 +221,10 @@ public class GrantGuard {
         return roleId != null && roles.findById(roleId).map(this::isOwnerRole).orElse(false);
     }
 
+    /**
+     * The 403 {@link ApiException} for a refused grant, with a message for the owner-only case or
+     * the exceeds-grantor case and the reason code attached as detail.
+     */
     private static ApiException refusal(String reason) {
         String message = OWNER_ONLY.equals(reason)
                 ? "Only an owner can make someone an owner."

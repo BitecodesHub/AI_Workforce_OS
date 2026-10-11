@@ -63,6 +63,7 @@ public class SkillService {
     private final ConnectorCatalog catalog;
     private final AuditClient audit;
 
+    /** Creates the service with the skill repository, the agent repository, the connector catalogue used to validate required connectors, and the audit client. */
     public SkillService(Skills skills, Agents agents, ConnectorCatalog catalog, AuditClient audit) {
         this.skills = skills;
         this.agents = agents;
@@ -265,6 +266,7 @@ public class SkillService {
         return List.copyOf(ids);
     }
 
+    /** Copies the validated fields onto the skill entity. */
     private static void apply(Skill skill, Valid valid) {
         skill.setName(valid.name());
         skill.setDescription(valid.description());
@@ -273,6 +275,7 @@ public class SkillService {
         skill.setRequiredConnectors(valid.connectors());
     }
 
+    /** Builds the conflict error returned when a skill name is already in use in the workspace. */
     private static ApiException nameConflict(String name) {
         return ApiException.conflict("A skill called \"" + name + "\" already exists in this workspace.");
     }
@@ -330,6 +333,7 @@ public class SkillService {
 
     // ---- Audit ----------------------------------------------------------------------------------
 
+    /** Records an audit event for a skill action, sent only after the surrounding transaction commits so that a rolled-back change is never reported. */
     private void recordAfterCommit(UUID orgId, String action, Skill skill, Map<String, Object> extra) {
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
         Map<String, Object> detail = new LinkedHashMap<>();

@@ -16,6 +16,9 @@ import { sentenceCase } from './format'
  * without an import cycle.
  */
 
+/**
+ * The colour families a status or category tag may use; the Tag component maps each to its own styling.
+ */
 export type TagTone =
   | 'blue'
   | 'success'
@@ -27,6 +30,9 @@ export type TagTone =
   | 'growth'
   | 'support'
 
+/**
+ * The kinds of record that have a status vocabulary; statusLabel takes one of these plus the raw status text.
+ */
 export type StatusKind =
   | 'run'
   | 'task'
@@ -42,10 +48,13 @@ export type StatusKind =
   | 'toolCall'
   | 'question'
 
+/** The label and tone a status is shown with. */
 export type StatusEntry = { tone: TagTone; label: string }
 
+/** Builds a status entry from a tone and a label. */
 const entry = (tone: TagTone, label: string): StatusEntry => ({ tone, label })
 
+/** Statuses shared by runs, tasks and goals, which move through the same lifecycle. */
 const RUN_LIKE = {
   running: entry('blue', 'Running'),
   waiting_approval: entry('warning', 'Waiting for approval'),
@@ -149,6 +158,7 @@ const STATUS: Record<StatusKind, Record<string, StatusEntry>> = {
   },
 }
 
+/** Normalises a status for lookup: trimmed, lower case, hyphens turned into underscores. */
 function statusKey(value: string): string {
   return value.trim().toLowerCase().replace(/-/g, '_')
 }
@@ -171,8 +181,10 @@ export function hasExplicitStatus(kind: StatusKind, value: string): boolean {
 
 /* ---- Audit outcomes --------------------------------------------------------------------------- */
 
+/** The outcomes an audit log entry can have. */
 export type AuditOutcome = 'succeeded' | 'failed' | 'denied' | 'locked'
 
+/** Audit outcome to label, taken from the shared status table so the log and badges agree. */
 export const OUTCOME_LABEL: Record<AuditOutcome, string> = {
   succeeded: STATUS.outcome.succeeded!.label,
   failed: STATUS.outcome.failed!.label,
@@ -180,6 +192,7 @@ export const OUTCOME_LABEL: Record<AuditOutcome, string> = {
   locked: STATUS.outcome.locked!.label,
 }
 
+/** Audit outcome to tone, taken from the shared status table. */
 export const OUTCOME_TONE: Record<AuditOutcome, TagTone> = {
   succeeded: STATUS.outcome.succeeded!.tone,
   failed: STATUS.outcome.failed!.tone,
@@ -189,6 +202,7 @@ export const OUTCOME_TONE: Record<AuditOutcome, TagTone> = {
 
 /* ---- Agent categories -------------------------------------------------------------------------- */
 
+/** Agent category key to the name shown in filters and tags. */
 export const CATEGORY_LABEL: Record<string, string> = {
   operations: 'Operations',
   engineering: 'Engineering',
@@ -357,6 +371,7 @@ const SOURCE_KINDS: Record<string, string> = {
 }
 
 // @find: knowledge source kind label
+/** Plain name of a knowledge source kind; unknown kinds in sentence case, an empty one as "Unknown". */
 export function sourceKindLabel(kind?: string | null): string {
   if (!kind) return 'Unknown'
   return SOURCE_KINDS[kind] ?? sentenceCase(kind)
@@ -451,6 +466,9 @@ export const CONNECTOR_CATEGORY_LABEL: Record<string, string> = {
   other: 'Other',
 }
 
+/**
+ * The order connector categories appear in on the Connectors page (the key order of CONNECTOR_CATEGORY_LABEL).
+ */
 export const CONNECTOR_CATEGORY_ORDER: readonly string[] = Object.keys(CONNECTOR_CATEGORY_LABEL)
 
 /** 'sales' reads 'Sales and CRM'; anything unknown in sentence case. */
@@ -472,6 +490,9 @@ const CONNECTOR_STATES: Record<string, StatusEntry> = {
 }
 
 // @find: connector state label
+/**
+ * Tone and label for a connector state (connected, sandbox, attention, builtin); unknown states in sentence case on neutral.
+ */
 export function connectorStateLabel(state?: string | null): StatusEntry {
   if (!state) return entry('neutral', 'Unknown')
   return CONNECTOR_STATES[state] ?? entry('neutral', sentenceCase(state))
@@ -515,6 +536,9 @@ const PROVIDER_KINDS: Record<string, string> = {
 }
 
 // @find: model provider kind label
+/**
+ * Product name of a model provider kind (compared case-insensitively); unknown kinds in sentence case, an empty one as "Unknown".
+ */
 export function providerKindLabel(kind?: string | null): string {
   if (!kind) return 'Unknown'
   return PROVIDER_KINDS[kind.toUpperCase()] ?? sentenceCase(kind)

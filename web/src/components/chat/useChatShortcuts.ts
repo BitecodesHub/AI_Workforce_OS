@@ -21,6 +21,12 @@ export type ChatShortcutHandlers = {
 }
 
 // @find: useChatShortcuts, use chat shortcuts, chat keyboard shortcuts, hotkeys, escape order, shortcut help
+/**
+ * Registers Chat's keyboard shortcuts through useHotkeys while enabled: Mod+K focus search, Mod+Shift+O new
+ * conversation, Mod+Shift+S toggle the sidebar, Alt+Up and Alt+Down previous and next conversation, Mod+/
+ * shortcut help, and Escape (whose precedence the caller decides in onEscape). The shortcuts marked
+ * allowInInput also work while a text field has focus.
+ */
 export function useChatShortcuts(handlers: ChatShortcutHandlers, enabled = true) {
   const bindings: Hotkey[] = [
     { key: 'k', mod: true, allowInInput: true, handler: handlers.onFocusSearch },

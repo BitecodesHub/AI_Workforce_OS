@@ -64,10 +64,10 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
  * regardless of what is enabled. This is the endpoint that writes that row.
  *
  * <p>A save takes the workspace's provider-settings lock before it reads anything, the lock that
- * turning a provider off also takes. A policy is refused when every provider it lists is switched
- * off for this workspace and it is set to stop when its models fail, because every run on it would
- * stop. Without the shared lock, that check and a provider being switched off could each pass
- * while the other was in flight, and together leave a policy that no longer works.
+ * turning a provider off also takes. A policy whose providers are all switched off for this
+ * workspace, while it is set to stop when its models fail, is saved but answered with a warning,
+ * because every run on it would stop. The shared lock keeps that warning and a provider being
+ * switched off from passing while the other is in flight.
  *
  * <p>Every change to a policy - saving the workspace's, saving or clearing an agent's - is audited
  * after it commits, with the chain before and after, so "who changed the models, and to what" has
@@ -87,6 +87,7 @@ public class ModelPolicyController {
     private final JpaProviderRegistry registry;
     private final AuditClient audit;
 
+    /** Receives the policy, model, agent and provider-settings repositories, the provider registry and the audit client. */
     public ModelPolicyController(
             ModelPolicies policies,
             Models models,
@@ -102,12 +103,14 @@ public class ModelPolicyController {
         this.audit = audit;
     }
 
+    /** One model in a submitted chain, with optional temperature and output-token limit. */
     public record CandidateInput(
             @NotBlank String providerId,
             @NotBlank String modelId,
             @DecimalMin("0.0") @DecimalMax("2.0") BigDecimal temperature,
             @Positive Integer maxOutputTokens) {}
 
+    /** The body of a policy save: the ordered chain and the optional failure, retry, deadline and compaction settings; a null setting is left unchanged. */
     public record ModelPolicyRequest(
             @Valid @Size(max = MAX_CANDIDATES) List<CandidateInput> candidates,
             @Pattern(regexp = "FAIL_CLOSED|DEGRADE_TO_SANDBOX") String exhaustedBehaviour,
@@ -115,6 +118,7 @@ public class ModelPolicyController {
             @Min(30) @Max(1800) Integer overallDeadlineSeconds,
             Boolean compactOnOverflow) {}
 
+    /** One model in a chain as a person reads it, with its zero-based position. */
     public record CandidateView(
             int position, String providerId, String modelId, BigDecimal temperature, Integer maxOutputTokens) {}
 
@@ -129,6 +133,7 @@ public class ModelPolicyController {
             /** A plain sentence about what runs will do with this routing, when that needs saying; else null. */
             String warning) {
 
+        /** The view without a warning. */
         public ModelPolicyView(
                 boolean configured,
                 String exhaustedBehaviour,
@@ -146,6 +151,7 @@ public class ModelPolicyController {
                     null);
         }
 
+        /** A copy of this view carrying a warning sentence (or null). */
         ModelPolicyView withWarning(String text) {
             return new ModelPolicyView(
                     configured,
@@ -164,13 +170,16 @@ public class ModelPolicyController {
     /** Who lists a provider or a model: the workspace routing, and which agents' own chains. */
     public record Usage(boolean workspace, List<AgentRef> agents) {}
 
+    /** A removal request: a provider, and optionally one of its models; a blank model means every model of the provider. */
     public record RemoveRequest(@NotBlank String providerId, String modelId) {}
 
     /** One agent a removal changed, and whether its own chain is now empty. */
     public record RemovedFrom(UUID id, String name, boolean nowEmpty) {}
 
+    /** What a removal did: whether the workspace chain changed, which agents changed, and a plain warning. */
     public record RemoveResult(boolean workspace, List<RemovedFrom> agents, String warning) {}
 
+    /** Reads the workspace default policy (an unset view when none exists); requires PROVIDER_READ; includes a warning when runs would fail. */
     // @find: get workspace model policy, GET /api/model-policy
     @GetMapping("/model-policy")
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
@@ -183,6 +192,14 @@ public class ModelPolicyController {
         return view.withWarning(workspaceWarning(orgId, view));
     }
 
+    /**
+     * Saves the workspace default policy.
+     *
+     * <p>Route {@code PUT /api/model-policy}; requires PROVIDER_MANAGE. Takes the workspace
+     * provider-settings lock, creates or loads the row, applies the request (unknown models are
+     * refused with a validation error), saves, and audits {@code model_policy.update} with the
+     * before and after chain once the transaction commits.
+     */
     // @find: set workspace model policy, PUT /api/model-policy
     @PutMapping("/model-policy")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
@@ -204,6 +221,7 @@ public class ModelPolicyController {
         return view.withWarning(workspaceWarning(orgId, view));
     }
 
+    /** Reads an agent's own policy, or an unset view; route {@code GET /api/agents/{agentId}/model-policy}; requires AGENT_READ. Not found for an unknown agent. */
     // @find: get agent model policy, GET /api/agents/{agentId}/model-policy
     @GetMapping("/agents/{agentId}/model-policy")
     @RequiresPermission(Permission.Codes.AGENT_READ)
@@ -217,6 +235,12 @@ public class ModelPolicyController {
         return view.withWarning(agentWarning(orgId, view, false));
     }
 
+    /**
+     * Saves an agent's own policy, overriding the workspace default.
+     *
+     * <p>Route {@code PUT /api/agents/{agentId}/model-policy}; requires AGENT_SET_MODEL_POLICY. As
+     * for the workspace policy, but scoped to the agent and audited as {@code agent.model_policy.set}.
+     */
     // @find: set agent model policy, PUT /api/agents/{agentId}/model-policy
     @PutMapping("/agents/{agentId}/model-policy")
     @RequiresPermission(Permission.Codes.AGENT_SET_MODEL_POLICY)
@@ -301,6 +325,7 @@ public class ModelPolicyController {
         return view.withWarning(agentWarning(orgId, view, true));
     }
 
+    /** Lists where a provider (or one of its models) appears: the workspace chain and which agents' chains; route {@code GET /api/model-policy/usage}; requires PROVIDER_READ. */
     // @find: where is model used, GET /api/model-policy/usage
     @GetMapping("/model-policy/usage")
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
@@ -373,7 +398,7 @@ public class ModelPolicyController {
 
     // ---- Warnings ------------------------------------------------------------------------------
 
-    /** What an agent's runs will do with this routing, or null when that needs no saying. */
+    /** What an agent's runs will do with this routing, or null when that needs no saying. {@code sayDefault} adds the sentence naming the workspace default. */
     private String agentWarning(UUID orgId, ModelPolicyView view, boolean sayDefault) {
         if (view.candidates().isEmpty()) {
             List<String> fallback = workspaceChain(orgId);
@@ -389,6 +414,7 @@ public class ModelPolicyController {
         return null;
     }
 
+    /** The warning for the workspace routing: none set, or no provider on; null otherwise. */
     private String workspaceWarning(UUID orgId, ModelPolicyView view) {
         if (view.candidates().isEmpty()) {
             return "No AI model is set for the workspace \u2014 agents without their own routing will fail until"
@@ -401,6 +427,7 @@ public class ModelPolicyController {
         return null;
     }
 
+    /** The warning after a removal: no workspace model, and which agents now fall back to the workspace default; null when nothing needs saying. */
     private String removalWarning(UUID orgId, List<RemovedFrom> changed) {
         List<String> emptied =
                 changed.stream().filter(RemovedFrom::nowEmpty).map(RemovedFrom::name).toList();
@@ -443,6 +470,7 @@ public class ModelPolicyController {
                 .orElse(List.of());
     }
 
+    /** A "Provider · Model" label using display names where known, falling back to ids. */
     private String label(UUID orgId, String providerId, String modelId) {
         String provider = registry.workspaceProvider(orgId, providerId)
                 .map(p -> p.entity().getDisplayName())
@@ -457,6 +485,7 @@ public class ModelPolicyController {
 
     // ---- Removing ------------------------------------------------------------------------------
 
+    /** Whether a policy lists the provider and, when a model is given, that model. */
     private static boolean lists(ModelPolicyEntity policy, String providerId, String modelId) {
         return policy.getCandidates().stream()
                 .anyMatch(c -> c.getProviderId().equals(providerId) && (modelId == null || c.getModelId().equals(modelId)));
@@ -484,6 +513,7 @@ public class ModelPolicyController {
         return true;
     }
 
+    /** The workspace's agents keyed by id. */
     private Map<UUID, Agent> agentsById(UUID orgId) {
         Map<UUID, Agent> byId = new LinkedHashMap<>();
         for (Agent agent : agents.findByOrgIdOrderByName(orgId)) {
@@ -492,13 +522,15 @@ public class ModelPolicyController {
         return byId;
     }
 
+    /** The agent in the workspace, or a not-found error. */
     private Agent requireAgent(UUID orgId, UUID agentId) {
         return agents.findByIdAndOrgId(agentId, orgId).orElseThrow(() -> ApiException.notFound("agent", agentId));
     }
 
     /**
      * Audits a change after it commits, so a save that rolls back leaves no entry saying it
-     * happened. {@code after} is null when the policy was removed.
+     * happened. {@code after} is null when the policy was removed. Attributed to the caller, or to
+     * the system actor when there is no request context.
      */
     private void record(
             UUID orgId,
@@ -536,7 +568,8 @@ public class ModelPolicyController {
     }
 
     /**
-     * Rejects a candidate that names a model this platform does not know about, rather than
+     * Copies a request onto a policy: replaces the chain, then sets each optional setting that was
+     * given. Rejects a candidate that names a model this platform does not know about, rather than
      * saving a policy that would fail silently the first time a run tries to resolve it.
      */
     private void apply(ModelPolicyEntity policy, ModelPolicyRequest request) {
@@ -578,6 +611,7 @@ public class ModelPolicyController {
         }
     }
 
+    /** Builds a view from a stored policy, with candidates in position order and no warning. */
     private static ModelPolicyView toView(ModelPolicyEntity entity) {
         List<CandidateView> candidates = entity.getCandidates().stream()
                 .sorted(Comparator.comparing(ModelPolicyCandidate::getPosition))
@@ -593,10 +627,12 @@ public class ModelPolicyController {
                 candidates);
     }
 
+    /** The view of a scope with no policy, using the default behaviour and limits. */
     private static ModelPolicyView unset() {
         return new ModelPolicyView(false, "FAIL_CLOSED", 2, 300, true, List.of());
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

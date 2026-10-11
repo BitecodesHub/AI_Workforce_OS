@@ -37,13 +37,14 @@ import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 
 /**
- * Questions agents asked while working, and the answers people give.
+ * REST endpoints to list, read, answer and extend the questions agents ask while working. Called
+ * by the questions inbox, chat and the run page.
  *
  * <p>An answer is accepted here and the run resumes on a thread of its own, so the person gets a
  * reply at once rather than waiting for the agent's next turn; the run's progress is then seen the
  * ordinary way. The resume is submitted only after the answer has committed, and only for an
  * answer that is new: the same person repeating the same answer is told it was received, and
- * nothing resumes twice.
+ * nothing resumes twice. Rules about validity and expiry live in {@link QuestionService}.
  */
 @RestController
 @RequestMapping("/api/orchestrator/questions")
@@ -58,26 +59,37 @@ public class QuestionController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ConversationAccess access;
 
+    /** Receives the question service, the executor that resumes runs, and the run repository used to report run status. */
     public QuestionController(QuestionService questions, RunExecutor executor, Runs runs) {
         this.questions = questions;
         this.executor = executor;
         this.runs = runs;
     }
 
+    /** One answer within a request: the question id, the chosen options and any free text. */
     public record AnswerItemRequest(
             @NotBlank @Size(max = 8) String questionId,
             @Size(max = 4) List<@NotBlank @Size(max = 60) String> selected,
             @Size(max = 2_000) String other) {}
 
+    /** The body of an answer: the item answers, an optional note, whether the questions were skipped, and the screen it came from. */
     public record AnswerRequest(
             @Size(max = 4) List<@Valid AnswerItemRequest> answers,
             @Size(max = 2_000) String note,
             boolean skipped,
             @NotBlank @Pattern(regexp = "chat|orchestrator|run|approvals") String via) {}
 
-    /** @param runStatus the run's status as the answer is accepted, usually still waiting_input */
+    /** The answered question and the status of its run as the answer is accepted, usually still waiting_input. */
     public record AnswerResult(QuestionService.QuestionView question, String runStatus) {}
 
+    /**
+     * Lists questions.
+     *
+     * <p>Route {@code GET /api/orchestrator/questions}; requires RUN_READ. Reads pending questions
+     * (soonest to close first) or every recent question, optionally only those whose work the caller
+     * asked for, and hides questions from other people's private conversations. Fails with a
+     * validation error for an unknown {@code status}.
+     */
     // @find: list questions, GET /api/orchestrator/questions
     /**
      * Pending questions, the soonest to close first, or every question newest first.
@@ -116,6 +128,7 @@ public class QuestionController {
         return questions.views(rows, actor);
     }
 
+    /** Returns one question; route {@code GET /api/orchestrator/questions/{id}}; requires RUN_READ. Not found when absent or hidden. */
     // @find: get question, GET /api/orchestrator/questions/{id}
     @GetMapping("/{id}")
     @RequiresPermission(Permission.Codes.RUN_READ)
@@ -126,6 +139,15 @@ public class QuestionController {
         return questions.views(List.of(question), RequestContext.requireActor()).getFirst();
     }
 
+    /**
+     * Answers a question and lets its run continue.
+     *
+     * <p>Route {@code POST /api/orchestrator/questions/{id}/answer}; answers 202; requires TASK_CREATE
+     * or AGENT_RUN. {@link QuestionService#answer} records the answer (the service rejects an
+     * invalid, expired or already-answered one). When the answer is new, the run is submitted to
+     * {@link RunExecutor} to resume in the background as the caller. Returns the question and the
+     * run status.
+     */
     @PostMapping("/{id}/answer")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @RequiresPermission(
@@ -151,6 +173,12 @@ public class QuestionController {
                 runStatus);
     }
 
+    /**
+     * Keeps a question open for longer, up to seven days from when it was asked.
+     *
+     * <p>Route {@code POST /api/orchestrator/questions/{id}/extend}; requires TASK_CREATE or
+     * AGENT_RUN. The service moves the deadline; nothing resumes. Not found when absent or hidden.
+     */
     @PostMapping("/{id}/extend")
     @RequiresPermission(
             value = {Permission.Codes.TASK_CREATE, Permission.Codes.AGENT_RUN},
@@ -170,6 +198,7 @@ public class QuestionController {
         }
     }
 
+    /** Converts the request into the service's answer input, ignoring null items. */
     private static QuestionService.AnswerInput toInput(AnswerRequest request) {
         List<QuestionService.AnswerItem> items = request.answers() == null
                 ? List.of()
@@ -180,6 +209,7 @@ public class QuestionController {
         return new QuestionService.AnswerInput(items, request.note(), request.skipped(), request.via());
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

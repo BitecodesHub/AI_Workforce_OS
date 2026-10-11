@@ -21,18 +21,42 @@ public class ApiException extends RuntimeException {
     private final Duration retryAfter;
     private final boolean retryable;
 
+    /**
+     * Raises a failure with the code's default message and retry flag.
+     */
     public ApiException(ErrorCode code) {
         this(code, code.defaultMessage(), null, null, null, code.retryable());
     }
 
+    /**
+     * Raises a failure with a specific message, which must be safe to show a person.
+     */
     public ApiException(ErrorCode code, String message) {
         this(code, message, null, null, null, code.retryable());
     }
 
+    /**
+     * Raises a failure and keeps the underlying cause for the server log.
+     *
+     * <p>The cause is never included in the response body.
+     */
     public ApiException(ErrorCode code, String message, Throwable cause) {
         this(code, message, null, cause, null, code.retryable());
     }
 
+    /**
+     * The full constructor, used by the shorter ones and by the copying builders below.
+     *
+     * <p>A {@code null} message falls back to the code's default, and {@code null} details become an
+     * empty map. The details are copied, so the exception is immutable once built.
+     *
+     * @param code the deliberate failure code
+     * @param message sentence safe to show a person
+     * @param details structured client detail, or {@code null}
+     * @param cause underlying exception, or {@code null}
+     * @param retryAfter suggested wait, or {@code null}
+     * @param retryable whether repeating the identical request could succeed
+     */
     public ApiException(
             ErrorCode code,
             String message,
@@ -47,10 +71,16 @@ public class ApiException extends RuntimeException {
         this.retryable = retryable;
     }
 
+    /**
+     * The machine-readable failure code.
+     */
     public ErrorCode code() {
         return code;
     }
 
+    /**
+     * The HTTP status taken from the code.
+     */
     public int status() {
         return code.status();
     }
@@ -63,50 +93,88 @@ public class ApiException extends RuntimeException {
         return details;
     }
 
+    /**
+     * How long a client should wait before repeating the request, or {@code null} when unknown.
+     */
     public Duration retryAfter() {
         return retryAfter;
     }
 
+    /**
+     * Whether repeating the identical request could succeed.
+     *
+     * <p>Defaults from the code; {@link #retryAfter(Duration)} forces it to true.
+     */
     public boolean retryable() {
         return retryable;
     }
 
     // ---- Builders ----------------------------------------------------------------------
 
+    /**
+     * Returns a copy with one more detail entry.
+     *
+     * <p>Exceptions are immutable, so the original is unchanged. The value must be safe to send to
+     * the client.
+     */
     public ApiException with(String key, Object value) {
         Map<String, Object> merged = new LinkedHashMap<>(details);
         merged.put(key, value);
         return new ApiException(code, getMessage(), merged, getCause(), retryAfter, retryable);
     }
 
+    /**
+     * Returns a copy that carries a wait hint and is marked retryable.
+     */
     public ApiException retryAfter(Duration duration) {
         return new ApiException(code, getMessage(), details, getCause(), duration, true);
     }
 
     // ---- Common failures, named at the call site ---------------------------------------
 
+    /**
+     * A 404 naming the resource kind and identifier.
+     *
+     * <p>The message is the generic one, so it does not reveal whether the item exists in another
+     * workspace.
+     */
     public static ApiException notFound(String resource, Object id) {
         return new ApiException(ErrorCode.NOT_FOUND).with("resource", resource).with("id", String.valueOf(id));
     }
 
+    /**
+     * A 422 naming the offending field and a short problem statement.
+     */
     public static ApiException validation(String field, String problem) {
         return new ApiException(ErrorCode.VALIDATION_FAILED)
                 .with("field", field)
                 .with("problem", problem);
     }
 
+    /**
+     * A 403 that names the permission code the caller lacks.
+     */
     public static ApiException permissionDenied(String permission) {
         return new ApiException(ErrorCode.PERMISSION_DENIED).with("requiredPermission", permission);
     }
 
+    /**
+     * A 409 with a caller-supplied message.
+     */
     public static ApiException conflict(String message) {
         return new ApiException(ErrorCode.CONFLICT, message);
     }
 
+    /**
+     * A 429 that tells the client how long to wait.
+     */
     public static ApiException rateLimited(Duration retryAfter) {
         return new ApiException(ErrorCode.RATE_LIMITED).retryAfter(retryAfter);
     }
 
+    /**
+     * A 500 that keeps the cause for the log and hides it from the response.
+     */
     public static ApiException internal(String message, Throwable cause) {
         return new ApiException(ErrorCode.INTERNAL_ERROR, message, cause);
     }

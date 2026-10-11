@@ -1,6 +1,6 @@
 // @find: zendesk, support, tickets, helpdesk, list tickets, get ticket, update ticket, public reply, private note, subdomain email api token, live adapter, real API, customer support
 // @what: Live Zendesk connector: runs zendesk__ tools (list, get, update tickets, reply or add notes) against a Zendesk subdomain using email and API token.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "zendesk"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke, and send_reply passes the approval gate first; the base address comes from the stored subdomain through baseFor; each tool makes one or two calls to the Zendesk subdomain; base class LiveServerAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.Set;
@@ -23,18 +23,33 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  *
  * <p>The stored credential is JSON: {@code {"subdomain":"acme","email":"...","token":"..."}}. Zendesk
  * authenticates a token as the user name {@code email/token} with the token as the password.
+ *
+ * <p>Used by the tool gateway when a workspace has stored a Zendesk credential. list_tickets and
+ * get_ticket are read tools; update_ticket and add_note are write tools (a person is asked first when
+ * the workspace policy says so); send_reply is outbound and always asks a person first, because the
+ * requester receives it. A reply is not idempotent, so a dropped connection is reported as
+ * indeterminate and the reply is never repeated.
+ *
+ * <p>Failures: a malformed credential, a missing argument or a value outside the allowed statuses and
+ * priorities becomes a plain failed result; HTTP errors are described by the base class.
  */
 public final class ZendeskAdapter extends LiveServerAdapter {
 
     /** The address comes from the credential's subdomain. */
+    /** Null on purpose: the real address is taken from the subdomain in each stored credential. */
     public static final String BASE_URL = null;
 
+    /** The ticket statuses Zendesk accepts. */
     private static final Set<String> STATUSES = Set.of("new", "open", "pending", "hold", "solved", "closed");
+    /** The ticket priorities Zendesk accepts. */
     private static final Set<String> PRIORITIES = Set.of("low", "normal", "high", "urgent");
+    /** The most characters of a ticket description or comment returned; longer text is cut. */
     private static final int BODY_LIMIT = 2000;
 
+    /** True when a base URL was injected (tests), in which case the credential subdomain is not used for routing. */
     private final boolean fixedBase;
 
+    /** Registers the five Zendesk tools; add_note and send_reply share one method and differ only in whether the comment is public. */
     public ZendeskAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Zendesk", json, http, baseUrl);
         this.fixedBase = baseUrl != null;
@@ -45,8 +60,13 @@ public final class ZendeskAdapter extends LiveServerAdapter {
         on("send_reply", (invocation, arguments, credential) -> comment(arguments, credential, true));
     }
 
+    /** The parsed credential: a validated base address, the agent email and the API token. */
     private record Account(String base, String email, String token) {}
 
+    /**
+     * Parses the stored JSON credential and builds the address with {@link Hosts#zendeskBase}, so only
+     * Zendesk hosts are ever called. Throws a plain refusal for malformed or incomplete input.
+     */
     private Account account(String credential) {
         JsonNode node;
         try {
@@ -70,12 +90,14 @@ public final class ZendeskAdapter extends LiveServerAdapter {
         }
     }
 
+    /** The Zendesk address of this credential, or null when a fixed base URL is in use. */
     @Override
     protected String baseFor(String credential) {
         Account account = account(credential);
         return fixedBase ? null : account.base();
     }
 
+    /** Sends the agent email followed by /token as the user name, and the API token as the password. */
     @Override
     protected void authorize(HttpHeaders headers, String credential) {
         Account account = account(credential);
@@ -83,6 +105,7 @@ public final class ZendeskAdapter extends LiveServerAdapter {
         headers.set(HttpHeaders.ACCEPT, "application/json");
     }
 
+    /** Connection check: GET the current user; answers the name and the Zendesk host. */
     @Override
     protected Mono<String> whoAmI(String credential) {
         Account account = account(credential);
@@ -94,6 +117,11 @@ public final class ZendeskAdapter extends LiveServerAdapter {
     }
 
     // @find: Zendesk list tickets, tool zendesk__list_tickets, live Zendesk call
+    /**
+     * Read tool. Without a status, GET the tickets, newest update first. With a status, a ticket search
+     * is used instead, so the answer can lag behind recent changes. At most 100 tickets. An unknown
+     * status is refused before any call.
+     */
     private Mono<ToolResult> listTickets(ToolInvocation invocation, JsonNode arguments, String credential) {
         String status = text(arguments, "status");
         int limit = limit(arguments, 25, 100);
@@ -117,6 +145,7 @@ public final class ZendeskAdapter extends LiveServerAdapter {
     }
 
     // @find: Zendesk get ticket, tool zendesk__get_ticket, live Zendesk call
+    /** Read tool. Two calls made together: the ticket and its comments. Long text is cut at the body limit. */
     private Mono<ToolResult> getTicket(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         return get(credential, "/api/v2/tickets/{id}", id)
@@ -137,6 +166,12 @@ public final class ZendeskAdapter extends LiveServerAdapter {
     }
 
     // @find: Zendesk update ticket, tool zendesk__update_ticket, live Zendesk call
+    /**
+     * Write tool. PUT the status, priority or assignee that were given; the assignee may be an email
+     * address or a numeric user id. No comment is added and no message is sent by this tool, although
+     * Zendesk triggers configured by the account may still notify people. Refuses before any call when
+     * a value is not allowed or nothing is given to change.
+     */
     private Mono<ToolResult> updateTicket(ToolInvocation invocation, JsonNode arguments, String credential) {
         String id = required(arguments, "id");
         ObjectNode ticket = json.createObjectNode();
@@ -173,6 +208,11 @@ public final class ZendeskAdapter extends LiveServerAdapter {
                 .map(answer -> done(ticket(answer.path("ticket")), "Updated ticket " + id + " in Zendesk."));
     }
 
+    /**
+     * Shared by add_note (a private note, a write tool) and send_reply (a public reply, an outbound tool
+     * that always asks a person first). PUT a comment on the ticket; a public comment is delivered to
+     * the requester by Zendesk. Not idempotent: a repeat would add the comment twice.
+     */
     private Mono<ToolResult> comment(JsonNode arguments, String credential, boolean isPublic) {
         String id = required(arguments, "ticketId");
         String text = required(arguments, "body");
@@ -194,6 +234,7 @@ public final class ZendeskAdapter extends LiveServerAdapter {
         });
     }
 
+    /** Maps a Zendesk ticket to the plain shape the tools return. */
     private ObjectNode ticket(JsonNode ticket) {
         ObjectNode item = json.createObjectNode();
         item.put("id", ticket.path("id").asText());
@@ -206,6 +247,7 @@ public final class ZendeskAdapter extends LiveServerAdapter {
         return item;
     }
 
+    /** Cuts text at the body limit and marks the cut with an ellipsis. */
     private static String clip(String text) {
         return text.length() <= BODY_LIMIT ? text : text.substring(0, BODY_LIMIT) + "…";
     }

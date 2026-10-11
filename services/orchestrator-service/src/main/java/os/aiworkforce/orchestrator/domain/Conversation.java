@@ -83,6 +83,7 @@ public class Conversation extends OrgScopedEntity {
         this.visibility = "private".equals(visibility) ? "private" : "workspace";
     }
 
+    /** True when only its creator and the people added to it may open the conversation. */
     public boolean isPrivate() {
         return "private".equals(visibility);
     }

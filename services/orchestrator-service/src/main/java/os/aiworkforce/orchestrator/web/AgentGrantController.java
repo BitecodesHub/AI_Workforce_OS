@@ -52,6 +52,7 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
 @Tag(name = "Agents")
 public class AgentGrantController {
 
+    /** The highest per-tool call ceiling a grant may set. */
     static final int MAX_CALLS_PER_RUN = 1000;
 
     private final Agents agents;
@@ -60,6 +61,7 @@ public class AgentGrantController {
     private final AgentController details;
     private final AuditClient audit;
 
+    /** Receives the repositories, the tool gateway used to validate names, the agent controller used to answer, and the audit client. */
     public AgentGrantController(
             Agents agents, ToolGrants grants, ToolGateway gateway, AgentController details, AuditClient audit) {
         this.agents = agents;
@@ -70,6 +72,8 @@ public class AgentGrantController {
     }
 
     /**
+     * The body of a grant request.
+     *
      * @param tools tool names on the server; empty or missing means every tool it offers
      * @param requireApproval ask a person before every action, not only before sending or deleting
      * @param maxCallsPerRun ceiling per tool per run; null means no ceiling
@@ -79,6 +83,17 @@ public class AgentGrantController {
             Boolean requireApproval,
             @Min(1) @Max(MAX_CALLS_PER_RUN) Integer maxCallsPerRun) {}
 
+    /**
+     * Creates or updates the agent's grant for one connector.
+     *
+     * <p>Route {@code PUT /api/agents/{agentId}/grants/{server}}; requires AGENT_GRANT_TOOLS. Flow:
+     * the agent and the connector are validated against the tool gateway, the chosen tools'
+     * required scopes are collected, the single grant row for that agent and server is created or
+     * overwritten and enabled, and an audit entry ({@code agent.grant.add} or
+     * {@code agent.grant.update}) is recorded after the transaction commits. Responds with the
+     * refreshed agent detail. Fails with not found for an unknown agent, and with a validation error
+     * for an unknown connector or tool.
+     */
     // @find: grant tool access to agent, PUT /api/agents/{agentId}/grants/{server}, require approval, allowed tools
     @PutMapping("/{server}")
     @RequiresPermission(Permission.Codes.AGENT_GRANT_TOOLS)
@@ -136,6 +151,13 @@ public class AgentGrantController {
         return details.get(agentId);
     }
 
+    /**
+     * Removes the agent's grant for one connector.
+     *
+     * <p>Route {@code DELETE /api/agents/{agentId}/grants/{server}}; requires AGENT_GRANT_TOOLS.
+     * Deletes the grant if present (a missing grant is not an error) and records an
+     * {@code agent.grant.remove} audit entry after commit. Responds with the refreshed agent detail.
+     */
     // @find: revoke tool access, DELETE /api/agents/{agentId}/grants/{server}
     @DeleteMapping("/{server}")
     @RequiresPermission(Permission.Codes.AGENT_GRANT_TOOLS)
@@ -153,18 +175,21 @@ public class AgentGrantController {
         return details.get(agentId);
     }
 
+    /** Queues an audit entry for after the surrounding transaction commits, attributed to the caller or the system actor. */
     private void record(UUID orgId, String action, UUID agentId, Map<String, Object> detail) {
         Actor actor = RequestContext.actor().orElse(Actor.SYSTEM);
         LifecycleAnnouncer.afterCommit(
                 () -> audit.record(orgId, actor, action, "agent", agentId.toString(), "succeeded", detail));
     }
 
+    /** A validation error naming the offending field and value. */
     private static ApiException invalid(String field, String value, String message) {
         return new ApiException(ErrorCode.VALIDATION_FAILED, message)
                 .with("field", field)
                 .with("value", value);
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

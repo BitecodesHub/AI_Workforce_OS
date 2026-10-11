@@ -28,8 +28,10 @@ import type { ConnectorId } from '../shared/landingFacts'
  * beside it in visually hidden text. Nothing in the band is focusable.
  */
 
+/** One count in the band: id, target value, unit and the note under it. */
 type Stat = { id: string; value: number; unit: string; note: string }
 
+/** The five counts (services, providers plus sandbox, connectors, permission codes, built-in roles), taken from landingFacts so they cannot drift from the hero or the role explorer. */
 const STATS: ReadonlyArray<Stat> = [
   { id: 'services', value: SERVICE_COUNT, unit: 'services', note: 'Independent Spring Boot services' },
   { id: 'providers', value: PROVIDERS.length, unit: '+ sandbox', note: 'Model providers, plus the offline sandbox model' },
@@ -43,6 +45,7 @@ const STATS: ReadonlyArray<Stat> = [
   { id: 'roles', value: BUILT_IN_ROLE_COUNT, unit: 'built-in roles', note: 'Plus any roles you compose' },
 ]
 
+/** One count. The figure counts up (useCountUp) once the band is in view; the animated number is hidden from assistive technology and the final value is in visually hidden text beside it. */
 function StatCell({ stat, active }: { stat: Stat; active: boolean }): ReactElement {
   const shown = useCountUp(stat.value, active)
   return (
@@ -59,6 +62,7 @@ function StatCell({ stat, active }: { stat: Stat; active: boolean }): ReactEleme
   )
 }
 
+/** A labelled list of connector names, named by its label through aria-labelledby. */
 function ConnectorRow({
   id,
   label,
@@ -85,6 +89,7 @@ function ConnectorRow({
 }
 
 // @find: PlatformBand component, spec band
+/** Section "What is actually running" (id platform): the five counts and rows of names for model providers, connectors that connect live (once an administrator adds a token or signs in) and, when there are any, connectors that work with practice data only. Counting starts when the list is 30 percent in view (useInView). Nothing in the band is focusable. Rendered by the Trust page. */
 export function PlatformBand(): ReactElement {
   const { ref, inView } = useInView<HTMLUListElement>({ threshold: 0.3 })
 

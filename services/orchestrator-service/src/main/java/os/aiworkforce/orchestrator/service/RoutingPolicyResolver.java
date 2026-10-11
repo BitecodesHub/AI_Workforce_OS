@@ -34,24 +34,51 @@ public class RoutingPolicyResolver {
     private final ModelPolicies policies;
     private final ServerRouting server;
 
+    /**
+     * For tests and callers with no deployment settings: behaves as if no deployment routing is configured.
+     *
+     * @param policies the saved model policies
+     */
     public RoutingPolicyResolver(ModelPolicies policies) {
         this(policies, ServerRouting.none());
     }
 
     @org.springframework.beans.factory.annotation.Autowired
+    /**
+     * The constructor Spring uses.
+     *
+     * @param policies the saved model policies
+     * @param server the deployment's routing settings; null is treated as none
+     */
     public RoutingPolicyResolver(ModelPolicies policies, ServerRouting server) {
         this.policies = policies;
         this.server = server == null ? ServerRouting.none() : server;
     }
 
     // @find: workspace default routing policy
-    /** The workspace's own chain, or empty when it lists no model. */
+    /**
+     * The chain a run would use for the workspace with no agent in play: the workspace's own policy,
+     * else the deployment default chain, with the local fallback appended when it is on. The chain is
+     * empty only when none of these supplies a model. Read only.
+     *
+     * @param orgId the workspace
+     * @return the resolved policy; never null
+     */
     @Transactional(readOnly = true)
     public RoutingPolicy workspaceDefault(UUID orgId) {
         return resolve(orgId, null);
     }
 
     // @find: resolve routing policy for agent
+    /**
+     * The policy a run will route with: the saved chain for the agent, else the workspace, else the
+     * deployment default, with the local fallback model appended last when it is on. Read only. Called
+     * by AgentRunner before routing.
+     *
+     * @param orgId the workspace
+     * @param agentId the agent; null skips the agent level
+     * @return the resolved policy; an empty chain (fail closed) when no model is set anywhere
+     */
     @Transactional(readOnly = true)
     public RoutingPolicy resolve(UUID orgId, UUID agentId) {
         return server.withLocalFallback(saved(orgId, agentId));
@@ -75,6 +102,7 @@ public class RoutingPolicyResolver {
                 .orElseGet(this::deploymentDefault);
     }
 
+    // The deployment's default chain (AIWOS_DEFAULT_ROUTING) as a policy, or NOTHING_SET when none is configured. Fails closed, two attempts per candidate, five minute overall deadline.
     private RoutingPolicy deploymentDefault() {
         if (server.defaultChain().isEmpty()) {
             return NOTHING_SET;
@@ -83,6 +111,7 @@ public class RoutingPolicyResolver {
                 server.defaultChain(), RoutingPolicy.ExhaustedBehaviour.FAIL_CLOSED, 2, Duration.ofMinutes(5), true);
     }
 
+    // Converts a saved policy to the router's form: candidates in saved position order, with the saved exhaustion behaviour, attempt limit, deadline and compaction flag. Throws IllegalArgumentException if the saved exhaustion behaviour is not a known value.
     private RoutingPolicy toPolicy(ModelPolicyEntity entity) {
         List<RoutingPolicy.Candidate> candidates = entity.getCandidates().stream()
                 .sorted(java.util.Comparator.comparing(ModelPolicyCandidate::getPosition))

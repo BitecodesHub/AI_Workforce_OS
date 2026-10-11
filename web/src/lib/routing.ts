@@ -23,8 +23,12 @@
  * Pure, and typed structurally so they accept the query types without importing them.
  */
 
+/** The only model field routing rules read: its output token limit. */
 export type RoutingModel = { maxOutputTokens: number }
 
+/**
+ * A model provider as the routing screens see it: identity, whether it is on for this workspace and for the platform, and the state of the stored key.
+ */
 export type RoutingProvider = {
   id: string
   displayName: string
@@ -42,6 +46,9 @@ export type RoutingProvider = {
   circuitState?: string | null
 }
 
+/**
+ * A stored credential for a provider: its reference, whether a key is present, expiry and when it was last used for a call.
+ */
 export type RoutingCredential = {
   ref: string
   present: boolean
@@ -50,12 +57,14 @@ export type RoutingCredential = {
   lastUsedAt?: string | null
 }
 
+/** The workspace's ordered list of models to try, and what to do when none answers. */
 export type RoutingPolicy = {
   configured: boolean
   exhaustedBehaviour?: string | null
   candidates: ReadonlyArray<{ providerId: string; modelId: string; position?: number }>
 }
 
+/** How a provider's key stands: not needed, stored, expired, rejected, or not stored. */
 export type CredentialState = 'not_needed' | 'stored' | 'expired' | 'rejected' | 'not_stored'
 
 /**
@@ -64,10 +73,17 @@ export type CredentialState = 'not_needed' | 'stored' | 'expired' | 'rejected' |
  */
 export type ReadinessReason = 'ready' | 'disabled' | 'platform_off' | 'no_key' | 'expired'
 
+/** Whether a provider can answer runs now, and the reason when it cannot. */
 export type ProviderReadiness = { ready: boolean; reason: ReadinessReason }
 
+/**
+ * Why routing is or is not live: it is, there is no policy, only the sandbox is listed, the sandbox comes first, or no listed model is ready.
+ */
 export type LiveRoutingReason = 'live' | 'no_policy' | 'sandbox_only' | 'sandbox_first' | 'none_ready'
 
+/**
+ * The verdict of liveRouting: whether runs reach a real model, why, which candidate is tried first, which candidates are skipped and whether the sandbox is a fallback.
+ */
 export type LiveRouting = {
   live: boolean
   reason: LiveRoutingReason
@@ -85,6 +101,9 @@ export type LiveRouting = {
   fallsBackToSandbox: boolean
 }
 
+/**
+ * A notice for the Command Map or Model Routing: its tone, one sentence, and whether it should link to Model routing.
+ */
 export type RoutingSummary = { tone: 'info' | 'warning' | 'success'; text: string; linkToRouting: boolean }
 
 // @find: embedding model check, hide embedding models from chat choices
@@ -93,8 +112,10 @@ export function isEmbeddingModel(model: RoutingModel): boolean {
   return model.maxOutputTokens <= 1
 }
 
+/** Whether a provider is the built-in offline sandbox. */
 const isSandbox = (provider: RoutingProvider) => provider.kind.toUpperCase() === 'SANDBOX'
 
+/** Parses an ISO timestamp to milliseconds, or NaN when absent. */
 const time = (iso?: string | null) => (iso ? new Date(iso).getTime() : Number.NaN)
 
 /**
@@ -225,6 +246,7 @@ const BLOCKED_PHRASE: Record<string, string> = {
   unavailable: 'not available in this workspace',
 }
 
+/** Joins phrases as "a, b and c". */
 function joinPhrases(parts: string[]): string {
   if (parts.length <= 1) return parts[0] ?? ''
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
@@ -310,6 +332,7 @@ export function toggledMessage(
   return `${name} is on for this workspace.`
 }
 
+/** A refused provider toggle: the service's sentence and where the fix lies. */
 export type ToggleRefusal = {
   /** The service's own sentence, which names the provider (and the agent, if any) and what to do instead. */
   text: string
@@ -361,6 +384,7 @@ export function connectableProviders<T extends RoutingProvider>(providers: reado
   )
 }
 
+/** A catalogue model with the fields recommendModel needs: tool support, enabled flag and prices. */
 export type ConnectModel = RoutingModel & {
   providerId: string
   modelId: string
@@ -389,6 +413,7 @@ export function recommendModel<T extends ConnectModel>(providerId: string, model
   return [...eligible].sort((a, b) => price(a) - price(b) || a.modelId.localeCompare(b.modelId))[0]
 }
 
+/** One model in a routing policy being saved, with optional temperature and output limit. */
 export type PolicyCandidateInput = {
   providerId: string
   modelId: string
@@ -396,11 +421,17 @@ export type PolicyCandidateInput = {
   maxOutputTokens?: number | null
 }
 
+/**
+ * The body of a routing policy save: the ordered candidates and what to do when all fail (fail closed, or fall back to the sandbox).
+ */
 export type PolicyInput = {
   candidates: PolicyCandidateInput[]
   exhaustedBehaviour?: 'FAIL_CLOSED' | 'DEGRADE_TO_SANDBOX'
 }
 
+/**
+ * The routing policy as read before connecting: the same shape the service returns, with candidate positions.
+ */
 export type ConnectPolicy = {
   configured: boolean
   exhaustedBehaviour?: string | null
@@ -430,12 +461,16 @@ export type ConnectPlan =
   | { kind: 'already'; fallsBackToSandbox: boolean }
   | { kind: 'full'; fallsBackToSandbox: boolean }
 
+/** Reads the exhausted behaviour from the service's text; undefined when it is neither known value. */
 const behaviourOf = (value?: string | null): PolicyInput['exhaustedBehaviour'] => {
   const upper = (value ?? '').toUpperCase()
   return upper === 'FAIL_CLOSED' || upper === 'DEGRADE_TO_SANDBOX' ? upper : undefined
 }
 
 // @find: plan routing change after connecting a provider, create ask already full; used by: Connect your AI dialog
+/**
+ * Decides what to do to the routing policy after a provider is connected (see ConnectPlan for the four outcomes). Pure: it orders the existing candidates by position, checks for the provider already listed and for the candidate limit, and for the ask case inserts the new model ahead of the first sandbox candidate (or at the end), keeping every candidate's temperature and output limit and the policy's own exhausted behaviour. Returns the plan, including whether the sandbox would remain a fallback. Used by the Connect your AI dialog.
+ */
 export function planConnect(args: {
   policy: ConnectPolicy | undefined
   providers: readonly RoutingProvider[]

@@ -14,6 +14,7 @@ import { WorkStrip } from './WorkStrip'
  * names who is in the conversation.
  */
 
+/** Cross icon for the panel's hide button. */
 function CloseIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -23,6 +24,15 @@ function CloseIcon() {
 }
 
 // @find: WorkPanel, work panel, work panel, context panel, wide screen panel, active goals
+/**
+ * Wide-screen side panel of the Chat page (shown at 1440 pixels and above, toggled from the thread header).
+ * Three collapsible sections whose open state persists in the browser under "chat.panel.working",
+ * "chat.panel.questions" and "chat.panel.participants": Working now (a full-size WorkStrip over
+ * activeGoals, or "Nothing is running right now"), Questions (pending questions as links that call
+ * onGoTo with the question anchor, rather than a second answer form) and Participants (agents that took
+ * part, with the default agent tagged). Props pass the thread's goals, questions and lookups, plus onStop,
+ * onGoTo, onReview (opens a goal's approval) and onClose.
+ */
 export function WorkPanel({
   goals,
   questions,

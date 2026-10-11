@@ -40,6 +40,14 @@ public class ServerRouting {
     private final String ollamaModel;
     private final List<RoutingPolicy.Candidate> defaultChain;
 
+    /**
+     * Reads the four environment variables through Spring placeholders and normalises them: a blank Ollama URL stays empty, a blank model name becomes the default model, and the default chain is parsed with {@link #parse}.
+     *
+     * @param localFallback whether to append the local model to every chain
+     * @param ollamaBaseUrl where the local model server answers; empty when none
+     * @param ollamaModel the local model name
+     * @param defaultRouting comma-separated {@code provider/model} chain, or blank
+     */
     public ServerRouting(
             @Value("${AIWOS_LOCAL_FALLBACK:false}") boolean localFallback,
             @Value("${AIWOS_OLLAMA_BASE_URL:}") String ollamaBaseUrl,
@@ -51,19 +59,22 @@ public class ServerRouting {
         this.defaultChain = parse(defaultRouting);
     }
 
-    /** Nothing configured: the behaviour of an installation that sets none of these variables. */
+    /** Nothing configured: the behaviour of an installation that sets none of these variables. Used by tests and by callers built without Spring. */
     public static ServerRouting none() {
         return new ServerRouting(false, "", DEFAULT_OLLAMA_MODEL, "");
     }
 
+    // Whether the local model is appended to every chain at run time.
     public boolean localFallback() {
         return localFallback;
     }
 
+    // The OpenAI-compatible base URL of the local model server; empty when unset. Read by ServerProviderSetup.
     public String ollamaBaseUrl() {
         return ollamaBaseUrl;
     }
 
+    // The local model name, never blank.
     public String ollamaModel() {
         return ollamaModel;
     }
@@ -102,6 +113,7 @@ public class ServerRouting {
                 policy.compactOnOverflow());
     }
 
+    // Parses "provider/model, provider/model" into candidates, in order. Entries without a provider or without a model are skipped silently; a null or blank string gives an empty list. The result is immutable.
     static List<RoutingPolicy.Candidate> parse(String chain) {
         List<RoutingPolicy.Candidate> out = new ArrayList<>();
         if (chain == null || chain.isBlank()) {

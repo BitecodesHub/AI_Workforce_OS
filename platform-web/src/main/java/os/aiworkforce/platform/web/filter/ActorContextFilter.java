@@ -46,18 +46,32 @@ import os.aiworkforce.platform.context.RequestContext;
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ActorContextFilter extends OncePerRequestFilter {
 
+    /** Header that carries the correlation id in a request and is echoed in the response. */
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
+    /** Header a client sends so that a repeated write can be recognised and not applied twice. */
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
+    /** Longest correlation or idempotency value accepted. */
     private static final int MAX_HEADER_LENGTH = 128;
 
     /** Absent when tracing is switched off; the filter then simply has no trace id to record. */
     private final ObjectProvider<Tracer> tracer;
 
+    /** Creates the filter. The tracer is optional, so the filter works when tracing is disabled. */
     public ActorContextFilter(ObjectProvider<Tracer> tracer) {
         this.tracer = tracer;
     }
 
+    /**
+     * Runs once per request.
+     *
+     * <p>Flow: takes the request id from the header when it passes {@code sanitise}, otherwise generates one;
+     * records the idempotency key and trace id when present; fills the logging context with request id,
+     * method and path; echoes the request id in the response header; then continues the chain. In all cases
+     * it clears the logging and request contexts afterwards.
+     *
+     * <p>Side effects: thread-local state only; nothing is stored. Failures of the chain propagate unchanged.
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
@@ -86,6 +100,10 @@ public class ActorContextFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Returns the id of the active trace, or empty when tracing is off, no span is open or the tracer
+     * fails.
+     */
     private Optional<String> currentTraceId() {
         try {
             Tracer active = tracer.getIfAvailable();

@@ -13,9 +13,18 @@ import { readStored, writeStored } from '../../lib/persist'
  * whole point of building this instead of an if in the caller.
  */
 
+/** Heading element used for the title, or a plain paragraph where a heading would break the page outline. */
 type HeadingLevel = 'h2' | 'h3' | 'h4' | 'p'
 
 // @find: collapsible card, expand collapse section
+/**
+ * Card section with a toggle heading, an optional summary shown only while collapsed, optional header actions and a body that stays in the DOM.
+ * Props: title, summary, open and onToggle (controlled; see useCollapsed), headingLevel, actions, children, className.
+ * The toggle is a button with aria-expanded and aria-controls. A collapsed body is hidden with the value
+ * "until-found" where the browser supports onbeforematch (set through a ref because the typings only accept a boolean), so
+ * the browser's find-in-page can still match text inside it and fires beforematch, which reopens the card;
+ * elsewhere it is plainly hidden. Two effects keep the hidden state and the beforematch listener in sync.
+ */
 export function Collapsible({
   title,
   summary,

@@ -29,48 +29,66 @@ import os.aiworkforce.platform.web.persistence.UuidV7;
  * assigned in Java, so Spring Data would otherwise take every fresh chunk for an existing one and
  * merge it, which costs a SELECT per passage before each insert - thousands of them for one large
  * document.
+ *
+ * <p>Created by {@code IngestionService} from the output of {@code Chunker}, found by keyword through
+ * {@code Chunks.searchLexical} and by meaning through the vector point that has the same identifier,
+ * and shown by {@code KnowledgeController}. The getters and setters below are plain accessors and are
+ * not documented one by one.
  */
 @Entity
 @Table(name = "chunks")
 public class Chunk implements Persistable<UUID> {
 
+    /** The passage identifier, assigned in Java. It is also the identifier of its vector point. */
     @Id
     @Column(nullable = false, updatable = false)
     private UUID id = UuidV7.generate();
 
+    /** The workspace the passage belongs to; every query filters on it. */
     @Column(name = "org_id", nullable = false)
     private UUID orgId;
 
+    /** The document the passage was cut from. */
     @Column(name = "document_id", nullable = false)
     private UUID documentId;
 
+    /** The source of that document, kept here so that a search can be limited to allowed sources without a join. */
     @Column(name = "source_id", nullable = false)
     private UUID sourceId;
 
+    /** The order of the passage within its document, from 0. Unique together with the document. */
     @Column(nullable = false)
     private int position;
 
+    /** The passage text, including the overlap carried over from the previous passage. */
     @Column(nullable = false, columnDefinition = "text")
     private String content;
 
+    /** A rough token count for budgeting, not a tokenizer result. */
     @Column(name = "token_estimate", nullable = false)
     private int tokenEstimate;
 
+    /** The estimated page, or null for a format without pages. */
     @Column(name = "page_number")
     private Integer pageNumber;
 
+    /** Where the passage starts in the extracted text. */
     @Column(name = "char_start")
     private Integer charStart;
 
+    /** Where the passage ends in the extracted text. */
     @Column(name = "char_end")
     private Integer charEnd;
 
+    /** The nearest heading above the passage, or null before the first heading. */
     @Column
     private String heading;
 
+    /** When the passage was created. */
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /** Not stored. True until the row is saved or loaded; see {@link #isNew()}. */
     @Transient
     private boolean isNew = true;
 
@@ -79,11 +97,16 @@ public class Chunk implements Persistable<UUID> {
         return id;
     }
 
+    /**
+     * Tells Spring Data whether this row has still to be inserted, so that a fresh passage is inserted
+     * without a prior select.
+     */
     @Override
     public boolean isNew() {
         return isNew;
     }
 
+    /** Marks the entity as no longer new after it is saved or loaded. */
     @PostPersist
     @PostLoad
     void markPersisted() {

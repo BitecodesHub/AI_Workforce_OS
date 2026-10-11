@@ -48,6 +48,11 @@ for arg in "$@"; do
   esac
 done
 
+# normalise_bool VALUE
+#   Purpose:   maps a yes/no style word to the literal true or false.
+#   Arguments: $1, any text; case is ignored. 1, true, yes, y and on mean true; 0, false, no, n
+#              and off mean false.
+#   Changes:   nothing; prints the result. An unrecognised value prints an empty line.
 normalise_bool() {
   case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     1 | true | yes | y | on) echo true ;;
@@ -60,6 +65,10 @@ if [[ -z "$demo_choice" && -n "${AIWOS_DEMO_ENABLED:-}" ]]; then
   demo_choice="$(normalise_bool "$AIWOS_DEMO_ENABLED")"
 fi
 
+# random_base64_32
+#   Purpose:   prints 32 random bytes, base64 encoded, for use as the encryption master key.
+#   Arguments: none.
+#   Changes:   nothing. Uses openssl when present, otherwise /dev/urandom.
 random_base64_32() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -base64 32
@@ -68,6 +77,10 @@ random_base64_32() {
   fi
 }
 
+# random_hex_32
+#   Purpose:   prints 32 random bytes as 64 hexadecimal characters, for secrets and passwords.
+#   Arguments: none.
+#   Changes:   nothing. Uses openssl when present, otherwise /dev/urandom.
 random_hex_32() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 32
@@ -76,11 +89,20 @@ random_hex_32() {
   fi
 }
 
+# env_value KEY
+#   Purpose:   prints the last value assigned to KEY in the launcher .env file.
+#   Arguments: $1, the setting name.
+#   Changes:   nothing.
+#   Failure:   prints an empty line when the file or the key is missing; never fails.
 env_value() {
   grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
 }
 
 # Replaces KEY's line, or appends it, through a temporary file so a crash never leaves half a file.
+# set_env_value KEY VALUE
+#   Arguments: $1 the setting name, $2 its new value.
+#   Changes:   rewrites ENV_FILE with mode 600, keeping every other line unchanged.
+#   Failure:   a write error stops the script (set -e) and leaves the original file intact.
 set_env_value() {
   local key="$1" value="$2" tmp="$ENV_FILE.tmp"
   awk -v key="$key" -v value="$value" '
@@ -95,6 +117,9 @@ set_env_value() {
 
 # Prints its answer, true or false, on stdout; the question goes to stderr so it is still shown
 # when the answer is captured.
+# ask_demo
+#   Arguments: none. Waits at most 60 s for an answer; no answer, or a non-terminal, means true.
+#   Changes:   nothing beyond the prompt text on standard error.
 ask_demo() {
   # Only a person at a terminal can answer; anything else takes the default.
   if [[ -t 0 ]]; then
@@ -110,6 +135,13 @@ ask_demo() {
   echo true
 }
 
+# write_new_env KEY_ID MASTER_KEY DEV_SECRET DB_PASSWORD DEMO LOADED
+#   Purpose:   creates ENV_FILE for the first time with the given settings and a fresh internal
+#              service secret.
+#   Arguments: $1 encryption key id, $2 master key (empty for a legacy install), $3 development
+#              secret, $4 database password, $5 demo switch, $6 whether demo data is loaded.
+#   Changes:   writes ENV_FILE through a temporary file with mode 600 (umask 077).
+#   Failure:   a write error stops the script (set -e); the old file, if any, is not replaced.
 write_new_env() {
   local key_id="$1" master_key="$2" development_secret="$3" db_password="$4" demo="$5" loaded="$6"
   local tmp="$ENV_FILE.tmp"

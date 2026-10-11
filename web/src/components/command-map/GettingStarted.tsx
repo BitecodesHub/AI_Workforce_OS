@@ -52,6 +52,7 @@ function readGuide(userId: string): string {
   return `${isGuideHidden(userId) ? 'hidden' : 'shown'}:${done.join(',')}`
 }
 
+/** One checklist step: its id, title, body, the kind of action it performs and whether it is satisfied. */
 type Step = {
   id: GuideStep
   title: string
@@ -67,6 +68,21 @@ type Step = {
 }
 
 // @find: getting started component, onboarding checklist
+/**
+ * Card on the Command Map that lists the first steps open to this person's role and ticks them as they are tried.
+ * Flow: the steps are built on each render from permissions (can) and shared queries: useRuns (also used by
+ * the Command Map), useApprovals (waiting count), useSources (document total), and useModelPolicy,
+ * useProviders and useCredentials (whether a live model answers, through liveRouting). Order follows
+ * ORDER where each step applies: meet an agent, give a task (opens TaskDialog), read the latest trace,
+ * decide approvals, ask the workforce, add or count documents, connect a live model (opens
+ * ConnectModelDialog until one is live), see the role. Two steps (documents, live model) are workspace
+ * facts and show the current state instead of a tick; they appear only after their data has loaded.
+ * Progress is kept in localStorage per user (lib/onboarding) and read with useSyncExternalStore, so the
+ * account menu can show the guide again without a reload. Hide this guide stores the setting and shows a
+ * toast; when storage refuses, the guide stays hidden only for this page view (hiddenHere). Completing the
+ * last remaining step hides the guide for next time (afterStep), except when it was already complete.
+ * Renders nothing when hidden. Rendered by the Command Map page; takes no props.
+ */
 export function GettingStarted() {
   const { navigate } = useRouter()
   const toast = useToast()
@@ -344,6 +360,10 @@ export function GettingStarted() {
   )
 }
 
+/**
+ * The clickable title of a step. A task or connect step is a button that opens its dialog; a satisfied state
+ * step is plain text; every other step is a link to its screen, which records the step as opened.
+ */
 function StepAction({
   step,
   onOpen,
@@ -376,6 +396,7 @@ function StepAction({
   )
 }
 
+/** Numbered circle for a step, replaced by a tick once the step is satisfied. Decorative (hidden from assistive technology). */
 function StepMarker({ satisfied, number }: { satisfied: boolean; number: number }) {
   return (
     <span

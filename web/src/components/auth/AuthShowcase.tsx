@@ -34,6 +34,12 @@ const POINTS: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [
 ]
 
 // @find: AuthShowcase, sign in side panel, product explainer
+/**
+ * Side panel on the sign-in page that explains the product before the visitor signs in.
+ * Renders a heading and lead paragraph, a decorative glimpse of a parked outbound action (hidden from
+ * assistive technology and drawn from static content, with no data or requests), the four POINTS and a
+ * link to /home. Static: no props, state or effects. Rendered beside the form on the sign-in route.
+ */
 export function AuthShowcase() {
   return (
     <aside className="auth-showcase" aria-labelledby="auth-showcase-title">

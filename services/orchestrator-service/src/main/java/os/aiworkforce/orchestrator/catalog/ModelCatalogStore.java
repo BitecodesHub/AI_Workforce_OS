@@ -27,8 +27,10 @@ public class ModelCatalogStore {
     /** Used when a listing gives no window: large enough for agent work, small enough to be safe. */
     static final int DEFAULT_CONTEXT = 128_000;
 
+    /** Used when a listing gives no output limit. */
     static final int DEFAULT_MAX_OUTPUT = 4_096;
 
+    /** SQL for a chat model: inserts it, or refreshes the row only when it was itself discovered, so a seeded row is never touched. */
     private static final String UPSERT = "INSERT INTO llm_models (provider_id, model_id, display_name, context_window,"
             + " max_output_tokens, supports_tools, supports_json_mode, supports_streaming, supports_vision,"
             + " input_cost_per_million, output_cost_per_million, enabled, source, free, discovered_at)"
@@ -41,13 +43,22 @@ public class ModelCatalogStore {
             + " discovered_at = EXCLUDED.discovered_at, updated_at = now()"
             + " WHERE llm_models.source = 'discovered'";
 
+    /** Writes the catalogue rows. */
     private final JdbcTemplate jdbc;
 
+    /** Builds the store; used by Spring. */
     public ModelCatalogStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** Saves the tool-capable models of one listing. Returns how many were written. */
+    /**
+     * Saves the tool-capable models of one listing. Returns how many were written.
+     *
+     * <p>Called by {@link ModelCatalogService} after a successful listing. Models without tool
+     * calling or with an id over 300 characters are skipped. Writes {@code llm_models} in batches of
+     * 200, in one transaction; a database failure propagates and nothing is saved. Unknown limits
+     * and prices fall back to the defaults above and to zero.
+     */
     // @find: save discovered models, upsert llm_models
     @Transactional
     public int saveDiscovered(String providerId, List<CatalogModel> listed, Instant now) {
@@ -81,6 +92,9 @@ public class ModelCatalogStore {
      * Saves the embedding models of one listing, so the embedding endpoint can price and use the
      * one a workspace chooses. Stored the way the seeded embedding rows are: no tools, no streaming
      * and one output token, which keeps them out of every chat model list and out of routing.
+     *
+     * <p>Returns how many were written. Same transaction and failure behaviour as
+     * {@link #saveDiscovered}.
      */
     // @find: save embedding models, upsert embedding llm_models
     @Transactional
@@ -103,6 +117,7 @@ public class ModelCatalogStore {
         return usable.size();
     }
 
+    /** SQL for an embedding model, stored with one output token and no tools; refreshes only rows that were discovered and are themselves embedding rows. */
     private static final String EMBEDDING_UPSERT = "INSERT INTO llm_models (provider_id, model_id, display_name,"
             + " context_window, max_output_tokens, supports_tools, supports_json_mode, supports_streaming,"
             + " supports_vision, input_cost_per_million, output_cost_per_million, enabled, source, free,"
@@ -112,7 +127,7 @@ public class ModelCatalogStore {
             + " free = EXCLUDED.free, discovered_at = EXCLUDED.discovered_at, updated_at = now()"
             + " WHERE llm_models.source = 'discovered' AND llm_models.max_output_tokens = 1";
 
-    /** Unknown is stored as zero    /** Unknown is stored as zero, the column's own default; the listing view says "price not listed". */
+    /** Unknown is stored as zero, the column's own default; the listing view says "price not listed". */
     private static BigDecimal price(BigDecimal value) {
         if (value == null || value.signum() < 0) {
             return BigDecimal.ZERO;
@@ -121,6 +136,7 @@ public class ModelCatalogStore {
         return value.min(BigDecimal.valueOf(999_999));
     }
 
+    /** Cuts a text to at most {@code max} characters. */
     private static String truncate(String value, int max) {
         return value.length() <= max ? value : value.substring(0, max);
     }

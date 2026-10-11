@@ -27,6 +27,11 @@ import os.aiworkforce.orchestrator.domain.Approval;
  * than the cause deserves. One interface per file is also the convention.
  */
 
+/**
+ * Spring Data repository for Approval rows.
+ *
+ * Every query is keyed on the workspace identifier wherever the entity carries one, so a caller never reaches another workspace's data.
+ */
 public interface Approvals extends JpaRepository<Approval, UUID> {
 
     // @find: record outcome of approved action

@@ -67,15 +67,28 @@ public class EmbeddingService {
     private final WebClient client;
     private final InternalTokenProvider tokens;
 
+    /**
+     * Builds the client for the orchestrator's embedding endpoint.
+     *
+     * @param builder the shared HTTP client builder
+     * @param properties supplies the orchestrator base address
+     * @param tokens issues the service token sent with each request
+     */
     public EmbeddingService(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         this.client = builder.baseUrl(properties.services().orchestrator()).build();
         this.tokens = tokens;
     }
 
+    /**
+     * The body sent to the orchestrator's {@code /internal/embeddings}. Null attribution fields are
+     * omitted from the JSON; {@code purpose} is {@code query} or {@code passage}, so the provider can
+     * embed each in the way it expects.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record EmbedRequest(
             String providerId, String modelId, List<String> texts, UUID agentId, UUID runId, String purpose) {}
 
+    /** The orchestrator's answer: one vector per submitted text, in order, and their width. */
     private record EmbedResponse(List<float[]> vectors, int dimension) {}
 
     // @find: embed a search question, query embedding
@@ -84,6 +97,14 @@ public class EmbeddingService {
      *
      * <p>The query must be embedded the same way as the passages it is compared with: vectors from
      * two models live in different spaces, and comparing them returns confident nonsense.
+     *
+     * <p>Called by {@code RetrievalService}. Attribution is taken from the current request context.
+     * Bounded by {@link #QUERY_TIMEOUT}.
+     *
+     * @return the question's vector
+     * @throws EmbeddingRefused when the orchestrator answers with an error status
+     * @throws ApiException {@code UPSTREAM_ERROR} when the answer is malformed; the HTTP client's own
+     *     exception (a timeout, for instance) when the orchestrator cannot be reached
      */
     public float[] embedQuery(UUID orgId, String providerId, String modelId, String text) {
         return embedQuery(orgId, providerId, modelId, text, ambientAgent(), ambientRun());
@@ -104,6 +125,12 @@ public class EmbeddingService {
      * Proves a model works for this workspace and says how wide its vectors are, by embedding one
      * short passage. Used before a workspace switches its knowledge base to the model, so a model
      * that cannot be used is refused with its reason rather than leaving every source unsearchable.
+     *
+     * <p>Called by {@code EmbeddingModelChange.change}. The call is booked to the workspace alone,
+     * with no agent or run.
+     *
+     * @return the number of dimensions of the model's vectors
+     * @throws EmbeddingRefused when the orchestrator refuses the model or returns an empty vector
      */
     public int probeDimension(UUID orgId, String providerId, String modelId) {
         List<float[]> vectors = embedBatch(
@@ -127,6 +154,12 @@ public class EmbeddingService {
      *
      * <p>A failed batch fails the documents in it rather than the whole ingestion run, so one
      * oversized document does not cost a corpus that was otherwise indexing correctly.
+     *
+     * <p>Splits the list into requests of 96 texts and joins the answers in order. Called by
+     * {@code IngestionService}. Attribution is taken from the current request context.
+     *
+     * @return one vector per text, in the same order; empty for an empty list
+     * @throws EmbeddingRefused when the orchestrator refuses a batch
      */
     public List<float[]> embed(UUID orgId, String providerId, String modelId, List<String> texts) {
         return embed(orgId, providerId, modelId, texts, ambientAgent(), ambientRun());
@@ -148,6 +181,15 @@ public class EmbeddingService {
         return all;
     }
 
+    /**
+     * Sends one batch to the orchestrator and checks the answer.
+     *
+     * <p>Calls {@code POST /internal/embeddings} with the workspace header and a service token for the
+     * orchestrator, and waits for the reply for at most {@code timeout}.
+     *
+     * @throws EmbeddingRefused when the orchestrator replies with an error status; its stated reason is kept
+     * @throws ApiException {@code UPSTREAM_ERROR} when the reply is missing or holds a different number of vectors
+     */
     private List<float[]> embedBatch(
             UUID orgId,
             String providerId,
@@ -188,6 +230,7 @@ public class EmbeddingService {
     public static final class EmbeddingRefused extends RuntimeException {
         private final String reason;
 
+        /** Builds the exception with a sentence that names the model; {@code reason} is also kept on its own. */
         public EmbeddingRefused(String providerId, String modelId, String reason) {
             super("The embedding model " + providerId + " / " + modelId + " could not be used: " + reason);
             this.reason = reason;
@@ -199,10 +242,15 @@ public class EmbeddingService {
         }
     }
 
+    /** Reads the error bodies the orchestrator returns, for {@link #reasonOf}. */
     private static final com.fasterxml.jackson.databind.ObjectMapper PROBLEMS =
             new com.fasterxml.jackson.databind.ObjectMapper();
 
-    /** The error's own sentence from a problem body, or a plain fallback; never the URL. */
+    /**
+     * The error's own sentence from a problem body, or a plain fallback; never the URL. The sentence
+     * is the {@code detail} field; a body that cannot be read, or has none, gives a sentence naming
+     * the HTTP status.
+     */
     static String reasonOf(WebClientResponseException refused) {
         String reason = "";
         try {
@@ -242,7 +290,13 @@ public class EmbeddingService {
     }
 
     // @find: explain embedding failure, embedding error message
-    /** Diagnostic detail for the ingestion screen when embedding is unavailable. */
+    /**
+     * Diagnostic detail for the ingestion screen when embedding is unavailable. Nothing in this
+     * service calls it at present.
+     *
+     * @return the failure's class name as {@code reason} and the fixed {@code service} name
+     *     {@code orchestrator}; it does not read the error's message
+     */
     public Map<String, String> describeFailure(Throwable error) {
         return Map.of("reason", error.getClass().getSimpleName(), "service", "orchestrator");
     }

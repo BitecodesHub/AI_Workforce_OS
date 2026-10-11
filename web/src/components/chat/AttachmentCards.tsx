@@ -25,6 +25,7 @@ import './attachments.css'
  * Someone who may manage knowledge can also keep a file there, for agents to find in later chats.
  */
 
+/** Turns a thrown value into user-facing text: an ApiError keeps its message, anything else gets a generic retry sentence. */
 function reasonOf(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Something went wrong. Try again.'
 }
@@ -56,6 +57,13 @@ function useImageUrl(id: string, enabled: boolean): string | 'failed' | null {
 
 const FOCUSABLE = 'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
 
+/**
+ * Full-size image viewer for a sent attachment, rendered into document.body with a portal.
+ * Behaviour: it takes focus on its close button when mounted, traps Tab inside the panel, closes on Escape or
+ * on a click of the backdrop, and returns focus to the element that was focused before it opened (captured
+ * at first render because StrictMode runs effects twice). The Download button calls downloadAttachment and
+ * shows any failure inline. The close callback is held in a ref so the key listener is bound only once.
+ */
 function Lightbox({ attachment, url, onClose }: { attachment: SentAttachment; url: string; onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -144,6 +152,12 @@ function Lightbox({ attachment, url, onClose }: { attachment: SentAttachment; ur
 
 type SaveState = { phase: 'idle' } | { phase: 'saving' } | { phase: 'saved' } | { phase: 'error'; message: string }
 
+/**
+ * Link-style control that copies a sent attachment into workspace Knowledge with saveAttachmentToKnowledge.
+ * State machine: idle, saving, saved (shows "Saved to knowledge") or error (shows the reason, with a
+ * specific sentence when the server denies permission). Rendered by AttachmentCard for viewers holding
+ * knowledge:source_manage.
+ */
 function SaveToKnowledge({ id }: { id: string }) {
   const [state, setState] = useState<SaveState>({ phase: 'idle' })
   if (state.phase === 'saved') return <span className="caption chat-attach-saved">Saved to knowledge</span>
@@ -180,6 +194,12 @@ function SaveToKnowledge({ id }: { id: string }) {
   )
 }
 
+/**
+ * One sent file as a list item. A viewable image fetches its bytes for a thumbnail (useImageUrl) and opens in
+ * the Lightbox when pressed; any other file calls openAttachment, which opens it in a tab or downloads it,
+ * with a spinner while opening and an inline alert on failure. The metadata line shows size and page count.
+ * When canSave is true a SaveToKnowledge control is added.
+ */
 function AttachmentCard({ attachment, canSave }: { attachment: SentAttachment; canSave: boolean }) {
   const image = attachment.kind === 'image' && isViewableImage(attachment)
   const thumb = useImageUrl(attachment.id, image)
@@ -245,6 +265,11 @@ function AttachmentCard({ attachment, canSave }: { attachment: SentAttachment; c
 }
 
 // @find: AttachmentCards, attachment cards, sent attachments, attached files in message, image thumbnail, file card
+/**
+ * List of the files a sent message carried, used by the user's message bubble. Renders nothing for an empty
+ * list. align places the list at the end (the user's side) or the start. Whether the Save to knowledge
+ * control is offered is decided once here from the knowledge:source_manage permission.
+ */
 export function AttachmentCards({ attachments, align = 'end' }: { attachments: SentAttachment[]; align?: 'end' | 'start' }) {
   if (attachments.length === 0) return null
   const canSave = can('knowledge:source_manage')

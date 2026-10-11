@@ -9,6 +9,8 @@
 
 # Pinned to the Maven release .mvn/wrapper/maven-wrapper.properties uses. The tag was chosen and
 # confirmed with docker manifest inspect, not read from a local image: none is kept after a build.
+# Stage build: compiles every module once; its output does not depend on SERVICE, which is why
+# BuildKit shares it between the eight images.
 FROM maven:3.9.16-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY pom.xml ./
@@ -24,6 +26,8 @@ RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -ntp -q install -DskipTests -Dspotless.check.skip=true -Djacoco.skip=true
 
 # The runtime is pinned to the exact JRE the images were built and tested with.
+# Stage runtime: copies only the one service's jar and runs it as a non-root user. SERVICE
+# selects which jar, so this is the only stage that differs between the eight images.
 FROM eclipse-temurin:21.0.12.1_1-jre-alpine AS runtime
 RUN apk add --no-cache curl tzdata && addgroup -S aiwos && adduser -S -G aiwos aiwos
 WORKDIR /app

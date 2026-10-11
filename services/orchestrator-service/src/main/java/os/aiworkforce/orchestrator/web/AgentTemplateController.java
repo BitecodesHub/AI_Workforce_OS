@@ -58,6 +58,7 @@ public class AgentTemplateController {
     private final Agents agents;
     private final AuditClient audit;
 
+    /** Receives the agent controller whose create method is reused, the agent repository and the audit client. */
     public AgentTemplateController(AgentController agentController, Agents agents, AuditClient audit) {
         this.agentController = agentController;
         this.agents = agents;
@@ -77,6 +78,12 @@ public class AgentTemplateController {
      */
     public record FromTemplateResult(AgentController.AgentView agent, List<String> suggestedConnectors) {}
 
+    /**
+     * Lists the available templates.
+     *
+     * <p>Routes {@code GET /api/agent-templates} and {@code GET /api/agents/templates}; requires
+     * AGENT_READ. Reads the static catalogue in {@link AgentTemplates}; nothing is stored.
+     */
     // @find: list agent templates, GET /api/agent-templates
     @GetMapping({"/api/agent-templates", "/api/agents/templates"})
     @RequiresPermission(Permission.Codes.AGENT_READ)
@@ -85,6 +92,16 @@ public class AgentTemplateController {
         return AgentTemplates.all().stream().map(AgentTemplateController::toView).toList();
     }
 
+    /**
+     * Creates an agent in the caller's workspace from a template.
+     *
+     * <p>Route {@code POST /api/agents/from-template/{key}}; requires AGENT_CREATE; answers 201.
+     * Picks a free key (suffixing {@code -2}, {@code -3} when taken), calls
+     * {@link AgentController#create}, and retries with the next suffix if another request took the
+     * key in the meantime, up to a fixed number of attempts. Grants no connector. Records an
+     * {@code agent.create_from_template} audit entry after commit. Fails with not found for an
+     * unknown template key, or rethrows the creation error when it is not a key clash.
+     */
     // @find: create agent from template, POST /api/agents/from-template/{key}
     @PostMapping("/api/agents/from-template/{key}")
     @ResponseStatus(HttpStatus.CREATED)
@@ -160,6 +177,7 @@ public class AgentTemplateController {
         return 2;
     }
 
+    /** Maps a catalogue template to the card shape, leaving out its prompt. */
     private static TemplateView toView(Template template) {
         return new TemplateView(
                 template.key(),

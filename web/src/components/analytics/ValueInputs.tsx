@@ -46,6 +46,11 @@ export function parseMinutes(entered: string): number | null {
   return Number.isInteger(value) && value >= 1 && value <= MAX_MINUTES ? value : Number.NaN
 }
 
+/**
+ * Sentence summarising the hours returned, the human-equivalent cost and the net value from the Insights
+ * value block, with the caveats that apply (agents with no estimate, no hourly rate). When value is null it
+ * explains that nothing is estimated yet and what to enter.
+ */
 function Estimate({ value }: { value: Insights['value'] }) {
   if (value === null) {
     return (
@@ -73,6 +78,13 @@ function Estimate({ value }: { value: Insights['value'] }) {
   )
 }
 
+/**
+ * Editable form for the hourly rate and the minutes a person takes over one task of each agent.
+ * Values are parsed with parseRate and parseMinutes on submit; an invalid field is reported at that field
+ * and nothing is sent. A valid submit calls useSaveValueSettings with the rate and only the agents that have
+ * minutes, then shows a toast; a server failure appears in a warning Notice. Rendered by ValueInputs for
+ * viewers holding budget:manage.
+ */
 function InputsForm({ settings }: { settings: ValueSettings }) {
   const save = useSaveValueSettings()
   const toast = useToast()
@@ -152,6 +164,7 @@ function InputsForm({ settings }: { settings: ValueSettings }) {
   )
 }
 
+/** Read-only statement of the saved hourly rate and the agents that have an estimate, for viewers without budget:manage. */
 function ReadOnlyInputs({ settings }: { settings: ValueSettings }) {
   const estimated = settings.agents.filter((agent) => agent.minutesPerTask !== null)
   return (
@@ -181,6 +194,13 @@ function ReadOnlyInputs({ settings }: { settings: ValueSettings }) {
 }
 
 // @find: ValueInputs, edit hourly rate and minutes saved, save value settings
+/**
+ * Analytics card for the value assumptions behind the "hours returned" figures.
+ * Reads useValueSettings through QueryState (permission analytics:read). Shows the current estimate
+ * (Estimate, from the value prop), then the editable form for viewers holding budget:manage or the
+ * read-only view for everyone else. The form is keyed on the stored values so a save elsewhere replaces its
+ * text. The section carries id "inputs" so tiles can link to #inputs. Rendered on the Analytics page.
+ */
 export function ValueInputs({ value }: { value: Insights['value'] }) {
   const settings = useValueSettings()
   const canManage = can('budget:manage')

@@ -15,12 +15,16 @@ import type { MenuEntry } from '../ui/Menu'
  * reach the j/k and arrow handling that moves focus between cards.
  */
 
+/** An option in a filter: value, label and an optional count. */
 export type ToolbarOption = { value: string; label: string; count?: number }
 
+/** How the list view groups goals. */
 export type ListGroup = 'none' | 'agent' | 'requester'
 
+/** Visible names of the grouping choices. */
 const GROUP_LABEL: Record<ListGroup, string> = { none: 'None', agent: 'Agent', requester: 'Requester' }
 
+/** Small decorative icons for the removable filter pills and the search field. */
 function RemoveIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
@@ -39,6 +43,18 @@ function SearchIcon() {
 }
 
 // @find: board toolbar component, search and filters
+/**
+ * Row of search, filter and view controls above the goals, rendered by Board.tsx. It draws controls only: every
+ * value is held by the parent (the URL through useListFilter and the page's agent parameter) and every change
+ * goes back through the callbacks.
+ * Controls: a search field; status chips (aria-pressed) with counts plus an optional extra chip such as "Done
+ * today"; a Filters menu holding source (multi-select), agent and requester (single-select) as a MenuButton
+ * with checked items and a count in its label; removable pills for each active menu filter so none is hidden;
+ * Clear filters when anything is active; a polite "Showing N of M" line (visually hidden while nothing is
+ * filtered, but always announced); a Show empty chip for the board view; a Group menu for the list view; and
+ * the Board or List switch. It sits outside the board's keyboard container so menu arrow keys never reach
+ * the card navigation.
+ */
 export function BoardToolbar({
   query,
   onQueryChange,

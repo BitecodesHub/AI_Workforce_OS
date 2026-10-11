@@ -60,6 +60,13 @@ public class Role extends BaseEntity {
     private Set<String> permissions = new LinkedHashSet<>();
 
     // @find: change role permissions, edit role, permission version bump
+    /**
+     * Replaces the role's permission set.
+     *
+     * <p>Does nothing when the new set equals the current one. Otherwise the set is copied and the
+     * permission version is incremented, so a no-op save never changes the version. The caller
+     * saves the entity.
+     */
     public void replacePermissions(Set<String> codes) {
         if (!permissions.equals(codes)) {
             permissions = new LinkedHashSet<>(codes);
@@ -73,6 +80,9 @@ public class Role extends BaseEntity {
         return held.containsAll(permissions);
     }
 
+    /**
+     * Whether this is a system role, which has no workspace and is available to every workspace.
+     */
     public boolean isPlatformWide() {
         return orgId == null;
     }

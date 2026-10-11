@@ -16,10 +16,20 @@ import java.util.UUID;
  */
 public final class UuidV7 {
 
+    /** Source of the random bits; shared because {@link SecureRandom} is thread safe. */
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /** Not instantiable: the class offers only static methods. */
     private UuidV7() {}
 
+    /**
+     * Creates a new identifier.
+     *
+     * <p>Fills sixteen bytes with random data, overwrites the first six with the current time in
+     * milliseconds, then sets the version nibble to 7 and the variant bits to the IETF layout.
+     * Called by {@code BaseEntity} when a row receives its id. Nothing is stored and nothing fails;
+     * two calls within the same millisecond differ only in their random tail.
+     */
     public static UUID generate() {
         byte[] value = new byte[16];
         RANDOM.nextBytes(value);

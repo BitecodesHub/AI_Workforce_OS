@@ -60,6 +60,9 @@ function messageRow(message: ChatMessage): ChatMessage {
   }
 }
 
+/**
+ * Result of useEarlierPages: the assembled thread, whether earlier messages exist, a loading flag and the loadEarlier action.
+ */
 export type EarlierPages = {
   /** The thread as far as it is loaded: earlier pages and slid-out messages, then the live window. */
   messages: ChatMessage[]
@@ -78,6 +81,7 @@ export type EarlierPages = {
 
 type Loaded = { id: string | null; live: readonly ChatMessage[]; older: ChatMessage[]; exhausted: boolean }
 
+/** Default `apply` for loadEarlier: runs the state change immediately, with no scroll-position handling. */
 const applyNow = (update: () => void) => update()
 
 // @find: show earlier messages, load older messages; route: GET /api/conversations/{id}/messages?before=; used by: Chat page
@@ -185,6 +189,9 @@ export function useConversationPeople(id: string | null, enabled = true) {
 }
 
 // @find: add people to conversation; route: POST /api/conversations/{id}/participants; used by: Chat page (AddPeopleDialog)
+/**
+ * Mutation that adds people to a shared conversation (POST /api/conversations/{id}/participants with userIds). On success it refetches that conversation's participant list. Used by the Chat page's add-people dialog.
+ */
 export function useAddConversationPeople() {
   const client = useQueryClient()
   return useMutation({
@@ -195,6 +202,9 @@ export function useAddConversationPeople() {
 }
 
 // @find: remove person from conversation; route: DELETE /api/conversations/{id}/participants/{userId}; used by: Chat page (AddPeopleDialog)
+/**
+ * Mutation that removes one person from a conversation (DELETE /api/conversations/{id}/participants/{userId}). On success it refetches the participant list. Used by the Chat page's add-people dialog.
+ */
 export function useRemoveConversationPerson() {
   const client = useQueryClient()
   return useMutation({

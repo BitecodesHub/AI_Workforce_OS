@@ -54,18 +54,29 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
  * <p>A server with no connection is still listed, in sandbox state. That is deliberate: a person
  * evaluating the platform should see what Gmail would offer before deciding whether to connect an
  * account, and an agent can be configured against it in the meantime.
+ *
+ * <p>Three groups of routes live here: the Integrations page ({@code /api/integrations/...}, gated by
+ * permission), the OAuth app and sign-in start routes, and the {@code /internal/connections/...}
+ * routes that sibling services call with a service token. Delegates to {@code ConnectorService}
+ * and {@code OAuthService}; it holds no state of its own.
  */
 @RestController
 @Tag(name = "Integrations")
 @RequestMapping
 public class IntegrationController {
 
+    /** Reads stored connections for the listing. */
     private final Connections connections;
+    /** Source of the connector adapters and their tool definitions. */
     private final ToolGateway gateway;
+    /** Static catalog of connector names, categories, setup steps and credential fields. */
     private final ConnectorCatalog catalog;
+    /** Connect, test, disconnect and internal credential logic. */
     private final ConnectorService connectors;
+    /** OAuth app storage and sign-in start. */
     private final OAuthService oauth;
 
+    /** Creates the controller with the collaborators it delegates to. */
     public IntegrationController(
             Connections connections,
             ToolGateway gateway,
@@ -79,6 +90,11 @@ public class IntegrationController {
         this.oauth = oauth;
     }
 
+    /**
+     * One tool a connector offers, as the console lists it. {@code alwaysRequiresApproval} is true for
+     * a tool that is always approved by a person, whether by its definition or because its adapter asks
+     * on every call of it.
+     */
     public record ToolView(
             String name,
             String qualifiedName,
@@ -93,6 +109,11 @@ public class IntegrationController {
      * <p>{@code status} is {@code sandbox} (practice data), {@code connected} (a live token is
      * stored and passed its last check) or {@code error} (the stored token failed its last check,
      * shown as "Needs attention" with {@code lastError}).
+     *
+     * <p>Built by {@code view}; it never contains a token. {@code liveAvailable} says whether a live
+     * adapter exists, {@code authType} how the connector is connected, {@code oauth} is null for
+     * connectors that are not connected by signing in, and {@code oauthAppConfigured} says whether the
+     * workspace has saved the provider's app.
      */
     public record ConnectionView(
             String server,
@@ -135,6 +156,10 @@ public class IntegrationController {
             @Size(max = 16) Map<String, @Size(max = 4096) String> fields,
             @Size(max = 120) String accountLabel) {}
 
+    /**
+     * Body of {@code PUT /api/integrations/{server}/oauth/app}. A blank {@code clientSecret} keeps the
+     * secret already stored; {@code settings} holds the provider's non-secret fields.
+     */
     public record OAuthAppRequest(
             @NotBlank
                     @Size(max = 512)
@@ -143,10 +168,17 @@ public class IntegrationController {
             @Size(max = 2048) String clientSecret,
             @Size(max = 16) Map<String, @Size(max = 512) String> settings) {}
 
+    /** The provider's consent address that the console sends the browser to. */
     public record OAuthStartView(String authorizeUrl) {}
 
+    /**
+     * The answer of the internal credential endpoints. {@code value} is the token (or null),
+     * {@code state} is {@code connected}, {@code none}, {@code reconnect_required} or
+     * {@code unreadable}, and {@code message} is a plain reason when there is one.
+     */
     public record InternalCredential(String value, String state, String message) {
 
+        /** A token only: the state is {@code connected} when a value is present and {@code none} otherwise. */
         public InternalCredential(String value) {
             this(value, value == null ? "none" : "connected", null);
         }
@@ -159,6 +191,13 @@ public class IntegrationController {
     public record ReconnectRequest(String reason) {}
 
     // @find: list connectors, Integrations page, GET /api/integrations
+    /**
+     * {@code GET /api/integrations}. Permission: {@code integration:read}.
+     *
+     * <p>Loads the workspace's stored connections and its saved OAuth apps, then returns one view for
+     * every connector the gateway knows, sorted by key. Connectors never connected appear as practice
+     * data. Read only; no tokens are decrypted.
+     */
     @GetMapping("/api/integrations")
     @RequiresPermission(Permission.Codes.INTEGRATION_READ)
     @Operation(summary = "Every connector, its status, and what each one offers")
@@ -175,6 +214,14 @@ public class IntegrationController {
     }
 
     // @find: connect connector, Add connector dialog, PUT /api/integrations/{server}/connection
+    /**
+     * {@code PUT /api/integrations/{server}/connection}. Permission: {@code integration:connect}.
+     *
+     * <p>Passes the pasted token or credential parts to {@code ConnectorService.connect}, which checks
+     * them with the provider, stores them encrypted and writes an audit entry. Returns the updated view.
+     * Fails with a validation or connector error when the token is empty, rejected, or the connector is
+     * not live or is connected by signing in.
+     */
     @PutMapping("/api/integrations/{server}/connection")
     @RequiresPermission(Permission.Codes.INTEGRATION_CONNECT)
     @Operation(summary = "Check a token with the provider and store it, encrypted")
@@ -185,6 +232,12 @@ public class IntegrationController {
     }
 
     // @find: get oauth app, GET /api/integrations/{server}/oauth/app
+    /**
+     * {@code GET /api/integrations/{server}/oauth/app}. Permission: {@code integration:connect}.
+     *
+     * <p>Returns whether an app is saved for the connector's provider, with its client identifier and
+     * settings; the secret is never included. Fails with not found for a connector without sign-in.
+     */
     @GetMapping("/api/integrations/{server}/oauth/app")
     @RequiresPermission(Permission.Codes.INTEGRATION_CONNECT)
     @Operation(summary = "The OAuth app saved for this connector's provider, without its secret")
@@ -193,6 +246,12 @@ public class IntegrationController {
     }
 
     // @find: save oauth app, PUT /api/integrations/{server}/oauth/app
+    /**
+     * {@code PUT /api/integrations/{server}/oauth/app}. Permission: {@code integration:connect}.
+     *
+     * <p>Validates and saves the provider app for the workspace (secret encrypted, written to the
+     * database) and writes an audit entry as the calling actor. Returns the saved app without its secret.
+     */
     @PutMapping("/api/integrations/{server}/oauth/app")
     @RequiresPermission(Permission.Codes.INTEGRATION_CONNECT)
     @Operation(summary = "Save the OAuth app (client id, secret and provider settings) for this connector's provider")
@@ -210,6 +269,11 @@ public class IntegrationController {
     /**
      * Opens a consent screen: answers the provider's address, and sets a short-lived cookie that
      * ties the sign-in to this browser. The browser is sent to the address by the console.
+     *
+     * <p>Permission: {@code integration:connect}. Calls {@code OAuthService.start}, which writes a
+     * pending state row, and sets the {@code aiwos_oauth} cookie (HTTP only, Lax, limited to the callback
+     * path, lasting as long as the state). Response: the consent address. Fails when the app has not
+     * been saved yet.
      */
     @GetMapping("/api/integrations/{server}/oauth/start")
     @RequiresPermission(Permission.Codes.INTEGRATION_CONNECT)
@@ -231,6 +295,13 @@ public class IntegrationController {
     }
 
     // @find: test connection, POST /api/integrations/{server}/test
+    /**
+     * {@code POST /api/integrations/{server}/test}. Permission: {@code integration:read}.
+     *
+     * <p>Asks the provider again whether the stored credential works, through
+     * {@code ConnectorService.test}, and records the result on the connection. Response: whether the
+     * check passed, a message and the time. With no stored token it reports that practice data is used.
+     */
     @PostMapping("/api/integrations/{server}/test")
     @RequiresPermission(Permission.Codes.INTEGRATION_READ)
     @Operation(summary = "Check the stored token with the provider again")
@@ -239,6 +310,13 @@ public class IntegrationController {
     }
 
     // @find: disconnect connector, DELETE /api/integrations/{server}/connection
+    /**
+     * {@code DELETE /api/integrations/{server}/connection}. Permission: {@code integration:disconnect}.
+     *
+     * <p>Forgets the stored token and returns the connector to practice data through
+     * {@code ConnectorService.disconnect}; an audit entry is written when a live connection existed.
+     * Response: {@code 204}. Disconnecting a connector that was never connected is not an error.
+     */
     @DeleteMapping("/api/integrations/{server}/connection")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.INTEGRATION_DISCONNECT)
@@ -254,6 +332,13 @@ public class IntegrationController {
      * <p>Refused to a person's token, whatever permissions it carries. The only legitimate caller
      * is a service acting on a run, and a human session reaching this endpoint is either a
      * mistake or an attempt to read a workspace's stored tokens.
+     *
+     * <p>Route: {@code GET /internal/connections/{server}/credential} with the workspace in the
+     * {@code X-Workspace-Id} header. Response: the credential and its state from
+     * {@code ConnectorService.lookup}, which may renew a token that is about to expire. A missing live
+     * token is a normal answer (state {@code none}), not an error.
+     *
+     * @throws ApiException {@code PERMISSION_DENIED} when the caller is a person
      */
     @GetMapping("/internal/connections/{server}/credential")
     @Operation(summary = "Internal: resolve a tool credential for a sibling service")
@@ -273,6 +358,13 @@ public class IntegrationController {
     /**
      * A new access token after the provider rejected the one handed out. Empty (a null value) when
      * the sign-in cannot be renewed; the connection is then marked as needing a reconnect.
+     *
+     * <p>Route: {@code POST /internal/connections/{server}/refresh}; internal callers only. Calls
+     * {@code ConnectorService.refreshRejected}, which may call the provider's token endpoint, save the
+     * new tokens and write an audit entry on failure. Response: the new token with state
+     * {@code connected}, or no value with state {@code reconnect_required}.
+     *
+     * @throws ApiException {@code PERMISSION_DENIED} when the caller is a person
      */
     @PostMapping("/internal/connections/{server}/refresh")
     @Operation(summary = "Internal: renew a rejected sign-in token for a sibling service")
@@ -287,6 +379,14 @@ public class IntegrationController {
     }
 
     // @find: internal reconnect required, POST /internal/connections/{server}/reconnect-required
+    /**
+     * {@code POST /internal/connections/{server}/reconnect-required}; internal callers only. Used when
+     * a sibling service finds that the provider no longer accepts a connection. Calls
+     * {@code ConnectorService.requireReconnect}, which flags the connection and writes an audit entry.
+     * Response: {@code 204}.
+     *
+     * @throws ApiException {@code PERMISSION_DENIED} when the caller is a person
+     */
     @PostMapping("/internal/connections/{server}/reconnect-required")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Internal: mark a connection as needing to be connected again")
@@ -298,12 +398,24 @@ public class IntegrationController {
         connectors.requireReconnect(workspaceId, server, request.reason());
     }
 
+    /**
+     * Refuses a person's token on the internal routes.
+     *
+     * @throws ApiException {@code PERMISSION_DENIED} when the caller is a person rather than a service
+     */
     private static void requireInternal() {
         if (RequestContext.requireActor().kind() == Actor.Kind.USER) {
             throw new ApiException(ErrorCode.PERMISSION_DENIED, "This endpoint is for internal service calls only.");
         }
     }
 
+    /**
+     * Builds the console view of one connector from its adapter's tools, its catalog entry and its
+     * stored connection, when there is one. A connection of null yields the sandbox view. No tokens are
+     * read. A connector missing from the catalog falls back to a minimal entry named after its key.
+     *
+     * @param apps the providers the workspace has saved an OAuth app for
+     */
     private ConnectionView view(String server, Connection connection, java.util.Set<String> apps) {
         List<ToolView> tools = gateway.adapter(server)
                 .map(adapter -> adapter.tools().stream()
@@ -347,6 +459,11 @@ public class IntegrationController {
                 appConfigured);
     }
 
+    /**
+     * The sign-in setup shown to administrators, including the redirect address to register.
+     *
+     * @return null when the connector is not connected by signing in
+     */
     private OAuthView oauthView(ConnectorInfo info) {
         OAuthSetup setup = info.oauth();
         if (setup == null) {
@@ -362,6 +479,11 @@ public class IntegrationController {
                 oauth.properties().redirectUri());
     }
 
+    /**
+     * The calling person's identifier, for recording who started a sign-in.
+     *
+     * @return null when there is no actor or its human identifier is missing or not a valid UUID
+     */
     private static UUID humanId() {
         return RequestContext.actor()
                 .map(Actor::humanId)
@@ -386,6 +508,11 @@ public class IntegrationController {
                 tool.alwaysRequiresApproval() || asksEveryCall);
     }
 
+    /**
+     * The workspace of the current request.
+     *
+     * @throws ApiException when the request carries no workspace
+     */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

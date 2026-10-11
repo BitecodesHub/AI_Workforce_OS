@@ -50,6 +50,9 @@ import { useToast } from '../lib/toast'
 const WORKSPACE_FIELD_LABELS = { name: 'Workspace name', timezone: 'Time zone' }
 
 // @find: workspace card, rename workspace, change time zone
+/**
+ * Form for the workspace name and time zone. Zone choices come from the browser's list with the saved zone and the browser's own zone included. Save is enabled only when something changed. Flow: validates on the client (validateWorkspaceForm), then useUpdateWorkspaceSettings (PATCH /api/workspaces/{id}/settings); success toasts "Workspace settings saved", and the service's field problems are shown beside the fields.
+ */
 function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const toast = useToast()
   const save = useUpdateWorkspaceSettings(workspace.id)
@@ -136,6 +139,9 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
 }
 
 // @find: notifications card, email notifications, approval alerts
+/**
+ * Form for the workspace webhook (exported because the Setup page reuses it). Fields: webhook address, optional signing secret (leave blank to keep the stored one, tick to remove it) and the events to be told about. An empty address turns notifications off. Flow: validateNotifications on the client, then useSaveNotificationSettings (PUT /api/orchestrator/notification-settings); success resets the secret fields and toasts. Send a test message (POST) goes to the saved address, so it is offered only when an address is saved and nothing is unsaved; the result or failure shows inline. Field problems from the service appear beside their fields.
+ */
 export function NotificationsCard({ settings }: { settings: NotificationSettings }) {
   const toast = useToast()
   const save = useSaveNotificationSettings()
@@ -418,6 +424,10 @@ function RetentionCard({ settings }: { settings: RetentionSettings }) {
 }
 
 // @find: Settings component, workspace settings page, /settings
+/**
+ * The Workspace settings page (route /settings, permission workspace:update; reached from the Profile page).
+ * Cards, each loaded behind its own QueryState: workspace name and time zone, notifications (webhook, plus this browser's own notification choice), the approval rule that stops a requester approving their own work, how long run detail is kept, and a pointer to the budget in Analytics (a link when the person holds analytics:read). Each card saves independently and toasts the result.
+ */
 export function Settings() {
   const workspaceId = profile()?.workspaceId ?? null
   const workspace = useWorkspace(workspaceId)

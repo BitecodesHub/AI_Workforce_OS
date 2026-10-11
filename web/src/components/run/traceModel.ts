@@ -15,18 +15,21 @@ import type { RunStep } from '../../lib/queries'
  */
 
 // @find: detailText, detail text, trace model, step mode, step heading, step kind
+/** Reads a non-empty string field from a step's detail; null otherwise. */
 export function detailText(detail: Record<string, unknown>, key: string): string | null {
   const value = detail[key]
   return typeof value === 'string' && value.trim() ? value : null
 }
 
 // @find: detailStrings, detail strings, trace model, step mode, step heading, step kind
+/** Reads a field of a step's detail as a list of strings; anything else gives an empty list. */
 export function detailStrings(detail: Record<string, unknown>, key: string): string[] {
   const value = detail[key]
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
 // @find: detailNumber, detail number, trace model, step mode, step heading, step kind
+/** Reads a finite number field from a step's detail; null otherwise. */
 export function detailNumber(detail: Record<string, unknown>, key: string): number | null {
   const value = detail[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -56,6 +59,7 @@ export type TraceQuestionItem = {
   options: TraceQuestionOption[]
 }
 
+/** Type guard: an object with string header and question fields. */
 function isTraceQuestionItem(value: unknown): value is TraceQuestionItem {
   if (!value || typeof value !== 'object') return false
   const item = value as Record<string, unknown>
@@ -83,6 +87,7 @@ export const SEARCHED_DOCUMENTS = 'Searched documents'
 const KNOWLEDGE_TOOLS = new Set(['knowledge.search', 'knowledge__search'])
 
 // @find: isKnowledgeSearch, is knowledge search, trace model, step mode, step heading, step kind
+/** True for a knowledge_query step, or a tool call to the document search tool (knowledge.search or knowledge__search). */
 export function isKnowledgeSearch(step: RunStep): boolean {
   if (step.kind === 'knowledge_query') return true
   return step.kind === 'tool_call' && KNOWLEDGE_TOOLS.has(detailText(step.detail, 'tool') ?? '')
@@ -105,6 +110,7 @@ export function stepKind(step: RunStep): { tone: TagTone; label: string } {
 const MEMORY_TOOLS = new Set(['memory.remember', 'memory__remember', 'memory.recall', 'memory__recall'])
 
 // @find: isMemoryStep, is memory step, trace model, step mode, step heading, step kind
+/** True for a memory_read step, or a tool call to memory.remember or memory.recall (either naming form). */
 export function isMemoryStep(step: RunStep): boolean {
   if (step.kind === 'memory_read') return true
   return step.kind === 'tool_call' && MEMORY_TOOLS.has(detailText(step.detail, 'tool') ?? '')
@@ -244,6 +250,7 @@ const ERROR_HEADING: Record<string, string> = {
 }
 
 // @find: stepHeading, step heading, trace model, step mode, step heading, step kind
+/** The heading of a step by kind: the document search or memory label, the provider and model for a model call, the tool name for a tool call or approval, the question headers, a friendly error title by code (ERROR_HEADING), or the handoff source. Other kinds use the tool name or a sentence-cased type; null when nothing applies. */
 export function stepHeading(step: RunStep): string | null {
   if (isKnowledgeSearch(step)) return SEARCHED_DOCUMENTS
   if (isMemoryStep(step)) return memoryStepLabel(step)
@@ -276,6 +283,7 @@ export function stepHeading(step: RunStep): string | null {
 }
 
 // @find: stepDescription, step description, trace model, step mode, step heading, step kind
+/** Body text of a step: the first of summary, reason, detail and content that has text; null when none. */
 export function stepDescription(step: RunStep): string | null {
   return (
     detailText(step.detail, 'summary') ??

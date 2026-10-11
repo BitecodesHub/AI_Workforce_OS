@@ -46,10 +46,20 @@ import os.aiworkforce.platform.resilience.ResiliencePresets;
  *
  * <p>Every outcome, including every refusal, produces an audit entry. A blocked call is exactly
  * the thing somebody will later need to prove did not happen.
+ *
+ * <p>Current scope, stated precisely: the gateway enforces the per-run ceiling on calls from the
+ * grant and the timeout of each tool. The per-minute rate limit and the circuit breaker named above
+ * are not applied in this class today ({@code resilience} is held but unused here). The audit
+ * entry is written by the caller (the orchestrator and the connector service) from the decision and
+ * the result this class returns; the gateway itself only logs.
+ *
+ * <p>Callers: the orchestrator ({@code evaluate}, then {@code invoke} after any approval) and the
+ * connector service. Adapters are discovered as Spring beans at construction.
  */
 @Service
 public class ToolGateway {
 
+    /** Gateway log. Holds decisions and outcomes only, never credentials or argument values. */
     private static final Logger log = LoggerFactory.getLogger(ToolGateway.class);
 
     private final Map<String, McpServerAdapter> adapters = new ConcurrentHashMap<>();
@@ -60,6 +70,11 @@ public class ToolGateway {
      * per request. Cleared when the run ends. */
     private final Map<String, Map<String, AtomicInteger>> runCallCounts = new ConcurrentHashMap<>();
 
+    /**
+     * Registers every adapter bean by server name. Rejects the reserved names {@code person} and
+     * {@code memory} with {@code IllegalStateException}, which stops startup: those namespaces belong to the
+     * orchestrator and an adapter under them would disguise a person or a memory note as a connector.
+     */
     public ToolGateway(List<McpServerAdapter> servers, ArgumentValidator validator, ResiliencePresets resilience) {
         servers.forEach(adapter -> {
             // person.* is answered by a person inside the orchestrator, not by a server. An
@@ -80,7 +95,11 @@ public class ToolGateway {
     }
 
     // @find: tools an agent may see, grants filter, which tools can the agent use
-    /** What the model is allowed to see, which is only what the agent may actually call. */
+    /**
+     * What the model is allowed to see, which is only what the agent may actually call. Keeps a
+     * tool only when its grant is enabled, names the tool (or covers every tool) and carries all the
+     * scopes the tool needs. Servers with no adapter are skipped. Pure; contacts no provider.
+     */
     public List<ToolDefinition> availableTools(List<ToolGrant> grants) {
         return grants.stream()
                 .filter(ToolGrant::enabled)
@@ -99,6 +118,12 @@ public class ToolGateway {
      * <p>Separate from {@link #invoke} so the orchestrator can park a run before spending
      * anything, and so the same decision can be re-evaluated after an approval without the
      * checks being duplicated in two places.
+     *
+     * <p>Order of checks: server known, tool known, grant covers the tool, scopes present, argument
+     * validation, per-run ceiling, then approval. A call needs approval when the tool is outbound or
+     * destructive, the grant or the workspace policy asks for it, or the adapter names a per-call
+     * reason. Outputs: {@code Refuse}, {@code Invalid}, {@code AwaitApproval} (approver permission
+     * {@code approval:decide}) or {@code Proceed}. Has no side effects and sends nothing.
      */
     public ApprovalDecision evaluate(
             ToolInvocation invocation, List<ToolGrant> grants, boolean policyRequiresApproval) {
@@ -163,6 +188,12 @@ public class ToolGateway {
      * <p>Takes the decision as an argument rather than re-deriving it, so a call cannot reach a
      * provider by a path that skipped the gate. Passing {@code Proceed} is a deliberate statement
      * by the caller that the checks were made.
+     *
+     * <p>Flow: a refusing, waiting or invalid decision returns a blocked or failed result at once;
+     * otherwise the arguments are normalised and validated again, the per-run counter is
+     * incremented, and the adapter is called with the credential under the tool's timeout. A timeout
+     * or any error becomes a result through {@code classify}, never an exception. Side effect: this
+     * is the one place a provider is contacted for a tool call, and it logs the outcome.
      */
     public Mono<ToolResult> invoke(ToolInvocation invocation, ApprovalDecision decision, String credential) {
         if (decision instanceof ApprovalDecision.Refuse refuse) {
@@ -270,6 +301,11 @@ public class ToolGateway {
         return false;
     }
 
+    /**
+     * Builds the one-sentence reason shown to the approver, from the tool's side-effect class, plus
+     * any extra detail the adapter supplies (for example the page a browser submit acts on). A failing
+     * adapter detail is ignored so it cannot prevent the approval request.
+     */
     private String describe(McpServerAdapter adapter, ToolDefinition tool, ToolInvocation invocation) {
         String what = switch (tool.sideEffect()) {
             case OUTBOUND -> "Send something outside the workspace using " + tool.qualifiedName();
@@ -287,6 +323,10 @@ public class ToolGateway {
         return detail.map(text -> what + ". " + text).orElse(what);
     }
 
+    /**
+     * Whether this run has already used the tool as often as the grant allows. False when the grant
+     * sets no ceiling or the invocation carries no run id.
+     */
     private boolean exceedsRunLimit(ToolInvocation invocation, ToolGrant grant) {
         if (grant.maxCallsPerRun() == null || invocation.runId() == null) {
             return false;
@@ -296,6 +336,7 @@ public class ToolGateway {
         return count != null && count.get() >= grant.maxCallsPerRun();
     }
 
+    /** Counts one call against the run, keyed by the qualified tool name. */
     private void countCall(ToolInvocation invocation) {
         if (invocation.runId() == null) {
             return;
@@ -320,6 +361,10 @@ public class ToolGateway {
     }
 
     // @find: which connectors are connected, server status map
+    /**
+     * Every registered server name mapped to whether its adapter is a sandbox (practice data) one.
+     * Used by the connector listing to show which servers exist.
+     */
     public Map<String, Boolean> connectedServers() {
         Map<String, Boolean> servers = new HashMap<>();
         adapters.forEach((name, adapter) -> servers.put(name, adapter.isSandbox()));
@@ -327,6 +372,7 @@ public class ToolGateway {
     }
 
     // @find: get adapter for connector, find server adapter
+    /** The adapter registered for a server, or empty. */
     public Optional<McpServerAdapter> adapter(String server) {
         return Optional.ofNullable(adapters.get(server));
     }

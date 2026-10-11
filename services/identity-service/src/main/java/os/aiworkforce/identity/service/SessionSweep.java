@@ -26,11 +26,19 @@ public class SessionSweep {
 
     private final Sessions sessions;
 
+    /** Creates the job with the session repository it deletes from. */
     public SessionSweep(Sessions sessions) {
         this.sessions = sessions;
     }
 
     // @find: sweep expired sessions, scheduled cleanup, cron 3:17
+    /**
+     * Deletes every session that expired more than {@link #GRACE} ago, in one transaction.
+     *
+     * <p>Runs by schedule at 03:17 each day and may also be called directly. It writes to the
+     * {@code sessions} table only, and logs the number removed when it is above zero. A database
+     * failure rolls the transaction back and the next run tries again.
+     */
     @Scheduled(cron = "0 17 3 * * *")
     @Transactional
     public void sweep() {

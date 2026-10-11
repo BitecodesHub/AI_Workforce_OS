@@ -32,10 +32,12 @@ export type MenuEntry =
   | { id: string; separator: true }
   | { id: string; groupLabel: string }
 
+/** The entries that perform an action (as opposed to separators and group labels). */
 type ActionEntry = Extract<MenuEntry, { onSelect: () => void }>
 
 const isActionEntry = (entry: MenuEntry): entry is ActionEntry => 'onSelect' in entry
 
+/** Selector for the enabled menu items, used for focus movement. */
 const MENU_ITEM_SELECTOR = '[role^="menuitem"]:not(:disabled)'
 
 /** The gap between a floating panel and its trigger, and the least room kept to the window's edge. */
@@ -63,6 +65,7 @@ export function floatingMenuPosition(
   return { top, left, placement }
 }
 
+/** Small down caret shown on the button trigger. */
 function CaretIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
@@ -71,6 +74,7 @@ function CaretIcon() {
   )
 }
 
+/** One menu item as a button. The role follows the entry: menuitem, menuitemcheckbox (checked defined) or menuitemradio (checked and group defined). Draws an optional leading icon, the label and an optional note; a danger entry is styled as such. */
 function MenuItemRow({ entry, onSelect }: { entry: ActionEntry; onSelect: (entry: ActionEntry) => void }) {
   const role = entry.checked === undefined ? 'menuitem' : entry.group ? 'menuitemradio' : 'menuitemcheckbox'
   return (
@@ -148,6 +152,18 @@ function portalHost(trigger: HTMLElement | null): HTMLElement {
 }
 
 // @find: dropdown menu button, more actions
+/**
+ * Dropdown menu opened from an icon, a link or a button (trigger), with keyboard support.
+ * Props: label (accessible name and menu label), items (MenuEntry list), trigger and text or icon for it, align
+ * (panel edge), triggerTabIndex (take the trigger out of the Tab order when a shortcut opens the menu), openRef
+ * (lets a caller open it without a click) and portal (render in a fixed layer beside the trigger so a clipped
+ * or scrolling ancestor cannot hide it; the host is the nearest open modal dialog, else the body).
+ * Behaviour: opening focuses the first enabled item. ArrowUp, ArrowDown, Home and End move focus, Escape closes
+ * and returns focus to the trigger, and Tab closes (a portalled panel returns focus to the trigger because it
+ * sits at the end of the document). A press outside closes it without moving focus. A plain command closes
+ * the menu after it runs, while checkbox and radio items keep it open so several can be set in one visit.
+ * A portalled panel is positioned with floatingMenuPosition on open and again on resize and scroll.
+ */
 export function MenuButton({
   label,
   items,

@@ -33,12 +33,16 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  */
 public final class StripeAdapter extends LiveServerAdapter {
 
+    /** Stripe's API address; the SandboxServerRegistry passes it in, tests pass a stand-in. */
     public static final String BASE_URL = "https://api.stripe.com";
 
+    /** The refund reasons Stripe accepts. */
     private static final Set<String> REASONS = Set.of("duplicate", "fraudulent", "requested_by_customer");
+    /** Currencies with no minor unit, where the amount is already a whole number. */
     private static final Set<String> ZERO_DECIMAL = Set.of(
             "bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd", "vuv", "xaf", "xof", "xpf");
 
+    /** Registers the five Stripe tools; {@code baseUrl} is the Stripe API address. */
     public StripeAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Stripe", json, http, baseUrl);
         on("search_customers", this::searchCustomers);
@@ -48,11 +52,13 @@ public final class StripeAdapter extends LiveServerAdapter {
         on("refund_payment", this::refund);
     }
 
+    /** Sends the key as a bearer credential. */
     @Override
     protected void authorize(HttpHeaders headers, String key) {
         headers.setBearerAuth(key);
     }
 
+    /** Reads the balance (a read call to Stripe) and answers whether the key is for live or test mode. */
     @Override
     protected Mono<String> whoAmI(String key) {
         return get(key, "/v1/balance").map(balance ->
@@ -60,6 +66,10 @@ public final class StripeAdapter extends LiveServerAdapter {
     }
 
     // @find: Stripe search customers, tool stripe__search_customers, live Stripe call
+    /**
+     * Tool search_customers (read). Searches by email, and by name too when the query has three or more characters,
+     * using Stripe's search endpoint. The query is quoted so it cannot add search clauses.
+     */
     private Mono<ToolResult> searchCustomers(ToolInvocation invocation, JsonNode arguments, String key) {
         String query = required(arguments, "query");
         String quoted = "\"" + query.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
@@ -80,6 +90,7 @@ public final class StripeAdapter extends LiveServerAdapter {
     }
 
     // @find: Stripe list payments, tool stripe__list_payments, live Stripe call
+    /** Tool list_payments (read). Lists payment intents, optionally for one customer; a status filter is applied here, not by Stripe. */
     private Mono<ToolResult> listPayments(ToolInvocation invocation, JsonNode arguments, String key) {
         String customer = text(arguments, "customer");
         String status = text(arguments, "status");
@@ -104,6 +115,7 @@ public final class StripeAdapter extends LiveServerAdapter {
     }
 
     // @find: Stripe get payment, tool stripe__get_payment, live Stripe call
+    /** Tool get_payment (read). Reads one payment intent by id. */
     private Mono<ToolResult> getPayment(ToolInvocation invocation, JsonNode arguments, String key) {
         String id = required(arguments, "id");
         return get(key, "/v1/payment_intents/{id}", id)
@@ -111,6 +123,7 @@ public final class StripeAdapter extends LiveServerAdapter {
     }
 
     // @find: Stripe list invoices, tool stripe__list_invoices, live Stripe call
+    /** Tool list_invoices (read). Lists invoices, optionally for one customer or status; amounts are returned in whole currency units. */
     private Mono<ToolResult> listInvoices(ToolInvocation invocation, JsonNode arguments, String key) {
         String customer = text(arguments, "customer");
         String status = text(arguments, "status");
@@ -144,6 +157,11 @@ public final class StripeAdapter extends LiveServerAdapter {
     }
 
     // @find: Stripe refund, tool stripe__refund, live Stripe call
+    /**
+     * Tool refund_payment (destructive: money leaves the account and cannot be taken back, so it always waits for a
+     * person). Validates the reason and amount, reads the payment for its currency when the refund is partial, then
+     * POSTs the refund. The invocation's idempotency key is sent so a repeat cannot refund twice.
+     */
     private Mono<ToolResult> refund(ToolInvocation invocation, JsonNode arguments, String key) {
         String payment = required(arguments, "id");
         String reason = text(arguments, "reason");
@@ -188,6 +206,7 @@ public final class StripeAdapter extends LiveServerAdapter {
         });
     }
 
+    /** The optional refund amount as a positive number; null means refund in full. Refuses anything else. */
     private static BigDecimal amount(JsonNode arguments) {
         String raw = text(arguments, "amount");
         if (raw == null) {
@@ -204,22 +223,26 @@ public final class StripeAdapter extends LiveServerAdapter {
         }
     }
 
+    /** Converts whole currency units to Stripe's smallest unit, rounding half up. */
     private static long minor(BigDecimal amount, String currency) {
         return ZERO_DECIMAL.contains(currency.toLowerCase())
                 ? amount.setScale(0, RoundingMode.HALF_UP).longValueExact()
                 : amount.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 
+    /** Converts Stripe's smallest unit to whole currency units. */
     private static BigDecimal major(long minor, String currency) {
         return ZERO_DECIMAL.contains(currency.toLowerCase())
                 ? BigDecimal.valueOf(minor)
                 : BigDecimal.valueOf(minor, 2);
     }
 
+    /** A Unix time in seconds as an ISO instant; empty when the field is missing. */
     private static String instant(JsonNode seconds) {
         return seconds.isNumber() ? Instant.ofEpochSecond(seconds.asLong()).toString() : "";
     }
 
+    /** The fields of a payment intent that are shared with agents; no card or key data. */
     private ObjectNode payment(JsonNode payment) {
         ObjectNode item = json.createObjectNode();
         String currency = payment.path("currency").asText("");

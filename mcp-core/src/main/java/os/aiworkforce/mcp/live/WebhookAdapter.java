@@ -44,12 +44,15 @@ import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
  */
 public final class WebhookAdapter extends LiveServerAdapter {
 
+    /** How many recent deliveries are kept per workspace, and the most a listing can return. */
     private static final int KEPT_DELIVERIES = 50;
 
+    /** True only outside deployed environments, so localhost can be used for testing. */
     private final boolean allowLoopback;
     /* Recent deliveries per workspace, newest first, so an agent can see what it already sent. */
     private final Map<String, Deque<ObjectNode>> deliveries = new ConcurrentHashMap<>();
 
+    /** Registers send_event and list_events. There is no base URL: the credential is the destination address. */
     public WebhookAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, boolean allowLoopback) {
         super(sandbox, "The webhook", json, http, null);
         this.allowLoopback = allowLoopback;
@@ -57,11 +60,13 @@ public final class WebhookAdapter extends LiveServerAdapter {
         on("list_events", this::listEvents);
     }
 
+    /** Adds nothing: the address is the credential and carries no token. */
     @Override
     protected void authorize(HttpHeaders headers, String url) {
         // The address is the credential; nothing goes in a header.
     }
 
+    /** A syntactic check only; never contacts the address. Answers the host name, or refuses with the reason. */
     @Override
     protected Mono<String> whoAmI(String url) {
         return Mono.fromCallable(() -> {
@@ -74,6 +79,11 @@ public final class WebhookAdapter extends LiveServerAdapter {
     }
 
     // @find: Webhook send event, tool webhook__send_event, live Webhook call
+    /**
+     * Tool send_event (outbound; a person approves it). Re-checks the address, resolves the host name on a worker
+     * thread so a name that now points inside the network is refused, then builds the JSON envelope (event, data,
+     * sentAt, source) and hands it to {@link #deliver}. Not idempotent.
+     */
     private Mono<ToolResult> sendEvent(ToolInvocation invocation, JsonNode arguments, String url) {
         String event = required(arguments, "event");
         String problem = problem(url, allowLoopback);
@@ -95,6 +105,11 @@ public final class WebhookAdapter extends LiveServerAdapter {
     }
 
     // @find: Webhook deliver, tool webhook__deliver, live Webhook call
+    /**
+     * POSTs the envelope to the receiver. Sends an Idempotency-Key header when the invocation has one. A redirect
+     * is a failure because redirects are not followed; a non-success status is a failure; a success is recorded
+     * for list_events. A dropped connection is reported as indeterminate by the base class.
+     */
     private Mono<ToolResult> deliver(ToolInvocation invocation, URI target, ObjectNode payload) {
         WebClient.RequestBodySpec request = http.post()
                 .uri(target)
@@ -129,6 +144,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
     }
 
     // @find: Webhook list events, tool webhook__list_events, live Webhook call
+    /** Tool list_events (read, no approval). Answers from memory only, so nothing is sent; history is lost on restart. */
     private Mono<ToolResult> listEvents(ToolInvocation invocation, JsonNode arguments, String url) {
         int limit = limit(arguments, 20, KEPT_DELIVERIES);
         ArrayNode items = json.createArrayNode();
@@ -141,6 +157,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
                 "Listed " + items.size() + " event(s) sent to the webhook since the platform last started."));
     }
 
+    /** Adds a delivery to the workspace's history, newest first, dropping the oldest beyond the limit. */
     private void remember(String orgId, ObjectNode delivery) {
         Deque<ObjectNode> recent = deliveries.computeIfAbsent(orgId, id -> new ArrayDeque<>());
         synchronized (recent) {
@@ -212,6 +229,11 @@ public final class WebhookAdapter extends LiveServerAdapter {
         }
     }
 
+    /**
+     * True for addresses a webhook may not reach: unspecified, link-local, site-local, multicast, carrier-grade NAT,
+     * benchmarking, protocol assignment and IPv6 unique-local ranges. Loopback is handled by the callers. Also used
+     * by the browser address checks.
+     */
     public static boolean isPrivate(InetAddress address) {
         if (address.isAnyLocalAddress()
                 || address.isLinkLocalAddress()
@@ -234,6 +256,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
         return false;
     }
 
+    /** True for localhost and any name under .localhost. */
     private static boolean isLoopbackName(String host) {
         String lower = host.toLowerCase(Locale.ROOT);
         return lower.equals("localhost") || lower.endsWith(".localhost");
@@ -244,6 +267,7 @@ public final class WebhookAdapter extends LiveServerAdapter {
         return host.contains(":") || host.matches("[0-9a-fA-FxX.]+");
     }
 
+    /** Parses a numeric host without any name lookup; null when it is not an address. */
     private static InetAddress literal(String host) {
         try {
             // A numeric host is parsed, not looked up.

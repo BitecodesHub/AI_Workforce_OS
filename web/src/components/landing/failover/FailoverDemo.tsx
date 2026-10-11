@@ -55,8 +55,10 @@ import type {
 
 /* ---- State ------------------------------------------------------------------------------------- */
 
+/** The demo's phases: ready (configure), routing (a run is playing) and done. */
 type Phase = 'ready' | 'routing' | 'done'
 
+/** The route view (nodes, trace, hop, bar, outcome) plus the phase, the fault configuration, the failure policy, the providers whose credential was rejected by the last request (breakerNote), the autoplayed flag and the live announcement. */
 type State = RouteView & {
   phase: Phase
   config: Config
@@ -66,6 +68,7 @@ type State = RouteView & {
   announcement: string
 }
 
+/** Reducer events: SEND, EVENT (one planned route event), PRESET, FAULT (one provider), POLICY and RESET. */
 type Action =
   | { type: 'SEND' }
   | { type: 'EVENT'; event: RouteEvent }
@@ -74,8 +77,10 @@ type Action =
   | { type: 'POLICY'; policy: Policy }
   | { type: 'RESET' }
 
+/** The default failure policy, fail closed. */
 const DEFAULT_POLICY: Policy = 'FAIL_CLOSED'
 
+/** The ready state: the Throttled scenario loaded, default policy, an empty trace and no breaker notes. */
 function idleState(): State {
   return {
     ...initialView(),
@@ -89,10 +94,12 @@ function idleState(): State {
 }
 
 /** An edit made after a run puts the demo back to ready with a clean chain and trace. */
+/** State after the visitor changes the configuration or policy: back to ready with a clean chain and trace (autoplay is considered done). */
 function edited(state: State, changes: Partial<Pick<State, 'config' | 'policy' | 'breakerNote'>>): State {
   return { ...state, ...initialView(), ...changes, phase: 'ready', autoplayed: true, announcement: '' }
 }
 
+/** Transitions of the demo. SEND starts a run; EVENT folds one event (only while routing) and, when it is the outcome, moves to done, applies opened circuit breakers to the configuration for the next request and announces the summary; PRESET, FAULT and POLICY are ignored while routing and otherwise reset to ready; RESET returns to the idle state. */
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'SEND':
@@ -139,6 +146,7 @@ function reducer(state: State, action: Action): State {
 }
 
 /** Under reduced motion the demo opens on the resolved throttled run, folded synchronously. */
+/** Initial state: ready normally; with reduced motion the demo opens on the resolved Throttled run, folded synchronously through the reducer. */
 function init(reduced: boolean): State {
   const idle = idleState()
   if (!reduced) return idle
@@ -149,6 +157,7 @@ function init(reduced: boolean): State {
   return { ...actions.reduce(reducer, idle), announcement: '' }
 }
 
+/** Timed steps for one run: SEND at 0, then every planned route event at its own time (from planRoute), played with useSequence. */
 function routeSteps(config: Config, policy: Policy, dispatch: Dispatch<Action>): SequenceStep[] {
   return [
     { at: 0, run: () => dispatch({ type: 'SEND' }) },
@@ -161,6 +170,7 @@ function routeSteps(config: Config, policy: Policy, dispatch: Dispatch<Action>):
 
 /* ---- Presentation maps -------------------------------------------------------------------------- */
 
+/** Tag tone of each node state. */
 const NODE_TONE: Record<NodeState, TagTone> = {
   idle: 'neutral',
   calling: 'blue',
@@ -173,6 +183,7 @@ const NODE_TONE: Record<NodeState, TagTone> = {
   not_tried: 'neutral',
 }
 
+/** Tag tone and text for an outcome (answered by, stopped on purpose, failed closed, degraded to sandbox). */
 function outcomeTag(outcome: Outcome): { tone: TagTone; text: string } {
   switch (outcome.kind) {
     case 'answered':
@@ -186,11 +197,13 @@ function outcomeTag(outcome: Outcome): { tone: TagTone; text: string } {
   }
 }
 
+/** The two failure policies offered, with their labels. */
 const POLICY_OPTIONS: ReadonlyArray<{ value: Policy; label: string }> = [
   { value: 'FAIL_CLOSED', label: 'Fail closed (default)' },
   { value: 'DEGRADE_TO_SANDBOX', label: 'Degrade to sandbox' },
 ]
 
+/** Fallback node view used when a node has no state yet. */
 const IDLE_NODE: NodeView = { state: 'idle', label: IDLE_LABEL }
 
 /* ---- Trace overflow ------------------------------------------------------------------------------ */
@@ -199,6 +212,7 @@ const IDLE_NODE: NodeView = { state: 'idle', label: IDLE_LABEL }
  * Whether the trace scrolls, so it can join the tab order only when there is something to scroll.
  * State changes only inside observer callbacks. New lines also scroll the trace to its end.
  */
+/** Returns a ref callback and whether the list overflows. A ResizeObserver measures overflow so the trace can join the tab order only when it has something to scroll, and a MutationObserver scrolls it to its end whenever a line is added. State changes only inside observer callbacks; both observers are disconnected on cleanup. */
 function useScrollableList<T extends HTMLElement>(): [RefCallback<T>, boolean] {
   const [scrollable, setScrollable] = useState(false)
   const ref = useCallback((node: T | null) => {
@@ -230,6 +244,7 @@ function useScrollableList<T extends HTMLElement>(): [RefCallback<T>, boolean] {
 
 /* ---- Parts ---------------------------------------------------------------------------------------- */
 
+/** The state tag of a chain node, toned by NODE_TONE. */
 function NodeTag({ node }: { node: NodeView }): ReactElement {
   return (
     <span className="lp-route-state">
@@ -238,6 +253,7 @@ function NodeTag({ node }: { node: NodeView }): ReactElement {
   )
 }
 
+/** A progress bar that fills over the given milliseconds, for a node that is waiting or backing off (decorative). */
 function NodeMeter({ ms }: { ms: number }): ReactElement {
   return (
     <span className="lp-route-meter" aria-hidden="true">
@@ -248,6 +264,7 @@ function NodeMeter({ ms }: { ms: number }): ReactElement {
   )
 }
 
+/** One line of the routing trace: the verb, the provider and the detail. */
 function TraceRow({ line }: { line: TraceLine }): ReactElement {
   return (
     <li className="lp-route-line lp-anim-slide">
@@ -263,6 +280,11 @@ function TraceRow({ line }: { line: TraceLine }): ReactElement {
 /* ---- Demo ------------------------------------------------------------------------------------------ */
 
 // @find: FailoverDemo component, failover demo
+/**
+ * Landing demo 02: a simulated model-routing chain the visitor can break.
+ * The visitor loads a scenario preset or sets each provider's fault with a select, chooses what happens when every candidate fails (fail closed or degrade to the offline sandbox) and presses Send a request. planRoute produces the timed events, which useSequence plays into the reducer; the trace, node tags, progress bars and a moving packet show what the router skips, retries, backs off and fails over. A safety refusal stops the chain on purpose. A rejected credential is remembered for the next request. It autoplays the Throttled scenario once when the stage is 45 percent in view.
+ * Accessibility: controls use aria-disabled, not the native attribute, while routing, because disabling a focused element would blur it to the body; handlers guard against changes instead. The summary is announced through the frame's status region, and the trace scrolls and is focusable only when it overflows. Nothing is sent anywhere. Rendered by DemoStage inside DemoFrame.
+ */
 export function FailoverDemo(): ReactElement {
   const { reduced } = useLandingMotion()
   const [state, dispatch] = useReducer(reducer, reduced, init)

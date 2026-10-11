@@ -15,13 +15,21 @@ import java.util.StringJoiner;
  */
 public final class ContextPrompt {
 
+    /** Not instantiable; every member is static. */
     private ContextPrompt() {}
 
     /** Longest playbook text handed to a model (the store allows 20,000), leaving room in the instruction for the thread. */
     static final int MAX_SKILL_CHARS = 12_000;
 
     // @find: build context block for a task instruction
-    /** The block, starting with a blank line, or an empty string when the context adds nothing. */
+    /**
+     * The block, starting with a blank line, or an empty string when the context adds nothing.
+     *
+     * <p>Called by {@code CoordinatorService} for each task it creates from a message with context.
+     * Up to three sections are written, in this order: the skill playbook, cut to {@link
+     * #MAX_SKILL_CHARS} and wrapped in a {@code skill} tag with the rule that the request wins; the
+     * repository, with a read-only warning; and the chosen documents. Pure; no I/O.
+     */
     public static String block(MessageContext context) {
         if (context == null || context.isEmpty()) {
             return "";
@@ -76,6 +84,7 @@ public final class ContextPrompt {
         return out.toString();
     }
 
+    /** Escapes a value for use inside a quoted tag attribute. */
     private static String attribute(String value) {
         return value.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;");
     }

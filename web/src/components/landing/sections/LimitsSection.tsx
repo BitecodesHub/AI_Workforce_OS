@@ -16,10 +16,12 @@ import { CONNECTOR_LABEL, LIVE_CONNECTORS, listOf } from '../shared/landingFacts
  */
 
 /** In a sentence, "webhooks" reads as the thing it is rather than as a product name. */
+/** Name of a connector for use in a sentence: "webhooks" for the webhook connector, otherwise its normal label. */
 function proseLabel(id: (typeof LIVE_CONNECTORS)[number]): string {
   return id === 'webhook' ? 'webhooks' : CONNECTOR_LABEL[id]
 }
 
+/** The four stated limits (agents are not autonomous, answers depend on documents, the offline model is a placeholder, connectors reach real accounts only after an administrator connects them). The connector sentence is built from LIVE_CONNECTORS so it cannot claim more than the catalogue has. */
 const LIMITS: ReadonlyArray<string> = [
   'Agents are not autonomous. They stop at every outbound or destructive action and wait for a person.',
   'Answers are only as good as the documents you connect. With nothing indexed, an agent will tell you it cannot answer.',
@@ -28,6 +30,7 @@ const LIMITS: ReadonlyArray<string> = [
 ]
 
 // @find: LimitsSection component, limits
+/** Section "What it does not do" (id limits) for the IT team reviewing the platform: an ordered list of the four limits in equal hairline cells, placed directly above the call to action. Static. Rendered by the Trust page; the home page answers the same limits as questions in Faq. */
 export function LimitsSection(): ReactElement {
   return (
     <LandingSection id="limits" labelledBy="limits-title">

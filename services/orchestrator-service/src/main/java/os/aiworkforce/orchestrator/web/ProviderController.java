@@ -80,7 +80,9 @@ import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 
 /**
- * Model providers, their models and their health, as the calling workspace sees them.
+ * REST endpoints for model providers, their models and their health, as the calling workspace
+ * sees them: listing, enabling and disabling, checking a pasted key, and testing a model now.
+ * Called by the Providers settings page.
  *
  * <p>This is what makes fallover visible. A run that answered on the third candidate is
  * inexplicable unless somebody can see that the first is paused and the second has no credential,
@@ -95,7 +97,8 @@ import os.aiworkforce.platform.rbac.RequiresPermission;
  * makes one one-token call with that key, tells the person in plain words whether the provider
  * took it, and never returns or logs what the provider said back, which can quote the key. It is
  * rate-limited per workspace, because a form that tests keys on request is also a way to guess at
- * them.
+ * them. {@code POST /{id}/check} is the related "Test now" action: it uses the workspace's
+ * stored key instead of a pasted one.
  */
 @RestController
 @RequestMapping("/api/providers")
@@ -107,6 +110,7 @@ public class ProviderController {
     /** Key checks one workspace may make in {@link #TEST_WINDOW}. */
     static final int TEST_LIMIT = 5;
 
+    /** The length of the sliding window used by both rate limits. */
     static final Duration TEST_WINDOW = Duration.ofMinutes(1);
 
     /** The longest the check waits for the provider, so a stalled one does not hold the request open. */
@@ -180,6 +184,7 @@ public class ProviderController {
     /** Where the rate limit reads the time; replaced by a test. */
     LongSupplier clock = System::currentTimeMillis;
 
+    /** Receives the provider and model repositories, the router, the provider registry, the settings and policy repositories, and the audit client. */
     public ProviderController(
             Providers providers,
             Models models,
@@ -201,6 +206,7 @@ public class ProviderController {
         this.audit = audit;
     }
 
+    /** Setter injection of the provider adapters (by kind) and the transaction manager used to record a valid key. */
     @Autowired
     void setKeyTesting(List<ChatProvider> adapters, PlatformTransactionManager transactions) {
         this.adapters.clear();
@@ -208,11 +214,13 @@ public class ProviderController {
         this.transaction = new TransactionTemplate(transactions);
     }
 
+    /** Setter injection of the credential resolver used by "Test now"; optional so hand-built test instances work. */
     @Autowired(required = false)
     void setCredentials(CredentialResolver credentials) {
         this.credentials = credentials;
     }
 
+    /** A provider as the Providers page shows it, with this workspace's switch, key status, health and model count. */
     public record ProviderView(
             String id,
             String displayName,
@@ -261,6 +269,7 @@ public class ProviderController {
         }
     }
 
+    /** A model as the Providers page shows it, with its capabilities, prices and any temporary unavailability. */
     public record ModelView(
             String providerId,
             String modelId,
@@ -276,6 +285,12 @@ public class ProviderController {
             Instant unavailableUntil,
             String unavailableReason) {}
 
+    /**
+     * Lists the providers the workspace can see, with their health.
+     *
+     * <p>Route {@code GET /api/providers}; requires PROVIDER_READ. Circuit state comes from the router;
+     * the rest from the registry. Read-only.
+     */
     // @find: list providers, GET /api/providers
     @GetMapping
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
@@ -288,6 +303,7 @@ public class ProviderController {
                 .toList();
     }
 
+    /** Lists every model available to the workspace; route {@code GET /api/providers/models}; requires PROVIDER_READ. */
     // @find: list models, GET /api/providers/models
     @GetMapping("/models")
     @RequiresPermission(Permission.Codes.PROVIDER_READ)
@@ -296,6 +312,7 @@ public class ProviderController {
         return registry.workspaceModels(orgId()).stream().map(ProviderController::toView).toList();
     }
 
+    /** Turns a provider on for this workspace; route {@code POST /api/providers/{providerId}/enable}; requires PROVIDER_MANAGE. Refused with a not-configured error when the installation does not offer it. */
     // @find: enable provider, POST /api/providers/{providerId}/enable
     @PostMapping("/{providerId}/enable")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
@@ -305,6 +322,7 @@ public class ProviderController {
         return setEnabled(providerId, true);
     }
 
+    /** Turns a provider off for this workspace; route {@code POST /api/providers/{providerId}/disable}; requires PROVIDER_MANAGE. Never refused; the response may carry a warning about routing left without a provider. */
     // @find: disable provider, POST /api/providers/{providerId}/disable
     @PostMapping("/{providerId}/disable")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
@@ -333,6 +351,7 @@ public class ProviderController {
         }
     }
 
+    /** The body of a key check: the pasted key, or for Bedrock a credential document. */
     public record KeyTestRequest(@NotBlank @Size(max = 8_000) String value) {}
 
     /**
@@ -341,6 +360,17 @@ public class ProviderController {
      */
     public record KeyTestResult(KeyCheck result, String message) {}
 
+    /**
+     * Checks a pasted key with one small call, before it is stored.
+     *
+     * <p>Route {@code POST /api/providers/{providerId}/test}; requires PROVIDER_MANAGE. Flow: validate
+     * the provider and the key shape, take a rate-limit slot, pick the cheapest chat model, make a
+     * one-token call to the provider (outbound HTTP, up to twenty seconds) and classify the answer.
+     * A valid key is recorded as valid in the workspace's own setting row; the key itself is never
+     * stored, returned or logged. A {@code provider.test_key} audit entry records only the provider and
+     * the result. Failures to validate, rate limits and missing models are errors; provider refusals
+     * are reported in the result.
+     */
     @PostMapping("/{providerId}/test")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
     @Operation(
@@ -477,11 +507,13 @@ public class ProviderController {
         return classify(answer.failure(), answer.httpStatus(), answer.rawBody());
     }
 
+    /** Classifies a bare failure kind into a key check result when no status code or body is available. */
     /** As {@link #classifyAnswer}, from the failure alone, when no status or body is to hand. */
     static KeyCheck classify(ProviderFailure failure) {
         return classify(failure, null, null);
     }
 
+    /** Classifies a failure using the HTTP status and body where there is one; client-error kinds are read more closely so a refused key is never called valid. */
     static KeyCheck classify(ProviderFailure failure, Integer status, String body) {
         if (failure == null) {
             return KeyCheck.VALID;
@@ -514,6 +546,7 @@ public class ProviderController {
         return body != null && REQUEST_SHAPE_COMPLAINT.matcher(body).find() ? KeyCheck.VALID : KeyCheck.NETWORK_ERROR;
     }
 
+    /** The plain sentence shown for a key check result; never contains anything the provider said. */
     static String messageFor(KeyCheck check, ProviderFailure failure, String provider) {
         return switch (check) {
             case VALID -> provider + " accepted the key.";
@@ -580,6 +613,7 @@ public class ProviderController {
                 .flatMap(model -> registry.model(orgId.toString(), providerId, model.getModelId()));
     }
 
+    /** The cost of a model per million tokens, input and output added, used to pick the cheapest. */
     private static BigDecimal pricePerMillion(LlmModelEntity model) {
         return model.getInputCostPerMillion().add(model.getOutputCostPerMillion());
     }
@@ -593,6 +627,7 @@ public class ProviderController {
                 "A key can be checked " + TEST_LIMIT + " times a minute in a workspace. Wait a moment, then try again.");
     }
 
+    /** Applies one sliding-window rate limit; throws a rate-limit error with a retry delay when the workspace has used its allowance. */
     private void takeSlot(Map<UUID, Deque<Long>> recent, UUID orgId, int limit, String refusal) {
         long now = clock.getAsLong();
         long window = TEST_WINDOW.toMillis();
@@ -629,6 +664,17 @@ public class ProviderController {
             Long latencyMs,
             Instant checkedAt) {}
 
+    /**
+     * Tests a model now with the workspace's stored key.
+     *
+     * <p>Route {@code POST /api/providers/{providerId}/check}; requires PROVIDER_MANAGE. Flow: resolve
+     * the provider, adapter and model (the named one, or the cheapest), take a rate-limit slot, clear
+     * the router's cool-off and the registry's availability notes for that model, look up the stored
+     * key, make a one-token call (outbound HTTP) and report the outcome with its latency. A working
+     * key is recorded as valid; a refused key marks the workspace's credential invalid. Audits
+     * {@code provider.check}. A missing or unreachable key store is reported in the result, not as an
+     * error.
+     */
     @PostMapping("/{providerId}/check")
     @RequiresPermission(Permission.Codes.PROVIDER_MANAGE)
     @Operation(
@@ -731,7 +777,7 @@ public class ProviderController {
         return new CheckResult(providerId, model.modelId(), modelName, result, message, latency, Instant.now());
     }
 
-    /** What a test call came to, in the words the console switches on. */
+    /** What a test call came to, in the words the console switches on: ok, rejected, no_credit, not_found, busy, timeout, unreachable or error. */
     static String checkResult(ProviderException failed) {
         if (failed == null) {
             return "ok";
@@ -927,6 +973,7 @@ public class ProviderController {
                         .orElse(false)));
     }
 
+    /** Builds a provider view, counting its enabled models. */
     private ProviderView toView(WorkspaceProvider provider, String circuitState) {
         LlmProviderEntity entity = provider.entity();
         return new ProviderView(
@@ -944,6 +991,7 @@ public class ProviderController {
                 models.findByProviderIdAndEnabledTrue(entity.getId()).size());
     }
 
+    /** Builds a model view from a workspace model and its availability note. */
     private static ModelView toView(WorkspaceModel workspaceModel) {
         LlmModelEntity model = workspaceModel.entity();
         return new ModelView(
@@ -962,6 +1010,7 @@ public class ProviderController {
                 workspaceModel.unavailableReason());
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

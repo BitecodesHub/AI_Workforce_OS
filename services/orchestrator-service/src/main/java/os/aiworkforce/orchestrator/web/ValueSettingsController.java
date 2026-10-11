@@ -64,6 +64,8 @@ public class ValueSettingsController {
     static final BigDecimal MAX_HOURLY_RATE = new BigDecimal("10000");
 
     /**
+     * One agent's time estimate.
+     *
      * @param agentId the agent
      * @param name its name, for the form
      * @param minutesPerTask what one of its tasks would take a person; absent when not estimated
@@ -71,6 +73,8 @@ public class ValueSettingsController {
     public record AgentMinutes(UUID agentId, String name, Integer minutesPerTask) {}
 
     /**
+     * The value settings as a person reads them.
+     *
      * @param label what every figure derived from these is called, wherever it is shown
      * @param hourlyRate the loaded hourly staff cost in US dollars; absent when not entered
      * @param agents every agent of the workspace, with its estimate or none
@@ -78,6 +82,8 @@ public class ValueSettingsController {
     public record ValueSettings(String label, BigDecimal hourlyRate, List<AgentMinutes> agents) {}
 
     /**
+     * The whole set of value settings, replaced on each save.
+     *
      * @param hourlyRate absent to remove the rate
      * @param minutesPerTask an estimate per agent id; an agent left out, or sent with no value, has
      *     none
@@ -90,6 +96,7 @@ public class ValueSettingsController {
     private final Agents agents;
     private final AuditClient audit;
 
+    /** Receives the runtime settings store, the insights service that reads the inputs, the agent repository and the audit client. */
     public ValueSettingsController(
             RuntimeConfigStore store, InsightsService insights, Agents agents, AuditClient audit) {
         this.store = store;
@@ -98,6 +105,7 @@ public class ValueSettingsController {
         this.audit = audit;
     }
 
+    /** Reads the value settings; route {@code GET /api/orchestrator/value-settings}; requires ANALYTICS_READ. Every agent of the workspace is listed. */
     // @find: get value settings, GET /api/orchestrator/value-settings
     @GetMapping
     @RequiresPermission(Permission.Codes.ANALYTICS_READ)
@@ -108,6 +116,16 @@ public class ValueSettingsController {
         return view(orgId, insights.valueInputs(orgId));
     }
 
+    /**
+     * Replaces the value settings.
+     *
+     * <p>Route {@code PUT /api/orchestrator/value-settings}; requires BUDGET_MANAGE. Validates the rate
+     * and minutes, checks every named agent belongs to the workspace, then writes or clears the hourly
+     * rate and the per-agent minutes in the runtime settings store, removing any minutes not named
+     * (including those of deleted agents). Records a {@code value_settings.update} audit entry with the
+     * old and new values after commit. Fails with a validation error for out-of-range values and not
+     * found for an agent outside the workspace.
+     */
     // @find: update value settings, PUT /api/orchestrator/value-settings
     @PutMapping
     @RequiresPermission(Permission.Codes.BUDGET_MANAGE)
@@ -164,6 +182,7 @@ public class ValueSettingsController {
         return view(orgId, after);
     }
 
+    /** Builds the response by pairing every agent of the workspace with its stored estimate. */
     private ValueSettings view(UUID orgId, InsightsService.ValueInputs inputs) {
         List<AgentMinutes> rows = new ArrayList<>();
         for (Agent agent : agents.findByOrgIdOrderByName(orgId)) {
@@ -205,6 +224,7 @@ public class ValueSettingsController {
         return kept;
     }
 
+    /** The agent id embedded in a minutes setting key, or null when the key does not end in an id. */
     private static UUID agentOf(String key) {
         try {
             return UUID.fromString(key.substring(InsightsService.KEY_MINUTES_PREFIX.length()));
@@ -225,6 +245,7 @@ public class ValueSettingsController {
         return values;
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

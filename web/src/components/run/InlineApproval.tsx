@@ -75,6 +75,10 @@ export function InlineApproval({
   return <InlineDecision approval={approval} agentName={agentName} compact={compact} canDecide={canDecide} />
 }
 
+/**
+ * The decision card for a loaded approval. Shows who is waiting, the readable summary, the context line and expiry, and the payload as a collapsible PayloadPreview (open by default for actions that leave the workspace or remove something, previewOpensByDefault).
+ * A viewer may decide only when the caller's own canDecide (default: the approval:decide permission) and the server's approval.canDecide agree (the latter includes the four-eyes rule); otherwise a notice explains, naming the case where the viewer asked for the work. Actions through useDecideApproval: Approve (carries data-approve-button so the chat's Review link can focus it), Send back with feedback (mode request_changes with a required note) and Reject and stop (mode reject with an optional reason), each note capped at 1,000 characters. Success shows a toast (the run outcome for an approval); errors appear in a warning Notice (decisionError). State: which action is busy, whether the reason forms are open and the reason text.
+ */
 function InlineDecision({
   approval,
   agentName,

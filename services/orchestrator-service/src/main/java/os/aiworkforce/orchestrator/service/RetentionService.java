@@ -59,6 +59,7 @@ public class RetentionService {
     /** How long a model-usage row is kept. */
     public static final int USAGE_DAYS = 400;
 
+    // The same figure as USAGE_DAYS, as a Duration for date arithmetic in purge().
     static final Duration USAGE_RETENTION = Duration.ofDays(USAGE_DAYS);
 
     /** The default, and the answer when the setting cannot be read. */
@@ -85,15 +86,25 @@ public class RetentionService {
         }
     }
 
+    // The store does the deletes; config answers each workspace's days; the clock is replaceable so tests can fix the date.
     private final RetentionStore store;
     private final RuntimeConfigService config;
     private final Clock clock;
 
+    /**
+     * Production constructor: uses the system clock. Registers the workspace setting with the runtime
+     * configuration service so that it appears in the console; the registration is skipped when no
+     * configuration service is supplied, as in unit tests.
+     *
+     * @param store the deletes, normally {@link JdbcRetentionStore}
+     * @param config where each workspace's retention days are read and written; may be null in tests
+     */
     @Autowired
     public RetentionService(RetentionStore store, RuntimeConfigService config) {
         this(store, config, Clock.systemUTC());
     }
 
+    // Test constructor: as above, with a clock the test controls.
     RetentionService(RetentionStore store, RuntimeConfigService config, Clock clock) {
         this.store = store;
         this.config = config;
@@ -134,10 +145,12 @@ public class RetentionService {
         config.set(RUN_DETAIL_DAYS.name(), orgId.toString(), Integer.toString(days), actorId);
     }
 
+    /** The least number of days a workspace may choose: the lower bound of the setting. */
     public static int min() {
         return RUN_DETAIL_DAYS.minimum().intValue();
     }
 
+    /** The greatest number of days a workspace may choose: the upper bound of the setting. */
     public static int max() {
         return RUN_DETAIL_DAYS.maximum().intValue();
     }

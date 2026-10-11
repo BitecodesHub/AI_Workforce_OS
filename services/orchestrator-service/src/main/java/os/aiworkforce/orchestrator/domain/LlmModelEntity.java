@@ -130,6 +130,7 @@ public class LlmModelEntity {
         this.unavailableReason = reason;
     }
 
+    /** True while a cooldown set by {@link #markUnavailable} has not yet ended, so the router skips the model. */
     public boolean isCurrentlyUnavailable() {
         return unavailableUntil != null && unavailableUntil.isAfter(Instant.now());
     }
@@ -198,6 +199,7 @@ public class LlmModelEntity {
         return source;
     }
 
+    /** True when the model came from the provider's own listing rather than the built-in catalogue. */
     public boolean isDiscovered() {
         return "discovered".equals(source);
     }

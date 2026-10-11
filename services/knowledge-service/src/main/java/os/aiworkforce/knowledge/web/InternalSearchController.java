@@ -70,9 +70,13 @@ public class InternalSearchController {
 
     private static final Logger log = LoggerFactory.getLogger(InternalSearchController.class);
 
+    /** The number of passages returned when the caller does not give a limit. */
     static final int DEFAULT_LIMIT = 5;
 
-    /** What a person may do in a workspace. A seam, so tests need not stand up the identity service. */
+    /**
+     * What a person may do in a workspace. A seam, so tests need not stand up the identity service.
+     * The production implementation is {@link IdentityPermissions}.
+     */
     public interface PersonPermissions {
 
         /**
@@ -86,6 +90,8 @@ public class InternalSearchController {
     }
 
     /**
+     * The body of the internal search: the question and how to narrow it.
+     *
      * @param query what to find, at most 1,000 characters
      * @param limit how many passages, {@value #DEFAULT_LIMIT} when left out
      * @param sourceIds narrow the search to these sources; one the person may not read is left out
@@ -99,18 +105,42 @@ public class InternalSearchController {
             UUID agentId,
             UUID runId) {}
 
-    /** @param indexedSources how many sources in the workspace hold at least one passage */
+    /**
+     * The response of the status endpoint.
+     *
+     * @param indexedSources how many sources in the workspace hold at least one passage
+     */
     public record Status(int indexedSources) {}
 
     private final RetrievalService retrieval;
     private final PersonPermissions people;
 
+    /**
+     * Creates the controller.
+     *
+     * @param retrieval the search itself
+     * @param people looks up the permissions of the person the work is for
+     */
     public InternalSearchController(RetrievalService retrieval, PersonPermissions people) {
         this.retrieval = retrieval;
         this.people = people;
     }
 
     // @find: agent searches knowledge base, search tool, POST /internal/knowledge/search
+    /**
+     * {@code POST /internal/knowledge/search}: searches the documents for a person an agent is working for.
+     *
+     * <p>Permission: a service token naming a person ({@code humanId}); a person's own token is refused.
+     * Flow: checks the token is a service's, resolves the workspace, asks the identity service (through a
+     * short cache) what the person holds, requires {@code knowledge:query}, includes restricted sources only
+     * with {@code knowledge:source_manage}, writes an info log line and calls {@code RetrievalService.retrieve}
+     * with the agent's identifier so its own documents are searched too.
+     *
+     * @return the cited passages, whether any was found, and whether the search was degraded
+     * @throws ApiException {@code PERMISSION_DENIED} for a person's token, for work with no person, or when the
+     *     person lacks {@code knowledge:query}; {@code ORGANISATION_MISMATCH} for a mismatched workspace;
+     *     {@code DEPENDENCY_UNAVAILABLE} when the identity service cannot be asked
+     */
     @PostMapping("/search")
     @Operation(summary = "Internal: search the knowledge base for a person an agent is working for")
     public KnowledgeController.SearchResponse search(
@@ -155,6 +185,13 @@ public class InternalSearchController {
     }
 
     // @find: how many sources are indexed, GET /internal/knowledge/status
+    /**
+     * {@code GET /internal/knowledge/status}: tells whether the workspace has any indexed documents.
+     *
+     * <p>Permission: a service token. Read-only; no person is named, so only a count is returned.
+     *
+     * @param agentId the agent asking, so that its own sources are counted as well; optional
+     */
     @GetMapping("/status")
     @Operation(summary = "Internal: whether the workspace has any indexed documents")
     public Status status(
@@ -164,7 +201,12 @@ public class InternalSearchController {
         return new Status(retrieval.indexedSources(orgOf(workspaceId), agentId));
     }
 
-    /** A person's own token must never reach this, whatever permissions it carries. */
+    /**
+     * A person's own token must never reach this, whatever permissions it carries.
+     *
+     * @return the calling service's actor
+     * @throws ApiException {@code PERMISSION_DENIED} for a user or API key token
+     */
     private static Actor requireService() {
         Actor actor = RequestContext.requireActor();
         if (actor.kind() == Actor.Kind.USER || actor.kind() == Actor.Kind.API_KEY) {
@@ -173,7 +215,11 @@ public class InternalSearchController {
         return actor;
     }
 
-    /** The workspace the token is for; a header naming another one is refused rather than followed. */
+    /**
+     * The workspace the token is for; a header naming another one is refused rather than followed.
+     *
+     * @throws ApiException {@code ORGANISATION_MISMATCH} when the token names no workspace or the header names a different one
+     */
     private static UUID orgOf(UUID header) {
         UUID orgId = parseUuid(RequestContext.requireOrgId());
         if (orgId == null) {
@@ -185,6 +231,7 @@ public class InternalSearchController {
         return orgId;
     }
 
+    /** A UUID read from text, or null for a missing, blank or malformed value; it never throws. */
     private static UUID parseUuid(String value) {
         try {
             return value == null || value.isBlank() ? null : UUID.fromString(value);
@@ -199,21 +246,29 @@ public class InternalSearchController {
      * <p>Held for {@value #TTL_SECONDS} seconds per person and workspace, so a run that searches
      * five times costs identity one call. That is also the longest a removed permission stays felt,
      * which is far inside the five minutes an access token already carries one.
+     *
+     * <p>Calls {@code POST /internal/memberships/permissions} on the identity service with a
+     * service token. Used by {@code InternalSearchController} through the {@link PersonPermissions} seam.
      */
     @Component
     static class IdentityPermissions implements PersonPermissions {
 
+        /** How long an answer is reused, in seconds. */
         static final long TTL_SECONDS = 30;
+        /** The most cached answers; when it is reached, expired entries are dropped, and the whole cache if that is not enough. */
         private static final int MAX_CACHED = 500;
 
+        /** Cache key: one person in one workspace. */
         private record Key(UUID orgId, UUID userId) {}
 
+        /** A cached permission set and the time it stops being reused. */
         private record Cached(Set<String> permissions, Instant expiresAt) {
             boolean isFresh() {
                 return Instant.now().isBefore(expiresAt);
             }
         }
 
+        /** The identity service's reply: whether the person is a member, and the permission codes held. */
         @JsonIgnoreProperties(ignoreUnknown = true)
         private record Answer(boolean member, List<String> permissions) {}
 
@@ -221,12 +276,27 @@ public class InternalSearchController {
         private final WebClient client;
         private final InternalTokenProvider tokens;
 
+        /**
+         * Builds the client for the identity service.
+         *
+         * @param builder the shared HTTP client builder, cloned so its base address is not shared
+         * @param properties supplies the identity service address
+         * @param tokens issues the service token for identity
+         */
         IdentityPermissions(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
             this.client = builder.clone().baseUrl(properties.services().identity()).build();
             this.tokens = tokens;
         }
 
         // @find: look up a person's permissions for restricted sources
+        /**
+         * The permission codes the person holds in the workspace, from the cache while an answer is
+         * fresh and otherwise from the identity service (five second limit). A non-member, or an empty
+         * answer, gives an empty set.
+         *
+         * @throws ApiException {@code DEPENDENCY_UNAVAILABLE} when the identity service fails or times out;
+         *     nothing is cached in that case
+         */
         @Override
         public Set<String> permissionsOf(UUID orgId, UUID userId) {
             Key key = new Key(orgId, userId);

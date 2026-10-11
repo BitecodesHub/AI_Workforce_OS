@@ -28,6 +28,7 @@ import os.aiworkforce.orchestrator.web.GoalController;
  */
 public final class GoalViews {
 
+    /** Static utility; not instantiated. */
     private GoalViews() {}
 
     /**

@@ -41,11 +41,18 @@ public class ServerProviderSetup {
     private final ServerRouting routing;
     private final Map<String, String> environment;
 
+    /**
+     * The constructor Spring uses: reads the real process environment.
+     *
+     * @param jdbc the JDBC template for this service's schema
+     * @param routing the deployment's routing settings
+     */
     @org.springframework.beans.factory.annotation.Autowired
     public ServerProviderSetup(JdbcTemplate jdbc, ServerRouting routing) {
         this(jdbc, routing, System.getenv());
     }
 
+    // For tests: lets the environment be supplied instead of read from the process.
     ServerProviderSetup(JdbcTemplate jdbc, ServerRouting routing, Map<String, String> environment) {
         this.jdbc = jdbc;
         this.routing = routing;
@@ -54,6 +61,11 @@ public class ServerProviderSetup {
 
     // @find: apply server provider settings at startup
     @EventListener(ApplicationReadyEvent.class)
+    /**
+     * Start-up hook: runs {@link #applyNow} once the application is ready, after Flyway has migrated.
+     * Any failure is logged as a warning and swallowed, so a provider setting problem never stops the service
+     * from starting. Called by Spring on ApplicationReadyEvent.
+     */
     public void apply() {
         try {
             applyNow();
@@ -63,6 +75,17 @@ public class ServerProviderSetup {
         }
     }
 
+    /**
+     * Does the work, and is separate from {@link #apply} so tests can see failures.
+     *
+     * <p>Flow: when an Ollama URL is set, updates the platform Ollama provider row if the URL differs;
+     * when the URL or the local fallback is set, turns Ollama on by default and inserts a catalogue row for
+     * the local model if it has none (idempotent, free of charge, 8192 context); when AWS default
+     * credentials are enabled, turns Bedrock on by default; finally logs a warning for each model in the
+     * deployment default chain that is missing or disabled in the catalogue. Side effects: updates to
+     * llm_providers and an insert into llm_models, all on platform-wide rows only. Each statement is
+     * guarded so a second run changes nothing. Throws on a database error.
+     */
     void applyNow() {
         boolean ollama = !routing.ollamaBaseUrl().isEmpty() || routing.localFallback();
         if (!routing.ollamaBaseUrl().isEmpty()) {
@@ -113,6 +136,7 @@ public class ServerProviderSetup {
         }
     }
 
+    // Enables a platform-wide provider row for every workspace that has not turned it off, bumping its version only when something changes.
     private void onByDefault(String providerId) {
         jdbc.update(
                 "UPDATE llm_providers SET workspace_default_enabled = TRUE, enabled = TRUE, version = version + 1,"

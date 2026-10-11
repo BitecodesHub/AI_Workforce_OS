@@ -95,6 +95,7 @@ public class WorkspaceProviderSetting {
 
     protected WorkspaceProviderSetting() {}
 
+    /** Creates the settings row for one provider in one workspace; both identifiers are required and a null raises {@link NullPointerException}. */
     public WorkspaceProviderSetting(UUID orgId, String providerId) {
         this.orgId = Objects.requireNonNull(orgId, "orgId");
         this.providerId = Objects.requireNonNull(providerId, "providerId");

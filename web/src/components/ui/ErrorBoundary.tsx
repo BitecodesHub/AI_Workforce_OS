@@ -147,6 +147,14 @@ class Boundary extends Component<BoundaryProps, BoundaryState> {
   }
 }
 
+/**
+ * The screen shown after a render failure. Distinguishes a stale-bundle failure (isChunkLoadError: "A newer
+ * version is available", reload to update) from any other ("This screen hit a problem"). Shows an API request
+ * reference when the error carries one, a Reload button, and a link out (Command Map when signed in, the home
+ * page otherwise). On mount, when focus has fallen to the document body, it moves to the heading so a screen
+ * reader announces the failure. The page variant adds its own main landmark; the screen variant sits inside
+ * the shell's.
+ */
 function Fallback({ error, variant }: { error: unknown; variant: Variant }) {
   const heading = useRef<HTMLHeadingElement>(null)
   const chunk = isChunkLoadError(error)

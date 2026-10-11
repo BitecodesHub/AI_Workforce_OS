@@ -16,6 +16,17 @@ import { Eyebrow, IconButton } from './index'
  */
 
 // @find: side sheet panel, drawer
+/**
+ * Edge-anchored panel for a record kept open beside a list (a goal, a run), built on the native dialog element.
+ * Props: open and onClose (controlled), side, modal, eyebrow and title (the title is the labelled heading and takes
+ * focus on open unless an element marked data-autofocus exists), width (sm, md or full), children, footer and
+ * returnFocusTo (where focus goes on close; default the element focused before opening).
+ * Modal sheets use showModal (native Escape and backdrop). Non-modal ones use show, so a wide screen keeps the
+ * page behind reachable, and then Escape is handled by a document key listener because only modal dialogs get
+ * it natively. A backdrop click closes only a modal sheet, and only when the press also started on the backdrop
+ * (so a drag that ends there does not close it). A close the parent asked for through open=false is not reported
+ * back to it again. Used by the Orchestrator sheets and Tasks.
+ */
 export function Sheet({
   open,
   onClose,

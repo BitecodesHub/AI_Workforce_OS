@@ -42,14 +42,15 @@ import os.aiworkforce.platform.rbac.Permission;
 import os.aiworkforce.platform.rbac.RequiresPermission;
 
 /**
- * Goals and the tasks beneath them.
+ * REST endpoints for goals and the tasks beneath them: list, read, create, retry and cancel.
+ * Called by the web app Goals page.
  *
  * <p>Creating a goal starts it. A person who describes a piece of work and then has to find a
  * second button to begin it has been asked the same question twice. The goal is answered as soon
  * as it is saved, with its first task about to start: the work happens in the background, and the
  * goal and its run show it as it goes. Running the task inside this request would hold the person
  * for as long as the agent took - past the gateway's one-minute limit - and could run somebody
- * else's queued work first.
+ * else's queued work first. Lifecycle rules live in {@link GoalService}.
  */
 @RestController
 @RequestMapping("/api/goals")
@@ -69,10 +70,12 @@ public class GoalController {
     private final Runs runs;
     private final GoalService service;
 
+    /** Who may read which conversation; absent only where a test builds this by hand. Used to hide goals from private conversations. */
     /** Who may read which conversation; absent only where a test builds this by hand. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ConversationAccess access;
 
+    /** Receives the goal, task and run repositories and the goal service. */
     public GoalController(Goals goals, Tasks tasks, Runs runs, GoalService service) {
         this.goals = goals;
         this.tasks = tasks;
@@ -80,6 +83,7 @@ public class GoalController {
         this.service = service;
     }
 
+    /** One task of a goal as a person reads it, including its latest run for linking to the trace. */
     public record TaskView(
             UUID id,
             UUID agentId,
@@ -99,6 +103,7 @@ public class GoalController {
              */
             UUID runId) {}
 
+    /** One goal with its tasks. */
     public record GoalView(
             UUID id,
             String title,
@@ -112,12 +117,14 @@ public class GoalController {
             Instant completedAt,
             List<TaskView> tasks) {}
 
+    /** One task in a new goal: the agent, its title and instruction, and the positions of the tasks it waits for. */
     public record TaskInput(
             @NotNull UUID agentId,
             @NotBlank @Size(max = 200) String title,
             @NotBlank @Size(max = 10_000) String instruction,
             List<Integer> dependsOn) {}
 
+    /** The body of a goal creation request: a title, optional description and one to fifty tasks. */
     public record CreateGoalRequest(
             @NotBlank @Size(max = 200) String title,
             @Size(max = 4_000) String description,
@@ -162,6 +169,7 @@ public class GoalController {
         return views(found);
     }
 
+    /** Returns one goal with its tasks; route {@code GET /api/goals/{goalId}}; requires TASK_READ. Not found when absent or hidden. */
     // @find: get goal, GET /api/goals/{goalId}
     @GetMapping("/{goalId}")
     @RequiresPermission(Permission.Codes.TASK_READ)
@@ -170,6 +178,14 @@ public class GoalController {
         return toView(visibleGoal(goalId));
     }
 
+    /**
+     * Creates a goal and starts it.
+     *
+     * <p>Route {@code POST /api/goals}; requires TASK_CREATE; answers 201. Hands the title and tasks
+     * to {@link GoalService#createGoal} as a manual goal with start enabled; the service saves it and
+     * the executor begins the first task after commit, as the caller. Returns the stored goal with its
+     * tasks. Task and plan validation errors come from the service.
+     */
     // @find: create goal, start goal, POST /api/goals
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -196,6 +212,12 @@ public class GoalController {
         return toView(goals.findById(goal.getId()).orElse(goal));
     }
 
+    /**
+     * Tries a failed or stopped goal again from the step that did not finish.
+     *
+     * <p>Route {@code POST /api/goals/{goalId}/retry}; requires TASK_CREATE. The service allows the
+     * original requester or someone who can cancel work, otherwise forbidden. Returns the refreshed goal.
+     */
     // @find: retry goal, POST /api/goals/{goalId}/retry
     @PostMapping("/{goalId}/retry")
     @RequiresPermission(Permission.Codes.TASK_CREATE)
@@ -210,6 +232,7 @@ public class GoalController {
         return toView(goals.findByIdAndOrgId(goalId, orgId).orElseThrow(() -> ApiException.notFound("goal", goalId)));
     }
 
+    /** Route {@code POST /api/goals/{goalId}/cancel}; requires TASK_READ plus the stop rule below. Returns the refreshed goal. */
     // @find: cancel goal, stop goal, POST /api/goals/{goalId}/cancel
     /**
      * Stops a goal. Open to the person who asked for it as well as to anyone who can cancel work,
@@ -257,10 +280,12 @@ public class GoalController {
                 .toList();
     }
 
+    /** The ids of the given tasks. */
     private static List<UUID> ids(List<Task> taskList) {
         return taskList.stream().map(Task::getId).toList();
     }
 
+    /** The workspace id of the current request. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

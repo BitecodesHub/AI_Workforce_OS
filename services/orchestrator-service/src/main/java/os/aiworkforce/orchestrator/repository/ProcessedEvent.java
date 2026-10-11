@@ -32,6 +32,7 @@ public class ProcessedEvent {
 
     protected ProcessedEvent() {}
 
+    /** Records that the event with this id, received on this topic, has been handled. */
     public ProcessedEvent(String eventId, String topic) {
         this.eventId = eventId;
         this.topic = topic;

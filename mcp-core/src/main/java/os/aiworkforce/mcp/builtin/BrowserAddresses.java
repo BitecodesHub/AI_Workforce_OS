@@ -25,18 +25,31 @@ public final class BrowserAddresses {
     /** Looks a host name up; replaced in tests so they need no network. */
     @FunctionalInterface
     public interface Resolver {
+        /** Every address the host name resolves to; throws when the name cannot be found. */
         InetAddress[] resolve(String host) throws UnknownHostException;
     }
 
+    /** The real resolver, backed by the operating system lookup. */
     public static final Resolver SYSTEM = InetAddress::getAllByName;
 
+    /** Message used for every refusal on network grounds. It does not say which rule matched. */
     static final String PRIVATE =
             "That address points inside a private network or at this server, which the browser may not open.";
 
+    /** Not instantiable. */
     private BrowserAddresses() {}
 
     // @find: may the browser open this address, refuse private address
-    /** Why the browser may not open {@code url}, or null when it may. */
+    /**
+     * Why the browser may not open {@code url}, or null when it may.
+     *
+     * <p>Rules in order: an address is present and parses; the scheme is http or https; a host is
+     * present; no user name or password is embedded; the name is not {@code localhost} or an
+     * internal suffix; every address the name resolves to is public. Side effect: one DNS lookup
+     * through {@code resolver}. A name that does not resolve is refused as not found. A time of check
+     * gap exists between this lookup and the runner's own fetch, which is why the runner repeats the
+     * checks for every request.
+     */
     public static String problem(String url, Resolver resolver) {
         if (url == null || url.isBlank()) {
             return "Give the full web address of the page to open, starting with https://.";
@@ -80,7 +93,11 @@ public final class BrowserAddresses {
         }
     }
 
-    /** Loopback, private, link-local (the cloud metadata address among them) or otherwise not public. */
+    /**
+     * Loopback, private, link-local (the cloud metadata address among them) or otherwise not public.
+     * Shared with the runner-side checks so both apply one definition; the private ranges come from
+     * the webhook adapter.
+     */
     public static boolean refused(InetAddress address) {
         return address.isLoopbackAddress() || WebhookAdapter.isPrivate(address);
     }

@@ -31,6 +31,10 @@ public record ToolInvocation(
         String idempotencyKey,
         Map<String, String> context) {
 
+    /**
+     * Compact constructor. Requires the workspace, server and tool, defaults the arguments to an
+     * empty object and copies the context so the record stays immutable.
+     */
     public ToolInvocation {
         Objects.requireNonNull(orgId, "orgId");
         Objects.requireNonNull(server, "server");
@@ -44,6 +48,7 @@ public record ToolInvocation(
         return new ToolInvocation(orgId, agentId, runId, server, tool, arguments, idempotencyKey, context);
     }
 
+    /** The {@code server.tool} name, as used in grants, approvals and the audit trail. */
     public String qualifiedName() {
         return server + "." + tool;
     }

@@ -38,6 +38,9 @@ public record Actor(
         String agentId,
         Map<String, Object> claims) {
 
+    /**
+     * The category of principal, which decides how the work is attributed and audited.
+     */
     public enum Kind {
         USER,
         API_KEY,
@@ -56,14 +59,26 @@ public record Actor(
         claims = claims == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(claims));
     }
 
+    /**
+     * Builds a signed-in person from token claims.
+     *
+     * <p>Used by {@code JwtActorConverter} and by tests. The result has no delegation, session or agent
+     * identifier.
+     */
     public static Actor user(String id, String orgId, String roleId, Set<String> permissions, long version) {
         return new Actor(id, Kind.USER, orgId, roleId, permissions, version, null, null, null, Map.of());
     }
 
+    /**
+     * Whether an agent is executing, rather than a person or a machine key.
+     */
     public boolean isAgent() {
         return kind == Kind.AGENT;
     }
 
+    /**
+     * Whether the platform itself is executing, for example a scheduler.
+     */
     public boolean isSystem() {
         return kind == Kind.SYSTEM;
     }
@@ -97,6 +112,12 @@ public record Actor(
                 Map.of());
     }
 
+    /**
+     * Whether the token carries exactly this permission code.
+     *
+     * <p>An exact set lookup: there are no wildcards, and organisation ownership is checked separately
+     * by the permission interceptor in platform-web.
+     */
     public boolean hasPermission(String code) {
         return permissions.contains(code);
     }

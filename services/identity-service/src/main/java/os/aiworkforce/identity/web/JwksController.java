@@ -35,11 +35,19 @@ public class JwksController {
 
     private final TokenService tokens;
 
+    /** Creates the controller over the token service that holds the keys. */
     public JwksController(TokenService tokens) {
         this.tokens = tokens;
     }
 
     // @find: jwks, public keys, GET /.well-known/jwks.json
+    /**
+     * GET {@code /.well-known/jwks.json}. No authentication or permission is required.
+     *
+     * <p>Returns the JWK set from {@link TokenService#jwks()} as JSON, with a public cache header of
+     * ten minutes and a stale-while-revalidate window of one hour. Reads at most the signing key
+     * table (cached for a few seconds); writes nothing.
+     */
     @GetMapping("/.well-known/jwks.json")
     @Operation(summary = "Public keys used to verify access tokens")
     public ResponseEntity<Map<String, Object>> jwks() {

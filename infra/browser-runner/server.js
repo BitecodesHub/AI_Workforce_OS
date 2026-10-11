@@ -9,6 +9,8 @@ const { chromium } = require('playwright-core')
 const { checkAndResolve, checkUrl, PRIVATE_MESSAGE } = require('./guard')
 const { startProxy } = require('./proxy')
 
+// Settings come from the environment so the same image runs locally and on the server. Without
+// BROWSER_RUNNER_SECRET every request except GET /health is refused.
 const PORT = Number(process.env.BROWSER_RUNNER_PORT || 8090)
 const HOST = process.env.BROWSER_RUNNER_HOST || '0.0.0.0'
 const SECRET = process.env.BROWSER_RUNNER_SECRET || ''
@@ -26,6 +28,8 @@ const FIELD_LIMIT = 40
 const VIEWPORT = { width: 1280, height: 800 }
 const MAX_BODY = 64 * 1024
 
+// Process-wide state: the one shared Chromium, the launch in progress (so concurrent steps share
+// one launch), the filtering proxy, the time the last session ended, and the open sessions by run.
 let browser = null
 let launching = null
 let proxy = null
@@ -35,6 +39,10 @@ const sessions = new Map()
 const lastPages = new Map()
 const LAST_PAGE_MS = 30 * 60 * 1000
 
+/**
+ * An expected, user-facing failure. The HTTP layer sends its status and message to the caller as
+ * {error: message}; any other error becomes a generic 500 and is only logged.
+ */
 class Refusal extends Error {
   constructor(status, message) {
     super(message)
@@ -42,10 +50,15 @@ class Refusal extends Error {
   }
 }
 
+/**
+ * Writes one timestamped line to standard output. Never throws; carries no secrets by design,
+ * so callers pass host names and counts, not page content.
+ */
 function log(message) {
   process.stdout.write(`${new Date().toISOString()} ${message}\n`)
 }
 
+// Resolves after MS milliseconds.
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** Resolves when PROMISE settles or after MS, whichever is first; never rejects. */
@@ -77,6 +90,11 @@ const LAUNCH_ARGS = [
   '--renderer-process-limit=3',
 ]
 
+/**
+ * Launches one headless Chromium that sends every request through the local filtering proxy.
+ * Requires the proxy to be running. Rejects if Chromium cannot start; the caller retries once.
+ * @returns {Promise<import('playwright-core').Browser>}
+ */
 async function launchOnce() {
   return chromium.launch({
     headless: true,
@@ -85,6 +103,14 @@ async function launchOnce() {
   })
 }
 
+/**
+ * Returns the shared Chromium, starting it (and the proxy) when needed.
+ * Flow: reuse a connected browser; join a launch already in progress; otherwise start the proxy
+ * once, launch with one retry, and register a disconnect handler that clears the browser and
+ * every session so the next step starts afresh.
+ * @returns {Promise<import('playwright-core').Browser>}
+ * Failure: rejects when the second launch attempt also fails; the HTTP layer reports it as a 500.
+ */
 async function ensureBrowser() {
   if (browser && browser.isConnected()) return browser
   if (launching) return launching
@@ -114,6 +140,12 @@ async function ensureBrowser() {
   }
 }
 
+/**
+ * Closes one run's browser context and forgets the session.
+ * @param {string} id the run identifier.
+ * @returns {Promise<boolean>} false when the run had no session. Errors from closing are ignored.
+ * Side effects: may reset the browser idle clock when the last session ends.
+ */
 async function closeSession(id) {
   const session = sessions.get(id)
   if (!session) return false
@@ -123,6 +155,17 @@ async function closeSession(id) {
   return true
 }
 
+/**
+ * Finds a run's session, optionally creating it.
+ * Flow: return and refresh an existing session; without create, return null; otherwise wait for a
+ * free slot (closing the longest idle session once it has been unused for 30 seconds), start
+ * Chromium if needed, and open a fresh context with one page. Extra pages and dialogs are
+ * closed or dismissed automatically.
+ * @param {string} id the run identifier.
+ * @param {boolean} create whether a missing session may be created.
+ * @returns {Promise<object|null>} {id, context, page, lastUsed}, or null when absent and not created.
+ * Failure: throws Refusal 429 when no slot frees up within QUEUE_WAIT_MS.
+ */
 async function sessionFor(id, create) {
   const existing = sessions.get(id)
   if (existing) {
@@ -168,6 +211,9 @@ async function sessionFor(id, create) {
   return session
 }
 
+// Housekeeping every 15 seconds (unref'd, so it never keeps the process alive): closes sessions
+// idle beyond SESSION_IDLE_MS, forgets remembered pages older than LAST_PAGE_MS, and closes
+// Chromium itself when no session has existed for BROWSER_IDLE_MS.
 setInterval(async () => {
   const now = Date.now()
   for (const [id, session] of sessions) {
@@ -189,6 +235,16 @@ setInterval(async () => {
 
 // ---- What one step answers -------------------------------------------------------------------
 
+/**
+ * Describes the page as it stands now: address, title, visible text, links, fillable fields,
+ * buttons and a JPEG screenshot. Text and picture are taken together. Lists and text are
+ * capped (TEXT_LIMIT, LINK_LIMIT, FIELD_LIMIT, 20 buttons).
+ * @param {import('playwright-core').Page} page the run's page.
+ * @param {string} [note] a plain-language remark for the agent, added as "note" when present.
+ * @returns {Promise<object>} {url, title, text, links, fields, buttons, screenshot (base64), note?}.
+ * Failure: never throws; a failed read gives empty text and lists, and a failed screenshot gives
+ * an empty string. Does not change the page.
+ */
 async function snapshot(page, note) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {})
   // The text and the picture are taken at the same time.
@@ -255,6 +311,10 @@ async function snapshot(page, note) {
 /** Network failures worth one more try: the connection dropped or the network changed. */
 const TRANSIENT = /ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_NETWORK_CHANGED|ERR_EMPTY_RESPONSE|ERR_HTTP2_PROTOCOL_ERROR|ERR_TIMED_OUT|ERR_SOCKET_NOT_CONNECTED/
 
+/**
+ * Whether the page already shows more than a little text (over 40 characters).
+ * @returns {Promise<boolean>} false on any error. Does not change the page.
+ */
 async function hasContent(page) {
   return page
     .evaluate(() => Boolean(document.body && document.body.innerText && document.body.innerText.trim().length > 40))
@@ -268,6 +328,15 @@ async function hasContent(page) {
  */
 const REJECT_LABEL = /^(reject all|reject|decline all|decline|refuse all|only necessary|necessary only|use necessary cookies only|allow necessary only|continue without accepting)$/i
 
+/**
+ * Closes a cookie or consent banner by choosing a reject option, never accept.
+ * Flow: for up to six frames, check quickly whether a button with a reject label exists, and if
+ * it is visible click it.
+ * @param {import('playwright-core').Page} page the run's page.
+ * @returns {Promise<string|null>} a note for the agent when a banner was closed, otherwise null.
+ * Side effects: at most one click per page. Slow or failing frames are skipped; callers also
+ * catch any error.
+ */
 async function dismissConsent(page) {
   const frames = page.frames().slice(0, 6)
   for (const frame of frames) {
@@ -295,6 +364,19 @@ async function dismissConsent(page) {
   return null
 }
 
+/**
+ * Opens an address in the run's page after the address guard has approved it.
+ * Flow: guard check and DNS resolution; goto with one retry for transient network errors; a
+ * slow page that has shown content is read as it stands; wait briefly for late content; refuse
+ * if a redirect ended somewhere private; try to close a consent banner.
+ * @param {import('playwright-core').Page} page the run's page.
+ * @param {string} raw the address requested by the agent.
+ * @returns {Promise<string|null>} notes for the agent (slow load, HTTP status of 400 or more,
+ * banner closed) joined into one string, or null.
+ * Side effects: navigates the page; navigates to about:blank after a private redirect.
+ * Failure: throws Refusal 422 (refused, private or unknown address), 504 (timeout with nothing
+ * shown) or 502 (any other load failure).
+ */
 async function navigate(page, raw) {
   const checked = await checkAndResolve(raw)
   if (!checked.ok) throw new Refusal(422, checked.reason)
@@ -340,10 +422,19 @@ async function navigate(page, raw) {
   return notes.length ? notes.join(' ') : null
 }
 
+/** Whether two strings are equal ignoring case and runs of whitespace. Pure. */
 function sameText(a, b) {
   return a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+/**
+ * Locates a visible form field by its label, name or placeholder (exact matches first, then
+ * partial label and placeholder matches).
+ * @param {import('playwright-core').Page} page the run's page.
+ * @param {string} field the label, name or placeholder given by the agent.
+ * @returns {Promise<import('playwright-core').Locator>} the first visible match.
+ * Failure: throws Refusal 400 when no field is named, or 404 when nothing visible matches.
+ */
 async function findField(page, field) {
   const wanted = String(field || '').trim()
   if (!wanted) throw new Refusal(400, 'Say which field to use, by its label, name or placeholder.')
@@ -361,6 +452,14 @@ async function findField(page, field) {
   throw new Refusal(404, `No field called "${wanted}" is on the page.`)
 }
 
+/**
+ * Types into a field, selects an option, or sets a checkbox or radio button. Never submits.
+ * @param {import('playwright-core').Page} page the run's page.
+ * @param {string} field how to find the field (see findField).
+ * @param {*} value the value, converted to text; for a checkbox, true/yes/on/1/checked mean on.
+ * Side effects: changes the page's form state.
+ * Failure: throws Refusal 400/404 from findField, or 422 when the element cannot be typed into.
+ */
 async function fill(page, field, value) {
   const target = await findField(page, field)
   const tag = await target.evaluate((el) => el.tagName.toLowerCase())
@@ -387,6 +486,10 @@ async function restore(session, state) {
   }
 }
 
+/**
+ * Waits, within fixed limits, for a page to finish loading after a click, search or submit.
+ * Never throws and never waits for ever: each wait is capped and its failure ignored.
+ */
 async function settle(page) {
   await page.waitForLoadState('domcontentloaded', { timeout: PAGE_TIMEOUT_MS }).catch(() => {})
   await within(page.waitForLoadState('load'), SETTLE_MS)
@@ -407,23 +510,35 @@ async function pageFor(id) {
   return { session: reopened, note: 'The page was opened again, so anything typed into it before was cleared.' }
 }
 
+/**
+ * Records the page's address as the run's last page, so pageFor can reopen it after a restart.
+ * @param {string} id the run identifier.
+ * @param {import('playwright-core').Page} page the run's page.
+ * Side effects: updates lastPages; an address the guard would refuse is not stored. Never throws.
+ */
 function remember(id, page) {
   const url = page.url()
   if (checkUrl(url).ok) lastPages.set(id, { url, at: Date.now() })
 }
 
+// One handler per action in the route. Each takes (run id, parsed JSON body) and returns the
+// snapshot object that the HTTP layer sends back as JSON. Failures are thrown as Refusal.
 const actions = {
+  // open: creates the run's session if needed and opens body.url.
   async open(id, body) {
     const session = await sessionFor(id, true)
     const note = await navigate(session.page, body.url)
     return snapshot(session.page, note)
   },
 
+  // read: describes the run's current page; reopens it if Chromium restarted.
   async read(id) {
     const { session, note } = await pageFor(id)
     return snapshot(session.page, note)
   },
 
+  // follow: opens the link whose visible text is body.linkText (exact match first, then partial).
+  // Refused with 404 when no link matches and 422 when the link is not an http or https address.
   async follow(id, body) {
     const { session } = await pageFor(id)
     const wanted = String(body.linkText || '').trim()
@@ -481,12 +596,16 @@ const actions = {
     return snapshot(page)
   },
 
+  // fill: types body.value into the field body.field. Sends nothing; the answer says so.
   async fill(id, body) {
     const { session } = await pageFor(id)
     await fill(session.page, body.field, body.value ?? '')
     return snapshot(session.page, 'Typed into the field. Nothing was sent.')
   },
 
+  // click: clicks the button whose visible text is body.text. When body.restore holds a url (and
+  // earlier fills), a page lost during a long wait for approval is put back first. Fails with 404
+  // when there is no page or no matching visible button, 400 when no text is given.
   async click(id, body) {
     const session = await sessionFor(id, Boolean(body.restore && body.restore.url))
     if (!session) throw new Refusal(404, 'No page is open in this run. Open one first with open_page.')
@@ -510,6 +629,8 @@ const actions = {
     throw new Refusal(404, `No button with the text "${wanted}" is on the page.`)
   },
 
+  // submit: submits the form that contains body.field, or the first form on the page. Restores a
+  // lost page first, as click does. Fails with 404 when there is no page or no form.
   async submit(id, body) {
     const session = await sessionFor(id, Boolean(body.restore && body.restore.url))
     if (!session) throw new Refusal(404, 'No page is open in this run. Open one first with open_page.')
@@ -532,12 +653,22 @@ const actions = {
 
 // ---- HTTP ------------------------------------------------------------------------------------
 
+/**
+ * Sends a JSON response (or an empty body when body is undefined) with caching switched off.
+ * @param {import('node:http').ServerResponse} res
+ * @param {number} status the HTTP status.
+ * @param {*} [body] anything JSON.stringify accepts.
+ */
 function send(res, status, body) {
   const text = body === undefined ? '' : JSON.stringify(body)
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
   res.end(text)
 }
 
+/**
+ * Checks the X-Runner-Secret header against the configured secret in constant time.
+ * @returns {boolean} false when no secret is configured or the header differs. Never throws.
+ */
 function authorised(req) {
   if (!SECRET) return false
   const given = Buffer.from(String(req.headers['x-runner-secret'] || ''))
@@ -545,6 +676,12 @@ function authorised(req) {
   return given.length === expected.length && crypto.timingSafeEqual(given, expected)
 }
 
+/**
+ * Reads and parses a JSON request body of at most MAX_BODY bytes.
+ * @returns {Promise<object>} the parsed body, or {} when it is empty.
+ * Failure: rejects with Refusal 413 when too large (the connection is then destroyed) or 400
+ * when it is not valid JSON.
+ */
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0
@@ -570,8 +707,15 @@ function readBody(req) {
   })
 }
 
+// Matches /sessions/<run id> and /sessions/<run id>/<action>. The run id is limited to letters,
+// digits and hyphens, so it is safe to log and to use as a key.
 const ROUTE = /^\/sessions\/([A-Za-z0-9-]{1,80})(?:\/(open|read|follow|search|fill|click|submit))?$/
 
+// The HTTP server. GET /health is open (a liveness probe); everything else needs the secret.
+// POST /sessions/{id}/{open|read|follow|search|fill|click|submit} runs an action;
+// DELETE /sessions/{id} ends the run's session. Answers: 200 with the snapshot, 204 for delete,
+// 401 wrong secret, 404 unknown route, 405 wrong method, 503 no secret configured, or the status
+// of a Refusal; anything unexpected is a generic 500 with details only in the log.
 const server = http.createServer(async (req, res) => {
   const path = (req.url || '').split('?')[0]
   if (req.method === 'GET' && path === '/health') {
@@ -626,6 +770,10 @@ server.listen(PORT, HOST, () => {
   log(`Browser runner listening on ${HOST}:${PORT}${SECRET ? '' : ' (no secret set: every request is refused)'}`)
 })
 
+/**
+ * Stops the server, closes every session, Chromium and the proxy, then exits with status 0.
+ * Run on SIGTERM and SIGINT. Errors while closing are ignored.
+ */
 async function shutdown() {
   server.close()
   for (const id of [...sessions.keys()]) await closeSession(id)

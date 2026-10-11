@@ -43,39 +43,66 @@ public class WorkspaceZoneLookup {
     private static final Logger log = LoggerFactory.getLogger(WorkspaceZoneLookup.class);
     /** Used only when the organisation service cannot be reached, or has no zone on record. */
     private static final ZoneId FALLBACK = ZoneId.of("UTC");
+    /** How long a successful lookup is kept. */
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     /** How long the fallback is kept when the lookup itself failed, so the next call asks again soon. */
     private static final Duration FAILURE_TTL = Duration.ofSeconds(30);
 
+    /** The HTTP client for the organisation service. */
     private final WebClient client;
+    /** Mints the service token the lookup is made with. */
     private final InternalTokenProvider tokens;
+    /** Lookups by workspace, shared by every caller of this bean. */
     private final Map<UUID, Cached> cache = new ConcurrentHashMap<>();
 
+    /** Creates the lookup over the organisation service address and the service token provider. */
     public WorkspaceZoneLookup(WebClient.Builder builder, PlatformProperties properties, InternalTokenProvider tokens) {
         this.client = builder.baseUrl(properties.services().organisation()).build();
         this.tokens = tokens;
     }
 
+    /** One cached answer: the zone, the name (possibly null) and when it stops being fresh. */
     private record Cached(ZoneId zone, String name, Instant expiresAt) {
+        /** Whether the entry may still be used. */
         boolean isFresh() {
             return Instant.now().isBefore(expiresAt);
         }
     }
 
+    /**
+     * The part of the organisation service's workspace record this class reads; other fields are ignored.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record WorkspaceResponse(UUID id, String name, String slug, String timezone, String status) {}
 
+    /**
+     * The timezone of the workspace, or UTC when it cannot be found out.
+     *
+     * <p>Served from the cache where fresh; otherwise one call to the organisation service. Used by
+     * the coordinator, the board, schedules and the date text given to agents. Never throws.
+     */
     // @find: zone for workspace, workspace timezone
     public ZoneId zoneFor(UUID orgId) {
         return lookup(orgId).zone();
     }
 
-    /** The workspace's display name, or null when the organisation service cannot say. */
+    /**
+     * The workspace's display name, or null when the organisation service cannot say.
+     *
+     * <p>Shares the cache of {@link #zoneFor}.
+     */
     // @find: name for workspace, workspace display name
     public String nameFor(UUID orgId) {
         return lookup(orgId).name();
     }
 
+    /**
+     * The cached answer for a workspace, fetching it when absent or stale.
+     *
+     * <p>A successful fetch is kept for {@link #CACHE_TTL}. A missing or invalid timezone gives UTC. Any
+     * failure of the call is logged as a warning and gives UTC with no name, kept only for {@link
+     * #FAILURE_TTL} so that the next call asks again soon. Never throws.
+     */
     private Cached lookup(UUID orgId) {
         Cached cached = cache.get(orgId);
         if (cached != null && cached.isFresh()) {
@@ -105,6 +132,9 @@ public class WorkspaceZoneLookup {
         return resolved;
     }
 
+    /**
+     * One call to the organisation service's internal workspace endpoint with a service token and a five second timeout; failures propagate to {@link #lookup}.
+     */
     private WorkspaceResponse fetch(UUID orgId) {
         return client.get()
                 .uri("/internal/workspaces/{id}", orgId)
@@ -115,6 +145,7 @@ public class WorkspaceZoneLookup {
                 .block();
     }
 
+    /** Parses a zone id, using UTC when it is not a valid zone. */
     private static ZoneId parseOrFallback(String timezone) {
         try {
             return ZoneId.of(timezone);

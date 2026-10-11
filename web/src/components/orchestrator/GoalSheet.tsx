@@ -21,8 +21,10 @@ import { StepList } from './StepList'
 import { requesterLabel } from './shared'
 import { useMemberDirectory } from './useMemberDirectory'
 
+/** Keys that move between goals while the sheet is open: Up and k for the previous goal, Down and j for the next. */
 const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'k', 'j'])
 
+/** True when the event target is a text-entry element, so navigation keys do not fire while someone types. */
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
@@ -34,10 +36,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * about the goal as a whole. `GoalDrawer` (a modal, one card only) is gone; this replaces it.
  */
 
+/** Adapts a task from the single-goal query to the board's task shape, with the board-only fields set to null. */
 function toBoardTask(task: Goal['tasks'][number]): BoardTask {
   return { ...task, runStatus: null, stepCount: null, cost: null }
 }
 
+/** Adapts a goal fetched with useGoal to the board's goal shape, so the sheet handles both sources the same way. */
 function toBoardGoal(goal: Goal): BoardGoal {
   return { ...goal, tasks: goal.tasks.map(toBoardTask) }
 }
@@ -50,6 +54,7 @@ function retryStepInfo(goal: BoardGoal, board: Board): { step: number; agentName
   return { step: (retryTask?.position ?? 0) + 1, agentName: agent?.name ?? 'The agent' }
 }
 
+/** Link back to where the goal came from: the chat conversation, or the Schedules page; null for a goal given directly. */
 function sourceLink(goal: BoardGoal) {
   if (goal.source === 'chat' && goal.conversationId) {
     return (
@@ -69,6 +74,23 @@ function sourceLink(goal: BoardGoal) {
 }
 
 // @find: goal sheet component, goal details drawer, retry or stop goal
+/**
+ * Side sheet showing one goal in full, opened from a board card or a goal URL (?goal=<id>).
+ * Props: goalId, board, orderedGoalIds (the order on screen, for j, k and arrow navigation), onClose,
+ * onNavigate(goalId) and focus ("question" or "approval" moves focus into the pending item on open).
+ * Data: the goal is taken from the board when present; otherwise useGoal fetches it (enabled only then) and a
+ * goal that cannot be found shows "not on the board any more" with a link to Tasks. Requester names come
+ * from useMemberDirectory. Pending question and approval for the goal come from board.questions and
+ * board.approvals.
+ * Content: status, source and total cost, a Copy link button, who asked and when, the pending item at the
+ * top (QuestionCard, or InlineApproval when an approval waits), the description (clamped, Show more), and
+ * StepList. Footer: Cancel goal (canStopGoal), Try again from step N (canRetryGoal), a source link and Open
+ * in Tasks. Cancel calls useCancelGoal and retry calls useRetryGoal, each behind a ConfirmDialog with its own
+ * error text and a success toast. A goal with one task is worded as a task.
+ * Layout and keyboard: the sheet is non-modal at 1024 pixels and wider (the board stays usable), modal
+ * below; its width follows the viewport. Navigation keys are scoped to the sheet content. Focus returns to
+ * the goal's card on close.
+ */
 export function GoalSheet({
   goalId,
   board,
@@ -292,6 +314,7 @@ export function GoalSheet({
   )
 }
 
+/** The goal description, clamped to four lines when long, with a Show more button; hidden when it only repeats the title. */
 function Description({ goal }: { goal: BoardGoal }) {
   const [expanded, setExpanded] = useState(false)
   const text = goal.description?.trim()

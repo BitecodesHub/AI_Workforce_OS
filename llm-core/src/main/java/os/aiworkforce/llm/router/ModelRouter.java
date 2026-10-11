@@ -1,6 +1,6 @@
 // @find: model router, LLM, model providers, routing, choose a model, failover, fallback, retries, backoff, circuit breaker, cool off, rate limit, budget, context too long compaction, provider health, tool calls, ModelRouter
 // @what: The only place that picks which model answers: tries candidates in order, retries, cools off failing ones and fails over.
-// @flow: Called by orchestrator-service engine; uses ProviderRegistry, BudgetGuard, CredentialResolver, TranscriptCompactor and UsageRecorder.
+// @flow: Called by orchestrator-service engine -> route -> tryCandidate (resolve: disqualify, then attempt: acquire limits, adapter.complete, retry, cool off; compact once on overflow) -> answered, or atBudgetCap, degradeToSandbox or an ApiException with the full trace. Uses ProviderRegistry, BudgetGuard, CredentialResolver, TranscriptCompactor, ResiliencePresets and UsageRecorder.
 package os.aiworkforce.llm.router;
 
 import java.math.BigDecimal;
@@ -92,6 +92,7 @@ import os.aiworkforce.platform.resilience.ResiliencePresets;
 public class ModelRouter {
 
     private static final Logger log = LoggerFactory.getLogger(ModelRouter.class);
+    /** Output size assumed for the cost estimate when neither the candidate nor the request caps it. */
     private static final int ASSUMED_OUTPUT_TOKENS = 800;
 
     /** Latency of every call that reached a provider, tagged {@code provider} and {@code outcome}. */
@@ -135,12 +136,19 @@ public class ModelRouter {
      */
     static final Duration CANDIDATE_BUDGET = Duration.ofSeconds(45);
 
+    /** Provider adapters by kind, filled from every {@link ChatProvider} bean given to the constructor. */
     private final Map<ProviderDescriptor.Kind, ChatProvider> adapters = new EnumMap<>(ProviderDescriptor.Kind.class);
+    /** Where providers and models are looked up, per workspace. */
     private final ProviderRegistry registry;
+    /** Fetches the decrypted key for a provider, at the moment of the call. */
     private final CredentialResolver credentials;
+    /** Asked before every attempt and told the cost afterwards. */
     private final BudgetGuard budget;
+    /** Receives every attempt, skipped and failed ones included. */
     private final UsageRecorder usage;
+    /** Supplies the platform's bulkhead presets and the jittered back-off delays. */
     private final ResiliencePresets resilience;
+    /** Shortens a conversation that overflows a model's window. */
     private final TranscriptCompactor compactor;
     /** One bulkhead and one rate limiter per provider and workspace, rebuilt when the provider's row changes. */
     private final Map<String, Limits> limits = new ConcurrentHashMap<>();
@@ -149,11 +157,18 @@ public class ModelRouter {
     /** How a back-off waits; replaced by a test that counts the waits instead of sleeping. */
     private java.util.function.Consumer<Duration> sleeper = ModelRouter::sleep;
 
+    /** How long a call waits for its turn under a provider's limits; shortened by tests. */
     private Duration limitWait = Duration.ofSeconds(LIMIT_WAIT_SECONDS);
+    /** The time each candidate is given; shortened by tests. */
     private Duration candidateBudget = CANDIDATE_BUDGET;
     /** Where calls are counted. The global registry when none is injected, which records nowhere until one is added. */
     private MeterRegistry meters = Metrics.globalRegistry;
 
+    /**
+     * Builds the router from the Spring beans it depends on, indexing the adapters by provider kind.
+     * A later adapter of the same kind replaces an earlier one. Makes no call and holds no state
+     * beyond the maps filled during use.
+     */
     public ModelRouter(
             List<ChatProvider> providers,
             ProviderRegistry registry,
@@ -171,6 +186,7 @@ public class ModelRouter {
         this.compactor = compactor;
     }
 
+    /** Optional injection of the metrics registry; without one, calls are counted nowhere. */
     @Autowired(required = false)
     void useMeterRegistry(MeterRegistry meters) {
         if (meters != null) {
@@ -193,7 +209,13 @@ public class ModelRouter {
         this.sleeper = sleeper;
     }
 
-    /** The context a call is made in, for budgeting, accounting and the trace. */
+    /**
+     * The context a call is made in, for budgeting, accounting and the trace.
+     *
+     * @param orgId the workspace; its provider rows, keys, limits and budget apply
+     * @param agentId the agent acting, or null for the chat planner and the embedding path
+     * @param runId the run, or null outside a run
+     */
     public record CallContext(String orgId, String agentId, String runId) {}
 
     // @find: route a chat request, pick model, retry and fail over
@@ -204,6 +226,21 @@ public class ModelRouter {
      * threads, so blocking here costs a stack rather than a platform thread, and the sequential
      * shape of "try, fail, try the next" is far clearer written as a loop than as a chain of
      * reactive operators.
+     *
+     * <p>Flow: candidates not cooling off are tried in policy order through {@link #tryCandidate};
+     * cooling candidates are tried afterwards. The first answer is returned. If the chain stopped on
+     * a budget refusal, {@link #atBudgetCap} answers or throws {@code BUDGET_EXCEEDED}. Otherwise the
+     * policy may degrade to the offline sandbox, and failing that an {@code ApiException} is thrown:
+     * {@code DEPENDENCY_UNAVAILABLE} when only the credential store was unreachable, else
+     * {@code NO_MODEL_AVAILABLE}, both carrying the trace.
+     *
+     * <p>Side effects: HTTP calls to providers through the adapters, retries with back-off, usage rows,
+     * budget records and metrics. Blocks the calling thread for up to the candidates' budgets.
+     *
+     * @param request what to ask, with its requirements (tools, JSON mode, images)
+     * @param policy the candidates and limits to apply; an empty one fails at once
+     * @param context the workspace, agent and run, for budget, usage and limits
+     * @return the first answer, with the attempt trace attached
      */
     public ChatResponse route(ChatRequest request, RoutingPolicy policy, CallContext context) {
         if (policy.isEmpty()) {
@@ -271,12 +308,16 @@ public class ModelRouter {
                 .with("attempts", history.stream().map(AttemptRecord::summary).toList());
     }
 
-    /** What the chain has learned so far: the conversation as it stands, and whether it must stop. */
+    /**
+     * What the chain has learned so far: the conversation as it stands, and whether it must stop.
+     * Mutable and confined to one {@link #route} call, so it needs no locking.
+     */
     private static final class Chain {
         private ChatRequest current;
         private BudgetGuard.Decision refusedByBudget;
         private boolean stopped;
 
+        /** Starts with the conversation as the caller gave it. */
         Chain(ChatRequest current) {
             this.current = current;
         }
@@ -397,10 +438,12 @@ public class ModelRouter {
             BudgetGuard.Decision refusedByBudget,
             ChatRequest baseline) {
 
+        /** A candidate that cannot be called, for a reason that is not the budget. */
         static Resolution skipped(AttemptRecord record) {
             return new Resolution(null, null, null, null, null, record, null, null);
         }
 
+        /** A candidate skipped because the budget refused it; the decision is kept so the chain can stop. */
         static Resolution refused(AttemptRecord record, BudgetGuard.Decision decision) {
             return new Resolution(null, null, null, null, null, record, decision, null);
         }
@@ -544,12 +587,18 @@ public class ModelRouter {
 
     // ---- Stages two and three: attempt and fall over --------------------------------------
 
+    /**
+     * The result of asking one candidate: an answer, or the last failure and whether the chain must stop
+     * rather than move to the next candidate.
+     */
     private record Outcome(ChatResponse response, ProviderFailure lastFailure, boolean stopChain) {
 
+        /** The candidate answered. */
         static Outcome success(ChatResponse response) {
             return new Outcome(response, null, false);
         }
 
+        /** The candidate gave no answer; {@code stopChain} is true only for failures not to be routed around. */
         static Outcome failed(ProviderFailure failure, boolean stopChain) {
             return new Outcome(null, failure, stopChain);
         }
@@ -738,6 +787,10 @@ public class ModelRouter {
 
     // ---- Short cool-off for overload -------------------------------------------------------
 
+    /**
+     * Notes in memory that a model is overloaded, for the failure's {@code Retry-After} or the default,
+     * capped at {@link #MAX_COOL_OFF}. Affects only the order of candidates in {@link #route}.
+     */
     private void coolOffFor(String orgId, String providerId, String modelId, ProviderException failure) {
         Duration wanted = failure.retryAfter() != null ? failure.retryAfter() : DEFAULT_COOL_OFF;
         Duration capped = wanted.compareTo(MAX_COOL_OFF) > 0 ? MAX_COOL_OFF : wanted;
@@ -747,6 +800,7 @@ public class ModelRouter {
         coolOff.put(coolOffKey(orgId, providerId, modelId), Instant.now().plus(capped));
     }
 
+    /** Whether the candidate is inside its cool-off; removes an expired entry as a side effect. */
     private boolean isCoolingOff(String orgId, RoutingPolicy.Candidate candidate) {
         String key = coolOffKey(orgId, candidate.providerId(), candidate.modelId());
         Instant until = coolOff.get(key);
@@ -780,6 +834,7 @@ public class ModelRouter {
         return isCoolingOff(orgId, RoutingPolicy.Candidate.of(providerId, modelId));
     }
 
+    /** The cool-off map key: workspace, provider and model. */
     private static String coolOffKey(String orgId, String providerId, String modelId) {
         return orgId + "|" + providerId + "|" + modelId;
     }
@@ -816,6 +871,7 @@ public class ModelRouter {
                 + ". Every model will be tried again on the next run.";
     }
 
+    /** {@code Provider · Model} display text for the failure summary, falling back to ids when the registry fails. */
     private String nameOf(String orgId, String providerId, String modelId) {
         String provider = providerId;
         String model = modelId;
@@ -834,6 +890,7 @@ public class ModelRouter {
         return provider + " \u00b7 " + model;
     }
 
+    /** A short plain phrase for why an attempt was skipped or failed, shown to the person who reads a failed run. */
     static String plainReason(AttemptRecord record) {
         if (record.outcome() == AttemptRecord.Outcome.SKIPPED) {
             return switch (record.skipReason()) {
@@ -933,6 +990,12 @@ public class ModelRouter {
         }
     }
 
+    /**
+     * Answers with the offline sandbox adapter, using a built-in free descriptor and model, and adds a
+     * success record to the trace. No budget check, no limits and no usage row. Used when the policy
+     * says {@code DEGRADE_TO_SANDBOX} or the budget cap does. Fails with {@code NO_MODEL_AVAILABLE}
+     * when no sandbox adapter is installed or it returns nothing.
+     */
     private ChatResponse degradeToSandbox(ChatRequest request, CallContext context, List<AttemptRecord> history) {
         ChatProvider sandbox = adapters.get(ProviderDescriptor.Kind.SANDBOX);
         if (sandbox == null) {
@@ -980,11 +1043,16 @@ public class ModelRouter {
         return response;
     }
 
+    /** The exception for a failure that stops the chain, carrying the trace; the error code comes from the failure. */
     private ApiException terminal(ProviderFailure failure, List<AttemptRecord> history) {
         return new ApiException(failure.toErrorCode())
                 .with("attempts", history.stream().map(AttemptRecord::summary).toList());
     }
 
+    /**
+     * Finds the {@code ProviderException} in the cause chain, or builds one: {@code TIMEOUT} when the
+     * blocking wait gave up, {@code UNKNOWN} otherwise. An unclassified failure is an adapter defect.
+     */
     private static ProviderException asProviderException(Exception e, ProviderDescriptor provider, ModelSpec model) {
         Throwable current = e;
         while (current != null) {
@@ -1053,6 +1121,7 @@ public class ModelRouter {
         return false;
     }
 
+    /** Time left until the deadline for a blocking wait: at least one millisecond, five minutes when unbounded. */
     private static Duration remaining(Instant deadline) {
         if (deadline == Instant.MAX) {
             return Duration.ofMinutes(5);
@@ -1061,6 +1130,7 @@ public class ModelRouter {
         return left.isNegative() ? Duration.ofMillis(1) : left;
     }
 
+    /** The real back-off wait. An interrupt restores the flag and fails the call as cancelled. */
     private static void sleep(Duration duration) {
         try {
             Thread.sleep(Math.max(0, duration.toMillis()));
@@ -1072,7 +1142,7 @@ public class ModelRouter {
 
     // ---- Limits and figures ----------------------------------------------------------------
 
-    /** Which of a provider's two limits made a call wait too long. */
+    /** Which of a provider's two limits made a call wait too long. Used as the {@code limit} metric tag. */
     private enum Limit {
         CONCURRENCY,
         RATE
@@ -1083,6 +1153,7 @@ public class ModelRouter {
 
         private final transient Limit limit;
 
+        /** Stackless, because it is control flow and not a defect. */
         LimitReached(Limit limit, String message) {
             super(message, null, false, false);
             this.limit = limit;
@@ -1096,6 +1167,7 @@ public class ModelRouter {
     /** A provider's two limits as one workspace uses them, with the figures they were built from. */
     private record Limits(int concurrent, Integer perMinute, Bulkhead bulkhead, RateLimiter limiter) {
 
+        /** Whether these limits were built from the same figures, so they can stay in use. */
         boolean matches(int wantedConcurrent, Integer wantedPerMinute) {
             return concurrent == wantedConcurrent && java.util.Objects.equals(perMinute, wantedPerMinute);
         }
@@ -1114,6 +1186,7 @@ public class ModelRouter {
             this.held = bulkhead != null;
         }
 
+        /** Gives the place back; safe to call more than once. */
         void release() {
             if (held) {
                 held = false;
@@ -1232,6 +1305,7 @@ public class ModelRouter {
         }
     }
 
+    /** Counts a call held back by the platform's own limit; never fails the call. */
     private void throttled(String providerId, Limit limit) {
         try {
             Counter.builder(THROTTLED_METER)
@@ -1258,7 +1332,10 @@ public class ModelRouter {
         return health;
     }
 
-    /** The name the provider's limits are kept under, per workspace. */
+    /**
+     * The name the provider's limits are kept under, per workspace. The name is historical: it also
+     * keyed a circuit breaker, which no longer exists.
+     */
     static String breakerName(String orgId, String providerId) {
         return "provider." + orgId + "." + providerId;
     }
@@ -1276,7 +1353,10 @@ public class ModelRouter {
                 && failure != ProviderFailure.QUOTA_EXHAUSTED;
     }
 
-    /** The first message of a conversation, used by callers that log a prompt summary. */
+    /**
+     * The first message of a conversation, used by callers that log a prompt summary. Returns the
+     * text of the first user message that has any, or an empty string.
+     */
     static String firstUserText(ChatRequest request) {
         return request.messages().stream()
                 .filter(message -> message.role() == ChatMessage.Role.USER)

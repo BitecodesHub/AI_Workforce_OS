@@ -24,12 +24,16 @@
 
 name: aiwos
 
+# Container log rotation: three files of 10 MB per container, so logs cannot fill the disk.
 x-logging: &logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "3"
 
+# Defaults shared by the application services: restart policy, log rotation, a 768 MB memory
+# limit, the common environment (database, secrets from .env, service addresses and a small JVM
+# heap) and the dependency on the data stores. Each service merges this with <<: *service.
 x-service: &service
   restart: unless-stopped
   logging: *logging
@@ -99,6 +103,8 @@ x-service: &service
     redis: {condition: service_healthy}
     qdrant: {condition: service_started}
 
+# Build settings shared by the backend images: the repository root as the context and the
+# launcher Dockerfile, so the images are built on this server from the checked-out commit.
 x-build: &build
   context: ../..
   dockerfile: infra/launcher/services.Dockerfile
@@ -106,7 +112,10 @@ x-build: &build
 # Passed to the Maven build stage of services.Dockerfile (declared there as an ARG).
 x-maven-opts: &maven_opts ${AIWOS_MAVEN_OPTS:--Xmx1g -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=384m}
 
+# Services. Caddy is the only one that publishes ports.
 services:
+  # Role: the HTTPS edge. Obtains the certificates, serves /deploy-status.json and proxies the rest
+  # to the web container (see infra/aws/Caddyfile).
   caddy:
     image: caddy:2.10.0-alpine
     restart: unless-stopped
@@ -132,6 +141,7 @@ services:
     depends_on:
       web: {condition: service_started}
 
+  # Role: relational database shared by the services; its data lives in a named volume.
   postgres:
     image: postgres:17.11-alpine
     restart: unless-stopped
@@ -152,6 +162,7 @@ services:
       timeout: 3s
       retries: 30
 
+  # Role: cache and rate-limit store, persisted in a named volume.
   redis:
     image: redis:7.4.11-alpine
     restart: unless-stopped
@@ -166,6 +177,7 @@ services:
       timeout: 3s
       retries: 30
 
+  # Role: vector database for the knowledge service, persisted in a named volume.
   qdrant:
     image: qdrant/qdrant:v1.19.1
     restart: unless-stopped
@@ -206,16 +218,19 @@ services:
       retries: 10
       start_period: 900s
 
+  # Role: sign-in, users and roles.
   identity:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/identity-service:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: identity-service, MAVEN_OPTS: *maven_opts}}
 
+  # Role: workspaces, organisations, invitations and stored credentials.
   organisation:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/org-service:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: org-service, MAVEN_OPTS: *maven_opts}}
 
+  # Role: agents, runs, approvals, model routing, chat and schedules.
   orchestrator:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/orchestrator-service:${AIWOS_IMAGE_TAG:-latest}
@@ -230,7 +245,7 @@ services:
   # two at once. Debian-based (Chromium does not run on Alpine), not published outside the Docker
   # network, and every request a page makes goes through its own filtering proxy, which refuses
   # private, loopback and metadata addresses. Chromium starts on the first browser step and is shut
-  # down after five idle minutes, so it costs about 60 MB at rest and 300-600 MB while in use.
+  # down after ten idle minutes, so it costs about 60 MB at rest and 300-600 MB while in use.
   # AIWOS_BROWSER_RUNNER_SECRET is generated into /opt/aiwos/.env by aiwos.sh; without it the
   # runner refuses every request and the browser connector says it is not running.
   browser:
@@ -252,32 +267,38 @@ services:
       retries: 3
       start_period: 20s
 
+  # Role: the memory service (what agents remember between runs).
   memory:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/memory-service:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: memory-service, MAVEN_OPTS: *maven_opts}}
 
+  # Role: documents and sources, searched through Qdrant.
   knowledge:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/knowledge-service:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: knowledge-service, MAVEN_OPTS: *maven_opts}}
 
+  # Role: connectors and OAuth to outside systems.
   integrations:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/integrations-service:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: integrations-service, MAVEN_OPTS: *maven_opts}}
 
+  # Role: usage analytics and the audit trail.
   analytics:
     <<: *service
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/analytics-service:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: analytics-service, MAVEN_OPTS: *maven_opts}}
 
+  # Role: optional API gateway (the "gateway" profile); the browser does not use it.
   gateway:
     <<: *service
     profiles: ["gateway"]
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/gateway:${AIWOS_IMAGE_TAG:-latest}
     build: {<<: *build, args: {SERVICE: gateway, MAVEN_OPTS: *maven_opts}}
 
+  # Role: nginx serving the web client and proxying each API prefix to its service, behind Caddy.
   web:
     image: ${AIWOS_IMAGE_PREFIX:-aiwos}/web:${AIWOS_IMAGE_TAG:-latest}
     build:
@@ -308,6 +329,8 @@ services:
       timeout: 3s
       retries: 10
 
+# Networks and volumes: one private bridge network for all containers, and named volumes
+# for the data that must survive a redeploy.
 networks:
   aiwos:
 

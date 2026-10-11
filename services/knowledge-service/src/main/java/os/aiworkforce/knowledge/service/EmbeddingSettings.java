@@ -29,11 +29,14 @@ public class EmbeddingSettings {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingSettings.class);
 
+    /** The settings key that holds the workspace's {@link Choice}. */
     static final String MODEL_KEY = "embedding.model";
+    /** The settings key that holds the progress of the latest change, written by {@code EmbeddingModelChange}. */
     static final String PROGRESS_KEY = "embedding.reindex";
 
     /**
-     * A workspace's choice.
+     * A workspace's choice. Saved by {@link #save}, returned by {@link #current} and used by
+     * {@code IngestionService} to set up new sources.
      *
      * @param provider the provider id, {@code sandbox} for keyword search only
      * @param model the model id
@@ -44,6 +47,7 @@ public class EmbeddingSettings {
         /** No model: the offline embeddings, whose vectors are never written or read. */
         public static final Choice KEYWORD_ONLY = new Choice(Source.SANDBOX_PROVIDER, "sandbox-embed-1", 1536);
 
+        /** True for any provider other than the sandbox, whose vectors carry no meaning. */
         public boolean searchesByMeaning() {
             return !Source.SANDBOX_PROVIDER.equalsIgnoreCase(provider);
         }
@@ -70,9 +74,16 @@ public class EmbeddingSettings {
         return model == null ? DEFAULT_MEANING_FLOOR : MEASURED_FLOORS.getOrDefault(model, DEFAULT_MEANING_FLOOR);
     }
 
+    /** The database access for the {@code runtime_settings} table. */
     private final JdbcTemplate jdbc;
+    /** Converts values to and from the JSON stored in the table. */
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
+    /**
+     * Creates the settings store.
+     *
+     * @param jdbc the database access used for the settings table
+     */
     public EmbeddingSettings(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
@@ -84,10 +95,25 @@ public class EmbeddingSettings {
     }
 
     // @find: save embedding model choice, change embedding model
+    /**
+     * Saves the workspace's choice, replacing an earlier one.
+     *
+     * <p>Called by {@code EmbeddingModelChange.change}. Writes one row to the settings table.
+     *
+     * @param by the identifier of the person who made the choice
+     */
     public void save(UUID orgId, Choice choice, String by) {
         write(orgId, MODEL_KEY, choice, by);
     }
 
+    /**
+     * Reads one setting of a workspace as a value of the given type.
+     *
+     * <p>Reads the settings table only. A stored value that cannot be parsed is logged as a warning and
+     * treated as absent.
+     *
+     * @return the value, or empty when there is no row or it is unreadable
+     */
     <T> Optional<T> read(UUID orgId, String key, Class<T> type) {
         List<String> values = jdbc.queryForList(
                 "SELECT value FROM runtime_settings WHERE key = ? AND org_id = ?", String.class, key, orgId);
@@ -102,6 +128,15 @@ public class EmbeddingSettings {
         }
     }
 
+    /**
+     * Writes one setting of a workspace, inserting the row or replacing the existing value.
+     *
+     * <p>Stores the value as JSON together with the time and the author. Used for both the model choice
+     * and the re-indexing progress.
+     *
+     * @param by the identifier of the author, {@code system} for background progress
+     * @throws IllegalStateException when the value cannot be converted to JSON
+     */
     void write(UUID orgId, String key, Object value, String by) {
         String text;
         try {

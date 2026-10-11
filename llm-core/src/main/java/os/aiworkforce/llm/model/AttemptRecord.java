@@ -37,6 +37,7 @@ public record AttemptRecord(
         TokenUsage usage,
         Integer httpStatus) {
 
+    /** How one attempt ended. */
     public enum Outcome {
         SUCCEEDED,
         FAILED,
@@ -68,6 +69,7 @@ public record AttemptRecord(
         MODEL_MARKED_UNAVAILABLE
     }
 
+    /** Builds the record for a candidate that was disqualified before any call was made. */
     public static AttemptRecord skipped(String provider, String model, SkipReason reason, String message) {
         return new AttemptRecord(
                 provider,
@@ -82,6 +84,7 @@ public record AttemptRecord(
                 null);
     }
 
+    /** Builds the record for a call that reached the provider and failed; usage may be null. */
     public static AttemptRecord failed(
             String provider,
             String model,
@@ -104,6 +107,7 @@ public record AttemptRecord(
                 httpStatus);
     }
 
+    /** Builds the record for a call that returned an answer. */
     public static AttemptRecord succeeded(
             String provider, String model, Instant startedAt, Duration duration, TokenUsage usage) {
         return new AttemptRecord(provider, model, Outcome.SUCCEEDED, null, null, null, startedAt, duration, usage, 200);

@@ -19,6 +19,14 @@ import type { WorkspaceChoice } from '../../lib/accountQueries'
  */
 
 // @find: WorkspacePicker, choose workspace after sign in
+/**
+ * Step shown after sign-in when the account belongs to several workspaces, or to none.
+ * Props: workspaces (from lib/accountQueries), pending (the org id being opened), error, onPick (opens a
+ * workspace) and onUseAnotherAccount (signs out of this account). With workspaces, each is one outline
+ * button naming the workspace and the role; while one opens, the other buttons are disabled. With none, it
+ * offers a link to create a workspace and explains how to be invited. An effect focuses the heading when the
+ * step appears or when the none state changes, so screen readers announce the change.
+ */
 export function WorkspacePicker({
   workspaces,
   pending,

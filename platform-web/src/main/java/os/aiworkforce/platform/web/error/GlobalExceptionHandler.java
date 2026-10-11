@@ -47,14 +47,25 @@ import os.aiworkforce.platform.error.ProblemResponse;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /** Logger for failures; the full cause is logged here and never sent to the caller. */
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /**
+     * Handles a failure the platform raised on purpose, such as a permission refusal or a missing item.
+     * The status and code come from the exception; it is logged at a level that suits its status and
+     * returned in the standard shape.
+     */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ProblemResponse> handleApi(ApiException e, HttpServletRequest request) {
         logDeliberate(e, request);
         return respond(e, request);
     }
 
+    /**
+     * Handles a request body that failed bean validation: 422 with a map from each wrong field to its
+     * message, and any object-level error keyed by the object name. When a field has several errors the
+     * first is kept.
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ProblemResponse> handleBeanValidation(
             MethodArgumentNotValidException e, HttpServletRequest request) {
@@ -78,6 +89,10 @@ public class GlobalExceptionHandler {
                 request);
     }
 
+    /**
+     * Handles constraint violations raised outside body binding, such as invalid path or query values:
+     * 422 with a map from the property path to the message.
+     */
     @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
     public ResponseEntity<ProblemResponse> handleConstraint(
             jakarta.validation.ConstraintViolationException e, HttpServletRequest request) {
@@ -90,6 +105,10 @@ public class GlobalExceptionHandler {
         return respond(new ApiException(ErrorCode.VALIDATION_FAILED, null, fields, null, null, false), request);
     }
 
+    /**
+     * Handles an unreadable body, a parameter of the wrong type or a missing parameter: 400
+     * {@code MALFORMED_REQUEST}. The parser's message is logged at debug level only.
+     */
     @ExceptionHandler({
         HttpMessageNotReadableException.class,
         MethodArgumentTypeMismatchException.class,
@@ -101,18 +120,21 @@ public class GlobalExceptionHandler {
         return respond(new ApiException(ErrorCode.MALFORMED_REQUEST), request);
     }
 
+    /** Handles an unsupported content type: 415. */
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ProblemResponse> handleMediaType(
             HttpMediaTypeNotSupportedException e, HttpServletRequest request) {
         return respond(new ApiException(ErrorCode.UNSUPPORTED_MEDIA_TYPE), request);
     }
 
+    /** Handles a method the route does not offer: 405. */
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ProblemResponse> handleMethod(
             HttpRequestMethodNotSupportedException e, HttpServletRequest request) {
         return respond(new ApiException(ErrorCode.METHOD_NOT_ALLOWED), request);
     }
 
+    /** Handles an upload above the configured size: 413. */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ProblemResponse> handleTooLarge(
             MaxUploadSizeExceededException e, HttpServletRequest request) {
@@ -135,16 +157,28 @@ public class GlobalExceptionHandler {
         return respond(new ApiException(ErrorCode.NOT_FOUND), request);
     }
 
+    /**
+     * Handles an authentication failure raised inside a controller or method-security check: 401
+     * {@code NOT_AUTHENTICATED}.
+     */
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ProblemResponse> handleAuthentication(AuthenticationException e, HttpServletRequest request) {
         return respond(new ApiException(ErrorCode.NOT_AUTHENTICATED), request);
     }
 
+    /**
+     * Handles a Spring Security refusal, for example from {@code @PreAuthorize}: 403 {@code
+     * PERMISSION_DENIED}.
+     */
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ProblemResponse> handleAccessDenied(AccessDeniedException e, HttpServletRequest request) {
         return respond(new ApiException(ErrorCode.PERMISSION_DENIED), request);
     }
 
+    /**
+     * Handles a save that lost the optimistic-lock race: 409 {@code VERSION_CONFLICT}, so the person
+     * can reload and retry.
+     */
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ProblemResponse> handleOptimisticLock(
             OptimisticLockingFailureException e, HttpServletRequest request) {
@@ -208,6 +242,10 @@ public class GlobalExceptionHandler {
         return respond(new ApiException(ErrorCode.INTERNAL_ERROR), request);
     }
 
+    /**
+     * Logs a deliberate failure by severity: server errors (5xx) at error level with the stack,
+     * 401 and 403 at info with the actor, and the rest at debug.
+     */
     private void logDeliberate(ApiException e, HttpServletRequest request) {
         if (e.status() >= 500) {
             // The request identifier is the reference a person reads from the error screen, so it is
@@ -233,6 +271,11 @@ public class GlobalExceptionHandler {
         }
     }
 
+    /**
+     * Builds the response for every handler: a problem body carrying the path, request id and trace id,
+     * the {@code application/problem+json} content type, the request id header and, when the exception
+     * asks for it, a {@code Retry-After} header of at least one second. Used by all handlers in this class.
+     */
     private ResponseEntity<ProblemResponse> respond(ApiException e, HttpServletRequest request) {
         ProblemResponse body = ProblemResponse.of(
                 e,
@@ -249,6 +292,10 @@ public class GlobalExceptionHandler {
         return response.body(body);
     }
 
+    /**
+     * Follows the cause chain to the innermost throwable and returns its message, which for a database
+     * error names the broken constraint.
+     */
     private static String rootMessage(Throwable e) {
         Throwable current = e;
         while (current.getCause() != null && current.getCause() != current) {

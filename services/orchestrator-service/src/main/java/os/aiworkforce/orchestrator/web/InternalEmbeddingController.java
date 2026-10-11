@@ -94,6 +94,7 @@ public class InternalEmbeddingController {
     private final Runs runs;
     private final Agents agents;
 
+    /** Receives the provider adapters, the provider registry, the credential resolver, the budget guard, the usage recorder and the run and agent repositories. */
     public InternalEmbeddingController(
             List<ChatProvider> providers,
             ProviderRegistry registry,
@@ -112,6 +113,8 @@ public class InternalEmbeddingController {
     }
 
     /**
+     * An embedding request from the knowledge service.
+     *
      * @param agentId the agent this embedding is made for, when it is made during a run; absent for
      *     ingesting a document
      * @param runId the run it is made for, with the same meaning
@@ -136,11 +139,25 @@ public class InternalEmbeddingController {
     }
 
     /**
+     * The vectors for a request.
+     *
      * @param vectors one per input, in the same order
      * @param dimension the width, so the caller can refuse a collection built at another size
      */
     public record EmbedResponse(List<float[]> vectors, int dimension) {}
 
+    /**
+     * Embeds a batch of texts through the workspace's configured provider.
+     *
+     * <p>Route {@code POST /internal/embeddings}; internal service tokens only (a user or API key
+     * actor is refused, as is a token for another workspace than the {@code X-Workspace-Id} header).
+     * Flow: validate the agent and run attribution, resolve the provider, model and adapter, fetch
+     * the stored credential when one is required, ask the budget guard about an estimated cost, call
+     * the provider (outbound, sliced where the vendor needs it), then record the attempt in the usage
+     * table and against the budget. Failures are recorded too and returned as plain-sentence errors:
+     * unreachable credential store, missing provider or model, budget exceeded, provider refusal, or a
+     * wrong vector count.
+     */
     // @find: embed text, POST /internal/embeddings, create embeddings
     @PostMapping
     @Operation(summary = "Internal: embed text through the workspace's configured provider")
@@ -260,7 +277,7 @@ public class InternalEmbeddingController {
      * Who the spend is for, once the agent and the run the caller named are known to be this
      * workspace's. A run implies its agent, so a caller that names only the run still has the
      * spend counted toward that agent's daily cap; naming a different agent than the run's is
-     * refused rather than guessed at.
+     * refused rather than guessed at. Reads the run and agent repositories; fails with not found.
      */
     private ModelRouter.CallContext attribution(UUID workspaceId, UUID agentId, UUID runId) {
         UUID agent = agentId;
@@ -285,6 +302,11 @@ public class InternalEmbeddingController {
      */
     static final int NVIDIA_SLICE = 32;
 
+    /**
+     * Calls the provider's embed method, in slices for NVIDIA and in one call otherwise, each call
+     * limited to sixty seconds. Returns null when a call yields nothing, which the caller treats as a
+     * malformed response.
+     */
     private static List<float[]> embedInSlices(
             ChatProvider adapter,
             ProviderDescriptor provider,
@@ -348,6 +370,7 @@ public class InternalEmbeddingController {
                 .with("model", model.modelId());
     }
 
+    /** The provider failure kind found on the error or its causes, or unknown when none is a provider error. */
     private static ProviderFailure failureOf(RuntimeException error) {
         Throwable current = error;
         while (current != null) {

@@ -79,6 +79,7 @@ function useOutsidePress(open: boolean, refs: Array<RefObject<HTMLElement | null
 
 /* ---- Glyphs ------------------------------------------------------------------------------------- */
 
+/** Shared SVG frame (stroke icon, hidden from assistive technology) for the small line drawings below. */
 function Glyph({ children, size = 14 }: { children: ReactNode; size?: number }) {
   return (
     <svg
@@ -98,6 +99,7 @@ function Glyph({ children, size = 14 }: { children: ReactNode; size?: number }) 
   )
 }
 
+/** Small line icons used by the toolbar: search, caret, check, info and close. Each is decorative. */
 function SearchGlyph() {
   return (
     <Glyph>
@@ -494,6 +496,14 @@ export type FilterChoice = {
 export type ActiveChip = { key: string; label: string; onRemove: () => void }
 
 // @find: ConnectorToolbar, connector toolbar, connector filters, search connectors, category filter, status filter
+/**
+ * Filter bar of the Connectors page, drawn from props because the filter state lives in the URL (useListFilter in
+ * the page). Contents: a search field (Escape clears it), Category and Status dropdowns (FilterDropdown), an
+ * "N need attention" pill when summary.attention is above zero (pressing it calls onShowAttention and
+ * reports aria-pressed through attentionActive), the LiveSummary pill, a polite "Showing N of M" status line,
+ * removable chips for the active filters and a Clear filters button when any filter is active. It has no
+ * data fetching or state of its own beyond the search field id.
+ */
 export function ConnectorToolbar({
   query,
   onQueryChange,

@@ -36,9 +36,11 @@ import { useNow } from '../../lib/useNow'
  * state appears at once rather than a beat later.
  */
 
+/** Messages for an incomplete answer: the Chat variant refers to replying in own words, the others to the Other option. */
 const SUMMARY_CHAT = 'Answer every question, or reply in your own words.'
 const SUMMARY_OTHER = 'Answer every question, or use Other to write your own answer.'
 
+/** Names of the screens a question can be answered from, for the "answered via" wording. */
 const VIA_LABEL: Record<AnsweredVia, string> = {
   chat: 'Chat',
   orchestrator: 'the Orchestrator',
@@ -46,6 +48,7 @@ const VIA_LABEL: Record<AnsweredVia, string> = {
   approvals: 'Approvals',
 }
 
+/** True for the API errors that mean someone else answered or the question closed first. */
 const isClosedRace = (error: unknown): boolean =>
   error instanceof ApiError && (error.code === 'question_already_answered' || error.code === 'question_closed')
 
@@ -75,6 +78,7 @@ type OptionRowProps = {
   onToggle?: () => void
 }
 
+/** One answer option as a radio or checkbox (multi), with its description and a Recommended tag; read-only when no toggle handler is given. */
 function OptionRow({
   groupName,
   label,
@@ -353,6 +357,12 @@ function ClosedBody({
 }
 
 // @find: QuestionCard, question card, agent question, clarifying question, answer question, choose option
+/**
+ * One card that shows an agent's clarifying question in every state, wherever it appears (Chat, the Orchestrator sheet, the Approvals page, a run page).
+ * Props: question (live data from useRunQuestions or useQuestions), agentName, optional agent avatar details, via (where it is answered from: chat, orchestrator, run or approvals), compact (smaller header), headingLevel, onReplyInOwnWords and answeringInComposer (Chat only), goalTitle and links (context line), and me and nameOf (names).
+ * States: open and answerable (a form with one fieldset per question, an Other control, a count of answered questions, "Reply in your own words", "Let the agent decide" and Send; Ctrl or Cmd and Enter submits), submitting, closed (answered, skipped, expired or withdrawn, with who answered and when), and open but not answerable by this viewer (read-only options and who is expected to answer).
+ * Flow: Send validates the draft (validateDraft); an invalid draft shows per-question errors and a summary. A valid one calls useAnswerQuestion (draftToInput, or a skip) and shows the returned closed question at once, before the cache refetch, moving focus to it and announcing it. An "already answered or closed" error switches the card to its closed state instead of showing an error. "Keep it open another day" calls useExtendQuestion when the question is extendable. A new question id resets the draft (adjusted during render).
+ */
 export function QuestionCard({
   question,
   agentName,

@@ -32,6 +32,7 @@ const VALUE: CSSProperties = {
   overflowWrap: 'anywhere',
 }
 
+/** Renders payload rows as a labelled description list; an empty value is shown as "(empty)". */
 function Rows({ rows }: { rows: PayloadRow[] }) {
   return (
     <dl className="stack" style={{ gap: 'var(--space-3)', margin: 0 }}>
@@ -46,6 +47,15 @@ function Rows({ rows }: { rows: PayloadRow[] }) {
 }
 
 // @find: PayloadPreview, payload preview, approval preview, what will be sent, email preview, message preview
+/**
+ * Shows an approval's payload the way a person should read it before approving.
+ * The payload string is parsed with parsePayload. A structured payload shows the known fields first, then
+ * the remaining fields under "Other details", never omitting any, as plain text with line breaks and never as
+ * markup. A payload that is not a set of fields is shown verbatim in a preformatted block. The caption
+ * comes from previewCaption(actionClass). For structured payloads a collapsible reveals the raw request
+ * (formatPayload). The scrolling region is focusable so keyboard users can read long requests.
+ * State: whether the raw view is open. Used by ApprovalCard, InlineApproval and BulkDecision.
+ */
 export function PayloadPreview({ payload, actionClass }: { payload: string; actionClass: string | null | undefined }) {
   const [rawOpen, setRawOpen] = useState(false)
   const parsed = parsePayload(payload)

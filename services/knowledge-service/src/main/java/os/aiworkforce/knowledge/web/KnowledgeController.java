@@ -76,6 +76,15 @@ public class KnowledgeController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.platform.web.audit.AuditClient audit;
 
+    /**
+     * Creates the controller.
+     *
+     * @param sources reads sources the caller may see
+     * @param documents lists documents
+     * @param chunks reads a document's passages
+     * @param retrieval runs searches
+     * @param ingestion creates, updates, indexes, reindexes and deletes
+     */
     public KnowledgeController(
             Sources sources,
             Documents documents,
@@ -90,6 +99,9 @@ public class KnowledgeController {
     }
 
     /**
+     * A source as the console shows it, with its counts, embedding model and last error. Built by
+     * {@code toView(Source)}.
+     *
      * @param restricted whether only people who manage knowledge can search and see it
      * @param searchMode how it is searched: {@code keyword} for a source whose embeddings are the
      *     offline sandbox's, which carry no meaning, otherwise {@code keyword+meaning}
@@ -112,6 +124,9 @@ public class KnowledgeController {
             UUID agentId) {}
 
     /**
+     * A document as the console lists it. Built by {@code toView(Document)}, also used by
+     * {@code AgentKnowledgeController}.
+     *
      * @param skipReason why nothing of it could be indexed
      * @param notice something worth knowing about a document that was indexed, such as only the
      *     first part of a very long file being kept
@@ -128,6 +143,9 @@ public class KnowledgeController {
             boolean removedAtSource) {}
 
     /**
+     * The body of the public search.
+     *
+     * @param query what to find, at most 1,000 characters
      * @param limit how many passages to return, 8 when left out
      * @param sourceIds the sources to search, or none for every one the caller may read; a source
      *     the caller may not read is left out silently, as if it did not exist
@@ -138,6 +156,8 @@ public class KnowledgeController {
             List<UUID> sourceIds) {}
 
     /**
+     * The result of the public search, shared with {@code InternalSearchController}.
+     *
      * @param passages what supports an answer, with enough detail to cite each one
      * @param grounded false when nothing matched, so the caller says "no source supports this"
      *     rather than presenting an empty result as a failure
@@ -147,6 +167,12 @@ public class KnowledgeController {
     public record SearchResponse(List<RetrievalService.Passage> passages, boolean grounded, boolean degraded) {}
 
     // @find: list knowledge sources, GET /api/sources, Knowledge page source list
+    /**
+     * {@code GET /api/sources}: lists the sources the caller may see.
+     *
+     * <p>Permission: {@code knowledge:read}. Read-only. Restricted sources appear only for someone who
+     * holds {@code knowledge:source_manage}; agent-owned sources never appear.
+     */
     @GetMapping("/sources")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Connected knowledge sources")
@@ -157,6 +183,11 @@ public class KnowledgeController {
     }
 
     // @find: get one source, GET /api/sources/{sourceId}
+    /**
+     * {@code GET /api/sources/{sourceId}}: one source.
+     *
+     * <p>Permission: {@code knowledge:read}. A restricted source the caller may not see gives a 404.
+     */
     @GetMapping("/sources/{sourceId}")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "One source")
@@ -164,6 +195,7 @@ public class KnowledgeController {
         return toView(visibleSource(sourceId));
     }
 
+    /** The body of the source update: a new name, a new restriction, or both. A missing field is left as it is. */
     public record UpdateSourceRequest(@Size(max = 120) String name, Boolean restricted) {}
 
     // @find: update source, rename source, restrict source, PATCH /api/sources/{sourceId}
@@ -172,6 +204,13 @@ public class KnowledgeController {
      *
      * <p>Restricting a source takes effect on the next search. It cannot take back passages already
      * shown to somebody, such as those quoted in a conversation before the change.
+     *
+     * <p>{@code PATCH /api/sources/{sourceId}}. Permission: {@code knowledge:source_manage}. Delegates
+     * to {@code IngestionService.updateSource} and records a {@code source.update} audit event with the
+     * fields changed. Returns the updated source.
+     *
+     * @throws ApiException a validation error for an empty name; not found for an unknown source;
+     *     {@code ALREADY_EXISTS} when the name is taken
      */
     @PatchMapping("/sources/{sourceId}")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
@@ -194,6 +233,12 @@ public class KnowledgeController {
     }
 
     // @find: list documents in a source, GET /api/sources/{sourceId}/documents
+    /**
+     * {@code GET /api/sources/{sourceId}/documents}: lists a source's documents, including skipped ones.
+     *
+     * <p>Permission: {@code knowledge:read}. Read-only; ordered by title. A restricted source the caller
+     * may not see gives a 404.
+     */
     @GetMapping("/sources/{sourceId}/documents")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Documents in a source, including the ones that could not be indexed")
@@ -217,6 +262,7 @@ public class KnowledgeController {
      * @param total how many passages the document has in all
      * @param page which page of them this is, from 0
      */
+    /** One page of a document's passages, with the total so the console can page through them. */
     public record DocumentPassages(
             UUID documentId, String title, long total, int page, int size, List<PassageView> passages) {}
 
@@ -224,6 +270,15 @@ public class KnowledgeController {
     /**
      * A document's passages in reading order, so a person can see what search will find in it -
      * and why a question it should answer comes back empty - without running an agent.
+     *
+     * <p>{@code GET /api/sources/{sourceId}/documents/{documentId}/chunks}. Permission:
+     * {@code knowledge:read}. Read-only. The document is looked up through its source, so an
+     * identifier from another source is not found.
+     *
+     * @param page the page number from 0
+     * @param size passages per page, from 1 to 200
+     * @throws ApiException a validation error for a bad page or size; not found for an unknown or
+     *     invisible source, or a document not in that source
      */
     @GetMapping("/sources/{sourceId}/documents/{documentId}/chunks")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
@@ -263,6 +318,15 @@ public class KnowledgeController {
     }
 
     // @find: search the knowledge base, POST /api/knowledge/search, citations, ask documents
+    /**
+     * {@code POST /api/knowledge/search}: searches the knowledge base as the caller.
+     *
+     * <p>Permission: {@code knowledge:query}. Read-only; delegates to {@code RetrievalService.retrieve}
+     * with eight passages by default, and with restricted sources only for someone who manages knowledge.
+     * Nothing found is a normal answer, not an error: {@code grounded} is false.
+     *
+     * @return the cited passages, whether the search was grounded, and whether it was degraded
+     */
     @PostMapping("/knowledge/search")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_QUERY)
     @Operation(summary = "Search the knowledge base, with a citation for every passage")
@@ -278,10 +342,24 @@ public class KnowledgeController {
         return new SearchResponse(found.passages(), !found.passages().isEmpty(), found.degraded());
     }
 
-    /** @param restricted whether only people who manage knowledge may search it; false when left out */
+    /**
+     * The body of the source creation.
+     *
+     * @param kind the kind of source; {@code upload} when left out
+     * @param restricted whether only people who manage knowledge may search it; false when left out
+     */
     public record CreateSourceRequest(@NotBlank @Size(max = 120) String name, String kind, Boolean restricted) {}
 
     // @find: create knowledge source, where the knowledge base is created, POST /api/sources, New source button
+    /**
+     * {@code POST /api/sources}: creates an empty source to upload documents into.
+     *
+     * <p>Permission: {@code knowledge:source_manage}. Delegates to {@code IngestionService.createSource} and
+     * records a {@code source.create} audit event.
+     *
+     * @return the new source
+     * @throws ApiException {@code ALREADY_EXISTS} when the workspace already has a source of that name
+     */
     @PostMapping("/sources")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
     @Operation(summary = "Create a source to upload documents into")
@@ -308,6 +386,15 @@ public class KnowledgeController {
      * <p>{@code mode} decides what happens when the source already holds a file of that name:
      * {@code replace}, the default, makes this the new version; {@code keep_both} keeps the old
      * one and stores this under the next free name.
+     *
+     * <p>{@code POST /api/sources/{sourceId}/documents}, multipart. Permission:
+     * {@code knowledge:source_manage}. The file must not be empty and is limited to 25 MB. Delegates to
+     * {@code IngestionService.ingest} (extraction, chunking, embedding, vector writes) and, when a
+     * document was stored, records a {@code document.upload} or {@code document.replace} audit event.
+     *
+     * @param mode {@code replace} or {@code keep_both}; replace when left out
+     * @throws ApiException a validation error for an empty, oversized file or unknown mode;
+     *     {@code INGESTION_FAILED} when the upload cannot be read; not found for an unknown source
      */
     @PostMapping(value = "/sources/{sourceId}/documents", consumes = "multipart/form-data")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
@@ -344,7 +431,14 @@ public class KnowledgeController {
         }
     }
 
-    /** @param recovered documents whose indexing had stopped part way, now finished */
+    /**
+     * The response of the reindex endpoint.
+     *
+     * @param documentsQueued the number of documents examined, which is also the number reindexed
+     * @param vectorised whether vectors could be written
+     * @param detail why vectors could not be written, or null
+     * @param recovered documents whose indexing had stopped part way, now finished
+     */
     public record ReindexResponse(
             UUID sourceId, String status, int documentsQueued, boolean vectorised, String detail, int recovered) {}
 
@@ -353,6 +447,12 @@ public class KnowledgeController {
      * Re-embeds a source from its already-stored text, for when the vector store was down
      * during ingestion. Nothing is re-uploaded: the passages survived that failure in Postgres,
      * so this only retries the embed-and-upsert half.
+     *
+     * <p>{@code POST /api/sources/{sourceId}/reindex}. Permission: {@code knowledge:source_manage}.
+     * Delegates to {@code IngestionService.reindex}, which runs for as long as it takes. It writes no
+     * audit event. A vector failure is reported in the response, not as an error.
+     *
+     * @throws ApiException not found for an unknown source
      */
     @PostMapping("/sources/{sourceId}/reindex")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
@@ -374,6 +474,12 @@ public class KnowledgeController {
      *
      * <p>A hard delete, because this is what honours an erasure request or retires a file uploaded
      * by mistake. It stops being citable as soon as this returns.
+     *
+     * <p>{@code DELETE /api/sources/{sourceId}/documents/{documentId}}. Permission:
+     * {@code knowledge:source_manage}. Delegates to {@code IngestionService.deleteDocument}, records a
+     * {@code document.delete} audit event and returns 204.
+     *
+     * @throws ApiException not found for an unknown source or a document not in it
      */
     @DeleteMapping("/sources/{sourceId}/documents/{documentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -385,7 +491,14 @@ public class KnowledgeController {
     }
 
     // @find: delete source, remove knowledge source, DELETE /api/sources/{sourceId}
-    /** Erases a source with every document in it. Other sources in the workspace are untouched. */
+    /**
+     * Erases a source with every document in it. Other sources in the workspace are untouched.
+     *
+     * <p>{@code DELETE /api/sources/{sourceId}}. Permission: {@code knowledge:source_manage}. Delegates to
+     * {@code IngestionService.deleteSource}, records a {@code source.delete} audit event and returns 204.
+     *
+     * @throws ApiException not found for an unknown source
+     */
     @DeleteMapping("/sources/{sourceId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(Permission.Codes.KNOWLEDGE_SOURCE_MANAGE)
@@ -395,6 +508,14 @@ public class KnowledgeController {
         record("source.delete", "source", sourceId, java.util.Map.of());
     }
 
+    /**
+     * Records an audit event for a successful change, through the shared audit outbox. Does nothing when no
+     * audit client is present, as in a test that builds the controller by hand.
+     *
+     * @param action the event name, such as {@code source.create}
+     * @param resourceType {@code source} or {@code document}
+     * @param detail the facts to keep with the event
+     */
     private void record(String action, String resourceType, UUID id, java.util.Map<String, Object> detail) {
         if (audit != null) {
             audit.record(action, resourceType, id.toString(), "succeeded", detail);
@@ -402,6 +523,15 @@ public class KnowledgeController {
     }
 
     // @find: knowledge health, vector store status, GET /api/knowledge/health
+    /**
+     * {@code GET /api/knowledge/health}: whether the knowledge base can currently answer.
+     *
+     * <p>Permission: {@code knowledge:read}. Read-only. Counts the sources the caller may see, how many
+     * are ready and how many need attention, and, when asked, their documents and passages. It does not
+     * contact the vector store.
+     *
+     * @param includeCounts whether to add the document and passage totals
+     */
     @GetMapping("/knowledge/health")
     @RequiresPermission(Permission.Codes.KNOWLEDGE_READ)
     @Operation(summary = "Whether the knowledge base can currently answer")
@@ -422,6 +552,7 @@ public class KnowledgeController {
         return status;
     }
 
+    /** Builds the console view of a source. */
     private static SourceView toView(Source source) {
         return new SourceView(
                 source.getId(),
@@ -441,6 +572,7 @@ public class KnowledgeController {
                 source.getAgentId());
     }
 
+    /** Builds the console view of a document; {@code removedAtSource} is true for a tombstoned document. */
     static DocumentView toView(Document document) {
         return new DocumentView(
                 document.getId(),
@@ -454,6 +586,7 @@ public class KnowledgeController {
                 document.getTombstonedAt() != null);
     }
 
+    /** The workspace of the current request, as an identifier. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

@@ -14,12 +14,20 @@ import os.aiworkforce.platform.web.audit.AuditTokenSource;
  * The organisation service records audit events and delivers them through the shared outbox. The
  * relay runs on a timer, outside any request, so its token names the platform; the person an event
  * is about travels inside the event.
+ *
+ * <p>Package-private configuration: it imports the shared audit client and supplies the one missing
+ * piece, the token source. It is picked up by component scanning in this service only.
  */
 @Configuration(proxyBeanMethods = false)
 @Import(AuditClientConfiguration.class)
 class AuditWiring {
 
     // @find: audit token for analytics service
+    /**
+     * The token source for the audit relay. Each call asks {@code InternalTokenProvider} for a token
+     * whose audience is analytics-service; the provider caches it. Runs on the relay's scheduler thread,
+     * where there is no request actor, so the token names the system actor.
+     */
     @Bean
     AuditTokenSource auditTokenSource(InternalTokenProvider tokens) {
         return () -> tokens.forService("analytics");

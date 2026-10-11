@@ -20,6 +20,10 @@ export function passageItemId(prefix: string, index: number): string {
 }
 
 // @find: PassageList, passage list, passages, quoted passages, citations, sources
+/**
+ * Numbered list of quoted passages from workspace documents, shown by the documents card and under an answer.
+ * Props: passages, idPrefix (item ids, so a citation elsewhere can focus one), limit (how many show before "Show N more"), activeIndex (the passage a citation just opened, highlighted and always shown even if beyond the limit) and compact (two-line layout). Each item shows the document title, page, heading and a link built by passageLink, which opens inside the app when the viewer holds knowledge:read. State: whether all passages are shown.
+ */
 export function PassageList({
   passages,
   idPrefix,

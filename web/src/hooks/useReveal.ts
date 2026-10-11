@@ -16,6 +16,7 @@ import type { CSSProperties, RefCallback } from 'react'
 
 let sharedObserver: IntersectionObserver | null = null
 
+/** Lazily creates the single shared IntersectionObserver that sets data-inview on each element the first time it enters view, or returns null where the API is missing. */
 function revealObserver(): IntersectionObserver | null {
   if (typeof IntersectionObserver === 'undefined') return null
   if (!sharedObserver) {
@@ -34,6 +35,7 @@ function revealObserver(): IntersectionObserver | null {
   return sharedObserver
 }
 
+/** Ref callback body: starts observing the node and returns the cleanup. Without IntersectionObserver the node is revealed at once, so content is never left hidden. */
 function attachReveal(node: HTMLElement | null): (() => void) | undefined {
   if (!node) return undefined
   if (node.dataset.inview === 'true') return undefined

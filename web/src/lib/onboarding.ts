@@ -17,6 +17,7 @@
  * guide itself.
  */
 
+/** The steps of the getting-started guide on the Command Map. */
 export type GuideStep =
   | 'meet-agent'
   | 'give-task'
@@ -27,11 +28,15 @@ export type GuideStep =
   | 'connect-model'
   | 'see-role'
 
+/** Prefix of every localStorage key this module writes. */
 const PREFIX = 'aiwos.gs'
 
+/** localStorage key recording that one step is done for one user. */
 const stepKey = (userId: string, step: GuideStep) => `${PREFIX}.${userId}.${step}`
+/** localStorage key recording that a user hid the guide. */
 const hiddenKey = (userId: string) => `${PREFIX}.${userId}.hidden`
 
+/** Reads a stored flag; false when it is unset or storage is blocked. */
 function read(key: string): boolean {
   try {
     return window.localStorage.getItem(key) === '1'
@@ -43,6 +48,9 @@ function read(key: string): boolean {
 /** Dispatched on window after any change made in this tab. */
 export const GUIDE_CHANGE_EVENT = 'aiwos:guide'
 
+/**
+ * Sets or clears a stored flag, then dispatches GUIDE_CHANGE_EVENT so a guide already on screen re-reads. Returns false (and does not dispatch) when storage is blocked.
+ */
 function write(key: string, value: boolean): boolean {
   try {
     if (value) window.localStorage.setItem(key, '1')

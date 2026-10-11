@@ -22,6 +22,7 @@ import { highlightParts } from './conversationGroups'
  * that message's id to `onSelect` so the thread can scroll to it.
  */
 
+/** Three-dot icon for the row menu trigger. */
 function DotsIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -32,6 +33,7 @@ function DotsIcon() {
   )
 }
 
+/** Renders text with the parts that match the search query wrapped in mark elements (split by highlightParts). */
 function Highlighted({ text, query, className }: { text: string; query: string; className?: string }) {
   const parts = highlightParts(text, query)
   return (
@@ -50,6 +52,19 @@ function Highlighted({ text, query, className }: { text: string; query: string; 
 }
 
 // @find: ConversationRow, conversation row, conversation row, sidebar item, rename inline, pin conversation
+/**
+ * One conversation in the sidebar list: a link, an inline rename field and a portalled action menu.
+ * Props: the conversation, current (the open one), needsYou (adds the attention dot), tabbable (this row is
+ * the Tab stop of the roving list), now (for the compact time), highlight (the search text to mark), the
+ * action callbacks (onSelect, onRename, onTogglePin, onToggleArchive, onCopyLink, onDelete), rowRef (so
+ * ChatSidebar can focus it) and onNavigate (the roving list's key handler).
+ * Behaviour: a plain click calls onSelect with the matching message id for a search hit; modified clicks
+ * fall through so the link opens in a new tab. Shift+F10 or the ContextMenu key opens the menu. Rename
+ * appears only when conversation.canManage and so does Delete; choosing Rename swaps the link for an
+ * input that focuses itself, commits on Enter or blur with a trimmed non-empty changed title through
+ * onRename, and cancels on Escape. A conversation waiting on the viewer shows a labelled dot ("Needs your
+ * answer" or "Needs your approval"); an unread one adds a hidden "new reply" cue for screen readers.
+ */
 export function ConversationRow({
   conversation,
   current,

@@ -1,6 +1,6 @@
 // @find: redactor, redact secrets, mask api keys, remove personal data, logging safety, sensitive keys, tokens, passwords, emails, card numbers
 // @what: Removes secrets and personal data from text, JSON and maps before they are logged or stored.
-// @flow: Used by logging, audit and run traces
+// @flow: Used by orchestrator AgentRunner for run traces; available to any service for logs and audit payloads
 package os.aiworkforce.platform.observability;
 
 import java.util.List;
@@ -60,6 +60,7 @@ public class Redactor {
     private final Set<String> sensitiveKeys;
     private final boolean redactEmails;
 
+    /** Reads the sensitive key names (lower-cased) and the e-mail masking switch from configuration. */
     public Redactor(PlatformProperties properties) {
         PlatformProperties.Observability observability = properties.observability();
         this.sensitiveKeys = observability.redactKeys().stream()
@@ -86,6 +87,7 @@ public class Redactor {
         return result;
     }
 
+    /** Masks the local part of an address, keeping at most its first two characters, for example {@code ab***@example.com}. */
     private String maskEmail(java.util.regex.MatchResult match) {
         String address = match.group();
         int at = address.indexOf('@');
@@ -101,6 +103,7 @@ public class Redactor {
         return redactNode(node, 0);
     }
 
+    /** Walks a JSON tree: values under sensitive keys are masked, strings are text-redacted, and nesting beyond the depth limit is replaced by a truncation marker. Returns a new tree and never changes the input. */
     private JsonNode redactNode(JsonNode node, int depth) {
         if (node == null || node.isNull()) {
             return node;
@@ -168,6 +171,7 @@ public class Redactor {
         return value.substring(0, 4) + "…" + value.substring(value.length() - 4);
     }
 
+    /** Replaces every match of the pattern with the mask text. */
     static String replaceAll(String input, Pattern pattern) {
         Matcher matcher = pattern.matcher(input);
         return matcher.replaceAll(MASK);

@@ -14,14 +14,17 @@
  * primitive, and the demo says so.
  */
 
+/** Types of the model: an entry (sequence number, time, text), a recorded entry (adds the previous hash and its own hash) and the result of checking one entry (the recomputed hash, whether it was altered, and whether its stored previous hash no longer matches). */
 export type AuditEntry = { seq: number; time: string; text: string }
 
 export type Recorded = AuditEntry & { prev: string; hash: string }
 
 export type Verification = { recomputed: string; altered: boolean; prevMismatch: boolean }
 
+/** The previous hash of the first entry. */
 export const GENESIS = '00000000'
 
+/** The four demo audit entries, in order. */
 export const ENTRIES: ReadonlyArray<AuditEntry> = [
   { seq: 1041, time: '09:14:02', text: "HR agent's run completed: welcome email drafted" },
   { seq: 1042, time: '09:14:40', text: 'A manager approved gmail.send_message' },
@@ -29,9 +32,11 @@ export const ENTRIES: ReadonlyArray<AuditEntry> = [
   { seq: 1044, time: '09:15:10', text: "Research agent's run failed: no supporting document" },
 ]
 
+/** Constants of the 32-bit FNV-1a hash. */
 const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
 
+/** UTF-8 bytes of a string; without TextEncoder it falls back to the low byte of each character, which is enough because every demo entry is ASCII. */
 function utf8(input: string): ArrayLike<number> {
   if (typeof TextEncoder === 'function') return new TextEncoder().encode(input)
   // Only reached without TextEncoder; every entry above is plain ASCII.
@@ -50,6 +55,7 @@ export function fnv1a32(input: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+/** Hash of one entry over the previous hash, the sequence number and the text. */
 function entryHash(prev: string, entry: AuditEntry): string {
   return fnv1a32(`${prev}|${entry.seq}|${entry.text}`)
 }

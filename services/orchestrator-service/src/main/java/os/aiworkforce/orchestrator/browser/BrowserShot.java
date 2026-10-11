@@ -46,6 +46,7 @@ public class BrowserShot {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /** Builds a new screenshot row; a missing page address or title is stored as an empty string and the identifier and timestamp are assigned automatically. */
     public static BrowserShot of(UUID orgId, UUID runId, String toolCallId, String url, String title, byte[] jpeg) {
         BrowserShot shot = new BrowserShot();
         shot.orgId = orgId;

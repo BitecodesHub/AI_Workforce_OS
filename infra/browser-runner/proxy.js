@@ -46,6 +46,11 @@ const BLOCKED_HOSTS = new Set([
   'nr-data.net',
 ])
 
+/**
+ * Whether a host, or any parent domain of it, is on the ad and tracking list.
+ * @param {string} host a host name; case and one trailing dot are ignored.
+ * @returns {boolean} true when the request should be refused. Pure; never throws.
+ */
 function isBlockedHost(host) {
   const name = String(host || '').toLowerCase().replace(/\.$/, '')
   const parts = name.split('.')
@@ -64,6 +69,13 @@ const ANSWER_MS = 60 * 1000
 const REFUSAL_MS = 10 * 1000
 const CACHE_LIMIT = 500
 
+/**
+ * Wraps resolvePublic in a small in-memory cache.
+ * @param {Function} [lookup] a dns.lookup compatible function, replaceable in tests.
+ * @returns {function(string): Promise<object>} resolves a host to the guard's {ok, address} or
+ *   {ok: false, reason} answer. The cache holds at most CACHE_LIMIT hosts and drops the oldest
+ *   entry when full. Side effects: DNS queries on a miss; never throws.
+ */
 function cachedResolver(lookup) {
   const cache = new Map()
   return async (host) => {
@@ -81,6 +93,18 @@ function cachedResolver(lookup) {
  * Starts the proxy and resolves to {port, close}. Because the proxy resolves the name and dials
  * the IP it checked, a name that answers a public address to a check and a private one a moment
  * later (DNS rebinding) cannot slip through: Chromium never resolves names itself.
+ *
+ * Flow: plain http requests are rebuilt as an upstream request to the checked address (headers
+ * for proxying are removed, 20 s timeout); CONNECT requests become a raw tunnel to the checked
+ * address and port (30 s idle timeout). Ad and tracking hosts and non-public addresses get 403.
+ * Only http requests and CONNECT are accepted; the proxy listens on 127.0.0.1 and a free port.
+ * @param {{lookup?: Function, onRefused?: function(string): void}} [options] lookup replaces
+ *   dns.lookup in tests; onRefused is called with the host name of every address refused by the
+ *   guard (not for the ad list).
+ * @returns {Promise<{port: number, close: function(): Promise<void>}>} the chosen port and a
+ *   function that stops the server.
+ * Failure: a malformed request gets 400, an upstream error or timeout 502; no error reaches the
+ *   caller after the proxy has started.
  */
 function startProxy({ lookup, onRefused = () => {} } = {}) {
   const resolveHost = cachedResolver(lookup)

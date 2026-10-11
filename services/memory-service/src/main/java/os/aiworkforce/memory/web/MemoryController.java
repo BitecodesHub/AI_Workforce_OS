@@ -38,6 +38,7 @@ public class MemoryController {
 
     private final EpisodicMemory memory;
 
+    /** Creates the controller over episodic memory. */
     public MemoryController(EpisodicMemory memory) {
         this.memory = memory;
     }
@@ -56,6 +57,7 @@ public class MemoryController {
             boolean compacted,
             Instant occurredAt) {
 
+        /** Copies the fields of an entity into the response record. */
         static EpisodeView of(Episode episode) {
             return new EpisodeView(
                     episode.getId(),
@@ -73,6 +75,11 @@ public class MemoryController {
     }
 
     // @find: GET /api/memory/episodes, getEpisodes, endpoint, memory
+    /**
+     * Route: GET /api/memory/episodes?agentId=&query=&limit=. Permission: memory:read. Returns one agent's
+     * episodes: most important first when no query is given, otherwise those matching the search. The limit
+     * defaults to 20 and is capped at 50. Read-only; scoped to the caller's workspace.
+     */
     @GetMapping("/episodes")
     @RequiresPermission(Permission.Codes.MEMORY_READ)
     @Operation(summary = "What one agent remembers, most important first, or matching a search")
@@ -86,6 +93,10 @@ public class MemoryController {
     }
 
     // @find: GET /api/memory/episodes/run/{runId}, getEpisodesForRun, endpoint, memory
+    /**
+     * Route: GET /api/memory/episodes/run/{runId}. Permission: memory:read. Returns the episodes recorded
+     * during one run, oldest first; empty when the run has none. Read-only.
+     */
     @GetMapping("/episodes/run/{runId}")
     @RequiresPermission(Permission.Codes.MEMORY_READ)
     @Operation(summary = "What was remembered during one run, in order")
@@ -93,6 +104,7 @@ public class MemoryController {
         return memory.forRun(orgId(), runId).stream().map(EpisodeView::of).toList();
     }
 
+    /** Reads the workspace id from the authenticated request; fails when the request has none. */
     private static UUID orgId() {
         return UUID.fromString(RequestContext.requireOrgId());
     }

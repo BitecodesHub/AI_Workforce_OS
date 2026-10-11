@@ -49,20 +49,37 @@ type Held = { controller: AbortController | null; previewUrl: string | null }
 let nextLocalId = 0
 const localId = () => `att-${(nextLocalId += 1)}`
 
+/** User-facing text for a failed upload: an ApiError keeps its message, anything else gets a generic retry sentence. */
 function failureReason(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Something went wrong. Try again.'
 }
 
+/** Sentence explaining which files were not added because of the per-message file cap (MAX_ATTACHMENTS). */
 function capMessage(skipped: string[]): string {
   const names = skipped.length === 1 ? skipped[0]! : `${skipped.length} files`
   return `You can attach up to ${MAX_ATTACHMENTS} files to one message, so ${names} ${skipped.length === 1 ? 'was' : 'were'} not added.`
 }
 
+/** True when the browser can make an object URL and the file is an image it can display, so a thumbnail is possible. */
 function canPreview(file: File): boolean {
   return typeof URL.createObjectURL === 'function' && isViewableImage({ name: file.name, mimeType: file.type })
 }
 
 // @find: useAttachments, use attachments, attachments hook, upload attachment, attach files, upload progress
+/**
+ * Hook that owns the files attached to the message being written and uploads them.
+ * Flow: add() checks each file (checkFile), starts an upload for every acceptable file at once
+ * (uploadAttachment, with progress and an AbortController), makes an object URL preview for viewable
+ * images, and records files that fail validation as error items. Only MAX_ATTACHMENTS non-error items are
+ * allowed; the rest are skipped with a notice. remove() cancels a running upload or deletes the unsent
+ * draft on the server (an upload removed mid-flight is deleted once its id is known). clear() forgets the
+ * items after a send without deleting them. readyIds lists the ids to send; uploading and hasErrors drive
+ * the Send button.
+ * Effects: items that leave the list have their upload aborted and preview URL revoked, everything is
+ * released on unmount, and moving to a different conversation drops the drafts (a new chat that receives
+ * its id on first send keeps them). statusMessage feeds a polite live region and notice is a visible caption.
+ * Used by Composer; the returned object is also exported as UseAttachments.
+ */
 export function useAttachments(conversationId: string | null) {
   const [items, setItems] = useState<DraftAttachment[]>([])
   const [statusMessage, setStatusMessage] = useState('')

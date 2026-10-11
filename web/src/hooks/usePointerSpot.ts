@@ -17,6 +17,9 @@ import { useReducedMotion } from './useReducedMotion'
 const FINE_POINTER = '(hover: hover) and (pointer: fine)'
 
 // @find: usePointerSpot hook, hover spotlight
+/**
+ * Returns a ref callback that makes the element track the pointer for the .lp-spot highlight. Writes --mx and --my (pixels from the element's top left) at most once per animation frame. Attaches nothing on touch screens, under reduced motion, or where matchMedia or requestAnimationFrame is missing. The returned cleanup removes the listener and cancels a pending frame.
+ */
 export function usePointerSpot<T extends HTMLElement>(): RefCallback<T> {
   const reduced = useReducedMotion()
 

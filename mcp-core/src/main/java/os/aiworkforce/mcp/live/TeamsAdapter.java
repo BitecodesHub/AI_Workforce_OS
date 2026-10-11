@@ -1,6 +1,6 @@
 // @find: microsoft teams, teams, channels, chat, messages, list channels, get messages, post message, Graph API, OAuth, live adapter, real API, communication
 // @what: Live Microsoft Teams connector: runs teams__ tools (list channels, read and post messages) against Microsoft Graph with an OAuth access token.
-// @flow: Registered by SandboxServerRegistry beside the sandbox twin; invoked through ToolGateway.invoke; base class LiveServerAdapter
+// @flow: Registered by SandboxServerRegistry beside the sandbox twin (case "teams"); ToolGateway.invoke reaches it through LiveServerAdapter.invoke, and post_message passes the approval gate first; OAuthAdapter supplies the bearer token and the one renew-and-retry after a 401; calls go to graph.microsoft.com, one call per tool plus one per joined team to find a channel; base class OAuthAdapter
 package os.aiworkforce.mcp.live;
 
 import java.util.ArrayList;
@@ -19,18 +19,34 @@ import os.aiworkforce.mcp.model.ToolInvocation;
 import os.aiworkforce.mcp.model.ToolResult;
 import os.aiworkforce.mcp.sandbox.SandboxServerAdapter;
 
-/** Microsoft Teams channels through Microsoft Graph with an OAuth access token. */
+/**
+ * Microsoft Teams channels through Microsoft Graph with an OAuth access token.
+ *
+ * <p>Used by the tool gateway when a workspace has connected a Microsoft account. list_channels and
+ * get_messages are read tools; post_message is outbound and always asks a person first, because it
+ * publishes text in a channel. A post is not idempotent, so a dropped connection is reported as
+ * indeterminate and the post is never repeated.
+ *
+ * <p>Failures: a missing argument, an unknown or ambiguous team or channel becomes a plain failed
+ * result; a 401 triggers one token renewal in the base class.
+ */
 public final class TeamsAdapter extends OAuthAdapter {
 
+    /** The production Microsoft Graph address; tests pass another base URL to the constructor. */
     public static final String BASE_URL = "https://graph.microsoft.com/v1.0";
 
+    /** The most joined teams searched, to bound the number of calls made when a channel is looked up by name. */
     private static final int MAX_TEAMS = 25;
+    /** How many teams have their channels fetched at the same time. */
     private static final int TEAM_CONCURRENCY = 3;
 
+    /** A joined team: its id and display name. */
     private record Team(String id, String name) {}
 
+    /** A channel with the team it belongs to; the team name and description may be empty when the channel was named directly. */
     private record Channel(String teamId, String team, String id, String name, String description) {}
 
+    /** Registers the three Teams tools. The sandbox supplies the tool definitions. */
     public TeamsAdapter(SandboxServerAdapter sandbox, ObjectMapper json, WebClient.Builder http, String baseUrl) {
         super(sandbox, "Microsoft Teams", json, http, baseUrl);
         on("list_channels", this::listChannels);
@@ -38,6 +54,7 @@ public final class TeamsAdapter extends OAuthAdapter {
         on("post_message", this::postMessage);
     }
 
+    /** Connection check: GET the signed-in user; answers the mail address, else the sign-in name, else the display name. */
     @Override
     protected Mono<String> whoAmI(String token) {
         return get(token, "/me").map(me -> {
@@ -53,6 +70,11 @@ public final class TeamsAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Teams list channels, tool teams__list_channels, live Microsoft Teams call
+    /**
+     * Read tool. Lists the channels of the joined teams (at most 25 teams), or of one team when a team
+     * name or id is given. Costs one call for the teams plus one per team. Fails when the team name is
+     * unknown or matches more than one team.
+     */
     private Mono<ToolResult> listChannels(ToolInvocation invocation, JsonNode arguments, String token) {
         String requested = text(arguments, "team");
         return teams(token).flatMap(teams -> {
@@ -82,6 +104,10 @@ public final class TeamsAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Teams get messages, tool teams__get_messages, live Microsoft Teams call
+    /**
+     * Read tool. Resolves the channel, then GET its latest messages, at most 50. HTML bodies are reduced to
+     * text. Needs the channel read permission granted to the connection.
+     */
     private Mono<ToolResult> getMessages(ToolInvocation invocation, JsonNode arguments, String token) {
         String reference = required(arguments, "channel");
         int top = Math.min(limit(arguments, 20, 50), 50);
@@ -112,6 +138,10 @@ public final class TeamsAdapter extends OAuthAdapter {
     }
 
     // @find: Microsoft Teams post message, tool teams__post_message, live Microsoft Teams call
+    /**
+     * Outbound tool; a person always approves it first. Resolves the channel, then POST the text as a new
+     * message from the signed-in account. Fails before any call when the channel or text is missing.
+     */
     private Mono<ToolResult> postMessage(ToolInvocation invocation, JsonNode arguments, String token) {
         String reference = required(arguments, "channel");
         String content = required(arguments, "text");
@@ -137,6 +167,7 @@ public final class TeamsAdapter extends OAuthAdapter {
 
     // ---- Resolving teams and channels ---------------------------------------------------------
 
+    /** GET the joined teams, keeping at most the first 25. */
     private Mono<List<Team>> teams(String token) {
         return get(token, "/me/joinedTeams").map(answer -> {
             List<Team> teams = new ArrayList<>();
@@ -149,6 +180,7 @@ public final class TeamsAdapter extends OAuthAdapter {
         });
     }
 
+    /** Teams whose id matches the request; when none does, teams whose name matches, ignoring case. */
     private static List<Team> matchTeams(List<Team> teams, String requested) {
         List<Team> byId = teams.stream().filter(team -> team.id().equalsIgnoreCase(requested)).toList();
         return byId.isEmpty()
@@ -156,6 +188,7 @@ public final class TeamsAdapter extends OAuthAdapter {
                 : byId;
     }
 
+    /** GET the channels of each team, a few teams at a time, and return them in team order. */
     private Mono<List<Channel>> channelsOf(String token, List<Team> teams) {
         return Flux.fromIterable(teams)
                 .flatMapSequential(
@@ -174,7 +207,13 @@ public final class TeamsAdapter extends OAuthAdapter {
                 .map(lists -> lists.stream().flatMap(List::stream).toList());
     }
 
-    /** "teamId/channelId", or a channel id or name found among the joined teams. */
+    /**
+     * "teamId/channelId", or a channel id or name found among the joined teams.
+     *
+     * Turns a channel reference into a channel. The form teamId/channelId needs no lookup and makes no
+     * call; an id or a name is searched among all joined teams, which costs one call per team. Fails
+     * with a plain message when nothing or more than one channel matches.
+     */
     private Mono<Channel> resolve(String token, String reference) {
         if (reference.contains("/")) {
             String[] parts = reference.split("/", -1);

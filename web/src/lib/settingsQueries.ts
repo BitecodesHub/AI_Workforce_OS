@@ -88,8 +88,10 @@ export type Workspace = { id: string; name: string; slug: string; timezone: stri
 /** The same limit as WorkspaceController.UpdateSettingsRequest. */
 export const WORKSPACE_NAME_MAX = 120
 
+/** The values of the workspace settings form. */
 export type WorkspaceForm = { name: string; timezone: string }
 
+/** Field problems for the workspace settings form; a missing key means the field is fine. */
 export type WorkspaceFormErrors = { name?: string | undefined; timezone?: string | undefined }
 
 // @find: validate workspace name and time zone, Settings page form errors
@@ -109,6 +111,9 @@ export function validateWorkspaceForm(form: WorkspaceForm, choices: readonly str
 }
 
 // @find: get workspace, workspace name and time zone; route: GET /api/workspaces/{id}; used by: Settings page
+/**
+ * Query for one workspace (GET /api/workspaces/{id}, key ['workspace', id]), disabled until an id is known. Used by the Settings page for the name and time zone.
+ */
 export function useWorkspace(id: string | null | undefined) {
   return useQuery({
     queryKey: ['workspace', id],
@@ -152,8 +157,10 @@ export type NotificationTest = { delivered: boolean; statusCode?: number | null;
 
 /** The service's own limits (NotificationService.SECRET_MIN and SECRET_MAX). */
 export const SECRET_MIN = 8
+/** Longest webhook signing secret accepted. */
 export const SECRET_MAX = 256
 
+/** Field problems for the notification form; a missing key means the field is fine. */
 export type NotificationErrors = {
   webhookUrl?: string | undefined
   secret?: string | undefined
@@ -183,6 +190,9 @@ export function validateNotifications(
 }
 
 // @find: notification settings, webhook, events to hear about; route: GET /api/orchestrator/notification-settings; used by: Settings page, Setup page
+/**
+ * Query for the workspace's notification settings (GET /api/orchestrator/notification-settings, key ['notification-settings']): webhook address, secret and events. Used by the Settings and Setup pages; pass enabled false when the person lacks permission.
+ */
 export function useNotificationSettings(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['notification-settings'],
@@ -192,6 +202,9 @@ export function useNotificationSettings(options: { enabled?: boolean } = {}) {
 }
 
 // @find: save notification settings, set webhook; route: PUT /api/orchestrator/notification-settings; used by: Settings page
+/**
+ * Mutation that saves notification settings (PUT /api/orchestrator/notification-settings). On success it writes the saved settings into the cache under ['notification-settings'], so no refetch is needed.
+ */
 export function useSaveNotificationSettings() {
   const client = useQueryClient()
   return useMutation({
@@ -221,6 +234,9 @@ export type RetentionSettings = {
 }
 
 // @find: retention settings, how long run detail is kept; route: GET /api/orchestrator/retention-settings; used by: Settings page
+/**
+ * Query for how long run detail is kept (GET /api/orchestrator/retention-settings, key ['retention-settings']), including the allowed range. Used by the Settings page.
+ */
 export function useRetentionSettings(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['retention-settings'],
@@ -230,6 +246,9 @@ export function useRetentionSettings(options: { enabled?: boolean } = {}) {
 }
 
 // @find: save retention, run detail days; route: PUT /api/orchestrator/retention-settings; used by: Settings page
+/**
+ * Mutation that saves the number of days run detail is kept (PUT /api/orchestrator/retention-settings with runDetailDays). On success the saved value replaces the cached one.
+ */
 export function useSaveRetentionSettings() {
   const client = useQueryClient()
   return useMutation({
@@ -248,6 +267,7 @@ export function useSaveRetentionSettings() {
  */
 export type RequesterRule = 'off' | 'destructive' | 'all'
 
+/** Words shown for each requester rule in the Settings page. */
 export const REQUESTER_RULE_LABEL: Record<RequesterRule, string> = {
   off: 'Off: the person who asked may approve',
   destructive: 'For actions that delete or cannot be undone',
@@ -255,6 +275,9 @@ export const REQUESTER_RULE_LABEL: Record<RequesterRule, string> = {
 }
 
 // @find: approval settings, requester cannot approve, second pair of eyes; route: GET /api/approvals/settings; used by: Settings page
+/**
+ * Query for the approval rule that stops the requester approving their own work (GET /api/approvals/settings, key ['approval-settings']). Used by the Settings page; enabled false skips it.
+ */
 export function useApprovalSettings(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['approval-settings'],
@@ -264,6 +287,9 @@ export function useApprovalSettings(options: { enabled?: boolean } = {}) {
 }
 
 // @find: save approval rule, requester cannot approve own work; route: PUT /api/approvals/settings; used by: Settings page
+/**
+ * Mutation that saves the requester rule (PUT /api/approvals/settings with requesterCannotApprove). On success it updates the cached setting and refetches the approvals lists, because who may decide each waiting request depends on the rule.
+ */
 export function useSaveApprovalSettings() {
   const client = useQueryClient()
   return useMutation({

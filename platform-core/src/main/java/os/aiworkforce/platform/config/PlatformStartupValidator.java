@@ -26,10 +26,26 @@ public class PlatformStartupValidator {
 
     private final PlatformProperties properties;
 
+    /**
+     * Receives the bound settings tree, which is read again by {@link #validate()}.
+     */
     public PlatformStartupValidator(PlatformProperties properties) {
         this.properties = properties;
     }
 
+    /**
+     * Checks the settings once the application is ready, and refuses to continue when they are unsafe.
+     *
+     * <p>Flow: asks {@link PlatformProperties#validateForEnvironment()} for every problem; when there
+     * are none, logs the service name, version and environment and returns. Otherwise it logs each
+     * problem at error level and throws.
+     *
+     * <p>Triggered by Spring's {@code ApplicationReadyEvent}. No database, network or audit side
+     * effects. Local and test environments always pass, because the underlying check returns nothing
+     * for them.
+     *
+     * @throws IllegalStateException listing the number of problems, which stops the process
+     */
     // @find: scheduled job or startup listener validate, startup validator
     @EventListener(ApplicationReadyEvent.class)
     public void validate() {

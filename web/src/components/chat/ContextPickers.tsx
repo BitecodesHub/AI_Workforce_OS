@@ -28,10 +28,12 @@ import type { ComposerContext, RepoChoice, SkillChoice } from './composerContext
  * Focuses a list's first control as it mounts. A list can appear after its data loads, or one
  * level down without the popover's view changing, so focusing on the view change alone missed it.
  */
+/** Ref callback that focuses an element when it mounts, so the first control of a freshly shown picker takes focus. */
 const focusOnMount = (element: HTMLElement | null) => {
   element?.focus()
 }
 
+/** Back arrow icon for the picker header. */
 function BackIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -40,6 +42,7 @@ function BackIcon() {
   )
 }
 
+/** Tick icon marking a chosen option. */
 function CheckIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -48,6 +51,7 @@ function CheckIcon() {
   )
 }
 
+/** Header row of a picker view: a back button that returns to the "+" menu, the title, and an optional action such as Done or Manage. */
 function PickerHeader({ title, onBack, action }: { title: string; onBack: () => void; action?: ReactNode }) {
   return (
     <div className="plus-picker-header">
@@ -60,6 +64,10 @@ function PickerHeader({ title, onBack, action }: { title: string; onBack: () => 
   )
 }
 
+/**
+ * One row of a SearchList: label, optional note and icon, chosen (shown with a tick), disabled, and an
+ * optional drill action that opens a list one level down.
+ */
 export type SearchItem = {
   id: string
   label: string
@@ -202,6 +210,7 @@ export function SearchList({
   )
 }
 
+/** Polite status line with a spinner for a picker that is loading. */
 function Loading({ label }: { label: string }) {
   return (
     <p className="plus-state caption muted" role="status">
@@ -210,16 +219,25 @@ function Loading({ label }: { label: string }) {
   )
 }
 
+/** Case-insensitive substring test of a query against several fields; an empty query matches everything. */
 const matches = (query: string, ...fields: (string | null | undefined)[]) => {
   const q = query.trim().toLowerCase()
   if (!q) return true
   return fields.some((field) => field?.toLowerCase().includes(q))
 }
 
+/** Formats a count with its singular or plural noun using Australian number formatting. */
 const plural = (count: number, one: string, many: string) => `${count.toLocaleString('en-AU')} ${count === 1 ? one : many}`
 
 /* ---- Knowledge ---------------------------------------------------------------------------------- */
 
+/**
+ * Second level of the knowledge picker: the documents of one source.
+ * Reads useSourceDocuments(source.id). The first row chooses the whole source; the other rows choose single
+ * documents, which are disabled when they are not searchable yet (no passages, or removed at the source),
+ * when the whole source is already chosen, or when MAX_KNOWLEDGE items are already attached. Choosing a row
+ * calls toggleKnowledge and passes the new context to onChange. Shows loading and error states.
+ */
 function DocumentsList({
   source,
   context,
@@ -291,6 +309,13 @@ function DocumentsList({
 }
 
 // @find: KnowledgePicker, add from knowledge, choose documents to ground message
+/**
+ * Picker for attaching workspace knowledge to the message ("Add from Knowledge" in the "+" menu).
+ * Reads useSources and lists the shared sources (an agent's own documents are not offered, because only that
+ * agent searches them). A row toggles the whole source; its arrow, or the Right key, opens DocumentsList to
+ * choose single documents. Sources with no documents are disabled and the cap MAX_KNOWLEDGE applies.
+ * Done appears once something is chosen. Shows loading, error and empty states. Rendered by PlusMenu.
+ */
 export function KnowledgePicker({
   context,
   onChange,
@@ -376,6 +401,14 @@ export function KnowledgePicker({
 
 /* ---- Repository --------------------------------------------------------------------------------- */
 
+/**
+ * Second level of the repository picker: choose a branch and an optional folder or file of one repository.
+ * Reads useGitHubBranches for the branch list and useGitHubTree for the folder being browsed, with a filter
+ * box, an "up one folder" row and at most 500 rows shown. The path field is free text (Enter attaches) and
+ * a folder or file row sets or opens it. Attach repository calls onAttach with owner, name, branch and
+ * normalised path. State: branch, path, the folder being browsed and the filter. Shows read errors and a
+ * loading line while folders are read.
+ */
 function RepoDetail({
   repo,
   current,
@@ -517,6 +550,12 @@ function RepoDetail({
 }
 
 // @find: RepoPicker, attach a repository, choose GitHub repo, not connected explains Connectors
+/**
+ * Picker for attaching a GitHub repository ("Attach a repository" in the "+" menu).
+ * Reads useGitHubRepos and lists the repositories with their visibility and description. A repository row
+ * opens RepoDetail. When GitHub is not connected, it explains that and offers a button that navigates to
+ * /connectors. Shows loading and error states. Rendered by PlusMenu; current is the repository already attached.
+ */
 export function RepoPicker({
   current,
   onBack,
@@ -592,6 +631,12 @@ export function RepoPicker({
 /* ---- Skills ------------------------------------------------------------------------------------- */
 
 // @find: SkillPicker, use a skill, choose a playbook for this message
+/**
+ * Picker for using a skill with the message ("Use a skill" in the "+" menu).
+ * Reads useSkills and filters by name and description; choosing a row calls onChoose with the skill id, name
+ * and default agent. The header has a Manage action that navigates to /skills. Shows loading, error and
+ * empty states. Rendered by PlusMenu.
+ */
 export function SkillPicker({
   current,
   onBack,
@@ -659,6 +704,11 @@ export function SkillPicker({
 /* ---- Agents ------------------------------------------------------------------------------------- */
 
 // @find: AgentPicker, choose an agent from plus menu
+/**
+ * Picker for choosing an agent from the "+" menu, the alternative to typing @. Lists the supplied active
+ * agents with an avatar and category, marks those already mentioned, and calls onChoose with the agent picked.
+ * Rendered by PlusMenu.
+ */
 export function AgentPicker({
   agents,
   mentionedIds,

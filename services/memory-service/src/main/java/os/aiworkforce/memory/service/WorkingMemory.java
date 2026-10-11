@@ -31,21 +31,50 @@ import os.aiworkforce.platform.error.ErrorCode;
 @Service
 public class WorkingMemory {
 
+    /** Logger for Redis degradation warnings. */
     private static final Logger log = LoggerFactory.getLogger(WorkingMemory.class);
+    /**
+     * Namespace for every Redis key of this tier; the full key is prefix, organisation, scope and
+     * key.
+     */
     private static final String PREFIX = "aiwos:working:";
+    /**
+     * Lifetime of an entry; each write restarts it, and expiry is the normal way entries
+     * disappear.
+     */
     private static final Duration DEFAULT_TTL = Duration.ofHours(4);
+    /** Largest accepted value in UTF-8 bytes. */
     private static final int MAX_VALUE_BYTES = 256 * 1024;
 
     private final StringRedisTemplate redis;
 
+    /** Creates the service over the shared Redis string template. */
     public WorkingMemory(StringRedisTemplate redis) {
         this.redis = redis;
     }
 
-    /** @param degraded true when the store was unreachable and the value was not written */
+    /**
+     * Outcome of a scratchpad write, so the caller can tell a stored value from a lost one.
+     *
+     * @param degraded true when the store was unreachable and the value was not written
+     */
     public record WriteResult(boolean degraded) {}
 
     // @find: write working memory, scratchpad set
+    /**
+     * Stores one scratchpad value under organisation, scope and key with the default time to live.
+     *
+     * Flow: reject values over the size limit with a validation error, then write to Redis. When Redis
+     * fails, the error is logged and a degraded result is returned instead of an exception, so the agent
+     * carries on without a scratchpad. No controller in this service calls it today.
+     *
+     * @param orgId organisation scope
+     * @param scope grouping such as a run or task
+     * @param key entry name within the scope
+     * @param value text to keep
+     * @return result whose degraded flag tells the caller the write was lost
+     * @throws ApiException validation error when the value exceeds 256 KiB
+     */
     public WriteResult put(String orgId, String scope, String key, String value) {
         if (value != null && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_VALUE_BYTES) {
             // A scratchpad entry this large is a transcript that belongs in the run trace, where
@@ -62,6 +91,10 @@ public class WorkingMemory {
     }
 
     // @find: read working memory value
+    /**
+     * Reads one scratchpad value. Returns empty when the key is absent, has expired, or Redis is
+     * unreachable (logged as a warning); it never throws for storage failures.
+     */
     public Optional<String> get(String orgId, String scope, String key) {
         try {
             return Optional.ofNullable(redis.opsForValue().get(redisKey(orgId, scope, key)));
@@ -72,6 +105,11 @@ public class WorkingMemory {
     }
 
     // @find: read all working memory
+    /**
+     * Reads every entry of a scope, keyed by the short key. Lists matching keys with a non-blocking SCAN,
+     * fetches the values in one multi-get and skips entries that expired in between. Returns an empty map
+     * when the scope is empty or Redis fails (logged); it never throws for storage failures.
+     */
     public Map<String, String> all(String orgId, String scope) {
         try {
             String pattern = PREFIX + orgId + ":" + scope + ":*";
@@ -104,6 +142,10 @@ public class WorkingMemory {
     }
 
     // @find: clear working memory scope
+    /**
+     * Deletes every entry of a scope, for example when a run finishes. Uses SCAN to find the keys and one
+     * delete call. Failures are logged at debug level and swallowed, because entries expire on their own.
+     */
     public void clearScope(String orgId, String scope) {
         try {
             String pattern = PREFIX + orgId + ":" + scope + ":*";
@@ -129,6 +171,7 @@ public class WorkingMemory {
         return new ApiException(ErrorCode.DEPENDENCY_DEGRADED, "Short-term agent memory is temporarily unavailable.");
     }
 
+    /** Builds the full Redis key from the prefix, organisation, scope and key. */
     private static String redisKey(String orgId, String scope, String key) {
         return PREFIX + orgId + ":" + scope + ":" + key;
     }
