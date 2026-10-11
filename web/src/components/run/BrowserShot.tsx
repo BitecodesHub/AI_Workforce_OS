@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { Dialog } from '../ui'
 import { fetchAudio } from '../../lib/voice'
-import { useRunSteps } from '../../lib/queries'
-import { browserShots } from './traceModel'
+import { useBrowserLive, useRunSteps } from '../../lib/queries'
+import { browserShots, usesBrowser } from './traceModel'
 import type { BrowserShotRef } from './traceModel'
 
 /**
@@ -108,52 +108,82 @@ export function BrowserShot({ shot, compact = false }: { shot: BrowserShotRef; c
 
 // @find: BrowserPreview, LiveView, live view, browser preview, browser window, pages visited, filmstrip, latest screenshot
 /**
- * What the run's web browser saw, drawn as a small browser window: an address bar with the page
- * being shown, the page itself (a click opens it full size), and a strip of every page the run
- * visited. While the run is working it follows the newest page as steps arrive (the steps query
- * already polls); choosing an earlier page in the strip pins it until the newest page is chosen again. Shows nothing until
- * the run has used the browser.
+ * What the run's web browser is doing, drawn as a small browser window: an address bar, a status
+ * line ("Opening youtube.com…", "Deciding what to do next…"), the page, and a strip of every page
+ * the run visited.
+ *
+ * While the run works and has turned to the browser (usesBrowser), the live view
+ * (useBrowserLive, GET /api/runs/{id}/browser/live) is asked for every second and its frame is
+ * shown, so the page appears as it loads rather than only after each step. Picking a page in the
+ * strip pins it until it is picked again. Once the run has finished, the stored screenshots of each
+ * step are shown instead (a click opens one full size). Renders nothing for a run that never used
+ * the browser. Used by the Chat progress card, under an answer and in the compact trace.
  */
 export function BrowserPreview({ runId, active }: { runId: string; active: boolean }) {
   const steps = useRunSteps(runId, { active }).data
   const shots = browserShots(steps)
+  // The live view is asked for only while the run works and only once it has turned to the browser.
+  const watching = active && usesBrowser(steps)
+  const live = useBrowserLive(runId, watching).data ?? null
   const [pinned, setPinned] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  if (shots.length === 0) return null
-  const latest = shots[shots.length - 1]!
-  const shown = shots.find((shot) => shot.shotId === pinned) ?? latest
-  const following = shown.shotId === latest.shotId
-  const position = shots.findIndex((shot) => shot.shotId === shown.shotId) + 1
+  const liveFrame = watching && live && live.frame ? live : null
+  if (shots.length === 0 && !liveFrame && !(watching && live)) return null
+  const latest = shots.length > 0 ? shots[shots.length - 1]! : null
+  const pinnedShot = shots.find((shot) => shot.shotId === pinned) ?? null
+  // While the run works the live frame is shown, unless an earlier page was picked in the strip.
+  const showingLive = Boolean(liveFrame) && !pinnedShot
+  const shown = pinnedShot ?? latest
+  const address = showingLive ? live!.url : (shown?.url ?? null)
+  const position = shown ? shots.findIndex((shot) => shot.shotId === shown.shotId) + 1 : 0
+  const status = watching
+    ? live?.busy
+      ? `${live.action}…`
+      : 'Deciding what to do next…'
+    : null
 
   return (
-    <figure className="browser-preview" aria-label="Web browser preview">
+    <figure className="browser-preview" aria-label="Web browser preview" data-live={showingLive || undefined}>
       <div className="browser-preview-bar">
         <span className="browser-preview-dots" aria-hidden="true">
           <span />
           <span />
           <span />
         </span>
-        <p className="browser-preview-address" title={shown.url ?? undefined}>
+        <p className="browser-preview-address" title={address ?? undefined}>
           <span className="browser-preview-lock" aria-hidden="true">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
               <rect x="3" y="7" width="10" height="7" rx="1.5" />
               <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
             </svg>
           </span>
-          <span className="browser-preview-host">{displayAddress(shown.url)}</span>
+          <span className="browser-preview-host">{displayAddress(address)}</span>
         </p>
-        {active && following ? (
+        {showingLive ? (
           <span className="browser-preview-live">
             <span className="chat-pulse-dot" aria-hidden="true" />
             Live
           </span>
-        ) : (
+        ) : shown ? (
           <span className="browser-preview-count caption">
             Page {position} of {shots.length}
           </span>
-        )}
+        ) : null}
       </div>
-      <PreviewPage key={shown.shotId} shot={shown} onOpen={() => setOpen(true)} open={open} onClose={() => setOpen(false)} />
+      {status && (
+        <p className="browser-preview-status caption" aria-live="polite">
+          {status}
+        </p>
+      )}
+      {showingLive ? (
+        <LivePage frame={live!.frame} title={live!.title || live!.url} busy={live!.busy} />
+      ) : shown ? (
+        <PreviewPage key={shown.shotId} shot={shown} onOpen={() => setOpen(true)} open={open} onClose={() => setOpen(false)} />
+      ) : (
+        <div className="browser-preview-page">
+          <p className="browser-preview-empty caption muted">Opening the page…</p>
+        </div>
+      )}
       {shots.length > 1 && (
         <div className="browser-preview-strip" role="group" aria-label="Pages visited">
           {shots.map((shot, index) => (
@@ -161,17 +191,46 @@ export function BrowserPreview({ runId, active }: { runId: string; active: boole
               key={shot.shotId}
               shot={shot}
               index={index + 1}
-              selected={shot.shotId === shown.shotId}
-              onSelect={() => setPinned(shot.shotId === latest.shotId ? null : shot.shotId)}
+              selected={!showingLive && shot.shotId === shown?.shotId}
+              onSelect={() => setPinned(shot.shotId === pinned || shot.shotId === latest?.shotId ? null : shot.shotId)}
             />
           ))}
         </div>
       )}
       <figcaption className="visually-hidden">
-        {active ? 'Live view of the page the agent has open: ' : 'Last page the agent saw: '}
-        {shown.title || shown.url || 'the page'}
+        {showingLive ? 'Live view of the page the agent has open: ' : 'Last page the agent saw: '}
+        {(showingLive ? live!.title || live!.url : shown?.title || shown?.url) || 'the page'}
       </figcaption>
     </figure>
+  )
+}
+
+/**
+ * The live frame of the page the agent has open, swapped in place each second without a flash:
+ * the new picture is decoded before it replaces the old one. Dimmed slightly while a step is
+ * still loading, so it reads as "in progress".
+ */
+function LivePage({ frame, title, busy }: { frame: string; title: string; busy: boolean }) {
+  const [shown, setShown] = useState(frame)
+  useEffect(() => {
+    if (frame === shown) return
+    let cancelled = false
+    const next = new Image()
+    next.src = `data:image/jpeg;base64,${frame}`
+    next
+      .decode()
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setShown(frame)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [frame, shown])
+  return (
+    <div className="browser-preview-page" data-busy={busy || undefined}>
+      <img className="browser-preview-image" src={`data:image/jpeg;base64,${shown}`} alt={`Live view of ${title || 'the page'}`} />
+    </div>
   )
 }
 

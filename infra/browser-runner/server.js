@@ -16,15 +16,23 @@ const HOST = process.env.BROWSER_RUNNER_HOST || '0.0.0.0'
 const SECRET = process.env.BROWSER_RUNNER_SECRET || ''
 const MAX_SESSIONS = Number(process.env.BROWSER_RUNNER_MAX_SESSIONS || 2)
 const SESSION_IDLE_MS = Number(process.env.BROWSER_RUNNER_SESSION_IDLE_MS || 2 * 60 * 1000)
-const BROWSER_IDLE_MS = Number(process.env.BROWSER_RUNNER_BROWSER_IDLE_MS || 10 * 60 * 1000)
+// Chromium stays running between runs by default (0), so no step waits for it to start; a positive
+// value closes it after that long with no open page, to save memory on a small server.
+const BROWSER_IDLE_MS = Number(process.env.BROWSER_RUNNER_BROWSER_IDLE_MS || 0)
 // A run that finds every page in use waits this long for one to free up, instead of being refused.
 const QUEUE_WAIT_MS = Number(process.env.BROWSER_RUNNER_QUEUE_WAIT_MS || 15 * 1000)
 // After the page's own content has arrived, at most this long for its pictures and late content.
 const SETTLE_MS = 2500
 const PAGE_TIMEOUT_MS = Number(process.env.BROWSER_RUNNER_PAGE_TIMEOUT_MS || 20 * 1000)
-const TEXT_LIMIT = 8000
-const LINK_LIMIT = 40
-const FIELD_LIMIT = 40
+// What one step sends back, kept small: every character is read by the model on every later turn,
+// so a lean page answers faster and keeps runs on the fastest models. read_page with "from" gives
+// the rest of a long page.
+const TEXT_LIMIT = 3500
+const LINK_LIMIT = 25
+const FIELD_LIMIT = 15
+const BUTTON_LIMIT = 12
+// The live view: one small frame shared by every viewer, taken at most this often.
+const LIVE_FRAME_MS = 700
 const VIEWPORT = { width: 1280, height: 800 }
 const MAX_BODY = 64 * 1024
 
@@ -37,6 +45,10 @@ let browserIdleSince = Date.now()
 const sessions = new Map()
 // Per run, the last address it had open: if Chromium restarts mid-run, the page is opened again.
 const lastPages = new Map()
+// The live view: the newest frame of each page (a WeakMap, so a closed page's frame goes with it),
+// and per run what the browser is doing right now, shown to the person watching.
+const frames = new WeakMap()
+const activities = new Map()
 const LAST_PAGE_MS = 30 * 60 * 1000
 
 /**
@@ -88,6 +100,10 @@ const LAUNCH_ARGS = [
   '--mute-audio',
   // Keeps memory bounded on a small server: at most three renderer processes.
   '--renderer-process-limit=3',
+  // Headless pages are never "in the background": timers and rendering run at full speed.
+  '--disable-renderer-backgrounding',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
 ]
 
 /**
@@ -213,7 +229,7 @@ async function sessionFor(id, create) {
 
 // Housekeeping every 15 seconds (unref'd, so it never keeps the process alive): closes sessions
 // idle beyond SESSION_IDLE_MS, forgets remembered pages older than LAST_PAGE_MS, and closes
-// Chromium itself when no session has existed for BROWSER_IDLE_MS.
+// Chromium itself when no session has existed for BROWSER_IDLE_MS (never, when it is 0, the default).
 setInterval(async () => {
   const now = Date.now()
   for (const [id, session] of sessions) {
@@ -225,7 +241,7 @@ setInterval(async () => {
   for (const [id, last] of lastPages) {
     if (now - last.at > LAST_PAGE_MS) lastPages.delete(id)
   }
-  if (browser && sessions.size === 0 && now - browserIdleSince > BROWSER_IDLE_MS) {
+  if (BROWSER_IDLE_MS > 0 && browser && sessions.size === 0 && now - browserIdleSince > BROWSER_IDLE_MS) {
     log('closing idle Chromium')
     const closing = browser
     browser = null
@@ -245,25 +261,42 @@ setInterval(async () => {
  * Failure: never throws; a failed read gives empty text and lists, and a failed screenshot gives
  * an empty string. Does not change the page.
  */
-async function snapshot(page, note) {
+async function snapshot(page, note, from = 0) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {})
   // The text and the picture are taken at the same time.
   const factsTaken = page
     .evaluate(
-      ({ textLimit, linkLimit, fieldLimit }) => {
+      ({ textLimit, linkLimit, fieldLimit, buttonLimit, from }) => {
         const visible = (el) => {
           const box = el.getBoundingClientRect()
           const style = window.getComputedStyle(el)
           return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
         }
-        const text = (document.body ? document.body.innerText : '').replace(/\n{3,}/g, '\n\n').trim()
+        // Runs of blank lines and spaces are collapsed: they cost the model time and say nothing.
+        const all = (document.body ? document.body.innerText : '')
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n\s*\n+/g, '\n')
+          .trim()
+        const start = Math.max(0, Math.min(Number(from) || 0, all.length))
+        const text = all.slice(start, start + textLimit)
         const links = []
+        const seen = new Set()
         for (const a of document.querySelectorAll('a[href]')) {
           if (links.length >= linkLimit) break
           const href = a.href
           const label = (a.innerText || a.getAttribute('aria-label') || a.title || '').replace(/\s+/g, ' ').trim()
           if (!label || !/^https?:/i.test(href) || !visible(a)) continue
-          links.push({ text: label.slice(0, 120), href })
+          // A link on the same site is given by its path alone, which is all the model needs to
+          // follow it and a fraction of the length; a duplicate is listed once.
+          let shown = href
+          try {
+            const target = new URL(href)
+            if (target.origin === location.origin) shown = target.pathname + target.search
+          } catch {}
+          const key = label + ' ' + shown
+          if (seen.has(key)) continue
+          seen.add(key)
+          links.push({ text: label.slice(0, 80), href: shown.slice(0, 160) })
         }
         const fields = []
         for (const el of document.querySelectorAll('input, textarea, select')) {
@@ -273,24 +306,28 @@ async function snapshot(page, note) {
           let label = ''
           if (el.labels && el.labels.length) label = el.labels[0].innerText
           if (!label) label = el.getAttribute('aria-label') || ''
-          fields.push({
-            label: label.replace(/\s+/g, ' ').trim().slice(0, 120),
-            name: el.getAttribute('name') || '',
-            type,
-            placeholder: el.getAttribute('placeholder') || '',
-          })
+          // Only the parts that say something, so an empty placeholder costs nothing.
+          const field = { type }
+          const cleanLabel = label.replace(/\s+/g, ' ').trim().slice(0, 80)
+          if (cleanLabel) field.label = cleanLabel
+          const name = el.getAttribute('name') || ''
+          if (name) field.name = name.slice(0, 60)
+          const placeholder = el.getAttribute('placeholder') || ''
+          if (placeholder && placeholder !== cleanLabel) field.placeholder = placeholder.slice(0, 80)
+          fields.push(field)
         }
         const buttons = []
         for (const el of document.querySelectorAll('button, input[type=submit], input[type=button], [role=button]')) {
-          if (buttons.length >= 20) break
+          if (buttons.length >= buttonLimit) break
           const label = (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()
-          if (label && visible(el)) buttons.push(label.slice(0, 80))
+          if (label && visible(el) && !buttons.includes(label.slice(0, 60))) buttons.push(label.slice(0, 60))
         }
-        return { title: document.title || '', text: text.slice(0, textLimit), links, fields, buttons }
+        const more = start + text.length < all.length ? start + text.length : null
+        return { title: document.title || '', text, more, links, fields, buttons }
       },
-      { textLimit: TEXT_LIMIT, linkLimit: LINK_LIMIT, fieldLimit: FIELD_LIMIT },
+      { textLimit: TEXT_LIMIT, linkLimit: LINK_LIMIT, fieldLimit: FIELD_LIMIT, buttonLimit: BUTTON_LIMIT, from },
     )
-    .catch(() => ({ title: '', text: '', links: [], fields: [], buttons: [] }))
+    .catch(() => ({ title: '', text: '', more: null, links: [], fields: [], buttons: [] }))
   const imageTaken = page
     .screenshot({ type: 'jpeg', quality: 55, timeout: 8000, animations: 'disabled', caret: 'hide', scale: 'css' })
     .catch(() => null)
@@ -304,7 +341,11 @@ async function snapshot(page, note) {
     buttons: facts.buttons,
     screenshot: image ? image.toString('base64') : '',
   }
+  // Where the rest of a long page starts, for read_page's "from".
+  if (facts.more !== null && facts.more !== undefined) answer.more = facts.more
   if (note) answer.note = note
+  // The newest picture doubles as the live view's frame until the next one is taken.
+  if (image) frames.set(page, { jpeg: image, at: Date.now() })
   return answer
 }
 
@@ -521,20 +562,147 @@ function remember(id, page) {
   if (checkUrl(url).ok) lastPages.set(id, { url, at: Date.now() })
 }
 
+/*
+ * A search, and only a search: types the words into the site's search box and presses Enter. A box
+ * inside a form that posts (sends data rather than asking for a results page) is refused, so this
+ * can never send or change anything; that needs fill_field and submit_form, which ask first.
+ * Used by the search action and by open with a search. Throws Refusal (404 no box, 422 a posting form).
+ */
+async function searchOn(page, query, field) {
+  let box = null
+  if (field) {
+    box = await findField(page, field)
+  } else {
+    const candidates = [
+      page.getByRole('searchbox'),
+      page.locator('input[type=search]'),
+      page.locator('input[name=q], input[name=query], input[name=search], input[name=search_query], input[name=s], input[name=k]'),
+      page.locator('input[aria-label*="search" i], input[placeholder*="search" i], textarea[aria-label*="search" i]'),
+    ]
+    for (const candidate of candidates) {
+      const first = candidate.first()
+      if ((await first.count()) > 0 && (await first.isVisible().catch(() => false))) {
+        box = first
+        break
+      }
+    }
+  }
+  if (!box) throw new Refusal(404, 'No search box is on this page. Open the site\'s search page, or its address with the search in it.')
+  const method = await box
+    .evaluate((el) => (el.form ? (el.form.getAttribute('method') || 'get').toLowerCase() : 'get'))
+    .catch(() => 'get')
+  if (method !== 'get') {
+    throw new Refusal(422, 'That box is part of a form that sends data, not a search. Use fill_field and submit_form, which ask a person first.')
+  }
+  const before = page.url()
+  await box.fill(query)
+  await box.press('Enter')
+  // Single-page sites (YouTube and the like) change the address and then draw the results bit by
+  // bit, with no page load to wait for: wait for the address to change, then for the text to stop
+  // growing, so the answer has the results and not the empty frame around them.
+  await within(page.waitForURL((url) => url.href !== before, { timeout: 4000 }), 4000)
+  await settle(page)
+  await untilTextSettles(page, 3000)
+}
+
+/**
+ * Waits until the page's visible text has stopped changing (the same length on two checks 250 ms
+ * apart) or MAX_MS has passed, whichever is first. Never throws; a page that cannot be read ends
+ * the wait at once.
+ */
+async function untilTextSettles(page, maxMs) {
+  const deadline = Date.now() + maxMs
+  let last = -1
+  while (Date.now() < deadline) {
+    const length = await page.evaluate(() => (document.body ? document.body.innerText.length : 0)).catch(() => null)
+    if (length === null || length === last) return
+    last = length
+    await sleep(250)
+  }
+}
+
+/** Plain words for what an action is doing, shown in the live view while it runs. */
+function describe(action, body) {
+  const host = (raw) => {
+    try {
+      return new URL(String(raw)).host.replace(/^www\./, '')
+    } catch {
+      return String(raw || 'the page')
+    }
+  }
+  switch (action) {
+    case 'open':
+      return body.search ? `Opening ${host(body.url)} and searching for "${String(body.search).slice(0, 60)}"` : `Opening ${host(body.url)}`
+    case 'read':
+      return 'Reading the page'
+    case 'follow':
+      return `Following the link "${String(body.linkText || '').slice(0, 60)}"`
+    case 'search':
+      return `Searching for "${String(body.query || '').slice(0, 60)}"`
+    case 'fill':
+      return `Typing into "${String(body.field || '').slice(0, 60)}"`
+    case 'click':
+      return `Clicking "${String(body.text || '').slice(0, 60)}"`
+    case 'submit':
+      return 'Submitting the form'
+    default:
+      return 'Working'
+  }
+}
+
+/**
+ * The live view of one run: what the browser is doing, the page it has open and a fresh frame.
+ * A frame younger than LIVE_FRAME_MS is reused, so several people watching cost one picture; a
+ * page still loading is captured as it stands. Answers {busy, action, url, title, frame (base64)
+ * or ''}, or null when the run has no page open. Never throws.
+ */
+async function live(id) {
+  const session = sessions.get(id)
+  const activity = activities.get(id) || null
+  if (!session) return activity ? { busy: true, action: activity.label, url: '', title: '', frame: '' } : null
+  const page = session.page
+  let frame = frames.get(page)
+  if (!frame || Date.now() - frame.at > LIVE_FRAME_MS) {
+    const jpeg = await page
+      .screenshot({ type: 'jpeg', quality: 45, timeout: 1500, animations: 'allow', caret: 'hide', scale: 'css' })
+      .catch(() => null)
+    if (jpeg) {
+      frame = { jpeg, at: Date.now() }
+      frames.set(page, frame)
+    }
+  }
+  const title = await within(page.title(), 300)
+  return {
+    busy: Boolean(activity),
+    action: activity ? activity.label : '',
+    since: activity ? activity.since : null,
+    url: page.url(),
+    title: typeof title === 'string' ? title : '',
+    frame: frame ? frame.jpeg.toString('base64') : '',
+  }
+}
+
 // One handler per action in the route. Each takes (run id, parsed JSON body) and returns the
 // snapshot object that the HTTP layer sends back as JSON. Failures are thrown as Refusal.
 const actions = {
   // open: creates the run's session if needed and opens body.url.
+  // With body.search, the site's own search is run straight after, in the same step, which saves
+  // the agent a whole turn for "search YouTube for ..." style requests.
   async open(id, body) {
     const session = await sessionFor(id, true)
     const note = await navigate(session.page, body.url)
+    const query = String(body.search || '').trim()
+    if (query) {
+      await searchOn(session.page, query, null)
+      return snapshot(session.page, note)
+    }
     return snapshot(session.page, note)
   },
 
   // read: describes the run's current page; reopens it if Chromium restarted.
-  async read(id) {
+  async read(id, body) {
     const { session, note } = await pageFor(id)
-    return snapshot(session.page, note)
+    return snapshot(session.page, note, Number(body && body.from) || 0)
   },
 
   // follow: opens the link whose visible text is body.linkText (exact match first, then partial).
@@ -562,38 +730,10 @@ const actions = {
    */
   async search(id, body) {
     const { session } = await pageFor(id)
-    const page = session.page
     const query = String(body.query || '').trim()
     if (!query) throw new Refusal(400, 'Say what to search for.')
-    let box = null
-    if (body.field) {
-      box = await findField(page, body.field)
-    } else {
-      const candidates = [
-        page.getByRole('searchbox'),
-        page.locator('input[type=search]'),
-        page.locator('input[name=q], input[name=query], input[name=search], input[name=search_query], input[name=s], input[name=k]'),
-        page.locator('input[aria-label*="search" i], input[placeholder*="search" i], textarea[aria-label*="search" i]'),
-      ]
-      for (const candidate of candidates) {
-        const first = candidate.first()
-        if ((await first.count()) > 0 && (await first.isVisible().catch(() => false))) {
-          box = first
-          break
-        }
-      }
-    }
-    if (!box) throw new Refusal(404, 'No search box is on this page. Open the site\'s search page, or its address with the search in it.')
-    const method = await box
-      .evaluate((el) => (el.form ? (el.form.getAttribute('method') || 'get').toLowerCase() : 'get'))
-      .catch(() => 'get')
-    if (method !== 'get') {
-      throw new Refusal(422, 'That box is part of a form that sends data, not a search. Use fill_field and submit_form, which ask a person first.')
-    }
-    await box.fill(query)
-    await box.press('Enter')
-    await settle(page)
-    return snapshot(page)
+    await searchOn(session.page, query, body.field)
+    return snapshot(session.page)
   },
 
   // fill: types body.value into the field body.field. Sends nothing; the answer says so.
@@ -623,6 +763,7 @@ const actions = {
       if ((await first.count()) > 0 && (await first.isVisible().catch(() => false))) {
         await first.click({ timeout: 10000 })
         await settle(page)
+        await untilTextSettles(page, 2000)
         return snapshot(page)
       }
     }
@@ -709,7 +850,7 @@ function readBody(req) {
 
 // Matches /sessions/<run id> and /sessions/<run id>/<action>. The run id is limited to letters,
 // digits and hyphens, so it is safe to log and to use as a key.
-const ROUTE = /^\/sessions\/([A-Za-z0-9-]{1,80})(?:\/(open|read|follow|search|fill|click|submit))?$/
+const ROUTE = /^\/sessions\/([A-Za-z0-9-]{1,80})(?:\/(open|read|follow|search|fill|click|submit|live))?$/
 
 // The HTTP server. GET /health is open (a liveness probe); everything else needs the secret.
 // POST /sessions/{id}/{open|read|follow|search|fill|click|submit} runs an action;
@@ -743,13 +884,28 @@ const server = http.createServer(async (req, res) => {
       send(res, 204)
       return
     }
-    if (req.method !== 'POST' || !action) {
+    if (req.method === 'GET' && action === 'live') {
+      const view = await live(id)
+      if (!view) {
+        send(res, 404, { error: 'No page is open in this run.' })
+        return
+      }
+      send(res, 200, view)
+      return
+    }
+    if (req.method !== 'POST' || !action || action === 'live') {
       send(res, 405, { error: 'Not allowed.' })
       return
     }
     const body = await readBody(req)
     const started = Date.now()
-    const answer = await actions[action](id, body)
+    activities.set(id, { label: describe(action, body), since: started })
+    let answer
+    try {
+      answer = await actions[action](id, body)
+    } finally {
+      activities.delete(id)
+    }
     const open = sessions.get(id)
     if (open) remember(id, open.page)
     log(`${action} for ${id} in ${Date.now() - started} ms`)
@@ -768,6 +924,8 @@ server.requestTimeout = 90 * 1000
 server.keepAliveTimeout = 65 * 1000
 server.listen(PORT, HOST, () => {
   log(`Browser runner listening on ${HOST}:${PORT}${SECRET ? '' : ' (no secret set: every request is refused)'}`)
+  // Started now rather than on the first step, so nobody waits for Chromium to start.
+  if (SECRET) ensureBrowser().catch((error) => log(`Chromium did not start ahead of use: ${String(error && error.message).split('\n')[0]}`))
 })
 
 /**

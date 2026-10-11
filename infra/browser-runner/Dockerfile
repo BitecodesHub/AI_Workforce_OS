@@ -8,7 +8,8 @@
 #   BROWSER_RUNNER_PORT              default 8090
 #   BROWSER_RUNNER_MAX_SESSIONS      browser contexts (one per run) open at once, default 2
 #   BROWSER_RUNNER_SESSION_IDLE_MS   an unused run's page is closed after this, default 120000 (2 min)
-#   BROWSER_RUNNER_BROWSER_IDLE_MS   Chromium itself is closed after this with no pages, default 600000
+#   BROWSER_RUNNER_BROWSER_IDLE_MS   Chromium is closed after this long with no pages; default 0, which
+#                                    keeps it running (started at boot) so no step waits for it
 #   BROWSER_RUNNER_PAGE_TIMEOUT_MS   page-load timeout, default 20000
 # The orchestrator side: AIWOS_BROWSER_RUNNER_URL (for example http://browser:8090) and
 # AIWOS_BROWSER_RUNNER_SECRET (the same secret).

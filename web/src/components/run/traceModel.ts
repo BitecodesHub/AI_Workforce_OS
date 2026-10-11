@@ -230,6 +230,26 @@ export function latestBrowserShot(steps: readonly RunStep[] | undefined): Browse
   return null
 }
 
+// @find: usesBrowser, run uses web browser, whether to show live browser view
+/**
+ * Whether the run has used, or is about to use, the web browser: a browser tool call is in its
+ * trace, or the model's latest turn asked for one (detail.toolCalls) and it is running now. Decides
+ * whether the live view is polled, so runs that never browse cost no extra requests.
+ */
+export function usesBrowser(steps: readonly RunStep[] | undefined): boolean {
+  if (!steps) return false
+  return steps.some((step) => {
+    const detail = (step.detail ?? {}) as Record<string, unknown>
+    if (step.kind === 'tool_call' || step.kind === 'approval') {
+      return typeof detail.tool === 'string' && detail.tool.startsWith('browser')
+    }
+    if (step.kind === 'model_call' && Array.isArray(detail.toolCalls)) {
+      return detail.toolCalls.some((name) => typeof name === 'string' && name.startsWith('browser'))
+    }
+    return false
+  })
+}
+
 // @find: browserShots, every screenshot of a run, pages visited, browser preview filmstrip
 /** Every screenshot in a run's steps, oldest first, for the browser preview's strip of pages. */
 export function browserShots(steps: readonly RunStep[] | undefined): BrowserShotRef[] {

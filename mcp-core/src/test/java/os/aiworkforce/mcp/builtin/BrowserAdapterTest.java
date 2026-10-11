@@ -184,6 +184,36 @@ class BrowserAdapterTest {
     }
 
     @Test
+    @DisplayName("open_page with search opens and searches in one step, and read_page passes where to read from")
+    void openWithSearchAndReadFrom() {
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/open")).willReturn(okJson(PAGE)));
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/read")).willReturn(okJson(PAGE)));
+
+        call("open_page", "{\"url\":\"https://example.com\",\"search\":\"lofi music\"}");
+        call("read_page", "{\"from\":3500}");
+
+        runner.verify(postRequestedFor(urlEqualTo("/sessions/" + RUN + "/open"))
+                .withRequestBody(matchingJsonPath("$.search", equalTo("lofi music"))));
+        runner.verify(postRequestedFor(urlEqualTo("/sessions/" + RUN + "/read"))
+                .withRequestBody(matchingJsonPath("$.from", equalTo("3500"))));
+    }
+
+    @Test
+    @DisplayName("the live view returns the runner's frame, and nothing when the runner has no page")
+    void liveView() {
+        runner.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlEqualTo("/sessions/" + RUN + "/live"))
+                .willReturn(okJson("{\"busy\":true,\"action\":\"Opening example.com\",\"url\":\"https://example.com/\",\"frame\":\"abc\"}")));
+
+        JsonNode view = adapter.live(RUN).block();
+
+        assertThat(view).isNotNull();
+        assertThat(view.path("action").asText()).isEqualTo("Opening example.com");
+        runner.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlEqualTo("/sessions/other/live"))
+                .willReturn(aResponse().withStatus(404)));
+        assertThat(adapter.live("other").block()).isNull();
+    }
+
+    @Test
     @DisplayName("search_site sends the words to the runner's search, which needs no approval")
     void searchSite() {
         runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/search")).willReturn(okJson(PAGE)));

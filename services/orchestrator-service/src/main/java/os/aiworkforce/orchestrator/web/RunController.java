@@ -78,6 +78,15 @@ public class RunController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private os.aiworkforce.orchestrator.chat.ConversationAccess access;
 
+    /** The tool servers, for the web browser's live view; absent only where a test builds this by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.mcp.policy.ToolGateway gateway;
+
+    /** Sets the tool servers by hand, for tests of the live view. */
+    void setGateway(os.aiworkforce.mcp.policy.ToolGateway gateway) {
+        this.gateway = gateway;
+    }
+
     /** Receives the run, step, task and goal repositories, the question service, and the goal service used to stop a run. */
     public RunController(
             Runs runs, RunSteps steps, Tasks tasks, Goals goals, QuestionService questions, GoalService goalService) {
@@ -204,6 +213,34 @@ public class RunController {
         return steps.findByRunIdOrderByPosition(runId).stream()
                 .map(RunController::toStepView)
                 .toList();
+    }
+
+    /**
+     * The live view of a run's web browser, for the preview in Chat and on the run page: what the
+     * browser is doing now, the page it has open and a fresh frame (a base64 JPEG). Route
+     * {@code GET /api/runs/{runId}/browser/live}; requires RUN_READ and the same visibility as the
+     * trace, so a run behind someone else's private conversation is "not found". The web client
+     * asks about once a second while the run is working. Answers 204 when the browser is not set
+     * up, the run has no page open or the browser did not answer within two seconds; never cached.
+     */
+    // @find: browser live view, live frame, realtime browser preview, GET /api/runs/{runId}/browser/live
+    @GetMapping("/{runId}/browser/live")
+    @RequiresPermission(Permission.Codes.RUN_READ)
+    @Operation(summary = "What the run's web browser is doing and showing right now")
+    public org.springframework.http.ResponseEntity<com.fasterxml.jackson.databind.JsonNode> browserLive(
+            @PathVariable UUID runId) {
+        visibleRun(runId);
+        com.fasterxml.jackson.databind.JsonNode view = gateway == null
+                ? null
+                : gateway.adapter("browser")
+                        .filter(os.aiworkforce.mcp.builtin.BrowserAdapter.class::isInstance)
+                        .map(os.aiworkforce.mcp.builtin.BrowserAdapter.class::cast)
+                        .map(browser -> browser.live(runId.toString()).block(java.time.Duration.ofSeconds(3)))
+                        .orElse(null);
+        org.springframework.http.CacheControl never = org.springframework.http.CacheControl.noStore();
+        return view == null
+                ? org.springframework.http.ResponseEntity.noContent().cacheControl(never).build()
+                : org.springframework.http.ResponseEntity.ok().cacheControl(never).body(view);
     }
 
     /** Returns the questions the run asked, oldest first; route {@code GET /api/runs/{runId}/questions}; requires RUN_READ. */

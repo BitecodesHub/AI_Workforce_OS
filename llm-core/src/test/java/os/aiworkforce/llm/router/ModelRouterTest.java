@@ -444,6 +444,39 @@ class ModelRouterTest {
     }
 
     @Test
+    @DisplayName("a busy model asking for more than two seconds is passed over while another can answer now")
+    void busyModelIsPassedOverWhenAnotherCanAnswer() {
+        registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        registry.add("b", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+        SequenceProvider a = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        a.failWith(failure(ProviderFailure.RATE_LIMITED, "a", 429, Duration.ofSeconds(7)));
+        SequenceProvider b = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+        List<Duration> waits = new ArrayList<>();
+        ModelRouter router = router(a, b);
+        router.useSleeper(waits::add);
+
+        ChatResponse response = router.route(request("hello"), policy("a/model-a", "b/model-b"), CONTEXT);
+
+        assertThat(response.provider()).isEqualTo("b");
+        assertThat(a.seen).hasSize(1);
+        assertThat(waits).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the only model left is still waited for, so a run never fails for want of patience")
+    void lastBusyModelIsWaitedFor() {
+        registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+        SequenceProvider a = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+        a.failWith(failure(ProviderFailure.RATE_LIMITED, "a", 429, Duration.ofSeconds(7)));
+        List<Duration> waits = new ArrayList<>();
+        ModelRouter router = router(a);
+        router.useSleeper(waits::add);
+
+        assertThat(router.route(request("hello"), policy("a/model-a"), CONTEXT).provider()).isEqualTo("a");
+        assertThat(waits).containsExactly(Duration.ofSeconds(7));
+    }
+
+    @Test
     @DisplayName("a 429 with a long Retry-After is not waited out: the next candidate is asked")
     void longRetryAfterFallsThrough() {
         registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");

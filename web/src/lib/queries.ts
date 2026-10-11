@@ -1415,8 +1415,43 @@ export function useRunSteps(id: string, options: { active?: boolean } = {}) {
     queryKey: ['runs', id, 'steps'],
     queryFn: ({ signal }) => api<RunStep[]>(`/api/runs/${id}/steps`, { signal }),
     enabled: Boolean(id),
+    // Every 1.5 s while the run works, so each step shows up moments after it happens.
     refetchInterval: () =>
-      (options.active ?? isRunActive(client.getQueryData<Run>(['runs', id]))) ? 3_000 : false,
+      (options.active ?? isRunActive(client.getQueryData<Run>(['runs', id]))) ? 1_500 : false,
+  })
+}
+
+/** What a run's web browser is doing and showing right now (GET /api/runs/{id}/browser/live). */
+export type BrowserLive = {
+  /** True while a browser step is under way. */
+  busy: boolean
+  /** That step in plain words, for example "Opening youtube.com"; empty between steps. */
+  action: string
+  /** When that step started (epoch ms), or null between steps. */
+  since: number | null
+  url: string
+  title: string
+  /** A fresh JPEG of the page, base64; empty when none could be taken. */
+  frame: string
+}
+
+// @find: browser live view, realtime browser preview, live frame, GET /api/runs/{id}/browser/live; used by: BrowserPreview
+/**
+ * The live view of a run's web browser, asked for every second while the run is working and the
+ * tab is in front, so the preview shows pages as they load and says what the agent is doing.
+ * Resolves to null when the run has no page open or the browser is not set up (204). Not asked at
+ * all once the run has finished; the stored screenshots take over then. Key ['runs', id, 'browser-live'].
+ */
+export function useBrowserLive(id: string, active: boolean) {
+  return useQuery({
+    queryKey: ['runs', id, 'browser-live'],
+    queryFn: async ({ signal }) => (await api<BrowserLive | undefined>(`/api/runs/${id}/browser/live`, { signal })) ?? null,
+    enabled: Boolean(id) && active,
+    refetchInterval: active ? 1_000 : false,
+    refetchIntervalInBackground: false,
+    // A missed frame is simply replaced by the next one a second later.
+    retry: false,
+    staleTime: 0,
   })
 }
 

@@ -4139,3 +4139,21 @@ input[type='checkbox'][role='switch']:checked::before {
   object-fit: cover;
   object-position: top;
 }
+
+/* The line under the address bar saying what the agent is doing in the browser right now. */
+.browser-preview-status {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  color: var(--blue);
+  background: var(--surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A live frame taken while a step is still loading reads as "in progress". */
+.browser-preview-page[data-busy] .browser-preview-image {
+  opacity: 0.85;
+  transition: opacity var(--transition-fast);
+}

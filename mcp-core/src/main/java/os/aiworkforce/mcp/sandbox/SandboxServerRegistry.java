@@ -1509,14 +1509,22 @@ public class SandboxServerRegistry {
                         "open_page",
                         "Open a public web page and read it. Returns the page title, address, visible text, links"
                                 + " and form fields. Only http and https addresses on the public internet can be"
-                                + " opened.",
-                        schema(str("url", "the full address, starting with https://"), "url"),
+                                + " opened. To search a site, give search as well: the page opens and its own search"
+                                + " runs in the same step, which is faster than opening and then searching. Long"
+                                + " pages say where the rest starts in more; read_page with from reads it.",
+                        schema(
+                                props(
+                                        str("url", "the full address, starting with https://"),
+                                        str("search", "optional: words to search for with the site's own search"
+                                                + " box once it opens, for example on YouTube or Wikipedia")),
+                                "url"),
                         ToolSpec.SideEffect.READ,
                         true),
                 browserTool(
                         "read_page",
-                        "Read the page that is open now again, for example after it has finished loading.",
-                        schema(""),
+                        "Read the page that is open now again, for example after it has finished loading. With"
+                                + " from, reads further down a long page, starting at the position more gave.",
+                        schema(number("from", "optional: where to start reading, the number given as more")),
                         ToolSpec.SideEffect.READ,
                         true),
                 browserTool(

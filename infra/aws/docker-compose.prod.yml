@@ -244,8 +244,9 @@ services:
   # The built-in web browser: headless Chromium behind a small HTTP API, one page per run, at most
   # two at once. Debian-based (Chromium does not run on Alpine), not published outside the Docker
   # network, and every request a page makes goes through its own filtering proxy, which refuses
-  # private, loopback and metadata addresses. Chromium starts on the first browser step and is shut
-  # down after ten idle minutes, so it costs about 60 MB at rest and 300-600 MB while in use.
+  # private, loopback and metadata addresses. Chromium starts with the container and stays running,
+  # so no step waits for it: about 150 MB at rest and 300-600 MB while in use. Set
+  # BROWSER_RUNNER_BROWSER_IDLE_MS (milliseconds) to close it when idle on a tighter server.
   # AIWOS_BROWSER_RUNNER_SECRET is generated into /opt/aiwos/.env by aiwos.sh; without it the
   # runner refuses every request and the browser connector says it is not running.
   browser:

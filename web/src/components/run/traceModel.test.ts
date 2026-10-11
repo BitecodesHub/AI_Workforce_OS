@@ -3,7 +3,7 @@
 // @flow: Run with the web test runner; covers traceModel.
 import { describe, expect, it } from 'vitest'
 import type { RunStep } from '../../lib/queries'
-import { browserShotOf, browserShots, completedAnswer, incompleteAnswerText, latestBrowserShot, stepHeading, stepMode } from './traceModel'
+import { browserShotOf, browserShots, usesBrowser, completedAnswer, incompleteAnswerText, latestBrowserShot, stepHeading, stepMode } from './traceModel'
 
 /*
  * What a trace says about where a tool's answer came from, how a run that stopped itself reads,
@@ -126,5 +126,10 @@ describe('browser screenshots in the trace', () => {
     // Every page the run visited, oldest first, for the preview's strip.
     expect(browserShots(steps).map((shot) => shot.shotId)).toEqual(['s1', 's2'])
     expect(browserShots(undefined)).toEqual([])
+    // The live view is polled only for runs that turn to the browser, even before the first page lands.
+    expect(usesBrowser(steps)).toBe(true)
+    expect(usesBrowser([{ ...steps[0]!, kind: 'model_call', detail: { toolCalls: ['browser__open_page'] } }])).toBe(true)
+    expect(usesBrowser([{ ...steps[0]!, kind: 'model_call', detail: { toolCalls: ['gmail__send_message'] } }])).toBe(false)
+    expect(usesBrowser(undefined)).toBe(false)
   })
 })

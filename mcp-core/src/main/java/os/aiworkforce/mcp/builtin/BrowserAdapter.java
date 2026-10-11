@@ -170,6 +170,29 @@ public final class BrowserAdapter implements McpServerAdapter {
                 .onErrorReturn(false);
     }
 
+    // @find: browser live view, live frame of a run, what the browser is doing now, GET /sessions/{id}/live
+    /**
+     * The live view of one run's browser: what it is doing now ({@code busy}, {@code action}), the
+     * page it has open ({@code url}, {@code title}) and a fresh JPEG frame ({@code frame}, base64).
+     * Called by the orchestrator's live endpoint about once a second while someone watches a run.
+     * Empty when the browser is not set up, the run has no page open, or the runner does not answer
+     * within two seconds; never errors, so a watcher simply keeps the last picture it had.
+     *
+     * @param runId the run whose browser to show; the runner keys its pages by run id
+     */
+    public Mono<JsonNode> live(String runId) {
+        if (!configured || runId == null || runId.isBlank()) {
+            return Mono.empty();
+        }
+        String session = runId.replaceAll("[^A-Za-z0-9-]", "");
+        return http.get()
+                .uri("/sessions/{id}/live", session)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(2))
+                .onErrorResume(error -> Mono.empty());
+    }
+
     // @find: run browser tool, open page through runner, browser call
     /**
      * Runs one browser tool against the run's page in the runner. The credential is unused.
@@ -212,10 +235,19 @@ public final class BrowserAdapter implements McpServerAdapter {
                                 return Mono.just(ToolResult.failed(problem));
                             }
                             ObjectNode open = json.createObjectNode().put("url", url);
+                            String search = arguments.path("search").asText("").strip();
+                            if (!search.isEmpty()) {
+                                open.put("search", search);
+                            }
                             return call(invocation, session, "open", open, page, startedAt);
                         });
             }
-            case "read_page" -> action = "read";
+            case "read_page" -> {
+                action = "read";
+                if (arguments.path("from").canConvertToInt() && arguments.path("from").asInt() > 0) {
+                    body.put("from", arguments.path("from").asInt());
+                }
+            }
             case "follow_link" -> {
                 action = "follow";
                 body.put("linkText", arguments.path("linkText").asText(""));
@@ -365,10 +397,15 @@ public final class BrowserAdapter implements McpServerAdapter {
         content.put("url", url);
         content.put("title", title);
         content.put("text", answer.path("text").asText(""));
-        content.set("links", answer.path("links").isArray() ? answer.get("links") : json.createArrayNode());
-        content.set("fields", answer.path("fields").isArray() ? answer.get("fields") : json.createArrayNode());
-        if (answer.path("buttons").isArray()) {
-            content.set("buttons", answer.get("buttons"));
+        // Where the rest of a long page starts; read_page with from reads it.
+        if (answer.path("more").canConvertToInt()) {
+            content.put("more", answer.path("more").asInt());
+        }
+        // Empty lists are left out: the model reads every character of every page on every later turn.
+        for (String list : List.of("links", "fields", "buttons")) {
+            if (answer.path(list).isArray() && !answer.get(list).isEmpty()) {
+                content.set(list, answer.get(list));
+            }
         }
         if (answer.hasNonNull("note")) {
             content.put("note", answer.path("note").asText());

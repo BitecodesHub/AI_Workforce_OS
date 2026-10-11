@@ -1800,6 +1800,7 @@ public class AgentRunner {
                         run, timeLimit, cutOff.length() > 0 ? cutOff.toString() : lastAssistantText(conversation));
             }
             boolean timeNearlyUp = worked.compareTo(timeLimit.multipliedBy(9).dividedBy(10)) >= 0;
+            foldEarlierPages(conversation);
             boolean trimmed = compactLongHistory(conversation, cutOff.length() > 0);
 
             // Only the ask tool or the document search on offer is not a reason to insist on a
@@ -2324,6 +2325,67 @@ public class AgentRunner {
         noted.set(0, ChatMessage.system((system.content() == null ? "" : system.content()) + "\n\n" + TIME_NOTE));
         return List.copyOf(noted);
     }
+
+    /** How many of the newest web pages stay in the conversation in full; older ones are folded. */
+    static final int FULL_BROWSER_PAGES = 2;
+
+    /** Marks a folded page, so it is never folded twice. */
+    private static final String FOLDED_PAGE_NOTE =
+            "An earlier page; its text was dropped to keep the conversation short. Open or read it again"
+                    + " if you need what it said.";
+
+    // @find: fold earlier web pages, shrink browser history, keep latest pages, faster browser agent
+    /**
+     * Keeps only the {@value #FULL_BROWSER_PAGES} newest web browser pages in full and folds every
+     * older one to its title and address. A page is a thousand tokens or more and the model reads
+     * the whole conversation on every turn, so without this a browsing run grows by a page a turn,
+     * slows down and soon outgrows the fast models' limits. The call and its result stay paired, so
+     * every provider still accepts the history; the model is told it can open the page again.
+     * Called before each model call in the run loop; changes the in-memory conversation only (the
+     * stored trace keeps every page).
+     */
+    static void foldEarlierPages(List<ChatMessage> conversation) {
+        int kept = 0;
+        for (int index = conversation.size() - 1; index >= 0; index--) {
+            ChatMessage message = conversation.get(index);
+            if (message.role() != ChatMessage.Role.TOOL || !isBrowserPage(message)) {
+                continue;
+            }
+            if (kept < FULL_BROWSER_PAGES) {
+                kept++;
+                continue;
+            }
+            conversation.set(index, ChatMessage.toolResult(
+                    message.toolCallId(), message.name(), foldedPage(message.content())));
+        }
+    }
+
+    /** A successful browser result that still carries its page: JSON from a browser tool with a url and text. */
+    private static boolean isBrowserPage(ChatMessage message) {
+        String name = message.name() == null ? "" : message.name();
+        String content = message.content() == null ? "" : message.content();
+        return name.startsWith("browser")
+                && content.startsWith("{\"url\"")
+                && content.contains("\"text\"")
+                && !content.contains(FOLDED_PAGE_NOTE);
+    }
+
+    /** The page reduced to its address, title and a note saying what was dropped; the original when it cannot be read. */
+    private static String foldedPage(String content) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode page = FOLD_JSON.readTree(content);
+            com.fasterxml.jackson.databind.node.ObjectNode folded = FOLD_JSON.createObjectNode();
+            folded.put("url", page.path("url").asText(""));
+            folded.put("title", page.path("title").asText(""));
+            folded.put("note", FOLDED_PAGE_NOTE);
+            return FOLD_JSON.writeValueAsString(folded);
+        } catch (Exception e) {
+            return content;
+        }
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper FOLD_JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     // @find: compact long run history, long running agent context, summarise old turns
     /**

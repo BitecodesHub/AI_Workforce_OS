@@ -118,6 +118,13 @@ public class ModelRouter {
     static final Duration MAX_RETRY_AFTER = Duration.ofSeconds(10);
 
     /**
+     * The longest wait for a busy model when another candidate could answer now. A person is
+     * watching most runs; asking the next model at once beats sitting out a free tier's per-minute
+     * limit. A model passed over this way is still asked at the end if no other candidate answers.
+     */
+    static final Duration QUICK_RETRY = Duration.ofSeconds(2);
+
+    /**
      * The longest an overloaded model is passed over in favour of other candidates. Kept in memory
      * only, never written down, and never applied to the last candidate left to try.
      */
@@ -255,21 +262,33 @@ public class ModelRouter {
         // after every other candidate, so the last one standing is always asked.
         List<RoutingPolicy.Candidate> deferred = new ArrayList<>();
 
-        for (RoutingPolicy.Candidate candidate : policy.candidates()) {
+        List<RoutingPolicy.Candidate> candidates = policy.candidates();
+        for (int index = 0; index < candidates.size(); index++) {
+            RoutingPolicy.Candidate candidate = candidates.get(index);
             if (isCoolingOff(context.orgId(), candidate)) {
                 deferred.add(candidate);
                 continue;
             }
+            chain.othersLeft = index < candidates.size() - 1 || !deferred.isEmpty();
+            chain.passedOver = false;
             ChatResponse answer = tryCandidate(candidate, request, policy, context, deadline, history, chain);
             if (answer != null) {
                 return answer;
+            }
+            if (chain.passedOver) {
+                // Too busy to wait for while others could answer: asked again at the end instead.
+                deferred.add(candidate);
             }
             if (chain.stopped) {
                 break;
             }
         }
         if (!chain.stopped) {
-            for (RoutingPolicy.Candidate candidate : deferred) {
+            for (int index = 0; index < deferred.size(); index++) {
+                RoutingPolicy.Candidate candidate = deferred.get(index);
+                // The last of these is always waited for: there is nobody else left to ask.
+                chain.othersLeft = index < deferred.size() - 1;
+                chain.passedOver = false;
                 ChatResponse answer = tryCandidate(candidate, request, policy, context, deadline, history, chain);
                 if (answer != null) {
                     return answer;
@@ -316,6 +335,10 @@ public class ModelRouter {
         private ChatRequest current;
         private BudgetGuard.Decision refusedByBudget;
         private boolean stopped;
+        /** Whether another candidate is still to be asked after the one being tried. */
+        private boolean othersLeft;
+        /** Set when the candidate just tried was too busy and passed over rather than waited for. */
+        private boolean passedOver;
 
         /** Starts with the conversation as the caller gave it. */
         Chain(ChatRequest current) {
@@ -358,7 +381,7 @@ public class ModelRouter {
         // What this candidate is sent: the conversation as it stands, or a version shortened
         // to fit this candidate's window, which a larger candidate further down never sees.
         ChatRequest sent = resolution.request();
-        Outcome outcome = attempt(resolution, sent, context, candidateDeadline, deadline, history, attempts);
+        Outcome outcome = attempt(resolution, sent, context, candidateDeadline, deadline, history, attempts, chain);
 
         // A context overflow is the one failure the request itself can fix. The provider has
         // just said this model is the one it overflowed, so the shortened conversation is
@@ -371,7 +394,7 @@ public class ModelRouter {
             if (compacted != null) {
                 chain.current = compacted;
                 sent = compacted;
-                outcome = attempt(resolution, sent, context, candidateDeadline, deadline, history, attempts);
+                outcome = attempt(resolution, sent, context, candidateDeadline, deadline, history, attempts, chain);
             }
         }
 
@@ -627,7 +650,8 @@ public class ModelRouter {
             Instant candidateDeadline,
             Instant overallDeadline,
             List<AttemptRecord> history,
-            int attempts) {
+            int attempts,
+            Chain chain) {
 
         ProviderDescriptor provider = resolution.provider();
         ModelSpec model = resolution.model();
@@ -737,6 +761,12 @@ public class ModelRouter {
                     Duration wait = retryAfter != null
                             ? retryAfter
                             : resilience.backoff("provider." + provider.id(), attempt);
+                    boolean busy = lastFailure == ProviderFailure.RATE_LIMITED
+                            || lastFailure == ProviderFailure.OVERLOADED;
+                    if (busy && chain.othersLeft && wait.compareTo(QUICK_RETRY) > 0) {
+                        chain.passedOver = true;
+                        return Outcome.failed(lastFailure, false);
+                    }
                     Instant retryBound = overallDeadline.isAfter(candidateDeadline) ? candidateDeadline : overallDeadline;
                     if (Instant.now().plus(wait).isAfter(retryBound)) {
                         return Outcome.failed(lastFailure, false);

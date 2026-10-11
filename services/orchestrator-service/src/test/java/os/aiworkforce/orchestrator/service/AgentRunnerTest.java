@@ -3040,6 +3040,32 @@ class AgentRunnerTest {
     }
 
     @Test
+    @DisplayName("only the two newest web pages stay in full; older ones fold to their address and title")
+    void foldEarlierPagesKeepsTheNewestTwo() {
+        List<ChatMessage> conversation = new ArrayList<>();
+        conversation.add(ChatMessage.system("You are helpful."));
+        conversation.add(ChatMessage.user("Compare three pages."));
+        for (int page = 1; page <= 3; page++) {
+            conversation.add(ChatMessage.toolResult("c" + page, "browser__open_page",
+                    "{\"url\":\"https://example.com/" + page + "\",\"title\":\"Page " + page
+                            + "\",\"text\":\"" + "words ".repeat(200) + "\"}"));
+        }
+        conversation.add(ChatMessage.toolResult("g1", "github__list_issues", "{\"url\":\"x\",\"text\":\"kept\"}"));
+
+        AgentRunner.foldEarlierPages(conversation);
+
+        String first = conversation.get(2).content();
+        assertThat(first).contains("https://example.com/1").contains("Page 1").contains("dropped").doesNotContain("words");
+        assertThat(conversation.get(2).toolCallId()).isEqualTo("c1");
+        assertThat(conversation.get(3).content()).contains("words");
+        assertThat(conversation.get(4).content()).contains("words");
+        // Only browser results are folded, and folding twice changes nothing.
+        assertThat(conversation.get(5).content()).contains("kept");
+        AgentRunner.foldEarlierPages(conversation);
+        assertThat(conversation.get(2).content()).isEqualTo(first);
+    }
+
+    @Test
     @DisplayName("a long list loses its trailing items, says how many it shows, and is still valid JSON")
     void capForModelShortensAListAtItemBoundaries() throws Exception {
         String capped = AgentRunner.capForModel(listOf(500));
