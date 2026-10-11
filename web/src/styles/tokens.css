@@ -70,6 +70,24 @@
   --highlight: #ffffff;       /* the light catching the top edge of glass, and a button sheen */
   --shadow-tint: #1a2a4a;     /* the colour every shadow is cast in */
 
+  /* The home page's hero stage: a night-sky panel that stays dark in both themes. */
+  --stage-bg: #050608;        /* the deep navy of the stage */
+  --stage-bg-top: #10152e;    /* the lighter navy where the stage catches the light, top left */
+  --stage-glow: #4257c9;      /* the soft glow in the top-left corner */
+  --stage-ink: #f5f7ff;       /* headline and card text on the stage */
+  --stage-muted: #b4bdd8;     /* lead and caption text on the stage */
+  --stage-star: #dfe5ff;      /* the dots of the starfield */
+  --stage-wire: #5068ff;      /* the glowing lines of the globe */
+  --stage-violet: #9a6bff;    /* the violet end of the stage's gradients */
+  --stage-card: #0f1118;      /* the glass cards floating over the globe */
+  --stage-edge: #262a38;      /* the hairline edge of glass on the stage */
+  --stage-cta: #ffffff;       /* the light pill button */
+  --stage-cta-ink: #0b1027;   /* text on the light pill button */
+  --stage-accent: #8ea2ff;    /* links and accents read as text on the stage */
+  --stage-green: #4fc7a3;     /* success on the stage */
+  --stage-amber: #f1b95c;     /* waiting and warnings on the stage */
+  --stage-red: #ff8f78;       /* danger on the stage */
+
   /* ---- Type -------------------------------------------------------------------------------- */
   /* One typeface for everything: Inter (see fonts.css). The mono token is kept as a name so
      labels, code and hashes keep their own styling, but it draws the same family: there is no
@@ -189,7 +207,7 @@
  * index.html (before first paint) and by lib/theme.ts, never by a media query alone, so the
  * person's choice of Light or Dark wins over the system's.
  *
- * Contrast, measured against --surface (#161c25) and --paper (#0e131a): --ink 14.3:1, --muted
+ * Contrast, measured against --surface (#0e0e11) and --paper (#050506): --ink 14.3:1, --muted
  * 6.9:1, --blue 6.9:1, the status inks above 7:1, every tag above 6.5:1 on its tint, and
  * --line-strong 3:1 so a field's edge is still seen. Primary buttons set dark text on the
  * lighter blue (7.5:1) rather than white on it.
@@ -199,16 +217,16 @@
 
   --blue: #7aa2ff;
   --blue-dark: #9bbaff;     /* hover on primary buttons: lighter, not darker, on a dark page */
-  --blue-light: #1c2b4a;
-  --ink: #e7ebf1;
-  --muted: #9ba6b6;
-  --line: #29313d;
+  --blue-light: #14203d;
+  --ink: #ededf0;
+  --muted: #a1a1ab;
+  --line: #232328;
   --green: #4fc7a3;
-  --paper: #0e131a;
-  --surface: #161c25;
+  --paper: #050506;
+  --surface: #0e0e11;
 
   --warning-ink: #f1b95c;
-  --warning-bg: #2a2214;
+  --warning-bg: #221a0c;
   --danger: #ff8f78;
 
   --category-operations: #7398ff;
@@ -217,27 +235,44 @@
   --category-support: #f29476;
 
   --chart-primary: #7aa2ff;
-  --chart-secondary: #3e5a8f;
+  --chart-secondary: #34497a;
 
-  --eyebrow: #93a6c6;
+  --eyebrow: #9aa2b4;
 
-  --surface-hover: #1f2732;
-  --icon-ink: #a8b2c2;
-  --nav-ink: #aab4c4;
-  --avatar-bg: #243042;
-  --avatar-ink: #bac6da;
-  --skeleton-highlight: #222a36;
+  --surface-hover: #18181c;
+  --icon-ink: #a6a6b0;
+  --nav-ink: #a9a9b3;
+  --avatar-bg: #1c1c22;
+  --avatar-ink: #c4c4cd;
+  --skeleton-highlight: #1a1a1e;
 
-  --on-accent: #0b1220;
-  --mix-base: #161c25;
+  --on-accent: #05070d;
+  --mix-base: #0e0e11;
   --mix-shade: #ffffff;
-  --code-bg: #10151d;
-  --glass-line: #3a4556;
-  --highlight: #2c3644;
+  --code-bg: #09090b;
+  --glass-line: #2e2e35;
+  --highlight: #26262c;
   --shadow-tint: #000000;
 
-  --line-strong: #5d6878;
-  --border-hover: #6e7a8b;
+  --stage-bg: #030304;
+  --stage-bg-top: #0e1330;
+  --stage-glow: #3a4db5;
+  --stage-ink: #eef1fb;
+  --stage-muted: #a9b2cd;
+  --stage-star: #cfd7f7;
+  --stage-wire: #5c72ff;
+  --stage-violet: #8f63f2;
+  --stage-card: #0c0d12;
+  --stage-edge: #22263a;
+  --stage-cta: #f3f5fc;
+  --stage-cta-ink: #070b1c;
+  --stage-accent: #8a9eff;
+  --stage-green: #47bb98;
+  --stage-amber: #e5ad52;
+  --stage-red: #f28470;
+
+  --line-strong: #4a4a53;
+  --border-hover: #5c5c66;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px -4px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35), 0 14px 36px -10px rgba(0, 0, 0, 0.6);
@@ -245,7 +280,7 @@
   --shadow-launcher: 0 10px 30px rgba(0, 0, 0, 0.55);
   --backdrop: rgba(3, 6, 12, 0.66);
 
-  --focus-ring: #27406e;
+  --focus-ring: #22355e;
 }
 
 /* Tailwind v4 reads the same variables, so a utility class and a hand-written rule cannot

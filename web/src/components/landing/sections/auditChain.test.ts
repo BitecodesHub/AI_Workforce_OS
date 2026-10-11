@@ -218,8 +218,14 @@ describe('sections', () => {
 
   it('explains how it works in three steps', () => {
     render(createElement(HowItWorks))
-    expect(screen.getAllByRole('listitem')).toHaveLength(3)
-    expect(screen.getByRole('heading', { level: 3, name: 'Approve what matters' })).toBeInTheDocument()
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(3)
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    // Each step opens its own scene; the last one waits for a yes before anything is sent.
+    fireEvent.click(screen.getByRole('tab', { name: /Approve what matters/ }))
+    expect(screen.getByRole('heading', { level: 3, name: 'HR wants to send an email' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    expect(screen.getByText(/Nothing is sent/, { selector: 'span' })).toBeInTheDocument()
   })
 
   it('draws who can do what from the same role data as the permission map', () => {

@@ -1,76 +1,16 @@
 /*
- * @find: landing styles, how it works, promise, who is it for, FAQ, trust section, footer, lp-how, lp-promise, lp-faq, lp-trust
+ * @find: landing styles, promise, who is it for, FAQ, trust section, footer, lp-how, lp-promise, lp-faq, lp-trust
  * @what: Styles for the buyer-focused sections of the public pages.
  * @flow: Used by Landing.tsx and Trust.tsx
  */
 /*
  * Public pages: the sections written for the people who choose the product.
  *
- * Owner: sections. Prefixes: .lp-how-*, .lp-promise*, .lp-who-*, .lp-faq-*, .lp-trust-* and
+ * Owner: sections. Prefixes: .lp-promise*, .lp-who-*, .lp-faq-*, .lp-trust-* and
  * .lp-footer-other. The same rules as the rest of the landing styles hold: tokens only, borders
  * from --line or the blue-grey glass rgba, radii from the token families, no raw colour, and no
  * keyframes of its own (entrances reuse base.css's reveal).
  */
-
-/* ---- How it works: three steps, one row ---------------------------------------------------- */
-
-.lp-how {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--lp-grid-gap);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.lp-how-step {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  padding: 26px 24px 28px;
-}
-
-.lp-how-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.lp-how-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-pill);
-  font-size: 16px;
-  font-weight: var(--weight-strong);
-  color: var(--on-accent);
-  background: var(--blue);
-}
-
-.lp-how-icon {
-  display: inline-flex;
-  color: var(--eyebrow);
-}
-
-.lp-how-title {
-  font-size: 18px;
-}
-
-.lp-how-body {
-  font-size: var(--lp-text-copy);
-  line-height: 1.6;
-  color: var(--muted);
-}
-
-@media (max-width: 899px) {
-  .lp-how {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 
 /* ---- Safe by design: six promises, three a row --------------------------------------------- */
 

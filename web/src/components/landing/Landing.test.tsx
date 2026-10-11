@@ -131,7 +131,8 @@ describe('Landing', () => {
     // Until the answer arrives the page shows the safe variant, never the other way round.
     expect(screen.queryByRole('link', { name: /Try the demo/ })).toBeNull()
     await settleDemoLookup()
-    expect(screen.getAllByRole('link', { name: /Try the demo/ }).length).toBeGreaterThanOrEqual(3)
+    // The hero and the final call to action; on the home page the bar keeps Create your workspace.
+    expect(screen.getAllByRole('link', { name: /Try the demo/ }).length).toBeGreaterThanOrEqual(2)
     for (const link of screen.getAllByRole('link', { name: /Try the demo/ })) {
       expect(link).toHaveAttribute('href', '/sign-in')
     }
@@ -196,7 +197,7 @@ describe('Landing', () => {
     try {
       renderLanding()
       expect(region('cited-tab')).toHaveAttribute('aria-selected', 'false')
-      const link = document.querySelector('.lp-benefits a[href="#cited"]') as HTMLElement
+      const link = document.querySelector('.lp-orbit-card[href="#cited"]') as HTMLElement
       fireEvent.click(link)
       expect(region('cited-tab')).toHaveAttribute('aria-selected', 'true')
       expect(region('cited-panel')).not.toHaveAttribute('hidden')

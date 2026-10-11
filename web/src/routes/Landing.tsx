@@ -40,11 +40,11 @@ const HOME_DEMOS: readonly StageItem[] = [
 // @find: Landing component, public home page, /home
 export function Landing(): ReactElement {
   return (
-    <LandingRoot>
+    <LandingRoot look="night">
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <LandingBar />
+      <LandingBar tone="stage" />
       {/* tabIndex so the skip link actually moves focus somewhere, not just the viewport - a
           skip link that scrolls but never focuses leaves a keyboard user with no visible
           indication of where they landed. */}

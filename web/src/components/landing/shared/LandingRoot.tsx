@@ -26,7 +26,11 @@ function ignorePause(): void {
 }
 
 // @find: LandingRoot component, motion root
-export function LandingRoot({ children }: { children: ReactNode }): ReactElement {
+/**
+ * look 'night' puts the whole page on the hero stage's deep black (.lp-night in
+ * styles/landing/sky.css), whatever theme the visitor has chosen.
+ */
+export function LandingRoot({ children, look = 'default' }: { children: ReactNode; look?: 'default' | 'night' }): ReactElement {
   const reduced = useReducedMotion()
   const [ambientPaused, setAmbientPaused] = useState(false)
   const motion = useMemo<LandingMotion>(
@@ -37,7 +41,7 @@ export function LandingRoot({ children }: { children: ReactNode }): ReactElement
   return (
     <LandingMotionContext.Provider value={motion}>
       <div
-        className="lp"
+        className={look === 'night' ? 'lp lp-night' : 'lp'}
         data-motion={reduced ? 'off' : 'on'}
         data-ambient={ambientPaused ? 'paused' : 'running'}
       >

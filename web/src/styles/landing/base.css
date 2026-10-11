@@ -53,7 +53,6 @@
   --lp-aurora-1: color-mix(in srgb, var(--blue) 20%, transparent);
   --lp-aurora-2: color-mix(in srgb, var(--chart-secondary) 42%, transparent);
   --lp-aurora-3: color-mix(in srgb, var(--blue-light) 95%, transparent);
-  --lp-grid-line: color-mix(in srgb, var(--blue) 7%, transparent);
   --lp-pool: color-mix(in srgb, var(--blue) 14%, transparent);
   --lp-spot: color-mix(in srgb, var(--blue) 9%, transparent);
   --lp-tint-04: color-mix(in srgb, var(--blue) 4%, transparent);
@@ -276,19 +275,6 @@
   top: 420px;
   right: -6%;
   background: radial-gradient(closest-side, var(--lp-aurora-3), transparent);
-}
-
-/* The blueprint grid, faded out towards the edges. */
-.lp-aurora::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--lp-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--lp-grid-line) 1px, transparent 1px);
-  background-size: 44px 44px;
-  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 65% 28%, black 20%, transparent 75%);
-  mask-image: radial-gradient(ellipse 60% 55% at 65% 28%, black 20%, transparent 75%);
 }
 
 @media (max-width: 599px) {

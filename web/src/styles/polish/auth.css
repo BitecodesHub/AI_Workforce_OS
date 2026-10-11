@@ -60,19 +60,6 @@
   background: radial-gradient(closest-side, color-mix(in srgb, var(--category-engineering) 12%, transparent), transparent);
 }
 
-.auth-grid {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--blue) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--blue) 6%, transparent) 1px, transparent 1px);
-  background-size: 44px 44px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 10%, transparent 70%);
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 10%, transparent 70%);
-}
-
 .auth-header {
   position: relative;
   z-index: 1;
@@ -349,21 +336,6 @@
     var(--surface) 100%
   );
   border-right: 1px solid var(--line);
-}
-
-/* The blueprint grid, faded towards the bottom of the pane. */
-.auth-showcase::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--blue) 7%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--blue) 7%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
-  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 30% 0%, black 15%, transparent 75%);
-  mask-image: radial-gradient(ellipse 90% 70% at 30% 0%, black 15%, transparent 75%);
 }
 
 .auth-showcase-title {

@@ -36,10 +36,14 @@ export const HOME_SECTIONS: readonly BarSection[] = [
 /** A 5% band just above the middle of the viewport decides which section is being read. */
 const SCROLLSPY_MARGIN = '-45% 0px -50% 0px'
 
-export type LandingBarProps = { sections?: readonly BarSection[] }
+/**
+ * tone 'stage' marks a bar that rests on the home page's dark hero stage: until the page scrolls,
+ * its links and buttons take the stage's light-on-dark colours (styles/landing/sky.css).
+ */
+export type LandingBarProps = { sections?: readonly BarSection[]; tone?: 'default' | 'stage' }
 
 // @find: LandingBar component, sticky top bar
-export function LandingBar({ sections = HOME_SECTIONS }: LandingBarProps): ReactElement {
+export function LandingBar({ sections = HOME_SECTIONS, tone = 'default' }: LandingBarProps): ReactElement {
   const inPage = useInPageLink()
   const demo = useDemoCta()
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -103,7 +107,7 @@ export function LandingBar({ sections = HOME_SECTIONS }: LandingBarProps): React
   return (
     <>
       <div ref={sentinelRef} className="lp-bar-sentinel" aria-hidden="true" />
-      <header className="lp-bar" data-solid={solid ? 'true' : 'false'}>
+      <header className="lp-bar" data-solid={solid ? 'true' : 'false'} data-tone={tone}>
         <div className="lp-bar-inner">
           <Brand />
           <nav aria-label="On this page" className="nav-capsule lp-bar-nav">
@@ -124,14 +128,15 @@ export function LandingBar({ sections = HOME_SECTIONS }: LandingBarProps): React
               {CTA.signIn.label}
             </a>
             {/* Without demo accounts the demo button would repeat the "See it work" link beside it,
-                so the bar offers the next step instead. */}
+                so the bar offers the next step instead. On the home page's stage both ways in
+                stay in the bar, as a pair, the whole time. */}
             <a
               className="button button-primary lp-bar-cta"
-              href={demo.accounts ? demo.href : CTA.create.href}
+              href={demo.accounts && tone !== 'stage' ? demo.href : CTA.create.href}
               onClick={inPage}
-              data-visible={ctaVisible ? 'true' : 'false'}
+              data-visible={ctaVisible || tone === 'stage' ? 'true' : 'false'}
             >
-              {demo.accounts ? demo.label : CTA.create.label}
+              {demo.accounts && tone !== 'stage' ? demo.label : CTA.create.label}
             </a>
           </div>
         </div>

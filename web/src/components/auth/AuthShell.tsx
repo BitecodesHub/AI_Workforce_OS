@@ -23,7 +23,6 @@ export function AuthShell({ children, footer }: AuthShellProps) {
   return (
     <main id="main" className="auth-page">
       <div className="auth-atmosphere" aria-hidden="true" />
-      <div className="auth-grid" aria-hidden="true" />
       <div className="auth-header">
         <Brand />
       </div>
