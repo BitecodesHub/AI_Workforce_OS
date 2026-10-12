@@ -144,6 +144,15 @@ aiwos:
   browser:
     runner-url: ${AIWOS_BROWSER_RUNNER_URL:}
     runner-secret: ${AIWOS_BROWSER_RUNNER_SECRET:}
+  # Push notifications on people's own devices (Web Push, read by push.PushService and
+  # push.VapidKeyStore). The VAPID key pair is generated once and stored encrypted unless both
+  # AIWOS_VAPID_PUBLIC_KEY and AIWOS_VAPID_PRIVATE_KEY (raw P-256, base64url) are set. The subject
+  # defaults to mailto:no-reply@<the host the app is served from>; allowed-hosts adds push
+  # services beyond the browsers' own (comma-separated host names or parent domains).
+  push:
+    enabled: ${AIWOS_PUSH_ENABLED:true}
+    subject: ${AIWOS_PUSH_SUBJECT:}
+    allowed-hosts: ${AIWOS_PUSH_ALLOWED_HOSTS:}
 
 # OpenAPI document and Swagger UI endpoints.
 springdoc:

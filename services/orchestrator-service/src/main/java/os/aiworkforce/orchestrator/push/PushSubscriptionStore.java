@@ -1,0 +1,233 @@
+// @find: push subscriptions store, save push subscription, delete push subscription, list my devices, push_subscriptions table, subscribed users, record push failure, record push success, PushSubscriptionStore
+// @what: Reads and writes push_subscriptions: one row per browser that agreed to receive push notifications.
+// @flow: Used by PushService (subscribe, unsubscribe, list, recipients) and PushDelivery (success, failure, removal)
+package os.aiworkforce.orchestrator.push;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Component;
+
+import os.aiworkforce.platform.web.persistence.UuidV7;
+
+/**
+ * Plain SQL over {@code push_subscriptions}.
+ *
+ * <p>Plain SQL rather than an entity because the writes that matter are single statements: an
+ * upsert on the endpoint, a counter bumped in place, a delete scoped to its owner. Each statement
+ * commits on its own; nothing here is part of a larger transaction, and delivery runs on threads
+ * that have none.
+ *
+ * <p>Every read and delete that a person can cause names their workspace and their own id, so one
+ * person can never list, or remove, another's device.
+ */
+@Component
+public class PushSubscriptionStore {
+
+    /** One browser that agreed to receive push notifications for one person in one workspace. */
+    public record PushSubscription(
+            UUID id,
+            UUID orgId,
+            UUID userId,
+            String endpoint,
+            String p256dh,
+            String auth,
+            String label,
+            Instant createdAt,
+            Instant lastSuccessAt,
+            int failureCount) {
+
+        @Override
+        public String toString() {
+            // The endpoint is a capability: whoever holds it (and the keys) can reach the device.
+            return "PushSubscription[id=" + id + ", userId=" + userId + "]";
+        }
+    }
+
+    private static final String COLUMNS =
+            "id, org_id, user_id, endpoint, p256dh, auth, user_agent_label, created_at, last_success_at, failure_count";
+
+    /*
+     * A browser keeps one endpoint per site, so the endpoint decides the row: subscribing again from
+     * the same browser refreshes its keys, and a different person signing in on that browser and
+     * turning push on takes the device over (the previous person stops receiving there).
+     */
+    private static final String UPSERT =
+            """
+            insert into push_subscriptions (id, org_id, user_id, endpoint, p256dh, auth, user_agent_label)
+            values (:id, :orgId, :userId, :endpoint, :p256dh, :auth, :label)
+            on conflict (endpoint) do update
+               set org_id = excluded.org_id,
+                   user_id = excluded.user_id,
+                   p256dh = excluded.p256dh,
+                   auth = excluded.auth,
+                   user_agent_label = excluded.user_agent_label,
+                   failure_count = 0
+            returning\s"""
+                    + COLUMNS;
+
+    private static final RowMapper<PushSubscription> ROW = PushSubscriptionStore::map;
+
+    private final NamedParameterJdbcTemplate named;
+    private final JdbcTemplate jdbc;
+
+    /** Wires the shared JDBC template. */
+    public PushSubscriptionStore(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+        this.named = new NamedParameterJdbcTemplate(jdbc);
+    }
+
+    // @find: save push subscription, upsert by endpoint
+    /**
+     * Saves a subscription for one person, or refreshes the existing row for the same endpoint
+     * (moving it to this person and workspace, and clearing its failure count).
+     *
+     * @return the row as stored
+     */
+    public PushSubscription upsert(UUID orgId, UUID userId, String endpoint, String p256dh, String auth, String label) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", UuidV7.generate())
+                .addValue("orgId", orgId)
+                .addValue("userId", userId)
+                .addValue("endpoint", endpoint)
+                .addValue("p256dh", p256dh)
+                .addValue("auth", auth)
+                .addValue("label", label == null ? "" : label);
+        return named.queryForObject(UPSERT, params, ROW);
+    }
+
+    // @find: list my push devices
+    /** One person's subscriptions in one workspace, newest first. */
+    public List<PushSubscription> listFor(UUID orgId, UUID userId) {
+        return jdbc.query(
+                "select " + COLUMNS + " from push_subscriptions where org_id = ? and user_id = ? order by created_at desc",
+                ROW,
+                orgId,
+                userId);
+    }
+
+    /** How many subscriptions one person has in one workspace. */
+    public int countFor(UUID orgId, UUID userId) {
+        Integer count = jdbc.queryForObject(
+                "select count(*) from push_subscriptions where org_id = ? and user_id = ?", Integer.class, orgId, userId);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * Removes one person's oldest subscriptions beyond {@code keep}, so a person who reinstalls
+     * browsers for years does not collect devices without end.
+     *
+     * @return how many were removed
+     */
+    public int trimOldest(UUID orgId, UUID userId, int keep) {
+        return jdbc.update(
+                """
+                delete from push_subscriptions
+                 where org_id = ? and user_id = ?
+                   and id not in (select id from push_subscriptions
+                                   where org_id = ? and user_id = ?
+                                   order by created_at desc, id desc
+                                   limit ?)
+                """,
+                orgId,
+                userId,
+                orgId,
+                userId,
+                Math.max(0, keep));
+    }
+
+    // @find: delete push subscription by endpoint
+    /**
+     * Removes the subscription with this endpoint, only when it belongs to this person in this
+     * workspace.
+     *
+     * @return the removed row's id, or empty when there was none of theirs
+     */
+    public Optional<UUID> deleteOwned(UUID orgId, UUID userId, String endpoint) {
+        return jdbc.queryForList(
+                        "delete from push_subscriptions where org_id = ? and user_id = ? and endpoint = ? returning id",
+                        UUID.class,
+                        orgId,
+                        userId,
+                        endpoint)
+                .stream()
+                .findFirst();
+    }
+
+    /** The subscription with this endpoint, whoever owns it; for checks before a change. */
+    public Optional<PushSubscription> findByEndpoint(String endpoint) {
+        return jdbc.query("select " + COLUMNS + " from push_subscriptions where endpoint = ?", ROW, endpoint).stream()
+                .findFirst();
+    }
+
+    // @find: who has push turned on in a workspace
+    /** The people in a workspace with at least one subscription, at most {@code limit} of them. */
+    public List<UUID> subscribedUsers(UUID orgId, int limit) {
+        return jdbc.queryForList(
+                "select distinct user_id from push_subscriptions where org_id = ? order by user_id limit ?",
+                UUID.class,
+                orgId,
+                Math.max(1, limit));
+    }
+
+    /** Every subscription of the given people in a workspace. Empty for no people. */
+    public List<PushSubscription> listForUsers(UUID orgId, Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return List.of();
+        }
+        MapSqlParameterSource params =
+                new MapSqlParameterSource().addValue("orgId", orgId).addValue("userIds", userIds);
+        return named.query(
+                "select " + COLUMNS + " from push_subscriptions where org_id = :orgId and user_id in (:userIds)",
+                params,
+                ROW);
+    }
+
+    /** A delivery arrived: the time is noted and the failure count starts again. */
+    public void recordSuccess(UUID id, Instant at) {
+        jdbc.update(
+                "update push_subscriptions set last_success_at = ?, failure_count = 0 where id = ?",
+                Timestamp.from(at),
+                id);
+    }
+
+    /** A delivery failed: the count goes up by one. @return the new count, or 0 when the row is gone */
+    public int recordFailure(UUID id) {
+        List<Integer> counts = jdbc.queryForList(
+                "update push_subscriptions set failure_count = failure_count + 1 where id = ? returning failure_count",
+                Integer.class,
+                id);
+        return counts.isEmpty() ? 0 : counts.get(0);
+    }
+
+    /** Removes a subscription the push service says is gone, or one that kept failing. */
+    public void delete(UUID id) {
+        jdbc.update("delete from push_subscriptions where id = ?", id);
+    }
+
+    // One row as a record.
+    private static PushSubscription map(ResultSet row, int n) throws SQLException {
+        Timestamp lastSuccess = row.getTimestamp("last_success_at");
+        return new PushSubscription(
+                row.getObject("id", UUID.class),
+                row.getObject("org_id", UUID.class),
+                row.getObject("user_id", UUID.class),
+                row.getString("endpoint"),
+                row.getString("p256dh"),
+                row.getString("auth"),
+                row.getString("user_agent_label"),
+                row.getTimestamp("created_at").toInstant(),
+                lastSuccess == null ? null : lastSuccess.toInstant(),
+                row.getInt("failure_count"));
+    }
+}

@@ -1,6 +1,6 @@
 // @find: app entry, main, bootstrap, start app, render root, query client, React Query, router provider, fonts, styles import, main.tsx
-// @what: The browser entry point: loads fonts and styles, creates the data client and renders the App.
-// @flow: Renders App from App.tsx inside QueryClientProvider and RouterProvider
+// @what: The browser entry point: loads fonts and styles, links the web app manifest, creates the data client and renders the App.
+// @flow: Renders App from App.tsx inside QueryClientProvider and RouterProvider, beside the PushBridge
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -13,6 +13,8 @@ import { App } from './App'
 import { RouterProvider } from './lib/router'
 import { ToastProvider } from './lib/toast'
 import { ApiError } from './lib/api'
+import { linkWebManifest } from './lib/push'
+import { PushBridge } from './lib/pushBridge'
 import { startThemeSync } from './lib/theme'
 import { ErrorBoundary, clearReloadFlagWhenSettled, logRenderError, reloadOnce } from './components/ui/ErrorBoundary'
 
@@ -48,6 +50,11 @@ clearReloadFlagWhenSettled()
 // index.html set the theme before first paint; this keeps it following the system and other tabs.
 startThemeSync()
 
+// The web app manifest, so a phone can add the console to its Home Screen (which is what lets an
+// iPhone receive push notifications). Linked from here because index.html's inline script is
+// pinned by hash in the launcher's Content-Security-Policy, and that file is left alone.
+linkWebManifest()
+
 /*
  * Every render failure is logged in one place, with the path it happened on: those an error
  * boundary caught and showed a fallback for, and any that escaped them all.
@@ -59,6 +66,8 @@ createRoot(document.getElementById('root')!, {
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider>
+        {/* A tapped push notification opens its link here; renders nothing. */}
+        <PushBridge />
         <ToastProvider>
           {/* The last resort, for a failure outside any screen (the navigation bar, say): a page
               that says so and can be reloaded, rather than a blank window. */}

@@ -1,6 +1,6 @@
-// @find: approvals, approve, reject, decide request, pending queue, waiting for approval, decided history, human in the loop, questions waiting, approval expires, who asked, email approval, tool call payload, /approvals, Approvals page
+// @find: approvals, approve, reject, decide request, pending queue, waiting for approval, decided history, human in the loop, questions waiting, approval expires, who asked, email approval, tool call payload, /approvals, Approvals page, decide mode, swipe to decide, decide one by one
 // @what: The Approvals page: where people approve or reject what an assistant wants to do (such as send an email) and answer assistant questions, plus the history of decisions.
-// @flow: Routed from App.tsx at /approvals; decisions go to the approvals API in lib/queries and resume the run
+// @flow: Routed from App.tsx at /approvals; decisions go to the approvals API in lib/queries and resume the run; the Decide view is components/approvals/DecideDeck
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
@@ -21,6 +21,9 @@ import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { ApprovalCard, DecidedCard } from '../components/approvals/ApprovalCard'
 import { BulkDialog, SimilarRequests } from '../components/approvals/BulkDecision'
 import type { BulkTarget } from '../components/approvals/BulkDecision'
+import { DecideDeck } from '../components/approvals/DecideDeck'
+import type { DeckDecision } from '../components/approvals/DecideDeck'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { QuestionCard } from '../components/run/QuestionCard'
 import { NOTE_MAX, approvalAnchor, bulkSummary, decisionError, groupIdentical, readableSummary, runOutcome } from '../lib/approvals'
 import {
@@ -44,6 +47,12 @@ import { useListFilter } from '../lib/useListFilter'
 const FILTER_THRESHOLD = 5
 
 type Tab = 'pending' | 'decided'
+
+/** How the waiting requests are shown: all at once, or one at a time to decide by swipe, button or key. */
+type View = 'list' | 'decide'
+
+/** Below this width the Decide view is the default: one card at a time suits a phone. */
+const DECIDE_BY_DEFAULT = '(max-width: 767px)'
 
 /** What a person chooses to look at in the history, as the server's statuses. */
 const OUTCOMES: ReadonlyArray<{ value: string; label: string }> = [
@@ -131,8 +140,9 @@ function QuestionsWaiting() {
 // @find: pending approvals queue, approve request, reject request, decide, comment, payload, expires, POST /api/approvals/:id/decision
 /**
  * The Waiting tab: requests an agent is blocked on, soonest to expire first, paged with Show more. Each card shows what will be sent or removed (the payload), the agent, the goal and when it expires. With approval:decide a person can Approve, Reject (with an optional reason) or Send back (request changes, with a note the agent must address), each through useDecideApproval; identical requests are grouped and can be decided together through useDecideApprovals, with a summary toast. A person cannot decide their own agent's request where the workspace rule forbids it (canDecide comes from the server). Decided cards leave the queue at once and focus moves to the neighbouring card. A deep link #approval-<id> pages through the queue until the card is found; if it is not there, the request is looked up and the page says whether it was decided, withdrawn or expired. Search and agent filter state live in the address.
+ * In the Decide view (`view` 'decide') the same queue is shown one card at a time by DecideDeck, which holds each decision for a few seconds behind Undo and then sends it through useDecideApproval here; a failure is explained by toast and the card comes back.
  */
-function PendingQueue() {
+function PendingQueue({ view, onShowList }: { view: View; onShowList: () => void }) {
   const toast = useToast()
   const { hash } = useRouter()
   const queueQuery = usePendingApprovalPages()
@@ -341,6 +351,23 @@ function PendingQueue() {
     if (result.isError) toast.error('More requests could not be loaded. Try again.')
   }
 
+  // The Decide view's send: only once a decision's undo window has closed. A failure is said by
+  // toast and rethrown, so the deck brings the card back.
+  const decideFromDeck = async ({ approval, kind, note: text }: DeckDecision) => {
+    try {
+      if (kind === 'approve') await decideApproval.mutateAsync({ id: approval.id, approved: true })
+      else if (kind === 'reject') {
+        await decideApproval.mutateAsync({ id: approval.id, approved: false, ...(text ? { note: text } : {}) })
+      } else {
+        await decideApproval.mutateAsync({ id: approval.id, approved: false, mode: 'request_changes', note: text ?? '' })
+      }
+      leave([approval.id])
+    } catch (error) {
+      toast.error(decisionError(error))
+      throw error
+    }
+  }
+
   const lookedUp = lookup.data
   const targetNotice =
     target === null || targetListed || pending === undefined || hasMore || wasDecidedHere || lookup.isLoading
@@ -371,7 +398,9 @@ function PendingQueue() {
         permission="approval:read"
         what="the approvals queue"
         rows={4}
-        isEmpty={() => (pending?.length ?? 0) === 0 && !hasMore}
+        // The Decide view has an empty state of its own, and stays mounted through it so a
+        // decision still in its undo window is not lost when the last card goes.
+        isEmpty={() => view === 'list' && (pending?.length ?? 0) === 0 && !hasMore}
         empty={
           <div style={{ marginTop: 'var(--space-7)' }}>
             <Card>
@@ -393,6 +422,25 @@ function PendingQueue() {
       >
         {() => {
           const queue = pending ?? []
+          if (view === 'decide') {
+            return (
+              <div style={{ marginTop: 'var(--space-6)' }}>
+                <DecideDeck
+                  approvals={queue}
+                  agentNames={agentNames}
+                  agentsKnown={agentsKnown}
+                  me={me}
+                  nameOf={nameOf}
+                  targetId={target ? target.slice('approval-'.length) : null}
+                  hasMore={Boolean(hasMore)}
+                  loadingMore={fetchingMore}
+                  onLoadMore={() => void loadMore()}
+                  onDecide={decideFromDeck}
+                  onShowList={onShowList}
+                />
+              </div>
+            )
+          }
           const filtering = queue.length > FILTER_THRESHOLD || filter.active || hasMore
           const shown = filtering ? filter.filtered : queue
           const agentCounts = filter.counts.agent ?? {}
@@ -705,6 +753,7 @@ function DecidedHistory() {
 /**
  * The Approvals page (route /approvals, permission approval:read).
  * Header, then the questions agents have asked (answered inline), a note that an undecided request expires and stops its run (nothing is sent because a deadline passed), a notice when the person's role can read but not decide, and a Waiting or Decided switch whose choice lives in the address (?tab=decided). The Waiting tab shows PendingQueue with a count of pending requests; the Decided tab shows DecidedHistory.
+ * On the Waiting tab a second switch chooses List or Decide one by one (?view=list or ?view=decide); with no choice made, screens narrower than 768 px open on Decide.
  */
 export function Approvals() {
   const { search, navigate } = useRouter()
@@ -712,11 +761,21 @@ export function Approvals() {
   const canDecide = can('approval:decide')
   const tab: Tab = search.get('tab') === 'decided' ? 'decided' : 'pending'
   const count = useApprovalCount({ enabled: canRead })
+  // The choice of view lives in the address once made; until then a phone opens on Decide.
+  const narrow = useMediaQuery(DECIDE_BY_DEFAULT)
+  const chosenView = search.get('view')
+  const view: View = chosenView === 'decide' || chosenView === 'list' ? chosenView : narrow ? 'decide' : 'list'
 
   // Each tab has its own filters, so moving between them starts the other clean.
   const showTab = (next: Tab) => {
     if (next === tab) return
     navigate(next === 'decided' ? '/approvals?tab=decided' : '/approvals', { replace: true, scroll: false })
+  }
+
+  // Switching view keeps the #fragment, so a link to one request still names it.
+  const showView = (next: View) => {
+    if (next === view) return
+    navigate(`/approvals?view=${next}${window.location.hash}`, { replace: true, scroll: false })
   }
 
   return (
@@ -750,17 +809,33 @@ export function Approvals() {
       </div>
 
       {canRead && (
-        <div className="orc-segmented" role="group" aria-label="Which requests to show" style={{ marginTop: 'var(--space-6)' }}>
-          <button id={TAB_ID} type="button" aria-pressed={tab === 'pending'} onClick={() => showTab('pending')}>
-            Waiting{count.data ? ` (${count.data.pending})` : ''}
-          </button>
-          <button type="button" aria-pressed={tab === 'decided'} onClick={() => showTab('decided')}>
-            Decided
-          </button>
+        <div className="approvals-switches" style={{ marginTop: 'var(--space-6)' }}>
+          <div className="orc-segmented" role="group" aria-label="Which requests to show">
+            <button id={TAB_ID} type="button" aria-pressed={tab === 'pending'} onClick={() => showTab('pending')}>
+              Waiting{count.data ? ` (${count.data.pending})` : ''}
+            </button>
+            <button type="button" aria-pressed={tab === 'decided'} onClick={() => showTab('decided')}>
+              Decided
+            </button>
+          </div>
+          {tab === 'pending' && (
+            <div className="orc-segmented" role="group" aria-label="How to show the waiting requests">
+              <button type="button" aria-pressed={view === 'list'} onClick={() => showView('list')}>
+                List
+              </button>
+              <button type="button" aria-pressed={view === 'decide'} onClick={() => showView('decide')}>
+                Decide one by one
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {tab === 'decided' && canRead ? <DecidedHistory /> : <PendingQueue />}
+      {tab === 'decided' && canRead ? (
+        <DecidedHistory />
+      ) : (
+        <PendingQueue view={view} onShowList={() => showView('list')} />
+      )}
     </div>
   )
 }
