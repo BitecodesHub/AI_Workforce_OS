@@ -1,4 +1,4 @@
-// @find: agent runner, agent run, run agent, agent engine, tool call, approval, approve outbound action, ask tool, human input, retry, Try again, model fallback, routing, memory, grounding, citations, budget, max steps, heartbeat lease, reaper, abandoned run, trace, loop guard
+// @find: agent runner, agent run, run agent, agent engine, tool call, approval, approve outbound action, ask tool, human input, retry, Try again, model fallback, routing, memory, grounding, citations, budget, max steps, heartbeat lease, reaper, abandoned run, trace, loop guard, takeover wait, hand back
 // @what: Core agent loop that asks the model, runs requested tools, parks for approval or answers, persists every step and enforces budgets and stop rules.
 // @flow: Called by task, chat, schedule and approval controllers via start/drive/resume; calls ModelRouter, MCP tool gateway, run and step repositories.
 package os.aiworkforce.orchestrator.service;
@@ -92,6 +92,7 @@ import os.aiworkforce.orchestrator.repository.ToolGrants;
 import os.aiworkforce.orchestrator.repository.Usage;
 import os.aiworkforce.orchestrator.schedule.Schedule;
 import os.aiworkforce.orchestrator.schedule.Schedules;
+import os.aiworkforce.orchestrator.takeover.TakeoverService;
 import os.aiworkforce.orchestrator.voice.VoiceClipService;
 import os.aiworkforce.platform.context.Actor;
 import os.aiworkforce.platform.context.RequestContext;
@@ -156,6 +157,12 @@ public class AgentRunner {
     static final String CONTINUE_REQUEST = "Continue exactly where you stopped.";
     static final String TIME_NOTE = "This run is close to its time limit. Finish with your best complete answer now and"
             + " say what is unfinished; only call a tool if essential.";
+    // A person took over the web browser part way through a turn and changed the page: what was
+    // left of the turn was planned for a page that is no longer there.
+    static final String TAKEOVER_NOT_RUN = "Not run: a person took over the web browser and changed the page."
+            + " Look at the page again and call it again if it is still needed.";
+    static final String TAKEN_OVER_NOTE = "A person took control of the web browser. The agent is waiting for it to be"
+            + " handed back.";
 
     /**
      * Past this many estimated tokens a long run's history is summarised before the next model call,
@@ -284,6 +291,20 @@ public class AgentRunner {
      */
     void useBrowserShots(os.aiworkforce.orchestrator.browser.BrowserShotService browserShots) {
         this.browserShots = browserShots;
+    }
+
+    /**
+     * A person taking over a run's web browser; absent only where a test builds the runner by hand,
+     * in which case nobody can take over and the loop never waits.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private os.aiworkforce.orchestrator.takeover.TakeoverService takeovers;
+
+    /**
+     * Test hook: installs the takeover service where the runner is built by hand rather than injected.
+     */
+    void useTakeovers(os.aiworkforce.orchestrator.takeover.TakeoverService takeovers) {
+        this.takeovers = takeovers;
     }
 
     /** Files attached to the chat message a run's goal came from; absent where a test builds the runner by hand. */
@@ -1596,6 +1617,26 @@ public class AgentRunner {
             QuestionService.AskPolicy ask,
             Supplier<List<ChatMessage>> conversation) {
         try {
+            return guardedDrive(run, agent, version, ask, conversation);
+        } finally {
+            // However the loop left - finished, failed, stopped or parked for a person - nothing
+            // stops for a person at a step boundary any more, so a hold of the run's browser (or a
+            // request for one) ends here, audited, rather than being left open.
+            String status = run.getStatus();
+            endTakeover(run, "waiting_approval".equals(status) || "waiting_input".equals(status)
+                    ? "the agent is waiting for a person"
+                    : "run ended");
+        }
+    }
+
+    /** The body of {@link #driveOrFail}: the loop, and what each kind of failure inside it means for the run. */
+    private Outcome guardedDrive(
+            Run run,
+            Agent agent,
+            AgentVersion version,
+            QuestionService.AskPolicy ask,
+            Supplier<List<ChatMessage>> conversation) {
+        try {
             return loop(run, agent, version, conversation.get(), ask);
         } catch (ApprovedCallUncertain e) {
             Optional<Outcome> endedElsewhere = endedElsewhere(run);
@@ -1714,14 +1755,17 @@ public class AgentRunner {
      * search, memory and schedule tools when they apply). Each pass of the {@code while} loop then:
      * <ol>
      *   <li>re-reads the run's status and the working-time budget, and steps back if the run was
-     *       stopped or its time is up;
+     *       stopped or its time is up; while a person has taken over the web browser it waits for
+     *       them first, and the time waited is given back ({@link #awaitTakeover});
      *   <li>shortens a very long history, builds the request (with wrap-up notes near the limits) and
      *       asks the model through {@link #routeModel};
      *   <li>handles a tool call written out as text, an answer cut off by the output limit (retry at
      *       a higher limit, then continue) and an empty answer;
      *   <li>records the model step and, for a plain answer, finishes the run as completed;
-     *   <li>otherwise runs each requested call through {@link #runTool}, re-checking the status before
-     *       every call, and returns at once when a call parks the run for an approval or an answer.
+     *   <li>otherwise runs each requested call through {@link #runTool}, re-checking the status (and
+     *       waiting out a takeover) before every call, and returns at once when a call parks the run
+     *       for an approval or an answer. A person who changed the page during a takeover makes the
+     *       rest of the turn not run, and the step it cost is given back.
      * </ol>
      * Exhausting {@code maxSteps} ends the run as failed with any partial answer kept.
      *
@@ -1782,8 +1826,13 @@ public class AgentRunner {
         // a run parked for a person's approval or answer does not use up its time while it waits.
         Instant drivenSince = Instant.now();
         Duration timeLimit = timeLimitOf(version);
+        // The step budget, plus one step given back for each turn a person's takeover made pointless
+        // (kept on the takeover row, so a run that parked and resumed keeps them).
+        int stepLimit = version.getMaxSteps() + (takeovers == null ? 0 : takeovers.stepsGivenBack(run.getId()));
+        // What a person who took over the web browser did, told to the agent before its next turn.
+        TakeoverService.HandBack handedBack = null;
 
-        while (run.getStepCount() < version.getMaxSteps()) {
+        while (run.getStepCount() < stepLimit) {
             // Read fresh before every model call, not just once: a person can cancel this run from
             // another request while this loop is mid-flight, and the only way that is ever seen is
             // by asking again. Falling back to what this loop already believes when the run cannot
@@ -1793,6 +1842,21 @@ public class AgentRunner {
             if (!"running".equals(currentStatus)) {
                 log.info("Run {} stopped cooperatively: it is now {}", run.getId(), currentStatus);
                 return steppedBack(run, currentStatus);
+            }
+            // A person holding the web browser: no model step until they hand it back, and the
+            // time spent waiting for them is given back to the run.
+            TakeoverService.HandBack back = awaitTakeover(run);
+            if (back.happened()) {
+                drivenSince = drivenSince.plus(back.waited());
+                handedBack = back.note() != null ? back : handedBack;
+                String afterWait = statusNow(run);
+                if (!"running".equals(afterWait)) {
+                    return steppedBack(run, afterWait);
+                }
+            }
+            if (handedBack != null) {
+                tellHandBack(run, conversation, handedBack);
+                handedBack = null;
             }
             Duration worked = Duration.between(drivenSince, Instant.now());
             if (worked.compareTo(timeLimit) >= 0) {
@@ -1812,8 +1876,8 @@ public class AgentRunner {
                     !gatewaySpecs.isEmpty() || ask.everAsked() || conversationHasToolCalls(conversation);
             ChatRequest request = ChatRequest.builder()
                     .messages(withTimeNote(
-                            messagesFor(conversation, version.getMaxSteps() - run.getStepCount(), cutOff),
-                            timeNearlyUp && version.getMaxSteps() - run.getStepCount() > 2))
+                            messagesFor(conversation, stepLimit - run.getStepCount(), cutOff),
+                            timeNearlyUp && stepLimit - run.getStepCount() > 2))
                     .tools(specs)
                     // Must come after tools(), which sets it from whether any tool is offered.
                     .requireToolSupport(needsToolSupport)
@@ -1866,7 +1930,7 @@ public class AgentRunner {
                 if (intended != null) {
                     response = written.asToolTurn(response, intended);
                 } else {
-                    reprompt = !reprompted && run.getStepCount() + 1 < version.getMaxSteps();
+                    reprompt = !reprompted && run.getStepCount() + 1 < stepLimit;
                 }
             }
             List<ToolCall> calls = uniqueCallIds(turn, response.toolCalls());
@@ -1875,7 +1939,7 @@ public class AgentRunner {
             // with the model's largest limit, then carry on from where it stopped, up to twice.
             // Each of those is a step, so the step limit still bounds all of it.
             boolean cutShort = calls.isEmpty() && response.isTruncated();
-            boolean stepLeft = run.getStepCount() + 1 < version.getMaxSteps();
+            boolean stepLeft = run.getStepCount() + 1 < stepLimit;
             Integer higherLimit = cutShort && raisedLimit == null && stepLeft
                     ? higherOutputLimit(run, response, request.maxOutputTokens())
                     : null;
@@ -1946,7 +2010,7 @@ public class AgentRunner {
             // The last step asked for tools. There is no step left to use what they would return,
             // so none of them is run; what the model said alongside is the best answer there is,
             // and it is kept as an incomplete one.
-            if (run.getStepCount() >= version.getMaxSteps()) {
+            if (run.getStepCount() >= stepLimit) {
                 recordNotRun(run, calls, STEP_LIMIT_NOT_RUN);
                 return failStepLimit(run, version, cutOff.length() > 0 ? cutOff.toString() : response.content());
             }
@@ -1966,6 +2030,30 @@ public class AgentRunner {
                     recordNotRun(run, calls.subList(i, calls.size()), STOPPED_NOT_RUN);
                     log.info("Run {} stopped between tool calls: it is now {}", run.getId(), statusBeforeCall);
                     return steppedBack(run, statusBeforeCall);
+                }
+                // No tool step while a person holds the web browser either. When they changed the
+                // page, the rest of this turn was planned for a page that has gone: it is recorded
+                // as not run, the step it cost is given back, and the model looks again.
+                TakeoverService.HandBack beforeCall = awaitTakeover(run);
+                if (beforeCall.happened()) {
+                    drivenSince = drivenSince.plus(beforeCall.waited());
+                    handedBack = beforeCall.note() != null ? beforeCall : handedBack;
+                    String afterWait = statusNow(run);
+                    if (!"running".equals(afterWait)) {
+                        recordNotRun(run, calls.subList(i, calls.size()), STOPPED_NOT_RUN);
+                        return steppedBack(run, afterWait);
+                    }
+                    if (beforeCall.pageChanged()) {
+                        List<ToolCall> skipped = calls.subList(i, calls.size());
+                        recordNotRun(run, skipped, TAKEOVER_NOT_RUN);
+                        String notRun = capForModel(ToolResult.blocked(TAKEOVER_NOT_RUN).forModel());
+                        for (ToolCall stale : skipped) {
+                            conversation.add(ChatMessage.toolResult(stale.id(), stale.name(), notRun));
+                        }
+                        stepLimit++;
+                        takeovers.giveStepBack(run.getId());
+                        break;
+                    }
                 }
                 if (held.contains(call.id())) {
                     ToolResult notYet = ToolResult.blocked(heldForReads(call.name()));
@@ -1994,6 +2082,51 @@ public class AgentRunner {
         // Exhausting the step budget is a failure, not a completion. An agent that stopped
         // because it ran out of turns has not answered the question.
         return failStepLimit(run, version, null);
+    }
+
+    // @find: agent waits while a person has taken over the browser, takeover boundary check
+    /**
+     * Waits while a person holds the run's web browser, at a step boundary (see
+     * {@link TakeoverService#awaitHandBack}); records a "taken over" note on the trace when the wait
+     * begins. Answers {@link TakeoverService.HandBack#NONE} at once when nobody can take over (no
+     * takeover service) or nobody has.
+     */
+    private TakeoverService.HandBack awaitTakeover(Run run) {
+        if (takeovers == null) {
+            return TakeoverService.HandBack.NONE;
+        }
+        return takeovers.awaitHandBack(
+                run.getId(),
+                () -> statusNow(run),
+                () -> saveStep(run, "note", Map.of("type", "taken_over", "summary", TAKEN_OVER_NOTE)));
+    }
+
+    /**
+     * Tells the agent what a person did while they held the web browser, before its next turn: kept
+     * on the trace as a "handed_back" note (so a resumed run is rebuilt with it), added to the
+     * conversation as the person's turn, and only then marked told on the takeover. A loop that
+     * parks or stops before getting here leaves it untold, so the next drive of the run tells it.
+     */
+    private void tellHandBack(Run run, List<ChatMessage> conversation, TakeoverService.HandBack back) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("type", "handed_back");
+        detail.put("summary", back.summary() == null ? "" : back.summary());
+        detail.put("content", back.note());
+        saveStep(run, "note", detail);
+        conversation.add(ChatMessage.user(back.note()));
+        if (takeovers != null) {
+            takeovers.markTold(run.getId());
+        }
+    }
+
+    /**
+     * Ends any hold of the run's web browser, or request for one, because the loop left or the run
+     * ended ({@link TakeoverService#endHold}); nothing when nobody can take over. Never throws.
+     */
+    private void endTakeover(Run run, String reason) {
+        if (takeovers != null) {
+            takeovers.endHold(run.getId(), reason);
+        }
     }
 
     /**
@@ -3841,7 +3974,8 @@ public class AgentRunner {
     /**
      * What every ending of a run owes once its new status has committed, wherever that ending
      * happened: the loop finishing, an approver rejecting, an approval expiring, the reaper giving
-     * up. Releases the run's tool-call budget and records the ending in the audit log.
+     * up. Ends any takeover of the run's web browser, releases the run's tool-call budget (closing
+     * its browser page) and records the ending in the audit log.
      *
      * <p>Call it after the commit, never inside the transaction that ends the run: an audit entry
      * for an ending that then rolled back would be a record of something that did not happen.
@@ -3850,6 +3984,9 @@ public class AgentRunner {
      * @param reason why it did not complete, when it did not
      */
     public void finishTerminal(Run run, String status, String reason) {
+        // A person holding (or about to hold) the run's browser loses it: the run is over, and its
+        // page is closed next. Ended and audited here, the one place every ending passes.
+        endTakeover(run, "run ended");
         tools.releaseRun(run.getId().toString());
         log.info("Run {} finished as {}", run.getId(), status);
         emitRunAudit(run, status, reason);
@@ -4250,7 +4387,10 @@ public class AgentRunner {
                     // The instruction is the first step, so it lands straight after the system
                     // prompt - where it was when the model first saw it.
                     Object content = detail.get("content");
-                    if (("instruction".equals(detail.get("type")) || "reprompt".equals(detail.get("type")))
+                    // A hand back is what a person told the agent after taking over the browser,
+                    // in the place the agent was told it.
+                    if (("instruction".equals(detail.get("type")) || "reprompt".equals(detail.get("type"))
+                                    || "handed_back".equals(detail.get("type")))
                             && content instanceof String text
                             && !text.isBlank()) {
                         conversation.add(ChatMessage.user(text));

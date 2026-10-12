@@ -1,4 +1,4 @@
-// @find: agent detail, edit agent, agent page, edit description, edit instructions, system prompt, temperature, pause agent, resume agent, agent connectors, grant connector, agent routing, model for agent, revisions, restore revision, voice, agent runs, give task, /agents/:id, AgentDetail
+// @find: agent detail, edit agent, agent page, edit description, edit instructions, system prompt, temperature, pause agent, resume agent, agent connectors, grant connector, agent routing, model for agent, revisions, restore revision, voice, agent runs, give task, watch live, agent desk, /agents/:id, AgentDetail
 // @what: The single agent page: its description, instructions, connected tools, model routing, revision history, voice, recent runs and scheduled tasks, with pause, resume and edit actions.
 // @flow: Routed from App.tsx at /agents/:id; opened from the cards on Agents.tsx
 import { useMemo, useRef, useState } from 'react'
@@ -27,6 +27,7 @@ import type { Column } from '../components/ui'
 import { BackLink, EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
 import { AgentStatusButton } from '../components/agents/AgentStatusButton'
+import { AgentDesk } from '../components/agents/AgentDesk'
 import { AgentDocumentsCard } from '../components/agents/AgentDocumentsCard'
 import { AgentMemoryCard } from '../components/agents/AgentMemoryCard'
 import { RetireAgentCard } from '../components/agents/RetireAgentCard'
@@ -51,6 +52,7 @@ import { formatCount, formatDateTime, formatRelativeTicked, formatRunElapsed, se
 import { connectorState, grantedToolNames } from '../lib/connectors'
 import { connectorStateLabel, serverLabel, startedByLabel, statusLabel } from '../lib/labels'
 import {
+  isRunActive,
   useAgent,
   useAgentModelPolicy,
   useCredentials,
@@ -1288,7 +1290,7 @@ function outcomeTile(
 // @find: AgentDetail component, agent page, pause agent, resume agent, delete agent, /agents/:id
 /**
  * The Agent detail page (route /agents/:id, permission agent:read).
- * Loads the agent (useAgent) behind QueryState, which handles loading, error, permission and not-found states. Header: category, name, status, revision, and, with agent:update, Edit instructions, Edit description and the pause or resume control. Give it a task is offered only with agent:run for an active, configured agent (the platform refuses runs otherwise). Summary tiles show the 30-day success rate, cost and run count (these need run:read), the step limit, connector count and last run, and show a plain line while loading or on failure rather than zero. Body cards: recent runs, schedules (task:read), instructions, memory, documents, revision history, connectors, model routing, voice (chat:use), and retirement (agent:update or agent:delete). Sets the tab title to the agent's name.
+ * Loads the agent (useAgent) behind QueryState, which handles loading, error, permission and not-found states. Header: category, name, status, revision, Watch live while it is working (run:read; opens the Agent desk on that run), and, with agent:update, Edit instructions, Edit description and the pause or resume control. Give it a task is offered only with agent:run for an active, configured agent (the platform refuses runs otherwise). Summary tiles show the 30-day success rate, cost and run count (these need run:read), the step limit, connector count and last run, and show a plain line while loading or on failure rather than zero. Body cards: recent runs, schedules (task:read), instructions, memory, documents, revision history, connectors, model routing, voice (chat:use), and retirement (agent:update or agent:delete). Sets the tab title to the agent's name.
  */
 export function AgentDetail({ id }: { id: string }) {
   const query = useAgent(id)
@@ -1306,6 +1308,10 @@ export function AgentDetail({ id }: { id: string }) {
   const runs = useRunList({ agentId: id })
   const now = useNow()
   const lastRun = runs.data?.pages[0]?.find((run) => run.agentId === id)
+  // The run it is working on now, newest first, for Watch live; the same list, so no extra request.
+  const workingRun = canReadRuns ? runs.data?.pages[0]?.find((run) => run.agentId === id && isRunActive(run)) : undefined
+  // The run the desk shows, kept while it is open even after the run finishes.
+  const [deskRunId, setDeskRunId] = useState<string | null>(null)
 
   return (
     <div className="page">
@@ -1356,8 +1362,13 @@ export function AgentDetail({ id }: { id: string }) {
                   </>
                 }
                 action={
-                  canEdit || canGiveTask ? (
+                  canEdit || canGiveTask || workingRun ? (
                     <>
+                      {workingRun && (
+                        <Button variant="outline" onClick={() => setDeskRunId(workingRun.id)}>
+                          Watch live
+                        </Button>
+                      )}
                       {/* Hides itself for a retired agent, which cannot be paused or resumed. */}
                       {canEdit && <AgentStatusButton agent={agent} />}
                       {canEdit && (
@@ -1370,6 +1381,10 @@ export function AgentDetail({ id }: { id: string }) {
                   ) : undefined
                 }
               />
+
+              {deskRunId && (
+                <AgentDesk open onClose={() => setDeskRunId(null)} runId={deskRunId} agentName={agent.name} />
+              )}
 
               <div style={{ marginTop: 'var(--space-6)' }}>
                 <StatRow>

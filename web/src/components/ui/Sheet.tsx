@@ -1,8 +1,8 @@
 // @find: sheet, side panel, drawer, slide over, detail panel, goal sheet, run sheet, modal non-modal, Sheet
 // @what: Edge-anchored panel built on native dialog for records kept open beside a list.
-// @flow: Used by Orchestrator and Tasks; sibling of Dialog in ui/index.
+// @flow: Used by Orchestrator, Tasks and the Agent desk (AgentDesk, which guards closing while a person has control); sibling of Dialog in ui/index.
 import type { ReactNode } from 'react'
-import { useEffect, useId, useRef } from 'react'
+import { useCallback, useEffect, useId, useRef } from 'react'
 import { Eyebrow, IconButton } from './index'
 
 /*
@@ -25,7 +25,9 @@ import { Eyebrow, IconButton } from './index'
  * page behind reachable, and then Escape is handled by a document key listener because only modal dialogs get
  * it natively. A backdrop click closes only a modal sheet, and only when the press also started on the backdrop
  * (so a drag that ends there does not close it). A close the parent asked for through open=false is not reported
- * back to it again. Used by the Orchestrator sheets and Tasks.
+ * back to it again. beforeClose, when given, is asked first on every close the person starts (Escape, the Close
+ * button, the backdrop); answering false keeps the sheet open, so the caller can ask something first. Used by
+ * the Orchestrator sheets, Tasks and the Agent desk. A dialog opened inside the sheet closing never closes the sheet.
  */
 export function Sheet({
   open,
@@ -38,6 +40,7 @@ export function Sheet({
   children,
   footer,
   returnFocusTo,
+  beforeClose,
 }: {
   open: boolean
   onClose: () => void
@@ -50,6 +53,8 @@ export function Sheet({
   footer?: ReactNode
   /** Where focus goes on close. Defaults to whatever had focus before the sheet opened. */
   returnFocusTo?: HTMLElement | null
+  /** Asked before a close the person starts; false keeps the sheet open. */
+  beforeClose?: (() => boolean) | undefined
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
@@ -58,6 +63,16 @@ export function Sheet({
   const openRef = useRef(open)
   const previousFocus = useRef<HTMLElement | null>(null)
   const pressStartedOnBackdrop = useRef(false)
+  // The newest guard, read by the listeners below without adding them again on every render.
+  const guard = useRef(beforeClose)
+  useEffect(() => {
+    guard.current = beforeClose
+  })
+  /** A close the person started: reported unless the guard keeps the sheet open. */
+  const requestClose = useCallback(() => {
+    if (guard.current && !guard.current()) return
+    onClose()
+  }, [onClose])
 
   useEffect(() => {
     openRef.current = open
@@ -80,11 +95,11 @@ export function Sheet({
   useEffect(() => {
     if (modal || !open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') requestClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [modal, open, onClose])
+  }, [modal, open, requestClose])
 
   return (
     <dialog
@@ -93,7 +108,24 @@ export function Sheet({
       data-side={side}
       data-width={width}
       aria-labelledby={titleId}
-      onClose={() => {
+      onCancel={(event) => {
+        // Escape on a modal sheet: the browser closes it unless the guard says to keep it open.
+        // A dialog opened inside the sheet handles its own Escape.
+        if (event.target !== event.currentTarget) return
+        if (guard.current && !guard.current()) event.preventDefault()
+      }}
+      onKeyDown={(event) => {
+        // Chrome closes a modal dialog on a second Escape even when the cancel event was refused;
+        // refusing the key itself stops that. Only for the sheet's own content, never for a
+        // dialog opened inside it, and only when there is a guard to ask.
+        if (event.key !== 'Escape' || !modal || !guard.current) return
+        if ((event.target as HTMLElement).closest('dialog') !== event.currentTarget) return
+        if (!guard.current()) event.preventDefault()
+      }}
+      onClose={(event) => {
+        // React passes a dialog's close on to every dialog around it; a confirm opened inside the
+        // sheet closing is not the sheet closing.
+        if (event.target !== event.currentTarget) return
         const wasOpen = openRef.current
         const focusTarget = returnFocusTo ?? previousFocus.current
         if (wasOpen) onClose()
@@ -105,7 +137,7 @@ export function Sheet({
       onClick={(event) => {
         const onBackdrop = pressStartedOnBackdrop.current && event.target === event.currentTarget
         pressStartedOnBackdrop.current = false
-        if (onBackdrop && modal) onClose()
+        if (onBackdrop && modal) requestClose()
       }}
     >
       <div className="sheet-body">
@@ -116,7 +148,7 @@ export function Sheet({
               {title}
             </h2>
           </div>
-          <IconButton label="Close" onClick={onClose}>
+          <IconButton label="Close" onClick={() => requestClose()}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>

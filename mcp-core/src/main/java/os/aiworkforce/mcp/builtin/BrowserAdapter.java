@@ -96,10 +96,46 @@ public final class BrowserAdapter implements McpServerAdapter {
     /* Per run: the open page and what was typed into it, to put the page back after a long approval. */
     private final Map<String, PageState> pages = new ConcurrentHashMap<>();
 
-    /** What is remembered about one run's page: its address and the fields typed since it was opened. */
+    /**
+     * What is remembered about one run's page: its address, the fields the agent typed since it was
+     * opened and, after a person had control of it, what the approver must be told about that.
+     */
     private static final class PageState {
         private volatile String url;
+        /* The agent's typing since the page was opened (or since a person last had control); a restore types these again. */
         private final List<ObjectNode> fills = new ArrayList<>();
+        /* What the agent typed before a person took control: told to an approver, never typed again by a restore. */
+        private final List<ObjectNode> earlierFills = new ArrayList<>();
+        /* The labels of the fields a person typed into while they had control; never what they typed. */
+        private final java.util.Set<String> personFields = new java.util.LinkedHashSet<>();
+        /* Whether a person acted on this page while they had control, since the agent last moved it on. */
+        private boolean personActed;
+
+        /** Records that a person acted on the page: the agent's typing so far becomes "earlier", the field label is kept. Call under the lock. */
+        private void notePerson(java.util.Collection<String> fields, String newUrl) {
+            for (ObjectNode fill : fills) {
+                earlierFills.removeIf(earlier -> earlier.path("field").asText().equals(fill.path("field").asText()));
+                earlierFills.add(fill);
+            }
+            fills.clear();
+            personActed = true;
+            for (String field : fields) {
+                if (field != null && !field.isBlank() && personFields.size() < 10) {
+                    personFields.add(clip(field));
+                }
+            }
+            if (newUrl != null && !newUrl.isBlank()) {
+                url = newUrl;
+            }
+        }
+
+        /** Forgets everything typed and any person's control: the agent moved the page on. Call under the lock. */
+        private void movedOn() {
+            fills.clear();
+            earlierFills.clear();
+            personFields.clear();
+            personActed = false;
+        }
     }
 
     /** Production constructor: uses the system name resolver for the address guard. */
@@ -194,6 +230,162 @@ public final class BrowserAdapter implements McpServerAdapter {
     }
 
     // @find: run browser tool, open page through runner, browser call
+    /**
+     * What the runner answered to a person's action on a run's page while they held control of it.
+     *
+     * @param ok whether the action was done
+     * @param problem a plain sentence saying why not, when {@code ok} is false
+     * @param url the page's address afterwards
+     * @param title the page's title afterwards
+     * @param frame a fresh JPEG of the page, base64; empty when none could be taken
+     * @param field for typing, the label of the field typed into (never what was typed); else empty
+     */
+    public record TakeoverAnswer(boolean ok, String problem, String url, String title, String frame, String field) {
+
+        /** An action that was not done, with the sentence that says why. */
+        public static TakeoverAnswer refused(String problem) {
+            return new TakeoverAnswer(false, problem, "", "", "", "");
+        }
+    }
+
+    /** The person actions the runner accepts on a page someone has taken over. */
+    public static final List<String> TAKEOVER_ACTIONS = List.of("click", "type", "key", "scroll", "navigate");
+
+    /* Long enough for an address to load (20 s) and settle; a person's click or key press is quicker. */
+    private static final Duration TAKEOVER_TIMEOUT = Duration.ofSeconds(35);
+
+    // @find: take over browser, person controls the page, click type key scroll navigate, POST /sessions/{id}/takeover/{action}
+    /**
+     * Does one action of a person who has taken over a run's web browser: a click at frame
+     * coordinates ({@code x}, {@code y}, {@code width}, {@code height}), typing {@code text} into the
+     * focused field, pressing {@code key}, scrolling by {@code dy} or opening {@code url}.
+     *
+     * <p>Flow: refuse when the browser is not set up or the action is unknown; for {@code navigate},
+     * apply the same address guard as {@code open_page} off the event loop first; then one POST to
+     * {@code /sessions/{id}/takeover/{action}}, never retried (a click must not be made twice), limited
+     * to 35 seconds. On success, when this server remembers the page, it notes that a person acted
+     * (the agent's earlier typing is kept only to tell an approver, so a later restore never types
+     * over what the person did) and moves to the new address. The server driving the run learns
+     * the same through {@link #personActed} when control is handed back. Typed text is never
+     * logged or kept here. Failure behaviour: every failure is a refused answer with a plain sentence,
+     * never an error.
+     *
+     * @param runId the run whose page to act on; the runner keys its pages by run id
+     * @param action one of {@link #TAKEOVER_ACTIONS}
+     * @param body the action's checked values, as the runner expects them
+     */
+    public Mono<TakeoverAnswer> takeover(String runId, String action, ObjectNode body) {
+        if (!configured) {
+            return Mono.just(TakeoverAnswer.refused(UNAVAILABLE));
+        }
+        if (runId == null || runId.isBlank() || !TAKEOVER_ACTIONS.contains(action)) {
+            return Mono.just(TakeoverAnswer.refused("The web browser cannot do that."));
+        }
+        String session = runId.replaceAll("[^A-Za-z0-9-]", "");
+        if ("navigate".equals(action)) {
+            String url = body.path("url").asText("").strip();
+            return Mono.fromCallable(() -> {
+                        String problem = BrowserAddresses.problem(url, resolver);
+                        return problem == null ? "" : problem;
+                    })
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flatMap(problem -> problem.isEmpty()
+                            ? personAction(session, action, body)
+                            : Mono.just(TakeoverAnswer.refused(problem)));
+        }
+        return personAction(session, action, body);
+    }
+
+    /**
+     * The POST behind {@link #takeover}: sends the action, maps the runner's answer, and updates the
+     * remembered page on success. Refusals, timeouts and an unreachable runner become refused answers.
+     */
+    private Mono<TakeoverAnswer> personAction(String session, String action, ObjectNode body) {
+        return http.post()
+                .uri("/sessions/{id}/takeover/{action}", session, action)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(TAKEOVER_TIMEOUT)
+                .map(answer -> {
+                    String url = answer.path("url").asText("");
+                    String field = answer.path("field").asText("");
+                    // Only a page this server already remembers: another server may be driving the
+                    // run, and it is told through personActed when control comes back.
+                    PageState page = pages.get(session);
+                    if (page != null) {
+                        synchronized (page) {
+                            page.notePerson(field.isBlank() ? List.of() : List.of(field), url);
+                        }
+                    }
+                    return new TakeoverAnswer(
+                            true,
+                            null,
+                            url,
+                            answer.path("title").asText(""),
+                            answer.path("frame").asText(""),
+                            answer.path("field").asText(""));
+                })
+                .onErrorResume(WebClientResponseException.class, refused ->
+                        Mono.just(TakeoverAnswer.refused(refusal(refused).summary())))
+                .onErrorResume(TimeoutException.class, slow -> Mono.just(TakeoverAnswer.refused(TOO_SLOW)))
+                .onErrorResume(WebClientRequestException.class, down -> {
+                    log.warn("The browser runner could not be reached for a person's {}: {}", action, down.getMessage());
+                    return Mono.just(TakeoverAnswer.refused(NOT_ANSWERING));
+                });
+    }
+
+    // @find: person acted on the run's page, takeover handed back, approval after takeover, forget agent typing
+    /**
+     * Tells this server that a person acted on a run's page while they had control: the labels of
+     * the fields they typed into (never what they typed) and the page's address now. Called on the
+     * server driving the run when control is handed back, since the person's actions may have been
+     * served by another one.
+     *
+     * <p>Effects, under the page's lock: the agent's typing so far is kept only to tell an approver
+     * and is never typed again by a restore; the person's field labels are kept; the address moves
+     * on when one is given. An approval for the agent's next click or submit on this page then says
+     * that a person had control and typed into those fields. Contacts nothing; never throws.
+     *
+     * @param runId the run whose page it is
+     * @param fields the labels of the fields the person typed into; may be empty
+     * @param url the page's address now, or null or blank to keep the remembered one
+     */
+    public void personActed(String runId, java.util.Collection<String> fields, String url) {
+        if (runId == null || runId.isBlank()) {
+            return;
+        }
+        String session = runId.replaceAll("[^A-Za-z0-9-]", "");
+        PageState page = pages.computeIfAbsent(session, id -> new PageState());
+        synchronized (page) {
+            page.notePerson(fields == null ? List.of() : fields, url);
+        }
+    }
+
+    // @find: hold browser page while a person has control, keep page open during takeover, POST /sessions/{id}/takeover/hold
+    /**
+     * Asks the runner to keep a run's page open while a person holds it ({@code on} true), however
+     * long they look without acting, or to let the usual idle rule apply again ({@code on} false).
+     * The runner bounds a hold to 30 minutes itself. False when the browser is not set up or the
+     * runner did not answer within five seconds; never errors.
+     */
+    public Mono<Boolean> hold(String runId, boolean on) {
+        if (!configured || runId == null || runId.isBlank()) {
+            return Mono.just(false);
+        }
+        String session = runId.replaceAll("[^A-Za-z0-9-]", "");
+        return http.post()
+                .uri("/sessions/{id}/takeover/hold", session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(json.createObjectNode().put("on", on))
+                .retrieve()
+                .toBodilessEntity()
+                .map(response -> response.getStatusCode().is2xxSuccessful())
+                .timeout(Duration.ofSeconds(5))
+                .onErrorReturn(false);
+    }
+
     /**
      * Runs one browser tool against the run's page in the runner. The credential is unused.
      *
@@ -364,8 +556,9 @@ public final class BrowserAdapter implements McpServerAdapter {
 
     /**
      * Updates what is remembered about the page after a successful step: a fill is recorded (replacing
-     * an earlier fill of the same field); anything other than a read clears the fills, since the page
-     * has moved on; the page address is refreshed from the answer. Synchronised per page.
+     * an earlier fill of the same field); anything other than a read clears the fills and what a
+     * person did while they had control, since the page has moved on; the page address is refreshed
+     * from the answer. Synchronised per page.
      */
     private void remember(PageState page, String action, ObjectNode body, JsonNode answer) {
         synchronized (page) {
@@ -373,7 +566,7 @@ public final class BrowserAdapter implements McpServerAdapter {
                 page.fills.removeIf(fill -> fill.path("field").asText().equals(body.path("field").asText()));
                 page.fills.add(body.deepCopy());
             } else if (!"read".equals(action)) {
-                page.fills.clear();
+                page.movedOn();
             }
             String url = answer.path("url").asText(null);
             if (url != null && !url.isBlank()) {
@@ -455,8 +648,10 @@ public final class BrowserAdapter implements McpServerAdapter {
     /**
      * For a click or a submit, the page it acts on and what was typed into that page, so the person
      * approving it sees what would reach the site: a submit's own arguments are usually empty.
-     * Empty for every other tool. Read from the remembered state only; contacts nothing. Used by the
-     * gateway when it builds the approval request.
+     * When a person had control of the page since the agent opened it, says so, names the fields
+     * they typed into (never their values, which are not known here) and what the agent had typed
+     * before; it never claims that nothing was typed then. Empty for every other tool. Read from the
+     * remembered state only; contacts nothing. Used by the gateway when it builds the approval request.
      */
     @Override
     public Optional<String> approvalDetail(ToolInvocation invocation) {
@@ -467,10 +662,16 @@ public final class BrowserAdapter implements McpServerAdapter {
         PageState page = pages.get(sessionOf(invocation));
         String url = null;
         List<ObjectNode> fills = List.of();
+        List<ObjectNode> earlier = List.of();
+        List<String> personFields = List.of();
+        boolean personActed = false;
         if (page != null) {
             synchronized (page) {
                 url = page.url;
                 fills = List.copyOf(page.fills);
+                earlier = List.copyOf(page.earlierFills);
+                personFields = List.copyOf(page.personFields);
+                personActed = page.personActed;
             }
         }
         StringBuilder text = new StringBuilder();
@@ -486,17 +687,35 @@ public final class BrowserAdapter implements McpServerAdapter {
             text.append("Submits the form");
         }
         text.append(url == null || url.isBlank() ? " on the open page" : " on " + clip(url));
-        if (fills.isEmpty()) {
+        if (fills.isEmpty() && !personActed) {
             text.append(". Nothing was typed into the page.");
+        } else if (fills.isEmpty()) {
+            text.append('.');
         } else {
-            text.append(", sending what was typed: ");
-            List<String> typed = new ArrayList<>();
-            for (ObjectNode fill : fills) {
-                typed.add(clip(fill.path("field").asText("a field")) + " = \"" + clip(fill.path("value").asText("")) + "\"");
+            text.append(", sending what was typed: ").append(typedList(fills)).append('.');
+        }
+        if (personActed) {
+            text.append(" A person had control of this page before this step");
+            if (!personFields.isEmpty()) {
+                List<String> named = personFields.stream().map(field -> "\"" + field + "\"").toList();
+                text.append(" and typed into ").append(String.join(", ", named))
+                        .append(" (what they typed is not shown here)");
             }
-            text.append(String.join("; ", typed)).append('.');
+            text.append(", so the page may hold more than the agent typed.");
+            if (!earlier.isEmpty()) {
+                text.append(" Before they took control, the agent had typed: ").append(typedList(earlier)).append('.');
+            }
         }
         return Optional.of(text.toString());
+    }
+
+    /** "Field = "value"; Other = "value"" for typed fields, each part shortened. */
+    private static String typedList(List<ObjectNode> fills) {
+        List<String> typed = new ArrayList<>();
+        for (ObjectNode fill : fills) {
+            typed.add(clip(fill.path("field").asText("a field")) + " = \"" + clip(fill.path("value").asText("")) + "\"");
+        }
+        return String.join("; ", typed);
     }
 
     /** Collapses whitespace and shortens a value to 200 characters so an approval sentence stays readable. */

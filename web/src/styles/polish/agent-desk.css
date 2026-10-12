@@ -1,0 +1,387 @@
+/*
+ * @find: agent desk styles, working now tiles, live tile, take over controls, you have control banner, interactive browser frame, takeover keys, phone width, touch targets
+ * @what: Styles for the Working now tiles on the Agents page, the Agent desk and its take over controls: one column no wider than the screen at phone width, and 44px targets on touch screens.
+ * @flow: Imported by polish/index.css; used by WorkingNow, AgentDesk and TakeoverControls
+ */
+
+/* ---- Working now (Agents page) ------------------------------------------------------------ */
+
+.desk-working {
+  margin-top: var(--space-6);
+}
+
+.desk-working-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.desk-tiles {
+  display: grid;
+  /* min() lets a tile shrink below 240px on the narrowest phones instead of pushing the page sideways. */
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desk-tile {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.desk-tile:hover {
+  border-color: var(--border-hover);
+}
+
+.desk-tile:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.desk-tile-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.desk-tile-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.desk-tile-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-pill);
+  background: var(--green);
+}
+
+/* The same colours as the Orchestrator's agent list: green working, blue waiting on a person. */
+.desk-tile-dot[data-state='waiting'],
+.desk-tile-dot[data-state='asking'] {
+  background: var(--blue);
+}
+
+.desk-tile-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk-tile-time {
+  flex: none;
+  color: var(--muted);
+}
+
+.desk-tile-caption {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.desk-tile-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 1280 / 800;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.desk-tile-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.desk-tile-live {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--blue);
+  background: var(--surface);
+  font-weight: var(--weight-medium);
+}
+
+/* ---- The Agent desk ------------------------------------------------------------------------ */
+
+.agent-desk {
+  display: grid;
+  /* One column that may shrink below its content's widest line, so nothing pushes the sheet sideways. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.agent-desk-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Focus is moved here (after a hand back) and to the notice that says control ended. */
+.agent-desk-status:focus-visible,
+.agent-desk-notice:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.agent-desk-holder,
+.agent-desk-waiting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.agent-desk-holder .notice,
+.agent-desk-waiting .notice {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.agent-desk-waiting {
+  margin-bottom: var(--space-4);
+}
+
+.agent-desk-grid,
+.agent-desk-single {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* Side by side once there is room: the page large on the left, the steps beside it. */
+@media (min-width: 960px) {
+  .agent-desk-grid {
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.agent-desk-single {
+  max-width: 820px;
+}
+
+.agent-desk-live,
+.agent-desk-steps {
+  min-width: 0;
+}
+
+/* The shared browser preview, drawn at the desk's full width rather than as a small window. */
+.agent-desk-live .browser-preview {
+  max-width: none;
+  margin: 0;
+}
+
+.agent-desk-footer {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.agent-desk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ---- Take over ----------------------------------------------------------------------------- */
+
+.takeover {
+  display: grid;
+  /* Without this the column grows to the widest unbreakable line (a long "Hand back to ..."), and the
+     address bar, frame and keys stretch past a phone's edge. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.takeover-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--blue-light);
+}
+
+.takeover-banner:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.takeover-banner-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* A long agent name wraps inside the button instead of widening the desk. */
+.takeover-banner .takeover-handback-open {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.takeover-banner-title {
+  margin: 0;
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+}
+
+.takeover-handback {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.takeover-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.takeover-address,
+.takeover-type {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.takeover-frame {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1280 / 800;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+
+/* Drawn at its own shape, with no cropping, so a click lands where it looks. */
+.takeover-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.takeover-frame[data-busy] .takeover-image {
+  opacity: 0.8;
+}
+
+.takeover-hide {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+}
+
+.takeover-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.takeover-key {
+  min-width: 44px;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.takeover-key:hover:not(:disabled) {
+  border-color: var(--border-hover);
+}
+
+.takeover-key:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.takeover-key:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* 44px is the smallest target a thumb hits reliably (WCAG 2.5.5), as for .button on touch screens. */
+@media (pointer: coarse) {
+  .takeover-key {
+    min-height: 44px;
+  }
+
+  .takeover-hide {
+    min-height: 44px;
+  }
+
+  /* Vertical padding only, so the link stays in line with the buttons beside it. */
+  .agent-desk-trace {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: var(--space-3) 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desk-tile,
+  .takeover-key {
+    transition: none;
+  }
+
+  .desk-tile-live .chat-pulse-dot {
+    animation: none;
+  }
+}

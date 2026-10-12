@@ -30,7 +30,7 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 
 # The runner's own code is copied after the dependencies, so a code change reuses the cached
 # layer that holds Chromium.
-COPY guard.js proxy.js server.js ./
+COPY guard.js proxy.js server.js takeover.js ./
 
 RUN groupadd --system runner && useradd --system --gid runner --home-dir /app --no-create-home runner \
     && chown -R runner:runner /app

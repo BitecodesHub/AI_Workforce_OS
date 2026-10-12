@@ -1,4 +1,4 @@
-// @find: run steps repository, trace steps of a run, highest step position, practice data used, last step of kind, RunSteps
+// @find: run steps repository, trace steps of a run, highest step position, practice data used, last step of kind, latest step, used the web browser, RunSteps
 // @what: Spring Data repository for RunStep rows.
 // @flow: Used by the run engine and the trace view.
 package os.aiworkforce.orchestrator.repository;
@@ -51,4 +51,16 @@ public interface RunSteps extends JpaRepository<RunStep, UUID> {
     // @find: latest step of a kind
     /** The run's latest step of one kind, such as its newest approval or question. */
     Optional<RunStep> findFirstByRunIdAndKindOrderByPositionDesc(UUID runId, String kind);
+
+    // @find: latest step of a run, run glance
+    /** The run's latest step of any kind, for a glance at what it is doing now. */
+    Optional<RunStep> findFirstByRunIdOrderByPositionDesc(UUID runId);
+
+    // @find: run used the web browser
+    /** Whether any tool call or approval of the run was for the web browser. */
+    @Query(
+            value = "select exists (select 1 from run_steps s where s.run_id = :runId"
+                    + " and s.kind in ('tool_call', 'approval') and s.detail ->> 'tool' like 'browser.%')",
+            nativeQuery = true)
+    boolean usedBrowser(@Param("runId") UUID runId);
 }
