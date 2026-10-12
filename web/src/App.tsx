@@ -40,6 +40,7 @@ const RunDetail = lazy(() => import('./routes/RunDetail').then((m) => ({ default
 const Approvals = lazy(() => import('./routes/Approvals').then((m) => ({ default: m.Approvals })))
 const Chat = lazy(() => import('./routes/Chat').then((m) => ({ default: m.Chat })))
 const Orchestrator = lazy(() => import('./routes/Orchestrator').then((m) => ({ default: m.Orchestrator })))
+const TeamRoom = lazy(() => import('./routes/TeamRoom').then((m) => ({ default: m.TeamRoom })))
 const Schedules = lazy(() => import('./routes/Schedules').then((m) => ({ default: m.Schedules })))
 const Skills = lazy(() => import('./routes/Skills').then((m) => ({ default: m.Skills })))
 const Knowledge = lazy(() => import('./routes/Knowledge').then((m) => ({ default: m.Knowledge })))
@@ -87,6 +88,7 @@ const PRIVATE: Array<[string, RouteMeta]> = [
   ['/runs', { permission: 'run:read', screen: () => <Runs /> }],
   ['/runs/:id', { permission: 'run:read', screen: (p) => <RunDetail id={p.id!} /> }],
   ['/orchestrator', { permission: 'run:read', screen: () => <Orchestrator /> }],
+  ['/team-room', { permission: 'run:read', screen: () => <TeamRoom /> }],
   ['/approvals', { permission: 'approval:read', screen: () => <Approvals /> }],
   ['/chat', { permission: 'chat:use', screen: () => <Chat /> }],
   ['/knowledge', { permission: 'knowledge:read', screen: () => <Knowledge /> }],
@@ -379,6 +381,7 @@ function titleFor(pattern: string): string {
     '/runs': 'Runs',
     '/runs/:id': 'Run',
     '/orchestrator': 'Orchestrator',
+    '/team-room': 'Team room',
     '/approvals': 'Approvals',
     '/chat': 'Chat',
     '/knowledge': 'Knowledge',

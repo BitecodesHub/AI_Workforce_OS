@@ -78,22 +78,20 @@ export function QueryState<T>({
   if (query.error) {
     if (keepData && query.data !== undefined) {
       const updatedAt = query.dataUpdatedAt
-      return (
-        <>
-          <div className="stale-banner">
-            <Notice tone="warning" live>
-              Lost connection.{' '}
-              {updatedAt !== undefined
-                ? `Showing what was loaded at ${formatDateTime(new Date(updatedAt).toISOString())}.`
-                : 'Showing what was loaded before.'}{' '}
-              Retrying.{' '}
-              <Button variant="quiet" onClick={() => query.refetch()}>
-                Retry now
-              </Button>
-            </Notice>
-          </div>
-          {children(query.data)}
-        </>
+      return withBanner(
+        <div className="stale-banner">
+          <Notice tone="warning" live>
+            Lost connection.{' '}
+            {updatedAt !== undefined
+              ? `Showing what was loaded at ${formatDateTime(new Date(updatedAt).toISOString())}.`
+              : 'Showing what was loaded before.'}{' '}
+            Retrying.{' '}
+            <Button variant="quiet" onClick={() => query.refetch()}>
+              Retry now
+            </Button>
+          </Notice>
+        </div>,
+        children(query.data),
       )
     }
     const error = query.error
@@ -121,7 +119,22 @@ export function QueryState<T>({
 
   if (query.data === undefined) return <LoadingState rows={rows ?? 4} label={`Loading ${what}`} />
   if (isEmpty && empty && isEmpty(query.data)) return <>{empty}</>
-  return <>{children(query.data)}</>
+  return withBanner(null, children(query.data))
+}
+
+/**
+ * The content behind an optional banner, always in the same place among its siblings. A polling
+ * screen whose read fails and recovers gains and loses the stale banner; with the content at a
+ * fixed position React keeps it mounted through both, so the reader's scroll position and keyboard
+ * focus survive a network blip.
+ */
+function withBanner(banner: ReactNode, content: ReactNode) {
+  return (
+    <>
+      {banner}
+      {content}
+    </>
+  )
 }
 
 // @find: back link

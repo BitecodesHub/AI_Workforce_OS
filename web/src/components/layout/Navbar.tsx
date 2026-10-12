@@ -53,6 +53,7 @@ const MENU_GROUPS = [
   {
     heading: 'Work',
     items: [
+      { label: 'Team room', href: '/team-room', note: 'Your AI team at work, live', needs: 'run:read' },
       { label: 'Runs', href: '/runs', note: 'Every run, with its step-by-step trace', needs: 'run:read' },
       { label: 'Tasks', href: '/tasks', note: 'Goals and the tasks they break into', needs: 'task:read' },
       { label: 'Schedules', href: '/schedules', note: 'Work that runs on its own timetable', needs: 'task:read' },
