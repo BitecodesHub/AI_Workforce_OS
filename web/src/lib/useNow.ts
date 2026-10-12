@@ -1,6 +1,7 @@
 // @find: use now, current time, ticking clock, relative time refresh, shared timer, hidden tab
 // @what: Gives components a shared ticking current time for relative times and running clocks.
 // @flow: Used with format.ts for relative times
+import { serverNow } from './serverClock'
 import { useCallback, useSyncExternalStore } from 'react'
 
 /*
@@ -26,7 +27,7 @@ const clocks = new Map<number, Clock>()
 function clockFor(intervalMs: number): Clock {
   let clock = clocks.get(intervalMs)
   if (!clock) {
-    clock = { now: Date.now(), listeners: new Set() }
+    clock = { now: serverNow(), listeners: new Set() }
     clocks.set(intervalMs, clock)
   }
   return clock
@@ -34,7 +35,7 @@ function clockFor(intervalMs: number): Clock {
 
 /** Updates the clock to the current time and notifies every subscriber. */
 function tick(clock: Clock) {
-  clock.now = Date.now()
+  clock.now = serverNow()
   for (const listener of clock.listeners) listener()
 }
 

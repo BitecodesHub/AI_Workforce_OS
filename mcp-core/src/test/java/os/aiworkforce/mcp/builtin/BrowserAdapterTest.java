@@ -199,6 +199,20 @@ class BrowserAdapterTest {
     }
 
     @Test
+    @DisplayName("search_site with a url opens that site and searches it in one step; a private address is refused first")
+    void searchSiteWithUrl() {
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/search")).willReturn(okJson(PAGE)));
+
+        call("search_site", "{\"query\":\"lofi music\",\"url\":\"https://example.com\"}");
+
+        runner.verify(postRequestedFor(urlEqualTo("/sessions/" + RUN + "/search"))
+                .withRequestBody(matchingJsonPath("$.url", equalTo("https://example.com")))
+                .withRequestBody(matchingJsonPath("$.query", equalTo("lofi music"))));
+        assertThat(call("search_site", "{\"query\":\"x\",\"url\":\"http://127.0.0.1/\"}").status())
+                .isEqualTo(ToolResult.Status.FAILED);
+    }
+
+    @Test
     @DisplayName("the live view returns the runner's frame, and nothing when the runner has no page")
     void liveView() {
         runner.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlEqualTo("/sessions/" + RUN + "/live"))

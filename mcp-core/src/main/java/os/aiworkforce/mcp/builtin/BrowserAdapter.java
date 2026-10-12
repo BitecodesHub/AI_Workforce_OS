@@ -255,6 +255,20 @@ public final class BrowserAdapter implements McpServerAdapter {
             case "search_site" -> {
                 action = "search";
                 body.put("query", arguments.path("query").asText(""));
+                String site = arguments.path("url").asText("").strip();
+                if (!site.isEmpty()) {
+                    body.put("url", site);
+                    // The same address checks as open_page, off the request thread (they look the
+                    // name up), before the runner is asked to open the site and search it.
+                    return Mono.fromCallable(() -> {
+                                String problem = BrowserAddresses.problem(site, resolver);
+                                return problem == null ? "" : problem;
+                            })
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .flatMap(problem -> problem.isEmpty()
+                                    ? call(invocation, session, "search", body, page, startedAt)
+                                    : Mono.just(ToolResult.failed(problem)));
+                }
                 if (arguments.hasNonNull("field")) {
                     body.put("field", arguments.path("field").asText(""));
                 }

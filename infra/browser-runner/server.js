@@ -728,12 +728,24 @@ const actions = {
    * inside a form that posts (sends data rather than asking for a results page) is refused, so this
    * can never send or change anything; that needs fill_field and submit_form, which ask first.
    */
+  // With body.url and no page open yet (or a different site wanted), that site is opened first,
+  // so "search YouTube for ..." works as one step whichever tool the agent reaches for.
   async search(id, body) {
-    const { session } = await pageFor(id)
     const query = String(body.query || '').trim()
     if (!query) throw new Refusal(400, 'Say what to search for.')
+    let note = null
+    let session
+    if (body.url) {
+      session = await sessionFor(id, true)
+      note = await navigate(session.page, body.url)
+    } else {
+      if (!sessions.has(id) && !lastPages.has(id)) {
+        throw new Refusal(404, 'No page is open yet. Give the site\'s address as url (or use open_page with url and search) to open it and search in one step.')
+      }
+      ;({ session } = await pageFor(id))
+    }
     await searchOn(session.page, query, body.field)
-    return snapshot(session.page)
+    return snapshot(session.page, note)
   },
 
   // fill: types body.value into the field body.field. Sends nothing; the answer says so.

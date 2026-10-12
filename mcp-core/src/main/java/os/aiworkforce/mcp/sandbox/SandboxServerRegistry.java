@@ -1543,6 +1543,8 @@ public class SandboxServerRegistry {
                         schema(
                                 props(
                                         str("query", "the words to search for"),
+                                        str("url", "optional: the site to open and search, for example"
+                                                + " https://www.youtube.com, when no page is open yet"),
                                         str("field", "optional: the search box's label or placeholder, when the"
                                                 + " page has more than one")),
                                 "query"),

@@ -1,6 +1,7 @@
 // @find: api client, fetch wrapper, http request, ApiError, access token, refresh token, 401 retry, timeout, network failure, error messages, describeApiError, restore session, sign in silently, timeAgo, formatDuration
 // @what: The single HTTP client every query and mutation uses: attaches the bearer token, renews it on 401, applies timeouts and turns failures into readable messages.
 // @flow: Called by every *Queries.ts hook; uses session.ts for tokens and format.ts for times
+import { noteServerDate } from './serverClock'
 import { formatElapsed, formatRelative } from './format'
 import {
   accessToken,
@@ -335,7 +336,8 @@ async function send(path: string, options: Options, token: string | null, limits
   if (token) headers.Authorization = `Bearer ${token}`
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
   try {
-    return await fetch(path, {
+    const sentAt = Date.now()
+    const response = await fetch(path, {
       method: options.method ?? 'GET',
       headers,
       credentials: 'include',
@@ -346,6 +348,9 @@ async function send(path: string, options: Options, token: string | null, limits
       body: options.form ?? (options.body !== undefined ? JSON.stringify(options.body) : null),
       ...(limits.signal ? { signal: limits.signal } : {}),
     })
+    // Every response teaches the screen's timers the server's clock (lib/serverClock.ts).
+    noteServerDate(response.headers?.get?.('date') ?? null, sentAt, Date.now())
+    return response
   } catch (error) {
     throw limits.failure(error)
   }
