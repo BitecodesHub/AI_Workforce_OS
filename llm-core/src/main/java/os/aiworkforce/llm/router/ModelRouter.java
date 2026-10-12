@@ -125,6 +125,19 @@ public class ModelRouter {
     static final Duration QUICK_RETRY = Duration.ofSeconds(2);
 
     /**
+     * The most time one candidate is given while another is still waiting to be asked. A model that
+     * has said nothing in this long is passed over for the next; the last candidate keeps the full
+     * {@link #CANDIDATE_BUDGET}, so a slow but working model still answers when it is all there is.
+     */
+    static final Duration SHORT_CANDIDATE_BUDGET = Duration.ofSeconds(20);
+
+    /** How long a model that timed out is asked after the others, so later turns do not wait on it again. */
+    static final Duration TIMEOUT_COOL_OFF = Duration.ofMinutes(2);
+
+    /** How long a model the provider does not offer is asked after the others; it rarely appears within minutes. */
+    static final Duration NOT_FOUND_COOL_OFF = Duration.ofMinutes(10);
+
+    /**
      * The longest an overloaded model is passed over in favour of other candidates. Kept in memory
      * only, never written down, and never applied to the last candidate left to try.
      */
@@ -363,7 +376,10 @@ public class ModelRouter {
         // deadline instead decides whether a failing candidate is tried a second time, and each
         // candidate is held to its own budget, so the whole chain stays bounded.
         boolean overdue = Instant.now().isAfter(deadline);
-        Instant candidateDeadline = Instant.now().plus(candidateBudget);
+        Duration budget = chain.othersLeft && candidateBudget.compareTo(SHORT_CANDIDATE_BUDGET) > 0
+                ? SHORT_CANDIDATE_BUDGET
+                : candidateBudget;
+        Instant candidateDeadline = Instant.now().plus(budget);
         int attempts = overdue ? 1 : attemptsFor(policy);
 
         Resolution resolution = resolve(candidate, chain.current, policy, context);
@@ -801,6 +817,10 @@ public class ModelRouter {
                 }
             }
             case RATE_LIMITED, OVERLOADED -> coolOffFor(context.orgId(), provider.id(), model.modelId(), failure);
+            // Asked after the others for a while, never dropped: the last candidate standing is
+            // always asked, so a model that recovers is used again.
+            case TIMEOUT -> coolOffFixed(context.orgId(), provider.id(), model.modelId(), TIMEOUT_COOL_OFF);
+            case MODEL_NOT_FOUND -> coolOffFixed(context.orgId(), provider.id(), model.modelId(), NOT_FOUND_COOL_OFF);
             case SERVER_ERROR -> {
                 if (failure.httpStatus() != null && failure.httpStatus() == 503) {
                     coolOffFor(context.orgId(), provider.id(), model.modelId(), failure);
@@ -828,6 +848,11 @@ public class ModelRouter {
             return;
         }
         coolOff.put(coolOffKey(orgId, providerId, modelId), Instant.now().plus(capped));
+    }
+
+    /** Notes in memory that a model should be asked after the others for exactly {@code length}. */
+    private void coolOffFixed(String orgId, String providerId, String modelId, Duration length) {
+        coolOff.put(coolOffKey(orgId, providerId, modelId), Instant.now().plus(length));
     }
 
     /** Whether the candidate is inside its cool-off; removes an expired entry as a side effect. */

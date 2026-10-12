@@ -261,20 +261,26 @@ class ModelRouterTest {
     }
 
     @Test
-    @DisplayName("a model the provider called unknown is not set aside: the next call asks it again")
-    void retiredModelIsAskedAgainNextTime() {
+    @DisplayName("a model the provider called unknown is asked after the others for a while, never dropped")
+    void retiredModelIsAskedLastButNeverDropped() {
         registry.add("vendor", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "retired-model");
         registry.add("vendor2", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
         AtomicInteger calls = new AtomicInteger();
 
         ModelRouter router = router(
                 new ScriptedProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE, ProviderFailure.MODEL_NOT_FOUND, calls),
-                new ScriptedProvider(ProviderDescriptor.Kind.ANTHROPIC, null));
+                new ScriptedProvider(ProviderDescriptor.Kind.ANTHROPIC, ProviderFailure.SERVER_ERROR));
 
-        router.route(request("hello"), policy("vendor/retired-model", "vendor2/model-b"), CONTEXT);
-        router.route(request("hello"), policy("vendor/retired-model", "vendor2/model-b"), CONTEXT);
+        // Every model fails here, so each call ends in a refusal; what matters is who was asked.
+        for (int call = 0; call < 2; call++) {
+            try {
+                router.route(request("hello"), policy("vendor/retired-model", "vendor2/model-b"), CONTEXT);
+            } catch (RuntimeException expected) {
+                // On the second call the missing model goes after the other, and is still asked.
+            }
+        }
 
-        // Not retried within a call (a 404 does not pass on a repeat), but asked again on the next.
+        // Not retried within a call (a 404 does not pass on a repeat), and asked again on the next.
         assertThat(calls.get()).isEqualTo(2);
     }
 
@@ -460,6 +466,35 @@ class ModelRouterTest {
         assertThat(response.provider()).isEqualTo("b");
         assertThat(a.seen).hasSize(1);
         assertThat(waits).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a model the provider does not offer, or one that timed out, is asked after the others on the next call")
+    void missingAndTimedOutModelsAreAskedLast() {
+        for (ProviderFailure kind : List.of(ProviderFailure.MODEL_NOT_FOUND, ProviderFailure.TIMEOUT)) {
+            registry = new StubRegistry();
+            registry.add("a", ProviderDescriptor.Kind.OPENAI_COMPATIBLE, "model-a");
+            registry.add("b", ProviderDescriptor.Kind.ANTHROPIC, "model-b");
+            SequenceProvider a = new SequenceProvider(ProviderDescriptor.Kind.OPENAI_COMPATIBLE);
+            // Enough failures for every retry of the first call and a possible second call.
+            for (int i = 0; i < 6; i++) {
+                a.failWith(failure(kind, "a", null, null));
+            }
+            SequenceProvider b = new SequenceProvider(ProviderDescriptor.Kind.ANTHROPIC);
+            ModelRouter router = router(a, b);
+            router.useSleeper(wait -> { });
+
+            assertThat(router.route(request("first"), policy("a/model-a", "b/model-b"), CONTEXT).provider())
+                    .as(kind.name())
+                    .isEqualTo("b");
+            int askedOfA = a.seen.size();
+            ChatResponse second = router.route(request("second"), policy("a/model-a", "b/model-b"), CONTEXT);
+
+            assertThat(second.provider()).as(kind.name()).isEqualTo("b");
+            // The second call went straight to the working model.
+            assertThat(a.seen).as(kind.name()).hasSize(askedOfA);
+            assertThat(second.attempts()).as(kind.name()).extracting(AttemptRecord::provider).containsExactly("b");
+        }
     }
 
     @Test

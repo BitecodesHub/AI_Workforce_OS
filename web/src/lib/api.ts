@@ -329,7 +329,7 @@ function doRefresh(): Promise<boolean> {
 
 type Limits = ReturnType<typeof limitsFor>
 
-/** Performs the fetch for one attempt: adds the bearer token when present and a JSON content type when there is a body, sends cookies, and honours the abort signal. Network failures and timeouts are converted into ApiError by limits.failure. */
+/** Performs the fetch for one attempt: adds the bearer token when present and a JSON content type when there is a body, sends cookies, never reads the browser cache, and honours the abort signal. Network failures and timeouts are converted into ApiError by limits.failure. */
 async function send(path: string, options: Options, token: string | null, limits: Limits): Promise<Response> {
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
@@ -339,6 +339,10 @@ async function send(path: string, options: Options, token: string | null, limits
       method: options.method ?? 'GET',
       headers,
       credentials: 'include',
+      // Live data is never taken from the browser's cache. The server already says not to store
+      // it; this also stops a stale or broken entry left by an older response (or a browser
+      // extension) from being served, which once made /api/approvals fail with "Failed to fetch".
+      cache: 'no-store',
       body: options.form ?? (options.body !== undefined ? JSON.stringify(options.body) : null),
       ...(limits.signal ? { signal: limits.signal } : {}),
     })
