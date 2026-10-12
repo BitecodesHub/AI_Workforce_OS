@@ -1,0 +1,544 @@
+/*
+ * @find: team room styles, presence card, animated avatar ring, thinking breathe, browsing orbit, using pulse, waiting glow, team conversation, chat lines, show earlier, command map team room card, reduced motion, 375 px
+ * @what: Styles for the Team room page, its agent sheet and the Command Map card: presence cards with state motion, and the conversation as a team chat.
+ * @flow: Imported by polish/index.css; used by routes/TeamRoom.tsx and components/team-room.
+ */
+
+/*
+ * One column by default, so a 375 px screen never scrolls sideways; the two parts sit side by side
+ * from 1024 px. Every state has its own colour, drawn from tokens, and its own motion, and the
+ * state is always written out too, so neither colour nor motion carries meaning alone.
+ *
+ * Motion is opt-in: every animation and transition is declared only inside
+ * @media (prefers-reduced-motion: no-preference), on selectors that also skip anything inside
+ * [data-motion='reduced'] (the page's own report of the same preference). Nothing has to override
+ * it under reduced motion, so no selector's weight can let an animation through.
+ */
+
+.tr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .tr-layout {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  }
+}
+
+.tr-presence,
+.tr-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* ---- Presence cards -------------------------------------------------------------------------- */
+
+.tr-agents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-3);
+}
+
+.tr-agent {
+  --tr-state: var(--muted);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.tr-agent:hover {
+  border-color: var(--border-hover);
+}
+
+.tr-agent[data-state='thinking'],
+.tr-sheet-status[data-state='thinking'] {
+  --tr-state: var(--blue);
+}
+
+.tr-agent[data-state='browsing'],
+.tr-sheet-status[data-state='browsing'] {
+  --tr-state: var(--category-engineering);
+}
+
+.tr-agent[data-state='using_tool'],
+.tr-sheet-status[data-state='using_tool'] {
+  --tr-state: var(--category-growth);
+}
+
+.tr-agent[data-state='waiting_approval'],
+.tr-agent[data-state='waiting_input'],
+.tr-sheet-status[data-state='waiting_approval'],
+.tr-sheet-status[data-state='waiting_input'] {
+  --tr-state: var(--warning-ink);
+}
+
+.tr-agent[data-for-you] {
+  background: color-mix(in srgb, var(--warning-bg) 55%, var(--surface));
+}
+
+.tr-agent-open {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-agent-open:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.tr-agent-figure {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+}
+
+.tr-agent-figure .avatar {
+  width: 40px;
+  height: 40px;
+  position: relative;
+  z-index: 1;
+}
+
+.tr-agent-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--tr-state) 18%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tr-state) 30%, transparent);
+  opacity: 0.6;
+}
+
+.tr-agent[data-state='idle'] .tr-agent-halo,
+.tr-agent[data-state='paused'] .tr-agent-halo,
+.tr-sheet-status[data-state='idle'] .tr-agent-halo,
+.tr-sheet-status[data-state='paused'] .tr-agent-halo {
+  background: transparent;
+  box-shadow: none;
+}
+
+.tr-agent[data-state='paused'] .tr-agent-figure .avatar {
+  opacity: 0.55;
+}
+
+.tr-agent-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 2;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--tr-state);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.tr-agent-orbit {
+  position: absolute;
+  inset: -3px;
+  z-index: 2;
+  border-radius: var(--radius-pill);
+}
+
+.tr-agent-orbit::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3px;
+  border-radius: var(--radius-pill);
+  background: var(--tr-state);
+}
+
+@keyframes tr-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.14);
+    opacity: 0.2;
+  }
+}
+
+@keyframes tr-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes tr-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes tr-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tr-agent-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.tr-agent-name {
+  font-weight: var(--weight-emphasis);
+  overflow-wrap: anywhere;
+}
+
+.tr-agent-role {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tr-agent-state {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  /* Pushed towards the text colour like a Tag's text: a raw category colour on a light card can
+     fall below 4.5:1, and the state is the line that has to be read. */
+  color: color-mix(in srgb, var(--tr-state) 60%, var(--mix-shade));
+  font-weight: var(--weight-medium);
+}
+
+.tr-agent-caption,
+.tr-sheet-caption {
+  min-width: 0;
+  /* A long site name has no break points ("Browsing averylongsubdomain.example.com.au"). */
+  overflow-wrap: anywhere;
+}
+
+.tr-agent[data-state='idle'] .tr-agent-state,
+.tr-agent[data-state='paused'] .tr-agent-state,
+.tr-agent[data-state='private'] .tr-agent-state {
+  color: var(--muted);
+}
+
+.tr-agent-work {
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tr-agent-action {
+  align-self: flex-start;
+  margin: calc(-1 * var(--space-2)) var(--space-4) var(--space-4) calc(48px + var(--space-3) + var(--space-4));
+}
+
+.tr-typing {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.tr-typing span {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+@keyframes tr-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* ---- The conversation ------------------------------------------------------------------------ */
+
+.tr-feed-body {
+  min-width: 0;
+}
+
+.tr-feed-scroll {
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.tr-feed-scroll:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.tr-feed-older,
+.tr-feed-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  text-align: center;
+}
+
+.tr-feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tr-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.tr-line .avatar {
+  flex: none;
+  margin-top: 2px;
+}
+
+.tr-line-person {
+  background: color-mix(in srgb, var(--blue) 14%, var(--mix-base));
+  color: color-mix(in srgb, var(--blue) 60%, var(--mix-shade));
+}
+
+.tr-line-schedule {
+  background: var(--avatar-bg);
+  color: var(--avatar-ink);
+}
+
+.tr-line-bubble {
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+}
+
+/* A faint blue on the card's own surface: the caption and link inside stay above 4.5:1 in both themes. */
+.tr-line[data-speaker='person'] .tr-line-bubble {
+  background: color-mix(in srgb, var(--blue) 5%, var(--surface));
+}
+
+.tr-line[data-kind='approval_requested'] .tr-line-bubble,
+.tr-line[data-kind='question_asked'] .tr-line-bubble {
+  background: color-mix(in srgb, var(--warning-bg) 70%, var(--paper));
+}
+
+.tr-line-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.tr-line-detail {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.tr-line-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-1) 0 0;
+}
+
+@keyframes tr-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- The agent sheet ------------------------------------------------------------------------- */
+
+.tr-sheet {
+  gap: var(--space-5);
+}
+
+.tr-sheet-status {
+  --tr-state: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.tr-sheet-caption {
+  margin: 0;
+  font-weight: var(--weight-medium);
+  color: color-mix(in srgb, var(--tr-state) 60%, var(--mix-shade));
+}
+
+.tr-sheet-status[data-state='idle'] .tr-sheet-caption,
+.tr-sheet-status[data-state='paused'] .tr-sheet-caption,
+.tr-sheet-status[data-state='private'] .tr-sheet-caption {
+  color: var(--ink);
+}
+
+/* ---- Command Map card ------------------------------------------------------------------------ */
+
+.tr-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: inherit;
+  text-decoration: none;
+}
+
+.tr-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.tr-card-avatars {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tr-card-avatar {
+  display: inline-flex;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.tr-card-avatar + .tr-card-avatar {
+  margin-left: -6px;
+}
+
+.tr-card-more {
+  margin-left: var(--space-2);
+}
+
+.tr-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tr-card-title {
+  font-weight: var(--weight-emphasis);
+}
+
+/* ---- Touch ---------------------------------------------------------------------------------- */
+
+/* The ways to act are plain links in running text; on a touch screen each gets a 44 px target. */
+@media (pointer: coarse) {
+  .tr-agent-action,
+  .tr-line-meta .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  /* No longer pulled up under the card's button, so the larger target never overlaps it. */
+  .tr-agent-action {
+    margin-top: 0;
+  }
+
+  .tr-line-meta {
+    align-items: center;
+  }
+}
+
+/* ---- Motion (only for viewers who have not asked for less) ----------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .tr-agent:not([data-motion='reduced'] *) {
+    transition: border-color var(--transition-fast);
+  }
+
+  .tr-agent[data-state='thinking'] .tr-agent-halo:not([data-motion='reduced'] *),
+  .tr-sheet-status[data-state='thinking'] .tr-agent-halo:not([data-motion='reduced'] *) {
+    animation: tr-breathe 1.8s var(--ease-standard) infinite;
+  }
+
+  .tr-agent-orbit:not([data-motion='reduced'] *) {
+    animation: tr-orbit 2.4s linear infinite;
+  }
+
+  .tr-agent[data-state='using_tool'] .tr-agent-halo:not([data-motion='reduced'] *),
+  .tr-sheet-status[data-state='using_tool'] .tr-agent-halo:not([data-motion='reduced'] *) {
+    animation: tr-pulse 1s var(--ease-standard) infinite;
+  }
+
+  .tr-agent[data-state='waiting_approval'] .tr-agent-badge:not([data-motion='reduced'] *),
+  .tr-agent[data-state='waiting_input'] .tr-agent-badge:not([data-motion='reduced'] *),
+  .tr-sheet-status[data-state='waiting_approval'] .tr-agent-badge:not([data-motion='reduced'] *),
+  .tr-sheet-status[data-state='waiting_input'] .tr-agent-badge:not([data-motion='reduced'] *) {
+    animation: tr-glow 2.4s var(--ease-standard) infinite;
+  }
+
+  .tr-typing span:not([data-motion='reduced'] *) {
+    animation: tr-dot 1.2s var(--ease-standard) infinite;
+  }
+
+  .tr-typing span:nth-child(2):not([data-motion='reduced'] *) {
+    animation-delay: 0.15s;
+  }
+
+  .tr-typing span:nth-child(3):not([data-motion='reduced'] *) {
+    animation-delay: 0.3s;
+  }
+
+  .tr-line:not([data-motion='reduced'] *) {
+    animation: tr-line-in var(--duration-base) var(--ease-standard) both;
+  }
+}

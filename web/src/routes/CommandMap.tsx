@@ -21,6 +21,7 @@ import { QueryState, EmptyIcon } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
 import { GettingStarted } from '../components/command-map/GettingStarted'
 import { SetupBanner } from '../components/setup/SetupBanner'
+import { TeamRoomCard } from '../components/team-room/TeamRoomCard'
 import { ConnectModelDialog } from '../components/onboarding/ConnectModelDialog'
 import { describeChange } from '../components/analytics/figures'
 import { formatCount, formatMoney, formatRelativeTicked, formatRunElapsed, truncateWords } from '../lib/format'
@@ -56,7 +57,7 @@ const LIVE_ACTIVITY_ROWS = 8
 // @find: CommandMap component, home dashboard, overview page, sandbox notice, connect your AI button, /
 /**
  * The Command Map (route /, the first screen after signing in; no route permission, each part checks its own).
- * Header links (Chat with chat:use, Orchestrator with run:read, Connectors with integration:read) and, with task:create, a Give an agent a task button that opens the task dialog (which opens the new run or goal itself). Sections in order: approvals waiting (approval:read), the setup banner, the routing status (which model agents really answer on; provider:read, with a Connect your AI dialog for provider:manage), the getting-started guide, and the recent runs behind QueryState (permission run:read; empty state differs for people who can create tasks). A signed-out visit to "/" shows the public home page instead (see App).
+ * Header links (Chat with chat:use, Orchestrator with run:read, Connectors with integration:read) and, with task:create, a Give an agent a task button that opens the task dialog (which opens the new run or goal itself). Sections in order: approvals waiting (approval:read), the setup banner, the routing status (which model agents really answer on; provider:read, with a Connect your AI dialog for provider:manage), the getting-started guide, the Team room card (run:read), and the recent runs behind QueryState (permission run:read; empty state differs for people who can create tasks). A signed-out visit to "/" shows the public home page instead (see App).
  */
 export function CommandMap() {
   const runsQuery = useRuns()
@@ -103,6 +104,7 @@ export function CommandMap() {
         <SetupBanner />
         <RoutingStatus />
         <GettingStarted />
+        <TeamRoomCard />
 
         <QueryState
           query={runsQuery}
