@@ -55,6 +55,16 @@ public class Task extends OrgScopedEntity {
     @Column(name = "depends_on", nullable = false)
     private List<UUID> dependsOn = List.of();
 
+    /**
+     * Whether {@code dependsOn} is the complete list of what this task waits for.
+     *
+     * <p>True for a goal drawn as a graph (a workflow), where a step nothing hands over to starts
+     * at once and a failed step stops only the steps that depend on it. False keeps the old rule
+     * for every other goal: an empty {@code dependsOn} waits for every earlier position.
+     */
+    @Column(name = "explicit_dependencies", nullable = false)
+    private boolean explicitDependencies = false;
+
     /** Incremented on each try, so a task that keeps failing stops rather than looping. */
     @Column(name = "attempt", nullable = false)
     private int attempt = 0;
@@ -128,6 +138,16 @@ public class Task extends OrgScopedEntity {
 
     public void setDependsOn(List<UUID> dependsOn) {
         this.dependsOn = dependsOn == null ? List.of() : dependsOn;
+    }
+
+    /** Whether {@code dependsOn} is complete, so an empty list means the task waits for nothing. */
+    public boolean hasExplicitDependencies() {
+        return explicitDependencies;
+    }
+
+    /** Marks {@code dependsOn} as the complete list of what this task waits for. */
+    public void setExplicitDependencies(boolean explicitDependencies) {
+        this.explicitDependencies = explicitDependencies;
     }
 
     public int getAttempt() {

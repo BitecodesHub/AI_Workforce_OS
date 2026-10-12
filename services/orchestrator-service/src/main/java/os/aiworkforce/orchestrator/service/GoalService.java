@@ -227,6 +227,10 @@ public class GoalService {
      * @param conversationId the chat conversation this goal answers, when {@code source} is
      *     {@code chat}
      * @param scheduleId the schedule that fired this goal, when {@code source} is {@code schedule}
+     * @param explicitDependencies whether each task's {@code dependsOnPositions} is complete: a
+     *     task with none starts at once and a failed task stops only the tasks that depend on it,
+     *     as a workflow's branches need. False keeps the old rule, where an empty list waits for
+     *     every earlier position and a failure stops everything after it.
      */
     public record NewGoal(
             String title,
@@ -235,7 +239,21 @@ public class GoalService {
             String source,
             UUID conversationId,
             UUID scheduleId,
-            List<NewTask> tasks) {}
+            List<NewTask> tasks,
+            boolean explicitDependencies) {
+
+        /** A goal whose tasks follow the old rule: an empty {@code dependsOnPositions} waits for every earlier position. */
+        public NewGoal(
+                String title,
+                String description,
+                UUID requestedBy,
+                String source,
+                UUID conversationId,
+                UUID scheduleId,
+                List<NewTask> tasks) {
+            this(title, description, requestedBy, source, conversationId, scheduleId, tasks, false);
+        }
+    }
 
     // @find: create goal simple, record a goal with tasks
     /**
@@ -329,6 +347,7 @@ public class GoalService {
             task.setInstruction(request.instruction());
             task.setPosition(index);
             task.setStatus("pending");
+            task.setExplicitDependencies(spec.explicitDependencies());
             created.add(task);
         }
         // A second pass, once every task has an id: a dependency can point anywhere in the
@@ -689,9 +708,11 @@ public class GoalService {
      * Whether a task can start yet, is still waiting on something unfinished, or is blocked for
      * good because a dependency it actually needs did not complete.
      *
-     * <p>A task with an explicit {@code dependsOn} waits for exactly those tasks; one without it
-     * falls back to the old rule and waits for every earlier position in the goal, so a plan
-     * built without dependencies still runs strictly in order.
+     * <p>A task with an explicit {@code dependsOn} waits for exactly those tasks, and so does one
+     * marked {@link Task#hasExplicitDependencies()} with an empty list (a workflow step nothing
+     * hands over to), which is ready at once. Any other task falls back to the old rule and waits
+     * for every earlier position in the goal, so a plan built without dependencies still runs
+     * strictly in order.
      */
     private Readiness readinessOf(Task task, List<Task> siblings) {
         List<Task> predecessors = predecessorsOf(task, siblings);
@@ -705,11 +726,12 @@ public class GoalService {
         return everyPredecessorCompleted ? Readiness.READY : Readiness.BLOCKED;
     }
 
-    // The tasks this one waits for: its explicit dependsOn, or every earlier position when it has
-    // none.
+    // The tasks this one waits for: its dependsOn when it has one or when that list is marked
+    // complete (a workflow step nothing hands over to waits for nothing), otherwise every earlier
+    // position.
     private static List<Task> predecessorsOf(Task task, List<Task> siblings) {
         List<UUID> dependsOn = task.getDependsOn();
-        if (!dependsOn.isEmpty()) {
+        if (!dependsOn.isEmpty() || task.hasExplicitDependencies()) {
             return siblings.stream()
                     .filter(sibling -> dependsOn.contains(sibling.getId()))
                     .toList();

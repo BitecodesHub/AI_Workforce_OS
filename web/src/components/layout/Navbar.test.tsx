@@ -1,11 +1,12 @@
-// @find: tests for navbar, primary navigation, nav permissions, Connectors link, role based menu, Navbar
+// @find: tests for navbar, primary navigation, nav permissions, Connectors link, role based menu, sign out asks a screen with unsaved changes, Navbar
 // @what: Tests that the navbar offers destinations only to roles with the needed permissions.
 // @flow: Renders Navbar with a saved session and mocked fetch.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RouterProvider } from '../../lib/router'
-import { clearSession, saveSession } from '../../lib/session'
+import { RouterProvider, useLeaveGuard } from '../../lib/router'
+import type { LeaveGuard } from '../../lib/router'
+import { clearSession, isSignedIn, saveSession } from '../../lib/session'
 import { Navbar } from './Navbar'
 
 /*
@@ -25,12 +26,19 @@ function signIn(permissions: string[]) {
   })
 }
 
-function renderNavbar(currentPath = '/') {
+/** A screen holding unsaved work, as the workflow editor does. */
+function GuardedScreen({ guard }: { guard: LeaveGuard }) {
+  useLeaveGuard(guard)
+  return null
+}
+
+function renderNavbar(currentPath = '/', guard: LeaveGuard | null = null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <RouterProvider>
         <Navbar currentPath={currentPath} />
+        {guard && <GuardedScreen guard={guard} />}
       </RouterProvider>
     </QueryClientProvider>,
   )
@@ -80,5 +88,26 @@ describe('Navbar', () => {
     const panel = within(screen.getByRole('group', { name: 'Settings and more' }))
     expect(panel.queryByRole('link', { name: /Connectors|Integrations/ })).not.toBeInTheDocument()
     expect(panel.getByRole('link', { name: /^Runs/ })).toHaveAttribute('href', '/runs')
+  })
+
+  it('asks a screen with unsaved work before signing out, and signs out only once it proceeds', async () => {
+    vi.stubGlobal('scrollTo', vi.fn())
+    signIn(['task:read'])
+    window.history.replaceState(null, '', '/workflows/wf-1')
+    let proceed: (() => void) | null = null
+    const guard = vi.fn<LeaveGuard>((next) => {
+      proceed = next
+    })
+    renderNavbar('/workflows/wf-1', guard)
+    fireEvent.click(screen.getByRole('button', { name: 'Your account' }))
+    fireEvent.click(screen.getByRole('button', { name: /Sign out/ }))
+
+    expect(guard).toHaveBeenCalledTimes(1)
+    expect(isSignedIn()).toBe(true)
+    expect(window.location.pathname).toBe('/workflows/wf-1')
+    act(() => proceed!())
+    await waitFor(() => expect(window.location.pathname).toBe('/sign-in'))
+    expect(isSignedIn()).toBe(false)
+    window.history.replaceState(null, '', '/')
   })
 })

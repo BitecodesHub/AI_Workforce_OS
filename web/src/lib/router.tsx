@@ -1,7 +1,7 @@
-// @find: router, routes, navigate, navigation, route params, search params, page title, tab title, attention count, redirects, old address, useRouter, RouterProvider, setPageTitle, setAttentionCount, useDocumentTitle, redirectFor, match, links, history, Back button, scroll to hash, URL
+// @find: router, routes, navigate, navigation, route params, search params, page title, tab title, attention count, redirects, old address, useRouter, RouterProvider, setPageTitle, setAttentionCount, useDocumentTitle, redirectFor, match, links, history, Back button, scroll to hash, URL, leave guard, unsaved changes, useLeaveGuard, leaveWhenAllowed
 // @what: The console's small in-house router: current path and query, navigation without reload, route parameters, tab title with attention count, and old-address redirects.
 // @flow: Used by App.tsx, main.tsx, useListFilter, attention and nearly every screen through useRouter.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 /*
@@ -20,6 +20,49 @@ export type NavigateOptions = {
   replace?: boolean
   /** Scroll to the top (or to the #fragment) afterwards. Defaults to true, or false with replace. */
   scroll?: boolean
+  /** Leave even though a screen has asked to be asked first (its own Save, or a confirmed Leave). */
+  force?: boolean
+}
+
+/*
+ * A screen with unsaved work can ask to be asked before the person leaves it: every way of
+ * leaving - a link, navigate(), Back and Forward, signing out - goes through the guard, which
+ * shows its own question and calls `proceed` if the person chooses to leave. One screen holds the
+ * guard at a time; a move within the same path (a filter, a query flag) never asks.
+ */
+
+/** Asks before leaving; calls `proceed` to leave after all. */
+export type LeaveGuard = (proceed: () => void) => void
+
+let leaveGuard: LeaveGuard | null = null
+
+// @find: leave guard, ask before leaving, unsaved changes, block navigation
+/** Registers a leave guard while `guard` is set; the latest registered screen wins, and unmounting removes it. */
+export function useLeaveGuard(guard: LeaveGuard | null) {
+  useEffect(() => {
+    if (!guard) return
+    leaveGuard = guard
+    return () => {
+      if (leaveGuard === guard) leaveGuard = null
+    }
+  }, [guard])
+}
+
+// @find: leave when allowed, sign out with unsaved changes
+/** Runs an action that leaves the screen (such as signing out) at once, or after the guard's question when a screen holds one. */
+export function leaveWhenAllowed(action: () => void) {
+  const guard = leaveGuard
+  if (guard) guard(action)
+  else action()
+}
+
+/** The path part of an address, resolved against the current location. */
+function pathOf(to: string): string {
+  try {
+    return new URL(to, window.location.href).pathname
+  } catch {
+    return to.split(/[?#]/)[0] ?? to
+  }
 }
 
 type RouterValue = {
@@ -70,12 +113,22 @@ function scrollToTarget(hash: string, fromTop = true) {
 // @find: router provider, navigation, history, link interception; wraps the whole app (main.tsx)
 /**
  * Provides the current path, query string, #fragment and navigate() to the whole app (mounted once in main.tsx).
- * Flow: location state is read from window.location. navigate(to, { replace, scroll }) pushes or replaces a history entry, updates state, and scrolls to the top or to the #fragment (replaced entries keep their position unless scroll is true). Back and Forward arrive through popstate. A document-wide click listener turns plain left-clicks on same-origin links that start with "/" into navigate() calls, leaving alone modified clicks, target _blank, downloads and links that start with "//". A deep link with a #fragment on first load is scrolled to once it renders.
+ * Flow: location state is read from window.location. navigate(to, { replace, scroll, force }) pushes or replaces a history entry, updates state, and scrolls to the top or to the #fragment (replaced entries keep their position unless scroll is true); while a screen holds a leave guard (useLeaveGuard), a move to another path asks it first unless force is set. Back and Forward arrive through popstate; with a leave guard held, the address is put back and the guard asked before moving on. A document-wide click listener turns plain left-clicks on same-origin links that start with "/" into navigate() calls, leaving alone modified clicks, target _blank, downloads and links that start with "//". A deep link with a #fragment on first load is scrolled to once it renders.
  */
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(readLocation)
+  // Where the screen is, for undoing a Back the leave guard holds up.
+  const shown = useRef(location)
+  useEffect(() => {
+    shown.current = location
+  }, [location])
 
-  const navigate = useCallback((to: string, options: NavigateOptions = {}) => {
+  const navigate = useCallback(function go(to: string, options: NavigateOptions = {}) {
+    const guard = leaveGuard
+    if (!options.force && guard && pathOf(to) !== window.location.pathname) {
+      guard(() => go(to, { ...options, force: true }))
+      return
+    }
     const replace = options.replace ?? false
     if (replace) window.history.replaceState(window.history.state, '', to)
     else window.history.pushState({}, '', to)
@@ -87,7 +140,22 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const onPop = () => setLocation(readLocation())
+    const onPop = () => {
+      const next = readLocation()
+      const guard = leaveGuard
+      const here = shown.current
+      if (guard && next.path !== here.path) {
+        // Back or Forward has already moved the address; put it back while the guard asks.
+        const target = `${next.path}${next.search}${next.hash}`
+        window.history.pushState({}, '', `${here.path}${here.search}${here.hash}`)
+        guard(() => {
+          window.history.pushState({}, '', target)
+          setLocation(readLocation())
+        })
+        return
+      }
+      setLocation(next)
+    }
     window.addEventListener('popstate', onPop)
 
     const onClick = (event: MouseEvent) => {

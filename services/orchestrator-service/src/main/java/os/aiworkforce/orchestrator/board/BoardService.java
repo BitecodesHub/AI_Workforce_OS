@@ -784,10 +784,14 @@ public class BoardService {
         return everyPredecessorDone ? "ready" : "waiting_on_earlier_task";
     }
 
-    /** The tasks that must finish before this one: those it names in {@code dependsOn}, otherwise every earlier position. */
+    /**
+     * The tasks that must finish before this one: those it names in {@code dependsOn} (none at all
+     * for a workflow step nothing hands over to, whose list is marked complete), otherwise every
+     * earlier position.
+     */
     private static List<Task> predecessorsOf(Task task, List<Task> siblings) {
         List<UUID> dependsOn = task.getDependsOn();
-        if (dependsOn != null && !dependsOn.isEmpty()) {
+        if ((dependsOn != null && !dependsOn.isEmpty()) || task.hasExplicitDependencies()) {
             return siblings.stream()
                     .filter(sibling -> dependsOn.contains(sibling.getId()))
                     .toList();

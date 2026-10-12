@@ -13,7 +13,7 @@ import { describeApiError } from '../../lib/api'
 import { formatMoney, shortId } from '../../lib/format'
 import { canRetryGoal, canStopGoal } from '../../lib/goals'
 import { goalSourceLabel } from '../../lib/labels'
-import { useCancelGoal, useGoal, useRetryGoal } from '../../lib/queries'
+import { isGoalActive, useCancelGoal, useGoal, useRetryGoal } from '../../lib/queries'
 import type { Board, BoardGoal, BoardTask, Goal } from '../../lib/queries'
 import { can, profile } from '../../lib/session'
 import { useToast } from '../../lib/toast'
@@ -84,8 +84,8 @@ function sourceLink(goal: BoardGoal) {
  * board.approvals.
  * Content: status, source and total cost, a Copy link button, who asked and when, the pending item at the
  * top (QuestionCard, or InlineApproval when an approval waits), the description (clamped, Show more), and
- * StepList. Footer: Cancel goal (canStopGoal), Try again from step N (canRetryGoal), a source link and Open
- * in Tasks. Cancel calls useCancelGoal and retry calls useRetryGoal, each behind a ConfirmDialog with its own
+ * StepList. Footer: Cancel goal (canStopGoal), Try again from step N (canRetryGoal), a source link, Replay
+ * (or Watch it on a canvas while it runs) for a goal of several steps, and Open in Tasks. Cancel calls useCancelGoal and retry calls useRetryGoal, each behind a ConfirmDialog with its own
  * error text and a success toast. A goal with one task is worded as a task.
  * Layout and keyboard: the sheet is non-modal at 1024 pixels and wider (the board stays usable), modal
  * below; its width follows the viewport. Navigation keys are scoped to the sheet content. Focus returns to
@@ -223,6 +223,11 @@ export function GoalSheet({
             </Button>
           )}
           {sourceLink(goal)}
+          {several && can('task:read') && (
+            <a className="link" href={`/workflows/run/${goal.id}`}>
+              {isGoalActive(goal) ? 'Watch it on a canvas' : 'Replay'}
+            </a>
+          )}
           <a className="link" href={`/tasks?goal=${goal.id}`}>
             Open in Tasks
           </a>
