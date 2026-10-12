@@ -107,3 +107,32 @@ describe('AnswerCard asked line', () => {
     expect(screen.getByText('Here is the reply.')).toBeInTheDocument()
   })
 })
+
+describe('AnswerCard cards', () => {
+  const CARD_STEP: RunStep = {
+    ...STEP,
+    detail: {
+      content: ['Draft:', '```email-draft', JSON.stringify({ to: 'sam@example.com', subject: 'Welcome', body: 'Hello.' }), '```'].join('\n'),
+    },
+  }
+
+  it('draws the card without a send button, linking to the conversation the run answered', () => {
+    render(<AnswerCard step={CARD_STEP} instruction={null} chatHref="/chat?c=c1" />)
+    expect(screen.getByRole('group', { name: 'Email draft: Welcome' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /send it/ })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Open the conversation' })).toHaveAttribute('href', '/chat?c=c1')
+  })
+
+  it('says to ask in Chat, with no link and no talk of a conversation, when the run came from none', () => {
+    render(<AnswerCard step={CARD_STEP} instruction={null} />)
+    expect(screen.getByText('To have this email sent, ask an agent in Chat.')).toBeInTheDocument()
+    expect(screen.queryByText(/its conversation/)).toBeNull()
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('says the card is read-only for a role that cannot start work', () => {
+    render(<AnswerCard step={CARD_STEP} instruction={null} readOnly />)
+    expect(screen.getByText(/cannot ask agents to act on it/)).toBeInTheDocument()
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+})

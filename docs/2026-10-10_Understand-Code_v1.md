@@ -194,7 +194,7 @@ Package root: `services/orchestrator-service/src/main/java/os/aiworkforce/orches
 |---|---|
 | `service/` | The engine. `AgentRunner.java` (the agent loop), `GoalService.java` (goal into task graph), `RunExecutor.java` (background execution on virtual threads), `ApprovalService.java`, `QuestionService.java`, `TaskProgress.java`, `MaintenanceScheduler.java` (timed sweeps), `RoutingPolicyResolver.java`, `JpaBudgetGuard.java`, `JpaUsageRecorder.java`, `JpaProviderRegistry.java`, `OrgCredentialResolver.java` (fetch a provider key from org-service), `ToolCredentialResolver.java` (fetch a connector token from integrations-service), `KnowledgeSearchTool.java`, `AgentMemoryTool.java`, `MemoryClient.java`, `AskPersonTool.java`, `AgentTemplates.java`, `DemoAgentSeeder.java`, `GeneralEmployee.java` (the fallback agent), `RetentionService.java`, `NotificationService.java`, `AuditClient.java`, `IntegrationsTokenRefresher.java`. |
 | `chat/` | Workforce Chat. `CoordinatorService.java` (reads a message and decides what happens), `MentionParser.java`, `IntentDetector.java`, `ModelRouterPlanner.java`, `RuleRouter.java`, `ChatController.java`, `ChatAppender.java`, `ChatQueue.java`, `ChatQueueRunner.java`, `ChatGoalListener.java`, `ConversationAccess.java`, `ConversationAdmin.java`, `ConversationQueries.java`, `ThreadContext.java`, `DocumentsPrompt.java`, `PassageRelevance.java`, `KnowledgeClient.java`, `Attachment*.java` (upload, read, prompt, types), `FeedbackController.java`. |
-| `schedule/` | Schedules. `ScheduleService.java`, `ScheduleSweep.java` (every 30 seconds), `ScheduleParser.java` (plain English to a timetable), `ScheduleController.java`, `ScheduleGoalListener.java`, `Schedule.java`. |
+| `schedule/` | Schedules. `ScheduleService.java`, `ScheduleSweep.java` (every 30 seconds), `ScheduleParser.java` (plain English to a timetable), `ScheduleExtractor.java` (the timing phrase inside a sentence), `ScheduleIntent.java` (whether a chat message asks for timed or repeated work at all, or only mentions a date), `ScheduleController.java`, `ScheduleGoalListener.java`, `Schedule.java`. |
 | `board/` | Orchestrator page and Analytics figures. `BoardService.java`, `OrchestratorController.java`, `InsightsService.java`, `InsightsController.java`, `GoalViews.java`. |
 | `catalog/` | Model discovery. `ModelCatalogService.java` (list what a provider offers), `ModelListParsers.java`, `BedrockRegionFinder.java`, `ModelCatalogStore.java`. |
 | `voice/` | ElevenLabs voice. `VoiceController.java`, `VoiceService.java`, `ElevenLabsClient.java`, `VoiceClipService.java`. |
@@ -296,6 +296,7 @@ Files named `*.test.tsx` beside each page are its tests.
 | Folder | Contents | Backs |
 |---|---|---|
 | `agents/` | `AgentDocumentsCard`, `AgentMemoryCard`, `AgentStatusButton`, `RetireAgentCard` | Agent detail page |
+| `answers/` | Answer cards drawn inside an agent's answer: `AnswerBlockCard` (dispatch), `EmailDraftCard`, `TableCard`, `ChartCard`, `ChecklistCard`, `ChoicesCard`, `CardShell`, `answerActions.ts` (what a card may do where it is shown). The format and its checks are in `web/src/lib/answerBlocks.ts`; chat agents are taught it by `AgentRunner.ANSWER_BLOCKS_GUIDANCE` | Chat answers, run answers (through `ui/Markdown`) |
 | `analytics/` | `ValueTiles`, `SpendBreakdown`, `BudgetCard`, `DailyTrend`, `AgentsTable`, `ActivityLog`, `OutcomesCard`, `RunRatings`, `AnswerRating`, `ValueInputs`, `figures.ts` | Analytics page |
 | `approvals/` | `ApprovalCard`, `BulkDecision`, `PayloadPreview` | Approvals page |
 | `auth/` | `AuthShell`, `AuthShowcase`, `DemoRolePicker`, `ResetPasswordForm`, `Stepper`, `WorkspacePicker` | Sign in, Create workspace, Accept invite |
@@ -325,6 +326,7 @@ Files named `*.test.tsx` beside each page are its tests.
 | `router.tsx` | The in-house router. |
 | `labels.ts`, `format.ts` | Plain words for every status code; dates, money and counts in one style. |
 | `connectors.ts`, `bedrock.ts`, `keyFormats.ts`, `routing.ts`, `routingActions.ts`, `modelCatalogue.ts` | Connector, key and model rules. |
+| `answerBlocks.ts` | The answer card format (email-draft, table, chart, checklist, choices): parse, validate and cap each fenced block; CSV export; the answer as plain text for Copy and read aloud. |
 | `approvals.ts`, `questions.ts`, `goals.ts`, `schedules.ts`, `mentions.ts`, `attachments.ts`, `attention.ts`, `voice.ts`, `markdown.ts`, `templates.ts`, `setup.ts`, `onboarding.ts`, `persist.ts`, `toast.tsx`, `useListFilter.ts`, `useNow.ts`, `clipboard.ts`, `hotkeys.ts`, `demo.ts`, `redirect.ts`, `agentDescription.ts` | Small rule sets and helpers, each tested by a `.test.ts` beside it. |
 
 #### `web/src/hooks/`
@@ -416,7 +418,7 @@ Paths inside answers abbreviate three long prefixes: **ORCH** = `services/orches
 ### B. Chat and agents
 
 10. **How does Chat pick an agent?**
-    `CoordinatorService.send(...)` (in `ORCH/chat/CoordinatorService.java`) tries, in order: an `@mention` (`MentionParser.parse`), an intent such as a schedule or a document question (`IntentDetector.detect`), a configured live model that plans the work (`ModelRouterPlanner.plan`), then keyword scoring (`RuleRouter.route`).
+    `CoordinatorService.send(...)` (in `ORCH/chat/CoordinatorService.java`) tries, in order: an `@mention` (`MentionParser.parse`), an intent such as a schedule or a document question (`IntentDetector.detect`; a schedule only when `ScheduleIntent.asksForSchedule` says the person asked for timed or repeated work), a configured live model that plans the work (`ModelRouterPlanner.plan`), then keyword scoring (`RuleRouter.route`). A message sent from an answer card (`MessageContext.CardRef`) skips mentions and schedules and goes to the card's agent, with the card's content given as data (`ContextPrompt.cardSection`).
     If nothing fits, the workspace's fallback agent (`GeneralEmployee`) takes it, or Chat asks the person to choose. Each reply states who took the work and why (`RoutingCard.tsx`).
 
 11. **How does one Chat message become work?**

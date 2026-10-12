@@ -1,5 +1,5 @@
-// @find: tests for mention parser, chat, matches key, matches camel case name, matches hyphenated name, matches two word name, leaves unknown token alone, collects several mentions in order, empty inputs match nothing, MentionParserTest, MentionParser
-// @what: Tests for MentionParser in the orchestrator chat package (7 test methods).
+// @find: tests for mention parser, chat, email address is not a mention, matches key, matches camel case name, matches hyphenated name, matches two word name, leaves unknown token alone, collects several mentions in order, empty inputs match nothing, MentionParserTest, MentionParser
+// @what: Tests for MentionParser in the orchestrator chat package (8 test methods).
 // @flow: Exercises MentionParser
 package os.aiworkforce.orchestrator.chat;
 
@@ -94,5 +94,21 @@ class MentionParserTest {
         assertThat(MentionParser.parse("", agents).agents()).isEmpty();
         assertThat(MentionParser.parse("@hr do it", List.of()).agents()).isEmpty();
         assertThat(MentionParser.parse(null, agents).text()).isEmpty();
+    }
+
+    // @find: test email address is not a mention, mention parser
+    @Test
+    @DisplayName("an \"@\" inside an email address is never a mention, so jo@hr.example.com does not address HR")
+    void emailAddressIsNotAMention() {
+        String card = "Please send this email.\nTo: jo@hr.example.com\nCc: accounts@research.example.com, a.b+c@support.io";
+
+        MentionParser.Result result = MentionParser.parse(card, agents);
+
+        assertThat(result.agents()).isEmpty();
+        assertThat(result.text()).isEqualTo(card);
+        // A mention after a space, a bracket or at the start still counts.
+        assertThat(MentionParser.parse("ask (@hr) and @research, and mail sam@hr.org", agents).agents())
+                .containsExactly(hr, research);
+        assertThat(MentionParser.parse("@hr: onboard her", agents).agents()).containsExactly(hr);
     }
 }

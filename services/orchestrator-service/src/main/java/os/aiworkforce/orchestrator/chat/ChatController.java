@@ -88,7 +88,10 @@ public class ChatController {
      * @param repo a GitHub repository (optional branch and path) the work is about
      * @param skillId a skill whose playbook the run follows
      * @param agentIds agents to address, added to any @mentions in the text (ids not in the workspace
-     *     are ignored); when neither names an agent, the coordinator decides who takes the message
+     *     are ignored); when neither names an agent, the coordinator decides who takes the message.
+     *     For a message from a card, only these agents are addressed: the text is not read for mentions
+     * @param card the answer card the message was sent from, with what the card held (see {@link
+     *     MessageContext.CardRef}); null for a message the person typed
      */
     public record SendMessageRequest(
             @Size(max = 10_000) String text,
@@ -96,7 +99,8 @@ public class ChatController {
             @Size(max = 10) List<UUID> attachmentIds,
             @Size(max = 20) List<MessageContext.KnowledgeRef> knowledge,
             MessageContext.RepoRef repo,
-            UUID skillId) {
+            UUID skillId,
+            MessageContext.CardRef card) {
 
         /** The shape before files could be attached. */
         public SendMessageRequest(String text, List<UUID> agentIds) {
@@ -105,12 +109,23 @@ public class ChatController {
 
         /** The shape before the "+" menu could attach knowledge, a repository or a skill. */
         public SendMessageRequest(String text, List<UUID> agentIds, List<UUID> attachmentIds) {
-            this(text, agentIds, attachmentIds, null, null, null);
+            this(text, agentIds, attachmentIds, null, null, null, null);
         }
 
-        /** What was attached besides files, checked. */
+        /** The shape before a message could come from an answer card. */
+        public SendMessageRequest(
+                String text,
+                List<UUID> agentIds,
+                List<UUID> attachmentIds,
+                List<MessageContext.KnowledgeRef> knowledge,
+                MessageContext.RepoRef repo,
+                UUID skillId) {
+            this(text, agentIds, attachmentIds, knowledge, repo, skillId, null);
+        }
+
+        /** What was attached besides files, and the card it came from, checked. */
         public MessageContext context() {
-            return MessageContext.of(knowledge, repo, skillId);
+            return MessageContext.of(knowledge, repo, skillId, card);
         }
     }
 

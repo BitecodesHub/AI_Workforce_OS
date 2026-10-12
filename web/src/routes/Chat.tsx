@@ -7,6 +7,7 @@ import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { Composer } from '../components/chat/Composer'
 import { ThreadSkeleton } from '../components/chat/ChatSkeletons'
 import { JumpToLatest } from '../components/chat/JumpToLatest'
+import type { CardSend } from '../components/chat/AnswerBubble'
 import { MessageList } from '../components/chat/MessageList'
 import { QueuedMessages } from '../components/chat/QueuedBubble'
 import { AddPeopleDialog } from '../components/chat/AddPeopleDialog'
@@ -42,6 +43,7 @@ import { Button, ConfirmDialog, EmptyState, ErrorState } from '../components/ui'
 import { Sheet } from '../components/ui/Sheet'
 import { ShortcutsDialog } from '../components/ui/ShortcutsDialog'
 import { ApiError, api, describeApiError } from '../lib/api'
+import { answerPlainText } from '../lib/answerBlocks'
 import { useEarlierPages, useSetConversationVisibility } from '../lib/chatQueries'
 import { describeChatActionError, useCancelQueued, useEditQueued, useStartQueuedNow } from '../lib/chatQueueQueries'
 import { useCopyText } from '../lib/clipboard'
@@ -500,15 +502,19 @@ export function Chat() {
     agentIds: string[],
     attachmentIds: string[] = [],
     context?: ComposerContext,
+    options: { asNewRequest?: boolean; card?: CardSend['card'] } = {},
   ): Promise<boolean> {
     if (unavailable) return false
-    const question = replyTo ? questions.find((q) => q.id === replyTo.questionId) : undefined
-    if (replyTo && !question) {
+    // A message from an answer card is always a new request to that card's agent, never the answer
+    // to whichever question the composer happens to be replying to.
+    const reply = options.asNewRequest || options.card ? null : replyTo
+    const question = reply ? questions.find((q) => q.id === reply.questionId) : undefined
+    if (reply && !question) {
       toast.error('This question is no longer open.')
       return false
     }
     // An automatic answer gives way to a mention of some other agent: that is a new request.
-    if (replyTo && question && !sendsAsNewRequest({ auto: replyTo.auto, agentId: question.agentId }, agentIds)) {
+    if (reply && question && !sendsAsNewRequest({ auto: reply.auto, agentId: question.agentId }, agentIds)) {
       const payload = composerAnswer(question, text)
       try {
         await answerQuestion.mutateAsync({ id: question.id, answers: payload.answers, note: payload.note ?? null, via: 'chat' })
@@ -561,6 +567,8 @@ export function Chat() {
         ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
         // Documents, a repository and a skill from the "+" menu; nothing when none was attached.
         ...contextPayload(context),
+        // The answer card the message comes from, with its content as data (see AnswerBubble).
+        ...(options.card ? { card: options.card } : {}),
       }
       let conversationId = selectedId
       if (conversationId) {
@@ -586,6 +594,13 @@ export function Chat() {
       await client.invalidateQueries({ queryKey: ['conversations', conversationId] })
       return true
     } catch (error) {
+      if (options.card) {
+        // A card keeps its own "could not be sent" line and its button stays ready, so it is tried
+        // again from the card - never from the shared banner, whose "Try again" would send it as a
+        // typed message, possibly as the answer to an open question.
+        toast.error(`Your request could not be sent. ${describeApiError(error)}`)
+        return false
+      }
       setFailedSend({ text, agentIds, attachmentIds, ...(context ? { context } : {}), reason: describeApiError(error) })
       setAnnouncement('Your message could not be sent.')
       return false
@@ -845,6 +860,13 @@ export function Chat() {
   const onStop = useStableCallback((goalId: string) => void handleStop(goalId))
   const onRetry = useStableCallback((goalId: string) => void handleRetry(goalId))
   const onAnswerFromDocuments = useStableCallback((messageId: string) => void handleAnswerFromDocuments(messageId))
+  // An answer card's request ("send this email", a choice, a ticked checklist) goes to the card's
+  // agent as the person's next message, through the same send as the composer, naming the card and
+  // carrying its content as data: the server routes it to that agent only, never as a schedule, and
+  // the agent's run does the work, with anything outbound waiting for approval as always.
+  const onCardSend = useStableCallback((request: CardSend) =>
+    handleSend(request.text, request.agentId ? [request.agentId] : [], [], undefined, { asNewRequest: true, card: request.card }),
+  )
   const onCancelQueued = useStableCallback((item: QueuedMessage) => handleCancelQueued(item))
   const onEditQueued = useStableCallback((item: QueuedMessage, text: string) => handleEditQueued(item, text))
   const onStartQueuedNow = useStableCallback((item: QueuedMessage) => handleStartQueuedNow(item))
@@ -1010,6 +1032,8 @@ export function Chat() {
                     onStop={onStop}
                     onRetry={onRetry}
                     onAnswerFromDocuments={onAnswerFromDocuments}
+                    onCardSend={canCreateWork ? onCardSend : null}
+                    queued={queued}
                     conversationId={selectedId}
                     agentsForReroute={activeAgents}
                     answeringMessageId={answeringMessageId}
@@ -1210,7 +1234,7 @@ function AnswerAnnouncer({
     }
     for (const message of ready) parts.push(`New reply from ${nameOf(message.agentId)}.`)
     const last = ready[ready.length - 1]
-    if (last) void speaker.speak(last.content, last.agentId)
+    if (last) void speaker.speak(answerPlainText(last.content, 'speech'), last.agentId)
     if (parts.length > 0) onAnnounce(parts.join(' '))
     previousMessages.current = messages
     // eslint-disable-next-line react-hooks/exhaustive-deps

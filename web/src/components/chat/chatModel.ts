@@ -1,6 +1,7 @@
 // @find: chat model, group messages, message grouping, new message ids, answer announce, read aloud, goal chain, thread rules, pure functions
 // @what: Pure rules behind the thread: grouping, new-message detection and a goal's chain.
 // @flow: Used by MessageList, MessageItem, ProgressCard and the Chat page.
+import { answerPlainText } from '../../lib/answerBlocks'
 import { toolLabel } from '../../lib/labels'
 import { formatElapsed, formatMoney, nameList } from '../../lib/format'
 import { canRetryGoal, canStopGoal } from '../../lib/goals'
@@ -710,7 +711,7 @@ export function conversationText(messages: readonly ChatMessage[], agentNames: R
       lines.push(`${who}: ${message.content}`)
     } else if (message.kind === 'answer') {
       const name = message.agentId ? (agentNames[message.agentId]?.name ?? 'An agent') : 'An agent'
-      lines.push(`${name}: ${message.content}`)
+      lines.push(`${name}: ${answerPlainText(message.content, 'copy')}`)
     } else if (message.kind === 'routing') {
       lines.push(routingSummary(message, agentNames))
     } else if (message.kind === 'error') {

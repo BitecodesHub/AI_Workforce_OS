@@ -6,6 +6,7 @@ import type {
   InputHTMLAttributes,
   MouseEvent as ReactMouseEvent,
   ReactNode,
+  Ref,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
@@ -544,7 +545,7 @@ export function Select({
 }
 
 // @find: textarea field, multi-line input
-/** A labelled multi-line field with the shared field behaviour (id, hint, error, aria-invalid, aria-describedby). */
+/** A labelled multi-line field with the shared field behaviour (id, hint, error, aria-invalid, aria-describedby). A `ref` reaches the textarea itself, for a caller that sizes or focuses it. */
 export function Textarea({
   label,
   error,
@@ -553,7 +554,7 @@ export function Textarea({
   id: idProp,
   className,
   ...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & FieldProps) {
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & FieldProps & { ref?: Ref<HTMLTextAreaElement> | undefined }) {
   const { id, describedBy, invalid } = useFieldIds(idProp, hint, error)
   return (
     <Field id={id} label={label} optional={optional} hint={hint} error={error}>

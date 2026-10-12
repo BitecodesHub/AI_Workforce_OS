@@ -275,7 +275,9 @@ function RunTrace({
         {run.status === 'waiting_approval' && <WaitingForApproval run={run} steps={steps} />}
         {run.status === 'waiting_input' && <WaitingForAnswer run={run} />}
 
-        {answer && <AnswerCard step={answer} instruction={instructionText} />}
+        {answer && (
+          <AnswerCard step={answer} instruction={instructionText} {...answerCardAccess(goal, can)} />
+        )}
         {incomplete && <IncompleteAnswer text={incomplete} instruction={instructionText} />}
 
         {/* What people said of the answer, with the reasons; absent when nobody has rated it. */}
@@ -326,6 +328,21 @@ function RunTrace({
  * and changed something (anything but a read), as a line of words.
  */
 // @find: completed actions list, what was already done in a run
+// @find: answerCardAccess, who may act on a card on the run page, card permissions
+/**
+ * What the cards in a run's answer may point to and do here, by the same rule as Chat: acting on a
+ * card starts work, so a role without task:create (or without Chat) reads and copies only. A run
+ * from a conversation the person may open links back to it, where the card can act. Pure.
+ */
+export function answerCardAccess(
+  goal: Pick<Goal, 'source' | 'conversationId'> | undefined,
+  can: (permission: string) => boolean,
+): { chatHref: string | undefined; readOnly: boolean } {
+  const readOnly = !can('task:create') || !can('chat:use')
+  const chatHref = goal?.source === 'chat' && goal.conversationId && can('chat:use') ? `/chat?c=${goal.conversationId}` : undefined
+  return { chatHref, readOnly }
+}
+
 export function completedActions(steps: ReadonlyArray<{ kind: string; detail: Record<string, unknown> }> | undefined): string[] {
   if (!steps) return []
   const lines: string[] = []

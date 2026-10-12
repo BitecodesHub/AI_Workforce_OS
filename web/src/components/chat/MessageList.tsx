@@ -3,8 +3,9 @@
 // @flow: Used by the Chat page; renders MessageItem.
 import { memo, useMemo } from 'react'
 import { formatDateTime } from '../../lib/format'
-import type { Agent, BoardGoal, ChatMessage, Member, RunQuestion } from '../../lib/queries'
+import type { Agent, BoardGoal, ChatMessage, Member, QueuedMessage, RunQuestion } from '../../lib/queries'
 import type { useSpeaker } from '../../lib/voice'
+import type { CardSend } from './AnswerBubble'
 import { MessageItem } from './MessageItem'
 import { QuestionMessage } from './QuestionMessage'
 import { lastAnswer, messageAuthor, orphanQuestions, withDayDividers } from './chatModel'
@@ -57,6 +58,8 @@ function MessageListInner({
   onStop,
   onRetry,
   onAnswerFromDocuments,
+  onCardSend = null,
+  queued,
   conversationId,
   agentsForReroute,
   answeringMessageId,
@@ -79,6 +82,10 @@ function MessageListInner({
   onStop: (goalId: string) => void
   onRetry: (goalId: string) => void
   onAnswerFromDocuments: (messageId: string) => void
+  /** Sends a request from an answer card to the agent that wrote the answer; null where the person cannot start work, so cards only read and copy. */
+  onCardSend?: ((request: CardSend) => Promise<boolean>) | null | undefined
+  /** Messages waiting their turn, so a card whose request waits shows it as sent. */
+  queued?: readonly QueuedMessage[] | undefined
   conversationId: string | null
   agentsForReroute: Agent[]
   answeringMessageId: string | null
@@ -159,6 +166,8 @@ function MessageListInner({
                 onStop={onStop}
                 onRetry={onRetry}
                 onAnswerFromDocuments={onAnswerFromDocuments}
+                onCardSend={onCardSend}
+                queued={queued}
               />
             </article>
           </li>

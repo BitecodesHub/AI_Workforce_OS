@@ -1,5 +1,5 @@
-// @find: tests for intent detector, chat, schedule when parser agrees, not aschedule when parser refuses, no marker never schedule, question is documents, search phrasing is documents, question with action verb is work, help request is work, policy question is documents, IntentDetectorTest, IntentDetector
-// @what: Tests for IntentDetector in the orchestrator chat package (15 test methods).
+// @find: tests for intent detector, chat, date that describes the request is work, starts next Monday, schedule when parser agrees, not aschedule when parser refuses, no marker never schedule, question is documents, search phrasing is documents, question with action verb is work, help request is work, policy question is documents, IntentDetectorTest, IntentDetector
+// @what: Tests for IntentDetector in the orchestrator chat package (17 test methods).
 // @flow: Exercises IntentDetector
 package os.aiworkforce.orchestrator.chat;
 
@@ -161,5 +161,35 @@ class IntentDetectorTest {
                 .isFalse();
         assertThat(IntentDetector.refersToDocuments("")).isFalse();
         assertThat(IntentDetector.refersToDocuments(null)).isFalse();
+    }
+
+    // @find: test date that describes the request is work, intent detector
+    @Test
+    @DisplayName("a date that describes the request is work, even when the parser can read it: Jane starts next Monday")
+    void describedDateIsWork() {
+        for (String text : java.util.List.of(
+                "Draft a welcome email for Jane, who starts next Monday",
+                "Prepare the agenda for the board meeting tomorrow at 10am",
+                "Write an email telling the team our stand-up is every Monday at 9am in Room 2",
+                "Schedule a meeting with Jane next Monday at 10am")) {
+            assertThat(IntentDetector.detect(text, ZONE, NOW, SchedulePreviewer.DEFAULT))
+                    .as(text)
+                    .isEqualTo(IntentDetector.Intent.WORK);
+            assertThat(IntentDetector.detect(text, ZONE, NOW, ALWAYS_PARSES)).as(text).isEqualTo(IntentDetector.Intent.WORK);
+        }
+    }
+
+    // @find: test request for timed work is a schedule with the real parser, intent detector
+    @Test
+    @DisplayName("with the real parser, a request for timed or repeated work is still a schedule")
+    void timedWorkIsAScheduleWithTheRealParser() {
+        for (String text : java.util.List.of(
+                "every weekday at 9am summarise support tickets",
+                "Send me the pipeline summary every weekday at 8:30am",
+                "remind HR tomorrow at 3pm to send onboarding emails")) {
+            assertThat(IntentDetector.detect(text, ZONE, NOW, SchedulePreviewer.DEFAULT))
+                    .as(text)
+                    .isEqualTo(IntentDetector.Intent.SCHEDULE);
+        }
     }
 }

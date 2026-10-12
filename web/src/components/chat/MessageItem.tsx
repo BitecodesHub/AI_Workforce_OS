@@ -2,10 +2,11 @@
 // @what: Picks the right component for each kind of thread item.
 // @flow: Called by MessageList; renders AnswerBubble, UserBubble, ErrorCard, RoutingCard and others.
 import { memo } from 'react'
-import type { Agent, BoardGoal, ChatMessage, Member, RunQuestion } from '../../lib/queries'
+import type { Agent, BoardGoal, ChatMessage, Member, QueuedMessage, RunQuestion } from '../../lib/queries'
 import { isGoalActive } from '../../lib/queries'
 import type { useSpeaker } from '../../lib/voice'
 import { AnswerBubble } from './AnswerBubble'
+import type { CardSend } from './AnswerBubble'
 import { DocumentsCard } from './DocumentsCard'
 import { ErrorCard } from './ErrorCard'
 import { NoticeLine } from './NoticeLine'
@@ -49,6 +50,10 @@ export type MessageItemProps = {
   onStop: (goalId: string) => void
   onRetry: (goalId: string) => void
   onAnswerFromDocuments: (messageId: string) => void
+  /** Sends a request from an answer card to the agent that wrote the answer; null where the person cannot start work. */
+  onCardSend?: ((request: CardSend) => Promise<boolean>) | null | undefined
+  /** Messages waiting their turn, so a card whose request waits shows it as sent. */
+  queued?: readonly QueuedMessage[] | undefined
 }
 
 /**
@@ -79,6 +84,8 @@ function MessageItemInner({
   onStop,
   onRetry,
   onAnswerFromDocuments,
+  onCardSend = null,
+  queued,
 }: MessageItemProps) {
   switch (message.kind) {
     case 'text': {
@@ -134,6 +141,9 @@ function MessageItemInner({
           onAskAgain={() => {
             if (goal) onAskAgain(goal)
           }}
+          onCardSend={onCardSend}
+          me={me}
+          queued={queued}
         />
       )
     case 'schedule_suggestion':

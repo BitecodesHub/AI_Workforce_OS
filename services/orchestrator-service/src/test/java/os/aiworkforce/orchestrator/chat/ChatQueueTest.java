@@ -1,5 +1,5 @@
-// @find: tests for chat queue, chat, second message is queued, queue starts in order, stop releases the queue, cancel and edit, others cannot change it, waiting decision and start now, expiry, retry while busy is refused, ChatQueueTest, ChatQueue
-// @what: Tests for ChatQueue in the orchestrator chat package (10 test methods).
+// @find: tests for chat queue, chat, queued card request keeps its card, second message is queued, queue starts in order, stop releases the queue, cancel and edit, others cannot change it, waiting decision and start now, expiry, retry while busy is refused, ChatQueueTest, ChatQueue
+// @what: Tests for ChatQueue in the orchestrator chat package (11 test methods).
 // @flow: Exercises ChatQueue
 package os.aiworkforce.orchestrator.chat;
 
@@ -311,6 +311,31 @@ class ChatQueueTest {
                         org.assertj.core.groups.Tuple.tuple("@Research second question", 1),
                         org.assertj.core.groups.Tuple.tuple("@Research third question", 2));
         assertThat(queue.state(ORG, conversation)).isEqualTo(ChatQueue.Busy.WORKING);
+    }
+
+    // @find: test queued card request keeps its card, chat queue
+    @Test
+    @DisplayName("a card's request that has to wait shows its card, so the card reads as already asked after a reload")
+    void queuedCardRequestKeepsItsCard() {
+        send("@Research first question");
+        UUID answer = UUID.randomUUID();
+        MessageContext context = MessageContext.of(null, null, null, new MessageContext.CardRef(
+                answer, 1, "choices", java.util.Map.of("question", "Send it today?", "option", "Yes")));
+
+        CoordinatorService.SendOutcome waiting = coordinator.send(
+                ORG, conversation.getId(), "My choice for \"Send it today?\": Yes", null, null, context, "Bearer x");
+
+        assertThat(waiting.queued()).isNotNull();
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> card = (java.util.Map<String, Object>)
+                queue.views(conversation.getId(), conversation, RequestContext.requireActor()).getFirst().card();
+        assertThat(card)
+                .containsEntry("messageId", answer.toString())
+                .containsEntry("index", 1)
+                .containsEntry("kind", "choices")
+                .containsEntry("content", java.util.Map.of("question", "Send it today?", "option", "Yes"));
+        assertThat(queue.views(conversation.getId(), conversation, RequestContext.requireActor()).getFirst().text())
+                .isEqualTo("My choice for \"Send it today?\": Yes");
     }
 
     // @find: test queue starts in order, chat queue

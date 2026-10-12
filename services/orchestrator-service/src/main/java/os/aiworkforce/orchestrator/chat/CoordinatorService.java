@@ -501,7 +501,7 @@ public class CoordinatorService {
         if (strict) {
             throw ApiException.validation("skillId", "That skill no longer exists. Choose another one.");
         }
-        return MessageContext.of(context.knowledge(), context.repo(), null);
+        return context.withoutSkill();
     }
 
     /**
@@ -790,7 +790,7 @@ public class CoordinatorService {
     /**
      * Phase two: decides what to do with a message, with no transaction open.
      *
-     * <p>Order of precedence: a context that forces work (skill or repository) with no mention goes to its preferred agent; a mention goes to the named agents (a paused one produces a choice, a single mention with a timing phrase becomes a schedule); files or forced work are routed as work; otherwise {@link IntentDetector} picks schedule, documents or work. Reads agents, earlier messages and may call the model planner and the knowledge service; writes nothing.
+     * <p>Order of precedence: a context that forces work (skill or repository) with no mention goes to its preferred agent; a mention goes to the named agents (a paused one produces a choice, a single mention that asks for timed work becomes a schedule); files or forced work are routed as work; otherwise {@link IntentDetector} picks schedule, documents or work. A message from an answer card goes to the agents named with it, never read for mentions and never a schedule; with none of them left, it is routed as work. Reads agents, earlier messages and may call the model planner and the knowledge service; writes nothing.
      *
      * @return the decision to apply; a runtime failure is left to the caller, which turns it into an error reply
      */
@@ -808,7 +808,11 @@ public class CoordinatorService {
         Agent fallback = generalEmployee.activeIn(workspaceAgents).orElse(null);
         Actor actor = RequestContext.actor().orElse(null);
 
-        MentionParser.Result mention = MentionParser.parse(text, workspaceAgents);
+        // A message from an answer card goes to the card's agent and nobody else: its text is the
+        // card's request, where an "@" is part of an email address, never a mention.
+        boolean fromCard = context != null && context.fromCard();
+        MentionParser.Result mention =
+                fromCard ? new MentionParser.Result(List.of(), text) : MentionParser.parse(text, workspaceAgents);
         List<Agent> chosen = new ArrayList<>(mention.agents());
         if (explicitAgentIds != null) {
             for (UUID agentId : explicitAgentIds) {
@@ -821,8 +825,10 @@ public class CoordinatorService {
         }
 
         List<ChatMessage> chronological = earlierMessages(conversationId, userMessage);
-        Background background = Background.of(
-                        ThreadContext.of(chronological, nameMap(workspaceAgents), Map.of(), requesterId))
+        // A card's request is about the answer the card is in, which may not be the newest one.
+        UUID aboutAnswer = fromCard ? context.card().messageId() : null;
+        Background background = Background.of(ThreadContext.of(
+                        chronological, nameMap(workspaceAgents), Map.of(), requesterId, aboutAnswer))
                 .withContextBlock(ContextPrompt.block(context));
 
         if (chosen.isEmpty() && context != null && context.forcesWork()) {
@@ -856,8 +862,9 @@ public class CoordinatorService {
                 return new ChoiceDecision(reason, pausedMentionAlternatives(fallback, workspaceAgents), text);
             }
             // "@Research every Monday at 9am summarise competitor news" sets up a schedule for
-            // Research instead of starting the work now.
-            if (!withFiles && chosen.size() == 1 && (context == null || !context.forcesWork())) {
+            // Research instead of starting the work now. A card's request never does: "send this
+            // email" is work now, whatever dates the email itself mentions.
+            if (!withFiles && !fromCard && chosen.size() == 1 && (context == null || !context.forcesWork())) {
                 Optional<Decision> scheduled = mentionSchedule(orgId, chosen.getFirst(), mention.text());
                 if (scheduled.isPresent()) {
                     return scheduled.get();
@@ -880,7 +887,7 @@ public class CoordinatorService {
                     contextBackground(background, orgId, part, chronological, authorizationHeader, context, withFiles));
         }
 
-        if (withFiles || (context != null && context.forcesWork())) {
+        if (withFiles || fromCard || (context != null && context.forcesWork())) {
             return decideWork(
                     orgId,
                     workspaceAgents,
@@ -1144,13 +1151,21 @@ public class CoordinatorService {
                 .orElse(null);
     }
 
-    /** A schedule for the one agent a message mentions, when the rest of it is a timing phrase plus work. */
+    /**
+     * A schedule for the one agent a message mentions, when the rest of it is a timing phrase plus
+     * work and it clearly asks for timed or repeated work ({@link
+     * os.aiworkforce.orchestrator.schedule.ScheduleIntent}): "@HR draft a welcome email for Jane, who
+     * starts next Monday" is work for HR now, not a schedule.
+     */
     private Optional<Decision> mentionSchedule(UUID orgId, Agent agent, String withoutMention) {
         if (withoutMention == null || withoutMention.isBlank() || withoutMention.strip().endsWith("?")) {
             return Optional.empty();
         }
         ZoneId zone = zones.zoneFor(orgId);
         Instant now = Instant.now();
+        if (!os.aiworkforce.orchestrator.schedule.ScheduleIntent.asksForSchedule(withoutMention, zone, now)) {
+            return Optional.empty();
+        }
         return os.aiworkforce.orchestrator.schedule.ScheduleExtractor.extract(withoutMention, zone, now)
                 .filter(found -> !found.instruction().isBlank())
                 .map(found -> scheduleDecision(agent, found.parsed(), found.phrase(), found.instruction(), zone, now));
@@ -1767,13 +1782,19 @@ public class CoordinatorService {
         // The same background the first routing had: the thread so far, and the passages the agent
         // that was first given this request was given, since the new one is answering the same thing.
         List<Map<String, Object>> passages = passagesIn(target.getDetail());
+        // What the "+" menu attached to the request - its skill, repository and chosen documents -
+        // goes with it to the agent now taking it, as it would have to the first one, and so does
+        // the card it was sent from, with the answer that card is in.
+        MessageContext context = contextOfRequest(orgId, conversationId, target);
         Background background = new Background(
-                ThreadContext.of(chronological, nameMap(workspaceAgents), Map.of(), requesterIdFromContext()),
+                ThreadContext.of(
+                        chronological,
+                        nameMap(workspaceAgents),
+                        Map.of(),
+                        requesterIdFromContext(),
+                        context.fromCard() ? context.card().messageId() : null),
                 passages,
                 false);
-        // What the "+" menu attached to the request - its skill, repository and chosen documents -
-        // goes with it to the agent now taking it, as it would have to the first one.
-        MessageContext context = contextOfRequest(orgId, conversationId, target);
         String instruction = withPreamble(background, agent.getId(), requestText + ContextPrompt.block(context));
 
         GoalService.NewTask task =

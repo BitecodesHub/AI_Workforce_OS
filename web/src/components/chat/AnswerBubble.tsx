@@ -1,6 +1,6 @@
-// @find: agent answer, reply bubble, answer message, copy answer, read aloud, thumbs up, thumbs down, feedback, sources, citations, sandbox model, markdown answer, chat thread
-// @what: An agent's reply in the thread: name, markdown answer, action bar (copy, read aloud, feedback) and document sources.
-// @flow: Used by MessageItem; uses PassageList.
+// @find: agent answer, reply bubble, answer message, copy answer, read aloud, thumbs up, thumbs down, feedback, sources, citations, sandbox model, markdown answer, chat thread, answer cards, act on a card
+// @what: An agent's reply in the thread: name, markdown answer with its cards, action bar (copy, read aloud, feedback) and document sources.
+// @flow: Used by MessageItem; uses PassageList; its cards send through onCardSend (Chat's handleSend).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -8,14 +8,27 @@ import { Collapsible } from '../ui/Collapsible'
 import { Markdown } from '../ui/Markdown'
 import { MenuButton } from '../ui/Menu'
 import { IconButton, Tag } from '../ui'
+import type { CardRequest } from '../../lib/answerBlocks'
+import { answerPlainText, cardRepliesFor } from '../../lib/answerBlocks'
 import { useCopyText } from '../../lib/clipboard'
-import type { Agent, BoardGoal, ChatMessage, ConversationDetail } from '../../lib/queries'
+import type { AnswerActions } from '../answers/answerActions'
+import type { Agent, BoardGoal, ChatMessage, ConversationDetail, QueuedMessage } from '../../lib/queries'
 import type { useSpeaker } from '../../lib/voice'
 import { AgentAvatar } from '../ui/AgentAvatar'
 import { RatingButtons, RatingReason, useAnswerRating } from '../analytics/AnswerRating'
 import { PassageList, passageItemId } from './PassageList'
 import { BrowserPreview } from '../run/BrowserShot'
 import { PRACTICE_DATA_NOTE, sourcesForAnswer } from './chatModel'
+
+/** A card's request on its way to Chat's send: what the card sends, the agent that wrote the answer, and the card (the answer and the card's place in it). */
+export type CardSend = {
+  text: string
+  agentId: string | null
+  card: { messageId: string; index: number; kind: CardRequest['kind']; content: Record<string, unknown> }
+}
+
+/** No waiting messages: one shared list, so an answer without any never sees a new one each render. */
+const NO_WAITING: readonly QueuedMessage[] = []
 
 /**
  * The thread the answer sits in, as the conversation query last stored it, for a caller that does
@@ -37,6 +50,13 @@ function storedThread(client: QueryClient, conversationId: string | null): reado
  * When the agent was given passages from the workspace's documents, they sit under the answer as a
  * folded "Sources" list, and a [2] in the answer opens source 2. Only the goal's first step reads
  * the passages, so only its answers show them.
+ *
+ * An answer may carry cards (an email draft, a table, a chart, a checklist, a choice). A card that
+ * acts sends the person's next message to this agent through `onCardSend`, naming this answer and
+ * the card, with the card's content as data; without it (a role that cannot start work) the cards
+ * only read and copy. What was already sent from each card - in the thread or waiting its turn - is
+ * found by that name (cardRepliesFor), never by matching words. Copy and read aloud use the cards
+ * written out as text, never their JSON.
  */
 export function AnswerBubble({
   message,
@@ -50,6 +70,9 @@ export function AnswerBubble({
   conversationId,
   onSendTo,
   onAskAgain,
+  onCardSend,
+  me = null,
+  queued = NO_WAITING,
 }: {
   message: ChatMessage
   agent: Agent | undefined
@@ -63,6 +86,12 @@ export function AnswerBubble({
   conversationId: string | null
   onSendTo: (agentId: string) => void
   onAskAgain: () => void
+  /** Sends a card's request to an agent as the person's next message; null or left out where the person cannot start work. */
+  onCardSend?: ((request: CardSend) => Promise<boolean>) | null | undefined
+  /** The viewer's id, so a card can say whether they or someone else used it. */
+  me?: string | null | undefined
+  /** Messages waiting their turn in the conversation; one sent from a card here counts as already sent. */
+  queued?: readonly QueuedMessage[] | undefined
 }) {
   const copy = useCopyText()
   const client = useQueryClient()
@@ -86,6 +115,22 @@ export function AnswerBubble({
   const name = agent?.name ?? 'An agent'
   const speaking = speaker.speakingKey === message.id
   const others = agentsForReroute.filter((candidate) => candidate.id !== message.agentId).slice(0, 6)
+  // What was already sent from each of this answer's cards, so a choice made shows as made.
+  const replies = useMemo(() => cardRepliesFor(message.id, thread, queued, me), [message.id, thread, queued, me])
+  const agentId = message.agentId
+  const messageId = message.id
+  const actions = useMemo<AnswerActions>(
+    () => ({
+      send: onCardSend
+        ? (index: number, request: CardRequest) =>
+            onCardSend({ text: request.text, agentId, card: { messageId, index, kind: request.kind, content: request.content } })
+        : undefined,
+      agentName: agent?.name,
+      replies,
+      readOnly: !onCardSend,
+    }),
+    [onCardSend, agentId, messageId, agent?.name, replies],
+  )
 
   return (
     <div className="chat-bubble-row chat-bubble-row-agent">
@@ -101,6 +146,7 @@ export function AnswerBubble({
         <Markdown
           text={message.content}
           citations={sources.length > 0 ? { count: sources.length, onOpen: openSource } : undefined}
+          actions={actions}
         />
         {message.detail.practiceData === true && (
           <p className="caption muted chat-answer-practice">{PRACTICE_DATA_NOTE}</p>
@@ -117,7 +163,7 @@ export function AnswerBubble({
           </div>
         )}
         <div className="row chat-actions chat-answer-actions" style={{ gap: 'var(--space-3)' }}>
-          <IconButton label="Copy answer" onClick={() => void copy(message.content, 'Answer copied')}>
+          <IconButton label="Copy answer" onClick={() => void copy(answerPlainText(message.content, 'copy'), 'Answer copied')}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
               <path d="M3.5 10.5V3.5a1 1 0 0 1 1-1h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
@@ -127,7 +173,7 @@ export function AnswerBubble({
             <IconButton
               label={speaking ? 'Stop reading aloud' : 'Read aloud'}
               aria-pressed={speaking}
-              onClick={() => (speaking ? speaker.stop() : speaker.speak(message.content, message.agentId, { force: true, key: message.id }))}
+              onClick={() => (speaking ? speaker.stop() : speaker.speak(answerPlainText(message.content, 'speech'), message.agentId, { force: true, key: message.id }))}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path d="M3 6h2.3L9 3.2v9.6L5.3 10H3z" fill="currentColor" />

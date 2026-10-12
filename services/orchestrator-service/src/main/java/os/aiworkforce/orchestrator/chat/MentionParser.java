@@ -24,15 +24,21 @@ import os.aiworkforce.orchestrator.domain.Agent;
  * words, each written out and followed by a space or the end of the message) all address the same
  * agent named "Customer Support". Matching is exact once both sides are normalised: a token that
  * does not resolve to a real agent is left in the text untouched, because it is not a mention at
- * all, just a person typing an "@" for some other reason.
+ * all, just a person typing an "@" for some other reason. An "@" inside an email address is never
+ * a mention.
  */
 public final class MentionParser {
 
     /** Not instantiable; every member is static. */
     private MentionParser() {}
 
-    /** The token a mention starts with: an "@" followed by a run of letters, digits or hyphens. */
-    private static final Pattern TOKEN = Pattern.compile("@([\\p{L}\\p{N}][\\p{L}\\p{N}-]*)");
+    /**
+     * The token a mention starts with: an "@" followed by a run of letters, digits or hyphens. The
+     * "@" must not follow a letter, a digit or one of {@code . _ % + -}, so the "@hr" in
+     * {@code jo@hr.example.com} is part of an email address, never a mention of an agent called HR.
+     */
+    private static final Pattern TOKEN =
+            Pattern.compile("(?<![\\p{L}\\p{N}._%+\\-])@([\\p{L}\\p{N}][\\p{L}\\p{N}-]*)");
 
     /** A further word a multi-word name's mention might continue into, joined by a space or hyphen. */
     private static final Pattern NEXT_WORD = Pattern.compile("[ -]([\\p{L}\\p{N}]+)");

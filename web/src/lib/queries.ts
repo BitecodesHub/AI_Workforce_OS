@@ -462,6 +462,12 @@ export type ChatMessageDetail = {
   scheduleId?: string
   /** On a schedule_suggestion: when the created schedule first runs. */
   nextRunAt?: string | null
+  /**
+   * On a person's message: what the composer attached (knowledge, repository, skill) and the answer
+   * card it was sent from (`card`: answer, place, kind and content). Read defensively by
+   * composerContext.sentContextOf and answerBlocks.sentCardOf.
+   */
+  context?: Record<string, unknown>
 }
 
 /** One message in a conversation: author, kind, text, position and kind-specific detail. */
@@ -573,6 +579,8 @@ export type QueuedMessage = {
   updatedAt: string
   status: 'queued' | 'starting' | 'expired'
   canManage: boolean
+  /** The answer card it was sent from (answer, place, kind and content), or null for a typed message. */
+  card?: unknown
 }
 
 /** What sending a message returns: the messages it added, or the queued item when work was in progress. */

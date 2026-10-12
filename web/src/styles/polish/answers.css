@@ -1,0 +1,406 @@
+/*
+ * @find: answer card styles, email draft card css, table card css, chart card css, checklist css, choices buttons css, card fallback note
+ * @what: Styles for the answer cards drawn inside an agent's answer (components/answers) and the note on a card that could not be shown.
+ * @flow: Imported by polish/index.css; classes used by CardShell, EmailDraftCard, TableCard, ChartCard, ChecklistCard, ChoicesCard and Markdown.tsx
+ */
+/*
+ * A card sits inside the answer's text, so it reads as part of the answer rather than as another
+ * panel on the page: a hairline edge, the card radius, the surface colour, and no shadow at rest.
+ * Charts take their colours from the chart tokens, with further tones mixed from them and the ink
+ * and muted colours - never toward the surface, which would fade a tone into the card - so the dark
+ * theme follows without a value of its own here. Every tone was checked at 3:1 or better against
+ * --surface in both themes (lowest: slice 3 at 3.1:1 light, 3.8:1 dark); the second and third bar
+ * series also carry a stripe or dot pattern, so bars never differ by colour alone.
+ */
+
+.answer-card {
+  /* Positioned, so screen-reader-only text inside (a hidden caption, the chart's figures) is
+     clipped to the card instead of widening the thread at phone width. */
+  position: relative;
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.answer-card-head {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.answer-card-kind {
+  margin: 0;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--eyebrow);
+}
+
+.answer-card-title {
+  margin: 0;
+  line-height: 1.4;
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.answer-card-note {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.answer-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/*
+ * A card's button that is busy or already used says so with aria-disabled rather than disabled, so
+ * it keeps keyboard focus (a disabled button drops it to the page); it looks rested all the same.
+ */
+.answer-card .button[aria-disabled='true'],
+.answer-choice[aria-disabled='true']:not([aria-pressed='true']) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.answer-card .button[aria-disabled='true']:active {
+  transform: none;
+}
+
+/* ---- Email draft -------------------------------------------------------------------------- */
+
+.answer-email-fields {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.answer-email-fields .textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+/* To, Cc and Subject: one line that wraps as it fills, so every recipient stays in view on a phone. */
+.answer-email-fields .answer-address {
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Table -------------------------------------------------------------------------------- */
+
+.answer-table-filter {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 320px;
+}
+
+.answer-table-filter .field-label {
+  margin-bottom: 0;
+}
+
+/*
+ * The table runs to the card's edges, so a wide one scrolls in the full width of the card. It is
+ * positioned so anything screen-reader-only inside it (the caption) stays inside its scroll box:
+ * unpositioned, a hidden span in the last column of a wide table widened the whole thread at phone
+ * width (the same escape shell.css fixes for .table-scroll).
+ */
+.answer-table-scroll {
+  position: relative;
+  max-width: none;
+  margin: 0 calc(var(--space-5) * -1);
+  padding: 0 var(--space-5);
+}
+
+/* Words stay whole: a narrow screen scrolls the table sideways rather than splitting a word. */
+.answer-table-scroll td {
+  overflow-wrap: break-word;
+  min-width: 12ch;
+  max-width: 40ch;
+  vertical-align: top;
+}
+
+.answer-table-scroll th {
+  padding: 0;
+  vertical-align: bottom;
+}
+
+.answer-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  font-weight: var(--weight-emphasis);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.answer-sort:hover {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+
+.answer-sort-mark {
+  flex-shrink: 0;
+  opacity: 0.45;
+}
+
+th[aria-sort='ascending'] .answer-sort,
+th[aria-sort='descending'] .answer-sort {
+  color: var(--ink);
+}
+
+th[aria-sort='ascending'] .answer-sort-mark,
+th[aria-sort='descending'] .answer-sort-mark {
+  opacity: 1;
+  color: var(--blue);
+}
+
+/* ---- Chart -------------------------------------------------------------------------------- */
+
+.answer-chart {
+  /* Contrast against --surface, light / dark: 5.8 / 7.8, 10.2 / 11.9, 5.0 / 7.5. */
+  --answer-series-0: var(--chart-primary);
+  --answer-series-1: color-mix(in srgb, var(--chart-primary) 45%, var(--ink));
+  --answer-series-2: var(--muted);
+  /* Slices 3 to 7, light / dark: 3.1 / 3.8, 12.9 / 14.9, 5.7 / 7.6, 3.1 / 4.0, 5.4 / 7.5. */
+  --answer-slice-0: var(--chart-primary);
+  --answer-slice-1: color-mix(in srgb, var(--chart-primary) 45%, var(--ink));
+  --answer-slice-2: var(--muted);
+  --answer-slice-3: color-mix(in srgb, var(--chart-primary) 40%, var(--chart-secondary));
+  --answer-slice-4: color-mix(in srgb, var(--ink) 85%, var(--muted));
+  --answer-slice-5: color-mix(in srgb, var(--muted) 40%, var(--chart-primary));
+  --answer-slice-6: color-mix(in srgb, var(--ink) 25%, var(--chart-secondary));
+  --answer-slice-7: color-mix(in srgb, var(--muted) 70%, var(--chart-primary));
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.answer-chart-box {
+  width: 100%;
+  min-width: 0;
+}
+
+.answer-chart-grid {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+}
+
+.answer-chart-zero {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.answer-chart-axis {
+  fill: var(--muted);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+}
+
+.answer-chart-point {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.answer-chart-slice {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+/* The stripes and dots over the second and third bars, in the card's own colour so they show on any fill. */
+.answer-chart-pattern {
+  fill: var(--surface);
+  opacity: 0.7;
+}
+
+/* The figures, once the person opens them: a plain table under the chart. */
+.answer-chart-figures {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.answer-chart-figures caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: var(--space-2);
+}
+
+.answer-chart-figures th,
+.answer-chart-figures td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.answer-chart-figures td {
+  text-align: right;
+}
+
+.answer-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.answer-chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The legend is a list inside an answer: Markdown's list indent and item spacing do not apply. */
+.md .answer-chart-legend {
+  padding: 0;
+}
+
+.md .answer-chart-legend li + li {
+  margin-top: 0;
+}
+
+.answer-chart-swatch {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Checklist ---------------------------------------------------------------------------- */
+
+.md .answer-checklist {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.md .answer-checklist li + li {
+  margin-top: 0;
+}
+
+.answer-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  cursor: pointer;
+}
+
+.answer-check input {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
+.answer-check-done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* ---- Choices ------------------------------------------------------------------------------ */
+
+.answer-choices-question {
+  margin: 0;
+  font-weight: var(--weight-emphasis);
+  color: var(--ink);
+}
+
+.answer-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.answer-choice {
+  white-space: normal;
+  text-align: left;
+}
+
+.answer-choice[aria-pressed='true'] {
+  border-color: var(--blue);
+  background: var(--blue-light);
+  color: var(--ink);
+}
+
+.answer-choice[aria-pressed='true']:disabled {
+  opacity: 1;
+}
+
+.md .answer-choices-list {
+  margin: 0;
+}
+
+/* ---- A card that could not be shown -------------------------------------------------------- */
+
+.md-code-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-caption);
+  color: var(--muted);
+  background: var(--surface);
+}
+
+/* 44px is the smallest target a thumb hits reliably, as for every other control (components.css). */
+@media (pointer: coarse) {
+  .answer-check {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .answer-check input {
+    margin-top: 0;
+  }
+
+  .answer-sort {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .answer-card {
+    padding: var(--space-4);
+  }
+
+  .answer-table-scroll {
+    margin: 0 calc(var(--space-4) * -1);
+    padding: 0 var(--space-4);
+  }
+
+  .answer-table-filter {
+    max-width: none;
+  }
+}

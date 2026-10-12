@@ -1,10 +1,15 @@
-// @find: markdown, render markdown, chat message formatting, citations, source links, code block, safe rendering, Markdown component
-// @what: Renders the safe parsed markdown tree as React elements, with optional clickable citations.
-// @flow: Used by Chat and run output; parses with lib/markdown.
+// @find: markdown, render markdown, chat message formatting, citations, source links, code block, safe rendering, Markdown component, answer cards, card fallback
+// @what: Renders the safe parsed markdown tree as React elements, with optional clickable citations and answer cards for card fences.
+// @flow: Used by Chat and run output; parses with lib/markdown, reads card fences with lib/answerBlocks and draws them with components/answers.
 import type { CSSProperties, ReactNode } from 'react'
 import { createContext, useContext, useMemo } from 'react'
+import type { CardResult } from '../../lib/answerBlocks'
+import { resolveCards } from '../../lib/answerBlocks'
 import type { MdAlign, MdBlock, MdInline, MdListItem } from '../../lib/markdown'
 import { parseMarkdown } from '../../lib/markdown'
+import { AnswerBlockCard } from '../answers/AnswerBlockCard'
+import type { AnswerActions } from '../answers/answerActions'
+import { AnswerActionsContext } from '../answers/answerActions'
 import { CopyButton } from './CopyButton'
 
 /*
@@ -16,10 +21,19 @@ import { CopyButton } from './CopyButton'
  *
  * A citation such as [2] is a button only when the caller says what to do with one (`citations`);
  * without that it is the text it was written as.
+ *
+ * A fenced block whose language names an answer card (lib/answerBlocks: email-draft, table, chart,
+ * checklist, choices) is drawn as that card once its JSON passes every check; one that fails is
+ * shown as the ordinary code block it is, with a short note, so nothing is lost and nothing
+ * half-drawn appears. What a card may do (send a message, link to its conversation) comes from the
+ * caller's `actions`.
  */
 
 /** What a click on a citation does. Null where the text has no passages behind it to open. */
 const CitationContext = createContext<((index: number) => void) | null>(null)
+
+/** The card fences of the text being rendered, read once per parse (resolveCards); empty outside a Markdown. */
+const CardsContext = createContext<ReadonlyMap<MdBlock, CardResult>>(new Map())
 
 /** A button that looks like the link it stands in for, in the text's own size, never a grey box. */
 const CITATION_STYLE: CSSProperties = {
@@ -93,19 +107,31 @@ function ListItems({ items }: { items: MdListItem[] }) {
   )
 }
 
-/** A fenced code block with an optional language label and a Copy code button (CopyButton). */
-function CodeBlock({ language, text }: { language: string | null; text: string }) {
+/** A fenced code block with an optional language label and a Copy code button (CopyButton); `note` is said under the label, for a card that could not be shown. */
+function CodeBlock({ language, text, note }: { language: string | null; text: string; note?: string | undefined }) {
   return (
     <figure className="md-code">
       <div className="md-code-head">
         {language && <span className="md-code-lang">{language}</span>}
         <CopyButton text={text} label="Copy code" variant="text" />
       </div>
+      {note && (
+        <p className="md-code-note" role="note">
+          This card could not be shown, so it appears as text. {note}
+        </p>
+      )}
       <pre>
         <code>{text}</code>
       </pre>
     </figure>
   )
+}
+
+/** A code block, or the answer card its fence describes: the card when it was read, the code with a note when it was refused, plain code otherwise. */
+function CodeOrCard({ block }: { block: Extract<MdBlock, { type: 'code' }> }) {
+  const result = useContext(CardsContext).get(block)
+  if (result?.ok) return <AnswerBlockCard block={result.block} index={result.index} />
+  return <CodeBlock language={block.language} text={block.text} note={result && !result.ok ? result.reason : undefined} />
 }
 
 /** A table in a focusable, scrollable region so wide tables do not break the layout and keyboard users can scroll them; column alignment follows the markdown. */
@@ -166,7 +192,7 @@ function Block({ block }: { block: MdBlock }) {
         </blockquote>
       )
     case 'code':
-      return <CodeBlock language={block.language} text={block.text} />
+      return <CodeOrCard block={block} />
     case 'rule':
       return <hr />
     case 'table':
@@ -189,31 +215,44 @@ function Blocks({ blocks }: { blocks: MdBlock[] }) {
   )
 }
 
-// @find: markdown renderer, citations, code blocks
+/** No actions: cards read and copy only. One shared object, so a Markdown without actions never re-renders its cards for a new empty one. */
+const NO_ACTIONS: AnswerActions = {}
+
+// @find: markdown renderer, citations, code blocks, answer cards
 /**
  * Renders a markdown string as React elements through the safe parser (parseMarkdown in lib/markdown).
- * Props: text, className and citations ({ count, onOpen }): the count tells the parser how many numbered
- * passages the text may cite, and onOpen is provided to Citation markers through a context. Without citations
- * a [n] stays literal text. The parse is memoised on the text and count. Used for chat answers, run output and
- * task results.
+ * Props: text, className, citations ({ count, onOpen }) and actions. The count tells the parser how many
+ * numbered passages the text may cite, and onOpen is provided to Citation markers through a context; without
+ * citations a [n] stays literal text. Card fences are read once per parse (resolveCards) and drawn as answer
+ * cards; `actions` says what those cards may do here (see components/answers/answerActions) and defaults to
+ * read and copy only. The parse is memoised on the text and count. Used for chat answers, run output and task
+ * results.
  */
 export function Markdown({
   text,
   className,
   citations,
+  actions,
 }: {
   text: string
   className?: string
   /** How many numbered passages the text may cite, and what opening one does. */
   citations?: { count: number; onOpen: (index: number) => void } | undefined
+  /** What the answer's cards may do where this text is shown; read and copy only when left out. */
+  actions?: AnswerActions | undefined
 }) {
   const count = citations?.count ?? 0
   const blocks = useMemo(() => parseMarkdown(text, { citations: count }), [text, count])
+  const cards = useMemo(() => resolveCards(blocks), [blocks])
   return (
     <CitationContext.Provider value={count > 0 ? (citations?.onOpen ?? null) : null}>
-      <div className={`md ${className ?? ''}`.trim()}>
-        <Blocks blocks={blocks} />
-      </div>
+      <CardsContext.Provider value={cards}>
+        <AnswerActionsContext.Provider value={actions ?? NO_ACTIONS}>
+          <div className={`md ${className ?? ''}`.trim()}>
+            <Blocks blocks={blocks} />
+          </div>
+        </AnswerActionsContext.Provider>
+      </CardsContext.Provider>
     </CitationContext.Provider>
   )
 }

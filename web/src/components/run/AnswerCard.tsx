@@ -1,6 +1,6 @@
-// @find: run answer, final answer, what the person asked, completed run answer, answer card, run detail
-// @what: Shows what a completed run answered and what was asked.
-// @flow: Used by RunDetail; uses traceModel.
+// @find: run answer, final answer, what the person asked, completed run answer, answer card, run detail, answer cards on run page
+// @what: Shows what a completed run answered (with its cards) and what was asked.
+// @flow: Used by RunDetail and RunTraceCompact; uses traceModel; cards link back to the conversation through chatHref.
 import { Card, Eyebrow, Tag } from '../ui'
 import { Markdown } from '../ui/Markdown'
 import { truncateWords } from '../../lib/format'
@@ -32,8 +32,25 @@ function askedText(instruction: string): string {
 }
 
 // @find: AnswerCard, answer card, run answer, final answer, what the person asked, completed run answer
-/** What a completed run answered: the last model reply with text (see answerStep in traceModel). */
-export function AnswerCard({ step, instruction }: { step: RunStep; instruction: string | null }) {
+/**
+ * What a completed run answered: the last model reply with text (see answerStep in traceModel).
+ * Cards in the answer read and copy here; a card that would act (send an email, make a choice)
+ * points to the conversation instead, through `chatHref` when the run came from one, or says it is
+ * read-only for a role that cannot use Chat.
+ */
+export function AnswerCard({
+  step,
+  instruction,
+  chatHref,
+  readOnly = false,
+}: {
+  step: RunStep
+  instruction: string | null
+  /** The Chat conversation the run answered, when there is one the person may open. */
+  chatHref?: string | undefined
+  /** The person's role cannot use Chat, so cards say they are there to read and copy. */
+  readOnly?: boolean | undefined
+}) {
   const sandbox = isSandboxStep(step)
   const asked = instruction ? askedText(instruction) : ''
   return (
@@ -47,7 +64,10 @@ export function AnswerCard({ step, instruction }: { step: RunStep; instruction: 
           Asked: {truncateWords(asked, 200)}
         </p>
       )}
-      <Markdown text={detailText(step.detail, 'content') ?? ''} />
+      <Markdown
+        text={detailText(step.detail, 'content') ?? ''}
+        actions={readOnly ? { readOnly: true } : chatHref ? { chatHref } : undefined}
+      />
       {sandbox && (
         <p className="caption" style={{ marginTop: 'var(--space-3)' }}>
           A placeholder answer from the offline model, not a real model's reply.

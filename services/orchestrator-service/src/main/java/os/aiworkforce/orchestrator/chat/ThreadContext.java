@@ -63,7 +63,16 @@ final class ThreadContext {
      * @param agentId the agent that wrote it, for an answer
      * @param lastReply whether this is the most recent answer, which is never dropped
      */
-    record Turn(String text, UUID agentId, String agentName, boolean lastReply) {}
+    record Turn(String text, UUID agentId, String agentName, boolean lastReply, boolean earlierAnswer) {
+
+        /** A turn that is not an earlier answer a card was used on. */
+        Turn(String text, UUID agentId, String agentName, boolean lastReply) {
+            this(text, agentId, agentName, lastReply, false);
+        }
+    }
+
+    /** The label of the answer a card was used on, when newer answers came after it and it was written by the agent now being asked. */
+    static final String EARLIER_REPLY_LABEL = "Your earlier reply this request is about (verbatim):\n";
 
     /**
      * The earlier turns of a conversation, oldest first.
@@ -145,10 +154,10 @@ final class ThreadContext {
          */
         private static String lastReplyLabel(Turn turn, UUID forAgentId) {
             if (forAgentId != null && forAgentId.equals(turn.agentId())) {
-                return LAST_REPLY_LABEL;
+                return turn.earlierAnswer() ? EARLIER_REPLY_LABEL : LAST_REPLY_LABEL;
             }
             String name = turn.agentName() == null ? "The agent's" : turn.agentName() + "'s";
-            return name + " last reply (verbatim):\n";
+            return name + (turn.earlierAnswer() ? " earlier reply this request is about" : " last reply") + " (verbatim):\n";
         }
     }
 
@@ -171,16 +180,42 @@ final class ThreadContext {
             Map<UUID, String> agentNames,
             Map<UUID, String> personNames,
             UUID requesterId) {
+        return of(earlierChronological, agentNames, personNames, requesterId, null);
+    }
+
+    // @find: thread context anchored on a card's answer, reply a card belongs to
+    /**
+     * As {@link #of(List, Map, Map, UUID)}, for a request about one particular answer: a message sent
+     * from a card in it. That answer, when it is among the earlier turns, is the one given verbatim,
+     * however many answers came after it, so a choice made on an older answer is read against the
+     * question it answers and not against whatever the newest answer asked.
+     *
+     * @param aboutAnswerId the answer the request is about, or null for the newest answer
+     */
+    static History of(
+            List<ChatMessage> earlierChronological,
+            Map<UUID, String> agentNames,
+            Map<UUID, String> personNames,
+            UUID requesterId,
+            UUID aboutAnswerId) {
         if (earlierChronological == null || earlierChronological.isEmpty()) {
             return History.EMPTY;
         }
-        // The newest answer that says anything: the one a follow-up such as "now send it" means.
+        // The newest answer that says anything: the one a follow-up such as "now send it" means -
+        // unless the request names the answer it is about.
         int lastAnswer = -1;
+        boolean earlierAnswer = false;
         for (int i = earlierChronological.size() - 1; i >= 0; i--) {
             ChatMessage message = earlierChronological.get(i);
             if ("answer".equals(message.getKind()) && message.getContent() != null && !message.getContent().isBlank()) {
-                lastAnswer = i;
-                break;
+                if (aboutAnswerId == null || aboutAnswerId.equals(message.getId())) {
+                    earlierAnswer = lastAnswer >= 0;
+                    lastAnswer = i;
+                    break;
+                }
+                if (lastAnswer < 0) {
+                    lastAnswer = i;
+                }
             }
         }
 
@@ -207,22 +242,25 @@ final class ThreadContext {
             kept.add(new Kept(i, turn));
         }
         if (lastAnswer >= 0) {
-            kept.add(new Kept(lastAnswer, lastReplyTurn(earlierChronological.get(lastAnswer), agentNames)));
+            kept.add(new Kept(lastAnswer, lastReplyTurn(earlierChronological.get(lastAnswer), agentNames, earlierAnswer)));
         }
         kept.sort(Comparator.comparingInt(Kept::index));
         return new History(kept.stream().map(Kept::turn).toList());
     }
 
     /**
-     * The most recent answer as a turn, kept verbatim and cut only at {@link #MAX_LAST_REPLY_CHARS}, with a marker saying how much was left out.
+     * The most recent answer (or the earlier one a card was used on, {@code earlierAnswer}) as a
+     * turn, kept verbatim and cut only at {@link #MAX_LAST_REPLY_CHARS}, with a marker saying how
+     * much was left out.
      */
-    private static Turn lastReplyTurn(ChatMessage message, Map<UUID, String> agentNames) {
+    private static Turn lastReplyTurn(ChatMessage message, Map<UUID, String> agentNames, boolean earlierAnswer) {
         String content = message.getContent() == null ? "" : message.getContent().strip();
         return new Turn(
                 GoalService.cutWithMarker(content, MAX_LAST_REPLY_CHARS),
                 message.getAgentId(),
                 agentName(agentNames, message.getAgentId()),
-                true);
+                true,
+                earlierAnswer);
     }
 
     /** {@code null} for anything that is not a plain user message or an agent's answer, or says nothing. */

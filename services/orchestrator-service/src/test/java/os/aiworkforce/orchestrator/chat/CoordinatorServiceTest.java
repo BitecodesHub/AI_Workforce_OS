@@ -1,4 +1,4 @@
-// @find: tests for coordinator service, chat, mentions chain into one goal, model plan is used when available, unmatched goes to general employee, paused general shows choice, tie shows choice with general last, retired mention starts nothing, paused mention starts nothing, fallback instruction lists colleagues, CoordinatorServiceTest, CoordinatorService
+// @find: tests for coordinator service, chat, card request is work for its agent, date in request is not a schedule, card on an older answer, mentions chain into one goal, model plan is used when available, unmatched goes to general employee, paused general shows choice, tie shows choice with general last, retired mention starts nothing, paused mention starts nothing, fallback instruction lists colleagues, CoordinatorServiceTest, CoordinatorService
 // @what: Tests for CoordinatorService in the orchestrator chat package (60 test methods).
 // @flow: Exercises CoordinatorService
 package os.aiworkforce.orchestrator.chat;
@@ -1523,5 +1523,132 @@ class CoordinatorServiceTest {
 
         assertThat(GoalService.passageTitles(instruction))
                 .containsExactly("[1] Refund policy, page 2", "[2] Support handbook");
+    }
+
+    // ---- Dates in a request, and requests from answer cards --------------------------------------
+
+    /** The real schedule reading, as the running service has it. */
+    private void realSchedulePreviewer() {
+        when(schedulePreviewer.tryParse(any(), any(), any()))
+                .thenAnswer(call -> SchedulePreviewer.DEFAULT.tryParse(
+                        call.getArgument(0), call.getArgument(1), call.getArgument(2)));
+    }
+
+    // @find: test date that describes a request starts work, coordinator service
+    @Test
+    @DisplayName("\"Draft a welcome email for Jane, who starts next Monday\" starts the work now and saves no schedule")
+    void describedDateStartsWorkNow() {
+        realSchedulePreviewer();
+        os.aiworkforce.orchestrator.schedule.ScheduleRequests requests =
+                mock(os.aiworkforce.orchestrator.schedule.ScheduleRequests.class);
+        coordinator.useScheduleRequests(requests);
+        plannerChooses(support, "Draft a welcome email for Jane");
+
+        List<ChatMessage> typed = coordinator.handleMessage(
+                ORG, conversation.getId(), "Draft a welcome email for Jane, who starts next Monday", null, null);
+        List<ChatMessage> mentioned = coordinator.handleMessage(
+                ORG, conversation.getId(), "@Research draft a welcome email for Jane, who starts next Monday", null, null);
+
+        assertThat(typed).noneMatch(m -> "schedule_suggestion".equals(m.getKind()));
+        assertThat(mentioned).noneMatch(m -> "schedule_suggestion".equals(m.getKind()));
+        verify(goalService, org.mockito.Mockito.times(2)).createGoal(eq(ORG), any(), eq(true));
+        verify(requests, never()).create(any(), any(), any(), any());
+    }
+
+    /** A card reference to an answer, holding an email draft. */
+    private static MessageContext.CardRef emailCard(UUID answerId, String to, String body) {
+        return new MessageContext.CardRef(answerId, 0, "email-draft", Map.of("to", to, "subject", "Welcome", "body", body));
+    }
+
+    // @find: test card request is work for its agent only, coordinator service
+    @Test
+    @DisplayName("a card's request is work for the card's agent alone: a date in it never saves a schedule, an address never mentions an agent")
+    void cardRequestIsWorkForItsAgentAlone() {
+        Agent hr = agentRow("hr", "HR");
+        when(agents.findByOrgIdOrderByName(ORG)).thenReturn(List.of(research, support, hr));
+        lenient().when(agents.findByIdAndOrgId(hr.getId(), ORG)).thenReturn(Optional.of(hr));
+        realSchedulePreviewer();
+        os.aiworkforce.orchestrator.schedule.ScheduleRequests requests =
+                mock(os.aiworkforce.orchestrator.schedule.ScheduleRequests.class);
+        coordinator.useScheduleRequests(requests);
+        // Before the fix, this text with Customer Support alone saved a recurring schedule, and the
+        // address mentioned HR.
+        String text = "Please send my edited email draft \"Welcome\" to jo@hr.example.com, exactly as written. "
+                + "Our stand-up is every Monday at 9am.";
+        MessageContext context = MessageContext.of(
+                null,
+                null,
+                null,
+                emailCard(UUID.randomUUID(), "jo@hr.example.com", "Our stand-up is every Monday at 9am in Room 2.\nYour first day is tomorrow at 9am."));
+
+        List<ChatMessage> created = coordinator
+                .send(ORG, conversation.getId(), text, List.of(support.getId()), List.of(), context, null)
+                .messages();
+
+        assertThat(created).noneMatch(m -> "schedule_suggestion".equals(m.getKind()));
+        verify(requests, never()).create(any(), any(), any(), any());
+        GoalService.NewGoal goal = createdGoal();
+        assertThat(goal.tasks()).hasSize(1);
+        GoalService.NewTask task = goal.tasks().getFirst();
+        assertThat(task.agentId()).isEqualTo(support.getId());
+        assertThat(task.instruction())
+                .contains(text)
+                .contains("## From a card in an earlier answer")
+                .contains("\"body\":\"Our stand-up is every Monday at 9am in Room 2.\\nYour first day is tomorrow at 9am.\"");
+        // The person's message records the card, so the card shows it as asked after a reload.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> shown = (Map<String, Object>) created.getFirst().getDetail().get("context");
+        assertThat(shown).containsKey("card");
+    }
+
+    // @find: test card request with no agent is routed as work, coordinator service
+    @Test
+    @DisplayName("a card's request whose agent is gone is routed as work, never as a schedule")
+    void cardRequestWithoutItsAgentIsRoutedAsWork() {
+        realSchedulePreviewer();
+        plannerChooses(research, "Send the welcome email");
+
+        List<ChatMessage> created = coordinator
+                .send(
+                        ORG,
+                        conversation.getId(),
+                        "every Monday at 9am send the welcome email",
+                        List.of(UUID.randomUUID()),
+                        List.of(),
+                        MessageContext.of(null, null, null, emailCard(UUID.randomUUID(), "sam@example.com", "Hello.")),
+                        null)
+                .messages();
+
+        assertThat(created).noneMatch(m -> "schedule_suggestion".equals(m.getKind()));
+        assertThat(createdGoal().tasks().getFirst().agentId()).isEqualTo(research.getId());
+    }
+
+    // @find: test card on an older answer is read against that answer, coordinator service
+    @Test
+    @DisplayName("a choice made on an older answer is given that answer verbatim, not whatever the newest answer asked")
+    void cardOnAnOlderAnswerIsReadAgainstIt() {
+        ChatMessage older = ChatMessage.of(
+                ORG, conversation.getId(), 1, "agent", null, support.getId(), "answer",
+                "Here is the welcome email.\n```choices\n{\"question\":\"Send it today?\",\"options\":[\"Yes\",\"No\"]}\n```",
+                Map.of(), null);
+        ChatMessage between = ChatMessage.of(
+                ORG, conversation.getId(), 2, "user", requesterId, null, "text", "Also, tidy the drafts folder", Map.of(), null);
+        ChatMessage newer = ChatMessage.of(
+                ORG, conversation.getId(), 3, "agent", null, support.getId(), "answer",
+                "Shall I archive the old drafts?", Map.of(), null);
+        when(messages.findEarlierTurns(eq(conversation.getId()), anyInt(), any()))
+                .thenReturn(new ArrayList<>(List.of(newer, between, older)));
+        MessageContext context = MessageContext.of(null, null, null, new MessageContext.CardRef(
+                older.getId(), 0, "choices", Map.of("question", "Send it today?", "option", "Yes")));
+
+        coordinator.send(
+                ORG, conversation.getId(), "My choice for \"Send it today?\": Yes", List.of(support.getId()), List.of(), context, null);
+
+        String instruction = createdGoal().tasks().getFirst().instruction();
+        assertThat(instruction)
+                .contains("Your earlier reply this request is about (verbatim):\nHere is the welcome email.")
+                .contains("Customer Support: Shall I archive the old drafts?")
+                .doesNotContain("Your last reply (verbatim)")
+                .contains("<card kind=\"choices\">\n{\"question\":\"Send it today?\",\"option\":\"Yes\"}\n</card>");
     }
 }

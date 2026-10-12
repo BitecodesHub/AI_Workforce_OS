@@ -3,12 +3,14 @@
 // @flow: Run with the web test runner; covers AnswerBubble.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import axe from 'axe-core'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Agent, BoardGoal, BoardTask, ChatMessage } from '../../lib/queries'
+import { choiceRequest } from '../../lib/answerBlocks'
+import type { Agent, BoardGoal, BoardTask, ChatMessage, QueuedMessage } from '../../lib/queries'
 import { clearSession, saveSession } from '../../lib/session'
 import type { useSpeaker } from '../../lib/voice'
 import { AnswerBubble } from './AnswerBubble'
+import type { CardSend } from './AnswerBubble'
 import { passageItemId } from './PassageList'
 import type { SourcePassage } from './chatModel'
 
@@ -126,7 +128,15 @@ function goalOf(tasks: BoardTask[]): BoardGoal {
 }
 
 function renderBubble(
-  props: { message?: ChatMessage; messages?: readonly ChatMessage[]; goal?: BoardGoal; client?: QueryClient } = {},
+  props: {
+    message?: ChatMessage
+    messages?: readonly ChatMessage[]
+    goal?: BoardGoal
+    client?: QueryClient
+    onCardSend?: (request: CardSend) => Promise<boolean>
+    me?: string
+    queued?: QueuedMessage[]
+  } = {},
 ) {
   const client = props.client ?? new QueryClient()
   const answer = props.message ?? ANSWER
@@ -144,6 +154,9 @@ function renderBubble(
         conversationId="c1"
         onSendTo={() => {}}
         onAskAgain={() => {}}
+        {...(props.onCardSend ? { onCardSend: props.onCardSend } : {})}
+        {...(props.me ? { me: props.me } : {})}
+        {...(props.queued ? { queued: props.queued } : {})}
       />
     </QueryClientProvider>,
   )
@@ -301,3 +314,114 @@ describe('AnswerBubble practice data', () => {
   })
 })
 
+
+describe('AnswerBubble cards', () => {
+  const CARD_ANSWER = message({
+    id: 'answer-cards',
+    position: 3,
+    content: [
+      'Here is the draft and a question.',
+      '```email-draft',
+      JSON.stringify({ to: 'sam@example.com', subject: 'Welcome', body: 'Hello Sam.' }),
+      '```',
+      '```choices',
+      JSON.stringify({ question: 'Send it today?', options: ['Yes', 'No'] }),
+      '```',
+    ].join('\n'),
+  })
+
+  it("sends a card's request to the agent that wrote the answer, naming this answer and the card, with the draft as data", async () => {
+    const onCardSend = vi.fn(async () => true)
+    renderBubble({ message: CARD_ANSWER, messages: [CARD_ANSWER], onCardSend })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Ask Customer Support to send it' }))
+    })
+    expect(onCardSend).toHaveBeenCalledWith({
+      text: 'Please send my edited email "Welcome" to sam@example.com, exactly as written in the draft.',
+      agentId: 'agent-1',
+      card: {
+        messageId: 'answer-cards',
+        index: 0,
+        kind: 'email-draft',
+        content: { to: 'sam@example.com', cc: '', subject: 'Welcome', body: 'Hello Sam.' },
+      },
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Yes' }))
+    })
+    const { text, content } = choiceRequest('Send it today?', 'Yes')
+    expect(onCardSend).toHaveBeenLastCalledWith({
+      text,
+      agentId: 'agent-1',
+      card: { messageId: 'answer-cards', index: 1, kind: 'choices', content },
+    })
+  })
+
+  /** The person's message as the server records one sent from a card of CARD_ANSWER. */
+  const fromCard = (id: string, position: number, index: number, content: Record<string, unknown>, authorId = 'user-1') =>
+    message({
+      id,
+      position,
+      kind: 'text',
+      authorKind: 'user',
+      authorId,
+      agentId: null,
+      content: 'My choice',
+      detail: { context: { card: { messageId: 'answer-cards', index, kind: 'choices', content } } },
+    })
+
+  it('marks a choice sent from this card, found by the card and never by words typed in the thread', () => {
+    const typed = message({ id: 'typed', position: 4, kind: 'text', authorKind: 'user', agentId: null, content: 'Yes' })
+    const chosen = fromCard('reply-1', 5, 1, { question: 'Send it today?', option: 'No' })
+    renderBubble({ message: CARD_ANSWER, messages: [CARD_ANSWER, typed, chosen], onCardSend: vi.fn(async () => true), me: 'user-1' })
+    expect(screen.getByRole('button', { name: 'No' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Yes' })).toBeDisabled()
+    expect(screen.getByText('You chose "No".')).toBeInTheDocument()
+  })
+
+  it('does not mark a choice for a "Yes" typed in the thread', () => {
+    const typed = message({ id: 'typed', position: 4, kind: 'text', authorKind: 'user', agentId: null, content: 'yes' })
+    renderBubble({ message: CARD_ANSWER, messages: [CARD_ANSWER, typed], onCardSend: vi.fn(async () => true) })
+    expect(screen.getByRole('button', { name: 'Yes' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'No' })).toBeEnabled()
+  })
+
+  it("shows a card's request that is still waiting its turn as already sent, after a reload or in another tab", () => {
+    const waiting: QueuedMessage = {
+      id: 'q1',
+      order: 1,
+      authorId: 'user-1',
+      text: 'Please send my edited email',
+      agentIds: ['agent-1'],
+      attachmentCount: 0,
+      createdAt: '2026-10-12T00:00:00Z',
+      updatedAt: '2026-10-12T00:00:00Z',
+      status: 'queued',
+      canManage: true,
+      card: { messageId: 'answer-cards', index: 0, kind: 'email-draft', content: { to: 'sam@example.com' } },
+    }
+    renderBubble({ message: CARD_ANSWER, messages: [CARD_ANSWER], onCardSend: vi.fn(async () => true), me: 'user-1', queued: [waiting] })
+    expect(screen.getByText(/You already asked Customer Support to send this draft; the request waits its turn\./)).toBeInTheDocument()
+  })
+
+  it('reads and copies only, with no send, for a role that cannot start work', () => {
+    renderBubble({ message: CARD_ANSWER, messages: [CARD_ANSWER] })
+    expect(screen.queryByRole('button', { name: /send it/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull()
+    expect(screen.getAllByText(/cannot ask agents to act on it/)).toHaveLength(2)
+  })
+
+  it('copies the answer with its cards written out as text, not as JSON', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    renderBubble({ message: CARD_ANSWER, messages: [CARD_ANSWER] })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy answer' }))
+    })
+    expect(writeText).toHaveBeenCalledWith(
+      'Here is the draft and a question.\nTo: sam@example.com\nSubject: Welcome\n\nHello Sam.\nSend it today?\n- Yes\n- No',
+    )
+  })
+})

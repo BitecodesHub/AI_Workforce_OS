@@ -79,6 +79,9 @@ public class ChatQueue {
      *
      * @param order its place in the queue, from 1
      * @param canManage whether the reader may edit or cancel it: its sender, or the conversation's owner
+     * @param card the answer card it was sent from (answer, place, kind and content), as a sent
+     *     message shows it in {@code detail.context.card}, so the card can show it as already asked;
+     *     null for a typed message
      */
     public record QueuedMessageView(
             UUID id,
@@ -90,7 +93,14 @@ public class ChatQueue {
             Instant createdAt,
             Instant updatedAt,
             String status,
-            boolean canManage) {}
+            boolean canManage,
+            Object card) {}
+
+    /** The card a waiting message was sent from, in the form a sent message shows it; null when it was typed. */
+    static Object cardOf(ChatQueuedMessage q) {
+        Map<String, Object> stored = q.getContext();
+        return stored == null ? null : stored.get("card");
+    }
 
     private final ChatQueuedMessages queue;
     private final Goals goals;
@@ -191,7 +201,8 @@ public class ChatQueue {
                     q.getCreatedAt(),
                     q.getUpdatedAt(),
                     status,
-                    canManage(q, conversation, reader)));
+                    canManage(q, conversation, reader),
+                    cardOf(q)));
         }
         return views;
     }
@@ -211,7 +222,8 @@ public class ChatQueue {
                         q.getCreatedAt(),
                         q.getUpdatedAt(),
                         q.getStatus(),
-                        canManage(q, conversation, reader)));
+                        canManage(q, conversation, reader),
+                        cardOf(q)));
     }
 
     /** Its sender may change or cancel it, and so may whoever owns the conversation; false for an unknown reader. */

@@ -326,4 +326,29 @@ describe('chat layout at phone width', () => {
     const rule = /\.chat-main \{[^}]*display: grid;[^}]*\}/.exec(chat)?.[0] ?? ''
     expect(rule).toContain('grid-template-columns: minmax(0, 1fr);')
   })
+
+  it("keeps screen-reader-only text in an answer card inside the card and the table's scroll box", () => {
+    // Unpositioned, a hidden span in the last column of a wide table card sat at its static place
+    // and widened the whole thread at 375px (scrollWidth 809 against 375).
+    const answers = readFileSync(join(SRC, 'styles/polish/answers.css'), 'utf8')
+    expect(/\.answer-table-scroll \{[^}]*\}/.exec(answers)?.[0] ?? '').toContain('position: relative;')
+    expect(/\.answer-card \{[^}]*\}/.exec(answers)?.[0] ?? '').toContain('position: relative;')
+  })
+
+  it("lays an answer card's chart legend out flat, and gives its small controls a thumb-sized target", () => {
+    const answers = readFileSync(join(SRC, 'styles/polish/answers.css'), 'utf8')
+    // Markdown's list indent and item spacing would otherwise push the legend in and step its items down.
+    expect(/\.md \.answer-chart-legend \{[^}]*\}/.exec(answers)?.[0] ?? '').toContain('padding: 0;')
+    expect(/\.md \.answer-chart-legend li \+ li \{[^}]*\}/.exec(answers)?.[0] ?? '').toContain('margin-top: 0;')
+    const coarse = /@media \(pointer: coarse\) \{[\s\S]*?\n\}/.exec(answers)?.[0] ?? ''
+    expect(/\.answer-check \{[^}]*\}/.exec(coarse)?.[0] ?? '').toContain('min-height: 44px;')
+    expect(/\.answer-sort \{[^}]*\}/.exec(coarse)?.[0] ?? '').toContain('min-height: 44px;')
+  })
+
+  it('mixes chart tones toward ink or muted, never toward the surface they sit on', () => {
+    const answers = readFileSync(join(SRC, 'styles/polish/answers.css'), 'utf8')
+    const tones = [...answers.matchAll(/--answer-(?:series|slice)-\d+: ([^;]+);/g)].map((match) => match[1]!)
+    expect(tones.length).toBe(11)
+    expect(tones.filter((tone) => tone.includes('var(--surface)'))).toEqual([])
+  })
 })

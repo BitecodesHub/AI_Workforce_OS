@@ -19,7 +19,10 @@ const CLAMP_LINES = 12
  * continue a group and is not the viewer's own, the context chips that were attached (SentContextChips), the
  * attached files (AttachmentCards), the text (clamped to 12 lines with Show more or Show less) and actions:
  * Copy, and for the viewer's own text "Edit and send again", which hands the text to onEditAndResend so
- * Composer can refill. A message with files or context only has no text bubble or text actions.
+ * Composer can refill. A message with files or context only has no text bubble or text actions. A
+ * message sent from an answer card (detail.context.card) has no "Edit and send again": its words are
+ * only the card's short summary, and sending them again would drop the draft, ticks or choice the
+ * card sent with them. The card itself is where to change and send again.
  */
 export function UserBubble({
   message,
@@ -36,6 +39,7 @@ export function UserBubble({
   const files = sentAttachmentsOf(message)
   const attached = sentContextOf(message.detail as Record<string, unknown> | null)
   const hasText = message.content.trim().length > 0
+  const fromCard = Boolean((message.detail as { context?: { card?: unknown } } | null)?.context?.card)
   const lines = message.content.split('\n').length
   const clampable = lines > CLAMP_LINES
 
@@ -73,7 +77,7 @@ export function UserBubble({
         )}
         <div className="row chat-actions" style={{ gap: 'var(--space-3)' }}>
           {hasText && <CopyButton text={message.content} label="Copy" />}
-          {author.isMe && hasText && (
+          {author.isMe && hasText && !fromCard && (
             <button type="button" className="link caption" onClick={() => onEditAndResend(message.content)}>
               Edit and send again
             </button>

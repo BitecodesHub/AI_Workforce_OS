@@ -1,6 +1,6 @@
 // @find: intent detector, what did the person mean, schedule intent, documents intent, work intent, question about documents, timing phrase, IntentDetector, @mention wins, refers to documents
 // @what: Classifies a chat message without an @mention as a schedule request, a question about documents, or work to route.
-// @flow: Called by CoordinatorService; uses SchedulePreviewer.
+// @flow: Called by CoordinatorService; uses SchedulePreviewer and ScheduleIntent.
 package os.aiworkforce.orchestrator.chat;
 
 import java.time.Instant;
@@ -9,6 +9,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import os.aiworkforce.orchestrator.schedule.ScheduleIntent;
 
 /**
  * Reads what a person meant by a message that was not addressed with an {@code @mention}.
@@ -108,7 +110,8 @@ public final class IntentDetector {
      * Mentions decide work by themselves; call this only when the message has none.
      *
      * <p>Called by {@code CoordinatorService}. A message is a {@code SCHEDULE} when it carries a
-     * timing marker, does not end in a question mark and the previewer can read a schedule from it;
+     * timing marker, does not end in a question mark, the previewer can read a schedule from it and
+     * it clearly asks for timed or repeated work ({@link ScheduleIntent#asksForSchedule});
      * otherwise a {@code DOCUMENTS} request when it starts with a search phrase or is a question
      * without an action verb; otherwise {@code WORK}. Empty text is {@code WORK}. Pure apart from the
      * previewer call, which only parses; nothing is stored.
@@ -118,8 +121,13 @@ public final class IntentDetector {
         if (text == null || text.isBlank()) {
             return Intent.WORK;
         }
-        // A question about a time ("what happened today at 3pm?") asks for an answer, not a schedule.
-        if (hasTimingMarker(text) && !text.strip().endsWith("?") && previewer.tryParse(text, zone, now).isPresent()) {
+        // A question about a time ("what happened today at 3pm?") asks for an answer, not a schedule,
+        // and a date that describes the request ("for Jane, who starts next Monday") is not a schedule
+        // either: only a message that asks for timed or repeated work is one (ScheduleIntent).
+        if (hasTimingMarker(text)
+                && !text.strip().endsWith("?")
+                && previewer.tryParse(text, zone, now).isPresent()
+                && ScheduleIntent.asksForSchedule(text, zone, now)) {
             return Intent.SCHEDULE;
         }
         if (looksLikeDocuments(text)) {
