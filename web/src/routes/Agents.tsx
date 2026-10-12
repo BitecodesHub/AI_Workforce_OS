@@ -1,4 +1,4 @@
-// @find: agents list, create agent, new agent, add assistant, ready-made assistants, templates, suggested assistants, from template, agent cards, success rate, 30-day cost, outcomes, General Employee, /agents, Agents page
+// @find: agents list, create agent, new agent, add assistant, ready-made assistants, templates, suggested assistants, from template, agent cards, success rate, 30-day cost, outcomes, General Employee, /agents, Agents page, working now
 // @what: The Agents page: lists the workspace's AI assistants with their results, and lets people create one from scratch or from a ready-made template.
 // @flow: Routed from App.tsx at /agents; each card links to AgentDetail.tsx
 import { useState } from 'react'
@@ -23,6 +23,7 @@ import { EmptyIcon, QueryState } from '../components/ui/QueryState'
 import { FilterBar, FilterEmpty } from '../components/ui/FilterBar'
 import { Collapsible } from '../components/ui/Collapsible'
 import { AgentStatusButton } from '../components/agents/AgentStatusButton'
+import { WorkingNow } from '../components/agents/WorkingNow'
 import { costFigure, successRateFigure, useAgentOutcomes } from '../lib/agentQueries'
 import type { AgentOutcome } from '../lib/agentQueries'
 import { agentDescription } from '../lib/agentDescription'
@@ -708,6 +709,8 @@ function SuggestedAssistants({ onAdded }: { onAdded: (result: FromTemplate) => v
 // @find: Agents component, agents page, list agents, create agent, /agents
 /**
  * The Agents page (route /agents, permission agent:read).
+ * With run:read, a "Working now" section (WorkingNow) opens the page: one live tile per agent with a run working or
+ * waiting, each opening the Agent desk to watch it and take over its web browser.
  * Loads the agents (useAgents) behind QueryState. Shows working agents as cards, with a search box once there are more than eight agents, and retired agents in a collapsed "Retired" group that is kept for history. Outcome figures (success rate and 30-day cost) on each card need run:read; they show a loading placeholder, and are left out if they fail or the person lacks the permission. With agent:create the header and empty state offer Add an agent, and a ready-made assistant opens a dialog saying what exists and what still needs connecting. The empty state differs for people who cannot create agents.
  */
 export function Agents() {
@@ -738,6 +741,9 @@ export function Agents() {
         description="Each agent works from its own instructions and can act only in the connectors it has been given."
         action={canCreate ? <Button onClick={() => setCreateOpen(true)}>Add an agent</Button> : undefined}
       />
+
+      {/* Who is working right now, live, with the desk a click away. The board it reads needs run:read. */}
+      {can('run:read') && <WorkingNow />}
 
       {canCreate && <CreateAgentDialog open={createOpen} onClose={() => setCreateOpen(false)} onAdded={setAdded} />}
       {canCreate && <AddedAssistantDialog added={added} onClose={() => setAdded(null)} />}

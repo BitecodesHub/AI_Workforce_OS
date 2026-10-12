@@ -1,4 +1,4 @@
-// @find: tests for web browser connector, browser adapter, open page, follow link, fill field, click button, submit form, screenshot metadata, browser runner client, SSRF refusals, private address, metadata address, localhost refused
+// @find: tests for web browser connector, browser adapter, open page, follow link, fill field, click button, submit form, screenshot metadata, browser runner client, SSRF refusals, private address, metadata address, localhost refused, takeover click, takeover navigate guard, hold page
 // @what: Checks the browser adapter calls the runner per run, gives the model text only with the screenshot in metadata, restores a page for a click, and refuses private addresses before the runner is called.
 package os.aiworkforce.mcp.builtin;
 
@@ -269,6 +269,133 @@ class BrowserAdapterTest {
         assertThat(BrowserAdapter.repeatable("search")).isTrue();
         assertThat(BrowserAdapter.repeatable("click")).isFalse();
         assertThat(BrowserAdapter.repeatable("submit")).isFalse();
+    }
+
+    @Test
+    @DisplayName("a person's click on a taken-over page goes to the runner once, with the secret, and comes back with a frame")
+    void takeoverClick() {
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/takeover/click")).willReturn(okJson(
+                "{\"url\":\"https://example.com/next\",\"title\":\"Next\",\"frame\":\"/9j/BBBB\"}")));
+        com.fasterxml.jackson.databind.node.ObjectNode body =
+                json.createObjectNode().put("x", 640).put("y", 400).put("width", 1280).put("height", 800);
+
+        BrowserAdapter.TakeoverAnswer answer = adapter.takeover(RUN, "click", body).block(Duration.ofSeconds(10));
+
+        assertThat(answer.ok()).isTrue();
+        assertThat(answer.url()).isEqualTo("https://example.com/next");
+        assertThat(answer.frame()).isEqualTo("/9j/BBBB");
+        runner.verify(1, postRequestedFor(urlEqualTo("/sessions/" + RUN + "/takeover/click"))
+                .withHeader(BrowserAdapter.SECRET_HEADER, equalTo("s3cret"))
+                .withRequestBody(matchingJsonPath("$.x", equalTo("640"))));
+    }
+
+    @Test
+    @DisplayName("a person opening a private address is refused by the same guard as open_page, before the runner")
+    void takeoverNavigateGuard() {
+        for (String url : List.of("http://169.254.169.254/latest/meta-data/", "http://localhost:8083/", "https://inside.example.com/")) {
+            BrowserAdapter.TakeoverAnswer answer = adapter.takeover(RUN, "navigate", json.createObjectNode().put("url", url))
+                    .block(Duration.ofSeconds(10));
+            assertThat(answer.ok()).as(url).isFalse();
+            assertThat(answer.problem()).as(url).isEqualTo(BrowserAddresses.PRIVATE);
+        }
+        assertThat(adapter.takeover(RUN, "navigate", json.createObjectNode().put("url", "file:///etc/passwd"))
+                        .block(Duration.ofSeconds(10)).problem())
+                .contains("Only web pages");
+        assertThat(adapter.takeover(RUN, "submit", json.createObjectNode()).block(Duration.ofSeconds(10)).ok()).isFalse();
+        runner.verify(0, postRequestedFor(urlPathMatching("/sessions/.*")));
+    }
+
+    @Test
+    @DisplayName("a runner refusal of a person's action is its plain sentence; holding the page posts on or off")
+    void takeoverRefusalAndHold() {
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/takeover/type")).willReturn(aResponse().withStatus(409)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"error\":\"Click the field to type into first.\"}")));
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/takeover/hold")).willReturn(okJson("{\"held\":true}")));
+
+        BrowserAdapter.TakeoverAnswer typed =
+                adapter.takeover(RUN, "type", json.createObjectNode().put("text", "secret words")).block(Duration.ofSeconds(10));
+
+        assertThat(typed.ok()).isFalse();
+        assertThat(typed.problem()).isEqualTo("Click the field to type into first.");
+        assertThat(adapter.hold(RUN, true).block(Duration.ofSeconds(10))).isTrue();
+        runner.verify(postRequestedFor(urlEqualTo("/sessions/" + RUN + "/takeover/hold"))
+                .withRequestBody(matchingJsonPath("$.on", equalTo("true"))));
+        BrowserAdapter off = new BrowserAdapter(tools, json, WebClient.builder(), "", "", RESOLVER);
+        assertThat(off.hold(RUN, true).block()).isFalse();
+        assertThat(off.takeover(RUN, "click", json.createObjectNode()).block().problem()).isEqualTo(BrowserAdapter.UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("after a person typed on a taken-over page, the approval names their field and the agent's earlier typing, never 'nothing was typed'")
+    void approvalAfterTakeoverType() {
+        runner.stubFor(post(urlPathMatching("/sessions/.*/(open|fill)")).willReturn(okJson(PAGE)));
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/takeover/type")).willReturn(okJson(
+                "{\"url\":\"https://example.com/transfer\",\"title\":\"Transfer\",\"frame\":\"\",\"field\":\"Amount\"}")));
+        call("open_page", "{\"url\":\"https://example.com\"}");
+        call("fill_field", "{\"field\":\"Amount\",\"value\":\"10\"}");
+
+        adapter.takeover(RUN, "type", json.createObjectNode().put("text", "9999")).block(Duration.ofSeconds(10));
+
+        String detail = adapter.approvalDetail(invocation("submit_form", "{}")).orElseThrow();
+        assertThat(detail)
+                .startsWith("Submits the form on https://example.com/transfer.")
+                .contains("A person had control of this page before this step and typed into \"Amount\""
+                        + " (what they typed is not shown here)")
+                .contains("Before they took control, the agent had typed: Amount = \"10\".")
+                .doesNotContain("Nothing was typed")
+                .doesNotContain("9999");
+    }
+
+    @Test
+    @DisplayName("a person's click or scroll alone is still told to the approver, and a restore never types the agent's earlier values over the person's work")
+    void approvalAfterTakeoverClickOrScroll() {
+        runner.stubFor(post(urlPathMatching("/sessions/.*/(open|fill|click)")).willReturn(okJson(PAGE)));
+        runner.stubFor(post(urlPathMatching("/sessions/" + RUN + "/takeover/(click|scroll)")).willReturn(okJson(
+                "{\"url\":\"https://example.com/\",\"title\":\"Example Domain\",\"frame\":\"\"}")));
+        call("open_page", "{\"url\":\"https://example.com\"}");
+        call("fill_field", "{\"field\":\"Search\",\"value\":\"otters\"}");
+
+        adapter.takeover(RUN, "scroll", json.createObjectNode().put("dy", 600)).block(Duration.ofSeconds(10));
+        assertThat(adapter.approvalDetail(invocation("click_button", "{\"text\":\"Go\"}")).orElseThrow())
+                .contains("A person had control of this page before this step, so the page may hold more than the agent typed.")
+                .contains("Before they took control, the agent had typed: Search = \"otters\".")
+                .doesNotContain("Nothing was typed");
+
+        adapter.takeover(RUN, "click", json.createObjectNode().put("x", 1).put("y", 1).put("width", 10).put("height", 10))
+                .block(Duration.ofSeconds(10));
+        call("click_button", "{\"text\":\"Go\"}");
+        runner.verify(postRequestedFor(urlEqualTo("/sessions/" + RUN + "/click"))
+                .withRequestBody(matchingJsonPath("$.restore.url", equalTo("https://example.com/")))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.notContaining("otters")));
+        // The click moved the page on: the next approval no longer speaks of the person.
+        assertThat(adapter.approvalDetail(invocation("submit_form", "{}")).orElseThrow())
+                .isEqualTo("Submits the form on https://example.com/. Nothing was typed into the page.");
+    }
+
+    @Test
+    @DisplayName("the server driving the run learns of a person's typing served by another server through personActed")
+    void personActedFromAnotherServer() {
+        runner.stubFor(post(urlPathMatching("/sessions/.*/(open|fill)")).willReturn(okJson(PAGE)));
+        runner.stubFor(post(urlEqualTo("/sessions/" + RUN + "/takeover/type")).willReturn(okJson(
+                "{\"url\":\"https://example.com/pay\",\"title\":\"Pay\",\"frame\":\"\",\"field\":\"Card name\"}")));
+        call("open_page", "{\"url\":\"https://example.com\"}");
+        call("fill_field", "{\"field\":\"Amount\",\"value\":\"10\"}");
+        // Another replica serves the person's request: it never saw the page, so it remembers nothing.
+        BrowserAdapter other = new BrowserAdapter(tools, json, WebClient.builder(), runner.baseUrl(), "s3cret", RESOLVER);
+        other.takeover(RUN, "type", json.createObjectNode().put("text", "J Smith")).block(Duration.ofSeconds(10));
+        assertThat(other.approvalDetail(invocation("submit_form", "{}")).orElseThrow())
+                .isEqualTo("Submits the form on the open page. Nothing was typed into the page.");
+        assertThat(adapter.approvalDetail(invocation("submit_form", "{}")).orElseThrow())
+                .contains("sending what was typed: Amount = \"10\"");
+
+        adapter.personActed(RUN, List.of("Card name"), "https://example.com/pay");
+
+        assertThat(adapter.approvalDetail(invocation("submit_form", "{}")).orElseThrow())
+                .startsWith("Submits the form on https://example.com/pay.")
+                .contains("typed into \"Card name\"")
+                .contains("the agent had typed: Amount = \"10\"")
+                .doesNotContain("J Smith");
     }
 
     private static ToolInvocation invocation(String tool, String arguments) {

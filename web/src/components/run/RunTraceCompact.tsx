@@ -89,7 +89,7 @@ function CompactStep({ step }: { step: RunStep }) {
  * the run waits on an approval (WaitingForApproval) or an answer (WaitingForAnswer, notice mode, with
  * onGoToQuestion); the finished answer (AnswerCard, hidden with showAnswer false); the web browser preview
  * (BrowserPreview, hidden with liveView false); the last `limit` steps (the instruction excluded) under "What
- * happened"; and a link to the full trace. Shows loading and "could not be loaded" text.
+ * happened"; and a link to the full trace (left out with traceLink false). Shows loading and "could not be loaded" text.
  */
 export function RunTraceCompact({
   runId,
@@ -97,6 +97,7 @@ export function RunTraceCompact({
   limit = 6,
   showAnswer = true,
   liveView = true,
+  traceLink = true,
   onGoToQuestion,
 }: {
   runId: string
@@ -108,6 +109,8 @@ export function RunTraceCompact({
   showAnswer?: boolean
   /** False where the caller already shows this run's Live view of the web browser. */
   liveView?: boolean
+  /** False where the caller already offers "Open full trace" itself, such as the Agent desk. */
+  traceLink?: boolean
   /** Where "Go to question" (shown while the run is waiting for an answer) should take the person. */
   onGoToQuestion?: (questionId: string) => void
 }) {
@@ -149,9 +152,11 @@ export function RunTraceCompact({
         </div>
       )}
 
-      <a className="link" href={`/runs/${runId}`}>
-        Open full trace
-      </a>
+      {traceLink && (
+        <a className="link" href={`/runs/${runId}`}>
+          Open full trace
+        </a>
+      )}
     </div>
   )
 }

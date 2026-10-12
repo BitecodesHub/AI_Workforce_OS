@@ -1,4 +1,5 @@
 // @find: browser runner, headless chromium, playwright, browser sidecar, open page, read page, follow link, fill field, click button, submit form, screenshot, browser session per run, idle timeout, shared secret, POST /sessions/{id}/open, DELETE /sessions/{id}, GET /health
+// @find: take over browser, person takes control, POST /sessions/{id}/takeover/{click|type|key|scroll|navigate|hold}, hold page open while a person has control
 // @what: The browser runner: a small HTTP server that drives one shared headless Chromium, one browser context per run, and answers each step with the page as text plus a JPEG screenshot.
 // @flow: Called by mcp-core BrowserAdapter (orchestrator) with the X-Runner-Secret header; every Chromium request goes through proxy.js, which applies guard.js
 'use strict'
@@ -8,6 +9,7 @@ const crypto = require('node:crypto')
 const { chromium } = require('playwright-core')
 const { checkAndResolve, checkUrl, PRIVATE_MESSAGE } = require('./guard')
 const { startProxy } = require('./proxy')
+const { HOLD_MS, performTakeover, validateTakeover } = require('./takeover')
 
 // Settings come from the environment so the same image runs locally and on the server. Without
 // BROWSER_RUNNER_SECRET every request except GET /health is refused.
@@ -50,6 +52,8 @@ const lastPages = new Map()
 const frames = new WeakMap()
 const activities = new Map()
 const LAST_PAGE_MS = 30 * 60 * 1000
+// The name lookup the address guard uses: the system's, unless a test replaces it (useLookup).
+let lookupOverride
 
 /**
  * An expected, user-facing failure. The HTTP layer sends its status and message to the caller as
@@ -193,7 +197,10 @@ async function sessionFor(id, create) {
   // waits in line for a free page rather than being refused straight away.
   const waitUntil = Date.now() + QUEUE_WAIT_MS
   while (sessions.size >= MAX_SESSIONS) {
-    const oldest = [...sessions.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0]
+    // A page a person is holding is never the one that gives way.
+    const oldest = [...sessions.entries()]
+      .filter(([, open]) => !(open.heldUntil > Date.now()))
+      .sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0]
     if (oldest && Date.now() - oldest[1].lastUsed > 30 * 1000) {
       await closeSession(oldest[0])
       break
@@ -222,7 +229,8 @@ async function sessionFor(id, create) {
     if (opened !== page) opened.close().catch(() => {})
   })
   page.on('dialog', (dialog) => dialog.dismiss().catch(() => {}))
-  const session = { id, context, page, lastUsed: Date.now() }
+  // heldUntil: while a person has taken the page over, the idle rule leaves it open until then.
+  const session = { id, context, page, lastUsed: Date.now(), heldUntil: 0 }
   sessions.set(id, session)
   return session
 }
@@ -233,7 +241,7 @@ async function sessionFor(id, create) {
 setInterval(async () => {
   const now = Date.now()
   for (const [id, session] of sessions) {
-    if (now - session.lastUsed > SESSION_IDLE_MS) {
+    if (now - session.lastUsed > SESSION_IDLE_MS && !(session.heldUntil > now)) {
       log(`closing idle session ${id}`)
       await closeSession(id)
     }
@@ -419,7 +427,7 @@ async function dismissConsent(page) {
  * shown) or 502 (any other load failure).
  */
 async function navigate(page, raw) {
-  const checked = await checkAndResolve(raw)
+  const checked = await checkAndResolve(raw, lookupOverride)
   if (!checked.ok) throw new Refusal(422, checked.reason)
   const notes = []
   let response = null
@@ -804,6 +812,104 @@ const actions = {
   },
 }
 
+// ---- A person in control ---------------------------------------------------------------------
+
+/** Plain words for what a person is doing on a page they took over, for the live view. Never the typed text. */
+function describePerson(action, value) {
+  switch (action) {
+    case 'click':
+      return 'A person is clicking on the page'
+    case 'type':
+      return 'A person is typing'
+    case 'key':
+      return 'A person is pressing a key'
+    case 'scroll':
+      return 'A person is scrolling'
+    case 'navigate': {
+      let host = 'a page'
+      try {
+        host = new URL(value.url).host.replace(/^www\./, '')
+      } catch {}
+      return `A person is opening ${host}`
+    }
+    default:
+      return 'A person is using the page'
+  }
+}
+
+/** Waits, within short fixed limits, for a page to quieten after a person's click or key press. Never throws. */
+async function quickSettle(page) {
+  await sleep(150)
+  await within(page.waitForLoadState('domcontentloaded'), 3000)
+  await within(page.waitForLoadState('load'), 1500)
+}
+
+/**
+ * A new frame of the page, stored as the live view's newest picture as well. Empty when none
+ * could be taken. Never throws.
+ */
+async function freshFrame(page) {
+  const jpeg = await page
+    .screenshot({ type: 'jpeg', quality: 50, timeout: 3000, animations: 'allow', caret: 'hide', scale: 'css' })
+    .catch(() => null)
+  if (!jpeg) return ''
+  frames.set(page, { jpeg, at: Date.now() })
+  return jpeg.toString('base64')
+}
+
+/**
+ * One action of a person who has taken over the run's page, or "hold", which keeps the page open
+ * (or lets it go) while they look without acting. Answers {url, title, frame} and, for typing, the
+ * label of the field typed into as {field}; never the typed text.
+ * Flow: check the body (validateTakeover); hold sets or clears the session's heldUntil; anything
+ * else is refused while a step is still under way on the page, then finds the page (reopening it
+ * after a restart), acts (performTakeover, with navigate going through the same address guard as
+ * open), refuses an address that ended somewhere private, and takes a fresh frame.
+ * @param {string} id the run identifier.
+ * @param {string} action one of the takeover actions.
+ * @param {object} body the parsed request body.
+ * Failure: throws Refusal (400/404/409/422) for a bad body, no page, a page still busy, nothing
+ * focused to type into or a refused address.
+ */
+async function takeoverAction(id, action, body) {
+  const checked = validateTakeover(action, body, VIEWPORT)
+  if (!checked.ok) throw new Refusal(checked.status, checked.message)
+  if (action === 'hold') {
+    const held = sessions.get(id)
+    if (!held) {
+      if (checked.value.on) throw new Refusal(404, 'No page is open in this run.')
+      return { held: false }
+    }
+    held.heldUntil = checked.value.on ? Date.now() + HOLD_MS : 0
+    held.lastUsed = Date.now()
+    return { held: checked.value.on }
+  }
+  // One thing at a time on a page: a person's action never runs beside a step still under way
+  // (the agent's, or their own previous one), so their input and that step never interleave.
+  if (activities.has(id)) throw new Refusal(409, 'The page is still busy with the last step. Try again in a moment.')
+  const { session } = await pageFor(id)
+  const page = session.page
+  const before = page.url()
+  activities.set(id, { label: describePerson(action, checked.value), since: Date.now() })
+  let done
+  try {
+    done = await performTakeover(page, action, checked.value, { navigate, settle: quickSettle, viewport: VIEWPORT })
+  } finally {
+    activities.delete(id)
+  }
+  if (!done.ok) throw new Refusal(done.status, done.message)
+  // A click that led somewhere private was refused by the proxy; say so plainly, as open does.
+  if (page.url() !== before && !checkUrl(page.url()).ok) {
+    await page.goto('about:blank').catch(() => {})
+    throw new Refusal(422, PRIVATE_MESSAGE)
+  }
+  const frame = await freshFrame(page)
+  const title = await within(page.title(), 300)
+  const answer = { url: page.url(), title: typeof title === 'string' ? title : '', frame }
+  if (done.field !== undefined) answer.field = done.field
+  return answer
+}
+
 // ---- HTTP ------------------------------------------------------------------------------------
 
 /**
@@ -863,9 +969,12 @@ function readBody(req) {
 // Matches /sessions/<run id> and /sessions/<run id>/<action>. The run id is limited to letters,
 // digits and hyphens, so it is safe to log and to use as a key.
 const ROUTE = /^\/sessions\/([A-Za-z0-9-]{1,80})(?:\/(open|read|follow|search|fill|click|submit|live))?$/
+// Matches /sessions/<run id>/takeover/<action>: a person's action on a page they have taken over.
+const TAKEOVER_ROUTE = /^\/sessions\/([A-Za-z0-9-]{1,80})\/takeover\/(click|type|key|scroll|navigate|hold)$/
 
 // The HTTP server. GET /health is open (a liveness probe); everything else needs the secret.
 // POST /sessions/{id}/{open|read|follow|search|fill|click|submit} runs an action;
+// POST /sessions/{id}/takeover/{click|type|key|scroll|navigate|hold} is a person's action;
 // DELETE /sessions/{id} ends the run's session. Answers: 200 with the snapshot, 204 for delete,
 // 401 wrong secret, 404 unknown route, 405 wrong method, 503 no secret configured, or the status
 // of a Refusal; anything unexpected is a generic 500 with details only in the log.
@@ -881,6 +990,33 @@ const server = http.createServer(async (req, res) => {
   }
   if (!authorised(req)) {
     send(res, 401, { error: 'Not allowed.' })
+    return
+  }
+  const takeover = TAKEOVER_ROUTE.exec(path)
+  if (takeover) {
+    const [, id, action] = takeover
+    if (req.method !== 'POST') {
+      send(res, 405, { error: 'Not allowed.' })
+      return
+    }
+    try {
+      const started = Date.now()
+      const answer = await takeoverAction(id, action, await readBody(req))
+      const open = sessions.get(id)
+      if (open) remember(id, open.page)
+      // The action only, never what was typed.
+      log(`takeover ${action} for ${id} in ${Date.now() - started} ms`)
+      send(res, 200, answer)
+    } catch (error) {
+      if (error instanceof Refusal) {
+        send(res, error.status, { error: error.message })
+      } else {
+        // A failed typing step logs only the kind of error: its message could echo what was typed.
+        const reason = action === 'type' ? (error && error.name) || 'error' : error && error.message ? error.message.split('\n')[0] : error
+        log(`takeover ${action} for ${id} failed: ${reason}`)
+        send(res, 500, { error: 'The web browser could not do that.' })
+      }
+    }
     return
   }
   const match = ROUTE.exec(path)
@@ -934,11 +1070,23 @@ const server = http.createServer(async (req, res) => {
 
 server.requestTimeout = 90 * 1000
 server.keepAliveTimeout = 65 * 1000
-server.listen(PORT, HOST, () => {
-  log(`Browser runner listening on ${HOST}:${PORT}${SECRET ? '' : ' (no secret set: every request is refused)'}`)
-  // Started now rather than on the first step, so nobody waits for Chromium to start.
-  if (SECRET) ensureBrowser().catch((error) => log(`Chromium did not start ahead of use: ${String(error && error.message).split('\n')[0]}`))
-})
+
+/** Test hook: the name lookup the address guard uses (a dns.lookup compatible function), or undefined for the system's. */
+function useLookup(lookup) {
+  lookupOverride = lookup
+}
+
+// Exported for the runner's own tests, which drive the HTTP routes against stand-in pages without
+// starting Chromium; run as a program (node server.js), it listens and starts Chromium.
+module.exports = { server, sessions, activities, lastPages, Refusal, takeoverAction, useLookup }
+
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    log(`Browser runner listening on ${HOST}:${PORT}${SECRET ? '' : ' (no secret set: every request is refused)'}`)
+    // Started now rather than on the first step, so nobody waits for Chromium to start.
+    if (SECRET) ensureBrowser().catch((error) => log(`Chromium did not start ahead of use: ${String(error && error.message).split('\n')[0]}`))
+  })
+}
 
 /**
  * Stops the server, closes every session, Chromium and the proxy, then exits with status 0.
@@ -951,7 +1099,9 @@ async function shutdown() {
   if (proxy) await proxy.close().catch(() => {})
   process.exit(0)
 }
-process.on('SIGTERM', shutdown)
-// One failed page must never take the runner down with it.
-process.on('unhandledRejection', (error) => log(`unhandled: ${String(error && error.message ? error.message : error).split('\n')[0]}`))
-process.on('SIGINT', shutdown)
+if (require.main === module) {
+  process.on('SIGTERM', shutdown)
+  // One failed page must never take the runner down with it.
+  process.on('unhandledRejection', (error) => log(`unhandled: ${String(error && error.message ? error.message : error).split('\n')[0]}`))
+  process.on('SIGINT', shutdown)
+}

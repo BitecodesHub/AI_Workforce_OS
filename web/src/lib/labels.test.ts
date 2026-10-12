@@ -93,6 +93,8 @@ const NOT_SHOWN: Record<string, string> = {
   chat_attachments_status_valid: 'shown as the file chip itself, or the reason it could not be read',
   // A queued chat message is shown by QueuedBubble with its own plain sentence per status.
   chat_queued_status_valid: 'shown by the queued bubble in Chat, in its own words',
+  // A takeover is shown by the Agent desk as who has control, in its own words (AgentDesk, TakeoverControls).
+  run_takeovers_status_valid: 'the Agent desk says who has control in its own words, never as a raw status',
 }
 
 describe('status labels cover the database', () => {
