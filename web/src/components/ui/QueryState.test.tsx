@@ -1,8 +1,8 @@
-// @find: tests for query state, missing record, not found, page heading, 404, stale banner keeps content mounted, QueryState
-// @what: Tests the heading shown when a record is missing, and that a polling screen's content stays mounted through a failed poll.
+// @find: tests for query state, missing record, not found, page heading, 404, stale banner keeps content mounted, stale data keeps the screen, QueryState
+// @what: Tests the heading shown when a record is missing, and that a polling screen's content stays mounted, with its own state, while the stale banner comes and goes.
 // @flow: Covers QueryState.tsx.
-import { useEffect } from 'react'
-import { render, screen } from '@testing-library/react'
+import { useEffect, useState } from 'react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { QueryState } from './QueryState'
@@ -59,5 +59,40 @@ describe('QueryState keeping data through a failed poll', () => {
 
     expect(mounts).toBe(1)
     expect(screen.getByText('Content')).toBe(content)
+  })
+
+  /** A screen with state of its own, counting how often it was mounted. */
+  let mounts = 0
+  function Counter() {
+    const [count, setCount] = useState(() => {
+      mounts += 1
+      return 0
+    })
+    return (
+      <button type="button" onClick={() => setCount(count + 1)}>
+        Clicked {count}
+      </button>
+    )
+  }
+
+  it('adds the stale banner above the screen without remounting it, and takes it away again', () => {
+    mounts = 0
+    const loaded = { data: ['a'], isLoading: false, error: null as unknown, refetch: vi.fn(), dataUpdatedAt: Date.parse('2026-10-13T09:00:00Z') }
+    const view = (query: typeof loaded) => (
+      <QueryState query={query} permission="approval:read" what="the approvals queue" keepData>
+        {() => <Counter />}
+      </QueryState>
+    )
+    const { rerender } = render(view(loaded))
+    fireEvent.click(screen.getByRole('button', { name: 'Clicked 0' }))
+
+    rerender(view({ ...loaded, error: new ApiError(0, 'network_error', 'Offline.', true, {}) }))
+    expect(screen.getByText(/Lost connection/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clicked 1' })).toBeInTheDocument()
+
+    rerender(view(loaded))
+    expect(screen.queryByText(/Lost connection/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clicked 1' })).toBeInTheDocument()
+    expect(mounts).toBe(1)
   })
 })

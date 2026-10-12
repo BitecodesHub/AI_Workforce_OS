@@ -76,6 +76,13 @@ type Options = {
    * takes. The default follows from the kind of request (see timeoutFor).
    */
   timeoutMs?: number | null
+  /**
+   * Lets the request outlive the page: the browser finishes sending it even when the tab is
+   * closing or the phone puts the app away. For a small write made as the person leaves - a
+   * decision still in its undo window - never for a read or an upload (browsers cap such a body
+   * at 64 KB).
+   */
+  keepalive?: boolean
 }
 
 /** A read that takes longer than this is a stalled service, not a slow one. */
@@ -330,7 +337,7 @@ function doRefresh(): Promise<boolean> {
 
 type Limits = ReturnType<typeof limitsFor>
 
-/** Performs the fetch for one attempt: adds the bearer token when present and a JSON content type when there is a body, sends cookies, never reads the browser cache, and honours the abort signal. Network failures and timeouts are converted into ApiError by limits.failure. */
+/** Performs the fetch for one attempt: adds the bearer token when present and a JSON content type when there is a body, sends cookies, never reads the browser cache, keeps the request alive past the page when asked, and honours the abort signal. Network failures and timeouts are converted into ApiError by limits.failure. */
 async function send(path: string, options: Options, token: string | null, limits: Limits): Promise<Response> {
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
@@ -346,6 +353,7 @@ async function send(path: string, options: Options, token: string | null, limits
       // extension) from being served, which once made /api/approvals fail with "Failed to fetch".
       cache: 'no-store',
       body: options.form ?? (options.body !== undefined ? JSON.stringify(options.body) : null),
+      ...(options.keepalive ? { keepalive: true } : {}),
       ...(limits.signal ? { signal: limits.signal } : {}),
     })
     // Every response teaches the screen's timers the server's clock (lib/serverClock.ts).

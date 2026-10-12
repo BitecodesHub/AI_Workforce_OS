@@ -1,0 +1,467 @@
+/*
+ * @find: swipe approvals styles, decide deck, one card at a time, swipe label, grab handle, undo bar, bottom sheet on phone, push notifications section, push devices list
+ * @what: Styles for the Approvals page's Decide view (the card deck, its swipe feedback, the undo bar and phone sheets) and the push notifications part of the settings card.
+ * @flow: Imported by polish/index.css; classes used by components/approvals/DecideDeck.tsx, routes/Approvals.tsx and components/settings/PushNotificationsSection.tsx
+ */
+
+/* ---- The two switches above the queue: Waiting or Decided, and List or Decide ------------------------- */
+
+.approvals-switches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ---- The deck ------------------------------------------------------------------------------------------- */
+
+.decide-deck {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.deck-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+/* Up to two cards peek out under the one on top, so the person can see more are waiting. */
+.deck-stack {
+  position: relative;
+  padding-bottom: var(--space-5);
+}
+
+.deck-stack::before,
+.deck-stack::after {
+  content: '';
+  position: absolute;
+  height: var(--space-7);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  z-index: 0;
+}
+
+.deck-stack::before {
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: var(--space-2);
+}
+
+.deck-stack::after {
+  left: var(--space-6);
+  right: var(--space-6);
+  bottom: 0;
+  opacity: 0.7;
+}
+
+.deck-stack[data-depth='0']::before,
+.deck-stack[data-depth='0']::after,
+.deck-stack[data-depth='1']::after {
+  display: none;
+}
+
+.deck-card {
+  position: relative;
+  z-index: 1;
+  /* Sideways drags are the card's; up and down stay the page's, so a long request still scrolls. */
+  touch-action: pan-y;
+  transition: transform var(--transition);
+  animation: deck-card-in var(--transition-slow);
+}
+
+.deck-card:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 4px;
+  border-radius: var(--radius-card);
+}
+
+/* The card follows the finger exactly while it is held; it only eases back when let go. */
+.deck-card[data-dragging='true'] {
+  transition: none;
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A mouse can drag the card sideways from its top; a finger anywhere on it. */
+.deck-grab {
+  cursor: grab;
+}
+
+/*
+ * The grab handle: the one place an upward drag sends the request back. Everywhere else up and
+ * down stay the page's (touch-action: pan-y on the card), so a long request scrolls as usual.
+ */
+.deck-handle {
+  display: flex;
+  justify-content: center;
+  margin: calc(-1 * var(--space-2)) 0 var(--space-2);
+  padding: var(--space-2) 0 var(--space-3);
+  touch-action: none;
+  cursor: grab;
+}
+
+.deck-handle-bar {
+  width: 40px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--line-strong);
+}
+
+.deck-card[data-direction='feedback'] .deck-handle-bar {
+  background: var(--blue);
+}
+
+@keyframes deck-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* What letting go would do, and a ring in its colour once it would. */
+.deck-card[data-direction='approve'] > .card {
+  outline: 2px solid color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+.deck-card[data-direction='reject'] > .card {
+  outline: 2px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.deck-card[data-direction='feedback'] > .card {
+  outline: 2px solid color-mix(in srgb, var(--blue) 35%, transparent);
+}
+
+.deck-card[data-armed='true'][data-direction='approve'] > .card {
+  outline-color: var(--green);
+}
+
+.deck-card[data-armed='true'][data-direction='reject'] > .card {
+  outline-color: var(--danger);
+}
+
+.deck-card[data-armed='true'][data-direction='feedback'] > .card {
+  outline-color: var(--blue);
+}
+
+.deck-swipe-label {
+  position: absolute;
+  top: var(--space-5);
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.deck-swipe-label[data-direction='approve'] {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, var(--mix-base));
+}
+
+.deck-swipe-label[data-direction='reject'] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--mix-base));
+}
+
+.deck-swipe-label[data-direction='feedback'] {
+  color: var(--blue);
+  background: var(--blue-light);
+}
+
+.deck-swipe-label[data-armed='true'][data-direction='approve'] {
+  background: var(--green);
+  color: var(--on-accent);
+}
+
+.deck-swipe-label[data-armed='true'][data-direction='reject'] {
+  background: var(--danger);
+  color: var(--on-accent);
+}
+
+.deck-swipe-label[data-armed='true'][data-direction='feedback'] {
+  background: var(--blue);
+  color: var(--on-accent);
+}
+
+.deck-swipe-label[data-armed='true'][data-direction='skip'] {
+  color: var(--ink);
+}
+
+/* ---- Inside a card -------------------------------------------------------------------------------------- */
+
+.deck-title-row {
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.deck-meta {
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.deck-context {
+  margin-bottom: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.deck-payload {
+  margin-bottom: var(--space-5);
+}
+
+/* Three big buttons that stay in reach at the foot of the screen while a long request is read. */
+.deck-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  background: var(--surface);
+}
+
+/* Three across fit a 375 px phone: the side padding gives way, then a long label wraps. */
+.deck-action {
+  min-width: 0;
+  min-height: 48px;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+  white-space: normal;
+  text-align: center;
+}
+
+.deck-action-reject {
+  color: var(--danger);
+}
+
+.deck-hint {
+  margin-top: var(--space-2);
+  max-width: 70ch;
+}
+
+/* A touch screen is told about swipes; a keyboard and mouse about the keys. */
+@media (hover: hover) and (pointer: fine) {
+  .deck-hint-touch {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .deck-hint-keys {
+    display: none;
+  }
+}
+
+.deck-readonly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+}
+
+.deck-run-link {
+  margin-top: var(--space-4);
+}
+
+.deck-others-note {
+  margin-bottom: var(--space-3);
+  max-width: 70ch;
+}
+
+.deck-empty-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* ---- Undo ------------------------------------------------------------------------------------------------ */
+
+/* Above the card, where the eye already is, and pinned while the page scrolls. */
+.deck-undo {
+  position: sticky;
+  top: var(--space-3);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  animation: deck-card-in var(--transition-slow);
+}
+
+.deck-undo-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.deck-undo-button {
+  flex: none;
+  /* The most time-critical target here: at least 44 px on every screen. */
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--blue);
+  font: inherit;
+  font-weight: var(--weight-strong);
+  cursor: pointer;
+}
+
+.deck-undo-button:hover {
+  background: var(--surface-hover);
+}
+
+/* Empties over the four seconds Undo is offered. */
+.deck-undo-timer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--blue);
+  transform-origin: left center;
+  animation: deck-undo-countdown 4s linear forwards;
+}
+
+@keyframes deck-undo-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* Without motion the bar would empty at once and say nothing true; the words carry it instead. */
+@media (prefers-reduced-motion: reduce) {
+  .deck-undo-timer {
+    display: none;
+  }
+
+  .deck-card,
+  .deck-undo {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ---- Phones ---------------------------------------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .deck-progress {
+    margin-bottom: var(--space-3);
+  }
+
+  /* The reject, send back and confirm sheets rise from the foot of the screen. */
+  .decide-deck .dialog {
+    margin: auto 0 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 48px);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .decide-deck .dialog[open] {
+    animation: deck-sheet-in var(--transition-slow);
+  }
+
+  .deck-actions {
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+}
+
+@keyframes deck-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Push notifications on this device (settings card) --------------------------------------------- */
+
+.push-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.push-devices {
+  margin-top: var(--space-5);
+}
+
+.push-devices-heading {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+}
+
+.push-device-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.push-device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.push-device-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.push-device-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}

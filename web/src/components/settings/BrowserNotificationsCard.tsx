@@ -1,6 +1,6 @@
 // @find: browser notifications, notification permission, enable notifications, desktop alerts, settings card, opt in, BrowserNotificationsCard, Settings page
-// @what: The settings card where a person opts in to browser notifications, kept in this browser.
-// @flow: Uses lib/attention helpers; rendered on the Settings page
+// @what: The settings card where a person opts in to browser notifications, kept in this browser, and turns push notifications on for this device.
+// @flow: Uses lib/attention helpers and PushNotificationsSection; rendered on the Settings, Profile and Setup pages
 import { useState } from 'react'
 import { Card, Eyebrow } from '../ui'
 import {
@@ -10,6 +10,7 @@ import {
   useBrowserNotifications,
 } from '../../lib/attention'
 import { profile } from '../../lib/session'
+import { PushNotificationsSection } from './PushNotificationsSection'
 
 /**
  * The person's own opt-in to browser notifications, kept in this browser.
@@ -71,6 +72,7 @@ export function BrowserNotificationsCard() {
       <p className="caption" role="status" style={{ marginTop: 'var(--space-3)' }}>
         {note}
       </p>
+      {userId && <PushNotificationsSection userId={userId} />}
     </Card>
   )
 }

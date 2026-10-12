@@ -582,8 +582,11 @@ public class NotificationService implements GoalLifecycleListener {
         return uri;
     }
 
-    /** True for any address that lies inside a network: loopback, link-local, private, multicast, carrier-grade or unique-local. */
-    static boolean isInternal(InetAddress address) {
+    /**
+     * True for any address that lies inside a network: loopback, link-local, private, multicast, carrier-grade or unique-local.
+     * Used by {@link #checkTarget} and by the push endpoint check (push.PushEndpoints).
+     */
+    public static boolean isInternal(InetAddress address) {
         if (address.isAnyLocalAddress()
                 || address.isLoopbackAddress()
                 || address.isLinkLocalAddress()
