@@ -46,8 +46,12 @@ import os.aiworkforce.orchestrator.teamroom.TeamRoomStore.Viewer;
 @EnabledIfEnvironmentVariable(named = "AIWOS_DATABASE_TESTS", matches = "true")
 class TeamRoomStorePersistenceTest {
 
-    private static final UUID ORG = UUID.fromString("00000000-0000-7000-8000-0000000000a1");
-    private static final UUID OTHER_ORG = UUID.fromString("00000000-0000-7000-8000-0000000000b2");
+    /*
+     * A fresh workspace per test (JUnit makes a new instance for each): other database tests write
+     * runs, goals and agents under the demo workspace ids into the same shared test database.
+     */
+    private final UUID ORG = UUID.randomUUID();
+    private final UUID OTHER_ORG = UUID.randomUUID();
     private static final UUID PERSON = UUID.fromString("00000000-0000-7000-8000-0000000000c3");
     /** Someone who is neither the creator of nor a participant in the private conversation. */
     private static final Viewer OUTSIDER = Viewer.person("00000000-0000-7000-8000-0000000000d4");

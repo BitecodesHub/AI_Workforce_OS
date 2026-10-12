@@ -43,8 +43,11 @@ import os.aiworkforce.platform.web.persistence.JpaAuditingConfig;
 @Import(JpaAuditingConfig.class)
 class WorkflowsPersistenceTest {
 
-    private static final UUID ORG = UUID.fromString("00000000-0000-7000-8000-0000000007a1");
-    private static final UUID OTHER_ORG = UUID.fromString("00000000-0000-7000-8000-0000000007b2");
+    /** A fresh workspace per test: other database tests write to the shared test database too. */
+    private final UUID ORG = UUID.randomUUID();
+    /** The one agent every test canvas names. */
+    private static final UUID CANVAS_AGENT = UUID.fromString("00000000-0000-7000-8000-0000000007c3");
+    private final UUID OTHER_ORG = UUID.randomUUID();
 
     private static DatabaseForTests.Connection connection;
 
@@ -75,7 +78,8 @@ class WorkflowsPersistenceTest {
     private static Map<String, Object> canvas() {
         Map<String, Object> node = new java.util.LinkedHashMap<>();
         node.put("id", "n1");
-        node.put("agentId", UUID.randomUUID().toString());
+        // A fixed agent, so two calls describe the same canvas and can be compared.
+        node.put("agentId", CANVAS_AGENT.toString());
         node.put("instruction", "Look it up.");
         node.put("connectors", List.of("github"));
         node.put("x", 40);
