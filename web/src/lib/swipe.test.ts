@@ -1,4 +1,4 @@
-// @find: tests for swipe rules, swipe threshold, deck keyboard shortcuts, deck order, swipe label
+// @find: tests for swipe rules, swipe threshold, swipe up only from the grab handle, deck keyboard shortcuts, deck order, swipe label
 // @what: Unit tests for lib/swipe.ts: when a drag counts, which way it points, what each key does and the order of the deck.
 // @flow: Runs under vitest; imports lib/swipe.ts only
 import { describe, expect, it } from 'vitest'
@@ -44,15 +44,22 @@ describe('readSwipe', () => {
     expect(readSwipe(-threshold, 0, 400)).toMatchObject({ direction: 'reject', armed: true })
   })
 
-  it('reads up as send back once it has gone 96 px, and down as nothing', () => {
-    expect(readSwipe(4, -(SWIPE_UP_PX - 1), 400)).toMatchObject({ direction: 'feedback', armed: false })
-    expect(readSwipe(4, -SWIPE_UP_PX, 400)).toMatchObject({ direction: 'feedback', armed: true })
-    expect(readSwipe(4, 200, 400)).toEqual({ direction: null, progress: 0, armed: false })
+  it('reads up from the grab handle as send back once it has gone 96 px, and down as nothing', () => {
+    expect(readSwipe(4, -(SWIPE_UP_PX - 1), 400, true)).toMatchObject({ direction: 'feedback', armed: false })
+    expect(readSwipe(4, -SWIPE_UP_PX, 400, true)).toMatchObject({ direction: 'feedback', armed: true })
+    expect(readSwipe(4, 200, 400, true)).toEqual({ direction: null, progress: 0, armed: false })
+  })
+
+  it('leaves an upward drag anywhere else to the page, which is scrolling', () => {
+    expect(readSwipe(4, -SWIPE_UP_PX * 2, 400)).toEqual({ direction: null, progress: 0, armed: false })
+    expect(readSwipe(4, -SWIPE_UP_PX * 2, 400, false)).toEqual({ direction: null, progress: 0, armed: false })
+    // A sideways swipe still counts wherever it starts.
+    expect(readSwipe(200, -20, 400)).toMatchObject({ direction: 'approve', armed: true })
   })
 
   it('lets the axis that moved more decide', () => {
-    expect(readSwipe(150, -120, 400).direction).toBe('approve')
-    expect(readSwipe(90, -120, 400).direction).toBe('feedback')
+    expect(readSwipe(150, -120, 400, true).direction).toBe('approve')
+    expect(readSwipe(90, -120, 400, true).direction).toBe('feedback')
   })
 })
 

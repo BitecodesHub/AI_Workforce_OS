@@ -1,4 +1,4 @@
-// @find: tests for the service worker, sw.js push handler, notificationclick handler, open deep link, focus window
+// @find: tests for the service worker, sw.js push handler, notificationclick handler, open deep link, focus window, open redirect tab newline
 // @what: Runs public/sw.js in isolation against a stand-in service worker scope and checks its push and notification-click handlers.
 // @flow: Reads web/public/sw.js from disk and evaluates it with a fake `self`; no browser needed
 import { readFileSync } from 'node:fs'
@@ -117,6 +117,35 @@ describe('service worker', () => {
     await dispatch(listeners, 'notificationclick', { notification: { close: vi.fn(), data: { url: '/runs/run-1' } } })
 
     expect(self.clients.openWindow).toHaveBeenCalledWith(`${ORIGIN}/runs/run-1`)
+  })
+
+  it('cannot be led off the app by characters the address parser drops or rewrites', async () => {
+    const { self, listeners } = scope()
+    // Each of these passes a "starts with one slash" check, yet a browser would resolve it to another site.
+    const tricks = ['/\t/evil.example', '/\n/evil.example/x', '/\r/evil.example', '/\\evil.example', '/\u0000/evil.example']
+    // Proof that they are tricks: resolved as a browser would, the first four land on another site.
+    for (const url of tricks.slice(0, 4)) expect(new URL(url, ORIGIN).origin).not.toBe(ORIGIN)
+
+    for (const url of tricks) {
+      await dispatch(listeners, 'push', { data: pushData({ title: 'Hi', url }) })
+      await dispatch(listeners, 'notificationclick', { notification: { close: vi.fn(), data: { url } } })
+    }
+
+    const shown = self.registration.showNotification.mock.calls as unknown as Array<[string, { data: { url: string } }]>
+    for (const [, options] of shown) expect(options.data.url).toBe('/approvals')
+    const opened = self.clients.openWindow.mock.calls as unknown as Array<[string]>
+    expect(opened).toHaveLength(tricks.length)
+    for (const [href] of opened) expect(href).toBe(`${ORIGIN}/approvals`)
+  })
+
+  it('keeps the path, query and fragment of a link inside the app', async () => {
+    const { self, listeners } = scope()
+
+    await dispatch(listeners, 'notificationclick', {
+      notification: { close: vi.fn(), data: { url: '/chat?c=conv-1#question-9' } },
+    })
+
+    expect(self.clients.openWindow).toHaveBeenCalledWith(`${ORIGIN}/chat?c=conv-1#question-9`)
   })
 
   it('opens the Approvals page for a tapped notification whose link is not a path in the app', async () => {

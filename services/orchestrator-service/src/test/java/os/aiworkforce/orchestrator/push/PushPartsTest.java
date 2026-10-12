@@ -43,6 +43,27 @@ class PushPartsTest {
     }
 
     @Test
+    @DisplayName("in a deployed environment a name that cannot be looked up is a passing failure, a private address a refusal")
+    void strictChecksTellTemporaryFromFinal() throws Exception {
+        PushEndpoints noNameService = new PushEndpoints(PushEndpoints.DEFAULT_HOSTS, true, host -> {
+            throw new java.net.UnknownHostException(host);
+        });
+        assertThatThrownBy(() -> noNameService.check("https://fcm.googleapis.com/fcm/send/abc"))
+                .isInstanceOf(PushEndpoints.Unresolved.class)
+                .isNotInstanceOf(IllegalArgumentException.class);
+
+        java.net.InetAddress inside = java.net.InetAddress.getByAddress(new byte[] {(byte) 192, (byte) 168, 1, 9});
+        PushEndpoints rebound = new PushEndpoints(PushEndpoints.DEFAULT_HOSTS, true, host -> new java.net.InetAddress[] {inside});
+        assertThatThrownBy(() -> rebound.check("https://fcm.googleapis.com/fcm/send/abc"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("public address");
+
+        java.net.InetAddress outside = java.net.InetAddress.getByAddress(new byte[] {(byte) 142, (byte) 250, 70, 106});
+        PushEndpoints fine = new PushEndpoints(PushEndpoints.DEFAULT_HOSTS, true, host -> new java.net.InetAddress[] {outside});
+        assertThat(fine.check("https://fcm.googleapis.com/fcm/send/abc").getHost()).isEqualTo("fcm.googleapis.com");
+    }
+
+    @Test
     @DisplayName("a device is named by browser and platform, and an unknown one as this browser")
     void deviceLabels() {
         assertThat(DeviceLabels.fromUserAgent(

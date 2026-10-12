@@ -11,6 +11,7 @@ import { roleLabel } from '../../lib/labels'
 import { isGuideHidden, setGuideHidden } from '../../lib/onboarding'
 import { useApprovals, useQuestions } from '../../lib/queries'
 import { useRouter } from '../../lib/router'
+import { forgetPushOnSignOut } from '../../lib/push'
 
 /*
  * The primary navigation.
@@ -154,6 +155,8 @@ export function Navbar({ currentPath = '/', glass = false }: { currentPath?: str
       // The session is ended locally regardless: a network failure must not strand somebody
       // on a screen they have asked to leave.
     }
+    // Signing out on purpose ends this browser's push notifications too.
+    void forgetPushOnSignOut()
     clearSession()
     navigate('/sign-in?signedOut=1')
   }

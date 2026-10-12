@@ -1,5 +1,5 @@
-// @find: tests for the approvals Decide view, decide one by one, view toggle, undo window delays the POST, phone default decide
-// @what: Page tests for the Decide view of /approvals: the switch between List and Decide, the phone default, and the decision reaching POST /api/approvals/:id/decision only after the undo window.
+// @find: tests for the approvals Decide view, decide one by one, view toggle, undo window delays the POST, phone default decide, failed poll keeps the deck, app put away keepalive, rotation keeps the view
+// @what: Page tests for the Decide view of /approvals: the switch between List and Decide, the phone default (fixed for the visit), the decision reaching POST /api/approvals/:id/decision only after the undo window, a failed poll that keeps the deck and its Undo, and a decision sent as a keepalive request when the app is put away.
 // @flow: Renders Approvals inside QueryClientProvider, RouterProvider and ToastProvider with fetch mocked
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -45,12 +45,17 @@ function item(id: string, overrides: Partial<ApprovalItem> = {}): ApprovalItem {
   }
 }
 
-let requests: Array<{ url: string; method: string; body: unknown }>
+let requests: Array<{ url: string; method: string; body: unknown; keepalive?: boolean }>
 let queue: ApprovalItem[]
+/** When true, the waiting queue's GET fails as a dropped connection would. */
+let queueDown: boolean
+/** The data client of the page rendered last, to refresh its queries as a poll would. */
+let lastClient: QueryClient
 
 function renderPage(url: string) {
   window.history.replaceState({}, '', url)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  lastClient = client
   return render(
     <QueryClientProvider client={client}>
       <RouterProvider>
@@ -62,27 +67,59 @@ function renderPage(url: string) {
   )
 }
 
-/** Pretends the screen is a phone (or not) for the (max-width: 767px) query. */
+/** Pretends the screen is a phone (or not) for the (max-width: 767px) query; returns a way to turn it, telling listeners. */
 function screenWidth(narrow: boolean) {
+  const screenNow = { narrow }
+  const listeners = new Set<() => void>()
   vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: narrow && query.includes('max-width: 767px'),
+    get matches() {
+      return screenNow.narrow && query.includes('max-width: 767px')
+    },
     media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+    addListener: (listener: () => void) => listeners.add(listener),
+    removeListener: (listener: () => void) => listeners.delete(listener),
   }))
+  return (nowNarrow: boolean) => {
+    screenNow.narrow = nowNarrow
+    act(() => listeners.forEach((listener) => listener()))
+  }
+}
+
+/** Presses a key inside the deck, where its keys work. */
+function pressInDeck(key: string) {
+  const deck = document.querySelector('.decide-deck')
+  if (!deck) throw new Error('No deck')
+  act(() => {
+    fireEvent.keyDown(deck, { key })
+  })
 }
 
 beforeEach(() => {
   requests = []
   queue = [item('a-1'), item('a-2')]
+  queueDown = false
   vi.stubGlobal('scrollTo', vi.fn())
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET'
-      requests.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+      requests.push({
+        url,
+        method,
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        ...(init?.keepalive ? { keepalive: true } : {}),
+      })
+      if (queueDown && url.startsWith('/api/approvals?status=pending')) return Promise.reject(new TypeError('Failed to fetch'))
+      if (url === '/api/approvals/elsewhere-1') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ status: 404, code: 'not_found', detail: 'That item does not exist.' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/problem+json' },
+          }),
+        )
+      }
       let body: unknown = []
       if (url.startsWith('/api/approvals?status=pending')) body = queue
       else if (url.startsWith('/api/approvals/count')) body = { pending: queue.length, canDecide: queue.length }
@@ -133,10 +170,8 @@ describe('Approvals, the Decide view', () => {
     await screen.findByText('1 of 2')
 
     vi.useFakeTimers()
-    act(() => {
-      fireEvent.keyDown(window, { key: 'a' })
-    })
-    expect(screen.getByText(/^Approved:/)).toBeInTheDocument()
+    pressInDeck('a')
+    expect(screen.getByText(/^Approved:/, { selector: '.deck-undo-text' })).toBeInTheDocument()
     await act(async () => {
       await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS - 100)
     })
@@ -158,9 +193,7 @@ describe('Approvals, the Decide view', () => {
     await screen.findByText('1 of 2')
 
     vi.useFakeTimers()
-    act(() => {
-      fireEvent.keyDown(window, { key: 'a' })
-    })
+    pressInDeck('a')
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     await act(async () => {
       await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS * 2)
@@ -168,6 +201,73 @@ describe('Approvals, the Decide view', () => {
 
     expect(requests.filter((request) => request.method === 'POST')).toEqual([])
     expect(screen.getByText('1 of 2')).toBeInTheDocument()
+  })
+
+  it('keeps the deck and its Undo through a failed refresh of the queue, and sends nothing early', async () => {
+    renderPage('/approvals?view=decide')
+    await screen.findByText('1 of 2')
+
+    pressInDeck('a')
+    queueDown = true
+    // The background poll fails while the decision is still in its undo window.
+    await act(async () => {
+      await lastClient.refetchQueries({ queryKey: ['approvals'] })
+    })
+
+    expect(await screen.findByText(/Lost connection/)).toBeInTheDocument()
+    expect(document.querySelector('.decide-deck')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+    expect(requests.filter((request) => request.method === 'POST')).toEqual([])
+  })
+
+  it('sends a decision still in its undo window as a keepalive request when the app is put away', async () => {
+    renderPage('/approvals?view=decide')
+    await screen.findByText('1 of 2')
+    const visibility = { state: 'visible' as DocumentVisibilityState }
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility.state })
+    try {
+      pressInDeck('a')
+      expect(requests.filter((request) => request.method === 'POST')).toEqual([])
+
+      visibility.state = 'hidden'
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+
+      await waitFor(() =>
+        expect(requests.filter((request) => request.method === 'POST')).toEqual([
+          {
+            url: '/api/approvals/a-1/decision',
+            method: 'POST',
+            body: { approved: true, mode: 'approve', note: null },
+            keepalive: true,
+          },
+        ]),
+      )
+    } finally {
+      delete (document as unknown as { visibilityState?: unknown }).visibilityState
+    }
+  })
+
+  it('a phone turned sideways keeps the Decide view it opened on, and the decision held in it', async () => {
+    const turn = screenWidth(true)
+    renderPage('/approvals')
+    await screen.findByText('1 of 2')
+    pressInDeck('a')
+
+    turn(false)
+
+    expect(screen.getByRole('button', { name: 'Decide one by one' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+    expect(requests.filter((request) => request.method === 'POST')).toEqual([])
+  })
+
+  it('a link to a request not in this workspace says it may belong to another workspace the person uses', async () => {
+    renderPage('/approvals?view=decide#approval-elsewhere-1')
+
+    expect(await screen.findByText(/not waiting in this workspace/)).toHaveTextContent(
+      'That request is not waiting in this workspace. It was decided, withdrawn or expired, or it belongs to another workspace you use.',
+    )
   })
 
   it('celebrates an empty queue in the Decide view', async () => {

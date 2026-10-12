@@ -1,5 +1,5 @@
-// @find: tests for push subscriptions persistence, push_subscriptions SQL, upsert by endpoint, owner-scoped delete, failure counter, VAPID key row, PushSubscriptionsPersistenceTest
-// @what: Opt-in database tests for PushSubscriptionStore's SQL and the V29 tables: the upsert on the endpoint, owner-scoped reads and deletes, counters and trimming.
+// @find: tests for push subscriptions persistence, push_subscriptions SQL, upsert by workspace and endpoint, owner-scoped delete, failure counter, VAPID key row, PushSubscriptionsPersistenceTest
+// @what: Opt-in database tests for PushSubscriptionStore's SQL and the V29 tables: the upsert on the workspace and endpoint (takeover only with the same keys), owner-scoped reads and deletes, paging, counters and trimming.
 package os.aiworkforce.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,45 +71,89 @@ class PushSubscriptionsPersistenceTest {
         jdbc.update("delete from push_subscriptions");
     }
 
+    private static final UUID SESSION = UUID.fromString("00000000-0000-7000-8000-00000000c0de");
+    private static final UUID LATER_SESSION = UUID.fromString("00000000-0000-7000-8000-00000000c0df");
+
+    private PushSubscription save(UUID orgId, UUID userId, String endpoint, String key, String auth) {
+        return store.upsert(orgId, userId, SESSION, endpoint, key, auth, "Chrome on Android").orElseThrow();
+    }
+
     @Test
-    @DisplayName("the same endpoint again updates the one row, and another person subscribing from it takes it over")
-    void upsertOnTheEndpoint() {
-        PushSubscription first = store.upsert(ORG, MAYA, FCM + "a", "key-1", "auth-1", "Chrome on Android");
+    @DisplayName("the same browser again updates its one row; another person takes it over only with the same keys")
+    void upsertOnTheWorkspaceAndEndpoint() {
+        PushSubscription first = save(ORG, MAYA, FCM + "a", "key-1", "auth-1");
         store.recordFailure(first.id());
 
-        PushSubscription again = store.upsert(ORG, MAYA, FCM + "a", "key-2", "auth-2", "Chrome on Android");
+        PushSubscription again =
+                store.upsert(ORG, MAYA, LATER_SESSION, FCM + "a", "key-2", "auth-2", "Chrome on Android").orElseThrow();
         assertThat(again.id()).isEqualTo(first.id());
         assertThat(again.p256dh()).isEqualTo("key-2");
+        assertThat(again.sessionId()).isEqualTo(LATER_SESSION);
         assertThat(again.failureCount()).isZero();
 
-        PushSubscription taken = store.upsert(ORG, PRIYA, FCM + "a", "key-3", "auth-3", "Chrome on Android");
+        // Somebody who only knows the endpoint changes nothing.
+        assertThat(store.upsert(ORG, PRIYA, SESSION, FCM + "a", "key-3", "auth-3", "")).isEmpty();
+        assertThat(store.findByOrgAndEndpoint(ORG, FCM + "a")).hasValueSatisfying(row -> assertThat(row.userId()).isEqualTo(MAYA));
+
+        // The next person on the same browser presents its keys, and takes it over.
+        PushSubscription taken = store.upsert(ORG, PRIYA, SESSION, FCM + "a", "key-2", "auth-2", "").orElseThrow();
         assertThat(taken.id()).isEqualTo(first.id());
         assertThat(store.listFor(ORG, MAYA)).isEmpty();
-        assertThat(store.listFor(ORG, PRIYA)).singleElement().satisfies(row -> assertThat(row.auth()).isEqualTo("auth-3"));
+        assertThat(store.listFor(ORG, PRIYA)).singleElement().satisfies(row -> assertThat(row.auth()).isEqualTo("auth-2"));
+    }
+
+    @Test
+    @DisplayName("the same browser in two workspaces has a row in each, and neither moves")
+    void oneRowPerWorkspace() {
+        PushSubscription inA = save(ORG, MAYA, FCM + "shared", "k", "a");
+        PushSubscription inB = save(OTHER_ORG, MAYA, FCM + "shared", "k", "a");
+        save(ORG, MAYA, FCM + "shared", "k", "a");
+
+        assertThat(inB.id()).isNotEqualTo(inA.id());
+        assertThat(store.listFor(ORG, MAYA)).extracting(PushSubscription::id).containsExactly(inA.id());
+        assertThat(store.listFor(OTHER_ORG, MAYA)).extracting(PushSubscription::id).containsExactly(inB.id());
     }
 
     @Test
     @DisplayName("reads and removals a person causes reach only their own rows in their own workspace")
     void ownerScoped() {
-        PushSubscription mine = store.upsert(ORG, MAYA, FCM + "mine", "k", "a", "");
-        store.upsert(ORG, PRIYA, FCM + "hers", "k", "a", "");
-        store.upsert(OTHER_ORG, MAYA, FCM + "elsewhere", "k", "a", "");
+        PushSubscription mine = save(ORG, MAYA, FCM + "mine", "k", "a");
+        PushSubscription phone = save(ORG, MAYA, FCM + "phone", "k", "a");
+        PushSubscription hers = save(ORG, PRIYA, FCM + "hers", "k", "a");
+        PushSubscription elsewhere = save(OTHER_ORG, MAYA, FCM + "elsewhere", "k", "a");
 
-        assertThat(store.listFor(ORG, MAYA)).extracting(PushSubscription::endpoint).containsExactly(FCM + "mine");
+        assertThat(store.listFor(ORG, MAYA)).extracting(PushSubscription::endpoint).containsExactlyInAnyOrder(FCM + "mine", FCM + "phone");
         assertThat(store.deleteOwned(ORG, MAYA, FCM + "hers")).isEmpty();
         assertThat(store.deleteOwned(ORG, MAYA, FCM + "elsewhere")).isEmpty();
         assertThat(store.deleteOwned(ORG, MAYA, FCM + "mine")).contains(mine.id());
-        assertThat(store.findByEndpoint(FCM + "hers")).isPresent();
-        assertThat(store.findByEndpoint(FCM + "elsewhere")).isPresent();
-        assertThat(store.subscribedUsers(ORG, 10)).containsExactly(PRIYA);
+        assertThat(store.deleteOwnedById(ORG, MAYA, hers.id())).isFalse();
+        assertThat(store.deleteOwnedById(ORG, MAYA, elsewhere.id())).isFalse();
+        assertThat(store.deleteOwnedById(ORG, MAYA, phone.id())).isTrue();
+        assertThat(store.findByOrgAndEndpoint(ORG, FCM + "hers")).isPresent();
+        assertThat(store.findByOrgAndEndpoint(OTHER_ORG, FCM + "elsewhere")).isPresent();
+        assertThat(store.subscribedUsersAfter(ORG, null, 10)).containsExactly(PRIYA);
         assertThat(store.listForUsers(ORG, List.of(MAYA, PRIYA))).extracting(PushSubscription::userId).containsExactly(PRIYA);
         assertThat(store.listForUsers(ORG, List.of())).isEmpty();
+        assertThat(store.deleteAll(List.of(hers.id(), elsewhere.id()))).isEqualTo(2);
+        assertThat(store.deleteAll(List.of())).isZero();
+    }
+
+    @Test
+    @DisplayName("subscribed people are read a page at a time, in id order, after the last one of the page before")
+    void subscribersArePaged() {
+        save(ORG, PRIYA, FCM + "p1", "k", "a");
+        save(ORG, MAYA, FCM + "m1", "k", "a");
+        save(ORG, MAYA, FCM + "m2", "k", "a");
+
+        assertThat(store.subscribedUsersAfter(ORG, null, 1)).containsExactly(MAYA);
+        assertThat(store.subscribedUsersAfter(ORG, MAYA, 1)).containsExactly(PRIYA);
+        assertThat(store.subscribedUsersAfter(ORG, PRIYA, 1)).isEmpty();
     }
 
     @Test
     @DisplayName("failures count up, a success resets them, and trimming keeps the newest devices")
     void countersAndTrimming() {
-        PushSubscription row = store.upsert(ORG, MAYA, FCM + "x", "k", "a", "");
+        PushSubscription row = save(ORG, MAYA, FCM + "x", "k", "a");
         assertThat(store.recordFailure(row.id())).isEqualTo(1);
         assertThat(store.recordFailure(row.id())).isEqualTo(2);
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
@@ -122,7 +166,7 @@ class PushSubscriptionsPersistenceTest {
         assertThat(store.recordFailure(row.id())).isZero();
 
         for (int i = 0; i < 4; i++) {
-            store.upsert(ORG, MAYA, FCM + "device-" + i, "k", "a", "");
+            save(ORG, MAYA, FCM + "device-" + i, "k", "a");
             jdbc.update("update push_subscriptions set created_at = now() - make_interval(mins => ?) where endpoint = ?", 10 - i,
                     FCM + "device-" + i);
         }

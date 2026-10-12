@@ -1,14 +1,16 @@
 // @find: push notifications, web push service, subscribe device, unsubscribe device, my devices, send test push, notify approval raised push, notify question asked push, push enabled, PushService
 // @what: Push notifications on a person's own devices: saves and removes subscriptions, sends the test, and tells the right people when an approval or a question is waiting.
-// @flow: Called by PushController; hears LifecycleAnnouncer as a GoalLifecycleListener after an approval or question commits; chooses people with PushRecipients and delivers on its own threads through PushDelivery
+// @flow: Called by PushController; hears LifecycleAnnouncer as a GoalLifecycleListener after an approval or question commits; chooses people with PushRecipients, drops devices whose sign-in ended (SessionLiveness) and delivers on its own threads through PushDelivery
 package os.aiworkforce.orchestrator.push;
 
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -43,9 +45,12 @@ import os.aiworkforce.platform.error.ErrorCode;
  * Tells a person's phone or laptop that something is waiting for them.
  *
  * <p>A person turns push on for one browser; that browser's subscription is saved against them and
- * their workspace. When an approval is raised, everyone with push on who could decide it now is
- * told, and when a run asks a question, the person it asks is told. Each notification is a sentence
- * and a link; what the agent wanted to send never leaves the workspace this way.
+ * each workspace they open there, with the sign-in session that saved it. When an approval is
+ * raised, everyone with push on who could decide it now is told, and when a run asks a question,
+ * the person it asks is told. Each notification is a sentence and a link; what the agent wanted to
+ * send never leaves the workspace this way. A device whose sign-in has ended - signed out there or
+ * from another device, everywhere, or by a password change - is never sent to again, and its
+ * subscription is removed the first time that is noticed.
  *
  * <p>Nothing here can hold up the work it reports. The announcement arrives after the approval or
  * question has committed, is handed to a thread of its own at once, and every request to a push
@@ -73,12 +78,20 @@ public class PushService implements GoalLifecycleListener {
     /** Whether push can be offered, and the key a browser subscribes with. */
     public record Status(boolean enabled, String publicKey) {}
 
+    /**
+     * A subscription as saved, and whether that changed anything worth recording: a new device, or
+     * one that passed from another person. A browser telling the server again what it already
+     * knew is not a change.
+     */
+    public record Saved(PushSubscription subscription, boolean changed) {}
+
     /** How the test went: devices tried, how many took it, and how many were found gone and removed. */
     public record TestResult(int devices, int delivered, int removed, String message) {}
 
     private final PushSubscriptionStore store;
     private final VapidKeyStore keys;
     private final PushRecipients recipients;
+    private final SessionLiveness liveness;
     private final PushEndpoints endpoints;
     private final PushDelivery delivery;
     private final Executor executor;
@@ -94,13 +107,15 @@ public class PushService implements GoalLifecycleListener {
             PushSubscriptionStore store,
             VapidKeyStore keys,
             PushRecipients recipients,
+            SessionLiveness liveness,
             ObjectMapper json,
             PlatformProperties properties,
             @Value("${aiwos.push.enabled:true}") boolean enabled,
             @Value("${aiwos.push.allowed-hosts:}") String extraHosts,
             @Value("${aiwos.push.subject:}") String subject,
             @Value("${aiwos.notifications.link-base-url:}") String linkBaseUrl) {
-        this(store, keys, recipients, endpointsFor(extraHosts, properties), json, subjectFor(subject, linkBaseUrl, properties),
+        this(store, keys, recipients, liveness, endpointsFor(extraHosts, properties), json,
+                checkedSubject(subjectFor(subject, linkBaseUrl, properties), enabled, properties),
                 new PushDelivery.HttpTransport(), Executors.newVirtualThreadPerTaskExecutor(), enabled, Clock.systemUTC(), true);
     }
 
@@ -109,6 +124,7 @@ public class PushService implements GoalLifecycleListener {
             PushSubscriptionStore store,
             VapidKeyStore keys,
             PushRecipients recipients,
+            SessionLiveness liveness,
             PushEndpoints endpoints,
             ObjectMapper json,
             String subject,
@@ -116,7 +132,7 @@ public class PushService implements GoalLifecycleListener {
             Executor executor,
             boolean enabled,
             Clock clock) {
-        this(store, keys, recipients, endpoints, json, subject, transport, executor, enabled, clock, false);
+        this(store, keys, recipients, liveness, endpoints, json, subject, transport, executor, enabled, clock, false);
     }
 
     // Shared constructor: builds the delivery and the two limiters, and remembers an executor it must shut down.
@@ -124,6 +140,7 @@ public class PushService implements GoalLifecycleListener {
             PushSubscriptionStore store,
             VapidKeyStore keys,
             PushRecipients recipients,
+            SessionLiveness liveness,
             PushEndpoints endpoints,
             ObjectMapper json,
             String subject,
@@ -135,6 +152,7 @@ public class PushService implements GoalLifecycleListener {
         this.store = store;
         this.keys = keys;
         this.recipients = recipients;
+        this.liveness = liveness;
         this.endpoints = endpoints;
         this.delivery = new PushDelivery(store, keys, endpoints, transport, json, subject, clock);
         this.executor = executor;
@@ -180,6 +198,20 @@ public class PushService implements GoalLifecycleListener {
         return "mailto:no-reply@" + (host == null || host.isBlank() ? "localhost" : host);
     }
 
+    /**
+     * The subject as given, with a warning in a deployed environment when it names localhost:
+     * Apple's push service, and others, refuse a VAPID contact that cannot be reached, and an
+     * operator should set {@code AIWOS_PUSH_SUBJECT} (or the link base address) before relying on push.
+     */
+    static String checkedSubject(String subject, boolean enabled, PlatformProperties properties) {
+        boolean deployed = properties != null && properties.environment() != null && properties.environment().isDeployed();
+        if (enabled && deployed && subject.toLowerCase(java.util.Locale.ROOT).endsWith("@localhost")) {
+            log.warn("Push notifications use the contact {}, which push services may refuse; set AIWOS_PUSH_SUBJECT "
+                    + "to a mailto: or https: address of this deployment", subject);
+        }
+        return subject;
+    }
+
     // ---- Settings page -------------------------------------------------------------------------
 
     // @find: is push available, VAPID public key for browser
@@ -194,17 +226,29 @@ public class PushService implements GoalLifecycleListener {
 
     // @find: save push subscription, turn on push for this device
     /**
-     * Saves this browser's subscription for the person, after checking everything that arrived
-     * with it: the endpoint is a browser push service, the key is a P-256 point and the secret is
-     * 16 bytes. The same browser subscribing again refreshes its row. A person keeps at most
-     * {@value #MAX_DEVICES} devices; the oldest goes when another arrives.
+     * Saves this browser's subscription for the person in this workspace, after checking
+     * everything that arrived with it: the endpoint is a browser push service, the key is a P-256
+     * point and the secret is 16 bytes. The same browser again refreshes its row and the session
+     * it belongs to. A browser already saved here for somebody else passes to this person only
+     * when they present the same keys (the same browser subscription, on a shared computer).
+     * A person keeps at most {@value #MAX_DEVICES} devices in a workspace; the oldest goes when
+     * another arrives.
      *
-     * @throws ApiException validation for anything malformed; dependency degraded when push is off
+     * @param sessionId the identity session of the caller's token; push stops when it ends
+     * @throws ApiException validation for anything malformed; conflict for another person's
+     *     browser; upstream unavailable when the push service's name cannot be looked up just now;
+     *     dependency degraded when push is off
      */
-    public PushSubscription subscribe(UUID orgId, UUID userId, String endpoint, String p256dh, String auth, String userAgent) {
+    public Saved subscribe(
+            UUID orgId, UUID userId, UUID sessionId, String endpoint, String p256dh, String auth, String userAgent) {
         requireEnabled();
+        if (sessionId == null) {
+            throw new ApiException(ErrorCode.NOT_AUTHENTICATED, "Sign in again to turn on push notifications.");
+        }
         try {
             endpoints.check(endpoint);
+        } catch (PushEndpoints.Unresolved unresolved) {
+            throw new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, "The browser's push service could not be reached. Try again.");
         } catch (IllegalArgumentException refused) {
             throw ApiException.validation("endpoint", refused.getMessage());
         }
@@ -232,10 +276,24 @@ public class PushService implements GoalLifecycleListener {
         } catch (IllegalArgumentException malformed) {
             throw ApiException.validation("keys.auth", "is not a browser push secret");
         }
-        PushSubscription saved =
-                store.upsert(orgId, userId, endpoint.strip(), cleanKey, cleanAuth, DeviceLabels.fromUserAgent(userAgent));
-        store.trimOldest(orgId, userId, MAX_DEVICES);
-        return saved;
+        String cleanEndpoint = endpoint.strip();
+        Optional<PushSubscription> before = store.findByOrgAndEndpoint(orgId, cleanEndpoint);
+        PushSubscription saved = store.upsert(
+                        orgId, userId, sessionId, cleanEndpoint, cleanKey, cleanAuth, DeviceLabels.fromUserAgent(userAgent))
+                .orElseThrow(PushService::someoneElsesBrowser);
+        boolean added = before.isEmpty();
+        if (added) {
+            store.trimOldest(orgId, userId, MAX_DEVICES);
+        }
+        return new Saved(saved, added || !before.get().userId().equals(userId));
+    }
+
+    // The refusal for a browser that is somebody else's here, which only its own keys could claim.
+    private static ApiException someoneElsesBrowser() {
+        return new ApiException(
+                ErrorCode.CONFLICT,
+                "This browser already receives push notifications for someone else in this workspace. "
+                        + "They can turn them off on their Profile page.");
     }
 
     // @find: remove push subscription, turn off push for this device
@@ -245,6 +303,17 @@ public class PushService implements GoalLifecycleListener {
             throw ApiException.validation("endpoint", "is missing");
         }
         return store.deleteOwned(orgId, userId, endpoint.strip());
+    }
+
+    // @find: remove one of my push devices by id
+    /**
+     * Removes one of the person's own devices by its id, from any browser: how a phone that was
+     * lost, sold or handed on stops showing this account's notifications.
+     *
+     * @return whether a device of theirs was removed (false for none, or somebody else's)
+     */
+    public boolean removeDevice(UUID orgId, UUID userId, UUID id) {
+        return store.deleteOwnedById(orgId, userId, id);
     }
 
     /** The person's own devices in this workspace, newest first. Read-only. */
@@ -264,9 +333,16 @@ public class PushService implements GoalLifecycleListener {
         if (!testLimiter.tryAcquire(userId)) {
             throw new ApiException(ErrorCode.RATE_LIMITED, "Wait a minute before sending another test notification.");
         }
-        List<PushSubscription> devices = store.listFor(orgId, userId);
-        if (devices.isEmpty()) {
+        List<PushSubscription> listed = store.listFor(orgId, userId);
+        if (listed.isEmpty()) {
             return new TestResult(0, 0, 0, "No device has push notifications turned on yet.");
+        }
+        List<PushSubscription> devices = signedIn(listed)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.DEPENDENCY_UNAVAILABLE, "Your devices could not be checked just now. Try again in a minute."));
+        int signedOut = listed.size() - devices.size();
+        if (devices.isEmpty()) {
+            return new TestResult(listed.size(), 0, signedOut, testSentence(listed.size(), 0, signedOut));
         }
         PushMessage message = PushMessage.test();
         List<CompletableFuture<PushDelivery.Outcome>> sends = new ArrayList<>();
@@ -281,7 +357,7 @@ public class PushService implements GoalLifecycleListener {
             log.debug("Not every test notification answered in time: {}", slow.toString());
         }
         int delivered = 0;
-        int removed = 0;
+        int removed = signedOut;
         for (CompletableFuture<PushDelivery.Outcome> send : sends) {
             // Still waiting, or failed outright, counts as not delivered.
             PushDelivery.Outcome outcome = send.isDone() && !send.isCompletedExceptionally()
@@ -293,7 +369,7 @@ public class PushService implements GoalLifecycleListener {
                 removed++;
             }
         }
-        return new TestResult(devices.size(), delivered, removed, testSentence(devices.size(), delivered, removed));
+        return new TestResult(listed.size(), delivered, removed, testSentence(listed.size(), delivered, removed));
     }
 
     // One sentence for the settings page about how the test went.
@@ -376,8 +452,9 @@ public class PushService implements GoalLifecycleListener {
     }
 
     /**
-     * Sends one message to every device of the given people who are still under their limit, each
-     * device on a delivery thread of its own. Runs on a delivery thread.
+     * Sends one message to every still signed-in device of the given people who are under their
+     * limit, each device on a delivery thread of its own. Devices whose sign-in has ended are
+     * removed instead; when that cannot be checked, nothing is sent. Runs on a delivery thread.
      */
     void send(UUID orgId, List<UUID> people, PushMessage message) {
         if (people.isEmpty() || keys.keys().isEmpty()) {
@@ -391,12 +468,54 @@ public class PushService implements GoalLifecycleListener {
                 log.debug("Push to person {} held back: limit of {} in {} minutes reached", person, NOTIFY_LIMIT, NOTIFY_WINDOW_MINUTES);
             }
         }
-        for (PushSubscription device : store.listForUsers(orgId, allowed)) {
+        Optional<List<PushSubscription>> devices = signedIn(store.listForUsers(orgId, allowed));
+        if (devices.isEmpty()) {
+            log.warn("Push for {} person(s) not sent: whether their devices are still signed in could not be checked", allowed.size());
+            return;
+        }
+        for (PushSubscription device : devices.get()) {
             try {
                 executor.execute(() -> delivery.deliver(device, message));
             } catch (RuntimeException e) {
                 log.warn("Push to subscription {} could not be queued: {}", device.id(), e.getMessage());
             }
         }
+    }
+
+    // @find: drop push devices whose sign-in ended
+    /**
+     * The devices whose sign-in is still live. The rest - signed out on the device or from
+     * another, signed out everywhere, password changed, or never tied to a session - are removed,
+     * so they are not asked about again; a device still in use saves itself again the next time
+     * the app opens there. Empty when identity could not say, and then nothing is removed.
+     */
+    private Optional<List<PushSubscription>> signedIn(List<PushSubscription> devices) {
+        if (devices.isEmpty()) {
+            return Optional.of(devices);
+        }
+        Set<UUID> sessions = new HashSet<>();
+        for (PushSubscription device : devices) {
+            if (device.sessionId() != null) {
+                sessions.add(device.sessionId());
+            }
+        }
+        Optional<Set<UUID>> live = sessions.isEmpty() ? Optional.of(Set.of()) : liveness.live(sessions);
+        if (live.isEmpty()) {
+            return Optional.empty();
+        }
+        List<PushSubscription> keep = new ArrayList<>();
+        List<UUID> ended = new ArrayList<>();
+        for (PushSubscription device : devices) {
+            if (device.sessionId() != null && live.get().contains(device.sessionId())) {
+                keep.add(device);
+            } else {
+                ended.add(device.id());
+            }
+        }
+        if (!ended.isEmpty()) {
+            store.deleteAll(ended);
+            log.info("Removed {} push subscription(s) whose device is no longer signed in", ended.size());
+        }
+        return Optional.of(keep);
     }
 }

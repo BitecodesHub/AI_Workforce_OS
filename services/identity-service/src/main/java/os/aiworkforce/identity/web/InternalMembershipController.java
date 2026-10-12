@@ -1,15 +1,21 @@
-// @find: internal memberships, bootstrap owner, bootstrap member, check grant, member permissions, accept invitation, create workspace owner, /internal/memberships, InternalMembershipController
-// @what: Service-to-service endpoints granting memberships for new workspaces and accepted invitations, and checking grants.
+// @find: internal memberships, bootstrap owner, bootstrap member, check grant, member permissions, batch member permissions, accept invitation, create workspace owner, /internal/memberships, InternalMembershipController
+// @what: Service-to-service endpoints granting memberships for new workspaces and accepted invitations, checking grants, and answering what members hold (one or many at once).
 // @flow: Called by the organisation service with a service token; uses GrantGuard, Memberships, Roles.
 package os.aiworkforce.identity.web;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -141,6 +147,22 @@ public class InternalMembershipController {
      * @param permissions the permission codes of the person's current role
      */
     public record PermissionsResponse(boolean member, java.util.List<String> permissions) {}
+
+    /** The most people one batch may ask about. */
+    public static final int MAX_BATCH = 200;
+
+    /**
+     * Request body for {@link #permissionsBatch}: the workspace and the people whose permissions are
+     * wanted, at most {@value #MAX_BATCH}.
+     */
+    public record BatchPermissionsRequest(
+            @NotNull UUID orgId, @NotNull @Size(max = MAX_BATCH) List<@NotNull UUID> userIds) {}
+
+    /**
+     * Response body for {@link #permissionsBatch}: the codes of each person asked about who is an
+     * active member; anybody else is absent.
+     */
+    public record BatchPermissionsResponse(Map<UUID, List<String>> permissions) {}
 
     // @find: bootstrap owner, workspace creator gets owner role, POST /internal/memberships/bootstrap-owner
     /**
@@ -334,6 +356,31 @@ public class InternalMembershipController {
                 .flatMap(membership -> roles.findById(membership.getRoleId()))
                 .map(role -> new PermissionsResponse(true, java.util.List.copyOf(role.getPermissions())))
                 .orElse(new PermissionsResponse(false, java.util.List.of()));
+    }
+
+    // @find: batch member permissions, POST /internal/memberships/permissions/batch
+    /**
+     * What several people hold in one workspace, for a sibling service choosing among them without
+     * any of their requests in flight - the orchestrator deciding who to tell about an approval.
+     * One call for up to {@value #MAX_BATCH} people instead of one each. A person who is not an
+     * active member is left out of the answer; each role is read once however many hold it.
+     *
+     * <p>Route: {@code POST /internal/memberships/permissions/batch}; service token only. Reads only.
+     */
+    @PostMapping("/permissions/batch")
+    @Operation(summary = "Internal: the permissions several people hold in a workspace")
+    @Transactional(readOnly = true)
+    public BatchPermissionsResponse permissionsBatch(@Valid @RequestBody BatchPermissionsRequest request) {
+        requireService();
+        Map<UUID, Optional<Role>> roleById = new HashMap<>();
+        Map<UUID, List<String>> held = new LinkedHashMap<>();
+        for (UUID userId : request.userIds()) {
+            memberships
+                    .findActive(userId, request.orgId())
+                    .flatMap(membership -> roleById.computeIfAbsent(membership.getRoleId(), roles::findById))
+                    .ifPresent(role -> held.put(userId, List.copyOf(role.getPermissions())));
+        }
+        return new BatchPermissionsResponse(held);
     }
 
     /**

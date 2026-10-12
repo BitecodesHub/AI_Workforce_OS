@@ -1,5 +1,5 @@
-// @find: push api, /api/push, vapid public key endpoint, push subscriptions endpoint, subscribe device, unsubscribe device, send test notification, push notifications on this device, PushController
-// @what: REST endpoints for a person's own push notifications: the server's public key, their devices, turning a device on or off, and the test.
+// @find: push api, /api/push, vapid public key endpoint, push subscriptions endpoint, subscribe device, unsubscribe device, remove device, send test notification, push notifications on this device, PushController
+// @what: REST endpoints for a person's own push notifications: the server's public key, their devices, turning a device on or off, removing one by id, and the test.
 // @flow: Called by the web app's push settings (web/src/lib/push.ts); delegates to PushService; audits device changes through AuditClient
 package os.aiworkforce.orchestrator.push;
 
@@ -20,6 +20,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -107,7 +108,9 @@ public class PushController {
     // @find: POST /api/push/subscriptions, turn on push for this device
     /**
      * Route {@code POST /api/push/subscriptions}; saves this browser's subscription for the caller
-     * (201). The same browser again refreshes its row. Audited without the endpoint or keys.
+     * in this workspace (201), tied to the caller's sign-in session. The same browser again
+     * refreshes its row. A new device, or one taken over on a shared computer, is audited without
+     * the endpoint or keys; a browser repeating what the server already knew is not.
      */
     @PostMapping("/subscriptions")
     @ResponseStatus(HttpStatus.CREATED)
@@ -117,12 +120,21 @@ public class PushController {
             @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent) {
         Actor actor = person();
         UUID orgId = orgOf(actor);
-        PushSubscription saved = push.subscribe(
-                orgId, userOf(actor), request.endpoint(), request.keys().p256dh(), request.keys().auth(), userAgent);
-        Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("device", saved.label());
-        audit.record(orgId, actor, "push.subscribe", "push_subscription", saved.id().toString(), "succeeded", detail);
-        return view(saved);
+        PushService.Saved saved = push.subscribe(
+                orgId,
+                userOf(actor),
+                sessionOf(actor),
+                request.endpoint(),
+                request.keys().p256dh(),
+                request.keys().auth(),
+                userAgent);
+        if (saved.changed()) {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("device", saved.subscription().label());
+            audit.record(
+                    orgId, actor, "push.subscribe", "push_subscription", saved.subscription().id().toString(), "succeeded", detail);
+        }
+        return view(saved.subscription());
     }
 
     // @find: DELETE /api/push/subscriptions, turn off push for this device
@@ -140,6 +152,23 @@ public class PushController {
         push.unsubscribe(orgId, userOf(actor), request.endpoint())
                 .ifPresent(id -> audit.record(
                         orgId, actor, "push.unsubscribe", "push_subscription", id.toString(), "succeeded", Map.of()));
+    }
+
+    // @find: DELETE /api/push/subscriptions/{id}, remove one of my devices
+    /**
+     * Route {@code DELETE /api/push/subscriptions/{id}}; removes one of the caller's own devices in
+     * this workspace, from any browser - a phone that was lost or handed on. 204 whether or not it
+     * was theirs, so nothing is learnt about anybody else's; audited when one was removed.
+     */
+    @DeleteMapping("/subscriptions/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Turn off push notifications on one of my devices")
+    public void removeDevice(@PathVariable UUID id) {
+        Actor actor = person();
+        UUID orgId = orgOf(actor);
+        if (push.removeDevice(orgId, userOf(actor), id)) {
+            audit.record(orgId, actor, "push.unsubscribe", "push_subscription", id.toString(), "succeeded", Map.of());
+        }
     }
 
     // @find: POST /api/push/test, send a test notification
@@ -164,6 +193,15 @@ public class PushController {
     // The caller's workspace as a UUID.
     private static UUID orgOf(Actor actor) {
         return UUID.fromString(actor.orgId());
+    }
+
+    // The sign-in session the caller's token belongs to, or null when it names none.
+    private static UUID sessionOf(Actor actor) {
+        try {
+            return actor.sessionId() == null || actor.sessionId().isBlank() ? null : UUID.fromString(actor.sessionId());
+        } catch (IllegalArgumentException notASession) {
+            return null;
+        }
     }
 
     // The caller's own id as a UUID.

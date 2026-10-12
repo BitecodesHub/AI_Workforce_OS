@@ -1,5 +1,5 @@
-// @find: undo decision, undo window, hold approval decision, four seconds undo, send after delay, flush decision, DecisionHold, useDecisionHold
-// @what: Holds one decision for a few seconds before it is sent, so it can be undone; the next decision or leaving the screen sends it at once.
+// @find: undo decision, undo window, hold approval decision, four seconds undo, send after delay, flush decision, app put away, page hidden, keepalive, DecisionHold, useDecisionHold
+// @what: Holds one decision for a few seconds before it is sent, so it can be undone; the next decision, leaving the screen, or the app being put away or closed sends it at once.
 // @flow: Used by components/approvals/DecideDeck.tsx; tested in decisionHold.test.ts
 import { useEffect, useState } from 'react'
 
@@ -7,8 +7,12 @@ import { useEffect, useState } from 'react'
  * A swipe is quick, and so is a mistake. Each decision is held for a moment before it is sent:
  * the card leaves the deck at once, an Undo button stays for four seconds, and only when that
  * window closes is the request made. Deciding the next card sends the held one straight away,
- * so at most one decision is ever waiting, and leaving the screen sends it too - a person who
- * swiped Approve and closed the app meant it.
+ * so at most one decision is ever waiting.
+ *
+ * A person who swiped Approve and then pressed Home or closed the tab meant it, so the held
+ * decision is sent the moment the page is hidden (a phone putting the app away fires only that,
+ * and may then freeze or discard the page) or closed. It goes as a keepalive request, which the
+ * browser finishes even while the page unloads; an ordinary one would be cancelled with it.
  */
 
 /** How long a decision can be undone before it is sent, in milliseconds. */
@@ -19,6 +23,12 @@ export type DecisionKind = 'approve' | 'reject' | 'feedback'
 
 /** One decision waiting to be sent: the request, what was decided, and the note given with it. */
 export type HeldDecision<T> = { item: T; kind: DecisionKind; note?: string }
+
+/** How a decision is being sent: `leaving` when the page is being hidden or closed, so the request must outlive it. */
+export type SendHow = { leaving: boolean }
+
+/** Sends one decision. */
+export type DecisionSender<T> = (decision: HeldDecision<T>, how: SendHow) => void
 
 /** The timer functions a hold uses, replaceable in tests. */
 type Timers = {
@@ -31,6 +41,8 @@ const REAL_TIMERS: Timers = {
   clear: (handle) => window.clearTimeout(handle as number),
 }
 
+const STAYING: SendHow = { leaving: false }
+
 // @find: decision hold, undo window logic
 /**
  * At most one decision, held until its window closes. `send` is called exactly once for each
@@ -42,7 +54,7 @@ export class DecisionHold<T> {
   private timer: unknown = null
 
   constructor(
-    private send: (decision: HeldDecision<T>) => void,
+    private send: DecisionSender<T>,
     private readonly onChange: (held: HeldDecision<T> | null) => void = () => {},
     private readonly windowMs: number = UNDO_WINDOW_MS,
     private readonly timers: Timers = REAL_TIMERS,
@@ -54,7 +66,7 @@ export class DecisionHold<T> {
   }
 
   /** Replaces what sending does, for a screen whose send function changes between renders. */
-  setSender(send: (decision: HeldDecision<T>) => void): void {
+  setSender(send: DecisionSender<T>): void {
     this.send = send
   }
 
@@ -76,14 +88,17 @@ export class DecisionHold<T> {
     return decision
   }
 
-  /** Sends the held decision now, if there is one. */
-  flush(): void {
+  /**
+   * Sends the held decision now, if there is one. `how.leaving` says the page is being hidden or
+   * closed, so the sender makes a request that outlives it.
+   */
+  flush(how: SendHow = STAYING): void {
     const decision = this.current
     if (!decision) return
     this.stopTimer()
     this.current = null
     this.onChange(null)
-    this.send(decision)
+    this.send(decision, how)
   }
 
   private stopTimer() {
@@ -95,9 +110,10 @@ export class DecisionHold<T> {
 // @find: use decision hold hook
 /**
  * A DecisionHold for a screen: the held decision as state, and the hold flushed when the screen
- * goes away or the page is being closed. `send` may change between renders; the latest is used.
+ * goes away, and as a request that outlives the page when the page is hidden (the app put away,
+ * another tab chosen) or closed. `send` may change between renders; the latest is used.
  */
-export function useDecisionHold<T>(send: (decision: HeldDecision<T>) => void, windowMs: number = UNDO_WINDOW_MS) {
+export function useDecisionHold<T>(send: DecisionSender<T>, windowMs: number = UNDO_WINDOW_MS) {
   const [held, setHeld] = useState<HeldDecision<T> | null>(null)
   const [hold] = useState(() => new DecisionHold<T>(send, setHeld, windowMs))
   useEffect(() => {
@@ -105,11 +121,15 @@ export function useDecisionHold<T>(send: (decision: HeldDecision<T>) => void, wi
   }, [hold, send])
 
   useEffect(() => {
-    // A phone closing the tab fires pagehide, not unmount: the decision still goes.
-    const onPageHide = () => hold.flush()
-    window.addEventListener('pagehide', onPageHide)
+    const leaving = () => hold.flush({ leaving: true })
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') leaving()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', leaving)
     return () => {
-      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', leaving)
       hold.flush()
     }
   }, [hold])

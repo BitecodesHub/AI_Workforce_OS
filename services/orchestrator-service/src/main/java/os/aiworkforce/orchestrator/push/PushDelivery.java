@@ -28,10 +28,16 @@ import os.aiworkforce.orchestrator.push.PushSubscriptionStore.PushSubscription;
  *
  * <p>The push service answers {@code 201} when it has taken the message. {@code 404} and {@code 410}
  * mean the browser dropped the subscription (the person turned notifications off, cleared the site
- * or uninstalled the browser), so the row is removed at once. Any other answer, or none, counts as
- * a failure; a subscription that fails {@value #MAX_FAILURES} times in a row is removed too, so a
- * device that will never answer is not tried forever. Nothing is retried: the Approvals badge and
- * the queue still show what is waiting, and a push that arrives late is worse than none.
+ * or uninstalled the browser), so the row is removed at once, as is one whose endpoint is refused
+ * outright (no longer an allowed push service, or a private address). Any other answer, or none,
+ * counts as a failure; a subscription that fails {@value #MAX_FAILURES} times in a row is removed
+ * too, so a device that will never answer is not tried forever.
+ *
+ * <p>Two failures say nothing about the subscription and are not counted: a host name that could
+ * not be looked up (this server's name service may be down) and {@code 429}, the push service
+ * asking this server to slow down. Counting them would let a short outage, or a busy afternoon,
+ * remove every device that happened to be tried. Nothing is retried: the Approvals badge and the
+ * queue still show what is waiting, and a push that arrives late is worse than none.
  *
  * <p>Every request has a five-second connect limit and a ten-second answer limit, follows no
  * redirect, and goes only to an endpoint {@link PushEndpoints} allows, checked again here because
@@ -43,6 +49,8 @@ public class PushDelivery {
 
     /** Failures in a row after which a subscription is removed. */
     public static final int MAX_FAILURES = 10;
+
+    private static final int TOO_MANY_REQUESTS = 429;
 
     /** How long a VAPID token is made to last; push services accept up to a day. */
     static final Duration TOKEN_LIFETIME = Duration.ofHours(12);
@@ -56,7 +64,7 @@ public class PushDelivery {
         DELIVERED,
         /** The subscription is gone, and was removed. */
         GONE,
-        /** It did not arrive; the failure was counted. */
+        /** It did not arrive; the failure was counted, unless it said nothing about the subscription. */
         FAILED,
         /** It was not attempted: push is off, or the endpoint is not allowed. */
         SKIPPED
@@ -115,9 +123,13 @@ public class PushDelivery {
         URI endpoint;
         try {
             endpoint = endpoints.check(subscription.endpoint());
+        } catch (PushEndpoints.Unresolved unresolved) {
+            // The name service did not answer: nothing is wrong with the subscription itself.
+            log.warn("Push to subscription {} not sent: {}", subscription.id(), unresolved.getMessage());
+            return Outcome.FAILED;
         } catch (IllegalArgumentException refused) {
-            // Saved under a rule that no longer allows it (an operator narrowed the list): it will
-            // never be allowed again, so it goes.
+            // Saved under a rule that no longer allows it (an operator narrowed the list, or the
+            // host now points inside a private network): it is not to be used again, so it goes.
             log.warn("Removing push subscription {}: its endpoint {}", subscription.id(), refused.getMessage());
             store.delete(subscription.id());
             return Outcome.GONE;
@@ -156,6 +168,11 @@ public class PushDelivery {
         if (status == 404 || status == 410) {
             store.delete(subscription.id());
             return Outcome.GONE;
+        }
+        if (status == TOO_MANY_REQUESTS) {
+            // The push service is limiting this server, not refusing the device.
+            log.warn("Push to subscription {} not taken: the push service asked to slow down (429)", subscription.id());
+            return Outcome.FAILED;
         }
         return failed(subscription, "the push service answered with status " + status);
     }

@@ -1,5 +1,5 @@
-// @find: tests for push controller, /api/push, subscribe audited, API key refused, my devices only, PushControllerTest
-// @what: Unit tests for PushController: only a person's own session may use it, every call is scoped to the caller, and the audit never holds the endpoint or keys.
+// @find: tests for push controller, /api/push, subscribe audited, API key refused, my devices only, remove device by id, PushControllerTest
+// @what: Unit tests for PushController: only a person's own session may use it, every call is scoped to the caller and tied to their sign-in session, and the audit records real changes only, never the endpoint or keys.
 package os.aiworkforce.orchestrator.push;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,12 +32,13 @@ import os.aiworkforce.platform.context.RequestContext;
 import os.aiworkforce.platform.error.ApiException;
 import os.aiworkforce.platform.error.ErrorCode;
 
-/** The five calls the settings card makes, as the person signed in. */
+/** The calls the settings card makes, as the person signed in. */
 class PushControllerTest {
 
     private static final UUID ORG = UUID.fromString("00000000-0000-7000-8000-0000000000a1");
     private static final UUID ME = UUID.fromString("00000000-0000-7000-8000-00000000000a");
     private static final String ENDPOINT = "https://fcm.googleapis.com/fcm/send/abc";
+    private static final UUID SESSION = UUID.fromString("00000000-0000-7000-8000-00000000c0de");
 
     private PushService push;
     private AuditClient audit;
@@ -49,8 +50,9 @@ class PushControllerTest {
         push = mock(PushService.class);
         audit = mock(AuditClient.class);
         controller = new PushController(push, audit);
-        // An employee: no special permission is needed for one's own devices.
-        me = Actor.user(ME.toString(), ORG.toString(), "employee", Set.of("run:read", "chat:use"), 0L);
+        // An employee: no special permission is needed for one's own devices. The token names its session.
+        me = new Actor(ME.toString(), Actor.Kind.USER, ORG.toString(), "employee", Set.of("run:read", "chat:use"), 0L,
+                null, SESSION.toString(), null, Map.of());
         RequestContext.setActor(me);
     }
 
@@ -61,7 +63,7 @@ class PushControllerTest {
 
     private static PushSubscription row(String endpoint) {
         return new PushSubscription(
-                UUID.randomUUID(), ORG, ME, endpoint, "p256dh-secret-key", "auth-secret", "Safari on iPhone",
+                UUID.randomUUID(), ORG, ME, endpoint, "p256dh-secret-key", "auth-secret", "Safari on iPhone", SESSION,
                 Instant.parse("2026-10-12T09:00:00Z"), null, 0);
     }
 
@@ -78,7 +80,7 @@ class PushControllerTest {
     @SuppressWarnings("unchecked")
     void subscribeIsAuditedWithoutSecrets() {
         PushSubscription saved = row(ENDPOINT);
-        when(push.subscribe(ORG, ME, ENDPOINT, "BKEY", "AUTH", "UA")).thenReturn(saved);
+        when(push.subscribe(ORG, ME, SESSION, ENDPOINT, "BKEY", "AUTH", "UA")).thenReturn(new PushService.Saved(saved, true));
 
         PushController.DeviceView view = controller.subscribe(
                 new PushController.SubscribeRequest(ENDPOINT, null, new PushController.SubscriptionKeys("BKEY", "AUTH")), "UA");
@@ -91,6 +93,33 @@ class PushControllerTest {
                 eq("succeeded"), detail.capture());
         assertThat(detail.getValue()).containsEntry("device", "Safari on iPhone");
         assertThat(detail.getValue().toString()).doesNotContain("fcm.googleapis.com").doesNotContain("BKEY");
+    }
+
+    @Test
+    @DisplayName("a browser telling the server again what it already knew, as on every visit, writes no audit entry")
+    void unchangedSubscriptionIsNotAudited() {
+        when(push.subscribe(ORG, ME, SESSION, ENDPOINT, "BKEY", "AUTH", "UA")).thenReturn(new PushService.Saved(row(ENDPOINT), false));
+
+        controller.subscribe(
+                new PushController.SubscribeRequest(ENDPOINT, null, new PushController.SubscriptionKeys("BKEY", "AUTH")), "UA");
+
+        verify(audit, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a device is removed by its id as the caller's own, audited only when one of theirs went")
+    void removeDeviceById() {
+        UUID lostPhone = UUID.randomUUID();
+        UUID someoneElses = UUID.randomUUID();
+        when(push.removeDevice(ORG, ME, lostPhone)).thenReturn(true);
+        when(push.removeDevice(ORG, ME, someoneElses)).thenReturn(false);
+
+        controller.removeDevice(lostPhone);
+        controller.removeDevice(someoneElses);
+
+        verify(audit).record(eq(ORG), eq(me), eq("push.unsubscribe"), eq("push_subscription"), eq(lostPhone.toString()),
+                eq("succeeded"), any());
+        verify(audit, never()).record(any(), any(), any(), any(), eq(someoneElses.toString()), any(), any());
     }
 
     @Test
@@ -138,6 +167,7 @@ class PushControllerTest {
                         new PushController.SubscribeRequest(ENDPOINT, null, new PushController.SubscriptionKeys("k", "a")), null))
                 .isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> controller.test()).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> controller.removeDevice(UUID.randomUUID())).isInstanceOf(ApiException.class);
         verifyNoInteractions(push);
     }
 }

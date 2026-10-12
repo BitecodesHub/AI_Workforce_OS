@@ -2368,7 +2368,15 @@ export function useCreateGoal() {
 export function useDecideApproval() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { id: string; approved: boolean; note?: string; mode?: 'approve' | 'reject' | 'request_changes' }) =>
+    // `keepalive` lets the decision reach the server while the page is being closed or put away
+    // (the Decide view sends a decision still in its undo window then).
+    mutationFn: (input: {
+      id: string
+      approved: boolean
+      note?: string
+      mode?: 'approve' | 'reject' | 'request_changes'
+      keepalive?: boolean
+    }) =>
       api<DecisionResult>(`/api/approvals/${input.id}/decision`, {
         method: 'POST',
         body: {
@@ -2376,6 +2384,7 @@ export function useDecideApproval() {
           mode: input.mode ?? (input.approved ? 'approve' : 'reject'),
           note: input.note ?? null,
         },
+        ...(input.keepalive ? { keepalive: true } : {}),
       }),
     // Settled rather than success: a decision that failed because someone else already decided,
     // or the approval expired, must still clear the stale card.

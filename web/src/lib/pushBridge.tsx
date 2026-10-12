@@ -1,8 +1,8 @@
-// @find: push bridge, notification tap opens the app, service worker message, keep push subscription current, forget push on sign out, PushBridge
-// @what: Connects the service worker to the app: a tapped notification opens its link here, the person's subscription is kept current, and push stops when someone else signs in or everyone signs out.
+// @find: push bridge, notification tap opens the app, service worker message, keep push subscription current, forget push when someone else signs in, PushBridge
+// @what: Connects the service worker to the app: a tapped notification opens its link here, the person's subscription is kept current in each workspace they open, and push stops when someone else signs in.
 // @flow: Mounted once in main.tsx inside RouterProvider; uses lib/push.ts, lib/session.ts and the router's navigate
 import { useEffect, useRef, useState } from 'react'
-import { forgetPushOfOthers, navigationFrom, syncPush } from './push'
+import { forgetPushOfOthers, forgetPushSyncNotes, navigationFrom, syncPush } from './push'
 import { useRouter } from './router'
 import { SESSION_EVENT, maySignInSilently, profile } from './session'
 
@@ -10,9 +10,14 @@ import { SESSION_EVENT, maySignInSilently, profile } from './session'
  * Nothing renders. A notification tapped while the app is open in a window arrives here as a
  * message from the service worker and becomes an ordinary in-app navigation (no reload). On every
  * move and every session change the bridge checks whose push this browser carries: the signed-in
- * person's is told to the server again once per visit (a browser may renew its subscription
- * quietly); anyone else's is dropped, so a shared computer does not keep showing one person's
- * notifications after they signed out.
+ * person's is told to the server in the workspace now open (at most once a day each, unless it
+ * changed; lib/push.ts keeps count), which also keeps the server's note of the sign-in it belongs
+ * to fresh; a different person's is dropped, so a shared computer does not keep showing one
+ * person's notifications to the next. Nobody being signed in drops nothing - that may be a session
+ * that expired, and push should still be on when the same person signs in again - but it does
+ * make the next sign-in tell the server at once, since the server stops using a subscription
+ * whose sign-in ended. Signing out on purpose drops push where the sign-out happens
+ * (lib/push.ts forgetPushOnSignOut).
  */
 
 // @find: PushBridge component
@@ -20,7 +25,7 @@ import { SESSION_EVENT, maySignInSilently, profile } from './session'
 export function PushBridge() {
   const { navigate, path } = useRouter()
   const [sessionVersion, setSessionVersion] = useState(0)
-  const syncedFor = useRef<string | null>(null)
+  const syncing = useRef(false)
 
   useEffect(() => {
     const container = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker
@@ -40,13 +45,21 @@ export function PushBridge() {
   }, [])
 
   useEffect(() => {
-    const me = profile()?.userId ?? null
-    // No profile yet but a session to restore is a tab still signing in, not a sign-out.
-    if (me !== null || !maySignInSilently()) void forgetPushOfOthers(me)
-    if (me !== null && syncedFor.current !== me) {
-      syncedFor.current = me
-      void syncPush(me)
+    const me = profile()
+    if (!me?.userId) {
+      // Signed out or expired (not a tab still restoring its session): the next sign-in is a new
+      // session, which the server must be told at once, whatever was told earlier today.
+      if (!maySignInSilently()) forgetPushSyncNotes()
+      return
     }
+    void forgetPushOfOthers(me.userId)
+    // On every move, so a tab left open for days still tells the server once a day; syncPush
+    // itself skips what was told today, and one telling at a time is enough.
+    if (syncing.current) return
+    syncing.current = true
+    void syncPush(me.userId, undefined, { workspaceId: me.workspaceId ?? null }).finally(() => {
+      syncing.current = false
+    })
   }, [path, sessionVersion])
 
   return null

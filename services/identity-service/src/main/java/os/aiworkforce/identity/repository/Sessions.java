@@ -1,8 +1,9 @@
 // @find: Spring Data repository for refresh-token sessions and bulk revocation.
-// @what: sessions, refresh token lookup, revoke family, revoke all sessions, sign out everywhere, live sessions, delete expired sessions, Sessions repository
+// @what: sessions, refresh token lookup, revoke family, revoke all sessions, sign out everywhere, live sessions, which sessions are still signed in, delete expired sessions, Sessions repository
 package os.aiworkforce.identity.repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +53,24 @@ public interface Sessions extends JpaRepository<Session, UUID> {
             order by s.issuedAt desc
             """)
     List<Session> findLiveByUserId(@Param("userId") UUID userId, @Param("now") Instant now);
+
+    /**
+     * Which of the given session links still belong to a signed-in device: their family has a link
+     * that is neither used, revoked nor expired, and the account is active. A link of a family that
+     * was signed out (there, from another device, everywhere, or by a password change or reset),
+     * one of a disabled account, and one no longer known are all left out. Read by the
+     * orchestrator before it sends a push notification to the device that link saved.
+     */
+    @Query(
+            """
+            select s.id from Session s
+            where s.id in :ids
+              and exists (select l.id from Session l
+                          where l.familyId = s.familyId
+                            and l.revokedAt is null and l.usedAt is null and l.expiresAt > :now)
+              and exists (select u.id from User u where u.id = s.userId and u.status = 'active')
+            """)
+    List<UUID> findSignedInIds(@Param("ids") Collection<UUID> ids, @Param("now") Instant now);
 
     /** When each family began, which is when that device signed in. Rows are {familyId, issuedAt}. */
     @Query(

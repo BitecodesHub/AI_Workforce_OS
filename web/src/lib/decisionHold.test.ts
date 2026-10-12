@@ -1,9 +1,10 @@
-// @find: tests for undo window, decision hold, send after four seconds, undo cancels the send, next decision flushes
-// @what: Unit tests for lib/decisionHold.ts: a decision is sent only when its window closes or the next one is made, and undo means it is never sent.
+// @find: tests for undo window, decision hold, send after four seconds, undo cancels the send, next decision flushes, app put away sends, page hidden keepalive
+// @what: Unit tests for lib/decisionHold.ts: a decision is sent only when its window closes or the next one is made, undo means it is never sent, and a hidden or closed page sends it at once as a request that outlives the page.
 // @flow: Runs under vitest with fake timers; imports lib/decisionHold.ts only
+import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DecisionHold, UNDO_WINDOW_MS } from './decisionHold'
-import type { HeldDecision } from './decisionHold'
+import { DecisionHold, UNDO_WINDOW_MS, useDecisionHold } from './decisionHold'
+import type { HeldDecision, SendHow } from './decisionHold'
 
 describe('DecisionHold', () => {
   let sent: Array<HeldDecision<string>>
@@ -85,5 +86,73 @@ describe('DecisionHold', () => {
 
     expect(sent).toEqual([])
     expect(later).toEqual(['approval-9'])
+  })
+})
+
+describe('useDecisionHold', () => {
+  let sent: Array<{ item: string; how: SendHow }>
+  const visibility = { state: 'visible' as DocumentVisibilityState }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    sent = []
+    visibility.state = 'visible'
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility.state })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    delete (document as unknown as { visibilityState?: unknown }).visibilityState
+  })
+
+  function mount() {
+    return renderHook(() => useDecisionHold<string>((decision, how) => sent.push({ item: decision.item, how })))
+  }
+
+  it('sends at once, as a request that outlives the page, when the app is put away', () => {
+    const { result } = mount()
+    act(() => result.current.hold.hold({ item: 'approval-1', kind: 'approve' }))
+
+    // Becoming visible again, or any other change, sends nothing.
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(sent).toEqual([])
+
+    visibility.state = 'hidden'
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(sent).toEqual([{ item: 'approval-1', how: { leaving: true } }])
+    expect(result.current.held).toBeNull()
+    act(() => vi.advanceTimersByTime(UNDO_WINDOW_MS * 2))
+    expect(sent).toHaveLength(1)
+  })
+
+  it('sends at once, as a request that outlives the page, when the tab is closed', () => {
+    const { result } = mount()
+    act(() => result.current.hold.hold({ item: 'approval-1', kind: 'reject', note: 'No.' }))
+
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'))
+    })
+
+    expect(sent).toEqual([{ item: 'approval-1', how: { leaving: true } }])
+  })
+
+  it('sends an ordinary request when the screen goes away inside the app, and nothing when nothing is held', () => {
+    const first = mount()
+    act(() => first.result.current.hold.hold({ item: 'approval-1', kind: 'approve' }))
+    first.unmount()
+    expect(sent).toEqual([{ item: 'approval-1', how: { leaving: false } }])
+
+    const second = mount()
+    visibility.state = 'hidden'
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    second.unmount()
+    expect(sent).toHaveLength(1)
   })
 })

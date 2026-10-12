@@ -8,8 +8,11 @@
  * A drag only counts once it has gone far enough that it cannot be a scroll or a wobble: sideways,
  * a third of the card's width (and never less than 96 px); upwards, 96 px. Until then the card
  * follows the finger and says what letting go would do; past it, the label changes to "Release
- * to ..." so the person knows the decision is armed. A drag downwards does nothing, because that
- * is how a phone scrolls.
+ * to ..." so the person knows the decision is armed.
+ *
+ * Up and down are how a phone scrolls a long request, so a vertical drag is the page's: only one
+ * that starts on the card's grab handle - the small bar at its top - can send a request back. A
+ * drag downwards never does anything.
  */
 
 /** What a swipe asks for: right approves, left rejects, up sends back with feedback. */
@@ -39,9 +42,11 @@ export function swipeThreshold(cardWidth: number): number {
 // @find: read a swipe, which way and how far
 /**
  * Reads a drag of `dx`, `dy` pixels (right and down positive) on a card `cardWidth` wide. The axis
- * that moved more decides the direction; a downward drag, or one inside the dead zone, is nothing.
+ * that moved more decides the direction. An upward drag counts only when `fromHandle` (it began on
+ * the grab handle); otherwise, like a downward drag or one inside the dead zone, it is nothing,
+ * because it is the person scrolling.
  */
-export function readSwipe(dx: number, dy: number, cardWidth: number): SwipeReading {
+export function readSwipe(dx: number, dy: number, cardWidth: number, fromHandle = false): SwipeReading {
   const across = Math.abs(dx)
   const up = -dy
   if (Math.max(across, Math.abs(dy)) < DEAD_ZONE_PX) return NOTHING
@@ -49,7 +54,7 @@ export function readSwipe(dx: number, dy: number, cardWidth: number): SwipeReadi
     const threshold = swipeThreshold(cardWidth)
     return { direction: dx > 0 ? 'approve' : 'reject', progress: Math.min(1, across / threshold), armed: across >= threshold }
   }
-  if (up > 0) return { direction: 'feedback', progress: Math.min(1, up / SWIPE_UP_PX), armed: up >= SWIPE_UP_PX }
+  if (up > 0 && fromHandle) return { direction: 'feedback', progress: Math.min(1, up / SWIPE_UP_PX), armed: up >= SWIPE_UP_PX }
   return NOTHING
 }
 

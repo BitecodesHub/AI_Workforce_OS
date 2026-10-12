@@ -1,15 +1,18 @@
-// @find: tests for push notifications client, enable push flow, disable push, service worker registration, PushManager subscribe, forget push on sign out, push settings section, push bridge navigation
+// @find: tests for push notifications client, enable push flow, disable push, service worker registration, PushManager subscribe, forget push on sign out, expired session keeps push, push sync once a day per workspace, push devices list remove, push settings section, push bridge navigation
 // @what: Tests for lib/push.ts, lib/pushBridge.tsx and the push settings section, with the service worker, PushManager and Notification replaced by stand-ins.
 // @flow: Runs under vitest + jsdom; fetch is stubbed per test
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   PUSH_OWNER_KEY,
+  PUSH_SYNC_INTERVAL_MS,
   base64UrlToBytes,
   bytesToBase64Url,
   disablePush,
   enablePush,
   forgetPushOfOthers,
+  forgetPushOnSignOut,
+  inAppPath,
   linkWebManifest,
   navigationFrom,
   pushOwner,
@@ -233,7 +236,7 @@ describe('disablePush, forgetPushOfOthers and syncPush', () => {
     expect(subscription.unsubscribe).toHaveBeenCalled()
   })
 
-  it('drops push that belongs to someone else, or to anyone once nobody is signed in, and keeps the owner’s own', async () => {
+  it('drops push that belongs to someone else now signed in, and keeps the owner’s own', async () => {
     const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
     localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
 
@@ -243,32 +246,88 @@ describe('disablePush, forgetPushOfOthers and syncPush', () => {
     expect(await forgetPushOfOthers('user-2', browser.env)).toBe(true)
     expect(browser.subscription()).toBeNull()
     expect(pushOwner()).toBeNull()
-
-    const again = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
-    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
-    expect(await forgetPushOfOthers(null, again.env)).toBe(true)
-    expect(again.subscription()).toBeNull()
   })
 
-  it('tells the server the owner’s subscription again, and does nothing for anyone else', async () => {
+  it('keeps push when nobody is signed in, as after a session expired, so it is still on after signing in again', async () => {
     const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
     localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
 
-    await syncPush('user-2', browser.env)
+    expect(await forgetPushOfOthers(null, browser.env)).toBe(false)
+
+    expect(browser.subscription()).not.toBeNull()
+    expect(pushOwner()).toBe('user-1')
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-1' })
+    expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual(['POST /api/push/subscriptions'])
+  })
+
+  it('signing out on purpose drops this browser’s push', async () => {
+    const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
+    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
+
+    await forgetPushOnSignOut(browser.env)
+
+    expect(browser.subscription()).toBeNull()
+    expect(pushOwner()).toBeNull()
+  })
+
+  it('tells the server the owner’s subscription in each workspace, at most once a day unless asked, and nothing for anyone else', async () => {
+    const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
+    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
+    const posts = () => requests.filter((request) => request.method === 'POST').length
+    const start = Date.parse('2026-10-13T09:00:00Z')
+
+    await syncPush('user-2', browser.env, { workspaceId: 'workspace-a', now: start })
     expect(requests).toEqual([])
 
-    await syncPush('user-1', browser.env)
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-a', now: start })
     expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual(['POST /api/push/subscriptions'])
+
+    // Every visit after that, the same day, tells the server nothing (no audit entry, no write).
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-a', now: start + 60_000 })
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-a', now: start + PUSH_SYNC_INTERVAL_MS - 1 })
+    expect(posts()).toBe(1)
+
+    // Another workspace opened here is told; so is the first again a day later, or when asked.
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-b', now: start + 120_000 })
+    expect(posts()).toBe(2)
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-a', now: start + PUSH_SYNC_INTERVAL_MS })
+    expect(posts()).toBe(3)
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-a', now: start + PUSH_SYNC_INTERVAL_MS + 1, force: true })
+    expect(posts()).toBe(4)
+  })
+
+  it('a subscription the browser renewed is told at once, whatever was told today', async () => {
+    const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
+    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
+    const start = Date.parse('2026-10-13T09:00:00Z')
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-a', now: start })
+
+    // The browser dropped its subscription: the next visit subscribes again and tells the server.
+    await browser.subscription()!.unsubscribe()
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-a', now: start + 1_000 })
+
+    expect(browser.pushManager.subscribe).toHaveBeenCalled()
+    expect(requests.filter((request) => request.method === 'POST' && request.url === '/api/push/subscriptions')).toHaveLength(2)
   })
 })
 
 describe('small parts', () => {
   it('accepts only an in-app path from the service worker', () => {
     expect(navigationFrom({ type: 'aiwos:navigate', url: '/approvals#approval-1' })).toBe('/approvals#approval-1')
+    expect(navigationFrom({ type: 'aiwos:navigate', url: '/chat?c=1#question-2' })).toBe('/chat?c=1#question-2')
     expect(navigationFrom({ type: 'aiwos:navigate', url: 'https://evil.example' })).toBeNull()
     expect(navigationFrom({ type: 'aiwos:navigate', url: '//evil.example' })).toBeNull()
     expect(navigationFrom({ type: 'other', url: '/x' })).toBeNull()
     expect(navigationFrom('nope')).toBeNull()
+  })
+
+  it('cannot be led off the app by a tab, line break or backslash the address parser drops or rewrites', () => {
+    const origin = 'https://console.example.com'
+    for (const trick of ['/\t/evil.example', '/\n/evil.example', '/\r/evil.example', '/\\evil.example', '/\u0000x']) {
+      expect(inAppPath(trick, origin)).toBeNull()
+      expect(navigationFrom({ type: 'aiwos:navigate', url: trick }, origin)).toBeNull()
+    }
+    expect(inAppPath('/approvals?tab=decided#approval-3', origin)).toBe('/approvals?tab=decided#approval-3')
   })
 
   it('round-trips a base64url key', () => {
@@ -301,6 +360,70 @@ function uninstall() {
 
 describe('the settings section', () => {
   afterEach(uninstall)
+
+  it('tells the server again at once when push is on here but the server no longer lists this browser', async () => {
+    const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
+    install(browser)
+    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
+    let listed: unknown[] = []
+    reply = (url, method) => {
+      if (url === '/api/push/subscriptions' && method === 'GET') return { status: 200, body: listed }
+      if (url === '/api/push/subscriptions' && method === 'POST') {
+        listed = [{ id: 'device-here', endpoint: ENDPOINT, label: 'Chrome on Android', createdAt: '2026-10-13T09:00:00Z', lastSuccessAt: null, failureCount: 0 }]
+        return { status: 201, body: listed[0] }
+      }
+      return { status: 200, body: {} }
+    }
+
+    render(<PushNotificationsSection userId="user-1" />)
+
+    const list = await screen.findByRole('list', { name: 'Devices with push notifications' })
+    expect(list).toHaveTextContent('This device')
+    expect(requests.filter((request) => request.method === 'POST' && request.url === '/api/push/subscriptions')).toHaveLength(1)
+    expect(screen.getByRole('switch', { name: /Push notifications on this device/ })).toBeChecked()
+  })
+
+  it('lists the person’s devices, marks this one, and removes another by its id', async () => {
+    const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
+    install(browser)
+    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
+    let devices = [
+      { id: 'device-here', endpoint: ENDPOINT, label: 'Chrome on Android', createdAt: '2026-10-01T09:00:00Z', lastSuccessAt: null, failureCount: 0 },
+      {
+        id: 'device-lost',
+        endpoint: 'https://web.push.apple.com/lost',
+        label: 'Safari on iPhone',
+        createdAt: '2026-09-01T09:00:00Z',
+        lastSuccessAt: '2026-10-10T09:00:00Z',
+        failureCount: 0,
+      },
+    ]
+    reply = (url, method) => {
+      if (url === '/api/push/subscriptions' && method === 'GET') return { status: 200, body: devices }
+      if (url === '/api/push/subscriptions/device-lost' && method === 'DELETE') {
+        devices = devices.filter((device) => device.id !== 'device-lost')
+        return { status: 204, body: null }
+      }
+      return { status: 200, body: {} }
+    }
+
+    render(<PushNotificationsSection userId="user-1" />)
+
+    const list = await screen.findByRole('list', { name: 'Devices with push notifications' })
+    expect(list).toHaveTextContent('Chrome on Android')
+    expect(list).toHaveTextContent('This device')
+    expect(list).toHaveTextContent('Safari on iPhone')
+    // This device is turned off with the switch; only the others have a Remove button.
+    const removeButtons = screen.getAllByRole('button', { name: /^Remove / })
+    expect(removeButtons).toHaveLength(1)
+    expect(removeButtons[0]).toHaveAccessibleName(/Safari on iPhone/)
+
+    fireEvent.click(removeButtons[0]!)
+
+    expect(await screen.findByText('Push notifications are off on Safari on iPhone.')).toBeInTheDocument()
+    expect(requests.some((request) => request.method === 'DELETE' && request.url === '/api/push/subscriptions/device-lost')).toBe(true)
+    await waitFor(() => expect(screen.queryByText('Safari on iPhone')).not.toBeInTheDocument())
+  })
 
   it('turns push on, sends the test and turns it off again', async () => {
     const browser = fakeBrowser()
@@ -346,11 +469,13 @@ describe('the settings section', () => {
     expect(toggle).not.toBeChecked()
   })
 
-  it('is switched off and says why in a browser without push', () => {
+  it('is switched off and says why in a browser without push', async () => {
     render(<PushNotificationsSection userId="user-1" />)
 
     expect(screen.getByRole('switch', { name: /Push notifications on this device/ })).toBeDisabled()
     expect(screen.getByText('This browser cannot receive push notifications.')).toBeInTheDocument()
+    // The device list is still asked for: another device can be removed from a browser without push.
+    await waitFor(() => expect(requests.some((request) => request.method === 'GET' && request.url === '/api/push/subscriptions')).toBe(true))
   })
 })
 
@@ -376,29 +501,62 @@ describe('PushBridge', () => {
     expect(window.location.hash).toBe('#approval-7')
   })
 
-  it('drops push of a person who signed out, but not while a tab is still signing in', async () => {
+  it('keeps push when the session merely ended, and drops it when someone else signs in here', async () => {
     const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
     install(browser)
     localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
-    localStorage.setItem('aiwos.signedIn', '1')
 
-    const view = render(
-      <RouterProvider>
-        <PushBridge />
-      </RouterProvider>,
-    )
-    await act(async () => {})
-    expect(browser.subscription()).not.toBeNull()
-
-    localStorage.removeItem('aiwos.signedIn')
-    view.rerender(
+    // Nobody signed in, no session to restore: an expired session looks exactly like this.
+    render(
       <RouterProvider>
         <PushBridge />
       </RouterProvider>,
     )
     act(() => window.dispatchEvent(new Event('aiwos:session')))
+    await act(async () => {})
+    expect(browser.subscription()).not.toBeNull()
+    expect(pushOwner()).toBe('user-1')
+
+    act(() =>
+      saveSession('token', {
+        userId: 'user-2',
+        workspaceId: 'workspace-1',
+        permissions: [],
+        displayName: 'Priya Shah',
+        email: 'priya@demo.test',
+        role: 'employee',
+      }),
+    )
     await waitFor(() => expect(browser.subscription()).toBeNull())
     expect(pushOwner()).toBeNull()
+  })
+
+  it('after a session ended, the next sign-in tells the server at once, even if it was told earlier that day', async () => {
+    const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
+    install(browser)
+    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
+    // Told this morning, under the sign-in that has since ended.
+    await syncPush('user-1', browser.env, { workspaceId: 'workspace-1' })
+    requests = []
+
+    render(
+      <RouterProvider>
+        <PushBridge />
+      </RouterProvider>,
+    )
+    act(() => window.dispatchEvent(new Event('aiwos:session')))
+    act(() =>
+      saveSession('token', {
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        permissions: [],
+        displayName: 'Maya Manager',
+        email: 'maya@demo.test',
+        role: 'manager',
+      }),
+    )
+
+    await waitFor(() => expect(requests.some((request) => request.url === '/api/push/subscriptions' && request.method === 'POST')).toBe(true))
   })
 
   it('tells the server the signed-in owner’s subscription again on arrival', async () => {

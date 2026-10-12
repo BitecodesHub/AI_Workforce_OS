@@ -38,14 +38,40 @@ public final class PushEndpoints {
     /** The longest endpoint accepted; real ones are a few hundred characters. */
     public static final int MAX_LENGTH = 2_048;
 
+    /**
+     * The endpoint's host name could not be looked up just now. Unlike a refusal, which is final,
+     * this says nothing about the subscription: the name server may simply be unreachable, so the
+     * caller tries again later and keeps the subscription.
+     */
+    public static final class Unresolved extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        Unresolved(String host) {
+            super("the host name " + host + " could not be looked up");
+        }
+    }
+
+    /** Looks a host name up; the JDK's resolver, or a stand-in in tests. */
+    @FunctionalInterface
+    interface Resolver {
+        InetAddress[] resolve(String host) throws UnknownHostException;
+    }
+
     private final List<String> allowedHosts;
     private final boolean strict;
+    private final Resolver resolver;
 
     /**
      * @param allowedHosts host names or parent domains an endpoint may use; lower-cased, blanks dropped
      * @param strict whether names must resolve to public addresses only (any deployed environment)
      */
     public PushEndpoints(List<String> allowedHosts, boolean strict) {
+        this(allowedHosts, strict, InetAddress::getAllByName);
+    }
+
+    /** For tests: the same rules with a resolver of their own. */
+    PushEndpoints(List<String> allowedHosts, boolean strict, Resolver resolver) {
+        this.resolver = resolver;
         this.allowedHosts = allowedHosts.stream()
                 .map(host -> host.strip().toLowerCase(Locale.ROOT))
                 .map(host -> host.startsWith(".") ? host.substring(1) : host)
@@ -68,7 +94,10 @@ public final class PushEndpoints {
     /**
      * The endpoint as a URI, when it may be used.
      *
-     * @throws IllegalArgumentException with what is wrong, as a phrase that follows "endpoint"
+     * @throws IllegalArgumentException with what is wrong, as a phrase that follows "endpoint": a
+     *     final refusal (not https, not a push service, a private address)
+     * @throws Unresolved when, in strict mode, the host name could not be looked up at all; a
+     *     temporary failure, not a refusal
      */
     public URI check(String endpoint) {
         if (endpoint == null || endpoint.isBlank()) {
@@ -99,9 +128,9 @@ public final class PushEndpoints {
         if (strict) {
             InetAddress[] resolved;
             try {
-                resolved = InetAddress.getAllByName(host);
+                resolved = resolver.resolve(host);
             } catch (UnknownHostException e) {
-                throw new IllegalArgumentException("is a host name that could not be found");
+                throw new Unresolved(host);
             }
             for (InetAddress address : resolved) {
                 if (NotificationService.isInternal(address)) {

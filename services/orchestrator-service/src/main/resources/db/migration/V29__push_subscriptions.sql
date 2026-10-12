@@ -1,7 +1,9 @@
--- Push notifications on a person's own devices (Web Push). One row per browser that agreed to receive
--- them: where its push service delivers (the endpoint, unique across the platform because a browser
--- hands each site one), the two keys a message is encrypted to, and how delivery has gone. A message
--- carries a sentence and a link, never what an agent wanted to send.
+-- Push notifications on a person's own devices (Web Push). One row per browser and workspace that
+-- agreed to receive them: where its push service delivers (the endpoint, which a browser hands each
+-- site once, so it is unique within a workspace), the two keys a message is encrypted to, the
+-- sign-in session that saved it, and how delivery has gone. A person who works in several
+-- workspaces has one row in each for the same browser. A message carries a sentence and a link,
+-- never what an agent wanted to send.
 CREATE TABLE push_subscriptions (
     id               UUID PRIMARY KEY,
     org_id           UUID        NOT NULL,
@@ -12,11 +14,14 @@ CREATE TABLE push_subscriptions (
     auth             TEXT        NOT NULL,
     -- "Chrome on Android": how the person tells their devices apart on the settings page.
     user_agent_label TEXT        NOT NULL DEFAULT '',
+    -- The identity session (the access token's sid) that last saved this row. A device whose
+    -- sign-in has ended (signed out, signed out everywhere, password changed) stops receiving.
+    session_id       UUID,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_success_at  TIMESTAMPTZ,
     -- Failed deliveries in a row; a subscription that keeps failing is removed.
     failure_count    INTEGER     NOT NULL DEFAULT 0,
-    CONSTRAINT push_subscriptions_endpoint_key UNIQUE (endpoint),
+    CONSTRAINT push_subscriptions_org_endpoint_key UNIQUE (org_id, endpoint),
     CONSTRAINT push_subscriptions_failure_count_check CHECK (failure_count >= 0)
 );
 

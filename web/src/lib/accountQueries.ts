@@ -4,6 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, api, normaliseFields } from './api'
 import { announceSessionChange, clearSession, saveSession } from './session'
+import { forgetPushOnSignOut } from './push'
 
 /*
  * The signed-in person's own account: the devices they are signed in on, their password, and the
@@ -140,7 +141,9 @@ export async function resetPassword(token: string, newPassword: string): Promise
  *
  * `everywhere` ends every session the account has, on every device. That one throws when the
  * service cannot be reached, because clearing only this tab would leave the other devices signed
- * in while the screen said otherwise. An ordinary sign-out clears this tab regardless.
+ * in while the screen said otherwise. An ordinary sign-out clears this tab regardless. Either way
+ * this browser's push notifications are dropped; the server stops using every device whose
+ * sign-in ended.
  */
 export async function signOut(everywhere = false): Promise<void> {
   const path = everywhere ? '/api/auth/sign-out?allDevices=true' : '/api/auth/sign-out'
@@ -150,6 +153,8 @@ export async function signOut(everywhere = false): Promise<void> {
   } else {
     await reach(path, { method: 'POST' }).catch(() => undefined)
   }
+  // Signing out on purpose: this browser's push notifications end too (an expired session keeps them).
+  void forgetPushOnSignOut()
   clearSession()
 }
 

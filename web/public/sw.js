@@ -21,12 +21,28 @@ const ICON = '/icons/icon-192.png'
 // The status-bar glyph on Android: the mark alone, in white on transparent.
 const BADGE = '/icons/badge-96.png'
 
-/** A path inside this app, or the Approvals page. */
+/** Whether the text holds a control character (which the address parser silently drops) or a backslash. */
+function hasUnsafeCharacter(value) {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i)
+    if (code < 0x20 || code === 0x7f || code === 0x5c) return true
+  }
+  return false
+}
+
+/**
+ * A path inside this app, or the Approvals page. The value is resolved the way the browser would
+ * resolve it and its origin compared, so a tab or line break the parser drops ("/<tab>/evil.example"
+ * becomes "//evil.example"), a backslash or a protocol-relative address cannot lead elsewhere.
+ */
 function safePath(value) {
-  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) {
+  if (typeof value !== 'string' || !value.startsWith('/') || hasUnsafeCharacter(value)) return FALLBACK_URL
+  try {
+    const url = new URL(value, self.location.origin)
+    return url.origin === self.location.origin ? url.pathname + url.search + url.hash : FALLBACK_URL
+  } catch (notAnAddress) {
     return FALLBACK_URL
   }
-  return value
 }
 
 /** Text no longer than `max`, or the fallback when it is not text. */

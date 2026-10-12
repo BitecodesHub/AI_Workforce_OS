@@ -1,6 +1,7 @@
 // @find: query state, loading, error, empty, permission denied, not found, stale data banner, retry, back link, empty icon, QueryState, BackLink, EmptyIcon
 // @what: Shared rendering of loading, error, empty, missing and no-permission states for any data screen.
 // @flow: Used by almost every screen with a TanStack query.
+import { Fragment } from 'react'
 import type { ReactNode } from 'react'
 import { ApiError, describeApiError } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
@@ -75,12 +76,19 @@ export function QueryState<T>({
 }) {
   if (query.isLoading) return <LoadingState rows={rows ?? 4} label={`Loading ${what}`} />
 
+  /*
+   * The content keeps one place and one key whether or not the stale banner stands above it, so a
+   * failed poll adds the banner without remounting the screen beneath: whatever that screen holds
+   * (a decision waiting out its undo window, a half-typed note, a scroll position) survives.
+   */
+  const content = (data: T) => <Fragment key="query-content">{children(data)}</Fragment>
+
   if (query.error) {
     if (keepData && query.data !== undefined) {
       const updatedAt = query.dataUpdatedAt
       return (
         <>
-          <div className="stale-banner">
+          <div key="stale-banner" className="stale-banner">
             <Notice tone="warning" live>
               Lost connection.{' '}
               {updatedAt !== undefined
@@ -92,7 +100,7 @@ export function QueryState<T>({
               </Button>
             </Notice>
           </div>
-          {children(query.data)}
+          {content(query.data)}
         </>
       )
     }
@@ -121,7 +129,13 @@ export function QueryState<T>({
 
   if (query.data === undefined) return <LoadingState rows={rows ?? 4} label={`Loading ${what}`} />
   if (isEmpty && empty && isEmpty(query.data)) return <>{empty}</>
-  return <>{children(query.data)}</>
+  // The empty slot is where the stale banner goes, so the content's position never moves either.
+  return (
+    <>
+      {null}
+      {content(query.data)}
+    </>
+  )
 }
 
 // @find: back link

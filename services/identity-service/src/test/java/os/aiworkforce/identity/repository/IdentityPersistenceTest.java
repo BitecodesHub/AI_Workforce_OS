@@ -164,6 +164,39 @@ class IdentityPersistenceTest {
     }
 
     @Test
+    @DisplayName("a session counts as signed in while its family has a live link, of an active account")
+    void signedInSessions() {
+        User user = user("priya@example.com");
+        UUID laptop = UUID.randomUUID();
+        UUID phone = UUID.randomUUID();
+        Session firstLaptopLink = session(user, laptop, "203.0.113.9");
+        firstLaptopLink.markUsed();
+        firstLaptopLink = sessions.saveAndFlush(firstLaptopLink);
+        Session laptopNow = sessions.saveAndFlush(session(user, laptop, "203.0.113.9"));
+        Session phoneNow = sessions.saveAndFlush(session(user, phone, "2001:db8::1"));
+        UUID unknown = UUID.randomUUID();
+        entities.clear();
+
+        // An older, used link still names a device that is signed in: its family lives on.
+        assertThat(sessions.findSignedInIds(
+                        List.of(firstLaptopLink.getId(), laptopNow.getId(), phoneNow.getId(), unknown), Instant.now()))
+                .containsExactlyInAnyOrder(firstLaptopLink.getId(), laptopNow.getId(), phoneNow.getId());
+
+        // The phone is signed out from the laptop: its family ends, and only it.
+        sessions.revokeFamily(phone, Instant.now(), "signed out from another device");
+        entities.clear();
+        assertThat(sessions.findSignedInIds(List.of(firstLaptopLink.getId(), phoneNow.getId()), Instant.now()))
+                .containsExactly(firstLaptopLink.getId());
+
+        // A disabled account has no signed-in device at all.
+        User stored = users.findById(user.getId()).orElseThrow();
+        stored.setStatus("disabled");
+        users.saveAndFlush(stored);
+        entities.clear();
+        assertThat(sessions.findSignedInIds(List.of(laptopNow.getId()), Instant.now())).isEmpty();
+    }
+
+    @Test
     @DisplayName("a reset token is claimed once, and a newer link closes the older one")
     void resetTokens() {
         User user = user("eli@example.com");

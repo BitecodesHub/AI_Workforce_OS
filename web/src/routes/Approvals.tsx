@@ -23,7 +23,6 @@ import { BulkDialog, SimilarRequests } from '../components/approvals/BulkDecisio
 import type { BulkTarget } from '../components/approvals/BulkDecision'
 import { DecideDeck } from '../components/approvals/DecideDeck'
 import type { DeckDecision } from '../components/approvals/DecideDeck'
-import { useMediaQuery } from '../hooks/useMediaQuery'
 import { QuestionCard } from '../components/run/QuestionCard'
 import { NOTE_MAX, approvalAnchor, bulkSummary, decisionError, groupIdentical, readableSummary, runOutcome } from '../lib/approvals'
 import {
@@ -53,6 +52,15 @@ type View = 'list' | 'decide'
 
 /** Below this width the Decide view is the default: one card at a time suits a phone. */
 const DECIDE_BY_DEFAULT = '(max-width: 767px)'
+
+/** Whether the screen is phone-narrow right now; false where the browser cannot say. */
+function opensNarrow(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia(DECIDE_BY_DEFAULT).matches
+  } catch {
+    return false
+  }
+}
 
 /** What a person chooses to look at in the history, as the server's statuses. */
 const OUTCOMES: ReadonlyArray<{ value: string; label: string }> = [
@@ -190,6 +198,7 @@ function PendingQueue({ view, onShowList }: { view: View; onShowList: () => void
     error: queueQuery.error,
     isLoading: queueQuery.isLoading,
     refetch: queueQuery.refetch,
+    dataUpdatedAt: queueQuery.dataUpdatedAt,
   }
 
   const searchText = useCallback(
@@ -351,15 +360,23 @@ function PendingQueue({ view, onShowList }: { view: View; onShowList: () => void
     if (result.isError) toast.error('More requests could not be loaded. Try again.')
   }
 
-  // The Decide view's send: only once a decision's undo window has closed. A failure is said by
-  // toast and rethrown, so the deck brings the card back.
-  const decideFromDeck = async ({ approval, kind, note: text }: DeckDecision) => {
+  // The Decide view's send: only once a decision's undo window has closed, or at once as the page
+  // is hidden or closed (`leaving`), when the request is made to outlive the page. A failure is
+  // said by toast and rethrown, so the deck brings the card back.
+  const decideFromDeck = async ({ approval, kind, note: text, leaving }: DeckDecision) => {
+    const outlive = leaving ? { keepalive: true } : {}
     try {
-      if (kind === 'approve') await decideApproval.mutateAsync({ id: approval.id, approved: true })
+      if (kind === 'approve') await decideApproval.mutateAsync({ id: approval.id, approved: true, ...outlive })
       else if (kind === 'reject') {
-        await decideApproval.mutateAsync({ id: approval.id, approved: false, ...(text ? { note: text } : {}) })
+        await decideApproval.mutateAsync({ id: approval.id, approved: false, ...(text ? { note: text } : {}), ...outlive })
       } else {
-        await decideApproval.mutateAsync({ id: approval.id, approved: false, mode: 'request_changes', note: text ?? '' })
+        await decideApproval.mutateAsync({
+          id: approval.id,
+          approved: false,
+          mode: 'request_changes',
+          note: text ?? '',
+          ...outlive,
+        })
       }
       leave([approval.id])
     } catch (error) {
@@ -382,7 +399,8 @@ function PendingQueue({ view, onShowList }: { view: View; onShowList: () => void
         <div style={{ marginBottom: 'var(--space-5)' }}>
           <Notice tone="warning">
             {targetNotice.missing
-              ? 'That request is no longer waiting. It was decided, withdrawn or expired.'
+              ? // A notification from another workspace the person uses opens here too.
+                'That request is not waiting in this workspace. It was decided, withdrawn or expired, or it belongs to another workspace you use.'
               : `That request is no longer waiting. It was ${statusLabel('approval', targetNotice.status).label.toLowerCase()}. `}
             {!targetNotice.missing && (
               <a className="link" href={`/approvals?tab=decided#${target}`}>
@@ -399,7 +417,10 @@ function PendingQueue({ view, onShowList }: { view: View; onShowList: () => void
         what="the approvals queue"
         rows={4}
         // The Decide view has an empty state of its own, and stays mounted through it so a
-        // decision still in its undo window is not lost when the last card goes.
+        // decision still in its undo window is not lost when the last card goes. For the same
+        // reason a failed poll keeps the deck behind a stale-data banner rather than replacing it,
+        // which would send a held decision early (or, offline, lose its Undo).
+        keepData={view === 'decide'}
         isEmpty={() => view === 'list' && (pending?.length ?? 0) === 0 && !hasMore}
         empty={
           <div style={{ marginTop: 'var(--space-7)' }}>
@@ -753,7 +774,7 @@ function DecidedHistory() {
 /**
  * The Approvals page (route /approvals, permission approval:read).
  * Header, then the questions agents have asked (answered inline), a note that an undecided request expires and stops its run (nothing is sent because a deadline passed), a notice when the person's role can read but not decide, and a Waiting or Decided switch whose choice lives in the address (?tab=decided). The Waiting tab shows PendingQueue with a count of pending requests; the Decided tab shows DecidedHistory.
- * On the Waiting tab a second switch chooses List or Decide one by one (?view=list or ?view=decide); with no choice made, screens narrower than 768 px open on Decide.
+ * On the Waiting tab a second switch chooses List or Decide one by one (?view=list or ?view=decide); with no choice made, a screen narrower than 768 px when the page opens starts on Decide, and stays there when the phone is turned or the window resized.
  */
 export function Approvals() {
   const { search, navigate } = useRouter()
@@ -761,10 +782,12 @@ export function Approvals() {
   const canDecide = can('approval:decide')
   const tab: Tab = search.get('tab') === 'decided' ? 'decided' : 'pending'
   const count = useApprovalCount({ enabled: canRead })
-  // The choice of view lives in the address once made; until then a phone opens on Decide.
-  const narrow = useMediaQuery(DECIDE_BY_DEFAULT)
+  // The choice of view lives in the address once made; until then a phone opens on Decide. The
+  // default is read once per visit: turning a phone sideways (wider than 767 px on most) must not
+  // swap the deck for the list mid-decision, sending what was held and losing a note being typed.
+  const [defaultView] = useState<View>(() => (opensNarrow() ? 'decide' : 'list'))
   const chosenView = search.get('view')
-  const view: View = chosenView === 'decide' || chosenView === 'list' ? chosenView : narrow ? 'decide' : 'list'
+  const view: View = chosenView === 'decide' || chosenView === 'list' ? chosenView : defaultView
 
   // Each tab has its own filters, so moving between them starts the other clean.
   const showTab = (next: Tab) => {
