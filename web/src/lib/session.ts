@@ -1,6 +1,8 @@
 // @find: session, sign in state, access token, profile, permissions, can, is signed in, sign out, clear session, sessionStorage, role change delay, session owner change, initials, refresh promise
 // @what: What the client knows about the signed-in session: short-lived access token in sessionStorage, profile and permissions, sign-out and cross-tab detection.
 // @flow: Used by api.ts, accountQueries.ts and every permission check (can)
+import { clearAllDrafts } from './workflowDraft'
+
 /*
  * What the client knows about the current session.
  *
@@ -219,6 +221,8 @@ export function announceSessionChange() {
  */
 export function clearSession() {
   removeStored()
+  // Unsaved workflow drafts hold the workspace's names and instructions; they leave with the person.
+  clearAllDrafts()
   setSignedInHint(false)
   lastRenewal = null
   post({ type: 'signed-out' })

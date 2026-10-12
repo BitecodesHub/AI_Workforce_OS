@@ -212,6 +212,7 @@ describe('other labels', () => {
     expect(auditActionLabel('approval.decide', { approved: false })).toBe('Rejected an action')
     expect(auditActionLabel('approval.decide')).toBe('Decided an approval')
     expect(auditActionLabel('member.role_change')).toBe('Changed a member’s role')
+    expect(auditActionLabel('workflow.run')).toBe('Ran a workflow')
   })
 
   it('says what started a run', () => {

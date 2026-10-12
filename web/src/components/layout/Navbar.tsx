@@ -10,7 +10,7 @@ import { can, clearSession, initials as initialsOf, profile } from '../../lib/se
 import { roleLabel } from '../../lib/labels'
 import { isGuideHidden, setGuideHidden } from '../../lib/onboarding'
 import { useApprovals, useQuestions } from '../../lib/queries'
-import { useRouter } from '../../lib/router'
+import { leaveWhenAllowed, useRouter } from '../../lib/router'
 
 /*
  * The primary navigation.
@@ -57,6 +57,7 @@ const MENU_GROUPS = [
       { label: 'Tasks', href: '/tasks', note: 'Goals and the tasks they break into', needs: 'task:read' },
       { label: 'Schedules', href: '/schedules', note: 'Work that runs on its own timetable', needs: 'task:read' },
       { label: 'Skills', href: '/skills', note: 'Reusable playbooks to apply to a chat message', needs: 'chat:use' },
+      { label: 'Workflows', href: '/workflows', note: 'Build repeatable work on a canvas', needs: 'task:read' },
       { label: 'Approvals', href: '/approvals', note: 'Actions waiting on a decision', needs: 'approval:read' },
     ],
   },
@@ -146,8 +147,13 @@ export function Navbar({ currentPath = '/', glass = false }: { currentPath?: str
    * A client-side sign-out leaves the session live for anybody holding the cookie, which is the
    * opposite of what the person just asked for.
    */
-  async function signOut() {
+  function signOut() {
     setAccountOpen(false)
+    // A screen with unsaved work (the workflow editor) asks first; signing out leaves it.
+    leaveWhenAllowed(() => void signOutNow())
+  }
+
+  async function signOutNow() {
     try {
       await fetch('/api/auth/sign-out', { method: 'POST', credentials: 'include' })
     } catch {
@@ -155,7 +161,7 @@ export function Navbar({ currentPath = '/', glass = false }: { currentPath?: str
       // on a screen they have asked to leave.
     }
     clearSession()
-    navigate('/sign-in?signedOut=1')
+    navigate('/sign-in?signedOut=1', { force: true })
   }
 
   /** Brings the getting-started guide back and goes to the Command Map, where it lives. */

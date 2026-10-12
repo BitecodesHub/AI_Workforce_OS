@@ -576,20 +576,51 @@ public class TaskProgress {
     }
 
     /**
-     * Tasks run in order, so a task after one that failed or was cancelled can never start.
-     * Leaving it "waiting to start" would keep the goal open with nothing left to happen.
+     * Skips the tasks that can now never start, since leaving them "waiting to start" would keep
+     * the goal open with nothing left to happen.
+     *
+     * <p>In a goal that runs in order, that is every task after the one that failed or was
+     * cancelled. In a goal whose dependencies are explicit (a workflow), it is only the tasks that
+     * wait on it, directly or through another task: a separate branch carries on.
      */
     private void skipLaterTasks(Task ended) {
         Instant now = Instant.now();
-        for (Task later : tasks.findByGoalIdOrderByPosition(ended.getGoalId())) {
+        List<Task> all = tasks.findByGoalIdOrderByPosition(ended.getGoalId());
+        Set<UUID> dependents = ended.hasExplicitDependencies() ? dependentsOf(ended, all) : null;
+        for (Task later : all) {
             boolean waiting = "pending".equals(later.getStatus()) || "ready".equals(later.getStatus());
-            if (later.getPosition() > ended.getPosition() && waiting) {
+            boolean stranded = dependents != null
+                    ? dependents.contains(later.getId())
+                    : later.getPosition() > ended.getPosition();
+            if (stranded && waiting) {
                 later.setStatus("skipped");
                 later.setFailureReason(EARLIER_TASK_UNFINISHED);
                 later.setCompletedAt(now);
                 tasks.save(later);
             }
         }
+    }
+
+    // @find: tasks that depend on a task, transitive dependents, workflow branch failure
+    /**
+     * Every task of the goal that waits on {@code ended}, directly or through other tasks, by
+     * following {@code dependsOn}. Pure; {@code ended} itself is not included.
+     */
+    static Set<UUID> dependentsOf(Task ended, List<Task> all) {
+        Set<UUID> reached = new LinkedHashSet<>();
+        reached.add(ended.getId());
+        boolean grew = true;
+        while (grew) {
+            grew = false;
+            for (Task task : all) {
+                if (!reached.contains(task.getId()) && task.getDependsOn().stream().anyMatch(reached::contains)) {
+                    reached.add(task.getId());
+                    grew = true;
+                }
+            }
+        }
+        reached.remove(ended.getId());
+        return reached;
     }
 
     /** The run's task, when it has one that is still in progress. */

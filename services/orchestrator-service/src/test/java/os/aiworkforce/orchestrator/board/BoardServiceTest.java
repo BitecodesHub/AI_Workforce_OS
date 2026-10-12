@@ -199,6 +199,26 @@ class BoardServiceTest {
                         () -> org.junit.jupiter.api.Assertions.fail("expected task in queue"));
     }
 
+    // @find: test workflow root step is ready beside an unfinished one, explicit dependencies, board service
+    @Test
+    @DisplayName("a workflow step nothing hands over to is ready even while an earlier position is unfinished")
+    void explicitRootIsReady() {
+        Goal g = goal("running");
+        Task first = task(g, 0, "running", null);
+        first.setExplicitDependencies(true);
+        Task root = task(g, 1, "pending", null);
+        root.setExplicitDependencies(true);
+        stubGoalAndTasks(g, List.of(first, root));
+        stubQueued(List.of(root));
+
+        BoardService.Board result = board.board(ORG, BoardService.Window.H2, ACTOR);
+
+        queueEntryFor(result, root.getId())
+                .ifPresentOrElse(
+                        entry -> assertThat(entry.reason()).isEqualTo("ready"),
+                        () -> org.junit.jupiter.api.Assertions.fail("expected task in queue"));
+    }
+
     // @find: test agent paused reason, board service
     @Test
     @DisplayName("a task whose agent is paused is held, whatever its dependencies")

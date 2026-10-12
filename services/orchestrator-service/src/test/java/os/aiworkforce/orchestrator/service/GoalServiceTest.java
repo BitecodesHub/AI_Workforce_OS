@@ -569,6 +569,26 @@ class GoalServiceTest {
             verify(executor, never()).submitNextTasks(any());
         }
 
+        // @find: test create goal with explicit dependencies marks tasks, workflow goal
+        @Test
+        @DisplayName("a goal with explicit dependencies marks every task so; the old shape marks none")
+        void explicitDependenciesMarkEveryTask() {
+            List<GoalService.NewTask> branches = List.of(
+                    new GoalService.NewTask(UUID.randomUUID(), "Facts", "Find facts", List.of()),
+                    new GoalService.NewTask(UUID.randomUUID(), "Research", "Read tickets", List.of()),
+                    new GoalService.NewTask(UUID.randomUUID(), "Draft", "Write it", List.of(0, 1)));
+
+            service.createGoal(ORG, new GoalService.NewGoal("Workflow", "", null, "manual", null, null, branches, true), false);
+            service.createGoal(ORG, new GoalService.NewGoal("Plan", "", null, "manual", null, null, branches), false);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Task>> saved = ArgumentCaptor.forClass(List.class);
+            verify(work.tasks, org.mockito.Mockito.times(2)).saveAll(saved.capture());
+            assertThat(saved.getAllValues().get(0)).allMatch(Task::hasExplicitDependencies);
+            assertThat(saved.getAllValues().get(0).get(2).getDependsOn()).hasSize(2);
+            assertThat(saved.getAllValues().get(1)).noneMatch(Task::hasExplicitDependencies);
+        }
+
         @Test
         @DisplayName("submits the goal's tasks through the run executor when asked to run without waiting")
         void asyncGoalSubmitsThroughExecutor() {
@@ -724,6 +744,51 @@ class GoalServiceTest {
             assertThat(next.getStatus()).isEqualTo("skipped");
             assertThat(next.getFailureReason()).isEqualTo(TaskProgress.EARLIER_TASK_UNFINISHED);
             verify(runner, never()).start(any(), any(), any(), any(), any());
+        }
+
+        // @find: test second root step starts at once, parallel branches, explicit dependencies, goal service
+        @Test
+        @DisplayName("with explicit dependencies, a step nothing hands over to starts at once and is handed nothing from earlier steps")
+        void explicitRootStartsAtOnce() {
+            Goal goal = work.goal("running");
+            Task first = work.task(goal, 0, "running");
+            first.setExplicitDependencies(true);
+            Task done = work.task(goal, 1, "completed");
+            done.setExplicitDependencies(true);
+            done.setResult("Unrelated work.");
+            Task second = work.task(goal, 2, "pending");
+            second.setExplicitDependencies(true);
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(second));
+            when(work.tasks.claim(second.getId())).thenReturn(Optional.of(second));
+
+            assertThat(service.runNextTask(ORG)).isTrue();
+
+            // The plain start: no hand-off from the earlier positions, which are another branch.
+            verify(runner).start(ORG, second.getAgentId(), second.getId(), second.getInstruction(), "task");
+            assertThat(second.getStatus()).isEqualTo("running");
+        }
+
+        // @find: test explicit dependency on failed task skips, other branch unaffected, goal service
+        @Test
+        @DisplayName("with explicit dependencies, a step whose own predecessor failed is skipped while a step on another branch starts")
+        void explicitBranchFailureIsLocal() {
+            Goal goal = work.goal("running");
+            Task failed = work.task(goal, 0, "failed");
+            failed.setExplicitDependencies(true);
+            Task root = work.task(goal, 1, "pending");
+            root.setExplicitDependencies(true);
+            Task blocked = work.task(goal, 2, "pending");
+            blocked.setExplicitDependencies(true);
+            blocked.setDependsOn(List.of(failed.getId()));
+            when(work.tasks.findClaimable(eq(ORG), any())).thenReturn(List.of(blocked, root));
+            when(work.tasks.claim(blocked.getId())).thenReturn(Optional.of(blocked));
+            when(work.tasks.claim(root.getId())).thenReturn(Optional.of(root));
+
+            assertThat(service.runNextTask(ORG)).isTrue();
+
+            assertThat(blocked.getStatus()).isEqualTo("skipped");
+            assertThat(root.getStatus()).isEqualTo("running");
+            verify(runner).start(ORG, root.getAgentId(), root.getId(), root.getInstruction(), "task");
         }
 
         @Test

@@ -49,6 +49,13 @@ class TaskProgressTest {
     private WorkFixture work;
     private TaskProgress progress;
 
+    /** Marks a task's dependencies as complete (a workflow's task) and sets them. */
+    private static Task explicit(Task task, Task... dependsOn) {
+        task.setExplicitDependencies(true);
+        task.setDependsOn(java.util.Arrays.stream(dependsOn).map(Task::getId).toList());
+        return task;
+    }
+
     @BeforeEach
     void setUp() {
         work = new WorkFixture();
@@ -145,6 +152,51 @@ class TaskProgressTest {
             assertThat(later.getStatus()).isEqualTo("skipped");
             assertThat(done.getStatus()).isEqualTo("completed");
             assertThat(goal.getStatus()).isEqualTo("cancelled");
+        }
+
+        // @find: test failed workflow branch skips only its dependents, explicit dependencies, task progress
+        @Test
+        @DisplayName("in a goal with explicit dependencies, a failed task skips only the tasks that wait on it; another branch carries on")
+        void failedBranchSkipsOnlyItsDependents() {
+            // facts(0) and research(1) both start at once; draft(2) waits on facts; check(3) waits on draft;
+            // summary(4) waits on research only.
+            Goal goal = work.goal("running");
+            Task facts = explicit(attempt(work.task(goal, 0, "running"), 2, 2));
+            Task research = explicit(work.task(goal, 1, "running"));
+            Task draft = explicit(work.task(goal, 2, "pending"), facts);
+            Task check = explicit(work.task(goal, 3, "ready"), draft);
+            Task summary = explicit(work.task(goal, 4, "pending"), research);
+
+            progress.onRunFinished(runFor(facts, "failed"), "failed", null, null);
+
+            assertThat(facts.getStatus()).isEqualTo("failed");
+            assertThat(draft.getStatus()).isEqualTo("skipped");
+            assertThat(draft.getFailureReason()).isEqualTo(TaskProgress.EARLIER_TASK_UNFINISHED);
+            assertThat(check.getStatus()).isEqualTo("skipped");
+            assertThat(research.getStatus()).isEqualTo("running");
+            assertThat(summary.getStatus()).isEqualTo("pending");
+            assertThat(goal.getStatus()).isEqualTo("running");
+
+            progress.onRunFinished(runFor(research, "completed"), "completed", "Found it.", null);
+            assertThat(summary.getStatus()).isEqualTo("pending");
+            assertThat(goal.getStatus()).isEqualTo("running");
+        }
+
+        // @find: test dependents of a task, transitive, task progress
+        @Test
+        @DisplayName("the tasks that depend on a task are found through every step of the chain, and nothing else")
+        void dependentsOfFollowsTheChain() {
+            Goal goal = work.goal("running");
+            Task a = work.task(goal, 0, "failed");
+            Task b = work.task(goal, 1, "pending");
+            Task c = work.task(goal, 2, "pending");
+            Task d = work.task(goal, 3, "pending");
+            c.setDependsOn(List.of(b.getId()));
+            b.setDependsOn(List.of(a.getId()));
+            d.setDependsOn(List.of(UUID.randomUUID()));
+
+            assertThat(TaskProgress.dependentsOf(a, List.of(a, b, c, d))).containsExactlyInAnyOrder(b.getId(), c.getId());
+            assertThat(TaskProgress.dependentsOf(c, List.of(a, b, c, d))).isEmpty();
         }
 
         @Test

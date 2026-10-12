@@ -333,6 +333,10 @@ const AUDIT_ACTIONS: Record<string, string> = {
   'memory.create': 'Added to an agent’s memory',
   'memory.update': 'Changed an agent’s memory',
   'memory.delete': 'Removed from an agent’s memory',
+  'workflow.create': 'Created a workflow',
+  'workflow.update': 'Changed a workflow',
+  'workflow.delete': 'Deleted a workflow',
+  'workflow.run': 'Ran a workflow',
 }
 
 /** Every action the log can hold a plain-words name for, for the filter list. */

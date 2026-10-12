@@ -42,6 +42,9 @@ const Chat = lazy(() => import('./routes/Chat').then((m) => ({ default: m.Chat }
 const Orchestrator = lazy(() => import('./routes/Orchestrator').then((m) => ({ default: m.Orchestrator })))
 const Schedules = lazy(() => import('./routes/Schedules').then((m) => ({ default: m.Schedules })))
 const Skills = lazy(() => import('./routes/Skills').then((m) => ({ default: m.Skills })))
+const Workflows = lazy(() => import('./routes/Workflows').then((m) => ({ default: m.Workflows })))
+const WorkflowEditor = lazy(() => import('./routes/WorkflowEditor').then((m) => ({ default: m.WorkflowEditor })))
+const WorkflowRun = lazy(() => import('./routes/WorkflowRun').then((m) => ({ default: m.WorkflowRun })))
 const Knowledge = lazy(() => import('./routes/Knowledge').then((m) => ({ default: m.Knowledge })))
 const SourceDetail = lazy(() => import('./routes/SourceDetail').then((m) => ({ default: m.SourceDetail })))
 const Connectors = lazy(() => import('./routes/Connectors').then((m) => ({ default: m.Connectors })))
@@ -84,6 +87,10 @@ const PRIVATE: Array<[string, RouteMeta]> = [
   ['/tasks', { permission: 'task:read', screen: () => <Tasks /> }],
   ['/schedules', { permission: 'task:read', screen: () => <Schedules /> }],
   ['/skills', { permission: 'chat:use', screen: () => <Skills /> }],
+  ['/workflows', { permission: 'task:read', screen: () => <Workflows /> }],
+  ['/workflows/new', { permission: 'task:create', screen: () => <WorkflowEditor id={null} /> }],
+  ['/workflows/run/:goalId', { permission: 'task:read', screen: (p) => <WorkflowRun goalId={p.goalId!} /> }],
+  ['/workflows/:id', { permission: 'task:read', screen: (p) => <WorkflowEditor id={p.id!} /> }],
   ['/runs', { permission: 'run:read', screen: () => <Runs /> }],
   ['/runs/:id', { permission: 'run:read', screen: (p) => <RunDetail id={p.id!} /> }],
   ['/orchestrator', { permission: 'run:read', screen: () => <Orchestrator /> }],
@@ -222,7 +229,7 @@ export function App() {
       watchSessionOwner((change) => {
         queryClient?.clear()
         if (change === 'signed-out-elsewhere' && find(PRIVATE, window.location.pathname)) {
-          navigate('/sign-in?signedOut=1', { replace: true })
+          navigate('/sign-in?signedOut=1', { replace: true, force: true })
         }
       }),
     [queryClient, navigate],
@@ -269,7 +276,7 @@ export function App() {
   const query = search.toString()
   const here = `${path}${query ? `?${query}` : ''}${hash}`
   useEffect(() => {
-    if (redirectToSignIn) navigate(`/sign-in?next=${encodeURIComponent(here)}`, { replace: true })
+    if (redirectToSignIn) navigate(`/sign-in?next=${encodeURIComponent(here)}`, { replace: true, force: true })
   }, [redirectToSignIn, navigate, here])
 
   // Page titles follow the screen, so browser history and tabs are readable. A signed-out visitor
@@ -376,6 +383,10 @@ function titleFor(pattern: string): string {
     '/tasks': 'Tasks',
     '/schedules': 'Schedules',
     '/skills': 'Skills',
+    '/workflows': 'Workflows',
+    '/workflows/new': 'New workflow',
+    '/workflows/run/:goalId': 'Workflow run',
+    '/workflows/:id': 'Workflow',
     '/runs': 'Runs',
     '/runs/:id': 'Run',
     '/orchestrator': 'Orchestrator',
