@@ -66,8 +66,13 @@ public enum ProviderFailure {
      */
     CONTENT_FILTERED(false, false, false),
 
-    /** The request itself was malformed: a bad parameter, an unsupported combination. */
-    INVALID_REQUEST(false, false, false),
+    /**
+     * The request itself was refused as malformed: a bad parameter, an unsupported combination.
+     * Not retried on the same model, but the next candidate is asked: providers validate the same
+     * conversation differently (a parameter one does not support, a history format one is strict
+     * about), so a refusal from one says little about the others.
+     */
+    INVALID_REQUEST(false, true, false),
 
     /** The model returned tool arguments that are not valid JSON. Repairable once. */
     MALFORMED_TOOL_CALL(true, true, false),

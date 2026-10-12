@@ -219,9 +219,23 @@ public class GeminiProvider implements ChatProvider {
             if (message.content() != null && !message.content().isBlank()) {
                 parts.addObject().put("text", message.content());
             }
+            boolean first = true;
             for (ToolCall call : message.toolCalls()) {
-                ObjectNode functionCall = parts.addObject().putObject("functionCall");
+                ObjectNode callPart = parts.addObject();
+                ObjectNode functionCall = callPart.putObject("functionCall");
                 functionCall.put("name", ToolNames.toWire(call.name()));
+                // Gemini 3 checks that each turn's first function call carries the signature it sent
+                // with it, and refuses the request otherwise. The real one is sent back when it is
+                // known; a call it never saw (made by another model, or before a restart) gets the
+                // value Google documents for that case, which skips the check.
+                String signature = signatures.get(signatureKey(call.name(), call.argumentsJson()));
+                if (signature == null && first && model.modelId().startsWith("gemini-3")) {
+                    signature = SKIP_SIGNATURE_CHECK;
+                }
+                if (signature != null) {
+                    callPart.put("thoughtSignature", signature);
+                }
+                first = false;
                 try {
                     functionCall.set("args", json.readTree(call.argumentsJson()));
                 } catch (Exception e) {
@@ -320,10 +334,9 @@ public class GeminiProvider implements ChatProvider {
             }
             if (part.has("functionCall")) {
                 JsonNode call = part.path("functionCall");
-                calls.add(new ToolCall(
-                        "call_" + callIndex++,
-                        ToolNames.fromWire(call.path("name").asText("")),
-                        call.path("args").toString()));
+                String name = ToolNames.fromWire(call.path("name").asText(""));
+                rememberSignature(part, name, call.path("args").toString());
+                calls.add(new ToolCall("call_" + callIndex++, name, call.path("args").toString()));
             }
         }
 
@@ -405,10 +418,9 @@ public class GeminiProvider implements ChatProvider {
                 }
                 if (part.has("functionCall")) {
                     JsonNode call = part.path("functionCall");
-                    state.calls.add(new ToolCall(
-                            "call_" + state.calls.size(),
-                            ToolNames.fromWire(call.path("name").asText("")),
-                            call.path("args").toString()));
+                    String name = ToolNames.fromWire(call.path("name").asText(""));
+                    rememberSignature(part, name, call.path("args").toString());
+                    state.calls.add(new ToolCall("call_" + state.calls.size(), name, call.path("args").toString()));
                 }
             }
             String finish = candidate.path("finishReason").asText(null);
@@ -533,5 +545,50 @@ public class GeminiProvider implements ChatProvider {
             return null;
         }
         return value.length() <= MAX_RAW_BODY_CHARS ? value : value.substring(0, MAX_RAW_BODY_CHARS) + "…";
+    }
+
+    // ---- Gemini 3 thought signatures ---------------------------------------------------------
+
+    /**
+     * The value Google documents for a function call whose original signature is not available
+     * (one written by another model, or carried over a restart): it tells Gemini 3 to skip the
+     * signature check for that turn instead of refusing the request.
+     */
+    static final String SKIP_SIGNATURE_CHECK = "skip_thought_signature_validator";
+
+    /** How many signatures are kept; the oldest are forgotten first. */
+    private static final int SIGNATURES_KEPT = 4_000;
+
+    /*
+     * The signatures Gemini sent with its function calls, keyed by tool name and arguments, so the
+     * next turn can send each one back with its call. In memory only: a signature is only needed by
+     * the turns that follow it, and one lost to a restart is replaced by SKIP_SIGNATURE_CHECK.
+     */
+    private final java.util.Map<String, String> signatures = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, String>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, String> eldest) {
+                    return size() > SIGNATURES_KEPT;
+                }
+            });
+
+    /** Keeps the signature a response part carries beside its function call, if it carries one. */
+    private void rememberSignature(JsonNode part, String toolName, String argumentsJson) {
+        String signature = part.path("thoughtSignature").asText("");
+        if (!signature.isBlank()) {
+            signatures.put(signatureKey(toolName, argumentsJson), signature);
+        }
+    }
+
+    /** The key a call's signature is kept under: its tool name and its arguments, as sent. */
+    private String signatureKey(String toolName, String argumentsJson) {
+        String arguments;
+        try {
+            // Normalised, so whitespace differences between storing and sending do not matter.
+            arguments = json.readTree(argumentsJson == null ? "{}" : argumentsJson).toString();
+        } catch (Exception e) {
+            arguments = argumentsJson == null ? "" : argumentsJson;
+        }
+        return toolName + "\u0000" + arguments;
     }
 }

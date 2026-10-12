@@ -276,14 +276,16 @@ class OpenAiCompatibleProviderTest {
     }
 
     @Test
-    @DisplayName("classifies a genuinely malformed request as the caller's fault")
+    @DisplayName("classifies a refused request as invalid: not retried here, but the next provider is asked")
     void invalidRequest() {
         stub(400, "{\"error\":{\"message\":\"Unsupported parameter: 'presence_penalty'\"}}");
 
         ProviderException failure = expectFailure(request("hello"));
 
         assertThat(failure.failure()).isEqualTo(ProviderFailure.INVALID_REQUEST);
-        assertThat(failure.failure().tryNextCandidate()).isFalse();
+        // One provider's parameter or history rules say little about another's, so the chain goes on.
+        assertThat(failure.failure().retrySameCandidate()).isFalse();
+        assertThat(failure.failure().tryNextCandidate()).isTrue();
     }
 
     // ---- Credentials and retired models -------------------------------------------------------
