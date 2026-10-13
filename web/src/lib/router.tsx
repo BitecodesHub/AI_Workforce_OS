@@ -190,6 +190,22 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
 }
 
+/** Moves nowhere: a page rendered ahead of time has no history to change. */
+function stayPut(): void {
+  // The browser's own RouterProvider takes over once the page loads.
+}
+
+// @find: static router provider, server rendering, prerender, fixed path, entry-server
+/**
+ * Provides a fixed path, with an empty query and fragment, to a screen rendered ahead of time
+ * (src/entry-server.tsx). It reads no browser global, so it works under Node, and its navigate()
+ * does nothing. The browser always uses RouterProvider.
+ */
+export function StaticRouterProvider({ path, children }: { path: string; children: ReactNode }) {
+  const value = useMemo<RouterValue>(() => ({ path, search: new URLSearchParams(), hash: '', navigate: stayPut }), [path])
+  return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
+}
+
 // @find: use router, navigate, current path, query string
 // @find: use router, current path, navigate, search params; used by: every page
 /**

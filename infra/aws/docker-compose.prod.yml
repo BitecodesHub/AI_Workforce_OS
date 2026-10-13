@@ -308,6 +308,11 @@ services:
       additional_contexts: {launcher: ../launcher}
       args:
         NODE_OPTIONS: ${AIWOS_NODE_OPTIONS:---max-old-space-size=1536}
+        # The address the prerendered pages, robots.txt, sitemap.xml and llms.txt name as canonical.
+        # Its own setting, not AIWOS_PUBLIC_HOST, so an image built before a host change cannot
+        # point search engines at the old name.
+        SITE_URL: ${AIWOS_SITE_URL:-https://ai-workforce.bitecodes.com}
+        SITE_LASTMOD: ${AIWOS_SITE_LASTMOD:-}
     restart: unless-stopped
     logging: *logging
     networks: [aiwos]

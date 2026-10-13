@@ -3,4 +3,5 @@
 # @flow: Used with infra/launcher/web.Dockerfile
 node_modules
 dist
+dist-ssr
 *.tsbuildinfo

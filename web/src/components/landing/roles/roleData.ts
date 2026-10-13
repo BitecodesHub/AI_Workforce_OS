@@ -8,7 +8,7 @@ import type { TagTone } from '../../ui'
  *
  * Every code and every role below was checked against three sources, and must be kept in step
  * with them:
- *   - platform-core rbac/Permission.java, which fixes the 46 codes and their order (Permission.ALL);
+ *   - platform-core rbac/Permission.java, which fixes the 47 codes and their order (Permission.ALL);
  *   - identity-service PermissionSeeder.java, which composes the five system roles and gives each
  *     its description;
  *   - the route table in web/src/App.tsx, which decides which console screens a code opens.
@@ -43,7 +43,7 @@ export const PERMISSION_GROUPS: ReadonlyArray<{ domain: string; codes: readonly 
   },
   { domain: 'task', codes: ['task:read', 'task:create', 'task:cancel'] },
   { domain: 'run', codes: ['run:read', 'run:cancel', 'run:replay'] },
-  { domain: 'chat', codes: ['chat:use'] },
+  { domain: 'chat', codes: ['chat:use', 'chat:read_all'] },
   { domain: 'approval', codes: ['approval:read', 'approval:decide'] },
   { domain: 'knowledge', codes: ['knowledge:read', 'knowledge:query', 'knowledge:source_manage'] },
   { domain: 'integration', codes: ['integration:read', 'integration:connect', 'integration:disconnect'] },
@@ -55,7 +55,7 @@ export const PERMISSION_GROUPS: ReadonlyArray<{ domain: string; codes: readonly 
   { domain: 'memory', codes: ['memory:read', 'memory:purge'] },
 ]
 
-/** All 46 codes, in the same order. */
+/** Every code (47), in the same order. roleData.test.ts checks the list against Permission.ALL itself. */
 export const ALL_CODES: readonly string[] = PERMISSION_GROUPS.flatMap((group) => group.codes)
 
 export const ROLE_ORDER: readonly RoleId[] = ['owner', 'admin', 'manager', 'employee', 'viewer']
@@ -79,7 +79,9 @@ export const ROLE_ARTICLE: Record<RoleId, 'a' | 'an'> = {
 /** The compositions PermissionSeeder.seedSystemRoles() creates. */
 export const ROLE_CODES: Record<RoleId, ReadonlySet<string>> = {
   owner: new Set(ALL_CODES),
-  admin: new Set(ALL_CODES.filter((code) => code !== 'workspace:delete')),
+  // The seeder leaves two codes with the owner alone: closing the workspace and reading other
+  // people's private conversations.
+  admin: new Set(ALL_CODES.filter((code) => code !== 'workspace:delete' && code !== 'chat:read_all')),
   manager: new Set([
     'workspace:read',
     'member:read',
@@ -144,7 +146,7 @@ export const ROLE_DESCRIPTION: Record<RoleId, string> = {
 
 export const ROLE_SUMMARY: Record<RoleId, string> = {
   owner: 'Everything, and the only role that can add or remove owners.',
-  admin: 'Everything except adding, changing or removing owners.',
+  admin: "Everything except adding, changing or removing owners and reading other people's private conversations.",
   manager: 'Runs agents, approves actions, cancels runs and tasks, and edits agents. Cannot change who may.',
   employee: 'Asks questions in chat and hands routine work to agents. Can see approvals, cannot decide them.',
   viewer: 'Reads dashboards and traces. Changes nothing.',

@@ -21,7 +21,7 @@ import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
 type StepId = 'choose' | 'ask' | 'approve'
 
 /** The three steps with icon, title and body. */
-const STEPS: ReadonlyArray<{ id: StepId; icon: IconName; title: string; body: string }> = [
+export const STEPS: ReadonlyArray<{ id: StepId; icon: IconName; title: string; body: string }> = [
   {
     id: 'choose',
     icon: 'check',
@@ -43,7 +43,7 @@ const STEPS: ReadonlyArray<{ id: StepId; icon: IconName; title: string; body: st
 ]
 
 /** Example requests for the ask scene: the text, the assistant that picks it up, what it does on its own and what waits for a person. The wording matches the assistants section and the shipped templates. */
-const REQUESTS: ReadonlyArray<{ text: string; agent: AgentId; alone: string; waits: string }> = [
+export const REQUESTS: ReadonlyArray<{ text: string; agent: AgentId; alone: string; waits: string }> = [
   {
     text: 'Draft the welcome email for our new starter',
     agent: 'hr',

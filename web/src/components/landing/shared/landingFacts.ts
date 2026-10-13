@@ -13,6 +13,7 @@
  */
 
 import type { TemplateKey } from '../../../lib/templates'
+import { ALL_CODES } from '../roles/roleData'
 
 /** Types for the example agents: their category (a tag tone), id and the AgentFact record (id, the real template key, display name, category, title and plain-English detail). */
 export type AgentCategory = 'operations' | 'engineering' | 'growth' | 'support'
@@ -167,10 +168,10 @@ export function listOf(items: readonly string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
-/** Counts stated on the page: the platform's services, the permission codes (kept equal to Permission.ALL in roleData) and the built-in roles. */
+/** Counts stated on the page: the platform's services, the permission codes (the length of roleData's ALL_CODES, which a test keeps equal to Permission.ALL) and the built-in roles. */
 export const SERVICE_COUNT = 8
 
-export const PERMISSION_CODE_COUNT = 46
+export const PERMISSION_CODE_COUNT = ALL_CODES.length
 
 export const BUILT_IN_ROLE_COUNT = 5
 

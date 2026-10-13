@@ -43,7 +43,10 @@ export function LandingFooter({ sections = HOME_SECTIONS, other = CTA.technical 
           <a className="lp-footer-other" href={other.href}>
             {other.label}
           </a>
-          <p className="caption lp-footer-caption">AI Workforce OS, an enterprise multi-agent platform.</p>
+          <p className="caption lp-footer-caption">
+            AI Workforce OS: AI assistants for routine business work that ask a person before anything is sent or
+            deleted.
+          </p>
         </div>
       </div>
     </footer>

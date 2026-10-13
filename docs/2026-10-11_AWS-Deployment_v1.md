@@ -167,8 +167,10 @@ pointing at the Elastic IP, then commit the name in `site.env` (or leave it ther
   certificate is requested and the sslip.io site is unaffected.
 - Once it resolves here, it becomes the primary address: `AIWOS_PUBLIC_HOST`,
   `AIWOS_PUBLIC_BASE_URL` (OAuth callbacks) and `public_url` in `/deploy-status.json`. Caddy gets a
-  Let's Encrypt certificate for both names, and the sslip.io name answers with a temporary (307)
-  redirect to the domain, except `/deploy-status.json`, which both names serve (the GitHub
+  Let's Encrypt certificate for both names, and the sslip.io name answers with a permanent (308)
+  redirect to the domain that browsers may keep for one hour (`Cache-Control: max-age=3600`), so
+  search engines index only the domain and a later switch back to the sslip.io name is followed
+  within the hour. The exception is `/deploy-status.json`, which both names serve (the GitHub
   workflow can keep polling the sslip.io name). CORS and nginx's allow-list accept both names.
 - Applying the change restarts only what reads the names (Caddy and the seven services, for
   `AIWOS_PUBLIC_BASE_URL` / `AIWOS_CORS_ORIGINS`) and reloads nginx; nothing is rebuilt. Expect a
@@ -177,6 +179,12 @@ pointing at the Elastic IP, then commit the name in `site.env` (or leave it ther
   becomes primary again. Emptying `AIWOS_CUSTOM_DOMAIN` takes effect on the next deploy.
 - A commit that changes only `site.env`, `Caddyfile`, `aiwos.sh`, `cloudformation.yaml`, `docs/`,
   `.github/` or top-level `*.md` files reuses the live images instead of building.
+- Search engines are pointed at one name whichever is primary: the web image prerenders the public
+  pages (home, `/trust`, `/sign-in`) with canonical links, link previews and structured data for
+  `AIWOS_SITE_URL` (default `https://ai-workforce.bitecodes.com`), and `robots.txt`, `sitemap.xml`,
+  `llms.txt` and `llms-full.txt` name it too. Set `AIWOS_SITE_URL` in `/opt/aiwos/.env` only if the
+  public domain changes; it takes effect on the next image build. `AIWOS_SITE_LASTMOD`
+  (YYYY-MM-DD), when set, adds a last-modified date to the sitemap.
 - `/opt/aiwos/.env` keeps the rendered names; do not edit them by hand (the next update rewrites
   them). `nip.io` instead of sslip.io would need a change to `render_site_config` in `aiwos.sh`.
 

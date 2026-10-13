@@ -1,6 +1,6 @@
 // @find: app entry, main, bootstrap, start app, render root, query client, React Query, router provider, fonts, styles import, main.tsx
 // @what: The browser entry point: loads fonts and styles, links the web app manifest, creates the data client and renders the App.
-// @flow: Renders App from App.tsx inside QueryClientProvider and RouterProvider, beside the PushBridge
+// @flow: Renders App from App.tsx inside QueryClientProvider and RouterProvider, beside the PushBridge, once a prerendered page's screen has loaded
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -9,7 +9,7 @@ import '@fontsource-variable/inter/opsz.css'
 import './styles/tokens.css'
 import './styles/components.css'
 import './styles/polish/index.css'
-import { App } from './App'
+import { App, preloadPrerenderedScreen } from './App'
 import { RouterProvider } from './lib/router'
 import { ToastProvider } from './lib/toast'
 import { ApiError } from './lib/api'
@@ -58,24 +58,35 @@ linkWebManifest()
 /*
  * Every render failure is logged in one place, with the path it happened on: those an error
  * boundary caught and showed a fallback for, and any that escaped them all.
+ *
+ * The public pages arrive with their content already in #root (written at build time by
+ * scripts/prerender.mjs, for crawlers that do not run JavaScript). createRoot replaces that markup
+ * on the first render rather than hydrating it, so the app's first render need not match it. It
+ * waits for the prerendered page's own screen first (its chunk is already preloading from the
+ * page's head), so the HTML is swapped for the same screen in one step, never for a blank moment.
  */
-createRoot(document.getElementById('root')!, {
-  onCaughtError: (error, info) => logRenderError('caught', error, info.componentStack),
-  onUncaughtError: (error, info) => logRenderError('uncaught', error, info.componentStack),
-}).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider>
-        {/* A tapped push notification opens its link here; renders nothing. */}
-        <PushBridge />
-        <ToastProvider>
-          {/* The last resort, for a failure outside any screen (the navigation bar, say): a page
-              that says so and can be reloaded, rather than a blank window. */}
-          <ErrorBoundary variant="page">
-            <App />
-          </ErrorBoundary>
-        </ToastProvider>
-      </RouterProvider>
-    </QueryClientProvider>
-  </StrictMode>,
-)
+/** Mounts the app into #root. */
+function renderApp(): void {
+  createRoot(document.getElementById('root')!, {
+    onCaughtError: (error, info) => logRenderError('caught', error, info.componentStack),
+    onUncaughtError: (error, info) => logRenderError('uncaught', error, info.componentStack),
+  }).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider>
+          {/* A tapped push notification opens its link here; renders nothing. */}
+          <PushBridge />
+          <ToastProvider>
+            {/* The last resort, for a failure outside any screen (the navigation bar, say): a page
+                that says so and can be reloaded, rather than a blank window. */}
+            <ErrorBoundary variant="page">
+              <App />
+            </ErrorBoundary>
+          </ToastProvider>
+        </RouterProvider>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+}
+
+void preloadPrerenderedScreen(document.documentElement.getAttribute('data-prerendered')).then(renderApp)

@@ -1,7 +1,7 @@
-// @find: app shell, routes, routing table, navigation, permissions per route, sign in redirect, restore session, session unreachable, tab title, waiting count, page titles, Navbar, error boundary, App
-// @what: The root component: route table, permission checks, sign-in redirects, session restore, page shell and tab titles.
+// @find: app shell, routes, routing table, navigation, permissions per route, sign in redirect, restore session, session unreachable, tab title, waiting count, page titles, meta description, canonical, noindex, prerendered screen preload, Navbar, error boundary, App
+// @what: The root component: route table, permission checks, sign-in redirects, session restore, page shell, tab titles and the search head of each page.
 // @flow: Rendered by main.tsx; renders the screens in src/routes and the Navbar
-import type { ReactElement, ReactNode } from 'react'
+import type { ComponentType, ReactElement, ReactNode } from 'react'
 import { Suspense, lazy, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { QueryClientContext } from '@tanstack/react-query'
 import { Navbar } from './components/layout/Navbar'
@@ -9,6 +9,7 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { NETWORK_FAILURE, restoreSession } from './lib/api'
 import { useAttention } from './lib/attention'
 import { match, redirectFor, setPageTitle, useRouter } from './lib/router'
+import { PUBLIC_PAGES, applyPageHead, clearPrerenderedMark, privateHead, publicHead, publicPageFor } from './lib/seo'
 import { isSignedIn, can, maySignInSilently, SESSION_EVENT, watchSessionOwner } from './lib/session'
 import { SignIn } from './routes/SignIn'
 import { CreateWorkspace } from './routes/CreateWorkspace'
@@ -26,11 +27,58 @@ import { Button, Notice, PageHeader, PermissionState } from './components/ui'
  * small auth screens stay in the main bundle.
  */
 const loadCommandMap = () => import('./routes/CommandMap')
+
+/*
+ * The home page and the technical page are also written as HTML at build time
+ * (scripts/prerender.mjs), so crawlers read them without running JavaScript. When the app starts
+ * on one of them, main.tsx first waits for that screen's chunk (preloadPrerenderedScreen), and the
+ * screen is then rendered directly rather than through React.lazy: a lazy screen always shows its
+ * loading fallback on the first render, which would blank the page between the prerendered HTML
+ * and the app's own copy of it.
+ */
+const loadedScreens: { home?: ComponentType; trust?: ComponentType } = {}
 /** Dynamic import of the Landing chunk; kept as a named loader so App can prefetch it on mount as well as lazy-render it. */
-const loadLanding = () => import('./routes/Landing')
+const loadLanding = () =>
+  import('./routes/Landing').then((m) => {
+    loadedScreens.home = m.Landing
+    return m
+  })
+/** Dynamic import of the Trust chunk, remembering the screen once it has loaded. */
+const loadTrust = () =>
+  import('./routes/Trust').then((m) => {
+    loadedScreens.trust = m.Trust
+    return m
+  })
 const CommandMap = lazy(() => loadCommandMap().then((m) => ({ default: m.CommandMap })))
-const Landing = lazy(() => loadLanding().then((m) => ({ default: m.Landing })))
-const Trust = lazy(() => import('./routes/Trust').then((m) => ({ default: m.Trust })))
+const LazyLanding = lazy(() => loadLanding().then((m) => ({ default: m.Landing })))
+const LazyTrust = lazy(() => loadTrust().then((m) => ({ default: m.Trust })))
+
+// @find: preload prerendered screen, avoid blank flash on load
+/**
+ * Loads the screen a prerendered page shows ('home' or 'trust', from <html data-prerendered>), so
+ * the first render can draw it at once. Resolves either way: a failed load is left for the lazy
+ * screen to report, as it would without the preload.
+ */
+export function preloadPrerenderedScreen(page: string | null): Promise<void> {
+  const load = page === 'home' ? loadLanding : page === 'trust' ? loadTrust : null
+  return load ? load().then(ignoreResult, ignoreResult) : Promise.resolve()
+}
+
+/** Discards a value, so a preload resolves to nothing whatever happened. */
+function ignoreResult(): void {}
+
+/** The home page: drawn directly once its chunk has loaded, through React.lazy until then. */
+function Landing() {
+  const Loaded = loadedScreens.home
+  return Loaded ? <Loaded /> : <LazyLanding />
+}
+
+/** The technical page: drawn directly once its chunk has loaded, through React.lazy until then. */
+function Trust() {
+  const Loaded = loadedScreens.trust
+  return Loaded ? <Loaded /> : <LazyTrust />
+}
+
 const Agents = lazy(() => import('./routes/Agents').then((m) => ({ default: m.Agents })))
 const AgentDetail = lazy(() => import('./routes/AgentDetail').then((m) => ({ default: m.AgentDetail })))
 const ModelRouting = lazy(() => import('./routes/ModelRouting').then((m) => ({ default: m.ModelRouting })))
@@ -291,6 +339,13 @@ export function App() {
     showTitle(titlePattern)
   }, [titlePattern, path])
 
+  // The page that was written ahead of time (scripts/prerender.mjs) skipped its entrance
+  // animation, since its content was already on screen. Any later page plays its own as usual.
+  const firstPath = useRef(path)
+  useLayoutEffect(() => {
+    if (path !== firstPath.current) clearPrerenderedMark()
+  }, [path])
+
   // After moving to another screen, focus goes to its heading, so a screen reader announces
   // where the person has arrived and the next Tab starts from the content rather than from
   // wherever the old page left it. Not on first load, where the browser's own start is right.
@@ -347,11 +402,22 @@ export function App() {
 }
 
 /**
- * Writes the browser tab title for a route pattern. It lives outside App because it writes a
- * global; the router keeps it apart from the waiting count, which the signed-in shell adds.
+ * Writes the browser tab title for a route pattern, and the description, canonical link and
+ * robots rule that go with it (lib/seo.ts): the three public pages are indexed under their
+ * canonical address, every other screen is noindex. It lives outside App because it writes
+ * globals; the router keeps the title apart from the waiting count, which the signed-in shell adds.
  */
 function showTitle(pattern: string): void {
-  setPageTitle(titleFor(pattern) + ' · AI Workforce OS')
+  const page = publicPageFor(pattern)
+  const head = page ? publicHead(page) : privateHead(titleFor(pattern))
+  setPageTitle(head.title)
+  applyPageHead(head)
+}
+
+// @find: route patterns, app routes list, nginx app route allow-list
+/** Every route pattern the app serves, public and signed-in. infra/launcher/nginx.conf serves the app shell for exactly these (nginxRoutes.test.ts compares the two). */
+export function routePatterns(): string[] {
+  return [...PUBLIC, ...PRIVATE].map(([pattern]) => pattern)
 }
 
 /**
@@ -375,9 +441,9 @@ function focusMainHeading(): void {
 function titleFor(pattern: string): string {
   const titles: Record<string, string> = {
     '/': 'Command Map',
-    '/home': 'AI employees for your business',
-    '/trust': 'Technical details',
-    '/sign-in': 'Sign in',
+    '/home': PUBLIC_PAGES.home.screen,
+    '/trust': PUBLIC_PAGES.trust.screen,
+    '/sign-in': PUBLIC_PAGES['sign-in'].screen,
     '/create-workspace': 'Create a workspace',
     '/accept-invite': 'Join the workspace',
     '/agents': 'Agents',

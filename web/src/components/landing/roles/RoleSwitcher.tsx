@@ -6,6 +6,7 @@ import type { ChangeEvent, CSSProperties, KeyboardEvent, ReactElement } from 're
 import { Tag } from '../../ui'
 import { useCountUp } from '../../../hooks/useCountUp'
 import { useInView } from '../../../hooks/useInView'
+import { CountFigure } from '../shared/CountFigure'
 import { Icon } from '../shared/Icon'
 import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
 import { useDemoCta } from '../shared/useDemoCta'
@@ -227,9 +228,8 @@ export function RoleSwitcher(): ReactElement {
             </div>
             <p className="lp-roles-count">
               <span className="lp-roles-count-value tabular">
-                <span aria-hidden="true">{shownCount}</span>
-                <span className="visually-hidden">{heldCount}</span>
-              </span>
+                <CountFigure shown={shownCount} value={heldCount} />
+              </span>{' '}
               <span className="lp-roles-count-label">of {TOTAL_CODES} permission codes</span>
             </p>
             <div className="lp-roles-compare">

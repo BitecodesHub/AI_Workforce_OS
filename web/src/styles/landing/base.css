@@ -1158,6 +1158,23 @@
     linear-gradient(var(--lp-bezel) 0 0) right bottom / 1px 12px no-repeat;
 }
 
+/* ---- Prerendered first view ------------------------------------------------------------------
+ * A page the build wrote as HTML (<html data-prerendered>, scripts/prerender.mjs) is already on
+ * screen before the app runs. Its first entrance is skipped, so content a visitor can already see
+ * does not fade out and rise in again when the app takes over. App.tsx clears the mark on the
+ * first move to another page, whose entrance then plays as usual.
+ */
+
+html[data-prerendered] .lp[data-motion='on'] .lp-reveal:not([data-inview='true']) {
+  opacity: 1;
+}
+
+html[data-prerendered] .lp[data-motion='on'] .lp-reveal[data-inview='true'],
+html[data-prerendered] .lp[data-motion='on'] .lp-sky-copy > *,
+html[data-prerendered] .lp[data-motion='on'] .lp-sky-orbit {
+  animation: none;
+}
+
 /* ---- Motion: only when the visitor allows it and the page has switched it on --------------- */
 
 @media (prefers-reduced-motion: no-preference) {

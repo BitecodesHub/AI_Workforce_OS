@@ -33,9 +33,22 @@ const TRUST_SECTIONS: readonly BarSection[] = [
   { id: 'limits', label: 'Limits' },
 ]
 
+/**
+ * The paragraphs under the heading. The second and third state the platform's defaults as it
+ * ships: RetentionService (traces kept 180 days), ApprovalService (a 24-hour approval window,
+ * and the four-eyes setting, off by default, whose middle value covers every DESTRUCTIVE action:
+ * deletions, cancellations and refunds, per SandboxServerRegistry) and EnvelopeEncryptionService
+ * (a data key per value, bound to its workspace). Exported for llms-full.txt (src/seo/crawlerFiles.ts).
+ */
+export const TRUST_LEAD: readonly string[] = [
+  'The detail behind the promises on the overview: the approval gate, provider failover, the tamper-evident audit chain, cited retrieval, the permission model and what actually runs.',
+  'Agent traces are kept for 180 days by default; administrators can change this. An approval nobody decides expires after 24 hours, and nothing is sent.',
+  'Provider keys and connector credentials are stored encrypted, each under its own data key and bound to its workspace. A workspace can also require that someone other than the person who asked approves, either for every approval or only for actions that delete something or cannot be undone, such as refunds and cancellations; this is off by default.',
+]
+
 // @find: Trust component, technical details page, /trust
 /**
- * The public technical details page (route /trust; no permission, no data fetching) for IT and security reviewers. Sections, in order: hero (with the default trace retention of 180 days), four interactive safety demos, the permission model (role switcher), the platform band, and limits, then a call to action to try the sandbox model. The navigation bar and footer list the same sections, and link back to the overview at /home. Provides a skip link to the main landmark.
+ * The public technical details page (route /trust; no permission, no data fetching) for IT and security reviewers. Sections, in order: hero (TRUST_LEAD: what the page covers, trace retention, the approval deadline, how secrets are stored and the four-eyes setting), four interactive safety demos, the permission model (role switcher), the platform band, and limits, then a call to action to try the sandbox model. The navigation bar and footer list the same sections, and link back to the overview at /home. Provides a skip link to the main landmark.
  */
 export function Trust(): ReactElement {
   return (
@@ -52,13 +65,11 @@ export function Trust(): ReactElement {
               <h1 id="trust-title" className="lp-hero-title lp-trust-title">
                 How it keeps agents in check
               </h1>
-              <p className="lp-hero-lead">
-                The detail behind the promises on the overview: the approval gate, provider failover, the tamper-evident
-                audit chain, cited retrieval, the permission model and what actually runs.
-              </p>
-              <p className="lp-hero-lead">
-                Agent traces are kept for 180 days by default; administrators can change this.
-              </p>
+              {TRUST_LEAD.map((paragraph) => (
+                <p key={paragraph} className="lp-hero-lead">
+                  {paragraph}
+                </p>
+              ))}
               <a className="lp-link lp-trust-back" href="/home">
                 Back to the overview
               </a>

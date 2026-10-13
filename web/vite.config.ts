@@ -59,6 +59,12 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  // The manifest lets scripts/prerender.mjs link each prerendered page's lazily loaded styles and
+  // chunks in its head, so the page paints styled before any script runs. The script deletes it
+  // from dist afterwards, so it is never published.
+  build: {
+    manifest: true,
+  },
   server: {
     port: 5173,
     proxy: Object.fromEntries(

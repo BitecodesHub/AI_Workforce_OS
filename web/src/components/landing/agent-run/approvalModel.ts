@@ -105,7 +105,7 @@ export const ANNOUNCE = {
   rejected: 'An approver rejected the action this run needed.',
   expiring: 'Letting the deadline pass.',
   expired:
-    'Nobody decided in time, so the approval was rejected by default. Nothing is sent because a deadline passed.',
+    'Nobody decided in time, so the approval expired and the run ended. Nothing is sent because a deadline passed.',
 } as const
 
 export const DECIDER_ANNOUNCEMENT: Record<Decider, string> = {
@@ -155,7 +155,7 @@ function focusOn(s: ApprovalState, target: FocusTarget): ApprovalState['focus'] 
 }
 
 // @find: approvalReducer, approve, reject, expire transitions
-/** Pure reducer for the approval-gate demo. Transitions: START (idle to running, only once; a user start sends focus to the timeline), STEP (update one step while running or approving), PARK (running to parked, card waiting), APPROVE (parked to approving, only when canDecide), RESOLVE_APPROVED (approving to completed, focus to the result), REJECT (parked to rejected, only when canDecide; send and summary skipped), LET_EXPIRE (parked to expiring; any role may let the deadline pass because doing nothing needs no permission), RESOLVE_EXPIRED (expiring to expired, rejected by default), SET_DECIDER (changes the role and announces it) and RESET (back to idle, focus to the timeline). An event that does not fit the current phase returns the state unchanged. Every state change that matters sets an announcement for the live region. */
+/** Pure reducer for the approval-gate demo. Transitions: START (idle to running, only once; a user start sends focus to the timeline), STEP (update one step while running or approving), PARK (running to parked, card waiting), APPROVE (parked to approving, only when canDecide), RESOLVE_APPROVED (approving to completed, focus to the result), REJECT (parked to rejected, only when canDecide; send and summary skipped), LET_EXPIRE (parked to expiring; any role may let the deadline pass because doing nothing needs no permission), RESOLVE_EXPIRED (expiring to expired: the approval expired and the run ended, as ApprovalService records it), SET_DECIDER (changes the role and announces it) and RESET (back to idle, focus to the timeline). An event that does not fit the current phase returns the state unchanged. Every state change that matters sets an announcement for the live region. */
 export function approvalReducer(s: ApprovalState, e: ApprovalEvent): ApprovalState {
   switch (e.type) {
     case 'START': {
