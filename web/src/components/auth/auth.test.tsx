@@ -133,6 +133,11 @@ describe('SignIn', () => {
     expect(container.querySelector('input[autocomplete="current-password"]')).not.toBeNull()
   })
 
+  it('leaves the form usable in the browser; only the build-time HTML is inert', async () => {
+    const { container } = await renderSignIn()
+    expect(container.querySelector('form.auth-form')).not.toHaveAttribute('inert')
+  })
+
   it('says why a sign-in failed and puts focus back in the password, selected', async () => {
     await renderSignIn()
     vi.mocked(fetch).mockImplementationOnce(

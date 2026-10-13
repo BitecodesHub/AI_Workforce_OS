@@ -107,7 +107,9 @@ export function SafetySection(): ReactElement {
           <h3 id="who-title" className="lp-h3">
             Who can do what
           </h3>
-          <p className="lp-who-lead">The five roles every workspace starts with. Owners and admins can adjust them.</p>
+          <p className="lp-who-lead">
+            The five roles every workspace starts with. Owners and admins can create roles of their own.
+          </p>
         </div>
         {/* Focusable, so a keyboard can scroll the table on a phone, where it is wider than the screen. */}
         <div className="lp-who-scroll" role="region" aria-labelledby="who-title" tabIndex={0}>

@@ -41,13 +41,16 @@
 	}
 
 	handle {
-		# The other names send people to the primary one. Temporary (307, method kept): the primary
-		# name can change back if the custom domain stops pointing here (aiwos.sh does that by itself
-		# after three failed checks), and a browser that remembered a permanent redirect would keep
-		# going to the dead name. Search engines are told which name to index by the canonical links
-		# and the sitemap, which always name the custom domain (SITE_URL in web.Dockerfile).
+		# The other names send people to the primary one with a permanent redirect (308, method
+		# kept), which search engines read as "index the primary name instead"; a temporary one is
+		# only a weak hint, and requests to the other name never reach a page's canonical link.
+		# Browsers may keep a permanent redirect for good, but the primary name can change back if
+		# the custom domain stops pointing here (aiwos.sh does that by itself after three failed
+		# checks). So the redirect says how long it may be kept: one hour, after which a browser
+		# asks again and follows whichever name is primary by then.
 		@other_name not host {$AIWOS_PUBLIC_HOST:localhost}
-		redir @other_name https://{$AIWOS_PUBLIC_HOST:localhost}{uri} 307
+		header @other_name Cache-Control "public, max-age=3600"
+		redir @other_name https://{$AIWOS_PUBLIC_HOST:localhost}{uri} 308
 
 		reverse_proxy web:80 {
 			# Agent runs and voice replies can take minutes and stream.

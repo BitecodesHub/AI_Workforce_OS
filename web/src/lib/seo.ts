@@ -37,7 +37,7 @@ export const SITE_URL = normaliseSiteUrl(import.meta.env.VITE_SITE_URL as string
  * llms.txt and the link preview of the home page all use it.
  */
 export const PRODUCT_DEFINITION =
-  'AI Workforce OS is a web app that gives a business its own team of AI assistants: they draft emails, sort customer questions, prepare reports and keep routine work moving, and nothing is sent, posted or deleted until a person approves it.'
+  'AI Workforce OS is a web app that gives a business its own team of AI assistants: they draft emails, sort customer questions, prepare reports and keep routine work moving, and nothing is sent or deleted until a person approves it.'
 
 /**
  * The link-preview image (public/og-image.png): the brand mark, without text, 1200 by 630 pixels.

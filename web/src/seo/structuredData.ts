@@ -1,4 +1,4 @@
-// @find: structured data, JSON-LD, schema.org, Organization, WebSite, SoftwareApplication, FAQPage, BreadcrumbList, WebPage, rich results, answer engines, structuredDataFor
+// @find: structured data, JSON-LD, schema.org, WebSite, SoftwareApplication, FAQPage, BreadcrumbList, WebPage, rich results, answer engines, structuredDataFor, no Organization until the publisher is confirmed
 // @what: Builds the schema.org JSON-LD graph each prerendered public page carries, from the same facts and FAQ the page shows.
 // @flow: Called by src/entry-server.tsx; scripts/prerender.mjs writes the result into each page's head as a script of type application/ld+json
 
@@ -28,8 +28,10 @@ import type { PublicPage } from '../lib/seo'
  * is for answer engines and Bing. It is built from FAQ_ITEMS, the list the page renders, so it
  * cannot say something the page does not.
  *
- * The Organization is named after the product until the publisher's legal name is confirmed; it
- * has no sameAs links for the same reason.
+ * There is no Organization node and no publisher yet. The product is not a company, and the
+ * publisher's legal name and official profiles (sameAs) have not been confirmed, so naming one
+ * would assert an entity the site does not establish. Add the Organization, and point WebSite and
+ * SoftwareApplication at it as publisher, once the owner confirms the name.
  */
 
 /** A JSON-LD node: plain JSON values only. */
@@ -56,7 +58,7 @@ export function featureList(): string[] {
 }
 
 /** The @id of a node, so nodes can point at each other across the graph. */
-function idFor(site: string, name: 'organization' | 'website' | 'software'): string {
+function idFor(site: string, name: 'website' | 'software'): string {
   return `${site}/#${name}`
 }
 
@@ -71,17 +73,10 @@ function imageObject(site: string): JsonLdNode {
   }
 }
 
-/** The nodes every public page shares: who publishes it, the site and the product. */
+/** The nodes every public page shares: the site and the product. */
 function sharedNodes(site: string): JsonLdNode[] {
   const home = absoluteUrl('/', site)
   return [
-    {
-      '@type': 'Organization',
-      '@id': idFor(site, 'organization'),
-      name: SITE_NAME,
-      url: home,
-      logo: { '@type': 'ImageObject', url: absoluteUrl('/icons/icon-512.png', site), width: 512, height: 512 },
-    },
     {
       '@type': 'WebSite',
       '@id': idFor(site, 'website'),
@@ -89,7 +84,6 @@ function sharedNodes(site: string): JsonLdNode[] {
       url: home,
       description: PUBLIC_PAGES.home.description,
       inLanguage: 'en',
-      publisher: { '@id': idFor(site, 'organization') },
     },
     {
       '@type': 'SoftwareApplication',
@@ -101,7 +95,6 @@ function sharedNodes(site: string): JsonLdNode[] {
       operatingSystem: 'Web browser',
       image: imageObject(site),
       featureList: featureList(),
-      publisher: { '@id': idFor(site, 'organization') },
     },
   ]
 }

@@ -1,6 +1,8 @@
-// @find: tests for role data, roles permissions, Permission.java, PermissionSeeder, console areas, 46 permission codes
+// @find: tests for role data, roles permissions, Permission.java, PermissionSeeder, console areas, 47 permission codes, chat:read_all
 // @what: Tests that role data matches the platform's permission registry, seeder and routes.
 // @flow: Covers roleData.ts
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createElement } from 'react'
 import axe from 'axe-core'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
@@ -25,15 +27,53 @@ import { RoleSwitcher } from './RoleSwitcher'
  * page states, so a drift here is a false claim there.
  */
 
+/** The repository root, where the Java sources live. */
+const REPO = join(__dirname, '..', '..', '..', '..', '..')
+
+/** Permission.java's source. */
+function permissionJava(): string {
+  return readFileSync(join(REPO, 'platform-core', 'src', 'main', 'java', 'os', 'aiworkforce', 'platform', 'rbac', 'Permission.java'), 'utf8')
+}
+
+/** Each constant name of Permission.Codes with its code, such as API_KEY_READ to api_key:read. */
+function javaCodeByName(): Map<string, string> {
+  return new Map([...permissionJava().matchAll(/public static final String (\w+) = "([^"]+)";/g)].map((match) => [match[1]!, match[2]!]))
+}
+
+/** The codes of Permission.ALL in its order, read from Permission.java (constant names mapped through Permission.Codes). */
+function javaPermissionCodes(): string[] {
+  const byName = javaCodeByName()
+  const all = /ALL = List\.of\(([^)]*)\);/.exec(permissionJava())?.[1] ?? ''
+  return [...all.matchAll(/\b([A-Z][A-Z_]+)\b/g)].map((match) => byName.get(match[1]!) ?? `unknown ${match[1]}`)
+}
+
+/** The code list of each system role PermissionSeeder creates, read from PermissionSeeder.java (Permission.ALL expands to every code). */
+function seededRoles(): Record<string, string[]> {
+  const java = readFileSync(
+    join(REPO, 'services', 'identity-service', 'src', 'main', 'java', 'os', 'aiworkforce', 'identity', 'service', 'PermissionSeeder.java'),
+    'utf8',
+  )
+  const byName = javaCodeByName()
+  const body = java.slice(java.indexOf('private void seedSystemRoles()'))
+  const roles: Record<string, string[]> = {}
+  for (const block of body.split('ensureRole(').slice(1)) {
+    const name = /^\s*"(\w+)"/.exec(block)?.[1]
+    if (!name) continue
+    const names = [...block.slice(0, block.indexOf('));')).matchAll(/Permission\.([A-Z][A-Z_]+)/g)].map((match) => match[1]!)
+    roles[name] = names.includes('ALL') ? javaPermissionCodes() : names.map((constant) => byName.get(constant) ?? `unknown ${constant}`)
+  }
+  return roles
+}
+
 describe('roleData', () => {
-  it('gives the five roles 46, 45, 25, 12 and 8 codes', () => {
-    expect(ROLE_ORDER.map((role) => ROLE_CODES[role].size)).toEqual([46, 45, 25, 12, 8])
+  it('gives the five roles 47, 45, 25, 12 and 8 codes', () => {
+    expect(ROLE_ORDER.map((role) => ROLE_CODES[role].size)).toEqual([47, 45, 25, 12, 8])
   })
 
-  it('has 46 unique codes, equal to the union of the 17 groups', () => {
+  it('has 47 unique codes, equal to the union of the 17 groups', () => {
     expect(PERMISSION_GROUPS).toHaveLength(17)
-    expect(ALL_CODES).toHaveLength(46)
-    expect(new Set(ALL_CODES).size).toBe(46)
+    expect(ALL_CODES).toHaveLength(47)
+    expect(new Set(ALL_CODES).size).toBe(47)
     const union = new Set(PERMISSION_GROUPS.flatMap((group) => group.codes))
     expect(union).toEqual(new Set(ALL_CODES))
     for (const group of PERMISSION_GROUPS) {
@@ -48,9 +88,15 @@ describe('roleData', () => {
     for (const area of CONSOLE_AREAS) if (area.code !== null) expect(known.has(area.code)).toBe(true)
   })
 
-  it('makes employee a subset of manager, and admin everything but workspace:delete', () => {
+  it('makes employee a subset of manager, and admin everything but workspace:delete and chat:read_all', () => {
     for (const code of ROLE_CODES.employee) expect(ROLE_CODES.manager.has(code)).toBe(true)
-    expect(compareRoles('owner', 'admin')).toEqual({ added: ['workspace:delete'], removed: [] })
+    expect(compareRoles('owner', 'admin')).toEqual({ added: ['workspace:delete', 'chat:read_all'], removed: [] })
+  })
+
+  it('lists exactly the codes of Permission.ALL, in its order, and the compositions PermissionSeeder gives', () => {
+    expect(ALL_CODES).toEqual(javaPermissionCodes())
+    const seeded = seededRoles()
+    for (const role of ROLE_ORDER) expect(ROLE_CODES[role], role).toEqual(new Set(seeded[role]))
   })
 
   it('compares manager with employee as 13 added and 0 removed', () => {
@@ -109,7 +155,7 @@ describe('RoleSwitcher', () => {
 
   it('opens on the manager tab with an empty announcer', () => {
     const { container } = render(createElement(RoleSwitcher))
-    const tab = screen.getByRole('tab', { name: 'Manager, 25 of 46 permission codes' })
+    const tab = screen.getByRole('tab', { name: 'Manager, 25 of 47 permission codes' })
     expect(tab).toHaveAttribute('aria-selected', 'true')
     expect(tab).toHaveAttribute('tabindex', '0')
     expect(screen.getAllByRole('tab').filter((t) => t.getAttribute('tabindex') === '0')).toHaveLength(1)
@@ -140,7 +186,7 @@ describe('RoleSwitcher', () => {
     const employee = screen.getByRole('tab', { name: /^Employee/ })
     expect(employee).toHaveAttribute('aria-selected', 'true')
     expect(employee).toHaveFocus()
-    expect(announcer(container)).toHaveTextContent('Employee: 12 of 46 permission codes. 8 of 11 console areas.')
+    expect(announcer(container)).toHaveTextContent('Employee: 12 of 47 permission codes. 8 of 11 console areas.')
 
     fireEvent.keyDown(employee, { key: 'End' })
     expect(screen.getByRole('tab', { name: /^Viewer/ })).toHaveAttribute('aria-selected', 'true')

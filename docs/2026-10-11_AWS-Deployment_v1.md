@@ -167,8 +167,10 @@ pointing at the Elastic IP, then commit the name in `site.env` (or leave it ther
   certificate is requested and the sslip.io site is unaffected.
 - Once it resolves here, it becomes the primary address: `AIWOS_PUBLIC_HOST`,
   `AIWOS_PUBLIC_BASE_URL` (OAuth callbacks) and `public_url` in `/deploy-status.json`. Caddy gets a
-  Let's Encrypt certificate for both names, and the sslip.io name answers with a temporary (307)
-  redirect to the domain, except `/deploy-status.json`, which both names serve (the GitHub
+  Let's Encrypt certificate for both names, and the sslip.io name answers with a permanent (308)
+  redirect to the domain that browsers may keep for one hour (`Cache-Control: max-age=3600`), so
+  search engines index only the domain and a later switch back to the sslip.io name is followed
+  within the hour. The exception is `/deploy-status.json`, which both names serve (the GitHub
   workflow can keep polling the sslip.io name). CORS and nginx's allow-list accept both names.
 - Applying the change restarts only what reads the names (Caddy and the seven services, for
   `AIWOS_PUBLIC_BASE_URL` / `AIWOS_CORS_ORIGINS`) and reloads nginx; nothing is rebuilt. Expect a

@@ -19,6 +19,7 @@ import {
   type WorkspaceChoice,
 } from '../lib/accountQueries'
 import { useRouter } from '../lib/router'
+import { useServerRender } from '../hooks/useServerRender'
 
 /*
  * Sign in.
@@ -41,6 +42,10 @@ import { useRouter } from '../lib/router'
  * in the card's height. The form comes first in the document, so the first Tab on a phone lands
  * in the email field rather than on links a screen below it; a wide screen still draws the
  * explanation on the left.
+ *
+ * The page is also prerendered as HTML for crawlers, and that HTML is replaced, not hydrated, when
+ * the app mounts. So the prerendered form is inert: nothing can be typed into it or submitted
+ * while the app loads, and so nothing is lost when the live form takes its place.
  */
 
 const PASSWORD_ID = 'sign-in-password'
@@ -56,6 +61,8 @@ type Pending = 'form' | string | null
  */
 export function SignIn() {
   const { search, navigate } = useRouter()
+  // True only in the build-time render: the prerendered form takes no input (see above).
+  const prerendered = useServerRender()
   // Where to go afterwards. Only same-site paths are honoured, so a crafted link cannot bounce a
   // person to another site straight after they have entered their password.
   const requested = search.get('next')
@@ -251,6 +258,7 @@ export function SignIn() {
 
           <form
             className="auth-form"
+            inert={prerendered}
             onSubmit={(event) => {
               event.preventDefault()
               if (!busy) signIn(email.trim(), password, 'form')

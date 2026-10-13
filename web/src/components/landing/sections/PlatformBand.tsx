@@ -5,6 +5,7 @@ import type { ReactElement } from 'react'
 import { Tag } from '../../ui'
 import { useCountUp } from '../../../hooks/useCountUp'
 import { useInView } from '../../../hooks/useInView'
+import { CountFigure } from '../shared/CountFigure'
 import { LandingSection, SectionHead } from '../shared/LandingSection'
 import {
   BUILT_IN_ROLE_COUNT,
@@ -24,8 +25,10 @@ import type { ConnectorId } from '../shared/landingFacts'
  * The counts come from landingFacts, so they cannot drift from the hero or the role explorer.
  * The connectors are split the way mcp-core's ConnectorCatalog splits them: the few that connect
  * to a real account with a token, and the rest, which work with practice data only.
- * The animated figure is decoration and hidden from assistive technology; the final value sits
- * beside it in visually hidden text. Nothing in the band is focusable.
+ * While a figure counts up, the moving number is hidden from assistive technology and the final
+ * value sits beside it in visually hidden text; otherwise the figure is written once (CountFigure),
+ * so a crawler reading the prerendered page sees "8 services", never "88 services". Nothing in the
+ * band is focusable.
  */
 
 /** One count in the band: id, target value, unit and the note under it. */
@@ -45,15 +48,14 @@ const STATS: ReadonlyArray<Stat> = [
   { id: 'roles', value: BUILT_IN_ROLE_COUNT, unit: 'built-in roles', note: 'Plus any roles you compose' },
 ]
 
-/** One count. The figure counts up (useCountUp) once the band is in view; the animated number is hidden from assistive technology and the final value is in visually hidden text beside it. */
+/** One count. The figure counts up (useCountUp) once the band is in view; CountFigure writes it once when still, and while it moves hides the moving number from assistive technology with the final value beside it in visually hidden text. */
 function StatCell({ stat, active }: { stat: Stat; active: boolean }): ReactElement {
   const shown = useCountUp(stat.value, active)
   return (
     <li className="lp-hairline-cell lp-platform-stat">
       <p className="lp-platform-figure">
         <span className="lp-platform-value tabular">
-          <span aria-hidden="true">{shown}</span>
-          <span className="visually-hidden">{stat.value}</span>
+          <CountFigure shown={shown} value={stat.value} />
         </span>{' '}
         <span className="lp-platform-unit">{stat.unit}</span>
       </p>

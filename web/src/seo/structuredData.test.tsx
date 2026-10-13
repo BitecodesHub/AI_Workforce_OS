@@ -1,4 +1,4 @@
-// @find: tests for structured data, JSON-LD, FAQPage matches visible FAQ, no invented ratings or prices, Organization, SoftwareApplication, BreadcrumbList
+// @find: tests for structured data, JSON-LD, FAQPage matches visible FAQ, no invented ratings or prices, no placeholder Organization, SoftwareApplication, BreadcrumbList
 // @what: Tests that the JSON-LD graph names the product truthfully and that its FAQ is word for word the FAQ the home page shows.
 // @flow: Tests src/seo/structuredData.ts against components/landing/sections/Faq.tsx and faqData.ts
 
@@ -26,10 +26,10 @@ function nodeOf(graph: JsonLdNode[], type: string): JsonLdNode {
 }
 
 describe('structured data', () => {
-  it('describes the site, the publisher and the product on every public page', () => {
+  it('describes the site and the product on every public page', () => {
     for (const page of ['home', 'trust', 'sign-in'] as const) {
       const graph = structuredDataFor(page, SITE)['@graph']
-      expect(graph.map((node) => node['@type'])).toEqual(expect.arrayContaining(['Organization', 'WebSite', 'SoftwareApplication']))
+      expect(graph.map((node) => node['@type'])).toEqual(expect.arrayContaining(['WebSite', 'SoftwareApplication']))
       const app = nodeOf(graph, 'SoftwareApplication')
       expect(app).toMatchObject({
         name: 'AI Workforce OS',
@@ -37,6 +37,15 @@ describe('structured data', () => {
         operatingSystem: 'Web browser',
         url: `${SITE}/`,
       })
+    }
+  })
+
+  it('names no publisher until the owner confirms one, rather than a placeholder Organization', () => {
+    for (const page of ['home', 'trust', 'sign-in'] as const) {
+      const data = structuredDataFor(page, SITE)
+      expect(data['@graph'].some((node) => node['@type'] === 'Organization'), page).toBe(false)
+      expect(keysOf(data), page).not.toContain('publisher')
+      expect(JSON.stringify(data), page).not.toContain('#organization')
     }
   })
 

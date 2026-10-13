@@ -1,4 +1,4 @@
-// @find: tests for shared landing components, reduced motion, LandingRoot, DemoFrame, SegmentedControl, hooks
+// @find: tests for shared landing components, reduced motion, LandingRoot, DemoFrame, SegmentedControl, CountFigure, hooks
 // @what: Tests the shared landing foundation in a jsdom environment.
 // @flow: Covers files in shared/
 import { useState } from 'react'
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useReducedMotion } from '../../../hooks/useReducedMotion'
 import { useSequence } from '../../../hooks/useSequence'
 import { useCountUp } from '../../../hooks/useCountUp'
+import { CountFigure } from './CountFigure'
 import { DemoFrame } from './DemoFrame'
 import { SegmentedControl } from './SegmentedControl'
 import { LandingRoot, useLandingMotion } from './LandingRoot'
@@ -136,6 +137,20 @@ describe('useCountUp', () => {
     setMatchMedia(undefined)
     const { result } = renderHook(() => useCountUp(46, false))
     expect(result.current).toBe(46)
+  })
+})
+
+describe('CountFigure', () => {
+  it('writes a still figure once, so text without tags reads "8", never "88"', () => {
+    const { container } = render(<CountFigure shown={8} value={8} />)
+    expect(container.textContent).toBe('8')
+    expect(container.querySelector('[aria-hidden]')).toBeNull()
+  })
+
+  it('while counting, hides the moving number and gives the final value to assistive technology', () => {
+    const { container } = render(<CountFigure shown={3} value={8} />)
+    expect(container.querySelector('[aria-hidden="true"]')?.textContent).toBe('3')
+    expect(container.querySelector('.visually-hidden')?.textContent).toBe('8')
   })
 })
 

@@ -155,3 +155,4 @@ export function buildCrawlerFiles(site: string = SITE_URL, lastmod?: string | nu
 
 export { SITE_URL }
 export { latinFontFile } from './seo/document'
+export { isIsoDate } from './seo/crawlerFiles'

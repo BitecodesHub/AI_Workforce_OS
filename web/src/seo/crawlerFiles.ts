@@ -37,9 +37,14 @@ import { PRODUCT_DEFINITION, PUBLIC_PAGES, SITE_NAME, absoluteUrl } from '../lib
  *   lastmod unless the build is given a real content date, and no priority or changefreq, which
  *   search engines ignore.
  *
- *   llms.txt (llmstxt.org) is a short Markdown guide for AI answer engines: what the product is, the
- *   pages and the key facts. llms-full.txt carries the full text of both public pages, including
- *   what tabs and demos hide until clicked.
+ *   llms.txt (llmstxt.org) is a short Markdown guide for AI answer engines: what the product is and
+ *   its key facts (free text before the first H2, where the format allows lists), then H2 sections
+ *   that are only lists of links, as the format requires. llms-full.txt carries the full text of
+ *   both public pages, including what tabs and demos hide until clicked.
+ *
+ *   Both llms files open with their H1, as the format requires, and carry no repository header:
+ *   a language model reads every line of them, so build notes would become page content. This
+ *   generator holds their header tags.
  *
  * Every sentence is taken from, or matches, what the pages say. No figure, rating, price or
  * customer count appears that the pages do not state, and no connector is described as tested or
@@ -100,15 +105,30 @@ export function robotsTxt(site: string): string {
   ].join('\n')
 }
 
-/** True for a calendar date written YYYY-MM-DD, the form a sitemap's lastmod takes. */
-export function isIsoDate(value: string | undefined | null): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+/** The latest calendar date anywhere on Earth at `now` (UTC+14), as YYYY-MM-DD: a later date has not begun anywhere yet. */
+function latestDateAt(now: Date): string {
+  return new Date(now.getTime() + 14 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+// @find: valid lastmod date, iso date check, future date, impossible date
+/**
+ * True for a real calendar date written YYYY-MM-DD, the form a sitemap's lastmod takes, that is not
+ * in the future at `now` (the build). The value must survive a round trip through Date, so a day
+ * that does not exist, such as 2026-02-30, which Date.parse would roll over into March, is
+ * refused. A date counts as begun once it has begun in any time zone, so a content date written
+ * where the day starts early (Australia, say) is not refused as tomorrow's.
+ */
+export function isIsoDate(value: string | undefined | null, now: Date = new Date()): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return false
+  return value <= latestDateAt(now)
 }
 
 // @find: sitemap xml generator, lastmod
-/** sitemap.xml for the site at `site`; `lastmod`, a YYYY-MM-DD content date, is added to each address only when it is a real date. */
-export function sitemapXml(site: string, lastmod?: string | null): string {
-  const dated = isIsoDate(lastmod) ? lastmod : null
+/** sitemap.xml for the site at `site`; `lastmod`, a YYYY-MM-DD content date, is added to each address only when it is a real date that is not later than `now`. */
+export function sitemapXml(site: string, lastmod?: string | null, now: Date = new Date()): string {
+  const dated = isIsoDate(lastmod, now) ? lastmod : null
   const urls = SITEMAP_PATHS.map((path) =>
     [
       '  <url>',
@@ -167,7 +187,7 @@ export function keyFacts(): string[] {
     `AI providers: ${listOf([...PROVIDERS])}. The workspace sets their order, and if one is busy or unavailable the next one answers.`,
     `Connectors (${CONNECTOR_COUNT}): ${listOf(connectorNames())}. Each connects to a real account once an owner or admin sets it up, and uses practice data until then, so nothing real is sent.`,
     `Ready-made example assistants: ${listOf(AGENTS.map((agent) => `${agent.name} (${agent.title.toLowerCase()})`))}. A new assistant can be briefed the way one would brief a new hire, and an assistant can pass work to another when a job needs more than one.`,
-    `Every workspace starts with ${countWord(BUILT_IN_ROLE_COUNT)} roles built from ${PERMISSION_CODE_COUNT} permissions, and owners and admins can adjust them or create new ones. An employee can hand work to the AI team but cannot approve what it sends, and a viewer can look at reports but change nothing.`,
+    `Every workspace starts with ${countWord(BUILT_IN_ROLE_COUNT)} built-in roles composed from ${PERMISSION_CODE_COUNT} permissions. The built-in roles are fixed, and owners and admins can create roles of their own. An employee can hand work to the AI team but cannot approve what it sends, and a viewer can look at reports but change nothing.`,
     'Every approval decision and every finished job is recorded against the person responsible, in a tamper-evident audit chain.',
     'Agent traces are kept for 180 days by default, and administrators can change this.',
     'Provider keys and connector credentials are stored encrypted, each under its own data key and bound to its workspace.',
@@ -178,36 +198,28 @@ export function keyFacts(): string[] {
   ]
 }
 
-/** The HTML comment that opens both llms files with the repository's header tags; kept short, since language models read it too. */
-function llmsHeader(file: 'llms.txt' | 'llms-full.txt', what: string): string {
-  return [
-    '<!--',
-    `  @find: ${file}, AI answer engines, GEO, plain-text guide to AI Workforce OS`,
-    `  @what: ${what}`,
-    `  @flow: Generated by web/src/seo/crawlerFiles.ts (crawlerFiles.test.ts keeps web/public/${file} equal); served by nginx`,
-    '-->',
-  ].join('\n')
-}
-
 // @find: llms txt generator, llmstxt.org
-/** llms.txt for the site at `site`, in the llmstxt.org format: a title, a one-sentence summary, a paragraph, then linked sections. */
+/**
+ * llms.txt for the site at `site`, in the llmstxt.org format: the H1, a one-sentence summary, then
+ * free text (a paragraph and the key facts as a list, introduced by a sentence because headings
+ * are not allowed there), then H2 sections that hold only lists of [name](url) links.
+ */
 export function llmsTxt(site: string): string {
   return [
-    llmsHeader('llms.txt', 'A short guide to AI Workforce OS for AI assistants and answer engines, in the llmstxt.org format.'),
     `# ${SITE_NAME}`,
     '',
     `> ${PRODUCT_DEFINITION}`,
     '',
     overview(),
     '',
+    'Key facts:',
+    '',
+    ...keyFacts().map((fact) => `- ${fact}`),
+    '',
     '## Pages',
     '',
     `- [Home page](${absoluteUrl(PUBLIC_PAGES.home.path, site)}): What the AI assistants do, how it works in three steps, example assistants, two demos, safety and common questions.`,
     `- [Security and technical details](${absoluteUrl(PUBLIC_PAGES.trust.path, site)}): For IT and security teams: the approval gate, provider failover, the tamper-evident audit chain, cited answers, the permissions of every role, what runs and the stated limits.`,
-    '',
-    '## Key facts',
-    '',
-    ...keyFacts().map((fact) => `- ${fact}`),
     '',
     '## Get started',
     '',
@@ -250,7 +262,7 @@ function homeSections(): string[] {
     '',
     ...PROMISES.map((promise) => `- ${promise.title}: ${promise.body}`),
     '',
-    'Who can do what, in the five roles every workspace starts with (owners and admins can adjust them):',
+    `Who can do what, in the ${countWord(BUILT_IN_ROLE_COUNT)} built-in roles every workspace starts with (owners and admins can create roles of their own):`,
     '',
     ...WHO_CAN.map((row) => `- ${row.label}: ${rolesHolding(row.codes)}`),
     '',
@@ -287,7 +299,6 @@ function trustSections(): string[] {
 /** llms-full.txt for the site at `site`: the full text of the home page and the technical page, including what tabs and demos show only when clicked. */
 export function llmsFullTxt(site: string): string {
   return [
-    llmsHeader('llms-full.txt', 'The full text of the AI Workforce OS public pages, for AI assistants and answer engines.'),
     `# ${SITE_NAME}`,
     '',
     `> ${PRODUCT_DEFINITION}`,

@@ -77,10 +77,23 @@ describe('the prerendered pages', () => {
     expect(jsonLd(html)[0]!['@graph'].map((node) => node['@type'])).toContain('BreadcrumbList')
   })
 
-  it('renders the sign-in form without asking the network', () => {
+  it('renders the sign-in form without asking the network, inert so nothing typed before the app runs is lost', () => {
     const html = pages['sign-in.html']
     expect(bodyText(html)).toContain('Welcome back')
     expect(html).toContain('<link rel="canonical" href="https://ai-workforce.bitecodes.com/sign-in" />')
+    expect(html).toMatch(/<form class="auth-form" inert="">/)
+    expect(html.match(/<form[\s>]/g)).toHaveLength(1)
+  })
+
+  it('writes each counted figure once on the technical page, as a crawler without CSS reads it', () => {
+    // Tags removed with nothing in their place: the harshest way a crawler can join the text.
+    const text = pages['trust.html'].slice(pages['trust.html'].indexOf('<body>')).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ')
+    for (const figure of ['8 services', '7 + sandbox', '20 connectors', '47 permission codes', '5 built-in roles', '25 of 47 permission codes']) {
+      expect(text).toContain(figure)
+    }
+    for (const doubled of ['88 services', '77 + sandbox', '2020 connectors', '4747 permission codes', '55 built-in roles', '2525']) {
+      expect(text).not.toContain(doubled)
+    }
   })
 
   it('marks the not-found page and the app shell noindex, with no canonical link', () => {
@@ -114,7 +127,7 @@ describe('the prerendered pages', () => {
   it('carries JSON-LD that parses, with the FAQ only on the home page', () => {
     /** The JSON-LD node types of one page, in order. */
     const types = (file: keyof typeof pages) => jsonLd(pages[file]).flatMap((graph) => graph['@graph'].map((node) => node['@type']))
-    expect(types('index.html')).toEqual(['Organization', 'WebSite', 'SoftwareApplication', 'FAQPage'])
+    expect(types('index.html')).toEqual(['WebSite', 'SoftwareApplication', 'FAQPage'])
     expect(types('trust.html')).not.toContain('FAQPage')
     expect(types('sign-in.html')).toContain('WebPage')
   })

@@ -16,8 +16,11 @@ import { CONNECTOR_LABEL, CONNECTOR_NOTICE, PROVIDERS, listOf } from '../shared/
  *
  * What runs without asking is taken from agentGrants.ts: reading, drafting, adding a calendar
  * event and updating a ticket or a GitHub issue run directly, while sending, posting and deleting
- * always wait. Owners and admins hold agent:set_approval_policy (roleData.ts), which can add a gate
- * to any other action.
+ * always wait. Owners and admins can make more actions wait: an agent's grant for a connector has a
+ * requireApproval switch (orchestrator AgentGrantController, PUT /api/agents/{id}/grants/{server}),
+ * behind agent:grant_tools, which only the Owner and Admin roles hold (roleData.ts). The built-in
+ * roles themselves are fixed (identity RoleController refuses to edit or delete them); owners and
+ * admins create roles of their own.
  *
  * Search and answer engines read these through the FAQPage structured data, built from this list
  * so it can never say something the page does not.
@@ -62,7 +65,7 @@ export const FAQ_ITEMS: ReadonlyArray<FaqItem> = [
   },
   {
     q: 'Who can see and approve things?',
-    a: 'Each person gets a role. An employee can hand work to the AI team but cannot approve what it sends, and a viewer can look at reports but change nothing. Owners and admins can shape the roles to fit your team.',
+    a: 'Each person gets a role. An employee can hand work to the AI team but cannot approve what it sends, and a viewer can look at reports but change nothing. Owners and admins can create roles of their own to fit your team.',
   },
   {
     q: 'How do we get started?',

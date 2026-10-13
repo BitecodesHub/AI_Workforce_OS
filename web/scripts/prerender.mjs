@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
  * Flat files rather than trust/index.html, so neither nginx nor `vite preview` answers /trust
  * with a redirect to /trust/. The crawler files in dist (copied from web/public by Vite) are
  * written again for the address this build names, with a sitemap lastmod only when SITE_LASTMOD
- * gives a real date. The Vite manifest is removed afterwards so it is not published.
+ * gives a real date that is not in the future (a warning names a value that is refused). The Vite manifest is removed afterwards so it is not published.
  */
 
 const WEB = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -55,7 +55,11 @@ async function main() {
   const assets = await readdir(join(DIST, 'assets'))
   const font = server.latinFontFile(assets)
   const pages = await writeAll(server.buildPages({ template, manifest, font }))
-  const crawler = await writeAll(server.buildCrawlerFiles(server.SITE_URL, process.env.SITE_LASTMOD ?? null))
+  const lastmod = process.env.SITE_LASTMOD || null
+  if (lastmod && !server.isIsoDate(lastmod)) {
+    console.warn(`prerender: SITE_LASTMOD "${lastmod}" is not a real YYYY-MM-DD date that has begun; the sitemap has no lastmod`)
+  }
+  const crawler = await writeAll(server.buildCrawlerFiles(server.SITE_URL, lastmod))
   await rm(join(DIST, '.vite'), { recursive: true, force: true })
 
   console.log(`prerender: ${server.SITE_URL}`)

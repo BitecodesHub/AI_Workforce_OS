@@ -36,13 +36,14 @@ const TRUST_SECTIONS: readonly BarSection[] = [
 /**
  * The paragraphs under the heading. The second and third state the platform's defaults as it
  * ships: RetentionService (traces kept 180 days), ApprovalService (a 24-hour approval window,
- * and the four-eyes setting, off by default) and EnvelopeEncryptionService (a data key per
- * value, bound to its workspace). Exported for llms-full.txt (src/seo/crawlerFiles.ts).
+ * and the four-eyes setting, off by default, whose middle value covers every DESTRUCTIVE action:
+ * deletions, cancellations and refunds, per SandboxServerRegistry) and EnvelopeEncryptionService
+ * (a data key per value, bound to its workspace). Exported for llms-full.txt (src/seo/crawlerFiles.ts).
  */
 export const TRUST_LEAD: readonly string[] = [
   'The detail behind the promises on the overview: the approval gate, provider failover, the tamper-evident audit chain, cited retrieval, the permission model and what actually runs.',
   'Agent traces are kept for 180 days by default; administrators can change this. An approval nobody decides expires after 24 hours, and nothing is sent.',
-  'Provider keys and connector credentials are stored encrypted, each under its own data key and bound to its workspace. A workspace can also require that someone other than the person who asked approves, for every action or only for deletions; this is off by default.',
+  'Provider keys and connector credentials are stored encrypted, each under its own data key and bound to its workspace. A workspace can also require that someone other than the person who asked approves, either for every approval or only for actions that delete something or cannot be undone, such as refunds and cancellations; this is off by default.',
 ]
 
 // @find: Trust component, technical details page, /trust

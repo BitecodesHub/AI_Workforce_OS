@@ -7,8 +7,9 @@ import { useReducedMotion } from './useReducedMotion'
 /*
  * A number that counts up to its target once it becomes active.
  *
- * The displayed value is decoration: callers render it aria-hidden, with the real target beside
- * it in visually hidden text, so a screen reader never hears the intermediate figures. State
+ * The displayed value is decoration: while it moves, callers render it aria-hidden with the real
+ * target beside it in visually hidden text (components/landing/shared/CountFigure), so a screen
+ * reader never hears the intermediate figures; once still, the figure is written once. State
  * changes only inside animation frames, never synchronously in the effect.
  */
 

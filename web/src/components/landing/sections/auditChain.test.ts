@@ -166,10 +166,12 @@ describe('sections', () => {
     expect(screen.getByText(/Deleting one waits for approval/)).toBeInTheDocument()
   })
 
-  it('renders the platform counts with their final values for assistive technology', () => {
+  it('renders the platform counts once each at their final values, readable by assistive technology', () => {
     const { container } = render(createElement(PlatformBand))
-    const hidden = [...container.querySelectorAll('.lp-platform-stats .visually-hidden')].map((node) => node.textContent)
-    expect(hidden).toEqual(['8', '7', '20', '46', '5'])
+    // Still figures (jsdom reports reduced motion): each written once, nothing hidden.
+    const figures = [...container.querySelectorAll('.lp-platform-value')].map((node) => node.textContent)
+    expect(figures).toEqual(['8', '7', '20', '47', '5'])
+    expect(container.querySelectorAll('.lp-platform-stats [aria-hidden="true"], .lp-platform-stats .visually-hidden')).toHaveLength(0)
     expect(screen.getByText('Sandbox')).toBeInTheDocument()
     // The connectors in two groups, as mcp-core's catalogue splits them.
     const live = screen.getByRole('list', { name: 'Connect live' })
