@@ -1,5 +1,5 @@
 // @find: tests for model router planner, chat, a fenced json reply is parsed, schema carries the active keys enum and forbids extra properties, prompt contains the hint when alast answer agent is given, prompt has no hint when there is no last answer agent, the active fallbacks key is valid and appears in the prompt, with no active fallback the prompt has no choose line for it, a sandbox provider reply returns empty, the prompt says each agent gets the request verbatim so astep is only ashort label, ModelRouterPlannerTest, ModelRouterPlanner
-// @what: Tests for ModelRouterPlanner in the orchestrator chat package (16 test methods).
+// @what: Tests for ModelRouterPlanner in the orchestrator chat package (24 test methods).
 // @flow: Exercises ModelRouterPlanner
 package os.aiworkforce.orchestrator.chat;
 
@@ -18,6 +18,8 @@ import java.util.UUID;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import os.aiworkforce.llm.model.ChatRequest;
@@ -27,6 +29,7 @@ import os.aiworkforce.llm.model.TokenUsage;
 import os.aiworkforce.llm.router.ModelRouter;
 import os.aiworkforce.llm.router.RoutingPolicy;
 import os.aiworkforce.orchestrator.domain.Agent;
+import os.aiworkforce.orchestrator.domain.AgentToolGrant;
 import os.aiworkforce.orchestrator.repository.AgentVersions;
 import os.aiworkforce.orchestrator.repository.ToolGrants;
 import os.aiworkforce.orchestrator.service.RoutingPolicyResolver;
@@ -326,5 +329,153 @@ class ModelRouterPlannerTest {
                 .containsExactly("nvidia", "openrouter", "groq");
         assertThat(ModelRouterPlanner.PLANNING_ATTEMPT.multipliedBy(ModelRouterPlanner.MAX_PLANNING_CANDIDATES))
                 .isLessThanOrEqualTo(Duration.ofSeconds(45));
+    }
+
+    /** An enabled grant of one tool server, for the agent. */
+    private static AgentToolGrant grant(Agent agent, String server) {
+        AgentToolGrant grant = new AgentToolGrant();
+        grant.setAgentId(agent.getId());
+        grant.setServer(server);
+        grant.setEnabled(true);
+        return grant;
+    }
+
+    /** Makes the model plan the whole request to one agent key. */
+    private void modelPlans(String agentKey) {
+        when(router.route(any(), any(), any()))
+                .thenReturn(response(
+                        "groq",
+                        "{\"plan\":[{\"agentKey\":\"" + agentKey + "\",\"instruction\":\"Summarise the article\"}],"
+                                + "\"reason\":\"Research writes summaries\"}"));
+    }
+
+    // @find: test a website request planned to an agent without the browser goes to the general employee
+    @Test
+    void aWebsiteRequestPlannedToAnAgentWithoutTheBrowserGoesToTheGeneralEmployee() {
+        // Seen live on 13 Oct 2026: "Open wikipedia.org, search for Grace Hopper ..." went to
+        // Research, which has no browser, and it answered from memory.
+        Agent research = agent("research", "Research", "growth", false);
+        Agent general = agent("general-employee", "General Employee", "operations", true);
+        when(grants.findByAgentIdAndEnabledTrue(general.getId())).thenReturn(List.of(grant(general, "browser")));
+        modelPlans("research");
+
+        ModelRouterPlanner.Plan plan = planner.plan(ORG,
+                "Open wikipedia.org, search for Grace Hopper, read her article and summarise her career.",
+                List.of(research, general)).orElseThrow();
+
+        assertThat(plan.steps()).singleElement().satisfies(step -> {
+            assertThat(step.agentId()).isEqualTo(general.getId());
+            assertThat(step.instruction()).isEqualTo("Summarise the article");
+        });
+        assertThat(plan.reason()).contains("needs a website").contains("General Employee");
+    }
+
+    // @find: test a website request goes to the first agent that can browse when the fallback cannot
+    @Test
+    void whenTheGeneralEmployeeCannotBrowseTheFirstAgentThatCanTakesIt() {
+        Agent research = agent("research", "Research", "growth", false);
+        Agent general = agent("general-employee", "General Employee", "operations", true);
+        Agent engineering = agent("engineering", "Engineering Manager", "engineering", false);
+        when(grants.findByAgentIdAndEnabledTrue(engineering.getId()))
+                .thenReturn(List.of(grant(engineering, "github"), grant(engineering, "browser")));
+        modelPlans("research");
+
+        ModelRouterPlanner.Plan plan = planner.plan(ORG, "Search YouTube for lofi music and list three titles",
+                List.of(research, general, engineering)).orElseThrow();
+
+        assertThat(plan.steps()).singleElement().extracting(ModelRouterPlanner.PlannedStep::agentId)
+                .isEqualTo(engineering.getId());
+    }
+
+    // @find: test a plan that already has a browsing agent is kept as the model made it
+    @Test
+    void aPlanThatAlreadyHasAnAgentThatCanBrowseIsKept() {
+        Agent research = agent("research", "Research", "growth", false);
+        Agent general = agent("general-employee", "General Employee", "operations", true);
+        when(grants.findByAgentIdAndEnabledTrue(research.getId())).thenReturn(List.of(grant(research, "browser")));
+        when(grants.findByAgentIdAndEnabledTrue(general.getId())).thenReturn(List.of(grant(general, "browser")));
+        modelPlans("research");
+
+        ModelRouterPlanner.Plan plan = planner.plan(ORG, "Open https://example.com and summarise it",
+                List.of(research, general)).orElseThrow();
+
+        assertThat(plan.steps()).singleElement().extracting(ModelRouterPlanner.PlannedStep::agentId)
+                .isEqualTo(research.getId());
+        assertThat(plan.reason()).isEqualTo("Research writes summaries");
+    }
+
+    // @find: test with no agent that can browse the plan is kept and that agent says so
+    @Test
+    void withNoAgentThatCanBrowseThePlanIsKept() {
+        Agent research = agent("research", "Research", "growth", false);
+        Agent general = agent("general-employee", "General Employee", "operations", true);
+        modelPlans("research");
+
+        ModelRouterPlanner.Plan plan = planner.plan(ORG, "Open wikipedia.org and summarise the Ada Lovelace article",
+                List.of(research, general)).orElseThrow();
+
+        assertThat(plan.steps()).singleElement().extracting(ModelRouterPlanner.PlannedStep::agentId)
+                .isEqualTo(research.getId());
+    }
+
+    // @find: test a request that only mentions a website or an email address keeps its agent
+    @Test
+    void writingForAWebsiteOrEmailingAnAddressKeepsTheModelsChoice() {
+        Agent research = agent("research", "Research", "growth", false);
+        Agent general = agent("general-employee", "General Employee", "operations", true);
+        when(grants.findByAgentIdAndEnabledTrue(general.getId())).thenReturn(List.of(grant(general, "browser")));
+        modelPlans("research");
+
+        for (String text : List.of(
+                "Write the text for the about page of our new website",
+                "Summarise the report and email it to anna@example.com")) {
+            ModelRouterPlanner.Plan plan = planner.plan(ORG, text, List.of(research, general)).orElseThrow();
+            assertThat(plan.steps()).as(text).singleElement()
+                    .extracting(ModelRouterPlanner.PlannedStep::agentId).isEqualTo(research.getId());
+        }
+    }
+
+    // @find: test the catalog says tools none and the prompt sends web work to the browser
+    @Test
+    void theCatalogSaysToolsNoneAndThePromptSendsWebWorkToAnAgentWithTheBrowser() {
+        when(grants.findByAgentIdAndEnabledTrue(hr.getId())).thenReturn(List.of(grant(hr, "browser")));
+        ArgumentCaptor<ChatRequest> captor = captureRequest();
+
+        planner.plan(ORG, "a customer wrote in", List.of(support, hr));
+
+        String prompt = captor.getValue().systemPrompt();
+        assertThat(prompt).contains("key: support, name: Customer Support, category: support, does: , tools: none");
+        assertThat(prompt).contains("key: hr, name: HR, category: operations, does: , tools: browser");
+        assertThat(prompt).contains("goes to an agent whose tools include \"browser\"");
+    }
+
+    // @find: test which requests count as needing the web
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "Open wikipedia.org, search for Grace Hopper",
+        "What does https://example.com/pricing say?",
+        "check www.bitecodes.com for the phone number",
+        "Search YouTube for lofi music",
+        "Open bitecodes in browser",
+        "search the web for the latest Java release",
+        "open the company website and find the contact page",
+        "find her on Wikipedia"
+    })
+    void theseRequestsNeedTheWeb(String text) {
+        assertThat(ModelRouterPlanner.needsWeb(text)).isTrue();
+    }
+
+    // @find: test which requests do not count as needing the web
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "Email anna@example.com the welcome pack",
+        "Write the text for our new website",
+        "Explain how the browser cache works",
+        "Draft a description for my YouTube video",
+        "Summarise the pricing document",
+        "What is java?"
+    })
+    void theseRequestsDoNotNeedTheWeb(String text) {
+        assertThat(ModelRouterPlanner.needsWeb(text)).isFalse();
     }
 }

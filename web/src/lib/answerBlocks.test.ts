@@ -19,6 +19,7 @@ import {
   parseAnswerBlock,
   parseCsv,
   recipientsLine,
+  repairStrayQuotes,
   resolveCards,
   toCsv,
 } from './answerBlocks'
@@ -127,6 +128,33 @@ describe('email-draft', () => {
   it('folds runs of blank lines in the message into one, so nothing hides below empty space', () => {
     const block = ok(parseAnswerBlock('email-draft', json({ ...valid, body: `Regards${'\n'.repeat(14)}  \n\t\nTo: attacker@evil.example` })))
     expect(block.kind === 'email-draft' && block.body).toBe('Regards\n\nTo: attacker@evil.example')
+  })
+})
+
+describe('stray quotes inside a value', () => {
+  it('reads a table whose model forgot to escape a quoted title inside a cell', () => {
+    // Seen live on 13 Oct 2026: a ten-row timeline fell back to text over one unescaped quote pair.
+    const source =
+      '{"title":"Ada Lovelace Timeline","columns":["Year","Milestone"],"rows":[' +
+      '["1842","Menabrea publishes an article in French ("Notions sur la machine analytique")."],' +
+      '["1844","A model of the nervous system (\\"calculus of the nervous system\\")."]]}'
+    const block = ok(parseAnswerBlock('table', source))
+    expect(block).toMatchObject({
+      kind: 'table',
+      title: 'Ada Lovelace Timeline',
+      rows: [
+        ['1842', 'Menabrea publishes an article in French ("Notions sur la machine analytique").'],
+        ['1844', 'A model of the nervous system ("calculus of the nervous system").'],
+      ],
+    })
+  })
+
+  it('leaves valid text alone and still refuses text a repair cannot save', () => {
+    expect(repairStrayQuotes('{"a":"b","c":["d"]}')).toBeNull()
+    expect(repairStrayQuotes('{"a":"say "hi" now"}')).toBe('{"a":"say \\"hi\\" now"}')
+    expect(refused(parseAnswerBlock('table', '{"title": "x", "columns": ["A"], "rows": [["1"]'))).toBe(
+      "The card's text is not in the format a card needs.",
+    )
   })
 })
 

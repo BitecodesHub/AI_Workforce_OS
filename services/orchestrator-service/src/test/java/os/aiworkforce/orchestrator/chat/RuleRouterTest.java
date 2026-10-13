@@ -1,5 +1,5 @@
 // @find: tests for rule router, chat, synonym match wins, splits clauses and chains, tool server word adds score, repository requests go to engineering, tie asks rather than guesses, nothing scored offers every agent, at floor score still wins when unique, people and employment words route to hr, RuleRouterTest, RuleRouter
-// @what: Tests for RuleRouter in the orchestrator chat package (18 test methods).
+// @what: Tests for RuleRouter in the orchestrator chat package (19 test methods).
 // @flow: Exercises RuleRouter
 package os.aiworkforce.orchestrator.chat;
 
@@ -76,6 +76,22 @@ class RuleRouterTest {
 
         assertThat(result.needsChoice()).isFalse();
         assertThat(result.steps().getFirst().agent()).isEqualTo(engineering);
+    }
+
+    // @find: test a website request goes to the agent with the browser, rule router
+    @Test
+    @DisplayName("a request to open a website goes to the agent that holds the browser")
+    void websiteRequestsGoToTheAgentWithTheBrowser() {
+        // Tool words are a weak signal (one point each, under the floor of two), so it takes two
+        // of them, as here, to route on the browser alone; a single one falls to the fallback.
+        Map<UUID, List<String>> tools = Map.of(engineering.getId(), List.of("github", "browser"));
+
+        RuleRouter.Result result =
+                RuleRouter.route("open wikipedia in the browser and read the Grace Hopper article", agents, tools);
+
+        assertThat(result.needsChoice()).isFalse();
+        assertThat(result.steps().getFirst().agent()).isEqualTo(engineering);
+        assertThat(result.steps().getFirst().matched()).contains("wikipedia", "browser");
     }
 
     // @find: test repository requests go to engineering, rule router

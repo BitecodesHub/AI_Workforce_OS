@@ -110,7 +110,8 @@ public final class RuleRouter {
             "github", List.of("github", "repo", "repository", "pull request", "branch"),
             "jira", List.of("jira"),
             "calendar", List.of("meeting", "interview"),
-            "drive", List.of("document", "doc"));
+            "drive", List.of("document", "doc"),
+            "browser", List.of("website", "web page", "wikipedia", "youtube", "browser", "online"));
 
     /** One compiled word-boundary pattern per phrase, built once and reused for every clause scored. */
     private static final Map<String, Pattern> PHRASE_PATTERNS = new ConcurrentHashMap<>();

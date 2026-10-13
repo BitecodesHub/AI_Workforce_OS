@@ -77,6 +77,16 @@ describe('PayloadPreview', () => {
     expect(valueOf(container, 'Cc')).toHaveTextContent('(empty)')
   })
 
+  it('lists fields straight under the caption when none of them is a known one', () => {
+    // Seen live on 13 Oct 2026: a browser form submit carries only {"field": ...}, and the box read
+    // "Exactly what will be sent", then nothing, then "Other details".
+    const { container } = render(<PayloadPreview payload={JSON.stringify({ field: 'Search Wikipedia' })} actionClass="OUTBOUND" />)
+
+    expect(screen.queryByText('Other details')).not.toBeInTheDocument()
+    expect(labels(container)).toEqual(['Field'])
+    expect(valueOf(container, 'Field')).toHaveTextContent('Search Wikipedia')
+  })
+
   it('shows a list of recipients as compact JSON, so none is dropped', () => {
     const payload = JSON.stringify({ to: ['a@x.example', 'b@y.example'], subject: 'Hi' })
 

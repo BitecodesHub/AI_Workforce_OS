@@ -142,13 +142,60 @@ function recipients(value: unknown, field: string, required: boolean): string {
   return addresses.join(', ')
 }
 
-/** A JSON object, or a refusal naming what was wrong with the body. */
+/** A character that may follow the closing quote of a JSON string: a separator or the end of an object or list. */
+const AFTER_STRING = /[,:}\]]/
+
+/**
+ * The card's text with stray double quotes inside its values escaped, or null when it has none to
+ * fix. Models quote titles inside a sentence and forget the backslash ("in French ("Notions sur
+ * la machine analytique")"), which made a whole timeline table fall back to text on 13 Oct 2026.
+ * Inside a string, a quote counts as the closing one only when what follows it (after spaces) is a
+ * separator, the end of an object or list, or the end of the text; any other quote is part of the
+ * value. Only tried after the text failed to parse as it is, and only kept when it then parses.
+ */
+export function repairStrayQuotes(source: string): string | null {
+  let out = ''
+  let inString = false
+  let changed = false
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i]!
+    if (inString && char === '\\') {
+      out += char + (source[i + 1] ?? '')
+      i++
+      continue
+    }
+    if (char === '"') {
+      if (!inString) {
+        inString = true
+      } else {
+        const rest = source.slice(i + 1).trimStart()
+        if (rest === '' || AFTER_STRING.test(rest[0]!)) {
+          inString = false
+        } else {
+          out += '\\"'
+          changed = true
+          continue
+        }
+      }
+    }
+    out += char
+  }
+  return changed ? out : null
+}
+
+/** A JSON object, or a refusal naming what was wrong with the body. A value with unescaped quotes is repaired first. */
 function jsonObject(source: string): Record<string, unknown> {
   let parsed: unknown
   try {
     parsed = JSON.parse(source)
   } catch {
-    refuse("The card's text is not in the format a card needs.")
+    const repaired = repairStrayQuotes(source)
+    try {
+      if (repaired === null) throw new Error('nothing to repair')
+      parsed = JSON.parse(repaired)
+    } catch {
+      refuse("The card's text is not in the format a card needs.")
+    }
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) refuse("The card's text is a list, not one card.")
   return parsed as Record<string, unknown>

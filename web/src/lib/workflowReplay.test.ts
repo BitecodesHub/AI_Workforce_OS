@@ -167,6 +167,21 @@ describe('building a replay from timestamps', () => {
       'Review: skipped',
     ])
   })
+
+  it('drops the full stop that ends a step named after its instruction, so the sentence reads cleanly', () => {
+    // Seen live on 13 Oct 2026: "...one sentence each.: completed".
+    const titled = (taskId: string) =>
+      taskId === 'a' ? 'General Employee: List three tips, one sentence each.' : 'Research: Make a checklist. '
+    expect(eventSentence({ kind: 'finished', taskId: 'a', status: 'completed', at: T0 }, titled)).toBe(
+      'General Employee: List three tips, one sentence each: completed',
+    )
+    expect(eventSentence({ kind: 'started', taskId: 'a', at: T0 }, titled)).toBe(
+      'General Employee: List three tips, one sentence each started',
+    )
+    expect(eventSentence({ kind: 'handoff', taskId: 'b', fromTaskId: 'a', at: T0 }, titled)).toBe(
+      'General Employee: List three tips, one sentence each handed over to Research: Make a checklist',
+    )
+  })
 })
 
 describe('live hand-offs', () => {

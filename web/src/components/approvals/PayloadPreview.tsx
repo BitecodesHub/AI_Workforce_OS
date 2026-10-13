@@ -97,7 +97,10 @@ export function PayloadPreview({ payload, actionClass }: { payload: string; acti
           <div className="approval-payload" role="group" aria-label={`${caption}, field by field`} tabIndex={0}>
             <div className="stack" style={{ gap: 'var(--space-5)' }}>
               {parsed.known.length > 0 && <Rows rows={parsed.known} />}
-              {parsed.other.length > 0 && (
+              {/* "Other details" only means something next to known fields; alone, the rows sit
+                  straight under the caption rather than under an empty first section. */}
+              {parsed.other.length > 0 && parsed.known.length === 0 && <Rows rows={parsed.other} />}
+              {parsed.other.length > 0 && parsed.known.length > 0 && (
                 <div className="stack" style={{ gap: 'var(--space-3)' }}>
                   <p className="caption muted">Other details</p>
                   <Rows rows={parsed.other} />

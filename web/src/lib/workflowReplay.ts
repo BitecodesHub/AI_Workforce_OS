@@ -319,9 +319,18 @@ export function goalCanvas(timeline: GoalTimeline): GoalCanvas {
   return { graph: { nodes, edges }, nodeOfTask, taskOfNode }
 }
 
+/**
+ * A step's name ready to sit inside a sentence: a title without one runs on into its instruction,
+ * which usually ends in a full stop, and "…one sentence each.: completed" was seen live on 13 Oct
+ * 2026, so the closing punctuation goes.
+ */
+function inSentence(title: string): string {
+  return title.replace(/[\s.!?;:,]+$/u, '')
+}
+
 /** The event's sentence for the replay log: "Research started", "Draft is waiting for approval". */
 export function eventSentence(event: ReplayEvent, name: (taskId: string) => string): string {
-  const who = name(event.taskId)
+  const who = inSentence(name(event.taskId))
   switch (event.kind) {
     case 'started':
       return `${who} started`
@@ -332,7 +341,7 @@ export function eventSentence(event: ReplayEvent, name: (taskId: string) => stri
     case 'retrying':
       return `${who} will try again`
     case 'handoff':
-      return `${name(event.fromTaskId ?? '')} handed over to ${who}`
+      return `${inSentence(name(event.fromTaskId ?? ''))} handed over to ${who}`
     case 'finished':
       return `${who}: ${STEP_STATUS_LABEL[event.status ?? 'completed'].toLowerCase()}`
   }

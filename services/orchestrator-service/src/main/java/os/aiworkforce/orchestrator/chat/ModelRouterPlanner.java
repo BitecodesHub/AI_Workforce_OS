@@ -74,6 +74,28 @@ public class ModelRouterPlanner {
     /** Matches the first sentence of an agent's system prompt, used as its one-line description. */
     private static final Pattern FIRST_SENTENCE = Pattern.compile("^(.+?[.!?])(?=\\s|$)");
 
+    /** The tool server that opens and reads websites. */
+    static final String BROWSER = "browser";
+
+    /**
+     * A web address in the request: a link, "www.", or a domain such as wikipedia.org. A domain
+     * inside an email address (anna@example.com) is not one: that request is about email.
+     */
+    private static final Pattern WEB_ADDRESS = Pattern.compile(
+            "(?i)\\bhttps?://|\\bwww\\.|(?<![@.\\w-])[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\."
+                    + "(?:com|org|net|io|ai|co|gov|edu|dev|app|info|me|uk|au|in|de|fr|ca|us)\\b");
+
+    /**
+     * Phrases that ask to go on the web: search or browse it, use the browser, or open, visit or
+     * search a website or a site people name without its address. Only asking to go there counts:
+     * "write the text for our website" is writing, and stays with whoever writes.
+     */
+    private static final Pattern WEB_WORDS = Pattern.compile(
+            "(?i)\\b(?:search (?:the web|the internet|online)|look (?:it |this |that )?up online"
+                    + "|browse (?:the )?(?:web|internet)|(?:in|with|use) (?:the |a )?browser"
+                    + "|(?:open|visit|go to)\\s+(?:the\\s+)?(?:\\w+\\s+)?(?:website|web ?site|web ?page|wikipedia|youtube)"
+                    + "|(?:search|on) (?:wikipedia|youtube))\\b");
+
     /** A reply that arrived fenced in a markdown code block, with an optional "json" tag. */
     private static final Pattern CODE_FENCE = Pattern.compile("^```(?:json)?\\s*(.*?)\\s*```$", Pattern.DOTALL);
 
@@ -171,7 +193,13 @@ public class ModelRouterPlanner {
                                 effectiveHints.lastAnswerAgent().getName(),
                                 effectiveHints.lastAnswerAgent().getKey());
 
-        String catalog = active.stream().map(this::describe).collect(Collectors.joining("\n"));
+        Map<UUID, List<String>> servers = new LinkedHashMap<>();
+        for (Agent agent : active) {
+            servers.put(agent.getId(), toolServers(agent));
+        }
+        String catalog = active.stream()
+                .map(agent -> describe(agent, servers.get(agent.getId())))
+                .collect(Collectors.joining("\n"));
         String system =
                 """
                 You route one request from a person to between one and three of the agents below, in the order they should work.
@@ -181,6 +209,7 @@ public class ModelRouterPlanner {
                 - Use each agent at most once. Use more than one agent only when the request asks for work done in sequence.
                 - Each agent is given the person's whole request word for word, so "instruction" is only that agent's part of it: one short sentence of at most 25 words. Never copy names, figures, pasted text or any other content from the request into it.
                 - Use only the agent keys listed; never invent one.
+                - A request that needs a website, a web page or a search on the web goes to an agent whose tools include "browser". One that needs another outside system, such as GitHub, email or phone calls, goes to an agent holding that tool. An agent with "tools: none" works only from what it knows and the workspace's documents, and cannot open anything.
                 %s
                 Reply with only a JSON object of this shape, and nothing else:
                 {"plan":[{"agentKey":"<key>","instruction":"<this agent's part, one short sentence>"}],"reason":"<one sentence>"}
@@ -213,7 +242,71 @@ public class ModelRouterPlanner {
             return Optional.empty();
         }
 
-        return parse(response.content(), byKey);
+        return parse(response.content(), byKey)
+                .map(plan -> withBrowsingAgent(plan, text, active, fallback, servers));
+    }
+
+    /**
+     * Makes sure a request that names a website, or asks for the web, is planned to an agent that
+     * can open it. A model sometimes routes "Open wikipedia.org and summarise the article" to the
+     * agent whose work sounds closest (one that writes summaries), which has no browser and then
+     * answers from memory: seen live on 13 Oct 2026.
+     *
+     * <p>Flow: when the request needs the web, no planned agent holds the browser and an active one
+     * does, the step whose label asks for the web (else the first step) goes to the General
+     * Employee when it can browse, otherwise to the first active agent that can. Every other plan
+     * is returned unchanged, as is one where no agent can browse: that agent then says so. Pure;
+     * logs the change at info.
+     *
+     * @param servers the tool servers each active agent holds, by agent id
+     */
+    static Plan withBrowsingAgent(
+            Plan plan, String text, List<Agent> active, Agent fallback, Map<UUID, List<String>> servers) {
+        if (!needsWeb(text)) {
+            return plan;
+        }
+        if (plan.steps().stream().anyMatch(step -> canBrowse(step.agentId(), servers))) {
+            return plan;
+        }
+        Agent browsing = fallback != null && canBrowse(fallback.getId(), servers)
+                ? fallback
+                : active.stream().filter(agent -> canBrowse(agent.getId(), servers)).findFirst().orElse(null);
+        if (browsing == null) {
+            return plan;
+        }
+        int index = 0;
+        for (int i = 0; i < plan.steps().size(); i++) {
+            if (needsWeb(plan.steps().get(i).instruction())) {
+                index = i;
+                break;
+            }
+        }
+        List<PlannedStep> steps = new ArrayList<>(plan.steps());
+        PlannedStep moved = steps.get(index);
+        steps.set(index, new PlannedStep(browsing.getId(), moved.instruction()));
+        log.info("The plan gave a web request to an agent without the browser; step {} goes to {} instead",
+                index + 1, browsing.getName());
+        return new Plan(List.copyOf(steps),
+                "It needs a website, so " + browsing.getName() + ", who can open one, takes it.");
+    }
+
+    /** True when the text names a web address, or asks to search, browse or open the web or a website. */
+    static boolean needsWeb(String text) {
+        return text != null && (WEB_ADDRESS.matcher(text).find() || WEB_WORDS.matcher(text).find());
+    }
+
+    /** True when the agent holds an enabled browser grant. */
+    private static boolean canBrowse(UUID agentId, Map<UUID, List<String>> servers) {
+        return servers.getOrDefault(agentId, List.of()).contains(BROWSER);
+    }
+
+    /** The distinct tool servers the agent has enabled, sorted; read from the database. */
+    private List<String> toolServers(Agent agent) {
+        return grants.findByAgentIdAndEnabledTrue(agent.getId()).stream()
+                .map(AgentToolGrant::getServer)
+                .distinct()
+                .sorted()
+                .toList();
     }
 
     /**
@@ -322,10 +415,10 @@ public class ModelRouterPlanner {
 
     /**
      * One catalog line for the prompt: key, name, category, the first sentence of its current
-     * instructions, the tool servers it has enabled, and a note when it is the default. Reads the
-     * agent's version and tool grants from the database.
+     * instructions, the tool servers it has enabled ("none" when it has none), and a note when it
+     * is the default. Reads the agent's version from the database.
      */
-    private String describe(Agent agent) {
+    private String describe(Agent agent, List<String> servers) {
         String does = "";
         if (agent.getCurrentVersionId() != null) {
             AgentVersion version =
@@ -334,11 +427,7 @@ public class ModelRouterPlanner {
                 does = firstSentence(version.getSystemPrompt());
             }
         }
-        String tools = grants.findByAgentIdAndEnabledTrue(agent.getId()).stream()
-                .map(AgentToolGrant::getServer)
-                .distinct()
-                .sorted()
-                .collect(Collectors.joining(", "));
+        String tools = servers == null || servers.isEmpty() ? "none" : String.join(", ", servers);
         String fallbackNote =
                 GeneralEmployee.isFallback(agent) ? " (default: choose when no other agent clearly fits)" : "";
         return "- key: %s, name: %s, category: %s, does: %s, tools: %s%s"
