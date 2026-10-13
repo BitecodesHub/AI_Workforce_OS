@@ -63,8 +63,9 @@ function WorkflowCard({
         </div>
       </dl>
       <div className="wf-card-actions">
+        {/* Someone who may not change this one opens it to read and run it, not to edit it. */}
         <a className="button button-outline" href={`/workflows/${workflow.id}`}>
-          {canEdit ? 'Open the editor' : 'Open'}
+          {canDelete ? 'Open the editor' : 'Open'}
         </a>
         {last && (
           <a className="button button-quiet" href={`/workflows/run/${last.goalId}`}>

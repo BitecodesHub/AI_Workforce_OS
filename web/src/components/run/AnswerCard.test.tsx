@@ -97,6 +97,26 @@ describe('AnswerCard asked line', () => {
     expect(asked(instruction)).toBe('Asked: Summarise the suppliers')
   })
 
+  it('shows a later workflow step its own part, not the workflow description the server put ahead of it', () => {
+    // As GoalService words a workflow step after others (seen live on 13 Oct 2026).
+    const described = [
+      'Original request: Checks a fork and join.',
+      '',
+      'Started from the workflow "QA fork join check".',
+      '',
+      'Work already done for this request:',
+      '- Customer Support: Our support hours stay 9 am to 5 pm.',
+      '- HR: Flexible hours help small businesses.',
+      '',
+      'Your part:',
+      'Write a two sentence summary for the manager.',
+    ].join('\n')
+    expect(asked(described)).toBe('Asked: Write a two sentence summary for the manager.')
+
+    const undescribed = 'Original request: Started from the workflow "Weekly report".\n\nWork already done for this request:\n- Research: A.\n\nYour part:\nWrite it up'
+    expect(asked(undescribed)).toBe('Asked: Write it up')
+  })
+
   it('shows no line when there is no instruction, or nothing follows the marker', () => {
     expect(asked(null)).toBeNull()
     expect(asked('Request:\n')).toBeNull()

@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   controlEndedMessage,
+  finishedNotice,
   framePoint,
   holderName,
   minutesLeft,
@@ -161,6 +162,29 @@ describe('toolSentence', () => {
   })
 })
 
+describe('finishedNotice', () => {
+  it('keeps "finished" for a completed run, and says why any other run stopped', () => {
+    expect(finishedNotice({ status: 'completed' })).toBe('This run has finished. Its steps and answer stay below.')
+    expect(
+      finishedNotice({ status: 'cancelled', failureReason: 'An approver rejected the action this run needed: Not this week.' }),
+    ).toBe('This run stopped. An approver rejected the action this run needed: Not this week. Its steps stay below.')
+    expect(finishedNotice({ status: 'failed', failureReason: 'No model could answer' })).toBe(
+      'This run stopped. No model could answer. Its steps stay below.',
+    )
+  })
+
+  it('says only that it stopped when there is no reason fit to show', () => {
+    expect(finishedNotice({ status: 'cancelled', failureReason: null })).toBe('This run was cancelled. Its steps stay below.')
+    // An old reason that carries the canceller's user id instead of words.
+    expect(finishedNotice({ status: 'cancelled', failureReason: 'Cancelled by 01a0e966-43b5-7145' })).toBe(
+      'This run was cancelled. Its steps stay below.',
+    )
+    expect(finishedNotice({ status: 'abandoned', failureReason: '  ' })).toBe(
+      'This run stopped before it finished. Its steps stay below.',
+    )
+  })
+})
+
 describe('controlEndedMessage', () => {
   const view = (overrides: Partial<TakeoverView>): TakeoverView => ({
     status: 'none',
@@ -210,6 +234,18 @@ describe('takeover helpers', () => {
     expect(minutesLeft('2026-10-12T08:00:00Z', now)).toBe(0)
     expect(minutesLeft(null, now)).toBeNull()
     expect(minutesLeft('not a date', now)).toBeNull()
+  })
+
+  it('never says more minutes than the whole hold, even when the clock was read before control was given', () => {
+    // A shared clock last read 20 seconds before control was given at 09:00:00 for 30 minutes.
+    const stale = Date.parse('2026-10-12T08:59:40Z')
+    expect(minutesLeft('2026-10-12T09:30:00Z', stale)).toBe(31)
+    expect(minutesLeft('2026-10-12T09:30:00Z', stale, '2026-10-12T09:00:00Z')).toBe(30)
+    // Later in the hold the cap changes nothing.
+    expect(minutesLeft('2026-10-12T09:30:00Z', Date.parse('2026-10-12T09:10:30Z'), '2026-10-12T09:00:00Z')).toBe(20)
+    // A start time that cannot be read, or one after the end, leaves the count as it was.
+    expect(minutesLeft('2026-10-12T09:30:00Z', stale, 'not a date')).toBe(31)
+    expect(minutesLeft('2026-10-12T09:30:00Z', stale, '2026-10-12T10:00:00Z')).toBe(31)
   })
 
   it('gathers wheel movement into one scroll within the server’s limit', () => {

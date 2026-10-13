@@ -91,7 +91,8 @@ function typingIn(target: EventTarget | null): boolean {
  * Props: graph and the viewport (both controlled); mode 'edit' (moves, connections, drops,
  * deletion) or 'view' (read-only, a step opens on activation); selection and onSelect; face, which
  * says how each step is drawn; tokens and activeEdges for hand-offs; fitKey, which fits the view
- * whenever it changes; and the edit callbacks. Fits the view on first draw. Side effects: a
+ * whenever it changes; and the edit callbacks. Fits the view on first draw when it opens with
+ * steps (an empty one keeps its view, so a first drop lands where it was dropped). Side effects: a
  * non-passive wheel listener for zoom, pointer capture during gestures.
  */
 export function WorkflowCanvas({
@@ -170,9 +171,11 @@ export function WorkflowCanvas({
     return () => box.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Fit the view on first draw and whenever the page asks (a different graph, Tidy up).
+  // Fit the view on first draw and whenever the page asks (a different graph, Tidy up). A canvas
+  // that opens empty counts as fitted already: the first step dropped onto it stays where it was
+  // dropped, rather than the view jumping to centre it (seen live on 13 Oct 2026).
   const hasNodes = graph.nodes.length > 0
-  const fitted = useRef<number | null>(null)
+  const fitted = useRef<number | null>(hasNodes ? null : fitKey)
   useEffect(() => {
     if (!hasNodes || fitted.current === fitKey) return
     fitted.current = fitKey

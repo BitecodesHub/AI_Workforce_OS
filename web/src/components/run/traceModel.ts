@@ -3,6 +3,7 @@
 // @flow: Used by TraceStep, RunTraceCompact and AnswerCard.
 import type { TagTone } from '../ui'
 import { formatDuration, sentenceCase } from '../../lib/format'
+import { readableSummary } from '../../lib/approvals'
 import { toolLabel } from '../../lib/labels'
 import type { RunStep } from '../../lib/queries'
 
@@ -250,6 +251,17 @@ export function usesBrowser(steps: readonly RunStep[] | undefined): boolean {
   })
 }
 
+// @find: personHasBrowser, a person has control of the web browser, agent waiting for hand back, taken_over note
+/**
+ * Whether a person holds the run's web browser as far as its steps tell: the newest step is the
+ * "taken_over" note the agent writes when it stops for them (any step after it means control came
+ * back). For views without the takeover state; the Agent desk reads that state instead.
+ */
+export function personHasBrowser(steps: readonly RunStep[] | undefined): boolean {
+  const last = steps && steps.length > 0 ? steps[steps.length - 1]! : null
+  return Boolean(last && last.kind === 'note' && (last.detail ?? {}).type === 'taken_over')
+}
+
 // @find: browserShots, every screenshot of a run, pages visited, browser preview filmstrip
 /** Every screenshot in a run's steps, oldest first, for the browser preview's strip of pages. */
 export function browserShots(steps: readonly RunStep[] | undefined): BrowserShotRef[] {
@@ -303,14 +315,20 @@ export function stepHeading(step: RunStep): string | null {
 }
 
 // @find: stepDescription, step description, trace model, step mode, step heading, step kind
-/** Body text of a step: the first of summary, reason, detail and content that has text; null when none. */
+/**
+ * Body text of a step: the first of summary, reason, detail and content that has text; null when
+ * none. An approval step's summary is the gateway's sentence naming the raw tool ("using
+ * gmail.send_message"), so it is read with the tool's label, as the Approvals page and the waiting
+ * notice above it read it.
+ */
 export function stepDescription(step: RunStep): string | null {
-  return (
+  const text =
     detailText(step.detail, 'summary') ??
     detailText(step.detail, 'reason') ??
     detailText(step.detail, 'detail') ??
     detailText(step.detail, 'content')
-  )
+  const tool = step.kind === 'approval' ? detailText(step.detail, 'tool') : null
+  return text && tool ? readableSummary({ tool, summary: text }) : text
 }
 
 // @find: answerStep, answer step, trace model, step mode, step heading, step kind

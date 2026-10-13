@@ -13,6 +13,7 @@ import {
   previewCaption,
   previewOpensByDefault,
   previewToggleLabel,
+  readableRequestSentence,
   readableSummary,
   runOutcome,
 } from './approvals'
@@ -75,6 +76,29 @@ describe('readableSummary', () => {
     expect(readableSummary({ tool: null, summary: sentence })).toBe(sentence)
     expect(readableSummary({ summary: sentence })).toBe(sentence)
     expect(readableSummary({ tool: 'stripe.refund_payment', summary: 'Send an email' })).toBe('Send an email')
+  })
+})
+
+describe('readableRequestSentence', () => {
+  it('reads the tool from the gateway sentence itself, for lines that carry no tool name (the Team room)', () => {
+    expect(readableRequestSentence('Send something outside the workspace using gmail.send_message')).toBe(
+      'Send something outside the workspace using Gmail · send message',
+    )
+    expect(readableRequestSentence('Permanently remove something using calendar__delete_event')).toBe(
+      'Permanently remove something using Google Calendar · delete event',
+    )
+    // The detail the adapter adds after the sentence stays as written.
+    expect(
+      readableRequestSentence('Send something outside the workspace using browser.submit_form. Submits the form on example.com'),
+    ).toBe('Send something outside the workspace using Web browser · submit form. Submits the form on example.com')
+  })
+
+  it('leaves anything that is not the gateway sentence alone', () => {
+    expect(readableRequestSentence('Send the offer')).toBe('Send the offer')
+    expect(readableRequestSentence('Which site should I check using www.example.com?')).toBe(
+      'Which site should I check using www.example.com?',
+    )
+    expect(readableRequestSentence('')).toBe('')
   })
 })
 

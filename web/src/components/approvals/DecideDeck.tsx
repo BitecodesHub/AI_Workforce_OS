@@ -140,6 +140,28 @@ export function DecideDeck({
   )
   const { held, hold } = useDecisionHold<ApprovalItem>(send)
 
+  // When the undo window closes, the bar and its Undo button leave. Focus on that button fell to
+  // the page, and the deck's keys then did nothing until the person clicked back in (a press of F
+  // looked ignored, 13 Oct 2026). Focus left on the page as the bar goes moves to the card on top,
+  // or to the heading that says nothing is left; focus anywhere else stays where it is.
+  const wasHeld = useRef(false)
+  useEffect(() => {
+    const before = wasHeld.current
+    wasHeld.current = Boolean(held)
+    if (!before || held) return
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    if (cardRef.current) {
+      cardRef.current.focus({ preventScroll: true })
+      return
+    }
+    const heading = doneRef.current?.querySelector<HTMLElement>('.empty-title')
+    if (heading) {
+      heading.tabIndex = -1
+      heading.focus({ preventScroll: true })
+    }
+  }, [held])
+
   // A link to another card (a notification tapped while this page is open) moves the deck there.
   // Adjusted while rendering, as React advises for state that follows a prop.
   const [linkedTo, setLinkedTo] = useState(targetId)

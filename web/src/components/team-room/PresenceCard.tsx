@@ -4,7 +4,8 @@
 import { Time } from '../ui'
 import { AgentAvatar } from '../ui/AgentAvatar'
 import { CATEGORY_LABEL } from '../../lib/labels'
-import { isBusy, isWaiting, presenceCaption } from '../../lib/teamRoomQueries'
+import { readableRequestSentence } from '../../lib/approvals'
+import { isBusy, isWaiting, presenceCaption, withoutAgentName } from '../../lib/teamRoomQueries'
 import type { AgentPresence, PersonNamer } from '../../lib/teamRoomQueries'
 import { can } from '../../lib/session'
 
@@ -15,10 +16,16 @@ export function roleLine(presence: Pick<AgentPresence, 'description' | 'category
   return `${CATEGORY_LABEL[presence.category ?? ''] ?? 'General'} team`
 }
 
-/** What the agent is working on, in a few words, when the viewer may see it. */
+/**
+ * What the agent is working on, in a few words, when the viewer may see it: the request it waits
+ * on (its tool named as every other screen names it), the question it asked, or its task, without
+ * the agent's name a workflow step's title opens with (the card already shows it).
+ */
 function workLine(presence: AgentPresence): string | null {
-  if (isWaiting(presence.state) && presence.waitingText) return presence.waitingText
-  if (presence.taskTitle) return `On: ${presence.taskTitle}`
+  if (isWaiting(presence.state) && presence.waitingText) {
+    return presence.state === 'waiting_approval' ? readableRequestSentence(presence.waitingText) : presence.waitingText
+  }
+  if (presence.taskTitle) return `On: ${withoutAgentName(presence.taskTitle, presence.name)}`
   if (presence.state === 'idle' && presence.queued > 0) {
     return presence.queued === 1 ? '1 task waiting to start' : `${presence.queued} tasks waiting to start`
   }

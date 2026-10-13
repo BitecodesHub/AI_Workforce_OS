@@ -18,6 +18,7 @@ import {
   presenceCaption,
   readNewer,
   releaseOlder,
+  withoutAgentName,
 } from './teamRoomQueries'
 import type { AgentPresence, FeedEvent, FeedKind, FeedPage, FeedState } from './teamRoomQueries'
 
@@ -193,6 +194,34 @@ describe('feedLine', () => {
       href: '/runs/r9',
       label: 'Open run',
     })
+  })
+
+  it('names the tool of a request by its label, as every other screen does, and leaves other text alone', () => {
+    const gateway = 'Send something outside the workspace using gmail.send_message'
+    const readable = 'Send something outside the workspace using Gmail · send message'
+    const line = (kind: FeedKind, overrides: Partial<FeedEvent> = {}) => feedLine(event(kind, overrides), nameOf)
+    expect(line('approval_requested', { text: gateway, forYou: true }).text).toBe(`HR is waiting for you to approve: ${readable}`)
+    expect(line('approval_approved', { text: gateway }).text).toBe(`Sam Lee approved: ${readable}`)
+    expect(line('approval_rejected', { text: gateway }).text).toBe(`Sam Lee rejected: ${readable}`)
+    expect(line('approval_sent_back', { text: gateway }).text).toBe(`Sam Lee sent it back with feedback: ${readable}`)
+    expect(line('approval_expired', { text: gateway }).text).toBe(`No one decided in time, so HR did not go ahead: ${readable}`)
+    // An answer that happens to quote a gateway sentence is the agent's own words.
+    expect(line('task_finished', { text: gateway }).text).toBe(`HR finished: ${gateway}`)
+  })
+
+  it('says the agent once when a workflow step is named after it', () => {
+    const line = (kind: FeedKind, overrides: Partial<FeedEvent> = {}) => feedLine(event(kind, overrides), nameOf)
+    expect(line('task_started', { title: 'HR: Screen the applications' }).text).toBe('HR started on Screen the applications')
+    expect(
+      line('task_handed_off', { title: 'HR: Screen', nextAgentName: 'Writer', nextTaskTitle: 'Writer: Write the note' }),
+    ).toEqual({ text: 'HR finished Screen and handed it to Writer', detail: 'Next: Write the note' })
+    expect(withoutAgentName('HR: Screen', 'HR')).toBe('Screen')
+    // Only the agent's own name, followed by the separator and some words, is taken off.
+    expect(withoutAgentName('HR', 'HR')).toBe('HR')
+    expect(withoutAgentName('HR: ', 'HR')).toBe('HR: ')
+    expect(withoutAgentName('HRM: Plan', 'HR')).toBe('HRM: Plan')
+    expect(withoutAgentName('Writer: Plan', 'HR')).toBe('Writer: Plan')
+    expect(withoutAgentName('HR: Plan', null)).toBe('HR: Plan')
   })
 
   it('names a deleted agent as an agent, and puts asking, deciding and answering in a person’s mouth', () => {

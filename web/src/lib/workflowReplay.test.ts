@@ -124,6 +124,31 @@ describe('building a replay from timestamps', () => {
     expect(replay.events.some((event) => event.kind === 'resumed')).toBe(false)
   })
 
+  it('never says a rejected step carried on, though the rejection settles just before the step ends', () => {
+    // As seen live on 13 Oct 2026: the approval was rejected at 54.969 s and the task cancelled at 54.971 s.
+    const timeline = finished()
+    const ms = (value: number) => new Date(T0 + value).toISOString()
+    timeline.tasks[0] = { ...timeline.tasks[0]!, status: 'cancelled', completedAt: ms(54_971) }
+    timeline.runs[0] = { ...timeline.runs[0]!, status: 'cancelled', completedAt: ms(54_970) }
+    timeline.waits = [{ runId: 'run-r', taskId: 'research', kind: 'approval', startedAt: at(10), endedAt: ms(54_969), outcome: 'rejected' }]
+    const replay = buildReplay(timeline)
+    const research = replay.events.filter((event) => event.taskId === 'research').map((event) => event.kind)
+    expect(research).toEqual(['started', 'waiting', 'finished'])
+    expect(stateAt(replay, ['research'], T0 + 54_970).get('research')).toBe('approval')
+    expect(stateAt(replay, ['research'], T0 + 54_971).get('research')).toBe('cancelled')
+  })
+
+  it('says a step carried on after an approval sent back with feedback, which it revised and asked again', () => {
+    const timeline = finished()
+    timeline.waits = [
+      { runId: 'run-r', taskId: 'research', kind: 'approval', startedAt: at(10), endedAt: at(20), outcome: 'rejected' },
+      { runId: 'run-r', taskId: 'research', kind: 'approval', startedAt: at(30), endedAt: at(40), outcome: 'approved' },
+    ]
+    const replay = buildReplay(timeline)
+    const research = replay.events.filter((event) => event.taskId === 'research').map((event) => `${(event.at - T0) / 1000}:${event.kind}`)
+    expect(research).toEqual(['1:started', '10:waiting', '20:resumed', '30:waiting', '40:resumed', '60:finished'])
+  })
+
   it('runs a goal still going until the server clock, with a question still open', () => {
     const live: GoalTimeline = {
       ...finished(),
@@ -149,6 +174,15 @@ describe('building a replay from timestamps', () => {
     expect(handoffsAt(replay, T0 + 61_500, 1_000)).toEqual([{ fromTaskId: 'research', toTaskId: 'draft', progress: 0.5 }])
     expect(handoffsAt(replay, T0 + 62_500, 1_000)).toEqual([])
     expect(handoffsAt(replay, T0 + 61_500, 0)).toEqual([])
+  })
+
+  it('leaves nothing travelling at the end of a replay, however long a token takes at the chosen speed', () => {
+    // At 10x a token takes nine seconds of replay time; here the last hand-off is ten seconds before the end.
+    const replay = buildReplay(finished())
+    const lastHandoff = replay.events.filter((event) => event.kind === 'handoff').at(-1)!.at
+    const travel = replay.end - lastHandoff + 5_000
+    expect(handoffsAt(replay, replay.end - 1, travel)).toHaveLength(1)
+    expect(handoffsAt(replay, replay.end, travel)).toEqual([])
   })
 
   it('says each event in plain words', () => {

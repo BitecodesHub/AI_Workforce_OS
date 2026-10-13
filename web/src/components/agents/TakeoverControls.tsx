@@ -75,7 +75,7 @@ export function TakeoverControls({
   const wheel = useRef<{ deltas: number[]; timer: number | null }>({ deltas: [], timer: null })
   const hintId = useId()
   const now = useNow(30_000)
-  const left = minutesLeft(view.endsAt, now)
+  const left = minutesLeft(view.endsAt, now, view.takenAt)
   const busy = act.isPending
 
   // Focus lands on the banner when control is taken, so a screen reader hears it at once.

@@ -3,7 +3,7 @@
 // @flow: Run with the web test runner; covers traceModel.
 import { describe, expect, it } from 'vitest'
 import type { RunStep } from '../../lib/queries'
-import { browserShotOf, browserShots, usesBrowser, completedAnswer, incompleteAnswerText, latestBrowserShot, stepHeading, stepMode } from './traceModel'
+import { browserShotOf, browserShots, usesBrowser, completedAnswer, incompleteAnswerText, latestBrowserShot, personHasBrowser, stepDescription, stepHeading, stepMode } from './traceModel'
 
 /*
  * What a trace says about where a tool's answer came from, how a run that stopped itself reads,
@@ -36,6 +36,26 @@ describe('stepMode', () => {
     expect(stepMode(step('tool_call', { tool: 'slack.post_message' }))).toBeNull()
     expect(stepMode(step('tool_call', { mode: 'something-else' }))).toBeNull()
     expect(stepMode(step('model_call', { mode: 'live' }))).toBeNull()
+  })
+})
+
+describe('stepDescription', () => {
+  it('reads an approval step with the tool label, as the Approvals page and the waiting notice do', () => {
+    const approval = step('approval', {
+      tool: 'gmail.send_message',
+      summary: 'Send something outside the workspace using gmail.send_message',
+      approvalId: 'a-1',
+    })
+    expect(stepDescription(approval)).toBe('Send something outside the workspace using Gmail · send message')
+  })
+
+  it('leaves every other step as written, and has nothing for a step without text', () => {
+    expect(stepDescription(step('tool_call', { tool: 'gmail.list_messages', summary: 'Read 3 messages.' }))).toBe('Read 3 messages.')
+    expect(stepDescription(step('approval', { summary: 'Send it using gmail.send_message' }))).toBe(
+      'Send it using gmail.send_message',
+    )
+    expect(stepDescription(step('model_call', { content: 'Done.' }))).toBe('Done.')
+    expect(stepDescription(step('note', {}))).toBeNull()
   })
 })
 
@@ -131,5 +151,18 @@ describe('browser screenshots in the trace', () => {
     expect(usesBrowser([{ ...steps[0]!, kind: 'model_call', detail: { toolCalls: ['browser__open_page'] } }])).toBe(true)
     expect(usesBrowser([{ ...steps[0]!, kind: 'model_call', detail: { toolCalls: ['gmail__send_message'] } }])).toBe(false)
     expect(usesBrowser(undefined)).toBe(false)
+  })
+
+  it('knows a person holds the browser only while the newest step is the agent stopping for them', () => {
+    const opened = step('a', { tool: 'browser.open_page', shotId: 's1' })
+    const taken = step('b', { type: 'taken_over', summary: 'A person took control of the web browser.' }, 'note')
+    const back = step('c', { type: 'handed_back', content: 'A person handed it back.' }, 'note')
+    expect(personHasBrowser([opened, taken])).toBe(true)
+    // Any step after it means control came back, with or without a note for the agent.
+    expect(personHasBrowser([opened, taken, back])).toBe(false)
+    expect(personHasBrowser([opened, taken, step('d', { content: '' }, 'model_call')])).toBe(false)
+    expect(personHasBrowser([opened])).toBe(false)
+    expect(personHasBrowser([])).toBe(false)
+    expect(personHasBrowser(undefined)).toBe(false)
   })
 })

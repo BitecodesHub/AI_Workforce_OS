@@ -247,10 +247,14 @@ function countStates(states: ReadonlyMap<string, StepStatus>): Map<StepStatus, n
   return counts
 }
 
-/** "2 of 5 steps completed, 1 running, 1 waiting for approval". */
+/**
+ * "2 of 5 steps completed, 1 running, 1 waiting for approval". Steps that ended without completing
+ * (failed, cancelled, skipped) are named too, so a branch stopped by a rejection while another still
+ * runs does not read as work yet to come (seen live on 13 Oct 2026).
+ */
 function summary(counts: ReadonlyMap<StepStatus, number>, total: number): string {
   const parts = [`${counts.get('completed') ?? 0} of ${plural(total, 'step', 'steps')} completed`]
-  for (const status of ['running', 'approval', 'question', 'failed'] as const) {
+  for (const status of ['running', 'approval', 'question', 'failed', 'cancelled', 'skipped'] as const) {
     const n = counts.get(status) ?? 0
     if (n > 0) parts.push(`${n} ${STEP_STATUS_LABEL[status].toLowerCase()}`)
   }

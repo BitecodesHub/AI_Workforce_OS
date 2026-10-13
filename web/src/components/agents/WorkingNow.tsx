@@ -90,6 +90,9 @@ function WorkingTileCard({
   const captionId = useId()
   const latest = glance?.kind ? [{ kind: glance.kind, detail: glance.detail ?? {} }] : glance ? [] : undefined
   const caption = stepCaption(latest, tile.state, live)
+  // The state is read before the caption, unless the caption already says it: a waiting tile was
+  // read as "Waiting for an approval. Waiting for an approval" (13 Oct 2026).
+  const stateFirst = caption.startsWith(STATE_LABEL[tile.state]) ? null : `${STATE_LABEL[tile.state]}. `
   const startedAt = startedAtOf(tile, glance?.startedAt)
 
   return (
@@ -110,7 +113,7 @@ function WorkingTileCard({
         {startedAt && <span className="desk-tile-time caption tabular">{formatElapsed(startedAt, null, now)}</span>}
       </span>
       <span id={captionId} className="desk-tile-caption caption">
-        <span className="visually-hidden">{`${STATE_LABEL[tile.state]}. `}</span>
+        {stateFirst && <span className="visually-hidden">{stateFirst}</span>}
         {caption}
       </span>
       {browsing && live?.frame && (

@@ -6,7 +6,7 @@ import type { RefObject } from 'react'
 import { Dialog } from '../ui'
 import { fetchAudio } from '../../lib/voice'
 import { useBrowserLive, useRunSteps } from '../../lib/queries'
-import { browserShots, usesBrowser } from './traceModel'
+import { browserShots, personHasBrowser, usesBrowser } from './traceModel'
 import type { BrowserShotRef } from './traceModel'
 
 /**
@@ -117,9 +117,24 @@ export function BrowserShot({ shot, compact = false }: { shot: BrowserShotRef; c
  * shown, so the page appears as it loads rather than only after each step. Picking a page in the
  * strip pins it until it is picked again. Once the run has finished, the stored screenshots of each
  * step are shown instead (a click opens one full size). Renders nothing for a run that never used
- * the browser. Used by the Chat progress card, under an answer and in the compact trace.
+ * the browser. Used by the Chat progress card, under an answer, in the compact trace and on the
+ * Agent desk.
+ *
+ * While a person holds the browser the status line says the agent is waiting for them, not
+ * "Deciding what to do next" (the Agent desk showed both at once, 13 Oct 2026). Whether a person
+ * holds it comes from personInControl when the caller knows the takeover state (the Agent desk),
+ * else from the steps (personHasBrowser).
  */
-export function BrowserPreview({ runId, active }: { runId: string; active: boolean }) {
+export function BrowserPreview({
+  runId,
+  active,
+  personInControl,
+}: {
+  runId: string
+  active: boolean
+  /** Whether a person holds the browser now; left out, the steps decide. */
+  personInControl?: boolean | undefined
+}) {
   const steps = useRunSteps(runId, { active }).data
   const shots = browserShots(steps)
   // The live view is asked for only while the run works and only once it has turned to the browser.
@@ -136,10 +151,13 @@ export function BrowserPreview({ runId, active }: { runId: string; active: boole
   const shown = pinnedShot ?? latest
   const address = showingLive ? live!.url : (shown?.url ?? null)
   const position = shown ? shots.findIndex((shot) => shot.shotId === shown.shotId) + 1 : 0
+  const held = personInControl ?? personHasBrowser(steps)
   const status = watching
-    ? live?.busy
-      ? `${live.action}…`
-      : 'Deciding what to do next…'
+    ? held
+      ? 'Waiting for a person to hand back the web browser.'
+      : live?.busy
+        ? `${live.action}…`
+        : 'Deciding what to do next…'
     : null
 
   return (

@@ -300,6 +300,9 @@ describe('AgentDesk', () => {
     expect(await screen.findByText('Priya Patel has control of the web browser. Research is waiting.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Take over' })).not.toBeInTheDocument()
     expect(screen.queryByText('You have control. The agent is waiting.')).not.toBeInTheDocument()
+    // The live view under the notice agrees: the agent waits, it is not deciding anything (13 Oct 2026).
+    expect(await screen.findByText('Waiting for a person to hand back the web browser.')).toBeInTheDocument()
+    expect(screen.queryByText('Deciding what to do next…')).not.toBeInTheDocument()
   })
 
   it('lets someone who can stop runs return another person\'s control to the agent, after asking', async () => {
@@ -450,6 +453,32 @@ describe('AgentDesk', () => {
 
     expect(await screen.findByText(/This run could not be loaded\./)).toBeInTheDocument()
     expect(screen.queryByText('Loading the run…')).not.toBeInTheDocument()
+  })
+
+  it('says why a run that stopped stopped, and keeps "finished" for a run that completed', async () => {
+    const run = (status: string, failureReason: string | null) => () =>
+      json(200, {
+        id: 'r-1',
+        agentId: 'a-research',
+        status,
+        trigger: 'manual',
+        stepCount: 2,
+        promptTokens: 0,
+        completionTokens: 0,
+        cost: 0,
+        startedAt: STARTED,
+        completedAt: STARTED,
+        failureReason,
+      })
+    overrides['GET /api/runs/r-1'] = run('cancelled', 'An approver rejected the action this run needed: Not this week.')
+    openDesk()
+
+    expect(
+      await screen.findByText(
+        'This run stopped. An approver rejected the action this run needed: Not this week. Its steps stay below.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/This run has finished/)).not.toBeInTheDocument()
   })
 
   it('hides Stop and Take over from someone who may not use them', async () => {

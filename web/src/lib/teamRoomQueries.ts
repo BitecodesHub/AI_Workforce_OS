@@ -4,6 +4,7 @@
 import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
+import { readableRequestSentence } from './approvals'
 import { serverLabel } from './labels'
 
 /*
@@ -441,6 +442,20 @@ function agentOf(name: string | null | undefined): string {
   return name && name.trim() ? name : 'An agent'
 }
 
+// @find: withoutAgentName, workflow task title, agent name said twice, General Employee started on General Employee
+/**
+ * A task title without the agent's own name in front. A workflow step with no title of its own is
+ * named "<agent>: <first words of the instruction>" (WorkflowService.taskTitle), and a line that
+ * already opens with the agent would otherwise say it twice: "General Employee started on General
+ * Employee: List three tips". Any other title comes back unchanged. Pure.
+ */
+export function withoutAgentName(title: string, agentName: string | null | undefined): string {
+  const name = agentName?.trim()
+  if (!name) return title
+  const prefix = `${name}: `
+  return title.startsWith(prefix) && title.length > prefix.length ? title.slice(prefix.length) : title
+}
+
 // @find: feedLine, feed line, hand-off conversation wording, asked, started on, handed it to, waiting for to approve, finished
 /**
  * One event as a line of the team's conversation, written as a person would say it:
@@ -453,8 +468,10 @@ function agentOf(name: string | null | undefined): string {
 export function feedLine(event: FeedEvent, nameOf: PersonNamer): FeedLine {
   const agent = agentOf(event.agentName)
   const person = nameOf(event.personId)
-  const title = event.title ?? 'a task'
-  const text = event.text ?? ''
+  const title = withoutAgentName(event.title ?? 'a task', event.agentName)
+  // An approval's text is the gateway's sentence, which names the raw tool ("using
+  // gmail.send_message"); every other screen reads it with the tool's label, and so does this one.
+  const text = event.kind.startsWith('approval_') ? readableRequestSentence(event.text ?? '') : (event.text ?? '')
   switch (event.kind) {
     case 'goal_requested':
       return {
@@ -471,7 +488,7 @@ export function feedLine(event: FeedEvent, nameOf: PersonNamer): FeedLine {
     case 'task_handed_off':
       return {
         text: `${agent} finished ${title} and handed it to ${agentOf(event.nextAgentName)}`,
-        detail: event.nextTaskTitle ? `Next: ${event.nextTaskTitle}` : null,
+        detail: event.nextTaskTitle ? `Next: ${withoutAgentName(event.nextTaskTitle, event.nextAgentName)}` : null,
       }
     case 'task_finished':
       return { text: text ? `${agent} finished: ${text}` : `${agent} finished ${title}`, detail: null }

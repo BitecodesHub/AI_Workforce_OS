@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Approvals } from './Approvals'
+import { NEW_CARD_GUARD_MS } from '../components/approvals/DecideDeck'
 import type { ApprovalItem } from '../lib/approvalQueries'
 import { UNDO_WINDOW_MS } from '../lib/decisionHold'
 import { RouterProvider } from '../lib/router'
@@ -186,6 +187,31 @@ describe('Approvals, the Decide view', () => {
         { url: '/api/approvals/a-1/decision', method: 'POST', body: { approved: true, mode: 'approve', note: null } },
       ]),
     )
+  })
+
+  it('keeps the deck keys working when the undo window closes while Undo has focus', async () => {
+    renderPage('/approvals?view=decide')
+    await screen.findByText('1 of 2')
+
+    vi.useFakeTimers()
+    pressInDeck('a')
+    const undo = screen.getByRole('button', { name: 'Undo' })
+    undo.focus()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS + 50)
+    })
+    vi.useRealTimers()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument())
+
+    // Focus came back to the card on top, not the page, so the next key reaches the deck.
+    const active = document.activeElement as HTMLElement
+    expect(active.closest('.decide-deck')).not.toBeNull()
+    // Past the short guard a new card has against a double tap deciding it too.
+    await act(() => new Promise((resolve) => setTimeout(resolve, NEW_CARD_GUARD_MS + 50)))
+    act(() => {
+      fireEvent.keyDown(active, { key: 'f' })
+    })
+    await waitFor(() => expect(document.querySelector('dialog[open]')?.textContent).toContain('Send this back with feedback?'))
   })
 
   it('never sends a decision that was undone', async () => {

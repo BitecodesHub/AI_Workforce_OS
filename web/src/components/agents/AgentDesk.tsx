@@ -10,7 +10,7 @@ import { RunTraceCompact } from '../run/RunTraceCompact'
 import { isInstruction, usesBrowser } from '../run/traceModel'
 import { TakeoverControls } from './TakeoverControls'
 import { describeApiError } from '../../lib/api'
-import { controlEndedMessage, holderName } from '../../lib/agentDesk'
+import { controlEndedMessage, finishedNotice, holderName } from '../../lib/agentDesk'
 import { useReleaseTakeover, useStartTakeover, useTakeover } from '../../lib/agentDeskQueries'
 import { formatRunElapsed } from '../../lib/format'
 import { isRunActive, useBrowserLive, useCancelRun, useMemberNames, useRun, useRunSteps } from '../../lib/queries'
@@ -248,7 +248,7 @@ function DeskBody({ runId, agentName, desk }: { runId: string; agentName: string
           {releaseError}
         </Notice>
       )}
-      {!active && <Notice>This run has finished. Its steps and answer stay below.</Notice>}
+      {!active && <Notice>{finishedNotice(run)}</Notice>}
 
       <div className={browsing ? 'agent-desk-grid' : 'agent-desk-single'}>
         {browsing && (
@@ -270,7 +270,7 @@ function DeskBody({ runId, agentName, desk }: { runId: string; agentName: string
                 onHandedBack={() => statusRef.current?.focus()}
               />
             ) : (
-              <BrowserPreview runId={runId} active={active} />
+              <BrowserPreview runId={runId} active={active} personInControl={takeover ? takeover.active : undefined} />
             )}
           </section>
         )}

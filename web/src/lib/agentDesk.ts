@@ -240,12 +240,43 @@ export function controlEndedMessage(
   }
 }
 
-/** Whole minutes left before control returns to the agent by itself, at least 0. Pure. */
-export function minutesLeft(endsAt: string | null | undefined, now: number): number | null {
+// @find: finishedNotice, run finished notice, why the run stopped, rejected approval on the desk, cancelled run reason
+/**
+ * What the desk says once its run is over. A completed run's steps and answer stay below; a run
+ * that stopped says why, in the words the server kept (failureReason, already a plain sentence such
+ * as "An approver rejected the action this run needed: Not this week."), so the desk agrees with
+ * the chat and the run page instead of calling a rejected run finished (seen 13 Oct 2026). A
+ * reason from before reasons were written for people ("Cancelled by <user id>") is not shown. Pure.
+ */
+export function finishedNotice(run: { status: string; failureReason?: string | null }): string {
+  if (run.status === 'completed') return 'This run has finished. Its steps and answer stay below.'
+  const reason = run.failureReason?.trim()
+  if (!reason || /^Cancelled by \S+$/.test(reason)) {
+    return run.status === 'cancelled'
+      ? 'This run was cancelled. Its steps stay below.'
+      : 'This run stopped before it finished. Its steps stay below.'
+  }
+  return `This run stopped. ${/[.?!]$/.test(reason) ? reason : `${reason}.`} Its steps stay below.`
+}
+
+/**
+ * Whole minutes left before control returns to the agent by itself, at least 0, and never more than
+ * the whole hold (from takenAt to endsAt) when takenAt is known. The cap matters because `now` comes
+ * from a shared clock that may have ticked up to its interval before control was given: the desk
+ * said "by itself in 31 minutes" of a 30 minute hold (13 Oct 2026). Pure.
+ */
+export function minutesLeft(
+  endsAt: string | null | undefined,
+  now: number,
+  takenAt?: string | null,
+): number | null {
   if (!endsAt) return null
   const ends = Date.parse(endsAt)
   if (Number.isNaN(ends)) return null
-  return Math.max(0, Math.ceil((ends - now) / 60_000))
+  const left = Math.max(0, Math.ceil((ends - now) / 60_000))
+  const taken = takenAt ? Date.parse(takenAt) : Number.NaN
+  if (Number.isNaN(taken) || taken > ends) return left
+  return Math.min(left, Math.ceil((ends - taken) / 60_000))
 }
 
 /**

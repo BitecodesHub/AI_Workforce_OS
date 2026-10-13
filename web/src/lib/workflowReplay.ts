@@ -1,7 +1,7 @@
 // @find: workflow replay, time-lapse, replay timeline, events from timestamps, state at time, step status, status mapping, hand-off tokens, live status, new hand-offs, goal canvas from timeline, auto layout goal, workflowReplay
 // @what: Pure functions that turn a goal's timeline (task, run, approval and question timestamps) into replay events, the state of every step at any moment, hand-off tokens, and the canvas a goal is drawn on.
 // @flow: Used by routes/WorkflowRun.tsx and components/workflows/ReplayPlayer.tsx; reads the GET /api/goals/{id}/timeline shape from lib/workflowQueries
-import type { GoalTimeline, TimelineTask } from './workflowQueries'
+import type { GoalTimeline, TimelineTask, TimelineWait } from './workflowQueries'
 import { layeredLayout, normaliseGraph } from './workflowGraph'
 import type { WorkflowGraph, WorkflowNode } from './workflowGraph'
 
@@ -91,6 +91,29 @@ const KIND_ORDER: Record<ReplayEvent['kind'], number> = {
   finished: 5,
 }
 
+// @find: wait outcome, carried on after approval, rejected approval stops step
+/**
+ * Whether a step went on working once a wait on a person ended. An approval granted or a question
+ * answered always lets it carry on. Any other ending (a rejection, an expiry, a withdrawal) stopped
+ * it, unless it plainly went on afterwards: it is still under way, it finished completed, or it
+ * waited on a person again later (an approval sent back with feedback is stored as rejected, and the
+ * step revises and asks again). Timestamps alone cannot tell: a rejection settles a few milliseconds
+ * before the step it stops ends, and on 13 Oct 2026 a live replay said a step a manager had rejected
+ * "carried on". Pure.
+ */
+function carriedOn(
+  wait: TimelineWait,
+  until: number,
+  final: StepStatus,
+  taskEnd: number | null,
+  waits: readonly TimelineWait[],
+): boolean {
+  const outcome = (wait.outcome ?? '').toLowerCase()
+  if (outcome === 'approved' || outcome === 'answered') return true
+  if (taskEnd === null || final === 'completed') return true
+  return waits.some((other) => other !== wait && (time(other.startedAt) ?? Number.NEGATIVE_INFINITY) > until)
+}
+
 // @find: build replay from timeline, replay timeline builder
 /**
  * Every event of a goal's life, in time order.
@@ -135,14 +158,13 @@ export function buildReplay(timeline: GoalTimeline): Replay {
       if (!last && ended !== null) events.push({ at: ended, taskId: task.id, kind: 'retrying', status: 'queued' })
     })
     const taskEnd = isSettled(final) ? (time(task.completedAt) ?? time(runs[runs.length - 1]!.completedAt) ?? goalEnd) : null
-    for (const wait of timeline.waits) {
-      if (wait.taskId !== task.id && !runs.some((run) => run.id === wait.runId)) continue
+    const waits = timeline.waits.filter((wait) => wait.taskId === task.id || runs.some((run) => run.id === wait.runId))
+    for (const wait of waits) {
       const from = time(wait.startedAt)
       if (from === null) continue
       events.push({ at: from, taskId: task.id, kind: 'waiting', status: wait.kind === 'question' ? 'question' : 'approval' })
       const until = time(wait.endedAt)
-      // A wait settled as the step ended (a refusal that failed it) hands straight to the finish.
-      if (until !== null && (taskEnd === null || until < taskEnd)) {
+      if (until !== null && (taskEnd === null || until < taskEnd) && carriedOn(wait, until, final, taskEnd, waits)) {
         events.push({ at: until, taskId: task.id, kind: 'resumed', status: 'running' })
       }
     }
@@ -216,9 +238,14 @@ export function stateAt(replay: Replay, taskIds: readonly string[], at: number):
 export type Handoff = { fromTaskId: string; toTaskId: string; progress: number }
 
 // @find: hand-off tokens at time, token travelling along edge
-/** Hand-offs under way at a moment: each travels for `travelMs` of replay time after it happens. */
+/**
+ * Hand-offs under way at a moment: each travels for `travelMs` of replay time after it happens.
+ * Nothing travels once the replay has reached its end, where the work is over: a replay opens there,
+ * and at 10x a hand-off into a last step that took under nine seconds would otherwise sit frozen on
+ * its connection beside a finished canvas (seen live on 13 Oct 2026).
+ */
 export function handoffsAt(replay: Replay, at: number, travelMs: number): Handoff[] {
-  if (travelMs <= 0) return []
+  if (travelMs <= 0 || at >= replay.end) return []
   return replay.events
     .filter((event) => event.kind === 'handoff' && event.fromTaskId && event.at <= at && at < event.at + travelMs)
     .map((event) => ({ fromTaskId: event.fromTaskId!, toTaskId: event.taskId, progress: (at - event.at) / travelMs }))

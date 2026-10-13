@@ -298,6 +298,35 @@ describe('Workflow editor', () => {
       expect(added.style.left).toBe(`${500 - 32 - 116}px`)
       expect(step(/^Step 3: Draft the reply/)).toBeInTheDocument()
     })
+
+    it('keeps the first step dropped on an empty canvas where it was dropped, and fits a saved one on opening', async () => {
+      // jsdom lays nothing out: give the canvas a real size, so fitting the view would move it.
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const sized = this.classList.contains('wf-canvas')
+        return { x: 0, y: 0, left: 0, top: 0, right: sized ? 800 : 0, bottom: sized ? 600 : 0, width: sized ? 800 : 0, height: sized ? 600 : 0, toJSON: () => ({}) } as DOMRect
+      })
+      try {
+        signIn(EDITOR)
+        const { container, unmount } = renderEditor(null)
+        await screen.findByRole('heading', { level: 1, name: 'Untitled workflow' })
+        const canvas = container.querySelector<HTMLElement>('.wf-canvas')!
+        const layer = container.querySelector<HTMLElement>('.wf-canvas-layer')!
+        const dataTransfer = { types: [AGENT_MIME], getData: (type: string) => (type === AGENT_MIME ? 'rhea' : ''), dropEffect: 'none' }
+        fireEvent.dragOver(canvas, { dataTransfer, clientX: 200, clientY: 150 })
+        fireEvent.drop(canvas, { dataTransfer, clientX: 200, clientY: 150 })
+        const added = await screen.findByRole('button', { name: /^Step 1: No instruction yet\. Rhea/ })
+        expect(added.style.left).toBe(`${200 - 32 - 116}px`)
+        // The view did not jump to centre the new step: it is still drawn under the pointer.
+        expect(layer.style.transform).toBe('translate(32px, 32px) scale(1)')
+        unmount()
+
+        const saved = renderEditor()
+        await screen.findByRole('button', { name: /^Step 1:/ })
+        expect(saved.container.querySelector<HTMLElement>('.wf-canvas-layer')!.style.transform).not.toBe('translate(32px, 32px) scale(1)')
+      } finally {
+        vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockRestore()
+      }
+    })
   })
 
   it('saves with the version it was loaded at, and shows the new version', async () => {

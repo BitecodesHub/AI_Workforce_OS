@@ -371,6 +371,69 @@ describe('Team room page', () => {
     expect(within(region).getAllByRole('listitem')[0]).toBe(firstLine)
   })
 
+  it('names the tool a request waits on as every other screen does, and says a workflow step agent once', async () => {
+    // As the gateway and a workflow write them: the raw tool name, and "<agent>: <instruction>".
+    const gateway = 'Send something outside the workspace using gmail.send_message'
+    presenceReply = {
+      status: 200,
+      body: {
+        generatedAt: '2026-10-12T10:00:00Z',
+        agents: [
+          agent('a-hr', 'HR', {
+            state: 'waiting_approval',
+            runId: 'run-hr',
+            approvalId: 'appr-hr',
+            waitingText: gateway,
+            waitingForYou: true,
+            since: SINCE,
+            activeRuns: 1,
+          }),
+          agent('a-ge', 'General Employee', {
+            state: 'thinking',
+            runId: 'run-ge',
+            taskTitle: 'General Employee: List three tips for a new starter',
+            since: SINCE,
+            activeRuns: 1,
+          }),
+        ],
+      } satisfies Room,
+    }
+    feedReply = {
+      status: 200,
+      body: feedPage([
+        feedEvent(1, 'approval_requested', { agentName: 'HR', text: gateway, approvalId: 'appr-hr', forYou: true }),
+        feedEvent(2, 'approval_rejected', { agentName: 'HR', text: gateway, runId: 'run-hr' }),
+        feedEvent(3, 'task_started', { agentName: 'General Employee', title: 'General Employee: List three tips' }),
+        feedEvent(4, 'task_handed_off', {
+          agentName: 'General Employee',
+          title: 'General Employee: List three tips',
+          nextAgentId: 'a-re',
+          nextAgentName: 'Research',
+          nextTaskTitle: 'Research: Sum them up',
+        }),
+      ]),
+    }
+    renderPage()
+    await screen.findByRole('list', { name: 'Agents and what they are doing' })
+    expect(
+      within(card('HR')).getByText('Send something outside the workspace using Gmail · send message'),
+    ).toBeInTheDocument()
+    expect(within(card('General Employee')).getByText('On: List three tips for a new starter')).toBeInTheDocument()
+
+    const region = await screen.findByRole('region', { name: 'Team conversation, newest at the bottom' })
+    const lines = within(region)
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('.tr-line-text')?.textContent)
+    expect(lines).toEqual([
+      'HR is waiting for you to approve: Send something outside the workspace using Gmail · send message',
+      'You rejected: Send something outside the workspace using Gmail · send message',
+      'General Employee started on List three tips',
+      'General Employee finished List three tips and handed it to Research',
+    ])
+    expect(within(region).getByText('Next: Sum them up')).toBeInTheDocument()
+    expect(region.textContent).not.toContain('gmail.send_message')
+  })
+
   it('says so when there are no agents and nothing has happened yet', async () => {
     presenceReply = { status: 200, body: { generatedAt: '2026-10-12T10:00:00Z', agents: [] } }
     feedReply = { status: 200, body: feedPage([]) }

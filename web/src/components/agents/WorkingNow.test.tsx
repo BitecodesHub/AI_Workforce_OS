@@ -163,6 +163,9 @@ describe('WorkingNow', () => {
     expect(await within(research).findByText('Live')).toBeInTheDocument()
     expect(container.querySelector('.desk-tile-frame img')?.getAttribute('src')).toBe('data:image/jpeg;base64,AAAA')
     expect(within(support).getByText('Waiting for an approval')).toBeInTheDocument()
+    // The state is said once: the caption already says it.
+    expect(support).toHaveAccessibleDescription('Waiting for an approval')
+    expect(research).toHaveAccessibleDescription('Working. Opening example.com')
     expect(support.querySelector('.desk-tile-frame')).toBeNull()
     // A tile reads its run at a glance, never the whole trace.
     expect(requested.some((url) => url.endsWith('/steps'))).toBe(false)

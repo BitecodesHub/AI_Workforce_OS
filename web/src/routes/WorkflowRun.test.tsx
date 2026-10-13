@@ -195,6 +195,34 @@ describe('Workflow run view, live', () => {
     expect(screen.queryByRole('button', { name: 'Play the replay' })).not.toBeInTheDocument()
   })
 
+  it('names a branch a rejection stopped, and never says the rejected step carried on', async () => {
+    // As seen live on 13 Oct 2026: one branch rejected (its follower skipped) while another still waits.
+    signIn(['task:read'])
+    const ms = (value: number) => new Date(T0 + value).toISOString()
+    timeline = {
+      ...live('pending'),
+      tasks: [
+        task('research', 0, { explicitDependencies: true, status: 'cancelled', startedAt: at(1), completedAt: ms(29_002), runId: 'run-r' }),
+        task('draft', 1, { explicitDependencies: true, status: 'waiting_approval', startedAt: at(1), runId: 'run-d' }),
+        task('review', 2, { explicitDependencies: true, dependsOn: ['research'], status: 'skipped', completedAt: ms(29_003) }),
+      ],
+      runs: [
+        { id: 'run-r', taskId: 'research', status: 'cancelled', startedAt: at(1), completedAt: ms(29_001) },
+        { id: 'run-d', taskId: 'draft', status: 'waiting_approval', startedAt: at(1), completedAt: null },
+      ],
+      waits: [
+        { runId: 'run-r', taskId: 'research', kind: 'approval', startedAt: at(5), endedAt: ms(29_000), outcome: 'rejected' },
+        { runId: 'run-d', taskId: 'draft', kind: 'approval', startedAt: at(12), endedAt: null, outcome: 'pending' },
+      ],
+    }
+    renderRun()
+    await screen.findByRole('heading', { level: 1, name: 'Reply to a customer' })
+    expect(screen.getByRole('status')).toHaveTextContent('Live: 0 of 3 steps completed, 1 waiting for approval, 1 cancelled, 1 skipped')
+    const events = within(screen.getByRole('region', { name: 'What happened' })).getAllByRole('listitem').map((item) => item.textContent)
+    expect(events.some((text) => /Research carried on/.test(text ?? ''))).toBe(false)
+    expect(events.some((text) => /Research: cancelled/.test(text ?? ''))).toBe(true)
+  })
+
   it('highlights the connection when a step hands over, without motion under reduced motion', async () => {
     signIn(['task:read'])
     const { client, container } = renderRun()

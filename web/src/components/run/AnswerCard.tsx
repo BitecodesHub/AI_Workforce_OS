@@ -12,6 +12,11 @@ import { detailText, isSandboxStep } from './traceModel'
  * conversation so far and any document passages ahead of the request, ending with a line that says
  * "Request:", so the question is what follows the last one. A step of a chain is given the request
  * under a heading of its own, ahead of the earlier work and its own part, which are left off here.
+ *
+ * A later step of a workflow is the exception: its "original request" is only the workflow's
+ * description, ending in the line the server adds ('Started from the workflow "Name".'), which
+ * nobody asked of that step. It shows its own part instead, as the workflow's first step shows its
+ * own instruction; on 13 Oct 2026 a step's trace read "Asked: Started from the workflow ...".
  */
 function askedText(instruction: string): string {
   let text = instruction
@@ -21,14 +26,32 @@ function askedText(instruction: string): string {
   }
   for (const heading of ["The person's request (verbatim):\n", 'Original request: ']) {
     if (!text.startsWith(heading)) continue
+    const whole = text
     text = text.slice(heading.length)
     const ends = ['\n\nWork already done for this request:\n', '\n\nYour part: ']
       .map((end) => text.indexOf(end))
       .filter((at) => at >= 0)
     if (ends.length > 0) text = text.slice(0, Math.min(...ends))
+    if (heading === 'Original request: ' && WORKFLOW_REQUEST.test(text.trim())) {
+      const part = ownPart(whole)
+      if (part) return part
+    }
     break
   }
   return text.trim()
+}
+
+/** The line WorkflowService ends a workflow goal's description with. */
+const WORKFLOW_REQUEST = /(?:^|\n)Started from the workflow ".*"\.$/
+
+/** A chain step's own part: what follows its last "Your part:" heading, on that line or the next. */
+function ownPart(instruction: string): string | null {
+  const heading = /\n\nYour part:[ \n]/g
+  let part: string | null = null
+  for (let match = heading.exec(instruction); match; match = heading.exec(instruction)) {
+    part = instruction.slice(match.index + match[0].length)
+  }
+  return part?.trim() || null
 }
 
 // @find: AnswerCard, answer card, run answer, final answer, what the person asked, completed run answer

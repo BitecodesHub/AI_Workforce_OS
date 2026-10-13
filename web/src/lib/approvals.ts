@@ -37,6 +37,25 @@ export function readableSummary(approval: Summarised): string {
   return text
 }
 
+/**
+ * The sentence the gateway opens every request with (ToolGateway.describe in mcp-core), which ends
+ * by naming the tool: "Send something outside the workspace using gmail.send_message".
+ */
+const GATEWAY_SENTENCE =
+  /^(?:Send something outside the workspace|Permanently remove something|Change workspace data|Read data) using ([A-Za-z0-9_-]+?(?:\.|__)[A-Za-z0-9_]+)/
+
+// @find: readable request sentence, approval summary without its tool, team room approval line, raw tool name in a sentence
+/**
+ * A request's summary in words when only the sentence is at hand, as in the Team room, whose lines
+ * carry no tool name: the tool the gateway's opening sentence names is read from the sentence and
+ * swapped for its label, exactly as readableSummary does. Any other text comes back unchanged, so a
+ * question or an answer that happens to say "using" is never rewritten. Pure.
+ */
+export function readableRequestSentence(text: string): string {
+  const tool = GATEWAY_SENTENCE.exec(text)?.[1]
+  return tool ? readableSummary({ tool, summary: text }) : text
+}
+
 /** The backend guarantees valid JSON; the fallback only covers a payload from before this column was populated. */
 export function formatPayload(payload: string): string {
   try {

@@ -169,6 +169,30 @@ describe('Workflows page', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Morning digest' })).not.toBeInTheDocument())
   })
 
+  it('forgets this person’s unsaved draft of a workflow once it is deleted, and nobody else’s', async () => {
+    const items = new Map<string, string>([
+      ['aiwos:workflow-draft:user-1:workspace-1:wf-2', '{}'],
+      ['aiwos:workflow-draft:user-1:workspace-1:wf-1', '{}'],
+    ])
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return items.size
+      },
+      key: (index: number) => [...items.keys()][index] ?? null,
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => void items.set(key, value),
+      removeItem: (key: string) => void items.delete(key),
+      clear: () => items.clear(),
+    })
+    signIn(['task:read', 'task:create'])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Morning digest' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Morning digest' })).not.toBeInTheDocument())
+    expect(items.has('aiwos:workflow-draft:user-1:workspace-1:wf-2')).toBe(false)
+    expect(items.has('aiwos:workflow-draft:user-1:workspace-1:wf-1')).toBe(true)
+  })
+
   it('offers replays of recent goals that passed work between agents', async () => {
     signIn(['task:read'])
     renderPage()
@@ -177,13 +201,18 @@ describe('Workflows page', () => {
     expect(screen.queryByRole('link', { name: 'Replay One step only' })).not.toBeInTheDocument()
   })
 
-  it('offers Delete only on the workflows this person may change', async () => {
+  it('offers Delete and the editor only on the workflows this person may change', async () => {
     rows = [summary({ ...REPLY, canChange: false }), summary({ ...DIGEST, canChange: true })]
     signIn(['task:read', 'task:create'])
     renderPage()
-    await screen.findByRole('heading', { name: 'Reply to a customer' })
+    const reply = (await screen.findByRole('heading', { name: 'Reply to a customer' })).closest('article')!
+    const digest = screen.getByRole('heading', { name: 'Morning digest' }).closest('article')!
     expect(screen.queryByRole('button', { name: 'Delete Reply to a customer' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete Morning digest' })).toBeInTheDocument()
+    // Someone else's workflow opens to be read and run, so its link does not promise an editor.
+    expect(within(reply as HTMLElement).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/workflows/wf-1')
+    expect(within(reply as HTMLElement).queryByRole('link', { name: 'Open the editor' })).not.toBeInTheDocument()
+    expect(within(digest as HTMLElement).getByRole('link', { name: 'Open the editor' })).toBeInTheDocument()
   })
 
   it('shows more replays on request, beyond the first six', async () => {

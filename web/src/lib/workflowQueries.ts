@@ -3,6 +3,8 @@
 // @flow: Used by routes/Workflows.tsx, routes/WorkflowEditor.tsx and routes/WorkflowRun.tsx; talks to the orchestrator through lib/api
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
+import { profile } from './session'
+import { clearDraft, draftKey } from './workflowDraft'
 import type { QueryOptions } from './queries'
 
 /*
@@ -250,12 +252,18 @@ export function useUpdateWorkflow(id: string) {
 }
 
 // @find: delete workflow; route: DELETE /api/workflows/{id}; used by: Workflows page, workflow editor
-/** Deletes a workflow; its runs and the goals they started stay, so they can still be replayed (task:create, maker or task:cancel). */
+/**
+ * Deletes a workflow; its runs and the goals they started stay, so they can still be replayed
+ * (task:create, maker or task:cancel). Once it is gone, this person's unsaved draft of it is
+ * forgotten too: nothing could ever offer it back, so it would only sit in this browser.
+ */
 export function useDeleteWorkflow() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api<void>(`/api/workflows/${id}`, { method: 'DELETE' }),
     onSuccess: (_, id) => {
+      const who = profile()
+      clearDraft(draftKey(id, who?.userId ?? null, who?.workspaceId ?? null))
       client.removeQueries({ queryKey: ['workflows', id] })
       void client.invalidateQueries({ queryKey: ['workflows'], exact: true })
     },

@@ -3313,8 +3313,13 @@ input[type='checkbox'][role='switch']:checked::before {
   width: min(520px, 100vw);
 }
 
+/*
+ * The browser's own rule for a modal dialog caps it at "100% - 2em - 6px", which left a 34px strip
+ * beside a full sheet at every width (the Agent desk at 375px lost 9% of the screen, 13 Oct 2026).
+ */
 .sheet[data-width='full'] {
   width: 100vw;
+  max-width: none;
   border: none;
 }
 
