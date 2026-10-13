@@ -75,4 +75,68 @@ describe('Sheet', () => {
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog', { name: 'A sheet' })).toBeInTheDocument()
   })
+
+  // Seen live in the Team room: closing an agent's sheet with Escape or Close left focus on the page
+  // body, because the page unmounts the sheet instead of closing it.
+  it('gives focus back to what opened it when its parent removes it while open', async () => {
+    function Opener() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open the sheet
+          </button>
+          {open && (
+            <Sheet open onClose={() => setOpen(false)} eyebrow="Agent" title="What they are doing">
+              <p>Busy</p>
+            </Sheet>
+          )}
+        </>
+      )
+    }
+    render(<Opener />)
+    const opener = screen.getByRole('button', { name: 'Open the sheet' })
+    opener.focus()
+    fireEvent.click(opener)
+    expect(screen.getByRole('heading', { name: 'What they are doing' })).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await Promise.resolve()
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+  })
+
+  it('leaves focus alone when the person has already moved it elsewhere', async () => {
+    function Elsewhere() {
+      const [open, setOpen] = useState(true)
+      return (
+        <>
+          <button type="button">Somewhere else</button>
+          {open && (
+            <Sheet open onClose={() => setOpen(false)} eyebrow="Agent" title="A sheet">
+              <button
+                type="button"
+                onClick={() => {
+                  screen.getByRole('button', { name: 'Somewhere else' }).focus()
+                  setOpen(false)
+                }}
+              >
+                Go elsewhere
+              </button>
+            </Sheet>
+          )}
+        </>
+      )
+    }
+    const before = document.createElement('button')
+    document.body.append(before)
+    before.focus()
+    render(<Elsewhere />)
+    fireEvent.click(screen.getByRole('button', { name: 'Go elsewhere' }))
+    await Promise.resolve()
+
+    expect(screen.getByRole('button', { name: 'Somewhere else' })).toHaveFocus()
+    before.remove()
+  })
 })

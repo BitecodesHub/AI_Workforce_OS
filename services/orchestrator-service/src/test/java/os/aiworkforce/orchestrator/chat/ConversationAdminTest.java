@@ -242,6 +242,37 @@ class ConversationAdminTest {
         verify(conversations).delete(conversation);
     }
 
+    // @find: test delete of a private conversation keeps its work hidden, conversation admin
+    @Test
+    @DisplayName("deleting a private conversation stops its work but keeps it tied to the conversation, so it stays hidden")
+    void deletingAPrivateConversationKeepsItsWorkHidden() {
+        // Seen live: after a private chat was deleted, its goal titles and results showed in everyone's
+        // Team room and run pages, because its work had been let go of the conversation.
+        conversation.setVisibility("private");
+        Goal mine = activeGoal(creatorId);
+        when(goals.findByOrgIdAndConversationIdAndStatusIn(eq(ORG), eq(conversation.getId()), any()))
+                .thenReturn(List.of(mine));
+        when(goalService.cancelIfActive(any(), any(), any())).thenReturn(Optional.empty());
+
+        admin.delete(ORG, asUser(creatorId, "chat:use"), conversation.getId());
+
+        verify(goalService).cancelIfActive(ORG, mine.getId(), ConversationAdmin.DELETED_REASON);
+        verify(goals, never()).detachConversation(any(), any());
+        verify(questions, never()).detachConversation(any(), any());
+        verify(conversations).delete(conversation);
+    }
+
+    // @find: test delete of a workspace conversation lets its work go, conversation admin
+    @Test
+    @DisplayName("deleting a workspace conversation lets its work go of it, so the work stays on the board for everyone")
+    void deletingAWorkspaceConversationDetachesItsWork() {
+        admin.delete(ORG, asUser(creatorId, "chat:use"), conversation.getId());
+
+        verify(goals).detachConversation(ORG, conversation.getId());
+        verify(questions).detachConversation(ORG, conversation.getId());
+        verify(conversations).delete(conversation);
+    }
+
     // @find: test delete of aconversation already gone is204, conversation admin
     @Test
     @DisplayName("deleting a conversation that is already gone returns quietly")

@@ -980,5 +980,19 @@ class TeamRoomServiceTest {
             String cut = TeamRoomService.oneLine(longLine);
             assertThat(cut).hasSizeLessThanOrEqualTo(160).endsWith("…");
         }
+
+        // @find: test one line skips fenced blocks, answer card result, email draft in feed
+        @Test
+        @DisplayName("a fenced block, such as an email draft card, never stands in for the answer's first line")
+        void oneLineSkipsFencedBlocks() {
+            // Seen live: an HR result that opens with an email-draft card read "HR finished: ```email-draft".
+            String card = "```email-draft\n{\n  \"to\": \"priya@example.com\",\n  \"subject\": \"Welcome\"\n}\n```";
+            assertThat(TeamRoomService.oneLine(card)).isNull();
+            assertThat(TeamRoomService.oneLine(card + "\n\nThe draft is ready to send.")).isEqualTo("The draft is ready to send.");
+            assertThat(TeamRoomService.oneLine("~~~~\ncode\n~~~\nstill code\n~~~~\nAfter the block")).isEqualTo("After the block");
+            assertThat(TeamRoomService.oneLine("```\nnever closed\nstill inside")).isNull();
+            assertThat(TeamRoomService.oneLine("---\n|---|---|\n| Plan | Price |")).isEqualTo("| Plan | Price |");
+            assertThat(TeamRoomService.oneLine("Here it is:\n```json\n{}\n```")).isEqualTo("Here it is:");
+        }
     }
 }

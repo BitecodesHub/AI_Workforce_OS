@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FeedAnnouncer, TeamFeed } from '../components/team-room/TeamFeed'
+import { FeedAnnouncer, TeamFeed, personInitials } from '../components/team-room/TeamFeed'
 import { RouterProvider } from '../lib/router'
 import { clearSession, saveSession } from '../lib/session'
 import { personNamer } from '../lib/teamRoomQueries'
@@ -737,5 +737,31 @@ describe('Team conversation announcements', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Show earlier' }))
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1))
+  })
+
+  // Seen live: every line the viewer spoke showed "YO", the first letters of "You".
+  it("puts the viewer's own initials beside their lines, a member's beside theirs, and none for someone unknown", () => {
+    const named = personNamer(ME, { 'user-sam': 'Sam Lee' })
+    const events = [
+      feedEvent(1, 'goal_requested', { title: 'Hire a designer' }),
+      feedEvent(2, 'approval_approved', { personId: 'user-sam', text: 'Send the shortlist' }),
+      feedEvent(3, 'question_answered', { personId: 'user-gone', text: 'Which tone?' }),
+    ]
+    render(
+      <RouterProvider>
+        <TeamFeed
+          state={{ ...base, events }}
+          nameOf={named}
+          onLoadOlder={() => {}}
+          loadingOlder={false}
+          olderError={null}
+        />
+      </RouterProvider>,
+    )
+    const circles = [...document.querySelectorAll('.tr-line-person')].map((circle) => circle.textContent)
+    expect(circles).toEqual(['MM', 'SL', ''])
+    expect(personInitials('You')).toBe('MM')
+    clearSession()
+    expect(personInitials('You')).toBe('')
   })
 })

@@ -110,6 +110,19 @@ class ConversationAccessTest {
                 .isSameAs(privateThread);
     }
 
+    // @find: test work from a deleted private conversation stays hidden, conversation access
+    @Test
+    void workFromAConversationThatNoLongerExistsIsHiddenFromAllButReadAll() {
+        // Deleting a private conversation leaves its work holding the id; deleting a workspace one clears it.
+        UUID deleted = UUID.randomUUID();
+        when(conversations.findByIdAndOrgId(deleted, ORG)).thenReturn(Optional.empty());
+
+        assertThat(access.hidden(ORG, user(ALICE), deleted)).isTrue();
+        assertThat(access.hidden(ORG, user(BOB), deleted)).isTrue();
+        assertThat(access.hidden(ORG, user(OWNER, Permission.Codes.CHAT_READ_ALL), deleted)).isFalse();
+        assertThat(access.hidden(ORG, user(BOB), null)).isFalse();
+    }
+
     // @find: test a holder of read all hides nothing, conversation access
     @Test
     void aHolderOfReadAllHidesNothing() {

@@ -595,22 +595,61 @@ public class TeamRoomService {
     /**
      * The first line of a text with words in it, without Markdown's leading marks, cut to {@value
      * #LINE_LIMIT} characters with an ellipsis. Pure; null or blank gives null.
+     *
+     * <p>A fenced block (``` or ~~~) is skipped whole, fence lines included: an answer card such as
+     * an email draft is a fenced block of JSON, and its fence line ("```email-draft") or its first
+     * brace would otherwise stand in for the answer. Lines with no letter or digit (a rule such as
+     * "---", a table's divider row) are skipped too. A text that is nothing but such lines gives
+     * null, so the line falls back to the task or run title.
      */
     static String oneLine(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
+        String fence = null;
         for (String line : text.split("\\R")) {
-            String plain = line.strip().replaceFirst("^(#{1,6}\\s+|[-*+>]\\s+|\\d+[.)]\\s+)", "")
+            String stripped = line.strip();
+            String marker = fenceMarker(stripped);
+            if (fence == null && marker != null) {
+                fence = marker;
+                continue;
+            }
+            if (fence != null) {
+                if (marker != null && marker.charAt(0) == fence.charAt(0) && marker.length() >= fence.length()
+                        && stripped.substring(marker.length()).isBlank()) {
+                    fence = null;
+                }
+                continue;
+            }
+            String plain = stripped.replaceFirst("^(#{1,6}\\s+|[-*+>]\\s+|\\d+[.)]\\s+)", "")
                     .replace("**", "")
                     .replace("__", "")
                     .strip();
-            if (plain.isEmpty()) {
+            if (plain.codePoints().noneMatch(Character::isLetterOrDigit)) {
                 continue;
             }
             return plain.length() <= LINE_LIMIT ? plain : plain.substring(0, LINE_LIMIT - 1).stripTrailing() + "…";
         }
         return null;
+    }
+
+    /**
+     * The fence a line opens or closes a fenced code block with (three or more backticks or tildes
+     * at its start), or null when it is not a fence line. Pure.
+     */
+    private static String fenceMarker(String stripped) {
+        if (stripped.length() < 3) {
+            return null;
+        }
+        char mark = stripped.charAt(0);
+        if (mark != '`' && mark != '~') {
+            return null;
+        }
+        int length = 0;
+        while (length < stripped.length() && stripped.charAt(length) == mark) {
+            length++;
+        }
+        return length >= 3 ? stripped.substring(0, length) : null;
     }
 
     /** Parses an identifier, or null for null or a value that is not one. */

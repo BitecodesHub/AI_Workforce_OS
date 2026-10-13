@@ -74,12 +74,15 @@ class TeamRoomStoreSqlTest {
             String select = selects.get(index);
             assertThat(select).as(branch.kind()).contains("'" + branch.kind() + "' as kind");
             if (branch.conversation() == null) {
-                assertThat(select).as(branch.kind()).doesNotContain("conversations hc");
+                assertThat(select).as(branch.kind()).doesNotContain("conversations hc").doesNotContain("conversations gc");
                 assertThat(select).as(branch.kind()).contains("r.task_id is null");
             } else {
                 assertThat(select)
                         .as(branch.kind())
-                        .contains("and not (exists (select 1 from conversations hc")
+                        .contains("and not (" + branch.conversation() + " is not null and (")
+                        // A deleted private conversation's work keeps its id and stays hidden.
+                        .contains("not exists (select 1 from conversations gc where gc.id = " + branch.conversation() + ")")
+                        .contains("or exists (select 1 from conversations hc")
                         .contains("where hc.id = " + branch.conversation())
                         .contains("hc.visibility = 'private'")
                         .contains("coalesce(hc.created_by, '') <> :me")
@@ -103,7 +106,7 @@ class TeamRoomStoreSqlTest {
         MapSqlParameterSource params = new MapSqlParameterSource();
         String sql = TeamRoomStore.feedSql(Viewer.seeingAll(), false, false, params);
 
-        assertThat(sql).doesNotContain("conversations hc").doesNotContain(":me");
+        assertThat(sql).doesNotContain("conversations hc").doesNotContain("conversations gc").doesNotContain(":me");
         assertThat(params.hasValue("me")).isFalse();
     }
 
@@ -135,7 +138,8 @@ class TeamRoomStoreSqlTest {
         store.activeRuns(ORG, PERSON);
         verify(jdbc).query(runsSql.capture(), runsParams.capture(), any(RowMapper.class));
         assertThat(runsSql.getValue())
-                .contains("(exists (select 1 from conversations hc")
+                .contains("not exists (select 1 from conversations gc where gc.id = g.conversation_id)")
+                .contains("or exists (select 1 from conversations hc")
                 .contains("as hidden")
                 // A parked run's approval is read without its payload.
                 .doesNotContain("payload");
@@ -147,7 +151,9 @@ class TeamRoomStoreSqlTest {
         Map<UUID, Integer> queued = store.queuedByAgent(ORG, PERSON);
         verify(jdbc).query(queuedSql.capture(), queuedParams.capture(), any(RowCallbackHandler.class));
         assertThat(queued).isEmpty();
-        assertThat(queuedSql.getValue()).contains("and not (exists (select 1 from conversations hc");
+        assertThat(queuedSql.getValue())
+                .contains("and not (g.conversation_id is not null and (")
+                .contains("or exists (select 1 from conversations hc");
         assertNoListParameters(queuedParams.getValue());
     }
 }

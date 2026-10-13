@@ -20,7 +20,8 @@ import { Eyebrow, IconButton } from './index'
  * Edge-anchored panel for a record kept open beside a list (a goal, a run), built on the native dialog element.
  * Props: open and onClose (controlled), side, modal, eyebrow and title (the title is the labelled heading and takes
  * focus on open unless an element marked data-autofocus exists), width (sm, md or full), children, footer and
- * returnFocusTo (where focus goes on close; default the element focused before opening).
+ * returnFocusTo (where focus goes on close; default the element focused before opening). Focus goes back there
+ * too when the parent removes a sheet that is still open, as long as focus left the page with it.
  * Modal sheets use showModal (native Escape and backdrop). Non-modal ones use show, so a wide screen keeps the
  * page behind reachable, and then Escape is handled by a document key listener because only modal dialogs get
  * it natively. A backdrop click closes only a modal sheet, and only when the press also started on the backdrop
@@ -88,6 +89,32 @@ export function Sheet({
     }
     if (!open && dialog.open) dialog.close()
   }, [open, modal, titleId])
+
+  // Where focus returns, read by the unmount clean-up below as it is at that moment.
+  const returnFocusRef = useRef(returnFocusTo)
+  useEffect(() => {
+    returnFocusRef.current = returnFocusTo
+  })
+
+  // A parent that mounts the sheet only while it is open ({chosen && <Sheet open ... />}, as the
+  // Team room, the Orchestrator and the Agent desk do) removes it without ever closing it, so the
+  // close event, which returns focus, never fires and keyboard users are dropped on the page body.
+  // Returning focus here covers that. It waits a microtask and acts only when the dialog has really
+  // left the page and focus went with it, so React's development double run of effects (the dialog
+  // stays in the page) and a person who has already moved focus elsewhere are left alone.
+  useEffect(() => {
+    const dialog = ref.current
+    return () => {
+      if (!dialog?.open) return
+      const target = returnFocusRef.current ?? previousFocus.current
+      queueMicrotask(() => {
+        if (dialog.isConnected) return
+        const active = document.activeElement
+        if (active && active !== document.body) return
+        if (target?.isConnected) target.focus()
+      })
+    }
+  }, [])
 
   // A non-modal dialog (shown with `.show()`) gets no native Escape handling of its own - only a
   // modal one does. Mirrors the backdrop click below: it reports the close to the caller and lets

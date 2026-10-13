@@ -33,7 +33,9 @@ import os.aiworkforce.platform.rbac.Permission;
  *
  * <p>The same rule hides the work a private thread started. {@link #hiddenGoalIds} and {@link
  * #hiddenTaskIds} answer "which goals and tasks must this person not see" in the database, so a
- * list can leave them out without loading them first.
+ * list can leave them out without loading them first. Work from a private thread that was deleted
+ * keeps its id and stays hidden from everyone but holders of {@code chat:read_all} ({@link
+ * #GONE_CONVERSATION}).
  */
 @Component
 public class ConversationAccess {
@@ -47,6 +49,31 @@ public class ConversationAccess {
               and not exists (select 1 from conversation_participants p
                               where p.conversation_id = c.id and p.user_id = ?)
             """;
+
+    /**
+     * Whether the conversation the column in {@code %s} names no longer exists. Deleting a private
+     * conversation leaves its goals and questions holding its id (ConversationAdmin.delete), and
+     * that work stays hidden from everyone without chat:read_all, the people who were in it
+     * included: there is no longer a conversation to say who they were. A deleted workspace
+     * conversation's work is let go of it (the id is cleared), so it is never caught here.
+     */
+    static final String GONE_CONVERSATION =
+            "not exists (select 1 from conversations gc where gc.id = %s)";
+
+    /**
+     * The ids of deleted private conversations whose goals or questions are still in the workspace,
+     * so a list that filters by conversation id leaves their work out too.
+     */
+    private static final String GONE_CONVERSATIONS =
+            """
+            select g.conversation_id from goals g
+            where g.org_id = ? and g.conversation_id is not null and %1$s
+            union
+            select q.conversation_id from run_questions q
+            where q.org_id = ? and q.conversation_id is not null and %2$s
+            """
+                    .formatted(GONE_CONVERSATION.formatted("g.conversation_id"),
+                            GONE_CONVERSATION.formatted("q.conversation_id"));
 
     /** Looks up conversations of a workspace. */
     private final Conversations conversations;
@@ -159,19 +186,25 @@ public class ConversationAccess {
         return conversation;
     }
 
+    /** Whether a goal ({@code g}) came from a conversation hidden from the person, or from a deleted private one. */
+    private static final String HIDDEN_GOAL =
+            "g.conversation_id is not null and (g.conversation_id in (" + HIDDEN_CONVERSATIONS + ") or "
+                    + GONE_CONVERSATION.formatted("g.conversation_id") + ")";
+
     /**
-     * Goals started from a private conversation this person is not part of. Empty for a holder of chat:read_all.
+     * Goals started from a private conversation this person is not part of, or from a private
+     * conversation that has since been deleted. Empty for a holder of chat:read_all.
      *
      * <p>One read-only query; lists use the result to leave those goals out.
      */
-    // @find: hidden goal ids, goals in private chats
+    // @find: hidden goal ids, goals in private chats, goals of a deleted private chat
     public Set<UUID> hiddenGoalIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
             return Set.of();
         }
         String me = meOrNone(actor);
         return Set.copyOf(jdbc.queryForList(
-                "select g.id from goals g where g.org_id = ? and g.conversation_id in (" + HIDDEN_CONVERSATIONS + ")",
+                "select g.id from goals g where g.org_id = ? and " + HIDDEN_GOAL,
                 UUID.class,
                 orgId,
                 orgId,
@@ -191,8 +224,7 @@ public class ConversationAccess {
         }
         String me = meOrNone(actor);
         return Set.copyOf(jdbc.queryForList(
-                "select t.id from tasks t join goals g on g.id = t.goal_id where g.org_id = ?"
-                        + " and g.conversation_id in (" + HIDDEN_CONVERSATIONS + ")",
+                "select t.id from tasks t join goals g on g.id = t.goal_id where g.org_id = ? and " + HIDDEN_GOAL,
                 UUID.class,
                 orgId,
                 orgId,
@@ -203,8 +235,10 @@ public class ConversationAccess {
     /**
      * Whether work from this conversation is out of this person's sight.
      *
-     * <p>False when there is no conversation or it cannot be found; otherwise the opposite of
-     * {@link #canRead}.
+     * <p>False when there is no conversation; the opposite of {@link #canRead} when it exists. A
+     * conversation id that names no conversation is one that was deleted while private (a deleted
+     * workspace one's work has its id cleared), so its work is hidden from everyone but holders of
+     * chat:read_all.
      */
     public boolean hidden(UUID orgId, Actor actor, UUID conversationId) {
         if (conversationId == null) {
@@ -213,21 +247,24 @@ public class ConversationAccess {
         return conversations
                 .findByIdAndOrgId(conversationId, orgId)
                 .map(conversation -> !canRead(conversation, actor))
-                .orElse(false);
+                .orElseGet(() -> !canReadAll(actor));
     }
 
     /**
-     * Conversation ids this person may not read, for filtering a list of conversation ids.
+     * Conversation ids this person may not read, for filtering a list of conversation ids: the
+     * private ones they are not part of, and the deleted private ones whose goals or questions are
+     * still in the workspace.
      *
      * <p>Empty for a holder of {@code chat:read_all}; otherwise one read-only query.
      */
-    // @find: hidden conversation ids, private chats hidden from a person
+    // @find: hidden conversation ids, private chats hidden from a person, deleted private chats
     public Set<UUID> hiddenConversationIds(UUID orgId, Actor actor) {
         if (canReadAll(actor)) {
             return Set.of();
         }
         String me = meOrNone(actor);
-        return Set.copyOf(jdbc.queryForList(HIDDEN_CONVERSATIONS, UUID.class, orgId, me, me));
+        return Set.copyOf(jdbc.queryForList(
+                HIDDEN_CONVERSATIONS + " union " + GONE_CONVERSATIONS, UUID.class, orgId, me, me, orgId, orgId));
     }
 
     /** People added to a conversation, for the share dialog. */

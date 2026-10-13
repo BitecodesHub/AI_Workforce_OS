@@ -482,6 +482,45 @@ class TeamRoomStorePersistenceTest {
         }
     }
 
+    // @find: test work from a deleted private conversation stays hidden, team room store persistence
+    @Test
+    @DisplayName("work from a deleted private conversation stays out of sight of everyone but readers of all")
+    void workFromADeletedPrivateConversationStaysHidden() {
+        // Seen live: deleting a private chat let its goal titles and results into everyone's Team room.
+        UUID ada = agent(ORG, "Ada");
+        UUID secret = privateConversation(ORG);
+        UUID goalId = goal(ORG, "Salary review", "chat", secret, null, ago(600));
+        UUID done = task(ORG, goalId, ada, "Compare salaries", "completed", 0, ago(500), ago(450), "Done.");
+        run(ORG, done, ada, "completed", ago(500));
+        UUID waiting = task(ORG, goalId, ada, "Email the board", "running", 1, ago(440), null, null);
+        UUID runId = run(ORG, waiting, ada, "running", ago(440));
+        task(ORG, goalId, ada, "File it", "ready", 2, null, null, null);
+        // What ConversationAdmin.delete leaves of a private conversation: its work, still holding its id.
+        jdbc.update("delete from conversations where id = ?", secret);
+
+        for (Viewer person : List.of(OUTSIDER, CREATOR, ADDED, Viewer.person(null))) {
+            assertThat(store.feedRows(ORG, person, null, false, 50)).as("feed of %s", person).isEmpty();
+            assertThat(store.activeRuns(ORG, person)).as("presence of %s", person).singleElement()
+                    .satisfies(run -> {
+                        assertThat(run.runId()).isEqualTo(runId);
+                        assertThat(run.hidden()).isTrue();
+                    });
+            assertThat(store.queuedByAgent(ORG, person)).as("queue of %s", person).isEmpty();
+        }
+        assertThat(store.feedRows(ORG, Viewer.seeingAll(), null, false, 50)).extracting(FeedRow::kind)
+                .containsExactlyInAnyOrder("goal_requested", "task_started", "task_started", "task_finished");
+        assertThat(store.activeRuns(ORG, Viewer.seeingAll()).getFirst().hidden()).isFalse();
+        assertThat(store.queuedByAgent(ORG, Viewer.seeingAll())).containsEntry(ada, 1);
+
+        // A workspace conversation's work has its id cleared when it is deleted, and is everyone's to see.
+        UUID open = workspaceConversation(ORG);
+        UUID openGoal = goal(ORG, "Team lunch", "chat", open, null, ago(300));
+        jdbc.update("update goals set conversation_id = null where id = ?", openGoal);
+        jdbc.update("delete from conversations where id = ?", open);
+        assertThat(store.feedRows(ORG, OUTSIDER, null, false, 50)).extracting(FeedRow::title)
+                .containsExactly("Team lunch");
+    }
+
     // @find: test thousands of private conversations, bind parameter limit, team room store persistence
     @Test
     @DisplayName("ten thousand private conversations hidden from a viewer do not change what the feed binds or break it")

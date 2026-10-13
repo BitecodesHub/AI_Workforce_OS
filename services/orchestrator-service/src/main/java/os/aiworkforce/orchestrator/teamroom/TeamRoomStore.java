@@ -49,17 +49,22 @@ public class TeamRoomStore {
     static final int TEXT_LIMIT = 600;
 
     /**
-     * Whether the conversation in {@code %s} is a private one the viewer ({@code :me}) neither
-     * started nor was added to. The rule of {@code ConversationAccess.HIDDEN_CONVERSATIONS}, as a
-     * named-parameter predicate; a null conversation is never hidden.
+     * Whether the conversation in {@code %1$s} is a private one the viewer ({@code :me}) neither
+     * started nor was added to, or one that no longer exists. The rule of {@code
+     * ConversationAccess.HIDDEN_CONVERSATIONS} and {@code ConversationAccess.GONE_CONVERSATION}, as a
+     * named-parameter predicate; a null conversation is never hidden. A conversation id that names
+     * no conversation is a private one that was deleted (deleting a workspace one clears the id
+     * from its work), so its work stays hidden from everyone without chat:read_all.
      */
     static final String HIDDEN_CONVERSATION =
             """
-            exists (select 1 from conversations hc
-                    where hc.id = %s and hc.org_id = :orgId and hc.visibility = 'private'
-                      and coalesce(hc.created_by, '') <> :me
-                      and not exists (select 1 from conversation_participants hp
-                                      where hp.conversation_id = hc.id and hp.user_id = :me))""";
+            %1$s is not null and (
+                not exists (select 1 from conversations gc where gc.id = %1$s)
+                or exists (select 1 from conversations hc
+                           where hc.id = %1$s and hc.org_id = :orgId and hc.visibility = 'private'
+                             and coalesce(hc.created_by, '') <> :me
+                             and not exists (select 1 from conversation_participants hp
+                                             where hp.conversation_id = hc.id and hp.user_id = :me)))""";
 
     /**
      * The workspace's runs still at work or parked, newest first, with the task and goal behind

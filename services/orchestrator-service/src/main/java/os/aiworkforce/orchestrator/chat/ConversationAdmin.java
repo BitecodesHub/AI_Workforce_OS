@@ -308,7 +308,8 @@ public class ConversationAdmin {
      * the caller cannot cancel work in general (D-9).
      *
      * <p>Flow: checks read access and the right to manage; cancels each active goal through
-     * {@link GoalService}; detaches goals and questions from the conversation; deletes the row under
+     * {@link GoalService}; detaches goals and questions from a workspace conversation (a private
+     * one's keep its id, so they stay hidden: see {@link ConversationAccess}); deletes the row under
      * a lock; and records a {@code conversation.delete} audit entry after the transaction commits.
      * Called by {@link ChatController#delete}.
      *
@@ -340,8 +341,15 @@ public class ConversationAdmin {
             goalService.cancelIfActive(orgId, goal.getId(), DELETED_REASON);
         }
 
-        goals.detachConversation(orgId, id);
-        questions.detachConversation(orgId, id);
+        // A workspace conversation's work was everyone's to see, so it is let go of the conversation
+        // and stays on the board as plain work. A private conversation's work keeps the id of the
+        // conversation it came from: ConversationAccess and the team room treat work whose
+        // conversation no longer exists as hidden from everyone without chat:read_all, so deleting a
+        // private chat never shows its titles, results or questions to the rest of the workspace.
+        if (!conversation.isPrivate()) {
+            goals.detachConversation(orgId, id);
+            questions.detachConversation(orgId, id);
+        }
         // Read fresh, under a lock, rather than reusing the copy loaded above - the cancels just
         // above may already have appended notices that bumped its version, and saving the stale
         // copy over that would fail its own optimistic-lock check.

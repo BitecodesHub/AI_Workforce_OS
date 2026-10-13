@@ -7,7 +7,7 @@ import { AgentAvatar } from '../ui/AgentAvatar'
 import { describeApiError } from '../../lib/api'
 import { feedLine, feedLink, feedSpeaker } from '../../lib/teamRoomQueries'
 import type { FeedEvent, FeedState, PersonNamer } from '../../lib/teamRoomQueries'
-import { can, initials } from '../../lib/session'
+import { can, initials, profile } from '../../lib/session'
 
 /** How close to the bottom (pixels) still counts as reading the newest lines. */
 const NEAR_BOTTOM_PX = 120
@@ -35,12 +35,24 @@ function Speaker({ event, nameOf }: { event: FeedEvent; nameOf: PersonNamer }) {
       </span>
     )
   }
-  const name = nameOf(event.personId)
   return (
     <span className="avatar avatar-sm tr-line-person" aria-hidden="true">
-      {name === 'Someone' ? '' : initials(name)}
+      {personInitials(nameOf(event.personId))}
     </span>
   )
+}
+
+/**
+ * The letters in a person's circle: their initials, the viewer's own initials when the line names
+ * them "You" (never "YO"), or nothing for "Someone". Reads the session profile.
+ */
+export function personInitials(name: string): string {
+  if (name === 'Someone') return ''
+  if (name === 'You') {
+    const own = profile()?.displayName?.trim()
+    return own ? initials(own) : ''
+  }
+  return initials(name)
 }
 
 /**
