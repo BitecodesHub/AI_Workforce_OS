@@ -223,6 +223,59 @@ describe('AgentDesk', () => {
     expect(actions()[4]).toEqual({ type: 'navigate', url: 'https://example.org/prices' })
   })
 
+  it('keeps keyboard focus where it was while an action is in flight, and sends one action at a time', async () => {
+    // Seen in Chrome on 13 Oct 2026: Enter in the address bar or the text box disabled that field
+    // while the action ran, which dropped keyboard focus to the page body.
+    takeover = MINE
+    let finish: (response: Response) => void = () => {}
+    // Each action waits until the test answers it.
+    const fetchMock = vi.mocked(fetch)
+    const answer = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url, init) => {
+      if (init?.method === 'POST' && url === '/api/runs/r-1/takeover/actions') {
+        calls.push({ method: 'POST', url: String(url), body: JSON.parse(String(init.body)) })
+        return new Promise<Response>((resolve) => {
+          finish = resolve
+        })
+      }
+      return answer(url, init)
+    })
+    openDesk()
+
+    const box = await screen.findByLabelText('Text to type')
+    box.focus()
+    fireEvent.change(box, { target: { value: 'hello there' } })
+    fireEvent.submit(box.closest('form')!)
+    await waitFor(() => expect(actions()).toHaveLength(1))
+
+    // In flight: the box stays focused and enabled but cannot be edited; the keys are marked
+    // unavailable, and pressing one sends nothing.
+    expect(box).toBeEnabled()
+    expect(box).toHaveAttribute('readonly')
+    expect(document.activeElement).toBe(box)
+    const enter = screen.getByRole('button', { name: 'Press Enter' })
+    expect(enter).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(enter)
+    fireEvent.submit(screen.getByLabelText('Address').closest('form')!)
+    expect(actions()).toHaveLength(1)
+
+    finish(json(200, { url: 'https://example.com/next', title: 'Next', frame: 'BBBB' }))
+    await waitFor(() => expect(box).toHaveValue(''))
+    expect(box).not.toHaveAttribute('readonly')
+    expect(document.activeElement).toBe(box)
+    expect(enter).not.toHaveAttribute('aria-disabled')
+
+    // Typing with the Type button brings focus back to the box, since the emptied box leaves Type unavailable.
+    fireEvent.change(box, { target: { value: 'more' } })
+    const type = screen.getByRole('button', { name: 'Type' })
+    type.focus()
+    fireEvent.click(type)
+    await waitFor(() => expect(actions()).toHaveLength(2))
+    finish(json(200, { url: 'https://example.com/next', title: 'Next', frame: 'CCCC' }))
+    await waitFor(() => expect(box).toHaveValue(''))
+    await waitFor(() => expect(document.activeElement).toBe(box))
+  })
+
   it('hands back to the agent with a note', async () => {
     takeover = MINE
     openDesk()
@@ -378,6 +431,17 @@ describe('AgentDesk', () => {
 
     const title = await screen.findByText('You have control. The agent is waiting.')
     expect(title.closest('[role="status"], [role="alert"], [aria-live]')).toBeNull()
+  })
+
+  it('says the agent is getting started until its first step lands, instead of an empty desk', async () => {
+    overrides['GET /api/runs/r-1/steps'] = () => json(200, STEPS.slice(0, 1))
+    openDesk()
+
+    expect(await screen.findByText('Research is getting started. Its steps appear here as it works.')).toBeInTheDocument()
+
+    delete overrides['GET /api/runs/r-1/steps']
+    expect(await screen.findByText('Opened Example Domain.', {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.queryByText(/is getting started/)).not.toBeInTheDocument()
   })
 
   it('says so when the run cannot be read, instead of loading for ever', async () => {

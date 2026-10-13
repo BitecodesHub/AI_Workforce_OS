@@ -25,6 +25,13 @@ import { can, isSignedIn, profile } from './session'
 /** The poll interval, in the background too. */
 export const ATTENTION_POLL_MS = 30_000
 
+/**
+ * How long invalidations of the approvals and questions lists are gathered before the count is
+ * refreshed once, in milliseconds: one mutation invalidates several lists, each announced on its
+ * own task.
+ */
+export const ATTENTION_REFRESH_GATHER_MS = 50
+
 /** The fields of an approval this reads (the rest of GET /api/approvals is not needed here). */
 export type AttentionApproval = {
   id: string
@@ -259,15 +266,26 @@ export function useAttention(): { count: number; approvals: number; questions: n
   // Deciding or answering invalidates the ordinary lists; this brings the count down with them
   // instead of leaving it for the next poll. Only an invalidation counts: the navigation bar's own
   // polls update those lists every half minute, and following them would double the requests.
+  // One decision invalidates every approvals query at once (the queue, its count, the history, the
+  // one looked up), and each used to restart the count's two requests, cancelling the one before:
+  // five aborted pairs per decision, seen in the browser on 13 Oct 2026. Invalidations that arrive
+  // together are gathered into one refresh.
   useEffect(() => {
     const cache = client.getQueryCache()
-    return cache.subscribe((event) => {
+    let pending: ReturnType<typeof setTimeout> | null = null
+    const unsubscribe = cache.subscribe((event) => {
       if (event.type !== 'updated' || event.action.type !== 'invalidate') return
       const root = event.query.queryKey[0]
-      if (root === 'approvals' || root === 'questions') {
+      if ((root !== 'approvals' && root !== 'questions') || pending !== null) return
+      pending = setTimeout(() => {
+        pending = null
         void client.invalidateQueries({ queryKey: ['attention'] })
-      }
+      }, ATTENTION_REFRESH_GATHER_MS)
     })
+    return () => {
+      unsubscribe()
+      if (pending !== null) clearTimeout(pending)
+    }
   }, [client])
 
   const approvals = canApprovals ? decidable(approvalsQuery.data ?? []).length : 0

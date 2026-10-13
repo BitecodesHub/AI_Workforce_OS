@@ -361,10 +361,13 @@ function PendingQueue({ view, onShowList }: { view: View; onShowList: () => void
   }
 
   // The Decide view's send: only once a decision's undo window has closed, or at once as the page
-  // is hidden or closed (`leaving`), when the request is made to outlive the page. A failure is
-  // said by toast and rethrown, so the deck brings the card back.
+  // is hidden or closed (`leaving`), when the request is made to outlive the page. The request
+  // leaves the queue as it is sent, not when the server answers, so a person who switched to the
+  // List (which sends a held decision at once) is never offered it again while it travels. A
+  // failure puts it back, is said by toast and is rethrown, so the deck brings the card back too.
   const decideFromDeck = async ({ approval, kind, note: text, leaving }: DeckDecision) => {
     const outlive = leaving ? { keepalive: true } : {}
+    leave([approval.id])
     try {
       if (kind === 'approve') await decideApproval.mutateAsync({ id: approval.id, approved: true, ...outlive })
       else if (kind === 'reject') {
@@ -378,8 +381,14 @@ function PendingQueue({ view, onShowList }: { view: View; onShowList: () => void
           ...outlive,
         })
       }
-      leave([approval.id])
     } catch (error) {
+      // Still waiting as far as this page knows; the refreshed queue drops it if someone else
+      // decided it meanwhile.
+      setGone((current) => {
+        const next = new Set(current)
+        next.delete(approval.id)
+        return next
+      })
       toast.error(decisionError(error))
       throw error
     }

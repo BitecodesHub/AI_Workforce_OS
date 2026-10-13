@@ -1,7 +1,7 @@
 // @find: push notifications on this device, enable push, disable push, send a test notification, add to home screen iPhone, my push devices, remove a device, lost phone push, PushNotificationsSection, settings card push
 // @what: The part of the Browser notifications card that turns push notifications on or off for this device, sends a test, and lists the person's devices with push on so one can be removed.
 // @flow: Rendered by BrowserNotificationsCard; uses lib/push.ts (enablePush, disablePush, isPushOn, syncPush, sendTestPush, listPushDevices, removePushDevice, currentSubscription)
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Tag, Time } from '../ui'
 import { describeApiError } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
@@ -49,6 +49,10 @@ export function PushNotificationsSection({ userId }: { userId: string }) {
   const [devicesFailed, setDevicesFailed] = useState(false)
   const [thisEndpoint, setThisEndpoint] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
+  // The line that says how the last change went; focus lands here when the control that made it
+  // has gone (a removed device's own Remove button), rather than falling to the top of the page.
+  const statusRef = useRef<HTMLParagraphElement>(null)
+  const refocusAfterRemoval = useRef(false)
 
   /*
    * The person's devices, and which one is this browser. Read again after anything changes them.
@@ -129,6 +133,7 @@ export function PushNotificationsSection({ userId }: { userId: string }) {
     try {
       await removePushDevice(device.id)
       setNote(`Push notifications are off on ${device.label || 'that device'}.`)
+      refocusAfterRemoval.current = true
     } catch (error) {
       setNote(describeApiError(error))
     } finally {
@@ -136,6 +141,18 @@ export function PushNotificationsSection({ userId }: { userId: string }) {
       void loadDevices()
     }
   }
+
+  /*
+   * After a removal the reloaded list no longer has the row, nor the Remove button that had focus;
+   * the browser would drop focus to the page itself, so it moves to the status line, which says
+   * what happened. Focus the person has since moved elsewhere is left alone.
+   */
+  useEffect(() => {
+    if (!refocusAfterRemoval.current || (devices === null && !devicesFailed)) return
+    refocusAfterRemoval.current = false
+    const active = document.activeElement
+    if (!active || active === document.body || !active.isConnected) statusRef.current?.focus()
+  }, [devices, devicesFailed])
 
   const blocked = on === true && pushPermission() === 'denied'
   const listed = devices ?? []
@@ -230,7 +247,7 @@ export function PushNotificationsSection({ userId }: { userId: string }) {
         </div>
       )}
 
-      <p className="caption" role="status" style={{ marginTop: 'var(--space-2)' }}>
+      <p ref={statusRef} tabIndex={-1} className="caption" role="status" style={{ marginTop: 'var(--space-2)' }}>
         {note}
       </p>
     </div>

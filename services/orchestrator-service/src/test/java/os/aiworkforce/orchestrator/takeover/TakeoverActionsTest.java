@@ -105,6 +105,24 @@ class TakeoverActionsTest {
     }
 
     @Test
+    @DisplayName("the page the browser landed on becomes the page now, without its query, and counts no action")
+    void landedOnUpdatesThePageNow() {
+        Map<String, Object> summary = TakeoverActions.record(Map.of(), "key", "https://en.wikipedia.org/wiki/Ada_Lovelace", null);
+
+        Map<String, Object> landed = TakeoverActions.landedOn(summary, "https://en.wikipedia.org/wiki/Analytical_engine?search=x#top");
+
+        assertThat(landed.get("lastUrl")).isEqualTo("https://en.wikipedia.org/wiki/Analytical_engine");
+        assertThat(landed.get("pages")).isEqualTo(List.of(
+                "https://en.wikipedia.org/wiki/Ada_Lovelace", "https://en.wikipedia.org/wiki/Analytical_engine"));
+        assertThat(TakeoverActions.total(landed)).isEqualTo(1);
+        assertThat(landed.toString()).doesNotContain("search=");
+        // An address that is not a web page leaves the summary as it was.
+        assertThat(TakeoverActions.landedOn(summary, "about:blank")).isEqualTo(summary);
+        assertThat(TakeoverActions.noteForAgent(landed, null, false))
+                .contains("the page now: \"https://en.wikipedia.org/wiki/Analytical_engine\"");
+    }
+
+    @Test
     @DisplayName("the hand-back note names the pages and field labels, asks for no typed text, and carries the person's note")
     void noteForAgent() {
         Map<String, Object> summary = TakeoverActions.record(Map.of(), "type", "https://shop.example.com/sign-in", "Password");

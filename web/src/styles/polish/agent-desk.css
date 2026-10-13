@@ -342,7 +342,7 @@
   transition: border-color var(--transition-fast);
 }
 
-.takeover-key:hover:not(:disabled) {
+.takeover-key:hover:not(:disabled):not([aria-disabled='true']) {
   border-color: var(--border-hover);
 }
 
@@ -351,9 +351,18 @@
   outline-offset: 2px;
 }
 
-.takeover-key:disabled {
+/* While an action is in flight the keys are marked unavailable rather than disabled, so the one
+   pressed keeps keyboard focus; they look the same either way. */
+.takeover-key:disabled,
+.takeover-key[aria-disabled='true'] {
   cursor: default;
   opacity: 0.6;
+}
+
+/* The address and text boxes are read-only while an action is in flight (not disabled, which drops focus). */
+.takeover-address .input:read-only,
+.takeover-type .input:read-only {
+  color: var(--muted);
 }
 
 /* 44px is the smallest target a thumb hits reliably (WCAG 2.5.5), as for .button on touch screens. */

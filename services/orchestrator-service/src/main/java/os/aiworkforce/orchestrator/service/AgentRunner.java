@@ -196,6 +196,13 @@ public class AgentRunner {
     /** An identical call is a repeat when it was one of this many calls ago or fewer. */
     static final int REPEAT_WINDOW = 3;
 
+    /**
+     * Web browser tools that change nothing outside the workspace but leave the browser on another
+     * page, after which an identical read_page reads a different page. Without this, "open page A,
+     * read it, open page B, read it" answered the second read with page A's text as a repeat.
+     */
+    static final Set<String> PAGE_MOVING_TOOLS = Set.of("browser.open_page", "browser.follow_link", "browser.search_site");
+
     /** Refused repeats after which the run is ended as a loop. */
     static final int MAX_BLOCKED_REPEATS = 3;
 
@@ -911,17 +918,24 @@ public class AgentRunner {
         }
     }
 
-    /** What the agent is told when its action was sent back: the feedback, and what to do with it. */
-    static final String SENT_BACK_INSTRUCTION =
-            "Do not repeat this action unchanged. Revise it using the feedback, or explain why you cannot.";
+    /**
+     * What the agent is told when its action was sent back: who sent it back, the feedback, and what
+     * to do with it. It names the reviewer because a bare "rejected" reads as the tool refusing: a
+     * live model then told the requester "the webhook service rejected that request" (13 Oct 2026).
+     */
+    static final String SENT_BACK_INSTRUCTION = "A person reviewing this action sent it back instead of approving it, "
+            + "so it was not taken. Do not repeat it unchanged. Revise it using their feedback, or explain why you "
+            + "cannot. When you report back, say that the reviewer asked for the change; the tool did not refuse it.";
 
-    // Builds the tool_call step detail that answers a call the approver sent back: status REJECTED,
-    // their note, and SENT_BACK_INSTRUCTION as the content the model will read on the next turn.
+    // Builds the tool_call step detail that answers a call the approver sent back: step status
+    // REJECTED, and for the model a "sent_back" status, the reviewer's feedback and
+    // SENT_BACK_INSTRUCTION, which it reads on the next turn.
     private Map<String, Object> sentBackDetail(Approval approval) {
         String note = approval.getDecisionNote() == null ? "" : approval.getDecisionNote();
         Map<String, Object> content = new LinkedHashMap<>();
-        content.put("status", "rejected");
-        content.put("note", note);
+        content.put("status", "sent_back");
+        content.put("sentBackBy", "a person who reviews this agent's actions");
+        content.put("feedback", note);
         content.put("instruction", SENT_BACK_INSTRUCTION);
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("toolCallId", approval.getToolCallId());
@@ -1831,6 +1845,10 @@ public class AgentRunner {
         int stepLimit = version.getMaxSteps() + (takeovers == null ? 0 : takeovers.stepsGivenBack(run.getId()));
         // What a person who took over the web browser did, told to the agent before its next turn.
         TakeoverService.HandBack handedBack = null;
+        // How long this loop has waited for people holding the browser since the agent was last told
+        // about a hand back, so the trace states the whole wait even when the hand back is read again
+        // (with nothing more waited) before it is told.
+        Duration untoldWait = Duration.ZERO;
 
         while (run.getStepCount() < stepLimit) {
             // Read fresh before every model call, not just once: a person can cancel this run from
@@ -1845,10 +1863,16 @@ public class AgentRunner {
             }
             // A person holding the web browser: no model step until they hand it back, and the
             // time spent waiting for them is given back to the run.
-            TakeoverService.HandBack back = awaitTakeover(run);
+            TakeoverService.HandBack back = awaitTakeover(run, untoldWait);
             if (back.happened()) {
                 drivenSince = drivenSince.plus(back.waited());
+                untoldWait = untoldWait.plus(back.waited());
                 handedBack = back.note() != null ? back : handedBack;
+                if (back.pageChanged()) {
+                    // The person moved or changed the page: what the agent read before describes a
+                    // page that may have gone, so reading it again is not a repeat.
+                    history.forgetReads();
+                }
                 String afterWait = statusNow(run);
                 if (!"running".equals(afterWait)) {
                     return steppedBack(run, afterWait);
@@ -1857,6 +1881,7 @@ public class AgentRunner {
             if (handedBack != null) {
                 tellHandBack(run, conversation, handedBack);
                 handedBack = null;
+                untoldWait = Duration.ZERO;
             }
             Duration worked = Duration.between(drivenSince, Instant.now());
             if (worked.compareTo(timeLimit) >= 0) {
@@ -2034,9 +2059,10 @@ public class AgentRunner {
                 // No tool step while a person holds the web browser either. When they changed the
                 // page, the rest of this turn was planned for a page that has gone: it is recorded
                 // as not run, the step it cost is given back, and the model looks again.
-                TakeoverService.HandBack beforeCall = awaitTakeover(run);
+                TakeoverService.HandBack beforeCall = awaitTakeover(run, untoldWait);
                 if (beforeCall.happened()) {
                     drivenSince = drivenSince.plus(beforeCall.waited());
+                    untoldWait = untoldWait.plus(beforeCall.waited());
                     handedBack = beforeCall.note() != null ? beforeCall : handedBack;
                     String afterWait = statusNow(run);
                     if (!"running".equals(afterWait)) {
@@ -2044,6 +2070,8 @@ public class AgentRunner {
                         return steppedBack(run, afterWait);
                     }
                     if (beforeCall.pageChanged()) {
+                        // What was read before belongs to a page the person has moved on from.
+                        history.forgetReads();
                         List<ToolCall> skipped = calls.subList(i, calls.size());
                         recordNotRun(run, skipped, TAKEOVER_NOT_RUN);
                         String notRun = capForModel(ToolResult.blocked(TAKEOVER_NOT_RUN).forModel());
@@ -2090,15 +2118,19 @@ public class AgentRunner {
      * {@link TakeoverService#awaitHandBack}); records a "taken over" note on the trace when the wait
      * begins. Answers {@link TakeoverService.HandBack#NONE} at once when nobody can take over (no
      * takeover service) or nobody has.
+     *
+     * @param untoldWait how long this loop already waited for a hand back the agent has not been
+     *     told about yet, so the trace's sentence states the whole wait
      */
-    private TakeoverService.HandBack awaitTakeover(Run run) {
+    private TakeoverService.HandBack awaitTakeover(Run run, Duration untoldWait) {
         if (takeovers == null) {
             return TakeoverService.HandBack.NONE;
         }
         return takeovers.awaitHandBack(
                 run.getId(),
                 () -> statusNow(run),
-                () -> saveStep(run, "note", Map.of("type", "taken_over", "summary", TAKEN_OVER_NOTE)));
+                () -> saveStep(run, "note", Map.of("type", "taken_over", "summary", TAKEN_OVER_NOTE)),
+                untoldWait);
     }
 
     /**
@@ -2904,6 +2936,14 @@ public class AgentRunner {
         // What was saved is what the model is told, so a resumed run sees what this one did.
         String modelContent = (String) detail.get("modelContent");
         boolean read = "READ".equals(sideEffect);
+        if (PAGE_MOVING_TOOLS.contains(call.name())
+                && (result.status() == ToolResult.Status.SUCCEEDED
+                        || result.status() == ToolResult.Status.INDETERMINATE)) {
+            // The browser is on another page now, so what was read of the page before (and which
+            // page was opened) no longer says what is on screen; forgotten before this call is
+            // remembered, so opening the same page twice in a row is still a repeat.
+            history.forgetReads();
+        }
         history.remember(key, result.status().name(), modelContent, read, mode);
         if (!read && (result.status() == ToolResult.Status.SUCCEEDED
                 || result.status() == ToolResult.Status.INDETERMINATE)) {

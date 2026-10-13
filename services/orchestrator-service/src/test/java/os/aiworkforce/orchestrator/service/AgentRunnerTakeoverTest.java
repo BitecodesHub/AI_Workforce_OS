@@ -1,5 +1,5 @@
 // @find: tests for agent runner takeover, agent waits while a person has the browser, resumes on hand back, time not counted, step given back, hand back note in conversation
-// @what: Unit tests for the run loop and a person taking over its web browser: no model or tool step while they hold it, the hand-back note before the next turn and kept until told, the time waited and a wasted turn given back (also after a park), and holds ended when the run ends or stops.
+// @what: Unit tests for the run loop and a person taking over its web browser: no model or tool step while they hold it, the hand-back note before the next turn and kept until told, the time waited and a wasted turn given back (also after a park), the whole wait in the trace, reads made before the page changed read again, and holds ended when the run ends or stops.
 package os.aiworkforce.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -246,7 +246,7 @@ class AgentRunnerTakeoverTest {
         version.setMaxSteps(2);
         TakeoverService service = mock(TakeoverService.class);
         AtomicInteger checks = new AtomicInteger();
-        when(service.awaitHandBack(any(), any(), any())).thenAnswer(call -> checks.incrementAndGet() == 2
+        when(service.awaitHandBack(any(), any(), any(), any())).thenAnswer(call -> checks.incrementAndGet() == 2
                 ? new TakeoverService.HandBack(true, Duration.ofMinutes(4), "A person used the browser.", "Handed back.", true)
                 : TakeoverService.HandBack.NONE);
         runner.useTakeovers(service);
@@ -276,6 +276,80 @@ class AgentRunnerTakeoverTest {
         assertThat(second.get(second.size() - 2).content()).contains(AgentRunner.TAKEOVER_NOT_RUN);
         assertThat(second.getLast().role()).isEqualTo(ChatMessage.Role.USER);
         assertThat(second.getLast().content()).isEqualTo("A person used the browser.");
+    }
+
+    @Test
+    @DisplayName("the trace states the whole wait when a hand back mid-turn is read again before the agent is told")
+    void wholeWaitIsTraced() {
+        // Seen live on 13 Oct 2026: an eight minute takeover before a tool call was traced as "the
+        // agent waited less than a minute", because the hand back was read a second time, with
+        // nothing more waited, at the top of the loop before it was told.
+        TakeoverTestKit.MovableClock clock = new TakeoverTestKit.MovableClock(Instant.parse("2026-10-12T09:00:00Z"));
+        runner.useTakeovers(takeoverService(clock, pause -> {
+            clock.advance(Duration.ofMinutes(8));
+            RunTakeover held = takeover.get();
+            held.setActions(TakeoverActions.record(Map.of(), "navigate", "https://en.wikipedia.org/wiki/Charles_Babbage", null));
+            held.close(RunTakeover.RELEASED, "u-person", clock.instant());
+        }));
+        when(tools.availableTools(any())).thenReturn(List.of(
+                new ToolDefinition("browser", "read_page", "Reads.", "{}", ToolSpec.SideEffect.READ, List.of(), false, null, null)));
+        // The person asks for control while the model decides to read the page.
+        when(router.route(any(), any(), any())).thenAnswer(call -> {
+            if (takeover.get() == null) {
+                takeover.set(RunTakeover.start(UUID.randomUUID(), ORG, "u-person", clock.instant()));
+                return toolCallAnswer("call_0", "browser.read_page", "{\"from\":0}");
+            }
+            return answer("Read the page the person opened.");
+        });
+
+        AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        assertThat(outcome.status()).isEqualTo("completed");
+        verify(tools, times(0)).invoke(any(), any(), any());
+        assertThat(savedNotes())
+                .filteredOn(step -> "handed_back".equals(step.getDetail().get("type")))
+                .singleElement()
+                .satisfies(step -> assertThat((String) step.getDetail().get("summary"))
+                        .contains("the agent waited 8 minutes")
+                        .contains("1 address opened"));
+    }
+
+    @Test
+    @DisplayName("a page read before a person changed the page is read for real after the hand back, not answered from memory")
+    void readsBeforeATakeoverAreReadAgain() {
+        // Seen live on 13 Oct 2026: after a person opened another article, the agent's read_page
+        // was answered with the earlier article's text as a "repeated identical read".
+        TakeoverTestKit.MovableClock clock = new TakeoverTestKit.MovableClock(Instant.parse("2026-10-12T09:00:00Z"));
+        runner.useTakeovers(takeoverService(clock, pause -> {
+            clock.advance(pause);
+            RunTakeover held = takeover.get();
+            held.setActions(TakeoverActions.record(Map.of(), "navigate", "https://en.wikipedia.org/wiki/Charles_Babbage", null));
+            held.close(RunTakeover.RELEASED, "u-person", clock.instant());
+        }));
+        when(tools.availableTools(any())).thenReturn(List.of(
+                new ToolDefinition("browser", "read_page", "Reads.", "{}", ToolSpec.SideEffect.READ, List.of(), false, null, null)));
+        when(tools.evaluate(any(), any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(ApprovalDecision.PROCEED);
+        AtomicInteger reads = new AtomicInteger();
+        when(tools.invoke(any(), any(), any())).thenAnswer(call -> {
+            if (reads.incrementAndGet() == 1) {
+                // The person asks for control while the first read is under way.
+                takeover.set(RunTakeover.start(UUID.randomUUID(), ORG, "u-person", clock.instant()));
+                return Mono.just(ToolResult.succeeded("{\"text\":\"Ada Lovelace was\"}", "Read A.", Duration.ZERO));
+            }
+            return Mono.just(ToolResult.succeeded("{\"text\":\"Charles Babbage was\"}", "Read B.", Duration.ZERO));
+        });
+        when(router.route(any(), any(), any())).thenReturn(
+                toolCallAnswer("call_0", "browser.read_page", "{\"from\":0}"),
+                toolCallAnswer("call_1", "browser.read_page", "{\"from\":0}"),
+                answer("Charles Babbage was a mathematician."));
+
+        AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        assertThat(outcome.status()).isEqualTo("completed");
+        verify(tools, times(2)).invoke(any(), any(), any());
+        assertThat(savedSteps("tool_call"))
+                .extracting(step -> step.getDetail().get("summary"))
+                .containsExactly("Read A.", "Read B.");
     }
 
     @Test

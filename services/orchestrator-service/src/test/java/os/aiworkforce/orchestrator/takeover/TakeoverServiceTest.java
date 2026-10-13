@@ -284,6 +284,29 @@ class TakeoverServiceTest {
     }
 
     @Test
+    @DisplayName("the agent is told the page the browser shows when control comes back, not the one the last action answered with")
+    void pageNowIsReadWhenControlComesBack() {
+        // Seen live on 13 Oct 2026: Enter in a search box answered before the results page opened,
+        // and the agent was told the page was still the one the person had searched from.
+        takeOver(starter);
+        when(browser.act(eq(RUN), eq("key"), anyMap()))
+                .thenReturn(new TakeoverBrowser.Answer(true, null, "https://en.wikipedia.org/wiki/Ada_Lovelace", "Ada", "", null));
+        service.act(ORG, RUN, starter, new TakeoverActions.ActionRequest("key", null, null, null, null, null, "Enter", null, null));
+        service.release(ORG, RUN, starter, null);
+        when(browser.pageAddress(RUN)).thenReturn(Optional.of("https://en.wikipedia.org/wiki/Analytical_engine?x=1"));
+
+        TakeoverService.HandBack back = service.awaitHandBack(RUN, () -> "running", () -> {});
+
+        assertThat(back.note())
+                .contains("the page now: \"https://en.wikipedia.org/wiki/Analytical_engine\"")
+                .doesNotContain("x=1");
+        // A browser that cannot say leaves the address the last action answered with.
+        when(browser.pageAddress(RUN)).thenReturn(Optional.empty());
+        assertThat(service.awaitHandBack(RUN, () -> "running", () -> {}).note())
+                .contains("the page now: \"https://en.wikipedia.org/wiki/Ada_Lovelace\"");
+    }
+
+    @Test
     @DisplayName("handing back keeps the note for the agent, audits without it, and the agent is told labels, not typed values")
     void handBackNote() {
         takeOver(starter);
@@ -318,6 +341,11 @@ class TakeoverServiceTest {
         // Not marked told until the loop has told the agent: a loop that parks first tells it next time.
         assertThat(stored.get().getDeliveredAt()).isNull();
         assertThat(service.awaitHandBack(RUN, () -> "running", () -> {}).note()).isEqualTo(back.note());
+        // Read again by a loop that already waited eight minutes for it: the trace states that wait,
+        // while only this call's wait (none) is given back to the run.
+        TakeoverService.HandBack again = service.awaitHandBack(RUN, () -> "running", () -> {}, Duration.ofMinutes(8));
+        assertThat(again.waited()).isEqualTo(Duration.ZERO);
+        assertThat(again.summary()).contains("the agent waited 8 minutes");
 
         service.markTold(RUN);
 

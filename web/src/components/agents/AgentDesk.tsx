@@ -7,7 +7,7 @@ import { Button, ConfirmDialog, Notice, StatusTag } from '../ui'
 import { Sheet } from '../ui/Sheet'
 import { BrowserPreview } from '../run/BrowserShot'
 import { RunTraceCompact } from '../run/RunTraceCompact'
-import { usesBrowser } from '../run/traceModel'
+import { isInstruction, usesBrowser } from '../run/traceModel'
 import { TakeoverControls } from './TakeoverControls'
 import { describeApiError } from '../../lib/api'
 import { controlEndedMessage, holderName } from '../../lib/agentDesk'
@@ -27,7 +27,8 @@ import { useNow } from '../../lib/useNow'
  * you have or are getting control; the takeover state (useTakeover) every two seconds while it works.
  * Layout: when the run uses the browser, the large live frame (BrowserPreview, or TakeoverControls
  * when you have control) beside the steps as they happen (RunTraceCompact); otherwise the steps fill
- * the desk. States: loading, a run that could not be read (with the reason), finished, someone else
+ * the desk. States: loading, a run that could not be read (with the reason), a run whose agent has
+ * not taken its first step yet (said, rather than an empty desk while the model thinks), finished, someone else
  * holding or getting control ("Priya has control", with Return control for people who can stop
  * runs), your request waiting for the agent to finish its step (with Cancel), and control that left
  * you without your hand back (said in a live notice). Footer: Stop (run:cancel, confirmed), Take
@@ -147,7 +148,7 @@ function useDesk(runId: string) {
 
 /** The desk's content: status line, notices, the live view and the steps. */
 function DeskBody({ runId, agentName, desk }: { runId: string; agentName: string; desk: Desk }) {
-  const { run, runError, active, takeover, controlling, waitingForControl, browsing } = desk
+  const { run, runError, active, steps, takeover, controlling, waitingForControl, browsing } = desk
   const toast = useToast()
   const release = useReleaseTakeover(runId)
   const othersHold = Boolean(takeover && (takeover.active || takeover.starting) && !takeover.mine)
@@ -210,6 +211,9 @@ function DeskBody({ runId, agentName, desk }: { runId: string; agentName: string
   }
 
   const holder = holderName(takeover?.takenBy, names)
+  // The first model call can take a minute when providers are slow; until a step lands, the desk
+  // says the agent is starting rather than showing nothing (seen 13 Oct 2026).
+  const notStarted = active && Boolean(steps) && !(steps ?? []).some((step) => !isInstruction(step))
 
   return (
     <div className="agent-desk">
@@ -271,6 +275,9 @@ function DeskBody({ runId, agentName, desk }: { runId: string; agentName: string
           </section>
         )}
         <section className="agent-desk-steps" aria-label="Steps as they happen">
+          {notStarted && (
+            <p className="caption muted">{`${agentName} is getting started. Its steps appear here as it works.`}</p>
+          )}
           <RunTraceCompact runId={runId} headingLevel="h3" limit={browsing ? 8 : 14} liveView={false} traceLink={false} />
         </section>
       </div>

@@ -380,6 +380,28 @@ describe('useAttention', () => {
     expect(FakeNotification.shown).toHaveLength(0)
   })
 
+  it('refreshes the count once, not once per list, when a decision invalidates every approvals list', async () => {
+    // Seen in the browser on 13 Oct 2026: each decision restarted the count's two requests once for
+    // every approvals query it invalidated, cancelling the one before - five aborted pairs a time.
+    const { client } = mount()
+    await firstLook(client)
+    for (const key of [['approvals', 'pending'], ['approvals', 'count'], ['approvals', 'decided'], ['approvals', 'one']]) {
+      client.setQueryData(key, [])
+    }
+    const before = { ...counts }
+
+    await act(async () => {
+      // What a decision does (lib/queries.ts invalidateWork): every work list, one call each.
+      for (const key of ['goals', 'runs', 'board', 'approvals', 'conversations']) {
+        void client.invalidateQueries({ queryKey: [key] })
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+
+    expect(counts.approvals - before.approvals).toBe(1)
+    expect(counts.questions - before.questions).toBe(1)
+  })
+
   it('does not ask for what the role cannot read', async () => {
     clearSession()
     saveSession('token', {

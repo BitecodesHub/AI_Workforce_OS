@@ -172,6 +172,29 @@ public final class TakeoverActions {
         return next;
     }
 
+    // @find: page the person left the browser on, page now after takeover, landed on
+    /**
+     * The summary with {@code url} as the page the browser is on now: the page it names last, added
+     * to the pages visited when it is a new one. Used when control comes back, because a person's
+     * last action can start a page load that finishes after that action answered, which left the
+     * summary naming the page before. No action is counted. Returns the summary unchanged for an
+     * address that does not parse or is not a web page (see {@link #address}); pure.
+     */
+    public static Map<String, Object> landedOn(Map<String, Object> summary, String url) {
+        String page = address(url);
+        if (page.isEmpty()) {
+            return summary == null ? Map.of() : summary;
+        }
+        Map<String, Object> next = new LinkedHashMap<>(summary == null ? Map.of() : summary);
+        List<String> pages = new ArrayList<>(strings(next.get("pages")));
+        if (!pages.contains(page) && pages.size() < LIST_LIMIT) {
+            pages.add(page);
+        }
+        next.put("pages", pages);
+        next.put("lastUrl", page);
+        return next;
+    }
+
     /** How many actions the summary counts. */
     public static int total(Map<String, Object> summary) {
         return summary == null ? 0 : number(summary.get("total"));

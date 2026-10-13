@@ -425,6 +425,43 @@ describe('the settings section', () => {
     await waitFor(() => expect(screen.queryByText('Safari on iPhone')).not.toBeInTheDocument())
   })
 
+  it('moves focus to the status line once the removed device’s row, and its Remove button, have gone', async () => {
+    // Found in the browser on 13 Oct 2026: after Remove, focus fell to the page itself, so a
+    // keyboard or screen-reader user was sent back to the top.
+    const browser = fakeBrowser({ permission: 'granted', existingKey: SERVER_KEY })
+    install(browser)
+    localStorage.setItem(PUSH_OWNER_KEY, 'user-1')
+    let devices = [
+      {
+        id: 'device-lost',
+        endpoint: 'https://web.push.apple.com/lost',
+        label: 'Safari on iPhone',
+        createdAt: '2026-09-01T09:00:00Z',
+        lastSuccessAt: null,
+        failureCount: 0,
+      },
+    ]
+    reply = (url, method) => {
+      if (url === '/api/push/subscriptions' && method === 'GET') return { status: 200, body: devices }
+      if (url === '/api/push/subscriptions/device-lost' && method === 'DELETE') {
+        devices = []
+        return { status: 204, body: null }
+      }
+      return { status: 200, body: {} }
+    }
+
+    render(<PushNotificationsSection userId="user-1" />)
+    const remove = await screen.findByRole('button', { name: /^Remove Safari on iPhone/ })
+    remove.focus()
+    expect(remove).toHaveFocus()
+
+    fireEvent.click(remove)
+
+    const status = await screen.findByText('Push notifications are off on Safari on iPhone.')
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument())
+    await waitFor(() => expect(status).toHaveFocus())
+  })
+
   it('turns push on, sends the test and turns it off again', async () => {
     const browser = fakeBrowser()
     install(browser)

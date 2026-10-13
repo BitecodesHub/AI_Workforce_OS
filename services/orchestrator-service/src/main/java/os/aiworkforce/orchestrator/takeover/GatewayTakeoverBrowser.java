@@ -1,6 +1,6 @@
 // @find: takeover browser adapter lookup, browser runner client for takeover, BrowserAdapter takeover, hold page, GatewayTakeoverBrowser
 // @what: The TakeoverBrowser backed by the built-in web browser connector (mcp-core BrowserAdapter) found through the tool gateway.
-// @flow: Used by TakeoverService; calls BrowserAdapter.live, hold, takeover and personActed, the first three of which call infra/browser-runner
+// @flow: Used by TakeoverService; calls BrowserAdapter.live (also for the page's address now), hold, takeover and personActed, the first three of which call infra/browser-runner
 package os.aiworkforce.orchestrator.takeover;
 
 import java.time.Duration;
@@ -74,6 +74,23 @@ public class GatewayTakeoverBrowser implements TakeoverBrowser {
             return Answer.refused("The web browser did not answer, so nothing was done. Try again in a minute.");
         }
         return new Answer(answer.ok(), answer.problem(), answer.url(), answer.title(), answer.frame(), answer.field());
+    }
+
+    /**
+     * The address in the runner's live view of the run (at most three seconds). Empty when this
+     * server has no browser, the view has no address, or it does not answer. Never throws.
+     */
+    @Override
+    public Optional<String> pageAddress(UUID runId) {
+        try {
+            return browser()
+                    .map(adapter -> adapter.live(runId.toString()).block(Duration.ofSeconds(3)))
+                    .map(view -> view.path("url").asText(""))
+                    .filter(url -> !url.isBlank());
+        } catch (RuntimeException e) {
+            log.warn("Run {}: the page's address could not be read from the browser: {}", runId, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**

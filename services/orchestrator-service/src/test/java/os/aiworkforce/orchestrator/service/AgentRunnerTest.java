@@ -721,9 +721,14 @@ class AgentRunnerTest {
                 .singleElement()
                 .satisfies(step -> {
                     assertThat(step.getDetail().get("status")).isEqualTo("REJECTED");
+                    // The model is told a reviewer sent it back, not that the call was "rejected":
+                    // a bare rejection read as the tool refusing, and the agent told its requester so.
                     assertThat(String.valueOf(step.getDetail().get("modelContent")))
                             .contains("Use a softer tone.")
-                            .contains("Do not repeat this action unchanged");
+                            .contains("\"status\":\"sent_back\"")
+                            .contains("A person reviewing this action sent it back")
+                            .contains("Do not repeat it unchanged")
+                            .doesNotContain("\"status\":\"rejected\"");
                 });
         ArgumentCaptor<ChatRequest> request = ArgumentCaptor.forClass(ChatRequest.class);
         verify(router).route(request.capture(), any(), any());
@@ -3008,6 +3013,67 @@ class AgentRunnerTest {
         assertThat((String) savedToolCalls().get(2).getDetail().get("modelContent"))
                 .doesNotContain("You already have this result")
                 .contains("{\"count\":1}");
+    }
+
+    @Test
+    @DisplayName("a page read after the browser opened another page is read for real, not answered with the old page")
+    void readAfterTheBrowserMovesIsMadeAgain() {
+        // Seen live on 13 Oct 2026: open A, read it, open B, read it answered the second read with
+        // A's text as a "repeated identical read", because opening a page is a read.
+        version.setMaxSteps(10);
+        when(steps.highestPosition(any())).thenReturn(-1);
+        when(tools.availableTools(any()))
+                .thenReturn(List.of(
+                        tool("browser", "open_page", ToolSpec.SideEffect.READ),
+                        tool("browser", "read_page", ToolSpec.SideEffect.READ)));
+        when(tools.evaluate(any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(ApprovalDecision.PROCEED);
+        when(tools.invoke(any(), any(), any()))
+                .thenReturn(
+                        Mono.just(ToolResult.succeeded("{\"title\":\"Ada Lovelace\"}", "Opened A.", Duration.ZERO)),
+                        Mono.just(ToolResult.succeeded("{\"text\":\"Ada Lovelace was\"}", "Read A.", Duration.ZERO)),
+                        Mono.just(ToolResult.succeeded("{\"title\":\"Charles Babbage\"}", "Opened B.", Duration.ZERO)),
+                        Mono.just(ToolResult.succeeded("{\"text\":\"Charles Babbage was\"}", "Read B.", Duration.ZERO)));
+        when(router.route(any(), any(), any()))
+                .thenReturn(
+                        toolCallAnswer("c", "browser.open_page", "{\"url\":\"https://en.wikipedia.org/wiki/Ada_Lovelace\"}"),
+                        toolCallAnswer("c", "browser.read_page", "{\"from\":0}"),
+                        toolCallAnswer("c", "browser.open_page", "{\"url\":\"https://en.wikipedia.org/wiki/Charles_Babbage\"}"),
+                        toolCallAnswer("c", "browser.read_page", "{\"from\":0}"),
+                        answer("Both read."));
+
+        AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        assertThat(outcome.status()).isEqualTo("completed");
+        verify(tools, times(4)).invoke(any(), any(), any());
+        assertThat(savedToolCalls())
+                .extracting(step -> step.getDetail().get("summary"))
+                .containsExactly("Opened A.", "Read A.", "Opened B.", "Read B.");
+        assertThat((String) savedToolCalls().get(3).getDetail().get("modelContent"))
+                .doesNotContain("You already have this result")
+                .contains("Charles Babbage was");
+    }
+
+    @Test
+    @DisplayName("opening the same page twice in a row is still a repeat")
+    void reopeningTheSamePageIsStillARepeat() {
+        version.setMaxSteps(10);
+        when(steps.highestPosition(any())).thenReturn(-1);
+        when(tools.availableTools(any())).thenReturn(List.of(tool("browser", "open_page", ToolSpec.SideEffect.READ)));
+        when(tools.evaluate(any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(ApprovalDecision.PROCEED);
+        when(tools.invoke(any(), any(), any()))
+                .thenReturn(Mono.just(ToolResult.succeeded("{\"title\":\"Ada Lovelace\"}", "Opened A.", Duration.ZERO)));
+        when(router.route(any(), any(), any()))
+                .thenReturn(
+                        toolCallAnswer("c", "browser.open_page", "{\"url\":\"https://en.wikipedia.org/wiki/Ada_Lovelace\"}"),
+                        toolCallAnswer("c", "browser.open_page", "{\"url\":\"https://en.wikipedia.org/wiki/Ada_Lovelace\"}"),
+                        answer("Opened."));
+
+        AgentRunner.Outcome outcome = runner.start(ORG, agent.getId(), null, INSTRUCTION, "manual");
+
+        assertThat(outcome.status()).isEqualTo("completed");
+        verify(tools, times(1)).invoke(any(), any(), any());
     }
 
     @Test

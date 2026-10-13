@@ -34,9 +34,12 @@ const WHEEL_GATHER_MS = 250
  * is clickable (framePoint maps the click to the page) and wheel movement over it is gathered into
  * one scroll every quarter second; an address bar opens a page; a text box types into the field
  * last clicked (with an option to hide what is typed); buttons press common keys and scroll. One
- * action at a time: controls wait while one is in flight. Every action's answer replaces the
- * picture; failures show in a notice. Works with mouse, touch (a tap is a click) and keyboard (every
- * control is a button or field).
+ * action at a time: while one is in flight the fields are read-only and the key buttons are marked
+ * unavailable rather than disabled, because disabling the focused control drops keyboard focus to
+ * the page (seen in Chrome on 13 Oct 2026 after pressing Enter in the address bar). Every action's
+ * answer replaces the picture; failures show in a notice. Typing with the Type button returns focus
+ * to the text box. Works with mouse, touch (a tap is a click) and keyboard (every control is a
+ * button or field).
  */
 export function TakeoverControls({
   runId,
@@ -66,6 +69,7 @@ export function TakeoverControls({
   const image = useRef<HTMLImageElement>(null)
   const banner = useRef<HTMLDivElement>(null)
   const handBackForm = useRef<HTMLFormElement>(null)
+  const typeForm = useRef<HTMLFormElement>(null)
   // Where focus goes after the hand-back form opens or closes; set by the buttons, applied below.
   const [focusAfter, setFocusAfter] = useState<'note' | 'handBack' | null>(null)
   const wheel = useRef<{ deltas: number[]; timer: number | null }>({ deltas: [], timer: null })
@@ -85,8 +89,12 @@ export function TakeoverControls({
     if (focusAfter === 'handBack') banner.current?.querySelector('button')?.focus()
   }, [focusAfter])
 
-  /** Sends one action; shows the server's sentence when it is refused. Resolves true when it was done. */
+  /**
+   * Sends one action; shows the server's sentence when it is refused. Resolves true when it was
+   * done; false, sending nothing, while another action is still in flight.
+   */
   const send = async (action: TakeoverAction): Promise<boolean> => {
+    if (act.isPending) return false
     setError(null)
     try {
       await act.mutateAsync(action)
@@ -142,14 +150,18 @@ export function TakeoverControls({
 
   const onType = async (event: FormEvent) => {
     event.preventDefault()
-    if (!text) return
-    if (await send({ type: 'type', text })) setText('')
+    if (!text || busy) return
+    if (await send({ type: 'type', text })) {
+      setText('')
+      // The Type button is unavailable once the box is empty, so a keyboard user is brought back to the box.
+      typeForm.current?.querySelector('input')?.focus()
+    }
   }
 
   const onGo = async (event: FormEvent) => {
     event.preventDefault()
     const url = address.trim()
-    if (!url) return
+    if (!url || busy) return
     if (await send({ type: 'navigate', url: /^https?:\/\//i.test(url) ? url : `https://${url}` })) {
       setTypedAddress(null)
     }
@@ -235,7 +247,7 @@ export function TakeoverControls({
           spellCheck={false}
           value={address}
           onChange={(event) => setTypedAddress(event.target.value)}
-          disabled={busy}
+          readOnly={busy}
         />
         <Button type="submit" variant="outline" disabled={busy || !address.trim()}>
           Go
@@ -262,7 +274,7 @@ export function TakeoverControls({
         below.
       </p>
 
-      <form className="takeover-type" onSubmit={onType}>
+      <form className="takeover-type" onSubmit={onType} ref={typeForm}>
         <Input
           label="Text to type"
           type={hidden ? 'password' : 'text'}
@@ -271,7 +283,7 @@ export function TakeoverControls({
           value={text}
           maxLength={2000}
           onChange={(event) => setText(event.target.value)}
-          disabled={busy}
+          readOnly={busy}
         />
         <Button type="submit" variant="outline" disabled={busy || !text}>
           Type
@@ -290,7 +302,7 @@ export function TakeoverControls({
             className="takeover-key"
             aria-label={entry.label}
             title={entry.label}
-            disabled={busy}
+            aria-disabled={busy || undefined}
             onClick={() => void send({ type: 'key', key: entry.key })}
           >
             {entry.text}
@@ -299,7 +311,7 @@ export function TakeoverControls({
         <button
           type="button"
           className="takeover-key"
-          disabled={busy}
+          aria-disabled={busy || undefined}
           onClick={() => void send({ type: 'scroll', dy: -SCROLL_STEP })}
         >
           Scroll up
@@ -307,7 +319,7 @@ export function TakeoverControls({
         <button
           type="button"
           className="takeover-key"
-          disabled={busy}
+          aria-disabled={busy || undefined}
           onClick={() => void send({ type: 'scroll', dy: SCROLL_STEP })}
         >
           Scroll down

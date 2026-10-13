@@ -414,12 +414,26 @@ public class TakeoverService {
      * @return what happened; never null
      */
     public HandBack awaitHandBack(UUID runId, Supplier<String> runStatus, Runnable onWait) {
+        return awaitHandBack(runId, runStatus, onWait, Duration.ZERO);
+    }
+
+    /**
+     * {@link #awaitHandBack(UUID, Supplier, Runnable)}, for a loop that already waited for a hand
+     * back it has not told the agent about yet: the trace's sentence states that wait plus this one.
+     * Without it, a hand back read a second time before it was told (nothing more waited) said the
+     * agent "waited less than a minute" after an eight minute takeover (13 Oct 2026). The wait
+     * answered in {@link HandBack#waited()} is only this call's, so no time is given back twice.
+     *
+     * @param untold how long the loop already waited for the hand back it has not told yet; never negative
+     */
+    public HandBack awaitHandBack(UUID runId, Supplier<String> runStatus, Runnable onWait, Duration untold) {
+        Duration before = untold == null || untold.isNegative() ? Duration.ZERO : untold;
         RunTakeover takeover = takeovers.findById(runId).orElse(null);
         if (takeover == null) {
             return HandBack.NONE;
         }
         if (takeover.isPending()) {
-            return pendingHandBack(takeover, Duration.ZERO);
+            return pendingHandBack(takeover, Duration.ZERO, before);
         }
         if (takeover.isStarting()) {
             takeover = activate(takeover);
@@ -427,7 +441,7 @@ public class TakeoverService {
                 return HandBack.NONE;
             }
             if (takeover.isPending()) {
-                return pendingHandBack(takeover, Duration.ZERO);
+                return pendingHandBack(takeover, Duration.ZERO, before);
             }
         }
         if (!takeover.isActive()) {
@@ -440,7 +454,7 @@ public class TakeoverService {
         while (true) {
             if (!clock.instant().isBefore(takeover.getTakenAt().plus(CEILING))) {
                 RunTakeover expired = closeByPlatform(takeover, RunTakeover.EXPIRED, "ceiling");
-                return expired != null && expired.isPending() ? pendingHandBack(expired, waitedSince(began)) : waitOnly(began);
+                return expired != null && expired.isPending() ? pendingHandBack(expired, waitedSince(began), before) : waitOnly(began);
             }
             try {
                 sleeper.sleep(pollInterval);
@@ -471,7 +485,7 @@ public class TakeoverService {
             }
             takeover = fresh;
             if (!takeover.isActive()) {
-                return takeover.isPending() ? pendingHandBack(takeover, waitedSince(began)) : waitOnly(began);
+                return takeover.isPending() ? pendingHandBack(takeover, waitedSince(began), before) : waitOnly(began);
             }
         }
     }
@@ -530,14 +544,26 @@ public class TakeoverService {
 
     /**
      * What the agent is to be told about control that came back, without marking it told: the row
-     * keeps it until {@link #markTold}. When the person acted, the browser on this server is told
-     * which fields they typed into, so an approval of the agent's next click says so.
+     * keeps it until {@link #markTold}. When the person acted, "the page now" is the address the
+     * browser shows at this moment ({@link TakeoverBrowser#pageAddress}), and the browser on this
+     * server is told which fields they typed into, so an approval of the agent's next click says so.
+     *
+     * @param waited how long this call waited, which the loop gives back to the run
+     * @param before how long the loop waited earlier for this same untold hand back, which only the
+     *     trace's sentence adds
      */
-    private HandBack pendingHandBack(RunTakeover takeover, Duration waited) {
+    private HandBack pendingHandBack(RunTakeover takeover, Duration waited, Duration before) {
         boolean automatic = RunTakeover.EXPIRED.equals(takeover.getStatus());
-        Map<String, Object> summary = takeover.getActions();
+        Map<String, Object> recorded = takeover.getActions();
+        // The page the browser shows now, not the one the person's last action answered with: a
+        // load that action started may have finished since (a search submitted with Enter).
+        Map<String, Object> summary = TakeoverActions.total(recorded) == 0
+                ? recorded
+                : browser.pageAddress(takeover.getRunId())
+                        .map(url -> TakeoverActions.landedOn(recorded, url))
+                        .orElse(recorded);
         String note = TakeoverActions.noteForAgent(summary, takeover.getNote(), automatic);
-        String trace = TakeoverActions.traceSummary(summary, waited, automatic);
+        String trace = TakeoverActions.traceSummary(summary, before.plus(waited), automatic);
         boolean changed = TakeoverActions.total(summary) > 0;
         if (changed) {
             browser.personActed(takeover.getRunId(), TakeoverActions.fields(summary));

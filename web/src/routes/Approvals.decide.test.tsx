@@ -249,6 +249,41 @@ describe('Approvals, the Decide view', () => {
     }
   })
 
+  it('a decision sent on the way to the List is not offered there again while it travels, and returns if it fails', async () => {
+    // Seen in the browser on 13 Oct 2026: approving a card and switching to the List at once sent
+    // the decision, but the List still showed the card with its Approve button until the server
+    // answered, as if nothing had been decided.
+    renderPage('/approvals?view=decide')
+    await screen.findByText('1 of 2')
+    let answer!: (response: Response) => void
+    const answered = new Promise<Response>((resolve) => {
+      answer = resolve
+    })
+    const plain = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation((url, init) =>
+      String(url).includes('/decision') ? answered : plain(url as string, init as RequestInit),
+    )
+
+    pressInDeck('a')
+    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Approve' })).toHaveLength(1))
+    expect(document.getElementById('approval-a-1')).toBeNull()
+    expect(document.getElementById('approval-a-2')).not.toBeNull()
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/a-1/decision'))).toHaveLength(1)
+
+    // The send fails: the request is still waiting, so it is offered again.
+    await act(async () => {
+      answer(
+        new Response(JSON.stringify({ status: 503, code: 'upstream_unavailable', detail: 'Try again.' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/problem+json' },
+        }),
+      )
+    })
+    await waitFor(() => expect(document.getElementById('approval-a-1')).not.toBeNull())
+  })
+
   it('a phone turned sideways keeps the Decide view it opened on, and the decision held in it', async () => {
     const turn = screenWidth(true)
     renderPage('/approvals')
