@@ -1,64 +1,28 @@
-// @find: faq, frequently asked questions, buyer questions, limits answered, offline model, email and calendar, connectors, practice data, who may approve, Faq, #faq
+// @find: faq, frequently asked questions, buyer questions, limits answered, offline model, email and calendar, connectors, practice data, who may approve, who is it for, how to start, Faq, #faq
 // @what: Plain-words questions and answers for buyers, built on native details elements.
-// @flow: Used by the home page
+// @flow: Used by the home page; the questions and answers come from faqData.ts, which the FAQPage structured data also reads
 import type { ReactElement } from 'react'
 import { Icon } from '../shared/Icon'
 import { LandingSection, Reveal, SectionHead } from '../shared/LandingSection'
-import { CONNECTOR_LABEL, CONNECTOR_NOTICE, PROVIDERS, listOf } from '../shared/landingFacts'
+import { FAQ_ITEMS } from './faqData'
 
 /*
- * The questions a buyer asks, answered plainly.
- *
- * This is where the page's limits live now: the offline model, how connectors reach real accounts,
- * what happens without documents and who may approve. Each answer is true of the platform as it
- * ships. Connectors reach a real account only once an owner or admin connects them, and use
- * practice data until then; the full list of connectors is the technical page's to state (see
- * landingFacts). Nothing here mentions demo accounts either, since a site may not offer them.
+ * The questions a buyer asks, answered plainly. The questions and answers live in faqData.ts,
+ * which the structured data for search and answer engines reads too, so the two cannot disagree.
  *
  * Native details elements, so each question opens with a click, Enter or Space, and a screen
- * reader announces it as expanded or collapsed without any script.
+ * reader announces it as expanded or collapsed without any script. A closed answer is still in
+ * the page's HTML, so a crawler that does not run JavaScript reads every one.
  */
 
-/** The questions and answers, in plain words. Each answer is true of the platform as it ships; connector wording comes from landingFacts, and the provider list is built with listOf. */
-const QUESTIONS: ReadonlyArray<{ q: string; a: string }> = [
-  {
-    q: 'Will it send anything without asking?',
-    a: 'No. Sending an email, posting a message or deleting something always waits for a person who is allowed to approve it. If nobody answers before the deadline, the request expires and nothing is sent.',
-  },
-  {
-    q: 'Do I need technical skills to use it?',
-    a: 'No. You ask for work in plain words in Chat, typed or spoken. The one-off set-up, such as choosing which AI provider to use, is done once by whoever looks after your workspace.',
-  },
-  {
-    q: 'What happens when it does not know something?',
-    a: 'It tells you. Answers come from the documents you add, with the page each point came from. When nothing in your documents covers the question, it says it cannot answer rather than guessing.',
-  },
-  {
-    q: 'Can we try it before connecting anything?',
-    a: 'Yes. Out of the box it runs on a built-in sandbox model that gives practice answers, clearly labelled as such, and every connector works with practice data, so nothing real is sent.',
-  },
-  {
-    q: 'Which AI does it use?',
-    a: `The one you choose: ${listOf([...PROVIDERS])}. You set the order, and if one is busy or unavailable it moves on to the next.`,
-  },
-  {
-    q: 'Does it work with our email and calendar?',
-    a: `Yes. ${[CONNECTOR_LABEL.gmail, CONNECTOR_LABEL.calendar, CONNECTOR_LABEL.outlook].join(', ')} and the other connectors connect to your real accounts once an owner or admin sets them up. ${CONNECTOR_NOTICE} Your IT team will find the technical details on the page for IT teams.`,
-  },
-  {
-    q: 'Who can see and approve things?',
-    a: 'Each person gets a role. An employee can hand work to the AI team but cannot approve what it sends, and a viewer can look at reports but change nothing. Owners and admins can shape the roles to fit your team.',
-  },
-]
-
 // @find: Faq component, FAQ section
-/** Home page section "Questions" (id faq). Renders each question as a native details and summary element inside a Reveal, so it opens with a click, Enter or Space and is announced as expanded or collapsed without script. Static: no state, no requests. */
+/** Home page section "Questions" (id faq). Renders each question from FAQ_ITEMS as a native details and summary element inside a Reveal, so it opens with a click, Enter or Space and is announced as expanded or collapsed without script. Static: no state, no requests. */
 export function Faq(): ReactElement {
   return (
     <LandingSection id="faq" labelledBy="faq-title">
       <SectionHead eyebrow="Questions" title="What people ask before they start" titleId="faq-title" />
       <Reveal className="lp-faq">
-        {QUESTIONS.map((item) => (
+        {FAQ_ITEMS.map((item) => (
           <details key={item.q} className="lp-faq-item">
             <summary className="lp-faq-q">
               <span>{item.q}</span>

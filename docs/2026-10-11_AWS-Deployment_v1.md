@@ -177,6 +177,12 @@ pointing at the Elastic IP, then commit the name in `site.env` (or leave it ther
   becomes primary again. Emptying `AIWOS_CUSTOM_DOMAIN` takes effect on the next deploy.
 - A commit that changes only `site.env`, `Caddyfile`, `aiwos.sh`, `cloudformation.yaml`, `docs/`,
   `.github/` or top-level `*.md` files reuses the live images instead of building.
+- Search engines are pointed at one name whichever is primary: the web image prerenders the public
+  pages (home, `/trust`, `/sign-in`) with canonical links, link previews and structured data for
+  `AIWOS_SITE_URL` (default `https://ai-workforce.bitecodes.com`), and `robots.txt`, `sitemap.xml`,
+  `llms.txt` and `llms-full.txt` name it too. Set `AIWOS_SITE_URL` in `/opt/aiwos/.env` only if the
+  public domain changes; it takes effect on the next image build. `AIWOS_SITE_LASTMOD`
+  (YYYY-MM-DD), when set, adds a last-modified date to the sitemap.
 - `/opt/aiwos/.env` keeps the rendered names; do not edit them by hand (the next update rewrites
   them). `nip.io` instead of sslip.io would need a change to `render_site_config` in `aiwos.sh`.
 

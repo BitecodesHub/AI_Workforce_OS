@@ -23,6 +23,14 @@ import { HeroGlobe } from './HeroGlobe'
  * the demos further down this page (see useDemoCta).
  */
 
+/**
+ * The lead under the headline. Its first sentence names the product and says what it does, so a
+ * search or answer engine quoting the page has one sentence that answers "what is AI Workforce
+ * OS". Exported for llms-full.txt (src/seo/crawlerFiles.ts), which repeats it word for word.
+ */
+export const HERO_LEAD =
+  'AI Workforce OS gives your business a team of AI assistants that draft emails, sort customer questions, prepare reports and keep routine work moving. You ask in plain words, and nothing is sent or deleted until a person says yes.'
+
 /** Seven model providers, one segment each: OpenRouter, Groq, NVIDIA NIM, Gemini, Bedrock, Anthropic, OpenAI. */
 const PROVIDER_COUNT = 7
 
@@ -54,8 +62,7 @@ export function Hero(): ReactElement {
           </h1>
 
           <p className="lp-sky-lead" style={revealStyle(2)}>
-            Your AI team drafts emails, sorts customer questions, prepares reports and keeps routine work moving.
-            You ask in plain words, and nothing is sent or deleted until a person says yes.
+            {HERO_LEAD}
           </p>
 
           <div id="lp-hero-ctas" className="lp-sky-ctas" style={revealStyle(3)}>

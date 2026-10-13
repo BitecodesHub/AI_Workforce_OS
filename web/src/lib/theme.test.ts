@@ -202,6 +202,23 @@ describe('no-flash script in index.html', () => {
     expect(run('dark', 'missing').theme).toBe('dark')
   })
 
+  it('marks <html> with data-session only when this browser has signed in before', () => {
+    /** Runs the inline script with only the signed-in hint stored, and returns the attributes it set on <html>. */
+    function attributesFor(signedIn: string | null) {
+      const attributes: Record<string, string> = {}
+      const element = { setAttribute: (k: string, v: string) => (attributes[k] = v), style: { colorScheme: '' } }
+      const storage = { getItem: (key: string) => (key === 'aiwos.signedIn' ? signedIn : null) }
+      new Function('localStorage', 'window', 'document', inline)(storage, {}, { documentElement: element })
+      return attributes
+    }
+    expect(attributesFor('1')).toHaveProperty('data-session', '')
+    expect(attributesFor(null)).not.toHaveProperty('data-session')
+    expect(attributesFor('0')).not.toHaveProperty('data-session')
+    // The key is the one session.ts writes when a person signs in.
+    const session = readFileSync(join(__dirname, 'session.ts'), 'utf8')
+    expect(session).toContain("const SIGNED_IN_HINT = 'aiwos.signedIn'")
+  })
+
   it('is allowed by its hash in the Content-Security-Policy', () => {
     const nginx = readFileSync(join(__dirname, '..', '..', '..', 'infra', 'launcher', 'nginx.conf'), 'utf8')
     const hash = createHash('sha256').update(inline, 'utf8').digest('base64')

@@ -95,7 +95,7 @@ const RESULT: Record<Outcome, { icon: IconName; title: string; body: string }> =
   expired: {
     icon: 'clock',
     title: 'Run cancelled',
-    body: 'Nobody decided in time, so the approval was rejected by default. Nothing is sent because a deadline passed.',
+    body: 'Nobody decided in time, so the approval expired and the run ended. Nothing is sent because a deadline passed.',
   },
 }
 

@@ -22,7 +22,7 @@ function proseLabel(id: (typeof LIVE_CONNECTORS)[number]): string {
 }
 
 /** The four stated limits (agents are not autonomous, answers depend on documents, the offline model is a placeholder, connectors reach real accounts only after an administrator connects them). The connector sentence is built from LIVE_CONNECTORS so it cannot claim more than the catalogue has. */
-const LIMITS: ReadonlyArray<string> = [
+export const LIMITS: ReadonlyArray<string> = [
   'Agents are not autonomous. They stop at every outbound or destructive action and wait for a person.',
   'Answers are only as good as the documents you connect. With nothing indexed, an agent will tell you it cannot answer.',
   'The offline model is a placeholder. It returns sensible-looking text so the platform can be tried, and says so wherever it answers.',

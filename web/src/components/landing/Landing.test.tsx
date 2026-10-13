@@ -5,7 +5,7 @@ import axe from 'axe-core'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
-import { App } from '../../App'
+import { App, preloadPrerenderedScreen } from '../../App'
 import { DEMO_ACCOUNTS_URL, resetDemoAccountsForTests } from '../../lib/demo'
 import { RouterProvider } from '../../lib/router'
 import { Landing } from '../../routes/Landing'
@@ -166,6 +166,16 @@ describe('Landing', () => {
     expect(screen.getByRole('link', { name: 'Technical details for IT teams' })).toHaveAttribute('href', '/trust')
   })
 
+  it('says in its first paragraph what the product is and who it is for, in words an answer engine can quote', () => {
+    renderLanding()
+    const lead = document.querySelector('.lp-sky-lead')?.textContent ?? ''
+    expect(lead.startsWith('AI Workforce OS gives your business a team of AI assistants')).toBe(true)
+    // The footer names the product too, without the jargon it used to carry.
+    const footer = document.querySelector('.lp-footer-caption')?.textContent ?? ''
+    expect(footer).toMatch(/^AI Workforce OS: AI assistants for routine business work/)
+    expect(footer).not.toMatch(/multi-agent|enterprise/i)
+  })
+
   it('has exactly one h1', () => {
     const { container } = renderLanding()
     expect(container.querySelectorAll('h1')).toHaveLength(1)
@@ -223,6 +233,51 @@ describe('App title for the public page', () => {
     window.history.pushState({}, '', '/')
   })
 
+  it('draws a prerendered page at once once its screen has loaded, never the blank loading state', async () => {
+    await expect(preloadPrerenderedScreen(null)).resolves.toBeUndefined()
+    for (const [page, path, heading] of [
+      ['home', '/', 'Hand the busywork to AI. Keep the final say.'],
+      ['trust', '/trust', 'How it keeps agents in check'],
+    ] as const) {
+      await preloadPrerenderedScreen(page)
+      window.history.pushState({}, '', path)
+      const { container, unmount } = render(
+        <RouterProvider>
+          <App />
+        </RouterProvider>,
+      )
+      // Straight after the first render, with nothing awaited: the screen itself, not a fallback.
+      expect(container.querySelector('h1')).toHaveTextContent(heading)
+      unmount()
+    }
+  })
+
+  it('titles the technical page for search, with its canonical link', () => {
+    window.history.pushState({}, '', '/trust')
+    const { unmount } = render(
+      <RouterProvider>
+        <App />
+      </RouterProvider>,
+    )
+    expect(document.title).toBe('Security and technical details · AI Workforce OS')
+    expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute('href', 'https://ai-workforce.bitecodes.com/trust')
+    expect(document.head.querySelector('meta[name="robots"]')).toBeNull()
+    unmount()
+  })
+
+  it('marks an unknown address noindex, with no canonical link', () => {
+    window.history.pushState({}, '', '/no-such-page')
+    const { unmount } = render(
+      <RouterProvider>
+        <App />
+      </RouterProvider>,
+    )
+    expect(document.title).toBe('Not found · AI Workforce OS')
+    expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute('content', 'noindex')
+    expect(document.head.querySelector('link[rel="canonical"]')).toBeNull()
+    unmount()
+  })
+
   it('titles the signed-out root and /home as the public page', () => {
     for (const path of ['/', '/home']) {
       window.history.pushState({}, '', path)
@@ -232,6 +287,8 @@ describe('App title for the public page', () => {
         </RouterProvider>,
       )
       expect(document.title).toBe('AI employees for your business · AI Workforce OS')
+      // Both addresses name / as the one to index.
+      expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute('href', 'https://ai-workforce.bitecodes.com/')
       unmount()
     }
     expect(fetchSpy.mock.calls.map(([input]) => urlOf(input)).filter((url) => url !== DEMO_ACCOUNTS_URL)).toEqual([])

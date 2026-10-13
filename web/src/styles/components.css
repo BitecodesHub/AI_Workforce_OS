@@ -28,6 +28,17 @@
   margin-bottom: var(--space-3);
 }
 
+/* ---- Prerendered page ------------------------------------------------------------------------
+ * The build writes the public pages as HTML (scripts/prerender.mjs) inside .prerendered-page,
+ * which React removes when the app renders. A browser that has signed in before (index.html's
+ * inline script sets data-session from the aiwos.signedIn hint) is about to see the Command Map
+ * at "/", not the home page, so the home page's HTML stays hidden rather than flashing first.
+ */
+
+html[data-session] .prerendered-page[data-page='home'] {
+  display: none;
+}
+
 /* ---- Page ---------------------------------------------------------------------------------- */
 
 .page {

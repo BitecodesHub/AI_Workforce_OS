@@ -20,7 +20,7 @@ import type { RoleId } from '../roles/roleData'
  */
 
 /** The six promises of the section (approval before sending, roles, a tamper-evident record, answers that cite their source, provider fallback, schedules), each with an icon, a title and a body. The provider count comes from landingFacts. */
-const PROMISES: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [
+export const PROMISES: ReadonlyArray<{ icon: IconName; title: string; body: string }> = [
   {
     icon: 'gate',
     title: 'Nothing is sent without a yes',
@@ -55,7 +55,7 @@ const PROMISES: ReadonlyArray<{ icon: IconName; title: string; body: string }> =
 
 /** What a person can do, in the words a manager would use; each row needs every listed code. */
 /** The rows of the who-can-do-what table. Each row is something a person can do in the console today and lists the permission codes a role needs to hold all of. */
-const WHO_CAN: ReadonlyArray<{ label: string; codes: readonly string[] }> = [
+export const WHO_CAN: ReadonlyArray<{ label: string; codes: readonly string[] }> = [
   { label: 'Ask the AI team for work', codes: ['chat:use', 'task:create'] },
   { label: 'See the work as it happens', codes: ['run:read'] },
   { label: 'Approve what gets sent', codes: ['approval:decide'] },

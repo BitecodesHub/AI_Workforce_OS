@@ -35,12 +35,17 @@
 	handle /deploy-status.json {
 		root * /srv/status
 		header Cache-Control "no-store"
+		# A status file, not a page: never in search results.
+		header X-Robots-Tag "noindex"
 		file_server
 	}
 
 	handle {
 		# The other names send people to the primary one. Temporary (307, method kept): the primary
-		# name can change back if the custom domain stops pointing here.
+		# name can change back if the custom domain stops pointing here (aiwos.sh does that by itself
+		# after three failed checks), and a browser that remembered a permanent redirect would keep
+		# going to the dead name. Search engines are told which name to index by the canonical links
+		# and the sitemap, which always name the custom domain (SITE_URL in web.Dockerfile).
 		@other_name not host {$AIWOS_PUBLIC_HOST:localhost}
 		redir @other_name https://{$AIWOS_PUBLIC_HOST:localhost}{uri} 307
 
