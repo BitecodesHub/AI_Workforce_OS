@@ -32,8 +32,8 @@ function workLine(presence: AgentPresence): string | null {
   return null
 }
 
-/** Where the viewer acts on what the agent waits for: the approval, or the run that asked. */
-function actionFor(presence: AgentPresence): { href: string; label: string } | null {
+/** Where the viewer acts on what the agent waits for: the approval, or the run that asked. Also used by the Command Map glance. */
+export function actionFor(presence: AgentPresence): { href: string; label: string } | null {
   if (!presence.waitingForYou) return null
   if (presence.state === 'waiting_approval' && presence.approvalId && can('approval:read')) {
     return { href: `/approvals#approval-${presence.approvalId}`, label: 'Review and decide' }

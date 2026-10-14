@@ -1,110 +1,61 @@
-// @find: command map, home dashboard, overview, start page, approvals waiting, routing status, week figures, recent runs, sandbox notice, connect your AI, /, Command Map page
-// @what: The signed-in home page: a one-screen overview of approvals waiting, model routing status, this week's figures and recent runs.
-// @flow: Routed from App.tsx at /; links onward to Approvals, Model routing and Runs
+// @find: command map, home dashboard, overview, start page, team room glance, approvals waiting, week figures, recent runs, /, Command Map page
+// @what: The signed-in home page: a one-screen overview that opens on the team room glance, then approvals waiting, this week's figures and recent runs.
+// @flow: Routed from App.tsx at /; renders TeamRoomGlance; links onward to the Team room, Approvals and Runs
 import { useState } from 'react'
-import {
-  Button,
-  Card,
-  DataTable,
-  EmptyState,
-  Eyebrow,
-  Notice,
-  PageHeader,
-  StatRow,
-  StatTile,
-  StatusTag,
-  Tag,
-  Time,
-} from '../components/ui'
+import { Button, Card, DataTable, EmptyState, Eyebrow, Notice, StatRow, StatTile, StatusTag, Tag, Time } from '../components/ui'
 import type { Column } from '../components/ui'
 import { QueryState, EmptyIcon } from '../components/ui/QueryState'
 import { TaskDialog } from '../components/ui/TaskDialog'
-import { GettingStarted } from '../components/command-map/GettingStarted'
-import { SetupBanner } from '../components/setup/SetupBanner'
-import { TeamRoomCard } from '../components/team-room/TeamRoomCard'
-import { ConnectModelDialog } from '../components/onboarding/ConnectModelDialog'
+import { TeamRoomGlance } from '../components/team-room/TeamRoomGlance'
 import { describeChange } from '../components/analytics/figures'
 import { formatCount, formatMoney, formatRelativeTicked, formatRunElapsed, truncateWords } from '../lib/format'
 import { useAgentInsights, useInsights } from '../lib/insightsQueries'
 import { categoryTone, startedByLabel } from '../lib/labels'
-import {
-  useAgentNames,
-  useAgents,
-  useApprovals,
-  useCredentials,
-  useModelPolicy,
-  useProviders,
-  useRuns,
-  useTaskIndex,
-} from '../lib/queries'
+import { useAgentNames, useAgents, useApprovals, useRuns, useTaskIndex } from '../lib/queries'
 import type { Run } from '../lib/queries'
-import { liveRouting, routingSummary } from '../lib/routing'
 import { can } from '../lib/session'
 import { useNow } from '../lib/useNow'
 
 /*
  * The first screen after signing in.
  *
- * It answers three questions in order: is anything waiting on me, which model are the agents
- * really answering on, and what have they been doing. The figures cover the last seven days and
- * say how they moved against the seven before; the live activity under them is the latest few
- * runs, with a link to all of them.
+ * It answers three questions in order: what is my AI team doing right now (the team room glance,
+ * which opens the screen), is anything waiting on me, and what have they been doing. The figures
+ * cover the last seven days and say how they moved against the seven before; the live activity
+ * under them is the latest few runs, with a link to all of them. Setup, model routing and the
+ * getting-started tour live on their own pages (Settings and more), not here: the owner asked for
+ * a shorter first screen on 13 Oct 2026.
  */
 
 /** Runs shown under the figures. The Runs page has the rest, filterable and sortable. */
 const LIVE_ACTIVITY_ROWS = 8
 
-// @find: CommandMap component, home dashboard, overview page, sandbox notice, connect your AI button, /
+// @find: CommandMap component, home dashboard, overview page, team room glance, /
 /**
  * The Command Map (route /, the first screen after signing in; no route permission, each part checks its own).
- * Header links (Chat with chat:use, Orchestrator with run:read, Connectors with integration:read) and, with task:create, a Give an agent a task button that opens the task dialog (which opens the new run or goal itself). Sections in order: approvals waiting (approval:read), the setup banner, the routing status (which model agents really answer on; provider:read, with a Connect your AI dialog for provider:manage), the getting-started guide, the Team room card (run:read), and the recent runs behind QueryState (permission run:read; empty state differs for people who can create tasks). A signed-out visit to "/" shows the public home page instead (see App).
+ * No visible title block: the screen opens on the team room glance, whose eyebrow and heading lead it, with a
+ * visually hidden h1 so screen readers and focus on arrival still find the page. The glance carries the page's
+ * one action, Give an agent a task (task:create), which opens the task dialog (it opens the new run or goal
+ * itself). Then approvals waiting (approval:read) and the recent runs behind QueryState (permission run:read;
+ * the empty state differs for people who can create tasks). A signed-out visit to "/" shows the public home
+ * page instead (see App).
  */
 export function CommandMap() {
   const runsQuery = useRuns()
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const canCreate = can('task:create')
-  const canReadConnectors = can('integration:read')
-  const canChat = can('chat:use')
-  const canOrchestrate = can('run:read')
   const giveTask = canCreate ? <Button onClick={() => setTaskDialogOpen(true)}>Give an agent a task</Button> : undefined
 
   return (
     <div className="page">
-      <PageHeader
-        eyebrow="Your workforce, in focus"
-        title="Command Map"
-        description="What your agents have been doing recently, and anything waiting on a decision."
-        action={
-          <>
-            {canChat && (
-              <a className="button button-quiet" href="/chat">
-                Chat
-              </a>
-            )}
-            {canOrchestrate && (
-              <a className="button button-quiet" href="/orchestrator">
-                Orchestrator
-              </a>
-            )}
-            {canReadConnectors && (
-              <a className="button button-quiet" href="/connectors">
-                Connectors
-              </a>
-            )}
-            {giveTask}
-          </>
-        }
-      />
+      <h1 className="visually-hidden">Command Map</h1>
 
       {/* No onSuccess: once the task starts, the dialog opens its run, or its goal if no run started. */}
       {canCreate && <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} />}
 
       <div className="page-sections">
+        <TeamRoomGlance eyebrow="Your workforce, live" action={giveTask} />
         <ApprovalsWaiting />
-        <SetupBanner />
-        <RoutingStatus />
-        <GettingStarted />
-        <TeamRoomCard />
 
         <QueryState
           query={runsQuery}
@@ -150,61 +101,6 @@ function ApprovalsWaiting() {
         </a>
       </span>
     </Notice>
-  )
-}
-
-/**
- * Which model runs are sent to, worked out from the routing policy, the providers and the stored
- * keys. Shown only to roles that can read all three, and only once all three have loaded: a claim
- * on the first screen that turns out to be wrong is worse than none, so a failed request makes no
- * claim at all. Other roles see sandbox answers marked on each trace instead.
- */
-// @find: routing status card, model provider health, sandbox mode
-function RoutingStatus() {
-  const canRead = can('provider:read')
-  const canManage = can('provider:manage')
-  const policy = useModelPolicy({ enabled: canRead })
-  const providers = useProviders({ enabled: canRead })
-  const credentials = useCredentials({ enabled: canRead })
-  const [connectOpen, setConnectOpen] = useState(false)
-
-  if (!canRead || policy.error || providers.error || credentials.error) return null
-  if (!policy.data || !providers.data || !credentials.data) return null
-
-  const routing = liveRouting(policy.data, providers.data, credentials.data)
-  const summary = routingSummary(routing, { canManage })
-  const link = (
-    <a className="link" href="/routing">
-      {summary.linkToRouting ? 'Set up model routing' : 'See model routing'}
-    </a>
-  )
-
-  if (routing.live) {
-    return (
-      <p className="caption">
-        {summary.text} {link}
-      </p>
-    )
-  }
-  // While runs are not reaching a live model, somebody who can manage providers is offered the
-  // whole job in one step, rather than only a link to the page about circuit breakers and costs.
-  return (
-    <>
-      <Notice tone={summary.tone}>
-        <span>
-          {summary.text} {link}
-          {canManage && (
-            <>
-              {' '}
-              <Button variant="outline" className="button-sm" onClick={() => setConnectOpen(true)}>
-                Connect your AI
-              </Button>
-            </>
-          )}
-        </span>
-      </Notice>
-      {canManage && <ConnectModelDialog open={connectOpen} onClose={() => setConnectOpen(false)} />}
-    </>
   )
 }
 

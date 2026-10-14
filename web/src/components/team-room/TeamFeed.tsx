@@ -12,8 +12,8 @@ import { can, initials, profile } from '../../lib/session'
 /** How close to the bottom (pixels) still counts as reading the newest lines. */
 const NEAR_BOTTOM_PX = 120
 
-/** The circle beside a line: the agent's avatar, the person's initials, or a clock for a schedule. */
-function Speaker({ event, nameOf }: { event: FeedEvent; nameOf: PersonNamer }) {
+/** The circle beside a line: the agent's avatar, the person's initials, or a clock for a schedule. Also used by the Command Map glance. */
+export function Speaker({ event, nameOf }: { event: FeedEvent; nameOf: PersonNamer }) {
   const speaker = feedSpeaker(event)
   if (speaker === 'agent') {
     return (

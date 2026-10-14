@@ -162,15 +162,16 @@ const BASE = '/api/orchestrator/team-room'
 // @find: useTeamRoom, team room presence query, poll presence every two seconds
 /**
  * Every agent's presence (GET /api/orchestrator/team-room, key ['team-room', 'presence']), read
- * every two seconds while the tab is visible. `live: false` reads it once (the Command Map card).
+ * every two seconds while the tab is visible, or every `pollMs` (the Command Map glance reads less
+ * often). `live: false` reads it once.
  */
-export function useTeamRoom(options: { enabled?: boolean; live?: boolean } = {}) {
+export function useTeamRoom(options: { enabled?: boolean; live?: boolean; pollMs?: number } = {}) {
   const live = options.live ?? true
   return useQuery({
     queryKey: PRESENCE_KEY,
     queryFn: ({ signal }) => api<TeamRoom>(BASE, { signal }),
     enabled: options.enabled ?? true,
-    refetchInterval: live ? PRESENCE_POLL_MS : false,
+    refetchInterval: live ? (options.pollMs ?? PRESENCE_POLL_MS) : false,
     refetchIntervalInBackground: false,
     staleTime: live ? 0 : 30_000,
   })
@@ -293,13 +294,14 @@ export async function readNewer(cursor: string, read: (url: string) => Promise<F
 // @find: useTeamRoomFeed, team room conversation query, poll feed every three seconds, show earlier
 /**
  * The conversation (GET /api/orchestrator/team-room/feed, key ['team-room', 'feed']). The first
- * read takes the newest page; each later one, every three seconds while the tab is visible, reads
+ * read takes the newest page; each later one, every three seconds while the tab is visible (or every
+ * `pollMs`), reads
  * what happened after the cursor the server handed back (readNewer, which catches up page by page
  * after the tab was hidden) and merges it in (mergeNewer). Too far behind, it starts again from the
  * newest page. `loadOlder` fetches the page before the oldest event held and puts it in front
  * (mergeOlder); `releaseOlder` says the reader is back at the newest line.
  */
-export function useTeamRoomFeed(options: { enabled?: boolean } = {}) {
+export function useTeamRoomFeed(options: { enabled?: boolean; pollMs?: number } = {}) {
   const client = useQueryClient()
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [olderError, setOlderError] = useState<unknown>(null)
@@ -318,7 +320,7 @@ export function useTeamRoomFeed(options: { enabled?: boolean } = {}) {
       return mergeNewer(client.getQueryData<FeedState>(FEED_KEY), page)
     },
     enabled: options.enabled ?? true,
-    refetchInterval: FEED_POLL_MS,
+    refetchInterval: options.pollMs ?? FEED_POLL_MS,
     refetchIntervalInBackground: false,
     staleTime: 0,
   })
